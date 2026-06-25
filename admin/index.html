@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BotPanel Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0c0c0c;--ink2:#1e1e1e;--ink3:#333;--paper:#f7f5f1;--paper2:#eeebe4;--paper3:#e4e0d7;--lime:#b5f23a;--lime-d:#93c92d;--lime-ink:#1a2d00;--red:#f03d2f;--amber:#f5a623;--sky:#2d6fff;--muted:#8a8378;--faint:#b8b3a8;--bd:rgba(12,12,12,0.09);--bd2:rgba(12,12,12,0.15);--r:12px;--rs:8px;--sh:0 1px 2px rgba(0,0,0,0.06),0 4px 16px rgba(0,0,0,0.04)}
+*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
+body{font-family:'Instrument Sans',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
+.screen{display:none;min-height:100vh}.screen.on{display:flex}
+#sc-login{background:var(--ink);align-items:center;justify-content:center;flex-direction:column;background-image:radial-gradient(ellipse 70% 50% at 15% 85%,rgba(181,242,58,.1) 0%,transparent 55%)}
+.lw{width:380px;max-width:calc(100vw - 32px)}
+.badge{display:inline-flex;align-items:center;gap:8px;background:rgba(181,242,58,.1);border:1px solid rgba(181,242,58,.2);border-radius:99px;padding:5px 14px 5px 7px;margin-bottom:24px}
+.badge .ld{width:24px;height:24px;background:var(--lime);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.badge .ld svg{width:14px;height:14px}
+.badge span{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--lime)}
+.lh{font-family:'Syne',sans-serif;font-size:40px;font-weight:800;color:#fff;line-height:1.05;letter-spacing:-2px;margin-bottom:8px}
+.lh em{color:var(--lime);font-style:normal}
+.lsub{font-size:14px;color:rgba(255,255,255,.38);margin-bottom:28px;line-height:1.6}
+.lbox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:24px}
+.lf{margin-bottom:14px}
+.lf label{font-size:10px;color:rgba(255,255,255,.3);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.lf input{width:100%;padding:11px 13px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:var(--rs);color:#fff;font-size:14px;font-family:inherit;transition:border-color .15s;-webkit-text-fill-color:#fff;caret-color:#fff}
+.lf input:-webkit-autofill,.lf input:-webkit-autofill:hover,.lf input:-webkit-autofill:focus{-webkit-text-fill-color:#fff;-webkit-box-shadow:0 0 0 1000px rgba(20,20,20,.95) inset}
+.lf input:focus{outline:none;border-color:rgba(181,242,58,.5);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(181,242,58,.15)}
+.lf input::placeholder{color:rgba(255,255,255,.2)}
+.lbtn{width:100%;padding:13px;background:var(--lime);color:var(--lime-ink);border:none;border-radius:var(--rs);font-size:14px;font-weight:700;font-family:'Syne',sans-serif;cursor:pointer;margin-top:4px;transition:all .15s}
+.lbtn:hover{background:var(--lime-d)}.lbtn:disabled{opacity:.5;cursor:not-allowed}
+.lerr{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none;padding:8px;background:rgba(240,61,47,.1);border-radius:var(--rs)}
+#sc-app{flex-direction:row}
+.sidebar{width:232px;height:100vh;position:sticky;top:0;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0}
+.sb-top{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.sb-logo .ld{width:28px;height:28px;background:var(--lime);border-radius:7px;display:flex;align-items:center;justify-content:center}
+.sb-logo .ld svg{width:15px;height:15px}
+.sb-logo-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:#fff}
+.sb-role{font-size:11px;color:rgba(181,242,58,.6);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-left:2px}
+nav{flex:1;padding:10px;overflow-y:auto}
+.ns{font-size:10px;color:rgba(255,255,255,.2);text-transform:uppercase;letter-spacing:.1em;padding:0 8px;margin:14px 0 5px;font-weight:600}
+.ni{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--rs);color:rgba(255,255,255,.38);font-size:13px;font-weight:500;cursor:pointer;transition:all .12s;margin-bottom:1px}
+.ni svg{width:15px;height:15px;flex-shrink:0}
+.ni:hover{background:rgba(255,255,255,.05);color:rgba(255,255,255,.7)}
+.ni.on{background:rgba(181,242,58,.1);color:var(--lime)}
+.ni .ct{margin-left:auto;font-size:10px;padding:2px 7px;background:rgba(181,242,58,.15);color:var(--lime);border-radius:99px;font-weight:700}
+.sb-ft{padding:12px 18px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between}
+.sb-ft-l{display:flex;align-items:center;gap:8px}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--lime);animation:pu 2.5s infinite}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.4}}
+.sb-ft-t{font-size:12px;color:rgba(255,255,255,.28)}
+.sb-ft-t strong{color:rgba(181,242,58,.8);font-weight:500}
+.out-btn{background:none;border:none;color:rgba(255,255,255,.25);cursor:pointer;font-size:11px;font-family:inherit}
+.out-btn:hover{color:rgba(240,61,47,.7)}
+.main{flex:1;overflow-y:auto;background:var(--paper)}
+.pg{display:none;padding:32px}.pg.on{display:block}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}
+.ph h1{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.5px}
+.ph p{font-size:13px;color:var(--muted);margin-top:3px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.stat{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:16px 20px;box-shadow:var(--sh)}
+.stat-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;font-weight:600}
+.stat-v{font-family:'Syne',sans-serif;font-size:30px;font-weight:700;letter-spacing:-1.5px;line-height:1}
+.stat-v.g{color:#2d7a00}.stat-v.r{color:var(--red)}.stat-v.a{color:var(--amber)}
+.stat-s{font-size:11px;color:var(--faint);margin-top:4px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:20px 22px;box-shadow:var(--sh)}
+.card+.card{margin-top:14px}
+.card-t{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:14px}
+input[type=text],input[type=number],input[type=url],input[type=email],input[type=password],input[type=date],textarea,select{background:var(--paper);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--ink);font-family:inherit;font-size:13px;padding:9px 12px;width:100%;transition:border-color .15s,box-shadow .15s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:rgba(0,0,0,.3);box-shadow:0 0 0 3px rgba(0,0,0,.05);background:#fff}
+textarea{resize:vertical;min-height:70px;line-height:1.6}
+.lbl{font-size:10px;color:var(--muted);display:block;margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.fg{margin-bottom:14px}.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:var(--rs);font-family:'Syne',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--bd2);background:#fff;color:var(--ink);transition:all .13s;white-space:nowrap}
+.btn svg{width:13px;height:13px}
+.btn:hover{background:var(--paper2);transform:translateY(-1px);box-shadow:var(--sh)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-dark{background:var(--ink);color:#fff;border-color:var(--ink)}.btn-dark:hover{background:var(--ink3)}
+.btn-lime{background:var(--lime);color:var(--lime-ink);border-color:var(--lime)}.btn-lime:hover{background:var(--lime-d)}
+.btn-red{color:var(--red);border-color:rgba(240,61,47,.2);background:#fff}.btn-red:hover{background:rgba(240,61,47,.06)}
+.btn-green{background:#2d7a00;color:#fff;border-color:#2d7a00}.btn-green:hover{opacity:.88}
+.btn-amber{background:var(--amber);color:#fff;border-color:var(--amber)}.btn-amber:hover{opacity:.88}
+.btn-sm{padding:5px 10px;font-size:12px}
+/* TABLE */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--bd2)}
+td{padding:11px 14px;border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--paper)}
+.pill{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em}
+.p-ok{background:#eafad4;color:#2a6500}.p-off{background:#ffe8e5;color:#9c1c10}.p-warn{background:#fff4dc;color:#8a5500}.p-gray{background:var(--paper2);color:var(--muted)}
+/* MODAL */
+.mbd{display:none;position:fixed;inset:0;background:rgba(12,12,12,.6);backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.mbd.on{display:flex}
+.modal{background:#fff;border:1px solid var(--bd);border-radius:16px;width:620px;max-width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.18);animation:mop .2s cubic-bezier(.34,1.56,.64,1)}
+@keyframes mop{from{transform:scale(.93) translateY(10px);opacity:0}to{transform:scale(1);opacity:1}}
+.mhd{padding:18px 22px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);position:sticky;top:0;background:#fff;z-index:1}
+.mhd h2{font-family:'Syne',sans-serif;font-size:16px;font-weight:700}
+.mx{background:var(--paper2);border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:18px;color:var(--muted);display:flex;align-items:center;justify-content:center}
+.mx:hover{background:var(--paper3)}
+.mbody{padding:18px 22px}.mft{padding:12px 22px;border-top:1px solid var(--bd);display:flex;gap:8px;justify-content:flex-end}
+.section-divider{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin:18px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+.warn-box{display:flex;gap:10px;background:#fffbee;border:1px solid #f5e68a;border-radius:var(--rs);padding:11px 13px;margin-bottom:14px}
+.warn-box svg{width:15px;height:15px;color:var(--amber);flex-shrink:0;margin-top:1px}
+.warn-box p{font-size:12px;color:#7a5800;line-height:1.65}
+.toast{position:fixed;bottom:22px;right:22px;z-index:9999;background:var(--ink);color:#fff;border-radius:var(--r);padding:11px 17px;font-size:13px;display:flex;align-items:center;gap:10px;transform:translateY(60px);opacity:0;transition:all .25s cubic-bezier(.34,1.56,.64,1);pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.22);max-width:320px}
+.toast.on{transform:translateY(0);opacity:1}
+.td{width:7px;height:7px;border-radius:50%;background:var(--lime);flex-shrink:0}
+.toast.err .td{background:var(--red)}
+.loading{display:flex;align-items:center;gap:10px;padding:32px;color:var(--muted);font-size:13px;justify-content:center}
+.spin{width:18px;height:18px;border:2px solid var(--bd2);border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.client-row-name{font-weight:600;font-size:13px}
+.client-row-type{font-size:11px;color:var(--muted)}
+.conv-item{padding:10px 0;border-bottom:1px solid var(--bd)}
+.conv-item:last-child{border-bottom:none}
+.conv-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.conv-role.user{color:var(--sky)}.conv-role.bot{color:#2d7a00}
+.conv-text{font-size:13px;line-height:1.5;color:var(--ink2)}
+.conv-time{font-size:10px;color:var(--faint);margin-top:2px}
+@media(max-width:900px){.stats{grid-template-columns:1fr 1fr}.g2,.g3{grid-template-columns:1fr}}
+@media(max-width:640px){.sidebar{display:none}.pg{padding:20px 16px}}
+/* ── SIMULADOR ─────────────────────────────────────── */
+.sim-wrap{display:flex;flex-direction:column;height:calc(100vh - 135px)}
+.chat-box{flex:1;display:flex;flex-direction:column;background:#fff;border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+.chat-bar{padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;background:#fff}
+.chat-bar-av{width:38px;height:38px;border-radius:50%;background:var(--lime);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.chat-biz-name{font-size:13px;font-weight:600}
+.chat-biz-sub{font-size:11px;color:var(--muted)}
+.chat-msgs{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
+.chat-foot{padding:10px 14px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:flex-end;background:#fff}
+.chat-tf{flex:1;padding:10px 14px;border-radius:22px;border:1px solid var(--bd2);font-size:14px;font-family:inherit;resize:none;line-height:1.4;max-height:120px;background:var(--paper)}
+.chat-tf:focus{outline:none;border-color:rgba(0,0,0,.3);background:#fff}
+.chat-sb{width:42px;height:42px;border-radius:50%;background:var(--lime);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .13s}
+.chat-sb:hover{background:var(--lime-d)}
+.chat-sb:disabled{opacity:.4;cursor:not-allowed}
+.mw{display:flex;flex-direction:column}
+.mw.u{align-items:flex-end}
+.mw.b{align-items:flex-start}
+.mb{max-width:72%;padding:9px 14px;border-radius:14px;font-size:13.5px;line-height:1.55;word-break:break-word;white-space:pre-wrap}
+.mb.u{background:var(--lime);color:var(--lime-ink);border-bottom-right-radius:3px}
+.mb.b{background:#fff;border:1px solid var(--bd);color:var(--ink);border-bottom-left-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.mt{font-size:10px;color:var(--faint);margin-top:3px;padding:0 3px}
+.typing-ind{display:none;align-items:center;gap:4px;padding:11px 16px;background:#fff;border:1px solid var(--bd);border-radius:14px;border-bottom-left-radius:3px}
+.typing-ind.on{display:flex}
+.td{width:7px;height:7px;border-radius:50%;background:var(--faint);animation:tdp 1.2s infinite}
+.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
+@keyframes tdp{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--faint);gap:10px;text-align:center;padding:40px}
+.chat-empty svg{width:44px;height:44px;opacity:.2}
+.chat-empty p{font-size:13px;line-height:1.7}
+/* ── WEBHOOKS / CONEXIONES ──────────────────────────── */
+.tunnel-box{background:var(--ink);color:#fff;border-radius:var(--r);padding:22px 24px;margin-bottom:14px;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.tunnel-url-display{font-family:'DM Mono',monospace;font-size:16px;color:var(--lime);word-break:break-all;margin:8px 0 4px}
+.tunnel-url-display.inactive{font-size:13px;color:rgba(255,255,255,.25)}
+.tunnel-note{font-size:11px;color:rgba(255,255,255,.3);margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);line-height:1.6}
+.wh-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--bd)}
+.wh-row:last-child{border-bottom:none}
+.wh-url{flex:1;font-family:'DM Mono',monospace;font-size:11.5px;color:var(--muted);background:var(--paper);padding:7px 10px;border-radius:var(--rs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--bd)}
+</style>
+</head>
+<body>
+
+<!-- LOGIN ADMIN -->
+<div class="screen on" id="sc-login">
+  <div class="lw">
+    <div class="badge"><div class="ld"><svg viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><span>Admin Panel</span></div>
+    <h1 class="lh">Panel de<br><em>control.</em></h1>
+    <p class="lsub">Gestiona todos tus clientes, pagos y bots.</p>
+    <div class="lbox">
+      <div class="lf"><label>Email de administrador</label><input type="email" id="l-email" placeholder="tu@email.com"></div>
+      <div class="lf"><label>Contraseña</label><input type="password" id="l-pass" placeholder="••••••••"></div>
+      <button class="lbtn" onclick="doLogin()">Entrar como admin →</button>
+      <div class="lerr" id="l-err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP ADMIN -->
+<div class="screen" id="sc-app">
+  <aside class="sidebar">
+    <div class="sb-top">
+      <div class="sb-logo"><div class="ld"><svg viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" stroke-width="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div><span class="sb-logo-name">BotPanel</span></div>
+      <div class="sb-role">Superadmin</div>
+    </div>
+    <nav>
+      <div class="ns">Gestión</div>
+      <div class="ni on" onclick="goPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Dashboard</div>
+      <div class="ni" onclick="goPage('clients',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Clientes<span class="ct" id="sb-clients-ct">0</span></div>
+      <div class="ns">Finanzas</div>
+      <div class="ni" onclick="goPage('billing',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Facturación</div>
+      <div class="ns">Herramientas</div>
+      <div class="ni" onclick="goPage('sim',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Simulador</div>
+      <div class="ni" onclick="goPage('webhooks',this);loadTunnelStatus()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>Conexiones</div>
+    </nav>
+    <div class="sb-ft"><div class="sb-ft-l"><div class="pulse"></div><div class="sb-ft-t"><strong>Admin</strong></div></div><button class="out-btn" onclick="doLogout()">Salir</button></div>
+  </aside>
+
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div class="pg on" id="pg-dashboard">
+      <div class="ph"><div><h1>Dashboard</h1><p>Visión general de tu negocio</p></div></div>
+      <div class="stats">
+        <div class="stat"><div class="stat-l">Total clientes</div><div class="stat-v" id="st-total">—</div><div class="stat-s">Negocios registrados</div></div>
+        <div class="stat"><div class="stat-l">Activos</div><div class="stat-v g" id="st-active">—</div><div class="stat-s">Bots funcionando</div></div>
+        <div class="stat"><div class="stat-l">Suspendidos</div><div class="stat-v r" id="st-susp">—</div><div class="stat-s">Pago pendiente</div></div>
+        <div class="stat"><div class="stat-l">Mensajes hoy</div><div class="stat-v" id="st-msgs">—</div><div class="stat-s">En todos los bots</div></div>
+      </div>
+      <div class="card"><div class="card-t">Clientes recientes</div><div id="dash-recent"><div class="loading"><div class="spin"></div></div></div></div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div class="pg" id="pg-clients">
+      <div class="ph"><div><h1>Clientes</h1><p>Gestiona todos los negocios de tu plataforma</p></div>
+        <button class="btn btn-dark" onclick="openClientModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo cliente</button>
+      </div>
+      <div class="card">
+        <div class="tw"><table>
+          <thead><tr><th>Negocio</th><th>WhatsApp</th><th>Plan</th><th>Vencimiento</th><th>Estado</th><th>Bot</th><th>Acciones</th></tr></thead>
+          <tbody id="clients-table"><tr><td colspan="7"><div class="loading"><div class="spin"></div></div></td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- FACTURACIÓN -->
+    <div class="pg" id="pg-billing">
+      <div class="ph"><div><h1>Facturación</h1><p>Historial de pagos y cobros pendientes</p></div>
+        <button class="btn btn-dark" onclick="openBillingModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo registro</button>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:160px">
+            <label class="lbl" style="margin-bottom:4px">Cliente</label>
+            <select id="bf-client" onchange="billingPage=1;renderBilling()" style="margin:0">
+              <option value="">Todos los clientes</option>
+            </select>
+          </div>
+          <div style="min-width:140px">
+            <label class="lbl" style="margin-bottom:4px">Estado</label>
+            <select id="bf-status" onchange="billingPage=1;renderBilling()" style="margin:0">
+              <option value="">Todos</option>
+              <option value="pending">Pendiente</option>
+              <option value="overdue">Vencido</option>
+              <option value="paid">Pagado</option>
+              <option value="future">Próximo</option>
+            </select>
+          </div>
+          <div style="align-self:flex-end">
+            <button class="btn btn-sm" onclick="clearBillingFilters()">Limpiar filtros</button>
+          </div>
+          <div style="align-self:flex-end;margin-left:auto">
+            <span id="bf-count" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tw"><table>
+          <thead><tr><th>Cliente</th><th>Período</th><th>Monto</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody id="billing-table"><tr><td colspan="5"><div class="loading"><div class="spin"></div></div></td></tr></tbody>
+        </table></div>
+        <div id="billing-pagination"></div>
+      </div>
+    </div>
+
+    <!-- SIMULADOR DE BOT -->
+    <div class="pg" id="pg-sim">
+      <div class="ph">
+        <div><h1>Simulador de Bot</h1><p>Prueba el bot de cualquier negocio sin WhatsApp real</p></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="sim-biz" onchange="simSelectBiz()" style="min-width:220px">
+            <option value="">— Elige un negocio —</option>
+          </select>
+          <button class="btn btn-red btn-sm" onclick="simClear()" id="sim-clear-btn" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            Limpiar chat
+          </button>
+        </div>
+      </div>
+      <div class="sim-wrap">
+        <div class="chat-box">
+          <div class="chat-bar">
+            <div class="chat-bar-av" id="sim-av">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--lime-ink)" stroke-width="2" style="width:18px;height:18px"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            </div>
+            <div>
+              <div class="chat-biz-name" id="sim-biz-name">Ningún negocio seleccionado</div>
+              <div class="chat-biz-sub" id="sim-biz-sub">Elige un negocio del menú para comenzar</div>
+            </div>
+          </div>
+          <div class="chat-msgs" id="sim-msgs">
+            <div class="chat-empty" id="sim-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <p>Selecciona un negocio y escríbele<br>como si fueras un cliente de WhatsApp.<br><br>El bot responde con la misma IA que en producción.</p>
+            </div>
+            <div class="typing-ind" id="sim-typing">
+              <div class="td"></div><div class="td"></div><div class="td"></div>
+            </div>
+          </div>
+          <div class="chat-foot">
+            <textarea class="chat-tf" id="sim-input" placeholder="Escribe un mensaje... (Enter para enviar)" rows="1" disabled
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();simSend()}"
+              oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
+            <button class="chat-sb" onclick="simSend()" id="sim-send" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--lime-ink)" stroke-width="2.5" style="width:16px;height:16px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONEXIONES / WEBHOOKS -->
+    <div class="pg" id="pg-webhooks">
+      <div class="ph"><div><h1>Conexiones</h1><p>Túnel público y URLs de webhooks para probar con WhatsApp real</p></div></div>
+
+      <!-- Túnel automático -->
+      <div class="tunnel-box">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:8px">URL Pública del Servidor</div>
+            <div class="tunnel-url-display inactive" id="tunnel-url-text">Sin túnel activo</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:4px" id="tunnel-status-text">Inicia el túnel para obtener una URL pública</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn btn-lime" onclick="startTunnel()" id="tunnel-start-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+              Iniciar túnel
+            </button>
+            <button class="btn" onclick="stopTunnel()" id="tunnel-stop-btn" style="display:none;border-color:rgba(255,255,255,.15);color:rgba(255,255,255,.7);background:rgba(255,255,255,.08)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Detener
+            </button>
+          </div>
+        </div>
+        <div class="tunnel-note">
+          El túnel usa <strong style="color:rgba(255,255,255,.6)">Cloudflare Quick Tunnel</strong> (gratis, sin cuenta) si tienes
+          <code style="background:rgba(255,255,255,.1);padding:2px 6px;border-radius:4px">cloudflared</code> instalado,
+          o <strong style="color:rgba(255,255,255,.6)">LocalTunnel</strong> como alternativa automática.
+          Para instalar cloudflared: <code style="background:rgba(255,255,255,.1);padding:2px 6px;border-radius:4px">brew install cloudflared</code>
+        </div>
+      </div>
+
+      <!-- URL manual (dominio propio / VPS) -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-t">Usar dominio propio o VPS</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Si tu servidor está en producción, ingresa la URL base aquí para generar los webhooks.</p>
+        <div style="display:flex;gap:8px">
+          <input type="url" id="manual-base-url" placeholder="https://mi-servidor.com" style="flex:1">
+          <button class="btn btn-dark" onclick="setManualUrl()">Aplicar</button>
+        </div>
+      </div>
+
+      <!-- URLs por proveedor -->
+      <div class="card">
+        <div class="card-t">URLs de Webhooks por proveedor</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Copia la URL del proveedor que usa cada cliente y configúrala en el dashboard de ese proveedor.</p>
+        <div id="wh-rows">
+          <p style="color:var(--faint);font-size:13px;padding:8px 0">Inicia el túnel o ingresa una URL para ver las URLs.</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL NUEVO CLIENTE -->
+<div class="mbd" id="client-modal">
+  <div class="modal">
+    <div class="mhd"><h2 id="cm-title">Nuevo cliente</h2><button class="mx" onclick="closeClientModal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="cm-id">
+      <div class="section-divider">Datos del negocio</div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Nombre del negocio *</label><input type="text" id="cm-name" placeholder="Perfumería Bella"></div>
+        <div class="fg"><label class="lbl">Tipo</label><select id="cm-type" onchange="toggleCalendarHint()">
+          <option value="perfumería">Perfumería</option>
+          <option value="barbería">Barbería</option>
+          <option value="peluquería">Peluquería</option>
+          <option value="salón de belleza">Salón de belleza</option>
+          <option value="spa">Spa / Masajes</option>
+          <option value="restaurante">Restaurante</option>
+          <option value="clínica">Clínica / Consultorio</option>
+          <option value="odontología">Odontología</option>
+          <option value="psicología">Psicología</option>
+          <option value="gym">Gym / Entrenamiento</option>
+          <option value="tienda ropa">Tienda de ropa</option>
+          <option value="farmacia">Farmacia</option>
+          <option value="negocio">Otro negocio</option>
+        </select></div>
+      </div>
+      <div class="g3">
+        <div class="fg"><label class="lbl">Plan</label><select id="cm-plan"><option value="basic">Basic</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></div>
+        <div class="fg"><label class="lbl">Tarifa mensual ($) *</label><input type="number" id="cm-rate" placeholder="35.00" step="0.01" min="0" oninput="onRateInput()"></div>
+        <div class="fg">
+          <label class="lbl">Vencimiento <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(auto)</span></label>
+          <input type="date" id="cm-expires">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Se calcula automáticamente a 12 meses. Puedes ajustarlo.</div>
+        </div>
+      </div>
+      <div id="cm-rate-hint" style="display:none;margin-top:-8px;margin-bottom:12px">
+        <div style="display:flex;gap:8px;background:#eafad4;border:1px solid #b5f23a;border-radius:var(--rs);padding:9px 12px;font-size:12px;color:#2a6500">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Se crearán <strong id="cm-rate-preview" style="margin:0 3px"></strong> automáticamente los 12 meses del año en estado pendiente.
+        </div>
+      </div>
+      <div class="fg"><label class="lbl">Notas internas</label><textarea id="cm-notes" rows="2" placeholder="Ej: Cliente referido por Juan, paga por transferencia..."></textarea></div>
+
+      <div class="section-divider">WhatsApp / Canal</div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Número WhatsApp *</label><input type="text" id="cm-phone" placeholder="+593991234567"></div>
+        <div class="fg"><label class="lbl">Proveedor</label>
+          <select id="cm-provider" onchange="toggleProviderFields()">
+            <option value="ycloud">YCloud (Meta partner)</option>
+            <option value="kapso">Kapso</option>
+            <option value="meta">Meta directo</option>
+            <option value="telegram">Telegram (pruebas)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Kapso -->
+      <div id="kapso-fields" style="display:none">
+        <div class="fg"><label class="lbl">Kapso API Key</label><input type="text" id="cm-kapso-key" placeholder="kap_xxxxxxxxxxxxxxxx" onblur="scheduleVerify()"></div>
+        <div class="g2">
+          <div class="fg"><label class="lbl">Kapso Number ID</label><input type="text" id="cm-kapso-num" placeholder="num_xxxxxxxxx"></div>
+          <div class="fg"><label class="lbl">Kapso Verify Token</label><input type="text" id="cm-kapso-verify" placeholder="mitoken_kapso_123"></div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">Webhook URL para Kapso: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/webhook/kapso</code></p>
+      </div>
+
+      <!-- YCloud -->
+      <div id="ycloud-fields">
+        <div class="g2">
+          <div class="fg"><label class="lbl">YCloud API Key</label><input type="text" id="cm-ycloud-key" placeholder="yc_live_xxxxxxxxx" onblur="scheduleVerify()"></div>
+          <div class="fg"><label class="lbl">YCloud Phone Number</label><input type="text" id="cm-ycloud-number" placeholder="+593991234567" onblur="scheduleVerify()"></div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">Webhook URL para YCloud: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/webhook/ycloud</code></p>
+      </div>
+
+      <!-- Meta directo -->
+      <div id="meta-fields" style="display:none">
+        <div class="g2">
+          <div class="fg"><label class="lbl">Meta Token</label><input type="text" id="cm-meta-token" placeholder="EAAxxxxxxxxx" onblur="scheduleVerify()"></div>
+          <div class="fg"><label class="lbl">Meta Phone ID</label><input type="text" id="cm-meta-phone" placeholder="123456789012345" onblur="scheduleVerify()"></div>
+        </div>
+        <div class="fg"><label class="lbl">Meta Verify Token</label><input type="text" id="cm-meta-verify" placeholder="mitoken_meta_123"></div>
+        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">Webhook URL para Meta: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/webhook</code></p>
+      </div>
+
+      <!-- Telegram -->
+      <div id="telegram-fields" style="display:none">
+        <div class="fg"><label class="lbl">Telegram Bot Token</label>
+          <input type="text" id="cm-telegram-token" placeholder="1234567890:ABCxxxxxxxxx" onblur="scheduleVerify()">
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">Obtén el token en Telegram con <strong>@BotFather → /newbot</strong>. Modo pruebas: el cliente escribe al bot y elige este negocio con <code>/start [slug]</code></p>
+      </div>
+
+      <!-- Banda de verificación -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--paper);border-radius:var(--rs);margin-bottom:14px">
+        <button class="btn btn-sm" onclick="verifyProvider()" id="cm-vfy-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Verificar conexión
+        </button>
+        <div id="cm-vfy-result" style="font-size:12px;color:var(--muted)">Ingresa las credenciales y verifica antes de guardar</div>
+      </div>
+
+      <div class="section-divider">Integraciones opcionales</div>
+
+      <!-- Cal.com -->
+      <div id="calcom-section">
+        <div class="fg"><label class="lbl">Cal.com — Enlace de reservas <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(solo negocios con citas)</span></label>
+          <input type="url" id="cm-calcom" placeholder="https://cal.com/tu-usuario/consulta-30min">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px" id="calcom-hint">El bot incluirá este enlace automáticamente cuando el cliente quiera agendar una cita.</div>
+        </div>
+      </div>
+
+      <!-- Retell AI -->
+      <div class="fg"><label class="lbl">Retell AI — Agent ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(voz)</span></label>
+        <input type="text" id="cm-retell" placeholder="agent_xxxxxxxxxxxxxxxxx">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">LLM endpoint: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/api/retell/llm</code> — configúralo en retell.ai</div>
+      </div>
+
+      <div class="section-divider">Acceso al panel del cliente</div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Email del cliente</label><input type="email" id="cm-email" placeholder="dueno@negocio.com"></div>
+        <div class="fg"><label class="lbl">Contraseña inicial</label><input type="password" id="cm-password" placeholder="mínimo 6 caracteres"></div>
+      </div>
+      <p style="font-size:11px;color:var(--muted)">El cliente usará este email y contraseña para entrar a su panel. No verá las credenciales de WhatsApp.</p>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeClientModal()">Cancelar</button><button class="btn btn-dark" id="cm-save-btn" onclick="saveClient()">Guardar cliente</button></div>
+  </div>
+</div>
+
+<!-- MODAL VER CLIENTE -->
+<div class="mbd" id="view-modal">
+  <div class="modal" style="width:700px">
+    <div class="mhd"><h2 id="vm-title">—</h2><button class="mx" onclick="closeViewModal()">×</button></div>
+    <div class="mbody" id="vm-body"></div>
+    <div class="mft"><button class="btn" onclick="closeViewModal()">Cerrar</button></div>
+  </div>
+</div>
+
+<!-- MODAL FACTURACIÓN -->
+<div class="mbd" id="billing-modal">
+  <div class="modal" style="width:480px">
+    <div class="mhd"><h2>Nuevo registro de pago</h2><button class="mx" onclick="closeBillingModal()">×</button></div>
+    <div class="mbody">
+      <div class="fg"><label class="lbl">Cliente</label><select id="bm-client"></select></div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="bm-amount" placeholder="35.00" step="0.01"></div>
+        <div class="fg"><label class="lbl">Estado</label><select id="bm-status"><option value="pending">Pendiente</option><option value="paid">Pagado</option><option value="overdue">Vencido</option></select></div>
+      </div>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Período inicio</label><input type="date" id="bm-start"></div>
+        <div class="fg"><label class="lbl">Período fin</label><input type="date" id="bm-end"></div>
+      </div>
+      <div class="fg"><label class="lbl">Notas</label><textarea id="bm-notes" rows="2" placeholder="Mes de julio 2024..."></textarea></div>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeBillingModal()">Cancelar</button><button class="btn btn-dark" onclick="saveBilling()">Guardar</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const API = window.location.origin
+let TOKEN = localStorage.getItem('admin_token')||''
+let clients = []
+let billingRecords = []
+
+// Variables para Supabase Realtime
+let sbClient = null
+
+function init() {
+  if (TOKEN) { bootApp(); return }
+  document.getElementById('sc-login').classList.add('on')
+}
+
+let adminInterval = null
+let lastClientsHash = ''
+let lastBillingHash = ''
+let lastMsgsCount = 0
+
+async function checkAdminUpdates() {
+  try {
+    const [statsR, clientsR, billingR] = await Promise.all([
+      fetch(`${API}/api/admin/stats`, { headers: H() }),
+      fetch(`${API}/api/admin/clients`, { headers: H() }),
+      fetch(`${API}/api/admin/billing`, { headers: H() })
+    ])
+    if (statsR.ok) {
+      const s = await statsR.json()
+      document.getElementById('st-total').textContent = s.totalClients
+      document.getElementById('st-active').textContent = s.activeClients
+      document.getElementById('st-susp').textContent = s.suspendedClients
+      document.getElementById('st-msgs').textContent = s.messagesToday
+    }
+    if (clientsR.ok) {
+      const c = await clientsR.json()
+      const hash = c.map(x => x.id + x.suspended + x.bot_active + x.plan).join('|')
+      if (lastClientsHash && lastClientsHash !== hash) {
+        clients = c
+        renderClients()
+        renderDashRecent()
+        populateBillingSelect()
+        document.getElementById('sb-clients-ct').textContent = c.length
+      }
+      lastClientsHash = hash
+    }
+    if (billingR.ok) {
+      const b = await billingR.json()
+      const hash = b.map(x => x.id + x.status).join('|')
+      if (lastBillingHash && lastBillingHash !== hash) {
+        billingRecords = b
+        renderBilling()
+      }
+      lastBillingHash = hash
+    }
+  } catch(e) {}
+}
+
+function initRealtime() {
+  fetch(`${API}/api/admin/supabase-config`, { headers: H() })
+    .then(r => r.json())
+    .then(cfg => {
+      if (!cfg.url || !cfg.key) throw new Error('sin config')
+      sbClient = supabase.createClient(cfg.url, cfg.key)
+      sbClient.channel('admin-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'businesses' }, () => { loadClients(); loadStats() })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'billing' }, () => { loadBilling() })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_history' }, () => { loadStats() })
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') console.log('✅ Admin Realtime WebSocket activo')
+        })
+    })
+    .catch(() => {
+      console.log('⚡ Admin polling cada 5s')
+      adminInterval = setInterval(checkAdminUpdates, 5000)
+    })
+}
+
+async function doLogin() {
+  const email=document.getElementById('l-email').value.trim(), pass=document.getElementById('l-pass').value
+  const err=document.getElementById('l-err'), btn=document.querySelector('.lbtn')
+  err.style.display='none'
+  btn.disabled=true; btn.textContent='Entrando...'
+  try {
+    const r=await fetch(`${API}/api/admin/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})})
+    const d=await r.json()
+    if (!r.ok){err.textContent=d.error||'Credenciales incorrectas';err.style.display='block'}
+    else { TOKEN=d.token; localStorage.setItem('admin_token',TOKEN); bootApp() }
+  } catch(e){err.textContent='Error de conexión';err.style.display='block'}
+  btn.disabled=false; btn.textContent='Entrar como admin →'
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('sc-login').classList.contains('on'))doLogin()})
+
+function doLogout(){localStorage.removeItem('admin_token');TOKEN='';location.reload()}
+
+function bootApp() {
+  document.getElementById('sc-login').classList.remove('on')
+  document.getElementById('sc-app').classList.add('on')
+  loadAll()
+  initRealtime()
+}
+
+function H(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'}}
+
+async function loadAll(){await Promise.all([loadStats(),loadClients(),loadBilling()])}
+
+async function loadStats() {
+  try {
+    const r=await fetch(`${API}/api/admin/stats`,{headers:H()})
+    const d=await r.json()
+    document.getElementById('st-total').textContent=d.totalClients
+    document.getElementById('st-active').textContent=d.activeClients
+    document.getElementById('st-susp').textContent=d.suspendedClients
+    document.getElementById('st-msgs').textContent=d.messagesToday
+  } catch {}
+}
+
+async function loadClients() {
+  try {
+    const r=await fetch(`${API}/api/admin/clients`,{headers:H()})
+    clients=await r.json()
+    document.getElementById('sb-clients-ct').textContent=clients.length
+    renderClients()
+    renderDashRecent()
+    populateBillingSelect()
+    // Actualizar selector del simulador
+    const simSel=document.getElementById('sim-biz')
+    if(simSel){const prev=simSel.value;simSel.innerHTML='<option value="">— Elige un negocio —</option>'+clients.filter(c=>c.active).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');if(prev)simSel.value=prev}
+  } catch(e){console.warn('loadClients:',e.message)}
+}
+
+async function loadBilling() {
+  try {
+    const r=await fetch(`${API}/api/admin/billing`,{headers:H()})
+    billingRecords=await r.json()
+    renderBilling()
+  } catch {}
+}
+
+function statusLabel(c) {
+  if (c.suspended) return '<span class="pill p-off">Suspendido</span>'
+  if (c.active) return '<span class="pill p-ok">Activo</span>'
+  return '<span class="pill p-gray">Inactivo</span>'
+}
+
+function botLabel(c) {
+  if (c.suspended) return '<span class="pill p-off">Pausado</span>'
+  if (c.bot_active) return '<span class="pill p-ok">Activo</span>'
+  return '<span class="pill p-warn">Pausado</span>'
+}
+
+function renderClients() {
+  const tb=document.getElementById('clients-table')
+  if (!clients.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">No hay clientes aún</td></tr>';return}
+  tb.innerHTML=clients.map(c=>{
+    // T12:00:00 evita desfase de zona horaria al parsear solo fecha
+    const exp      = c.plan_expires_at ? new Date(c.plan_expires_at.split('T')[0] + 'T12:00:00') : null
+    const daysLeft = exp ? Math.ceil((exp - new Date()) / 86400000) : null
+    const expLabel = !exp
+      ? '<span style="color:var(--faint);font-size:12px">—</span>'
+      : daysLeft < 0
+        ? `<span class="pill p-off">Vencido</span>`
+        : daysLeft <= 10
+          ? `<span class="pill p-warn" title="${exp.toLocaleDateString('es')}">${daysLeft}d</span>`
+          : `<span style="font-size:12px;color:var(--muted)">${exp.toLocaleDateString('es')}</span>`
+    return `
+    <tr>
+      <td><div class="client-row-name">${c.name}</div><div class="client-row-type">${c.type||'—'}</div></td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${c.whatsapp_number||'—'}</td>
+      <td><span class="pill p-gray">${c.plan||'basic'}</span></td>
+      <td>${expLabel}</td>
+      <td>${statusLabel(c)}</td>
+      <td>${botLabel(c)}</td>
+      <td>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="quickVerify('${c.id}')" title="Verificar conexión del proveedor" id="vfy-${c.id}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </button>
+          <button class="btn btn-sm" onclick="viewClient('${c.id}')">Ver</button>
+          <button class="btn btn-sm" onclick="editClient('${c.id}')">Editar</button>
+          ${c.suspended
+            ? `<button class="btn btn-sm btn-green" onclick="reactivate('${c.id}')">Reactivar</button>`
+            : `<button class="btn btn-sm btn-red" onclick="suspend('${c.id}')">Suspender</button>`
+          }
+          <button class="btn btn-sm" onclick="deleteClient('${c.id}','${c.name.replace(/'/g,"\\'")}')" style="color:var(--red);border-color:rgba(240,61,47,.2)" title="Eliminar cliente">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+}
+
+function renderDashRecent() {
+  document.getElementById('dash-recent').innerHTML=clients.slice(0,6).map(c=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd)">
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${c.name}</div><div style="font-size:11px;color:var(--muted)">${c.type||''} · ${c.whatsapp_number||'sin número'}</div></div>
+      <div style="display:flex;gap:6px;align-items:center">${statusLabel(c)}${botLabel(c)}</div>
+    </div>`).join('')||'<div style="color:var(--muted);font-size:13px;padding:10px 0">Sin clientes aún.</div>'
+}
+
+const BILLING_PER_PAGE = 12
+let billingPage = 1
+
+function renderBilling() {
+  const tb     = document.getElementById('billing-table')
+  const today  = new Date(); today.setHours(0,0,0,0)
+  const filterClient = document.getElementById('bf-client')?.value || ''
+  const filterStatus = document.getElementById('bf-status')?.value || ''
+
+  // Filtrar
+  let filtered = billingRecords.filter(b => {
+    if (filterClient && b.business_id !== filterClient) return false
+    if (filterStatus) {
+      const periodStart = b.period_start ? new Date(b.period_start + 'T00:00:00') : null
+      const isFuture = periodStart && periodStart > today
+      const effectiveStatus = isFuture ? 'future' : b.status
+      if (filterStatus === 'future' && !isFuture) return false
+      if (filterStatus !== 'future' && effectiveStatus !== filterStatus) return false
+    }
+    return true
+  })
+
+  // Ordenar: por nombre de cliente A→Z, luego por mes
+  filtered.sort((a, b) => {
+    const nameA = (a.businesses?.name || '').toLowerCase()
+    const nameB = (b.businesses?.name || '').toLowerCase()
+    if (nameA !== nameB) return nameA < nameB ? -1 : 1
+    return (a.period_start || '') < (b.period_start || '') ? -1 : 1
+  })
+
+  const total      = filtered.length
+  const totalPages = Math.max(1, Math.ceil(total / BILLING_PER_PAGE))
+  if (billingPage > totalPages) billingPage = totalPages
+  const pageData   = filtered.slice((billingPage - 1) * BILLING_PER_PAGE, billingPage * BILLING_PER_PAGE)
+
+  // Contador
+  const countEl = document.getElementById('bf-count')
+  if (countEl) countEl.textContent = total === billingRecords.length
+    ? `${total} registros`
+    : `${total} de ${billingRecords.length}`
+
+  // Tabla
+  if (!pageData.length) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Sin registros para los filtros aplicados</td></tr>'
+  } else {
+    tb.innerHTML = pageData.map(b => {
+      const periodStart = b.period_start ? new Date(b.period_start + 'T00:00:00') : null
+      const isFuture    = periodStart && periodStart > today
+      const mesLabel    = periodStart ? periodStart.toLocaleDateString('es', { month: 'long', year: 'numeric' }) : '—'
+
+      const estadoPill = isFuture
+        ? '<span class="pill p-gray">Próximo</span>'
+        : b.status === 'paid'    ? '<span class="pill p-ok">Pagado</span>'
+        : b.status === 'overdue' ? '<span class="pill p-off">Vencido</span>'
+        :                          '<span class="pill p-warn">Pendiente</span>'
+
+      const accion = isFuture
+        ? `<button class="btn btn-sm" disabled style="opacity:.3;cursor:not-allowed">Marcar pagado</button>`
+        : b.status !== 'paid'
+          ? `<button class="btn btn-sm btn-green" onclick="markPaid('${b.id}')">Marcar pagado</button>`
+          : ''
+
+      return `<tr style="${isFuture ? 'opacity:.45' : ''}">
+        <td><strong>${b.businesses?.name||'—'}</strong></td>
+        <td style="font-size:12px;text-transform:capitalize">${mesLabel}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:500">$${parseFloat(b.amount||0).toFixed(2)}</td>
+        <td>${estadoPill}</td>
+        <td>${accion}</td>
+      </tr>`
+    }).join('')
+  }
+
+  // Paginación
+  const pg = document.getElementById('billing-pagination')
+  if (totalPages <= 1) { pg.innerHTML = ''; return }
+
+  // Generar números de página (máx 5 visibles)
+  let pages = []
+  const delta = 2
+  for (let i = Math.max(1, billingPage - delta); i <= Math.min(totalPages, billingPage + delta); i++) pages.push(i)
+  if (pages[0] > 1) pages = [1, '...', ...pages]
+  if (pages[pages.length - 1] < totalPages) pages = [...pages, '...', totalPages]
+
+  pg.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0 2px;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted)">Mostrando ${(billingPage-1)*BILLING_PER_PAGE+1}–${Math.min(billingPage*BILLING_PER_PAGE,total)} de ${total}</span>
+      <div style="display:flex;gap:4px;align-items:center">
+        <button class="btn btn-sm" onclick="setBillingPage(${billingPage-1})" ${billingPage<=1?'disabled':''}>←</button>
+        ${pages.map(p => p === '...'
+          ? `<span style="padding:0 4px;color:var(--faint)">…</span>`
+          : `<button class="btn btn-sm${p===billingPage?' btn-dark':''}" onclick="setBillingPage(${p})">${p}</button>`
+        ).join('')}
+        <button class="btn btn-sm" onclick="setBillingPage(${billingPage+1})" ${billingPage>=totalPages?'disabled':''}>→</button>
+      </div>
+    </div>`
+}
+
+function setBillingPage(p) { billingPage = p; renderBilling() }
+
+function clearBillingFilters() {
+  billingPage = 1
+  document.getElementById('bf-client').value = ''
+  document.getElementById('bf-status').value = ''
+  renderBilling()
+}
+
+function populateBillingSelect() {
+  const modal = document.getElementById('bm-client')
+  modal.innerHTML = clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+
+  const filter = document.getElementById('bf-client')
+  if (filter) {
+    const current = filter.value
+    filter.innerHTML = '<option value="">Todos los clientes</option>' +
+      clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+    filter.value = current
+  }
+}
+
+// NAVEGACIÓN
+function goPage(name,el){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'));document.getElementById('pg-'+name).classList.add('on');el.classList.add('on')}
+
+// MODAL CLIENTE
+function toggleProviderFields(){
+  const p=document.getElementById('cm-provider').value
+  document.getElementById('kapso-fields').style.display     = p==='kapso'     ? 'block':'none'
+  document.getElementById('ycloud-fields').style.display    = p==='ycloud'    ? 'block':'none'
+  document.getElementById('meta-fields').style.display      = p==='meta'      ? 'block':'none'
+  document.getElementById('telegram-fields').style.display  = p==='telegram'  ? 'block':'none'
+}
+
+const CALENDAR_TYPES=['barbería','peluquería','salón','spa','clínica','consultorio','odontología','psicología','gym','entrenamiento','restaurante','masajes','estetica','estética']
+function toggleCalendarHint(){
+  const t=document.getElementById('cm-type').value.toLowerCase()
+  const needs=CALENDAR_TYPES.some(k=>t.includes(k))
+  const el=document.getElementById('calcom-hint')
+  if(el) el.style.color = needs ? 'var(--lime-d)' : 'var(--muted)'
+}
+
+function openClientModal(id=null) {
+  document.getElementById('cm-id').value=id||''
+  document.getElementById('cm-title').textContent=id?'Editar cliente':'Nuevo cliente'
+  if (!id){
+    ;['cm-name','cm-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-ycloud-number','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-calcom','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
+    document.getElementById('cm-plan').value='basic'
+    document.getElementById('cm-provider').value='ycloud'
+    toggleProviderFields()
+    toggleCalendarHint()
+    resetVfyStatus()
+    document.getElementById('cm-rate-hint').style.display='none'
+    const expires = new Date()
+    expires.setFullYear(expires.getFullYear() + 1)
+    document.getElementById('cm-expires').value = expires.toISOString().split('T')[0]
+  }
+  document.getElementById('client-modal').classList.add('on')
+}
+
+function onRateInput() {
+  const val = parseFloat(document.getElementById('cm-rate').value)
+  const hint = document.getElementById('cm-rate-hint')
+  const preview = document.getElementById('cm-rate-preview')
+  if (val > 0) {
+    hint.style.display = 'block'
+    preview.textContent = `12 cobros de $${val.toFixed(2)}`
+  } else {
+    hint.style.display = 'none'
+  }
+}
+
+function editClient(id) {
+  const c=clients.find(x=>x.id===id); if(!c) return
+  openClientModal(id)
+  document.getElementById('cm-name').value=c.name||''
+  document.getElementById('cm-type').value=c.type||'negocio'
+  document.getElementById('cm-phone').value=c.whatsapp_number||''
+  document.getElementById('cm-plan').value=c.plan||'basic'
+  document.getElementById('cm-provider').value=c.whatsapp_provider||'ycloud'
+  document.getElementById('cm-kapso-key').value=c.kapso_api_key||''
+  document.getElementById('cm-kapso-num').value=c.kapso_number_id||''
+  document.getElementById('cm-kapso-verify').value=c.kapso_verify_token||''
+  document.getElementById('cm-ycloud-key').value=c.ycloud_api_key||''
+  document.getElementById('cm-ycloud-number').value=c.ycloud_number||''
+  document.getElementById('cm-meta-token').value=c.meta_token||''
+  document.getElementById('cm-meta-phone').value=c.meta_phone_id||''
+  document.getElementById('cm-meta-verify').value=c.meta_verify_token||''
+  document.getElementById('cm-telegram-token').value=c.telegram_bot_token||''
+  document.getElementById('cm-calcom').value=c.calcom_link||''
+  document.getElementById('cm-retell').value=c.retell_agent_id||''
+  document.getElementById('cm-notes').value=c.notes||''
+  document.getElementById('cm-rate').value=c.monthly_rate||''
+  document.getElementById('cm-rate-hint').style.display='none'
+  if (c.plan_expires_at) document.getElementById('cm-expires').value=c.plan_expires_at.split('T')[0]
+  toggleProviderFields()
+  toggleCalendarHint()
+  resetVfyStatus()
+}
+
+function closeClientModal(){document.getElementById('client-modal').classList.remove('on')}
+
+async function saveClient() {
+  const id=document.getElementById('cm-id').value
+  const name=document.getElementById('cm-name').value.trim(), phone=document.getElementById('cm-phone').value.trim()
+  const rate=parseFloat(document.getElementById('cm-rate').value)
+  if (!name||!phone){toast('Nombre y número son obligatorios',true);return}
+  if (!id && (!rate||rate<=0)){toast('La tarifa mensual es obligatoria',true);return}
+  const btn=document.getElementById('cm-save-btn'); btn.disabled=true; btn.textContent='Guardando...'
+  const payload={
+    name, type:document.getElementById('cm-type').value,
+    whatsapp_number:phone, whatsapp_provider:document.getElementById('cm-provider').value,
+    plan:document.getElementById('cm-plan').value,
+    kapso_api_key:document.getElementById('cm-kapso-key').value||null,
+    kapso_number_id:document.getElementById('cm-kapso-num').value||null,
+    kapso_verify_token:document.getElementById('cm-kapso-verify').value||null,
+    ycloud_api_key:document.getElementById('cm-ycloud-key').value||null,
+    ycloud_number:document.getElementById('cm-ycloud-number').value||null,
+    meta_token:document.getElementById('cm-meta-token').value||null,
+    meta_phone_id:document.getElementById('cm-meta-phone').value||null,
+    meta_verify_token:document.getElementById('cm-meta-verify').value||null,
+    telegram_bot_token:document.getElementById('cm-telegram-token').value||null,
+    calcom_link:document.getElementById('cm-calcom').value||null,
+    retell_agent_id:document.getElementById('cm-retell').value||null,
+    notes:document.getElementById('cm-notes').value||null,
+    monthly_rate:parseFloat(document.getElementById('cm-rate').value)||null
+  }
+  const expires=document.getElementById('cm-expires').value; if(expires) payload.plan_expires_at=expires
+  const email=document.getElementById('cm-email').value.trim(), password=document.getElementById('cm-password').value
+  if (!id) { payload.client_email=email; payload.client_password=password }
+  try {
+    // Verificar credenciales antes de guardar
+    const provider = document.getElementById('cm-provider').value
+    if (provider !== 'telegram' || document.getElementById('cm-telegram-token').value) {
+      setVfyStatus('loading', 'Verificando credenciales...')
+      const vr = await fetch(`${API}/api/admin/verify-provider`, {
+        method:'POST', headers:H(), body:JSON.stringify({
+          provider,
+          ycloud_api_key: document.getElementById('cm-ycloud-key').value,
+          ycloud_number:  document.getElementById('cm-ycloud-number').value,
+          meta_token:     document.getElementById('cm-meta-token').value,
+          meta_phone_id:  document.getElementById('cm-meta-phone').value,
+          kapso_api_key:   document.getElementById('cm-kapso-key').value,
+          kapso_number_id: document.getElementById('cm-kapso-num').value,
+          telegram_bot_token: document.getElementById('cm-telegram-token').value,
+        })
+      })
+      const vd = await vr.json()
+      if (!vd.ok) {
+        setVfyStatus('error', '⚠️ '+vd.info+' — guardando de todas formas...')
+      } else {
+        setVfyStatus('ok', '✅ '+vd.info)
+      }
+    }
+
+    let r
+    if (id) r=await fetch(`${API}/api/admin/clients/${id}`,{method:'PUT',headers:H(),body:JSON.stringify(payload)})
+    else r=await fetch(`${API}/api/admin/clients`,{method:'POST',headers:H(),body:JSON.stringify(payload)})
+    if (!r.ok) throw new Error((await r.json()).error)
+    await Promise.all([loadClients(), loadBilling()])
+    closeClientModal()
+    toast(id?'✓ Cliente actualizado':'✓ Cliente creado — 12 meses generados en Facturación')
+  } catch(e){toast('Error: '+e.message,true)}
+  btn.disabled=false; btn.textContent='Guardar cliente'
+}
+
+async function deleteClient(id, name) {
+  if (!confirm(`¿Eliminar permanentemente a "${name}"?\n\nSe eliminarán también sus productos, conversaciones y registros de pago. Esta acción no se puede deshacer.`)) return
+  try {
+    const r = await fetch(`${API}/api/admin/clients/${id}`, { method: 'DELETE', headers: H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    await loadClients()
+    await loadStats()
+    await loadBilling()
+    toast(`✓ "${name}" eliminado`)
+  } catch(e) { toast('Error al eliminar: ' + e.message, true) }
+}
+
+async function suspend(id) {
+  const c=clients.find(x=>x.id===id)
+  const reason=prompt(`Motivo de suspensión para "${c?.name}":`,'Pago pendiente')
+  if (reason===null) return
+  await fetch(`${API}/api/admin/clients/${id}/suspend`,{method:'POST',headers:H(),body:JSON.stringify({reason})})
+  await loadClients(); await loadStats()
+  toast(`⛔ ${c?.name} suspendido`)
+}
+
+async function reactivate(id) {
+  const c=clients.find(x=>x.id===id)
+  if (!confirm(`¿Reactivar el servicio de "${c?.name}"?`)) return
+  await fetch(`${API}/api/admin/clients/${id}/reactivate`,{method:'POST',headers:H()})
+  await loadClients(); await loadStats()
+  toast(`✅ ${c?.name} reactivado`)
+}
+
+async function viewClient(id) {
+  const c=clients.find(x=>x.id===id); if(!c) return
+  document.getElementById('vm-title').textContent=c.name
+  document.getElementById('vm-body').innerHTML='<div class="loading"><div class="spin"></div></div>'
+  document.getElementById('view-modal').classList.add('on')
+  try {
+    const [prodsR, convsR, polR] = await Promise.all([
+      fetch(`${API}/api/admin/clients/${id}/products`,{headers:H()}),
+      fetch(`${API}/api/admin/clients/${id}/conversations`,{headers:H()}),
+      fetch(`${API}/api/admin/clients/${id}/policies`,{headers:H()})
+    ])
+    const prods=await prodsR.json(), convs=await convsR.json(), pol=await polR.json()
+    document.getElementById('vm-body').innerHTML=`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="background:var(--paper);border-radius:var(--rs);padding:12px"><div class="card-t">Negocio</div>
+          <div style="font-size:13px;line-height:1.8">
+            <div><strong>Tipo:</strong> ${c.type||'—'}</div>
+            <div><strong>Número:</strong> ${c.whatsapp_number||'—'}</div>
+            <div><strong>Proveedor:</strong> ${c.whatsapp_provider||'—'}</div>
+            <div><strong>Plan:</strong> ${c.plan||'—'}</div>
+            <div><strong>Estado:</strong> ${c.suspended?'⛔ Suspendido':'✅ Activo'}</div>
+          </div>
+        </div>
+        <div style="background:var(--paper);border-radius:var(--rs);padding:12px"><div class="card-t">Estadísticas</div>
+          <div style="font-size:13px;line-height:1.8">
+            <div><strong>Productos:</strong> ${prods.length}</div>
+            <div><strong>Conversaciones:</strong> ${convs.length}</div>
+            <div><strong>Envíos:</strong> ${pol?.shipping?'Configurado':'Sin configurar'}</div>
+          </div>
+        </div>
+      </div>
+      <div class="card-t">Últimas conversaciones</div>
+      <div style="max-height:250px;overflow-y:auto">
+        ${convs.slice(0,20).map(m=>`
+          <div class="conv-item">
+            <div class="conv-role ${m.role==='user'?'user':'bot'}">${m.role==='user'?`📱 ${m.contact_phone}`:'🤖 Bot'}</div>
+            <div class="conv-text">${m.content}</div>
+            <div class="conv-time">${new Date(m.created_at).toLocaleString('es')}</div>
+          </div>`).join('')||'<div style="color:var(--muted);font-size:13px;padding:10px 0">Sin conversaciones aún.</div>'}
+      </div>
+      <div class="card-t" style="margin-top:16px">Productos (${prods.length})</div>
+      <div style="max-height:160px;overflow-y:auto">
+        ${prods.map(p=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px"><span>${p.name}</span><span style="font-family:'DM Mono',monospace;font-weight:500">$${parseFloat(p.price).toFixed(2)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin productos.</div>'}
+      </div>`
+  } catch(e){ document.getElementById('vm-body').innerHTML=`<p style="color:var(--red)">Error: ${e.message}</p>` }
+}
+function closeViewModal(){document.getElementById('view-modal').classList.remove('on')}
+
+// BILLING
+function openBillingModal(){document.getElementById('billing-modal').classList.add('on')}
+function closeBillingModal(){document.getElementById('billing-modal').classList.remove('on')}
+
+async function saveBilling() {
+  const bizId=document.getElementById('bm-client').value, amount=document.getElementById('bm-amount').value
+  if (!bizId||!amount){toast('Completa todos los campos',true);return}
+  await fetch(`${API}/api/admin/billing`,{method:'POST',headers:H(),body:JSON.stringify({business_id:bizId,amount:parseFloat(amount),status:document.getElementById('bm-status').value,period_start:document.getElementById('bm-start').value||null,period_end:document.getElementById('bm-end').value||null,notes:document.getElementById('bm-notes').value||null})})
+  await loadBilling(); closeBillingModal(); toast('✓ Registro creado')
+}
+
+async function markPaid(id) {
+  await fetch(`${API}/api/admin/billing/${id}`,{method:'PUT',headers:H(),body:JSON.stringify({status:'paid',paid_at:new Date().toISOString()})})
+  await loadBilling(); toast('✓ Marcado como pagado')
+}
+
+function toast(msg,err=false){const t=document.getElementById('toast');document.getElementById('toast-msg').textContent=msg;t.className='toast'+(err?' err':'');t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3200)}
+
+// ══════════════════════════════════════════════════════════
+// VERIFICACIÓN DE PROVEEDORES
+// ══════════════════════════════════════════════════════════
+
+function setVfyStatus(state, text) {
+  const el = document.getElementById('cm-vfy-result')
+  const btn = document.getElementById('cm-vfy-btn')
+  if (!el) return
+  el.textContent = text
+  el.style.color = state === 'ok' ? '#2d7a00' : state === 'error' ? 'var(--red)' : 'var(--muted)'
+  if (btn) btn.disabled = state === 'loading'
+}
+
+let _vfyTimer = null
+function scheduleVerify() {
+  clearTimeout(_vfyTimer)
+  _vfyTimer = setTimeout(verifyProvider, 1200)
+}
+
+async function verifyProvider() {
+  const btn = document.getElementById('cm-vfy-btn')
+  const provider = document.getElementById('cm-provider').value
+  setVfyStatus('loading', '⏳ Verificando conexión...')
+  if (btn) {
+    btn.disabled = true
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Verificando...`
+  }
+
+  const payload = {
+    provider,
+    ycloud_api_key:     document.getElementById('cm-ycloud-key')?.value || '',
+    ycloud_number:      document.getElementById('cm-ycloud-number')?.value || '',
+    meta_token:         document.getElementById('cm-meta-token')?.value || '',
+    meta_phone_id:      document.getElementById('cm-meta-phone')?.value || '',
+    kapso_number_id:    document.getElementById('cm-kapso-num')?.value || '',
+    telegram_bot_token: document.getElementById('cm-telegram-token')?.value || '',
+  }
+
+  try {
+    const r = await fetch(`${API}/api/admin/verify-provider`, {
+      method: 'POST', headers: H(), body: JSON.stringify(payload)
+    })
+    const d = await r.json()
+    setVfyStatus(d.ok ? 'ok' : 'error', d.ok ? '✅ ' + d.info : '❌ ' + d.info)
+  } catch(e) {
+    setVfyStatus('error', '❌ Error de red: ' + e.message)
+  }
+
+  if (btn) {
+    btn.disabled = false
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Verificar conexión`
+  }
+}
+
+// Verificación rápida desde la tabla (usa datos guardados en BD)
+async function quickVerify(id) {
+  const btn = document.getElementById(`vfy-${id}`)
+  const c = clients.find(x => x.id === id)
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5' }
+
+  try {
+    const r = await fetch(`${API}/api/admin/clients/${id}/verify`, { method: 'POST', headers: H() })
+    const d = await r.json()
+    if (d.ok) {
+      toast(`✅ ${c?.name}: ${d.info}`)
+      if (btn) { btn.style.borderColor = '#2d7a00'; btn.style.color = '#2d7a00' }
+    } else {
+      toast(`❌ ${c?.name}: ${d.info}`, true)
+      if (btn) { btn.style.borderColor = 'var(--red)'; btn.style.color = 'var(--red)' }
+    }
+  } catch(e) {
+    toast('❌ Error al verificar: ' + e.message, true)
+  }
+
+  if (btn) btn.disabled = false
+}
+
+// Limpiar estado de verificación al abrir modal
+function resetVfyStatus() {
+  setVfyStatus('idle', 'Ingresa las credenciales y verifica antes de guardar')
+}
+
+// ══════════════════════════════════════════════════════════
+// SIMULADOR DE BOT
+// ══════════════════════════════════════════════════════════
+let simBizId = null
+
+function simSelectBiz() {
+  simBizId = document.getElementById('sim-biz').value
+  const biz = clients.find(c => c.id === simBizId)
+  document.getElementById('sim-biz-name').textContent = biz?.name || 'Ningún negocio seleccionado'
+  document.getElementById('sim-biz-sub').textContent  = biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'
+  const canChat = !!simBizId
+  document.getElementById('sim-input').disabled = !canChat
+  document.getElementById('sim-send').disabled  = !canChat
+  document.getElementById('sim-clear-btn').style.display = canChat ? 'inline-flex' : 'none'
+  if (canChat) document.getElementById('sim-input').focus()
+}
+
+function simAddMsg(text, role) {
+  const empty = document.getElementById('sim-empty')
+  if (empty) empty.remove()
+  const typing = document.getElementById('sim-typing')
+  const msgs   = document.getElementById('sim-msgs')
+  const wrap   = document.createElement('div')
+  wrap.className = `mw ${role === 'user' ? 'u' : 'b'}`
+  wrap.innerHTML = `
+    <div class="mb ${role === 'user' ? 'u' : 'b'}">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+    <div class="mt">${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}</div>`
+  msgs.insertBefore(wrap, typing)
+  msgs.scrollTop = msgs.scrollHeight
+}
+
+async function simSend() {
+  if (!simBizId) return
+  const input  = document.getElementById('sim-input')
+  const text   = input.value.trim()
+  if (!text) return
+  input.value = ''; input.style.height = 'auto'
+  document.getElementById('sim-send').disabled = true
+  simAddMsg(text, 'user')
+  const typing = document.getElementById('sim-typing')
+  typing.classList.add('on')
+  document.getElementById('sim-msgs').scrollTop = 99999
+  try {
+    const r = await fetch(`${API}/api/admin/simulate`, {
+      method: 'POST', headers: H(),
+      body: JSON.stringify({ business_id: simBizId, message: text })
+    })
+    const d = await r.json()
+    typing.classList.remove('on')
+    if (d.reply) simAddMsg(d.reply, 'bot')
+    if (d.image) {
+      const msgs   = document.getElementById('sim-msgs')
+      const typing2 = document.getElementById('sim-typing')
+      const imgWrap = document.createElement('div')
+      imgWrap.className = 'mw b'
+      imgWrap.innerHTML = `<img src="${d.image}" style="max-width:220px;border-radius:10px;border:1px solid var(--bd)" onerror="this.style.display='none'">`
+      msgs.insertBefore(imgWrap, typing2)
+      msgs.scrollTop = 99999
+    }
+  } catch(e) {
+    typing.classList.remove('on')
+    simAddMsg('⚠️ Error de conexión: ' + e.message, 'bot')
+  }
+  document.getElementById('sim-send').disabled = false
+  document.getElementById('sim-input').focus()
+}
+
+async function simClear() {
+  if (!simBizId || !confirm('¿Limpiar la conversación de prueba?')) return
+  await fetch(`${API}/api/admin/simulate/${simBizId}/history`, { method: 'DELETE', headers: H() })
+  document.getElementById('sim-msgs').innerHTML = `
+    <div class="chat-empty" id="sim-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <p>Chat limpiado. Escribe algo para continuar probando.</p>
+    </div>
+    <div class="typing-ind" id="sim-typing"><div class="td"></div><div class="td"></div><div class="td"></div></div>`
+  toast('✓ Chat limpiado')
+}
+
+// ══════════════════════════════════════════════════════════
+// CONEXIONES / TÚNEL / WEBHOOKS
+// ══════════════════════════════════════════════════════════
+let tunnelBase = null
+
+const WH_PROVIDERS = [
+  { name:'YCloud',        cls:'p-ok',   path:'/webhook/ycloud',          desc:'YCloud → Webhooks → Add Endpoint' },
+  { name:'Kapso',         cls:'p-warn', path:'/webhook/kapso',           desc:'Kapso → Configuración → Webhook URL' },
+  { name:'Meta',          cls:'p-gray', path:'/webhook',                 desc:'Meta → App → WhatsApp → Webhook URL' },
+  { name:'Retell LLM',    cls:'p-ok',   path:'/api/retell/llm',          desc:'Retell → Agent → Custom LLM URL' },
+  { name:'Retell Events', cls:'p-gray', path:'/api/retell/call-events',  desc:'Retell → Agent → Call Events URL' },
+]
+
+function renderWebhookRows(base) {
+  const el = document.getElementById('wh-rows')
+  if (!base) { el.innerHTML='<p style="color:var(--faint);font-size:13px;padding:8px 0">Inicia el túnel o ingresa una URL para ver las URLs.</p>'; return }
+  el.innerHTML = WH_PROVIDERS.map(p => `
+    <div class="wh-row">
+      <span class="pill ${p.cls}" style="min-width:88px;text-align:center">${p.name}</span>
+      <div class="wh-url" title="${base+p.path}">${base+p.path}</div>
+      <button class="btn btn-sm" onclick="copyUrl('${base+p.path}')">Copiar</button>
+      <span style="font-size:11px;color:var(--faint);min-width:190px;flex-shrink:0">${p.desc}</span>
+    </div>`).join('')
+}
+
+function copyUrl(url) {
+  navigator.clipboard.writeText(url).then(() => toast('✓ URL copiada al portapapeles'))
+}
+
+function setManualUrl() {
+  const url = document.getElementById('manual-base-url').value.trim().replace(/\/$/, '')
+  if (!url) return toast('Ingresa una URL válida', true)
+  tunnelBase = url
+  document.getElementById('tunnel-url-text').textContent = url
+  document.getElementById('tunnel-url-text').className = 'tunnel-url-display'
+  document.getElementById('tunnel-status-text').textContent = '📌 URL manual configurada'
+  renderWebhookRows(url)
+}
+
+async function loadTunnelStatus() {
+  try {
+    const r = await fetch(`${API}/api/admin/tunnel`, { headers: H() })
+    const d = await r.json()
+    if (d.active && d.url) {
+      tunnelBase = d.url
+      document.getElementById('tunnel-url-text').textContent = d.url
+      document.getElementById('tunnel-url-text').className = 'tunnel-url-display'
+      document.getElementById('tunnel-status-text').textContent = `✅ Activo — ${d.provider}`
+      document.getElementById('tunnel-start-btn').style.display = 'none'
+      document.getElementById('tunnel-stop-btn').style.display  = 'inline-flex'
+      renderWebhookRows(d.url)
+    }
+  } catch(e) {}
+}
+
+async function startTunnel() {
+  const btn = document.getElementById('tunnel-start-btn')
+  btn.disabled = true
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-6.22-8.56"/></svg> Iniciando...`
+  document.getElementById('tunnel-status-text').textContent = 'Iniciando túnel (puede tardar ~15s)...'
+  try {
+    const r = await fetch(`${API}/api/admin/tunnel/start`, { method:'POST', headers:H() })
+    const d = await r.json()
+    if (!r.ok) throw new Error(d.error)
+    tunnelBase = d.url
+    document.getElementById('tunnel-url-text').textContent = d.url
+    document.getElementById('tunnel-url-text').className = 'tunnel-url-display'
+    document.getElementById('tunnel-status-text').textContent = `✅ Activo — ${d.provider}`
+    btn.style.display = 'none'
+    document.getElementById('tunnel-stop-btn').style.display = 'inline-flex'
+    renderWebhookRows(d.url)
+    toast('🌐 Túnel activo: ' + d.url)
+  } catch(e) {
+    document.getElementById('tunnel-status-text').textContent = '❌ Error: ' + e.message
+    toast('Error al iniciar túnel: ' + e.message, true)
+    btn.disabled = false
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg> Iniciar túnel`
+  }
+}
+
+async function stopTunnel() {
+  await fetch(`${API}/api/admin/tunnel/stop`, { method:'POST', headers:H() })
+  tunnelBase = null
+  document.getElementById('tunnel-url-text').textContent = 'Sin túnel activo'
+  document.getElementById('tunnel-url-text').className = 'tunnel-url-display inactive'
+  document.getElementById('tunnel-status-text').textContent = 'Túnel detenido'
+  document.getElementById('tunnel-start-btn').style.display = 'inline-flex'
+  document.getElementById('tunnel-stop-btn').style.display  = 'none'
+  renderWebhookRows(null)
+  toast('🔌 Túnel detenido')
+}
+
+init()
+</script>
+</body>
+</html>

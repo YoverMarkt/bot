@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BotPanel — Mi negocio</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0c0c0c;--ink2:#1e1e1e;--paper:#f7f5f1;--paper2:#eeebe4;--paper3:#e4e0d7;--lime:#b5f23a;--lime-d:#93c92d;--lime-ink:#1a2d00;--red:#f03d2f;--amber:#f5a623;--sky:#2d6fff;--muted:#8a8378;--faint:#b8b3a8;--bd:rgba(12,12,12,0.09);--bd2:rgba(12,12,12,0.15);--r:12px;--rs:8px;--sh:0 1px 2px rgba(0,0,0,0.06),0 4px 16px rgba(0,0,0,0.04)}
+*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
+body{font-family:'Instrument Sans',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
+.screen{display:none;min-height:100vh}.screen.on{display:flex}
+#sc-login{background:var(--ink);align-items:center;justify-content:center;flex-direction:column;background-image:radial-gradient(ellipse 70% 50% at 15% 85%,rgba(181,242,58,.1) 0%,transparent 55%)}
+.lw{width:380px;max-width:calc(100vw - 32px)}
+.badge{display:inline-flex;align-items:center;gap:8px;background:rgba(181,242,58,.1);border:1px solid rgba(181,242,58,.2);border-radius:99px;padding:5px 14px 5px 7px;margin-bottom:24px}
+.badge .ld{width:24px;height:24px;background:var(--lime);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.badge .ld svg{width:14px;height:14px}
+.badge span{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--lime)}
+.lh{font-family:'Syne',sans-serif;font-size:38px;font-weight:800;color:#fff;line-height:1.05;letter-spacing:-2px;margin-bottom:8px}
+.lh em{color:var(--lime);font-style:normal}
+.lsub{font-size:14px;color:rgba(255,255,255,.38);margin-bottom:28px}
+.lbox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:24px}
+.lf{margin-bottom:14px}
+.lf label{font-size:10px;color:rgba(255,255,255,.3);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.lf input{width:100%;padding:11px 13px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:var(--rs);color:#fff;font-size:14px;font-family:inherit;transition:border-color .15s;-webkit-text-fill-color:#fff;caret-color:#fff}
+.lf input:-webkit-autofill,.lf input:-webkit-autofill:hover,.lf input:-webkit-autofill:focus{-webkit-text-fill-color:#fff;-webkit-box-shadow:0 0 0 1000px rgba(30,30,30,.9) inset;transition:background-color 5000s ease-in-out 0s}
+.lf input:focus{outline:none;border-color:rgba(181,242,58,.5);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(181,242,58,.15)}
+.lf input::placeholder{color:rgba(255,255,255,.2)}
+.lbtn{width:100%;padding:13px;background:var(--lime);color:var(--lime-ink);border:none;border-radius:var(--rs);font-size:14px;font-weight:700;font-family:'Syne',sans-serif;cursor:pointer;margin-top:4px;transition:all .15s}
+.lbtn:hover{background:var(--lime-d)}.lbtn:disabled{opacity:.5;cursor:not-allowed}
+.lerr{color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none;padding:8px;background:rgba(240,61,47,.1);border-radius:var(--rs)}
+
+/* SUSPENDED BANNER */
+.susp-banner{background:linear-gradient(90deg,var(--red),#ff6b5b);color:#fff;padding:12px 20px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px}
+.susp-banner svg{width:16px;height:16px;flex-shrink:0}
+
+#sc-app{flex-direction:row}
+.sidebar{width:220px;height:100vh;position:sticky;top:0;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0}
+.sb-top{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.sb-logo .ld{width:26px;height:26px;background:var(--lime);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.sb-logo .ld svg{width:14px;height:14px}
+.sb-logo-name{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff}
+.sb-biz{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:var(--rs);padding:9px 11px}
+.sb-biz-name{font-size:13px;font-weight:600;color:#fff;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-biz-type{font-size:11px;color:rgba(255,255,255,.28)}
+nav{flex:1;padding:10px;overflow-y:auto}
+.ns{font-size:10px;color:rgba(255,255,255,.2);text-transform:uppercase;letter-spacing:.1em;padding:0 8px;margin:12px 0 4px;font-weight:600}
+.ni{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--rs);color:rgba(255,255,255,.38);font-size:13px;font-weight:500;cursor:pointer;transition:all .12s;margin-bottom:1px}
+.ni svg{width:15px;height:15px;flex-shrink:0}
+.ni:hover{background:rgba(255,255,255,.05);color:rgba(255,255,255,.7)}
+.ni.on{background:rgba(181,242,58,.1);color:var(--lime)}
+.ni .ct{margin-left:auto;font-size:10px;padding:2px 7px;background:rgba(181,242,58,.15);color:var(--lime);border-radius:99px;font-weight:700}
+.sb-ft{padding:12px 16px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--lime);animation:pu 2.5s infinite}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.4}}
+.sb-ft-t{font-size:12px;color:rgba(255,255,255,.28)}
+.sb-ft-t strong{color:rgba(181,242,58,.8);font-weight:500}
+.out-btn{background:none;border:none;color:rgba(255,255,255,.25);cursor:pointer;font-size:11px;font-family:inherit}
+.out-btn:hover{color:rgba(240,61,47,.7)}
+.main{flex:1;overflow-y:auto;background:var(--paper)}
+.pg{display:none}.pg.on{display:block}
+.pg-inner{padding:28px 32px}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+.ph h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.5px}
+.ph p{font-size:13px;color:var(--muted);margin-top:3px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.stat{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:14px 18px;box-shadow:var(--sh)}
+.stat-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;font-weight:600}
+.stat-v{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;letter-spacing:-1px;line-height:1}
+.stat-v.g{color:#2d7a00}.stat-s{font-size:11px;color:var(--faint);margin-top:3px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:18px 22px;box-shadow:var(--sh)}
+.card+.card{margin-top:14px}
+.card-t{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:14px}
+input[type=text],input[type=number],input[type=url],textarea,select{background:var(--paper);border:1px solid var(--bd2);border-radius:var(--rs);color:var(--ink);font-family:inherit;font-size:13px;padding:9px 12px;width:100%;transition:border-color .15s,box-shadow .15s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:rgba(0,0,0,.3);box-shadow:0 0 0 3px rgba(0,0,0,.05);background:#fff}
+textarea{resize:vertical;min-height:70px;line-height:1.6}
+.lbl{font-size:10px;color:var(--muted);display:block;margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.fg{margin-bottom:13px}.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--rs);font-family:'Syne',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--bd2);background:#fff;color:var(--ink);transition:all .13s;white-space:nowrap}
+.btn svg{width:13px;height:13px}
+.btn:hover{background:var(--paper2);transform:translateY(-1px);box-shadow:var(--sh)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-dark{background:var(--ink);color:#fff;border-color:var(--ink)}.btn-dark:hover{background:var(--ink2)}
+.btn-red{color:var(--red);border-color:rgba(240,61,47,.2)}.btn-red:hover{background:rgba(240,61,47,.05)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.pg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.pc{background:#fff;border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);transition:all .15s}
+.pc:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.09)}
+.pc-img{width:100%;height:140px;background:var(--paper2);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.pc-img img{width:100%;height:100%;object-fit:cover}
+.no-img{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--faint);font-size:11px}
+.no-img svg{width:26px;height:26px;opacity:.35}
+.pc-ov{position:absolute;inset:0;background:rgba(12,12,12,.55);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;cursor:pointer}
+.pc-img:hover .pc-ov{opacity:1}
+.pc-body{padding:11px 13px}
+.pc-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;margin-bottom:1px}
+.pc-brand{font-size:11px;color:var(--muted);margin-bottom:7px}
+.pc-price{font-family:'DM Mono',monospace;font-size:16px;font-weight:500}
+.pc-price .sl{font-size:12px;color:var(--faint);text-decoration:line-through;margin-left:5px}
+.pill{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+.p-ok{background:#eafad4;color:#2a6500}.p-low{background:#fff4dc;color:#8a5500}.p-out{background:#ffe8e5;color:#9c1c10}
+.pc-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:6px}
+.tag{font-size:10px;padding:2px 7px;border-radius:99px;background:var(--paper2);color:var(--muted)}
+.pc-acts{display:flex;gap:5px;padding:7px 12px 11px}
+.mbd{display:none;position:fixed;inset:0;background:rgba(12,12,12,.6);backdrop-filter:blur(6px);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.mbd.on{display:flex}
+.modal{background:#fff;border:1px solid var(--bd);border-radius:16px;width:540px;max-width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.18);animation:mop .2s cubic-bezier(.34,1.56,.64,1)}
+@keyframes mop{from{transform:scale(.93) translateY(10px);opacity:0}to{transform:scale(1);opacity:1}}
+.mhd{padding:18px 22px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);position:sticky;top:0;background:#fff;z-index:1}
+.mhd h2{font-family:'Syne',sans-serif;font-size:16px;font-weight:700}
+.mx{background:var(--paper2);border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:18px;color:var(--muted);display:flex;align-items:center;justify-content:center}
+.mx:hover{background:var(--paper3)}
+.mbody{padding:18px 22px}.mft{padding:12px 22px;border-top:1px solid var(--bd);display:flex;gap:8px;justify-content:flex-end}
+.upz{border:2px dashed var(--bd2);border-radius:var(--r);padding:20px;text-align:center;cursor:pointer;transition:all .15s;position:relative;background:var(--paper)}
+.upz:hover{border-color:var(--ink2);background:var(--paper2)}
+.upz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.upz svg{width:26px;height:26px;margin:0 auto 7px;color:var(--faint);display:block}
+.upz p{font-size:13px;color:var(--muted)}.upz p strong{color:var(--ink)}
+.upz small{font-size:11px;color:var(--faint)}
+.uppv{display:none;align-items:center;gap:12px;background:var(--paper);border-radius:var(--rs);padding:10px}
+.uppv.on{display:flex}.uppv img{width:50px;height:50px;object-fit:cover;border-radius:8px}
+/* CONVERSATIONS */
+.conv-thread{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--bd)}
+.conv-thread:last-child{border-bottom:none}
+.conv-phone{font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px}
+.conv-msg{display:flex;gap:8px;margin-bottom:5px;align-items:flex-start}
+.conv-dot-user{width:6px;height:6px;border-radius:50%;background:var(--sky);margin-top:5px;flex-shrink:0}
+.conv-dot-bot{width:6px;height:6px;border-radius:50%;background:var(--lime);margin-top:5px;flex-shrink:0}
+.conv-msg-text{font-size:13px;line-height:1.5;color:var(--ink2)}
+.conv-msg-time{font-size:10px;color:var(--faint);margin-left:auto;white-space:nowrap;padding-top:2px}
+.toast{position:fixed;bottom:22px;right:22px;z-index:9999;background:var(--ink);color:#fff;border-radius:var(--r);padding:11px 17px;font-size:13px;display:flex;align-items:center;gap:10px;transform:translateY(60px);opacity:0;transition:all .25s cubic-bezier(.34,1.56,.64,1);pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.22);max-width:320px}
+.toast.on{transform:translateY(0);opacity:1}
+.td{width:7px;height:7px;border-radius:50%;background:var(--lime);flex-shrink:0}
+.toast.err .td{background:var(--red)}
+.loading{display:flex;align-items:center;gap:10px;padding:32px;color:var(--muted);font-size:13px;justify-content:center}
+.spin{width:18px;height:18px;border:2px solid var(--bd2);border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:900px){.stats{grid-template-columns:1fr 1fr}.g2,.g3{grid-template-columns:1fr}}
+@media(max-width:640px){.sidebar{display:none}.pg-inner{padding:20px 16px}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN CLIENTE -->
+<div class="screen on" id="sc-login">
+  <div class="lw">
+    <div class="badge"><div class="ld"><svg viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" stroke-width="2.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg></div><span>BotPanel</span></div>
+    <h1 class="lh">Mi panel<br>de <em>WhatsApp.</em></h1>
+    <p class="lsub">Gestiona tu catálogo y ve las conversaciones de tu bot.</p>
+    <div class="lbox">
+      <div class="lf"><label>Correo electrónico</label><input type="email" id="l-email" placeholder="tu@negocio.com"></div>
+      <div class="lf"><label>Contraseña</label><input type="password" id="l-pass" placeholder="••••••••"></div>
+      <button class="lbtn" onclick="doLogin()">Entrar →</button>
+      <div class="lerr" id="l-err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP CLIENTE -->
+<div class="screen" id="sc-app">
+  <aside class="sidebar">
+    <div class="sb-top">
+      <div class="sb-logo"><div class="ld"><svg viewBox="0 0 24 24" fill="none" stroke="#0c0c0c" stroke-width="2.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg></div><span class="sb-logo-name">BotPanel</span></div>
+      <div class="sb-biz"><div class="sb-biz-name" id="sb-name">—</div><div class="sb-biz-type" id="sb-type">—</div></div>
+    </div>
+    <nav>
+      <div class="ns">Mi negocio</div>
+      <div class="ni on" onclick="goPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Inicio</div>
+      <div class="ni" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg>Catálogo<span class="ct" id="sb-cnt">0</span></div>
+      <div class="ni" onclick="goPage('conversations',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones</div>
+      <div class="ni" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
+    </nav>
+    <div class="sb-ft"><div style="display:flex;align-items:center;gap:8px"><div class="pulse" id="bot-pulse"></div><div class="sb-ft-t" id="bot-status-text">Bot <strong>activo</strong></div></div><button class="out-btn" onclick="doLogout()">Salir</button></div>
+  </aside>
+
+  <main class="main">
+
+    <!-- BANNER SUSPENDIDO -->
+    <div id="susp-banner" style="display:none">
+      <div class="susp-banner" style="flex-direction:column;align-items:flex-start;gap:6px;padding:16px 20px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <strong style="font-size:15px">Servicio suspendido</strong>
+        </div>
+        <div style="font-size:13px;font-weight:400;line-height:1.6;opacity:0.92">
+          Para volver a utilizar el servicio y que tu bot responda a tus clientes, debes realizar el pago correspondiente. Contacta al administrador para regularizar tu cuenta.
+        </div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="pg on" id="pg-dashboard">
+      <div class="pg-inner">
+        <div class="ph"><div><h1 id="dash-h">Bienvenido</h1><p id="dash-sub">—</p></div>
+          <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar producto</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="stat-l">Productos</div><div class="stat-v g" id="st-p">—</div><div class="stat-s">En catálogo</div></div>
+          <div class="stat"><div class="stat-l">Disponibles</div><div class="stat-v" id="st-a">—</div><div class="stat-s">Con stock</div></div>
+          <div class="stat"><div class="stat-l">Mensajes hoy</div><div class="stat-v" id="st-m">—</div><div class="stat-s">Respondidos</div></div>
+          <div class="stat"><div class="stat-l">Contactos</div><div class="stat-v" id="st-c">—</div><div class="stat-s">Clientes únicos</div></div>
+        </div>
+        <div class="card"><div class="card-t">Productos recientes</div><div id="dash-prods"></div></div>
+      </div>
+    </div>
+
+    <!-- CATÁLOGO -->
+    <div class="pg" id="pg-products">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Catálogo</h1><p>El bot usa estos productos para responder</p></div>
+          <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo producto</button>
+        </div>
+        <div class="pg-grid" id="prod-grid"></div>
+      </div>
+    </div>
+
+    <!-- CONVERSACIONES -->
+    <div class="pg" id="pg-conversations">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Conversaciones</h1><p>Mensajes que tu bot ha respondido</p></div></div>
+        <div class="card"><div id="conv-list"><div class="loading"><div class="spin"></div></div></div></div>
+      </div>
+    </div>
+
+    <!-- POLÍTICAS -->
+    <div class="pg" id="pg-policies">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Políticas del bot</h1><p>El bot responde usando esta información</p></div></div>
+        <div class="card">
+          <div class="fg"><label class="lbl">Envíos</label><textarea id="pol-ship" rows="3"></textarea></div>
+          <div class="fg"><label class="lbl">Devoluciones</label><textarea id="pol-ret" rows="3"></textarea></div>
+          <div class="fg"><label class="lbl">Descuentos</label><textarea id="pol-disc" rows="3"></textarea></div>
+          <div class="fg"><label class="lbl">Instrucciones especiales para el bot</label><textarea id="pol-bot" rows="4"></textarea></div>
+          <button class="btn btn-dark" onclick="savePolicies()">Guardar políticas</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL PRODUCTO -->
+<div class="mbd" id="prod-modal">
+  <div class="modal">
+    <div class="mhd"><h2 id="m-title">Nuevo producto</h2><button class="mx" onclick="closeModal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="edit-id">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="fg"><label class="lbl">Nombre *</label><input type="text" id="p-name" placeholder="Dior Sauvage EDT 100ml"></div>
+        <div class="fg"><label class="lbl">Marca</label><input type="text" id="p-brand" placeholder="Dior"></div>
+      </div>
+      <div class="g3" style="margin-bottom:12px">
+        <div class="fg"><label class="lbl">Precio ($) *</label><input type="number" id="p-price" step="0.01" placeholder="89.99"></div>
+        <div class="fg"><label class="lbl">Precio oferta</label><input type="number" id="p-sale" step="0.01" placeholder="79.99"></div>
+        <div class="fg"><label class="lbl">Stock</label><select id="p-stock"><option value="disponible">Disponible</option><option value="últimas unidades">Últimas unidades</option><option value="agotado">Agotado</option></select></div>
+      </div>
+      <div class="fg" style="margin-bottom:12px"><label class="lbl">Descripción</label><textarea id="p-desc" rows="3"></textarea></div>
+      <div class="g2" style="margin-bottom:12px">
+        <div class="fg"><label class="lbl">Etiquetas</label><input type="text" id="p-tags" placeholder="hombre, fresco, regalo"></div>
+        <div class="fg"><label class="lbl">SKU</label><input type="text" id="p-sku" placeholder="DIOR-SAU-100"></div>
+      </div>
+      <div class="fg" style="margin-bottom:10px">
+        <label class="lbl">Imagen</label>
+        <div class="upz" id="upz"><input type="file" id="up-file" accept="image/*" onchange="handleFile(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg><p><strong>Clic o arrastra</strong></p><small>JPG, PNG hasta 5MB</small></div>
+        <div class="uppv" id="uppv"><img id="up-img" src="" alt=""><div><div id="up-name" style="font-size:13px;font-weight:600"></div><div id="up-size" style="font-size:11px;color:var(--muted)"></div><button class="btn btn-sm btn-red" onclick="clearFile()" style="margin-top:6px">Quitar</button></div></div>
+      </div>
+      <div class="fg"><label class="lbl">O pega URL de imagen</label><input type="url" id="p-img" placeholder="https://..."></div>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-dark" id="save-btn" onclick="saveProduct()">Guardar producto</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const API = window.location.origin
+let TOKEN = localStorage.getItem('client_token')||''
+let BIZ   = JSON.parse(localStorage.getItem('client_biz')||'null')
+let products = []
+
+let sbClient = null
+let realtimeInterval = null
+
+function init() {
+  if (TOKEN && BIZ) { bootApp(); return }
+  document.getElementById('sc-login').classList.add('on')
+}
+
+// Cache de última versión conocida para detectar cambios
+let lastProductsHash = ''
+let lastStatsHash = ''
+let lastBizSuspended = null
+
+async function checkForUpdates() {
+  try {
+    // Verificar estado del negocio (suspensión)
+    const bizR = await fetch(`${API}/api/client/business`, { headers: H() })
+    if (bizR.ok) {
+      const biz = await bizR.json()
+      if (lastBizSuspended !== null && lastBizSuspended !== biz.suspended) {
+        // Estado de suspensión cambió
+        if (biz.suspended) {
+          document.getElementById('susp-banner').style.display = 'block'
+          document.getElementById('bot-pulse').style.background = 'var(--red)'
+          document.getElementById('bot-status-text').innerHTML = 'Bot <strong style="color:var(--red)">suspendido</strong>'
+        } else {
+          document.getElementById('susp-banner').style.display = 'none'
+          document.getElementById('bot-pulse').style.background = 'var(--lime)'
+          document.getElementById('bot-status-text').innerHTML = 'Bot <strong>activo</strong>'
+        }
+      }
+      lastBizSuspended = biz.suspended
+    }
+
+    // Verificar productos
+    const prodsR = await fetch(`${API}/api/client/products`, { headers: H() })
+    if (prodsR.ok) {
+      const prods = await prodsR.json()
+      const hash = prods.map(p => p.id + p.price + p.stock + p.updated_at).join('|')
+      if (lastProductsHash && lastProductsHash !== hash) {
+        products = prods
+        renderProducts()
+        renderDashProducts()
+        document.getElementById('sb-cnt').textContent = products.length
+        document.getElementById('st-p').textContent = products.length
+        document.getElementById('st-a').textContent = products.filter(p => p.stock === 'disponible').length
+      }
+      lastProductsHash = hash
+    }
+
+    // Verificar stats (mensajes nuevos)
+    const statsR = await fetch(`${API}/api/client/stats`, { headers: H() })
+    if (statsR.ok) {
+      const stats = await statsR.json()
+      const hash = JSON.stringify(stats)
+      if (lastStatsHash && lastStatsHash !== hash) {
+        document.getElementById('st-p').textContent = stats.totalProducts
+        document.getElementById('st-a').textContent = stats.availableProducts
+        document.getElementById('st-m').textContent = stats.messagesToday
+        document.getElementById('st-c').textContent = stats.totalContacts
+        // Si está en conversaciones, recargar
+        if (document.getElementById('pg-conversations').classList.contains('on')) {
+          loadConversations()
+        }
+      }
+      lastStatsHash = hash
+    }
+
+  } catch(e) {
+    // Silencioso — no molestar al usuario si falla un check
+  }
+}
+
+function initRealtime() {
+  // Intentar Supabase Realtime primero
+  fetch(`${API}/api/client/supabase-config`, { headers: H() })
+    .then(r => r.json())
+    .then(cfg => {
+      if (!cfg.url || !cfg.key) throw new Error('sin config')
+      sbClient = supabase.createClient(cfg.url, cfg.key)
+      const bizId = BIZ?.id
+
+      sbClient.channel('client-changes-' + bizId)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `business_id=eq.${bizId}` }, () => { loadProducts() })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_history', filter: `business_id=eq.${bizId}` }, () => { loadStats(); if (document.getElementById('pg-conversations').classList.contains('on')) loadConversations() })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'businesses', filter: `id=eq.${bizId}` }, payload => {
+          const b = payload.new
+          if (b.suspended) {
+            document.getElementById('susp-banner').style.display = 'block'
+            document.getElementById('bot-pulse').style.background = 'var(--red)'
+            document.getElementById('bot-status-text').innerHTML = 'Bot <strong style="color:var(--red)">suspendido</strong>'
+          } else {
+            document.getElementById('susp-banner').style.display = 'none'
+            document.getElementById('bot-pulse').style.background = 'var(--lime)'
+            document.getElementById('bot-status-text').innerHTML = 'Bot <strong>activo</strong>'
+          }
+          lastBizSuspended = b.suspended
+        })
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') console.log('✅ Realtime WebSocket activo')
+        })
+    })
+    .catch(() => {
+      // Fallback: polling cada 5 segundos
+      console.log('⚡ Realtime via polling cada 5s')
+      realtimeInterval = setInterval(checkForUpdates, 5000)
+    })
+}
+
+async function doLogin() {
+  const email=document.getElementById('l-email').value.trim(), pass=document.getElementById('l-pass').value
+  const err=document.getElementById('l-err'), btn=document.querySelector('.lbtn')
+  err.style.display='none'; btn.disabled=true; btn.textContent='Entrando...'
+  try {
+    const r=await fetch(`${API}/api/client/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})})
+    const d=await r.json()
+    if (!r.ok){err.textContent=d.error||'Credenciales incorrectas';err.style.display='block'}
+    else { TOKEN=d.token; BIZ=d.business; localStorage.setItem('client_token',TOKEN); localStorage.setItem('client_biz',JSON.stringify(BIZ)); bootApp() }
+  } catch(e){err.textContent='Error de conexión';err.style.display='block'}
+  btn.disabled=false; btn.textContent='Entrar →'
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('sc-login').classList.contains('on'))doLogin()})
+function doLogout(){localStorage.removeItem('client_token');localStorage.removeItem('client_biz');TOKEN='';BIZ=null;location.reload()}
+
+function bootApp() {
+  document.getElementById('sc-login').classList.remove('on')
+  document.getElementById('sc-app').classList.add('on')
+  document.getElementById('sb-name').textContent=BIZ?.name||'—'
+  document.getElementById('sb-type').textContent=(BIZ?.type||'Negocio')+' · BotPanel'
+  document.getElementById('dash-h').textContent=`Hola, ${BIZ?.name||''}!`
+  document.getElementById('dash-sub').textContent='Panel de gestión de tu bot de WhatsApp'
+
+  // Mostrar banner si suspendido
+  if (BIZ?.suspended) {
+    document.getElementById('susp-banner').style.display='block'
+    document.getElementById('bot-pulse').style.background='var(--red)'
+    document.getElementById('bot-status-text').innerHTML='Bot <strong style="color:var(--red)">suspendido</strong>'
+  }
+  loadAll()
+  initRealtime(BIZ?.id)
+}
+
+function H(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'}}
+
+async function loadBusiness() {
+  try {
+    const r = await fetch(`${API}/api/client/business`, { headers: H() })
+    if (!r.ok) return
+    const biz = await r.json()
+    lastBizSuspended = biz.suspended
+    if (biz.suspended) {
+      document.getElementById('susp-banner').style.display = 'block'
+      document.getElementById('bot-pulse').style.background = 'var(--red)'
+      document.getElementById('bot-status-text').innerHTML = 'Bot <strong style="color:var(--red)">suspendido</strong>'
+    } else {
+      document.getElementById('susp-banner').style.display = 'none'
+      document.getElementById('bot-pulse').style.background = 'var(--lime)'
+      document.getElementById('bot-status-text').innerHTML = 'Bot <strong>activo</strong>'
+    }
+  } catch {}
+}
+
+async function loadAll(){await Promise.all([loadStats(),loadProducts(),loadPolicies(),loadBusiness()])}
+
+async function loadStats() {
+  try {
+    const r=await fetch(`${API}/api/client/stats`,{headers:H()})
+    const d=await r.json()
+    document.getElementById('st-p').textContent=d.totalProducts
+    document.getElementById('st-a').textContent=d.availableProducts
+    document.getElementById('st-m').textContent=d.messagesToday
+    document.getElementById('st-c').textContent=d.totalContacts
+  } catch {}
+}
+
+function goPage(name,el) {
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'))
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'))
+  document.getElementById('pg-'+name).classList.add('on')
+  el.classList.add('on')
+  if (name==='conversations') loadConversations()
+}
+
+async function loadProducts() {
+  try {
+    const r=await fetch(`${API}/api/client/products`,{headers:H()})
+    products=await r.json()
+    renderProducts(); renderDashProducts()
+    document.getElementById('sb-cnt').textContent=products.length
+    document.getElementById('st-p').textContent=products.length
+    document.getElementById('st-a').textContent=products.filter(p=>p.stock==='disponible').length
+  } catch {}
+}
+
+function sc(s){return s==='disponible'?'p-ok':s==='agotado'?'p-out':'p-low'}
+
+function renderProducts() {
+  const g=document.getElementById('prod-grid')
+  if (!products.length){g.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted);grid-column:1/-1"><p style="font-size:14px">No hay productos. Agrega el primero.</p></div>`;return}
+  g.innerHTML=products.map(p=>`
+    <div class="pc">
+      <div class="pc-img">
+        ${p.image_url?`<img src="${p.image_url}" alt="${p.name}" onerror="this.parentElement.innerHTML='<div class=no-img><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/></svg><span>Sin imagen</span></div>'">`:`<div class="no-img"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>Sin imagen</span></div>`}
+        <div class="pc-ov"><button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" onclick="openModal('${p.id}')">Editar</button></div>
+      </div>
+      <div class="pc-body">
+        <div class="pc-name">${p.name}</div><div class="pc-brand">${p.brand||'—'}</div>
+        <div class="pc-price">$${parseFloat(p.price).toFixed(2)}${p.price_sale?`<span class="sl">$${parseFloat(p.price_sale).toFixed(2)}</span>`:''}</div>
+        <span class="pill ${sc(p.stock)}">${p.stock}</span>
+        <div class="pc-tags">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+      </div>
+      <div class="pc-acts">
+        <button class="btn btn-sm" style="flex:1" onclick="openModal('${p.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>
+        <button class="btn btn-sm btn-red" onclick="delProduct('${p.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+      </div>
+    </div>`).join('')
+}
+
+function renderDashProducts() {
+  document.getElementById('dash-prods').innerHTML=!products.length
+    ?'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin productos aún.</div>'
+    :products.slice(0,5).map(p=>`<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--bd)"><div style="width:34px;height:34px;background:var(--paper2);border-radius:7px;overflow:hidden;flex-shrink:0">${p.image_url?`<img src="${p.image_url}" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${p.name}</div><div style="font-size:11px;color:var(--muted)">${p.brand||''}</div></div><div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">$${parseFloat(p.price).toFixed(2)}</div></div>`).join('')
+}
+
+// MODAL
+function openModal(id=null) {
+  document.getElementById('m-title').textContent=id?'Editar producto':'Nuevo producto'
+  document.getElementById('edit-id').value=id||''
+  clearFile()
+  const p=id?products.find(x=>x.id===id):null
+  document.getElementById('p-name').value=p?.name||''
+  document.getElementById('p-brand').value=p?.brand||''
+  document.getElementById('p-price').value=p?.price||''
+  document.getElementById('p-sale').value=p?.price_sale||''
+  document.getElementById('p-stock').value=p?.stock||'disponible'
+  document.getElementById('p-desc').value=p?.description||''
+  document.getElementById('p-tags').value=(p?.tags||[]).join(', ')
+  document.getElementById('p-sku').value=p?.external_sku||''
+  document.getElementById('p-img').value=p?.image_url||''
+  document.getElementById('prod-modal').classList.add('on')
+}
+function closeModal(){document.getElementById('prod-modal').classList.remove('on')}
+
+async function saveProduct() {
+  const name=document.getElementById('p-name').value.trim(), price=parseFloat(document.getElementById('p-price').value)
+  if (!name||isNaN(price)){toast('Nombre y precio son obligatorios',true);return}
+  const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Guardando...'
+  const payload={name,price,brand:document.getElementById('p-brand').value.trim()||null,price_sale:parseFloat(document.getElementById('p-sale').value)||null,stock:document.getElementById('p-stock').value,description:document.getElementById('p-desc').value.trim()||null,tags:document.getElementById('p-tags').value.split(',').map(t=>t.trim()).filter(Boolean),external_sku:document.getElementById('p-sku').value.trim()||null,image_url:document.getElementById('p-img').value.trim()||null}
+  const editId=document.getElementById('edit-id').value
+  try {
+    const r=await fetch(editId?`${API}/api/client/products/${editId}`:`${API}/api/client/products`,{method:editId?'PUT':'POST',headers:H(),body:JSON.stringify(payload)})
+    if (!r.ok) throw new Error((await r.json()).error)
+    await loadProducts(); closeModal(); toast(editId?'✓ Producto actualizado':'✓ Producto agregado')
+  } catch(e){toast('Error: '+e.message,true)}
+  btn.disabled=false; btn.textContent='Guardar producto'
+}
+
+async function delProduct(id) {
+  if (!confirm('¿Eliminar este producto?')) return
+  await fetch(`${API}/api/client/products/${id}`,{method:'DELETE',headers:H()})
+  await loadProducts(); toast('Producto eliminado')
+}
+
+function handleFile(e) {
+  const f=e.target.files[0]; if (!f) return
+  const r=new FileReader()
+  r.onload=ev=>{document.getElementById('up-img').src=ev.target.result;document.getElementById('up-name').textContent=f.name;document.getElementById('up-size').textContent=(f.size/1024).toFixed(0)+' KB';document.getElementById('upz').style.display='none';document.getElementById('uppv').classList.add('on');document.getElementById('p-img').value=ev.target.result}
+  r.readAsDataURL(f)
+}
+function clearFile(){document.getElementById('upz').style.display='block';document.getElementById('uppv').classList.remove('on');document.getElementById('up-file').value=''}
+
+// CONVERSATIONS
+async function loadConversations() {
+  try {
+    const r=await fetch(`${API}/api/client/conversations`,{headers:H()})
+    const convs=await r.json()
+    // Agrupar por contacto
+    const grouped={}
+    convs.forEach(m=>{if(!grouped[m.contact_phone])grouped[m.contact_phone]=[];grouped[m.contact_phone].push(m)})
+    const cl=document.getElementById('conv-list')
+    if (!Object.keys(grouped).length){cl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:16px 0">Sin conversaciones aún. Cuando alguien escriba al bot aparecerá aquí.</div>';return}
+    cl.innerHTML=Object.entries(grouped).map(([phone,msgs])=>`
+      <div class="conv-thread">
+        <div class="conv-phone">📱 ${phone}</div>
+        ${msgs.slice(-6).map(m=>`
+          <div class="conv-msg">
+            <div class="${m.role==='user'?'conv-dot-user':'conv-dot-bot'}"></div>
+            <div class="conv-msg-text">${m.content}</div>
+            <div class="conv-msg-time">${new Date(m.created_at).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}</div>
+          </div>`).join('')}
+      </div>`).join('')
+  } catch(e){document.getElementById('conv-list').innerHTML=`<p style="color:var(--red)">Error cargando: ${e.message}</p>`}
+}
+
+// POLICIES
+async function loadPolicies() {
+  try {
+    const r=await fetch(`${API}/api/client/policies`,{headers:H()})
+    const d=await r.json()
+    document.getElementById('pol-ship').value=d.shipping||''
+    document.getElementById('pol-ret').value=d.returns||''
+    document.getElementById('pol-disc').value=d.discounts||''
+    document.getElementById('pol-bot').value=d.bot_instructions||''
+  } catch {}
+}
+async function savePolicies() {
+  try {
+    const r=await fetch(`${API}/api/client/policies`,{method:'PUT',headers:H(),body:JSON.stringify({shipping:document.getElementById('pol-ship').value,returns:document.getElementById('pol-ret').value,discounts:document.getElementById('pol-disc').value,bot_instructions:document.getElementById('pol-bot').value})})
+    if (!r.ok) throw new Error()
+    toast('✓ Políticas guardadas')
+  } catch {toast('Error al guardar',true)}
+}
+
+function toast(msg,err=false){const t=document.getElementById('toast');document.getElementById('toast-msg').textContent=msg;t.className='toast'+(err?' err':'');t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3200)}
+
+init()
+</script>
+</body>
+</html>
