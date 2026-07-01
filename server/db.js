@@ -230,15 +230,28 @@ const getAvailableSlots = async (bizId, daysAhead = 7) => {
 }
 
 const updateClientUser = async (bizId, email, passwordHash) => {
-  const { data: existing } = await sb.from('client_users').select('id').eq('business_id', bizId).single()
+  // El usuario DUEÑO del negocio (el que gestiona el admin). Un negocio puede tener
+  // varios usuarios; el dueño es el de role='owner'.
+  const { data: existing } = await sb.from('client_users').select('id').eq('business_id', bizId).eq('role', 'owner').single()
   if (existing) {
     const upd = { email }
     if (passwordHash) upd.password_hash = passwordHash
-    await sb.from('client_users').update(upd).eq('business_id', bizId)
+    await sb.from('client_users').update(upd).eq('id', existing.id)
   } else {
-    await sb.from('client_users').insert({ business_id: bizId, email, password_hash: passwordHash })
+    await sb.from('client_users').insert({ business_id: bizId, email, password_hash: passwordHash, role: 'owner' })
   }
 }
+
+// ── SUB-USUARIOS (empleados) — todo filtrado por business_id ──
+const getClientUsers = async bizId =>
+  (await sb.from('client_users').select('id,email,name,role,permissions,created_at').eq('business_id', bizId).order('created_at')).data || []
+const getClientUserById = async (bizId, id) =>
+  (await sb.from('client_users').select('*').eq('business_id', bizId).eq('id', id).single()).data
+// Solo se editan/borran EMPLEADOS por esta vía (protege al dueño)
+const updateClientUserById = async (bizId, id, fields) =>
+  sb.from('client_users').update(fields).eq('business_id', bizId).eq('id', id).eq('role', 'employee')
+const deleteClientUserById = async (bizId, id) =>
+  sb.from('client_users').delete().eq('business_id', bizId).eq('id', id).eq('role', 'employee')
 
 // ── VENTAS Y REPORTES ─────────────────────────────────────
 // Toda función filtra por business_id (aislamiento multi-tenant).
@@ -282,6 +295,7 @@ module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
   getClientByEmail, getClientUserByBusiness, createClientUser, updateClientUser,
+  getClientUsers, getClientUserById, updateClientUserById, deleteClientUserById,
   getProducts, getProductById, createProduct, updateProduct, deleteProduct,
   countProducts, setProductEmbedding, getProductsWithoutEmbedding, searchProductsByVector,
   getPolicies, upsertPolicies,

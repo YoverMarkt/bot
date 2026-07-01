@@ -247,14 +247,15 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <nav>
       <div class="ns">Mi negocio</div>
       <div class="ni on" onclick="goPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Inicio</div>
-      <div class="ni" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg><span id="nav-products-label">Catálogo</span><span class="ct" id="sb-cnt">0</span></div>
-      <div class="ni" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
-      <div class="ni" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
-      <div class="ni" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
-      <div class="ni" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
-      <div class="ni" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
-      <div class="ni" id="nav-calendar" style="display:none" onclick="goPage('calendar',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Reservas<span class="ct" id="booking-badge" style="display:none">0</span></div>
-      <div class="ni" onclick="goPage('settings',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Ajustes</div>
+      <div class="ni" data-perm="catalogo" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg><span id="nav-products-label">Catálogo</span><span class="ct" id="sb-cnt">0</span></div>
+      <div class="ni" data-perm="conversaciones" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
+      <div class="ni" data-perm="reportes" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
+      <div class="ni" data-perm="owner" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
+      <div class="ni" data-perm="owner" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
+      <div class="ni" data-perm="citas" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
+      <div class="ni" data-perm="citas" id="nav-calendar" style="display:none" onclick="goPage('calendar',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Reservas<span class="ct" id="booking-badge" style="display:none">0</span></div>
+      <div class="ni" data-perm="owner" id="nav-usuarios" onclick="goPage('usuarios',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Usuarios</div>
+      <div class="ni" data-perm="owner" onclick="goPage('settings',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Ajustes</div>
     </nav>
     <div class="sb-ft"><div style="display:flex;align-items:center;gap:8px"><div class="pulse" id="bot-pulse"></div><div class="sb-ft-t" id="bot-status-text">Bot <strong>activo</strong></div></div><div style="display:flex;gap:6px"><button class="out-btn" onclick="testAlarmSound()" title="Probar y activar el sonido">🔊</button><button class="out-btn" onclick="doLogout()">Salir</button></div></div>
   </aside>
@@ -314,6 +315,16 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
           </div>
         </div>
         <div id="rep-content"><p style="color:var(--muted)">Cargando…</p></div>
+      </div>
+    </div>
+
+    <!-- USUARIOS (empleados) -->
+    <div class="pg" id="pg-usuarios">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Usuarios y permisos</h1><p>Crea empleados con acceso limitado a tu panel.</p></div>
+          <button class="btn btn-dark" onclick="openUserModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo empleado</button>
+        </div>
+        <div id="users-list"></div>
       </div>
     </div>
 
@@ -529,6 +540,25 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
   </div>
 </div>
 
+<!-- Modal: crear/editar empleado -->
+<div class="mbd" id="user-modal">
+  <div class="modal">
+    <div class="mhd"><h2 id="um-title">Nuevo empleado</h2><button class="mx" onclick="closeUserModal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="um-id">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="fg"><label class="lbl">Nombre</label><input type="text" id="um-name" placeholder="Nombre del empleado"></div>
+        <div class="fg"><label class="lbl">Correo *</label><input type="email" id="um-email" placeholder="empleado@negocio.com"></div>
+      </div>
+      <div class="fg" style="margin-bottom:14px"><label class="lbl">Contraseña <span id="um-pass-hint" style="font-weight:400;color:var(--muted)"></span></label><input type="password" id="um-pass" placeholder="mínimo 6 caracteres"></div>
+      <label class="lbl">¿Qué puede ver y usar?</label>
+      <div id="um-perms" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">Las secciones no marcadas no aparecen en su panel, y el servidor las bloquea aunque intente acceder directo.</p>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeUserModal()">Cancelar</button><button class="btn btn-dark" id="um-save" onclick="saveUser()">Guardar</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
 
 <!-- Banner de alarma de reserva nueva -->
@@ -547,6 +577,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
 const API = window.location.origin
 let TOKEN = localStorage.getItem('client_token')||''
 let BIZ   = JSON.parse(localStorage.getItem('client_biz')||'null')
+let USER  = JSON.parse(localStorage.getItem('client_user')||'null')
 let products = []
 
 let sbClient = null
@@ -667,12 +698,12 @@ async function doLogin() {
     const r=await fetch(`${API}/api/client/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})})
     const d=await r.json()
     if (!r.ok){err.textContent=d.error||'Credenciales incorrectas';err.style.display='block'}
-    else { TOKEN=d.token; BIZ=d.business; localStorage.setItem('client_token',TOKEN); localStorage.setItem('client_biz',JSON.stringify(BIZ)); bootApp() }
+    else { TOKEN=d.token; BIZ=d.business; USER=d.user||{role:'owner',permissions:[]}; localStorage.setItem('client_token',TOKEN); localStorage.setItem('client_biz',JSON.stringify(BIZ)); localStorage.setItem('client_user',JSON.stringify(USER)); bootApp() }
   } catch(e){err.textContent='Error de conexión';err.style.display='block'}
   btn.disabled=false; btn.textContent='Entrar →'
 }
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('sc-login').classList.contains('on'))doLogin()})
-function doLogout(){localStorage.removeItem('client_token');localStorage.removeItem('client_biz');TOKEN='';BIZ=null;location.reload()}
+function doLogout(){localStorage.removeItem('client_token');localStorage.removeItem('client_biz');localStorage.removeItem('client_user');TOKEN='';BIZ=null;USER=null;location.reload()}
 
 function bootApp() {
   document.getElementById('sc-login').classList.remove('on')
@@ -688,9 +719,24 @@ function bootApp() {
     document.getElementById('bot-pulse').style.background='var(--red)'
     document.getElementById('bot-status-text').innerHTML='Bot <strong style="color:var(--red)">suspendido</strong>'
   }
+  applyPermissions()
   loadAll()
   initRealtime(BIZ?.id)
-  startConvRefresh()
+  if (can('conversaciones')) startConvRefresh()   // el polling/alarma solo si puede ver conversaciones
+}
+
+// ── PERMISOS (empleados) ──────────────────────────────────
+function can(perm){ return USER?.role === 'owner' || (Array.isArray(USER?.permissions) && USER.permissions.includes(perm)) }
+
+function applyPermissions() {
+  const owner = USER?.role === 'owner'
+  if (owner) return   // el dueño ve todo (horarios/reservas los maneja el tipo de negocio)
+  document.querySelectorAll('.ni[data-perm]').forEach(el => {
+    const p = el.getAttribute('data-perm')
+    const allowed = p !== 'owner' && Array.isArray(USER?.permissions) && USER.permissions.includes(p)
+    if (!allowed) el.style.display = 'none'
+  })
+  document.getElementById('sb-type').textContent = 'Empleado · BotPanel'
 }
 
 function H(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'}}
@@ -786,6 +832,7 @@ function goPage(name,el) {
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
   if (name==='reportes') loadReports()
+  if (name==='usuarios') loadUsers()
   if (name==='botprompt') loadBotPrompt()
   if (name==='policies') loadPolicies()
   if (name==='schedule') loadSchedule()
@@ -863,6 +910,76 @@ function renderReports(d) {
       ${repCard('📦 Stock bajo o agotado', stock)}
       ${repCard('📋 Pedidos sin cerrar'+(d.pending.count?` (${d.pending.count})`:''), pend)}
     </div>`
+}
+
+// ── USUARIOS Y PERMISOS (gestión, solo dueño) ─────────────
+const PERM_LABELS = {
+  catalogo:'📦 Catálogo (agregar y editar productos)',
+  conversaciones:'💬 Conversaciones (chatear con clientes)',
+  citas:'📅 Citas y horarios',
+  reportes:'📊 Reportes de ventas',
+  ventas:'💰 Registrar ventas'
+}
+
+let usersData = []
+async function loadUsers() {
+  try {
+    usersData = await fetch(`${API}/api/client/users`, { headers: H() }).then(r=>r.json())
+    const box = document.getElementById('users-list')
+    const dueño = usersData.filter(u=>u.role==='owner').map(u=>esc(u.email)).join(', ') || '—'
+    const emps = usersData.filter(u=>u.role!=='owner')
+    box.innerHTML = `<div style="margin-bottom:12px;color:var(--muted);font-size:13px">👑 Dueño: <strong>${dueño}</strong> (acceso total)</div>` +
+      (emps.length ? emps.map(u=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+          <div><strong>${esc(u.name||u.email)}</strong><div style="font-size:12px;color:var(--muted)">${esc(u.email)} · ${(u.permissions||[]).length} permiso(s)</div></div>
+          <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="openUserModal('${u.id}')">Editar</button><button class="btn btn-sm btn-red" onclick="deleteUser('${u.id}','${esc(u.email)}')">Eliminar</button></div>
+        </div>`).join('') : `<p style="color:var(--muted)">Aún no tienes empleados. Crea el primero con el botón de arriba.</p>`)
+  } catch(e){ document.getElementById('users-list').innerHTML = `<p style="color:var(--red)">No se pudo cargar.</p>` }
+}
+
+function openUserModal(id) {
+  const u = id ? usersData.find(x=>x.id===id) : null
+  document.getElementById('um-id').value = u?.id || ''
+  document.getElementById('um-title').textContent = u ? 'Editar empleado' : 'Nuevo empleado'
+  document.getElementById('um-name').value = u?.name || ''
+  document.getElementById('um-email').value = u?.email || ''
+  document.getElementById('um-pass').value = ''
+  document.getElementById('um-pass-hint').textContent = u ? '(déjalo vacío para no cambiarla)' : '*'
+  const perms = u?.permissions || []
+  document.getElementById('um-perms').innerHTML = Object.entries(PERM_LABELS).map(([k,label])=>
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" value="${k}" ${perms.includes(k)?'checked':''} style="width:auto;margin:0"> ${label}</label>`).join('')
+  document.getElementById('user-modal').classList.add('on')
+}
+function closeUserModal(){ document.getElementById('user-modal').classList.remove('on') }
+
+async function saveUser() {
+  const id = document.getElementById('um-id').value
+  const email = document.getElementById('um-email').value.trim()
+  const password = document.getElementById('um-pass').value
+  const name = document.getElementById('um-name').value.trim()
+  const permissions = [...document.querySelectorAll('#um-perms input:checked')].map(c=>c.value)
+  if (!email) return toast('El correo es obligatorio', true)
+  if (!id && password.length < 6) return toast('La contraseña debe tener al menos 6 caracteres', true)
+  const btn = document.getElementById('um-save'); btn.disabled=true; btn.textContent='Guardando...'
+  try {
+    const body = { email, name, permissions }
+    if (password) body.password = password
+    const r = await fetch(id ? `${API}/api/client/users/${id}` : `${API}/api/client/users`,
+      { method: id?'PUT':'POST', headers:H(), body:JSON.stringify(body) })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast(id?'✓ Empleado actualizado':'✓ Empleado creado')
+    closeUserModal(); loadUsers()
+  } catch(e){ toast('Error: '+e.message, true) }
+  btn.disabled=false; btn.textContent='Guardar'
+}
+
+async function deleteUser(id, email) {
+  if (!confirm(`¿Eliminar al empleado ${email}? Ya no podrá entrar al panel.`)) return
+  try {
+    const r = await fetch(`${API}/api/client/users/${id}`, { method:'DELETE', headers:H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast('✓ Empleado eliminado'); loadUsers()
+  } catch(e){ toast('Error: '+e.message, true) }
 }
 
 function sc(s){return s==='disponible'?'p-ok':s==='agotado'?'p-out':'p-low'}
@@ -1106,7 +1223,7 @@ function renderChatPanel(phone) {
   document.getElementById('chat-status').textContent = (sess?.contact_name ? realPhone + ' · ' : '') + (isManual ? '🤚 Modo manual — respondiendo tú' : '🤖 Bot activo')
 
   document.getElementById('chat-actions').innerHTML =
-    `<button class="btn btn-sm" style="color:#1a7f37;border-color:rgba(26,127,55,.25)" onclick="openSaleModal('${phoneEnc}')">💰 Venta realizada</button>` +
+    (can('ventas') ? `<button class="btn btn-sm" style="color:#1a7f37;border-color:rgba(26,127,55,.25)" onclick="openSaleModal('${phoneEnc}')">💰 Venta realizada</button>` : '') +
     (isManual
       ? `<button class="btn btn-sm" onclick="setMode('${phoneEnc}',false)">🤖 Activar bot</button>`
       : `<button class="btn btn-sm" style="color:var(--red);border-color:rgba(240,61,47,.2)" onclick="setMode('${phoneEnc}',true)">🤚 Tomar control</button>`)

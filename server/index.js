@@ -94,6 +94,20 @@ function authClient(req, res, next) {
   catch { res.status(401).json({ error: 'Token inválido' }) }
 }
 
+// El permiso se valida en el SERVIDOR (no basta ocultar el menú). El dueño siempre pasa.
+function requirePermission(section) {
+  return (req, res, next) => {
+    if (req.user?.urole === 'owner') return next()
+    const perms = Array.isArray(req.user?.perms) ? req.user.perms : []
+    if (perms.includes(section)) return next()
+    return res.status(403).json({ error: 'No tienes permiso para esta sección' })
+  }
+}
+function requireOwner(req, res, next) {
+  if (req.user?.urole === 'owner') return next()
+  return res.status(403).json({ error: 'Solo el dueño puede hacer esto' })
+}
+
 // ══════════════════════════════════════════
 // ADMIN — LOGIN
 // ══════════════════════════════════════════
@@ -276,8 +290,10 @@ app.post('/api/client/login', loginLimiter, async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Contraseña incorrecta' })
     const biz = await db.getBusinessById(user.business_id)
     if (!biz?.active) return res.status(403).json({ error: 'Tu cuenta no está activa. Contacta al administrador.' })
-    const token = jwt.sign({ userId: user.id, businessId: user.business_id, role: 'client', email }, JWT(), { expiresIn: '7d' })
-    res.json({ token, business: { id: biz.id, name: biz.name, type: biz.type, suspended: biz.suspended, bot_active: biz.bot_active } })
+    const urole = user.role || 'owner'
+    const perms = Array.isArray(user.permissions) ? user.permissions : []
+    const token = jwt.sign({ userId: user.id, businessId: user.business_id, role: 'client', urole, perms, email }, JWT(), { expiresIn: '7d' })
+    res.json({ token, user: { name: user.name || '', role: urole, permissions: perms }, business: { id: biz.id, name: biz.name, type: biz.type, suspended: biz.suspended, bot_active: biz.bot_active } })
   } catch(e) { res.status(500).json({ error: e.message }) }
 })
 
@@ -304,28 +320,28 @@ app.put('/api/client/business', authClient, async (req, res) => {
 })
 
 app.get('/api/client/products',      authClient, async (req, res) => res.json(await db.getProducts(req.user.businessId)))
-app.get('/api/client/conversations', authClient, async (req, res) => res.json(await db.getConversations(req.user.businessId)))
+app.get('/api/client/conversations', authClient, requirePermission('conversaciones'), async (req, res) => res.json(await db.getConversations(req.user.businessId)))
 
 // ── SESIONES / MODO MANUAL ────────────────────────────────
-app.get('/api/client/sessions', authClient, async (req, res) => {
+app.get('/api/client/sessions', authClient, requirePermission('conversaciones'), async (req, res) => {
   try { res.json(await db.getSessions(req.user.businessId)) }
   catch { res.json([]) }
 })
 
-app.put('/api/client/sessions/:phone/mode', authClient, async (req, res) => {
+app.put('/api/client/sessions/:phone/mode', authClient, requirePermission('conversaciones'), async (req, res) => {
   const { manual } = req.body
   await db.upsertSession(req.user.businessId, req.params.phone, { manual_mode: !!manual, unread_owner: false })
   res.json({ ok: true })
 })
 
 // Marcar un chat manual como atendido (calla la alarma de forma persistente)
-app.put('/api/client/sessions/:phone/read', authClient, async (req, res) => {
+app.put('/api/client/sessions/:phone/read', authClient, requirePermission('conversaciones'), async (req, res) => {
   await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { unread_owner: false })
   res.json({ ok: true })
 })
 
 // Guardar/editar el nombre del contacto (para identificar quién escribe)
-app.put('/api/client/sessions/:phone/name', authClient, async (req, res) => {
+app.put('/api/client/sessions/:phone/name', authClient, requirePermission('conversaciones'), async (req, res) => {
   const name = (req.body.name || '').trim().slice(0, 60)
   await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { contact_name: name || null })
   res.json({ ok: true })
@@ -343,7 +359,7 @@ async function sendToContact(biz, phone, message) {
   }
 }
 
-app.post('/api/client/sessions/:phone/send', authClient, async (req, res) => {
+app.post('/api/client/sessions/:phone/send', authClient, requirePermission('conversaciones'), async (req, res) => {
   const bizId = req.user.businessId
   const phone = decodeURIComponent(req.params.phone)
   const { message } = req.body
@@ -355,17 +371,17 @@ app.post('/api/client/sessions/:phone/send', authClient, async (req, res) => {
     res.json({ ok: true })
   } catch(e) { res.status(500).json({ error: e.message }) }
 })
-app.get('/api/client/policies',      authClient, async (req, res) => res.json(await db.getPolicies(req.user.businessId) || {}))
-app.put('/api/client/policies',      authClient, async (req, res) => { await db.upsertPolicies(req.user.businessId, req.body); res.json({ ok: true }) })
-app.put('/api/client/bot-prompt',    authClient, async (req, res) => { await db.upsertPolicies(req.user.businessId, { bot_prompt: req.body.bot_prompt }); res.json({ ok: true }) })
+app.get('/api/client/policies',      authClient, requireOwner, async (req, res) => res.json(await db.getPolicies(req.user.businessId) || {}))
+app.put('/api/client/policies',      authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, req.body); res.json({ ok: true }) })
+app.put('/api/client/bot-prompt',    authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, { bot_prompt: req.body.bot_prompt }); res.json({ ok: true }) })
 
 // ── HORARIOS ──────────────────────────────────────────────
-app.get('/api/client/schedule',  authClient, async (req, res) => res.json(await db.getSchedule(req.user.businessId)))
-app.put('/api/client/schedule',  authClient, async (req, res) => { await db.upsertSchedule(req.user.businessId, req.body.days); res.json({ ok: true }) })
+app.get('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getSchedule(req.user.businessId)))
+app.put('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => { await db.upsertSchedule(req.user.businessId, req.body.days); res.json({ ok: true }) })
 
 // ── RESERVAS ──────────────────────────────────────────────
-app.get('/api/client/bookings',  authClient, async (req, res) => res.json(await db.getBookings(req.user.businessId, req.query.from, req.query.to)))
-app.put('/api/client/bookings/:id/status', authClient, async (req, res) => {
+app.get('/api/client/bookings',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getBookings(req.user.businessId, req.query.from, req.query.to)))
+app.put('/api/client/bookings/:id/status', authClient, requirePermission('citas'), async (req, res) => {
   const { status } = req.body
   try {
     const booking = await db.getBookingById(req.params.id)
@@ -393,7 +409,7 @@ app.put('/api/client/bookings/:id/status', authClient, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }) }
 })
 
-app.post('/api/client/products', authClient, async (req, res) => {
+app.post('/api/client/products', authClient, requirePermission('catalogo'), async (req, res) => {
   const { name, price } = req.body
   if (!name || !price) return res.status(400).json({ error: 'Nombre y precio requeridos' })
   const { data, error } = await db.createProduct({ ...req.body, business_id: req.user.businessId, price: parseFloat(price), active: true })
@@ -403,17 +419,17 @@ app.post('/api/client/products', authClient, async (req, res) => {
   res.status(201).json(data)
 })
 
-app.put('/api/client/products/:id', authClient, async (req, res) => {
+app.put('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => {
   await db.updateProduct(req.params.id, req.body)
   // Re-generar embedding tras editar
   db.getProductById(req.params.id).then(p => p && bot.indexProduct(p)).catch(() => {})
   res.json({ ok: true })
 })
-app.delete('/api/client/products/:id', authClient, async (req, res) => { await db.deleteProduct(req.params.id); res.json({ ok: true }) })
+app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.params.id); res.json({ ok: true }) })
 
 // ── VENTAS (registro manual) Y PEDIDOS PENDIENTES ─────────
 // Prellenado del formulario: catálogo + lo que el bot ya cotizó en la conversación.
-app.get('/api/client/sessions/:phone/quote', authClient, async (req, res) => {
+app.get('/api/client/sessions/:phone/quote', authClient, requirePermission('ventas'), async (req, res) => {
   const bizId = req.user.businessId
   const phone = decodeURIComponent(req.params.phone)
   try {
@@ -435,7 +451,7 @@ app.get('/api/client/sessions/:phone/quote', authClient, async (req, res) => {
 })
 
 // Registrar "Venta realizada"
-app.post('/api/client/sales', authClient, async (req, res) => {
+app.post('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
   const bizId = req.user.businessId
   const { contact_phone, contact_name, items } = req.body
   if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'La venta necesita al menos un ítem' })
@@ -446,7 +462,7 @@ app.post('/api/client/sales', authClient, async (req, res) => {
       return { product_id: i.product_id || null, product_name: (i.product_name || 'Producto').trim(), quantity: qty, unit_price: price, line_total: +(qty * price).toFixed(2) }
     })
     const total = +norm.reduce((s, i) => s + i.line_total, 0).toFixed(2)
-    const { data: sale, error } = await db.createSale({ business_id: bizId, contact_phone: contact_phone || null, contact_name: contact_name || null, total, status: 'completada', source: 'manual' })
+    const { data: sale, error } = await db.createSale({ business_id: bizId, contact_phone: contact_phone || null, contact_name: contact_name || null, total, status: 'completada', source: 'manual', created_by: req.user.userId || null })
     if (error) return res.status(500).json({ error: error.message })
     await db.addSaleItems(norm.map(i => ({ ...i, sale_id: sale.id, business_id: bizId })))
     // Al registrar la venta, la conversación deja de figurar como pendiente
@@ -456,31 +472,66 @@ app.post('/api/client/sales', authClient, async (req, res) => {
 })
 
 // Anular venta (revierte el registro y el conteo)
-app.post('/api/client/sales/:id/void', authClient, async (req, res) => {
+app.post('/api/client/sales/:id/void', authClient, requirePermission('ventas'), async (req, res) => {
   try { await db.voidSale(req.user.businessId, req.params.id); res.json({ ok: true }) }
   catch(e) { res.status(500).json({ error: e.message }) }
 })
 
 // Ventas registradas de un contacto (para mostrarlas y poder anularlas)
-app.get('/api/client/sales', authClient, async (req, res) => {
+app.get('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
   const phone = req.query.phone ? decodeURIComponent(req.query.phone) : null
   if (!phone) return res.json([])
   res.json(await db.getSalesByContact(req.user.businessId, phone))
 })
 
 // Pedidos / cotizaciones sin cerrar
-app.get('/api/client/pending-orders', authClient, async (req, res) =>
+app.get('/api/client/pending-orders', authClient, requirePermission('reportes'), async (req, res) =>
   res.json(await db.getPendingOrders(req.user.businessId)))
 
 // Datos de los 7 reportes para el panel del dueño (JSON) — filtrado por business_id (JWT)
-app.get('/api/client/reports', authClient, async (req, res) => {
+app.get('/api/client/reports', authClient, requirePermission('reportes'), async (req, res) => {
   const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
   try { res.json(await reports.getAllReports(req.user.businessId, period)) }
   catch(e) { res.status(500).json({ error: e.message }) }
 })
 
+// ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
+const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
+app.get('/api/client/users', authClient, requireOwner, async (req, res) =>
+  res.json(await db.getClientUsers(req.user.businessId)))
+
+app.post('/api/client/users', authClient, requireOwner, async (req, res) => {
+  const { email, password, name, permissions } = req.body
+  if (!email || !password) return res.status(400).json({ error: 'Correo y contraseña requeridos' })
+  const perms = (Array.isArray(permissions) ? permissions : []).filter(p => VALID_PERMS.includes(p))
+  try {
+    const hash = await bcrypt.hash(password, 10)
+    const { data, error } = await db.createClientUser({ business_id: req.user.businessId, email: email.trim(), password_hash: hash, name: name || null, role: 'employee', permissions: perms })
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json({ id: data.id })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+app.put('/api/client/users/:id', authClient, requireOwner, async (req, res) => {
+  const { email, password, name, permissions } = req.body
+  const fields = {}
+  if (email) fields.email = email.trim()
+  if (name !== undefined) fields.name = name
+  if (Array.isArray(permissions)) fields.permissions = permissions.filter(p => VALID_PERMS.includes(p))
+  if (password) fields.password_hash = await bcrypt.hash(password, 10)
+  try {
+    if (Object.keys(fields).length) await db.updateClientUserById(req.user.businessId, req.params.id, fields)
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/client/users/:id', authClient, requireOwner, async (req, res) => {
+  try { await db.deleteClientUserById(req.user.businessId, req.params.id); res.json({ ok: true }) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
 // Reindexar (generar embeddings) de los productos que aún no tienen — para catálogos existentes
-app.post('/api/client/reindex', authClient, async (req, res) => {
+app.post('/api/client/reindex', authClient, requirePermission('catalogo'), async (req, res) => {
   try {
     const pending = await db.getProductsWithoutEmbedding(req.user.businessId)
     res.json({ ok: true, pending: pending.length, message: pending.length ? `Indexando ${pending.length} productos en segundo plano…` : 'Todos los productos ya están indexados ✓' })

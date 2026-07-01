@@ -58,13 +58,15 @@ create table if not exists businesses (
   created_at          timestamptz default now()
 );
 
--- ── TABLA 2: Usuarios del panel del cliente (dueños) ───────
+-- ── TABLA 2: Usuarios del panel del cliente (dueño + empleados) ─
 create table if not exists client_users (
   id            uuid primary key default gen_random_uuid(),
   business_id   uuid references businesses(id) on delete cascade,
   email         text unique not null,
   password_hash text not null,
   name          text,
+  role          text not null default 'owner',   -- 'owner' | 'employee'
+  permissions   jsonb default '[]',              -- secciones permitidas al empleado
   created_at    timestamptz default now()
 );
 
@@ -184,6 +186,7 @@ create table if not exists sales (
   total         numeric(10,2) not null default 0,
   status        text not null default 'completada' check (status in ('completada','anulada')),
   source        text default 'manual',
+  created_by    uuid references client_users(id) on delete set null,  -- vendedor que la registró
   sold_at       timestamptz default now(),
   created_at    timestamptz default now()
 );
