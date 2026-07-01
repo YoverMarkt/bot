@@ -164,3 +164,10 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 - "Cambia el login / cómo se guardan las keys" → seguridad-saas + arquitecto-saas + tester-saas.
 - "El bot responde mal / no agenda / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
 - "Revisa esto antes de subirlo" → revisor-pr.
+
+---
+
+## 11. MÓDULOS FUTUROS (no construir hasta que haya demanda real)
+
+- **Sucursales / multi-local por negocio.** Un negocio con varios locales. Enfoque **aditivo** cuando se pida: tabla `locations` + columna `location_id` (nullable) en `products`, `sales`, `bookings`, `conversation_sessions`. Los negocios de un solo local quedan con `location_id` nulo (sin cambios). NO construir de forma especulativa: mete "impuesto de complejidad" a todos y toca multi-tenancy (filtrar por `business_id` **y** `location_id`). Requiere definir antes: ¿cada sucursal tiene su propio número de WhatsApp?, ¿comparten catálogo?, ¿un empleado pertenece a una o varias? Va con **arquitecto-saas**.
+- **Ventas por sucursal** (reporte) depende del módulo anterior.
