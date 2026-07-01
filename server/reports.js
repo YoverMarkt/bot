@@ -36,12 +36,13 @@ function previousRange(period) {
 }
 
 // ── Detección de intención del dueño (para WhatsApp) ──────
-const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring']
+const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller']
 function detectReportIntent(text) {
   const t = (text || '').toLowerCase()
   const has = (...ws) => ws.some(w => t.includes(w))
   let report = null
-  if      (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
+  if      (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
+  else if (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
   else if (has('cliente frecuente', 'clientes frecuentes', 'mejores clientes', 'quién compra', 'quien compra', 'recurrente', 'fideliz')) report = 'recurring'
   else if (has('menos vendido', 'bajo movimiento', 'no se vende', 'se vende poco', 'poco movimiento', 'liquidar', 'para promoción', 'para promocion')) report = 'low_movement'
   else if (has('más vendido', 'mas vendido', 'top producto', 'productos top', 'mejor producto', 'qué se vende', 'que se vende')) report = 'top'
@@ -62,10 +63,53 @@ function detectReportIntent(text) {
 
 async function computeSummary(bizId, period) {
   const { start, end, label } = rangeFor(period)
-  const sales = await db.getSalesWithItems(bizId, start, end)
+  const [sales, allCustomers, writers] = await Promise.all([
+    db.getSalesWithItems(bizId, start, end),
+    db.getSaleCustomers(bizId),
+    db.getWritersInRange(bizId, start, end)
+  ])
   const total = sales.reduce((s, v) => s + Number(v.total || 0), 0)
   const items = sales.reduce((s, v) => s + (v.sale_items || []).reduce((a, i) => a + Number(i.quantity || 0), 0), 0)
-  return { label, orders: sales.length, total, items, avg: sales.length ? total / sales.length : 0 }
+
+  // Compradores distintos del período
+  const periodBuyers = new Set(sales.map(v => v.contact_phone).filter(Boolean))
+  // Primera compra (histórica) de cada cliente → para "clientes nuevos"
+  const firstBuy = {}
+  for (const c of allCustomers) {
+    if (!c.contact_phone) continue
+    const t = new Date(c.sold_at).getTime()
+    if (!(c.contact_phone in firstBuy) || t < firstBuy[c.contact_phone]) firstBuy[c.contact_phone] = t
+  }
+  const startT = new Date(start).getTime()
+  let nuevos = 0
+  for (const ph of periodBuyers) if ((firstBuy[ph] ?? 0) >= startT) nuevos++
+  // Recurrentes (histórico): clientes con 2+ compras en total
+  const countByCust = {}
+  for (const c of allCustomers) if (c.contact_phone) countByCust[c.contact_phone] = (countByCust[c.contact_phone] || 0) + 1
+  const recurrentes = Object.values(countByCust).filter(n => n >= 2).length
+  // Conversión: compradores del período ÷ clientes que escribieron
+  const conversion = writers > 0 ? Math.min(100, (periodBuyers.size / writers) * 100) : null
+
+  return {
+    label, orders: sales.length, total, items, avg: sales.length ? total / sales.length : 0,
+    nuevos, recurrentes, conversion, buyers: periodBuyers.size, writers
+  }
+}
+
+async function computeBySeller(bizId, period) {
+  const { start, end, label } = rangeFor(period)
+  const [sales, users] = await Promise.all([db.getSalesWithItems(bizId, start, end), db.getClientUsers(bizId)])
+  const nameById = {}
+  users.forEach(u => { nameById[u.id] = u.name || u.email })
+  const map = {}
+  for (const v of sales) {
+    const key = v.created_by || 'sin_asignar'
+    const name = v.created_by ? (nameById[v.created_by] || 'Usuario') : 'Sin asignar'
+    if (!map[key]) map[key] = { name, orders: 0, total: 0 }
+    map[key].orders += 1
+    map[key].total += Number(v.total || 0)
+  }
+  return { label, rows: Object.values(map).sort((a, b) => b.total - a.total) }
 }
 
 async function computeTop(bizId, period, limit = 5) {
@@ -132,11 +176,12 @@ async function computePending(bizId) {
 
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
-  const [summary, top, lowMovement, comparison, recurring, lowStock, pending] = await Promise.all([
+  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller] = await Promise.all([
     computeSummary(bizId, period), computeTop(bizId, period), computeLowMovement(bizId, period),
-    computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId)
+    computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId),
+    computeBySeller(bizId, period)
   ])
-  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending }
+  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -145,7 +190,12 @@ async function getAllReports(bizId, period) {
 
 const fmtSummary = d => !d.orders
   ? `📊 Resumen de ventas (${d.label})\n\nSin ventas registradas en el período. 🤷`
-  : `📊 Resumen de ventas (${d.label})\n\n💰 Total vendido: ${money(d.total)}\n🧾 Pedidos: ${d.orders}\n📦 Ítems vendidos: ${d.items}\n🎟️ Ticket promedio: ${money(d.avg)}`
+  : `📊 Resumen de ventas (${d.label})\n\n💰 Total vendido: ${money(d.total)}\n🧾 Pedidos: ${d.orders}\n📦 Ítems vendidos: ${d.items}\n🎟️ Ticket promedio: ${money(d.avg)}\n🆕 Clientes nuevos: ${d.nuevos}\n🔁 Clientes recurrentes: ${d.recurrentes}\n📈 Conversión: ${d.conversion === null ? 's/d' : d.conversion.toFixed(0) + '%'}`
+
+const fmtBySeller = d => !d.rows.length
+  ? `🧑‍💼 Ventas por vendedor (${d.label})\n\nSin ventas en el período.`
+  : `🧑‍💼 Ventas por vendedor (${d.label})\n\n` +
+    d.rows.map((r, i) => `${i + 1}. ${r.name} — ${r.orders} venta(s) · ${money(r.total)}`).join('\n')
 
 const fmtTop = d => !d.rows.length
   ? `🏆 Productos más vendidos (${d.label})\n\nSin ventas en el período.`
@@ -189,6 +239,7 @@ async function runReport(bizId, intent) {
     case 'recurring':    return fmtRecurring(await computeRecurring(bizId, p))
     case 'low_stock':    return fmtLowStock(await computeLowStock(bizId))
     case 'pending':      return fmtPending(await computePending(bizId))
+    case 'seller':       return fmtBySeller(await computeBySeller(bizId, p))
     default:             return null
   }
 }
