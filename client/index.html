@@ -937,6 +937,11 @@ async function loadUsers() {
   } catch(e){ document.getElementById('users-list').innerHTML = `<p style="color:var(--red)">No se pudo cargar.</p>` }
 }
 
+// Permisos sugeridos según el rubro (solo al CREAR; se pueden marcar/desmarcar todos).
+function defaultPermsForBiz(){
+  return isServiceBiz() ? ['citas','conversaciones'] : ['conversaciones','ventas','catalogo']
+}
+
 function openUserModal(id) {
   const u = id ? usersData.find(x=>x.id===id) : null
   document.getElementById('um-id').value = u?.id || ''
@@ -945,7 +950,8 @@ function openUserModal(id) {
   document.getElementById('um-email').value = u?.email || ''
   document.getElementById('um-pass').value = ''
   document.getElementById('um-pass-hint').textContent = u ? '(déjalo vacío para no cambiarla)' : '*'
-  const perms = u?.permissions || []
+  // Al editar: los permisos guardados. Al crear: sugerencia según el tipo de negocio.
+  const perms = u ? (u.permissions || []) : defaultPermsForBiz()
   document.getElementById('um-perms').innerHTML = Object.entries(PERM_LABELS).map(([k,label])=>
     `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" value="${k}" ${perms.includes(k)?'checked':''} style="width:auto;margin:0"> ${label}</label>`).join('')
   document.getElementById('user-modal').classList.add('on')
