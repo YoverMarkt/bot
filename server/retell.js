@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const db        = require('./db')
+const settings  = require('./settings')
 
 // Retell AI — Custom LLM endpoint
 // Configura en retell.ai: LLM → Custom LLM → URL = https://tu-dominio/api/retell/llm
@@ -52,15 +53,14 @@ async function handleRetellLLM(req, res) {
       messages.push({ role: 'user', content: 'Hola' })
     }
 
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const r = await claude.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
-      system: systemPrompt,
-      messages
-    })
+    // Usa el MISMO proveedor de IA configurado en el panel (Groq, OpenAI, Gemini o Claude)
+    const bot = require('./bot')
+    const last = messages[messages.length - 1]
+    const userMessage = last?.role === 'user' ? last.content : 'Hola'
+    const history = last?.role === 'user' ? messages.slice(0, -1) : messages
+    const rawText = await bot.callAI(systemPrompt, history, userMessage, biz.ai_provider)
 
-    let content = r.content[0].text
+    let content = (rawText || '')
       .replace(/##IMG##[^#]+##/g, '')
       .replace(/\*\*([^*]+)\*\*/g, '$1')
       .replace(/\*([^*]+)\*/g, '$1')

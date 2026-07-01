@@ -1,10 +1,12 @@
 -- ============================================================
--- MIGRACIÓN: Integraciones YCloud, Telegram, Retell, Cal.com
+-- ⚠️ OBSOLETO — NO USAR. Conservado solo como historial.
 --
--- INSTRUCCIONES:
--- 1. Ve a supabase.com → tu proyecto → SQL Editor
--- 2. Pega este contenido y clic en RUN
+-- El esquema actual y completo está en  schema.sql  (consolidado).
+-- Este archivo tiene la tabla `bookings` con el esquema VIEJO
+-- (start_time/end_time) que YA fue reemplazado por
+-- booking_date/booking_time/duration_minutes. No lo ejecutes.
 -- ============================================================
+-- (Histórico) MIGRACIÓN: Integraciones YCloud, Telegram, Retell, Cal.com
 
 -- Nuevas columnas en businesses
 alter table businesses add column if not exists ycloud_api_key    text;
@@ -37,3 +39,15 @@ create index if not exists idx_bookings_biz     on bookings(business_id);
 create index if not exists idx_bookings_contact on bookings(business_id, contact_phone);
 
 alter table bookings disable row level security;
+
+-- IA por cliente (null = usa la configuración global del servidor)
+alter table businesses add column if not exists ai_provider text;
+
+-- Configuración global del servidor (IA, tokens, etc.)
+create table if not exists server_settings (
+  key        text primary key,
+  value      text,
+  updated_at timestamptz default now()
+);
+
+alter table server_settings disable row level security;
