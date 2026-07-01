@@ -11,6 +11,7 @@ const Anthropic = require('@anthropic-ai/sdk')
 const axios     = require('axios')
 const db        = require('./db')
 const bot       = require('./bot')
+const reports   = require('./reports')
 const retell    = require('./retell')
 const tunnel    = require('./tunnel')
 const srvSettings = require('./settings')
@@ -470,6 +471,13 @@ app.get('/api/client/sales', authClient, async (req, res) => {
 // Pedidos / cotizaciones sin cerrar
 app.get('/api/client/pending-orders', authClient, async (req, res) =>
   res.json(await db.getPendingOrders(req.user.businessId)))
+
+// Datos de los 7 reportes para el panel del dueño (JSON) — filtrado por business_id (JWT)
+app.get('/api/client/reports', authClient, async (req, res) => {
+  const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
+  try { res.json(await reports.getAllReports(req.user.businessId, period)) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
 
 // Reindexar (generar embeddings) de los productos que aún no tienen — para catálogos existentes
 app.post('/api/client/reindex', authClient, async (req, res) => {

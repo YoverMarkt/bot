@@ -249,6 +249,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       <div class="ni on" onclick="goPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Inicio</div>
       <div class="ni" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg><span id="nav-products-label">Catálogo</span><span class="ct" id="sb-cnt">0</span></div>
       <div class="ni" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
+      <div class="ni" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
       <div class="ni" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
       <div class="ni" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
       <div class="ni" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
@@ -299,6 +300,20 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
           </div>
         </div>
         <div class="pg-grid" id="prod-grid"></div>
+      </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div class="pg" id="pg-reportes">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Reportes de ventas</h1><p>Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p></div>
+          <div style="display:flex;gap:6px" id="rep-period">
+            <button class="btn btn-sm" data-p="hoy" onclick="setRepPeriod('hoy',this)">Hoy</button>
+            <button class="btn btn-sm on" data-p="semana" onclick="setRepPeriod('semana',this)">Semana</button>
+            <button class="btn btn-sm" data-p="mes" onclick="setRepPeriod('mes',this)">Mes</button>
+          </div>
+        </div>
+        <div id="rep-content"><p style="color:var(--muted)">Cargando…</p></div>
       </div>
     </div>
 
@@ -770,6 +785,7 @@ function goPage(name,el) {
   // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
+  if (name==='reportes') loadReports()
   if (name==='botprompt') loadBotPrompt()
   if (name==='policies') loadPolicies()
   if (name==='schedule') loadSchedule()
@@ -786,6 +802,67 @@ async function loadProducts() {
     document.getElementById('st-p').textContent=products.length
     document.getElementById('st-a').textContent=products.filter(p=>p.stock==='disponible').length
   } catch {}
+}
+
+// ── REPORTES (panel del dueño) ────────────────────────────
+let repPeriod = 'semana'
+const repMoney = n => '$' + (Number(n)||0).toFixed(2)
+
+function setRepPeriod(p, el) {
+  repPeriod = p
+  document.querySelectorAll('#rep-period .btn').forEach(b=>b.classList.remove('on'))
+  el.classList.add('on')
+  loadReports()
+}
+
+async function loadReports() {
+  const box = document.getElementById('rep-content')
+  box.innerHTML = '<p style="color:var(--muted)">Cargando…</p>'
+  try {
+    const r = await fetch(`${API}/api/client/reports?period=${repPeriod}`, { headers: H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    renderReports(await r.json())
+  } catch(e) { box.innerHTML = `<p style="color:var(--red)">Error cargando reportes: ${esc(e.message)}</p>` }
+}
+
+function repCard(title, body){ return `<div style="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:16px"><h3 style="font-size:14px;margin:0 0 10px">${title}</h3>${body}</div>` }
+function repEmpty(msg){ return `<p style="color:var(--muted);font-size:13px;margin:0">${msg}</p>` }
+
+function renderReports(d) {
+  const s = d.summary
+  const stat = (label,val) => `<div style="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px 16px;flex:1;min-width:120px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${label}</div><div style="font-size:22px;font-weight:700;margin-top:4px">${val}</div></div>`
+  const summaryRow = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${stat('Total vendido',repMoney(s.total))}${stat('Pedidos',s.orders)}${stat('Ítems',s.items)}${stat('Ticket promedio',repMoney(s.avg))}</div>`
+
+  const top = d.top.rows.length
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.top.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.qty} uds</strong> · ${repMoney(r.rev)}</li>`).join('')}</ol>`
+    : repEmpty('Sin ventas en el período.')
+  const rec = d.recurring.rows.length
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.recurring.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} compra(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
+    : repEmpty('Sin ventas en el período.')
+  const c = d.comparison
+  let trend
+  if (c.pct === null) trend = c.curTotal>0 ? '🚀 sin base anterior' : 'sin datos'
+  else trend = `<span style="color:${c.pct>=0?'#1a7f37':'var(--red)'}">${c.pct>=0?'▲ +':'▼ '}${c.pct.toFixed(1)}%</span>`
+  const comp = `<div style="font-size:13px;line-height:1.7">Actual: <strong>${repMoney(c.curTotal)}</strong> (${c.curOrders} pedidos)<br>Anterior: ${repMoney(c.prevTotal)} (${c.prevOrders} pedidos)<br>Variación: ${trend}</div>`
+  const low = d.lowMovement.rows.length
+    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.lowMovement.rows.map(p=>`<li style="margin-bottom:3px">${esc(p.name)} — ${p.qty} uds</li>`).join('')}</ul>`
+    : repEmpty('Todos tus productos tuvieron ventas. 🎉')
+  const stock = d.lowStock.rows.length
+    ? `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${d.lowStock.rows.map(p=>`<li style="margin-bottom:3px">${p.stock==='agotado'?'🔴':'🟡'} ${esc(p.name)} — ${p.stock}</li>`).join('')}</ul>`
+    : repEmpty('Nada agotado ni en últimas unidades. ✅')
+  const pend = d.pending.count
+    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.pending.rows.map(x=>`<li style="margin-bottom:3px">${esc(x.name)}${x.last_message?' — "'+esc(String(x.last_message).slice(0,40))+'"':''}</li>`).join('')}</ul>`
+    : repEmpty('No hay cotizaciones sin cerrar. ✅')
+
+  document.getElementById('rep-content').innerHTML = summaryRow +
+    `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+      ${repCard('🏆 Productos más vendidos', top)}
+      ${repCard('🤝 Clientes frecuentes', rec)}
+      ${repCard('📊 Comparación con período anterior', comp)}
+      ${repCard('🐌 Bajo movimiento (candidatos a promo)', low)}
+      ${repCard('📦 Stock bajo o agotado', stock)}
+      ${repCard('📋 Pedidos sin cerrar'+(d.pending.count?` (${d.pending.count})`:''), pend)}
+    </div>`
 }
 
 function sc(s){return s==='disponible'?'p-ok':s==='agotado'?'p-out':'p-low'}
