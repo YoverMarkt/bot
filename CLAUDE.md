@@ -152,6 +152,7 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 | Tocar auth, secretos, encriptación, webhooks, endpoints públicos, datos sensibles | **seguridad-saas** |
 | Crear/modificar migraciones, tablas, índices, columnas o políticas RLS | **base-de-datos** |
 | Antes de commit o de abrir un PR: revisar el diff completo | **revisor-pr** |
+| Versionar: ramas, commits, push, PRs, merges (el "cómo" de Git/GitHub) | **git-github** |
 | Hay un error, bug o comportamiento inesperado | **debugging** |
 | Crear feature/endpoint/etiqueta nueva o cambiar comportamiento que otros consumen | **documentacion** |
 | Crear o editar el system prompt de un bot de cliente (perfumería, barbería, clínica…) | **prompts-de-bots** |
