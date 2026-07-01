@@ -47,14 +47,16 @@ bot/
 │   ├── index.js               # Servidor, rutas API, webhooks, auth middlewares
 │   ├── bot.js                 # Núcleo del bot: callAI, visión, audio, RAG, processMessage, etiquetas
 │   ├── db.js                  # TODO el acceso a Supabase (única capa de datos)
+│   ├── reports.js             # 7 reportes de ventas para el dueño (intención + validación owner_phone)
 │   ├── settings.js            # Config de keys de IA (tabla server_settings; panel > .env)
 │   ├── telegram.js            # Integración Telegram (telegraf)
 │   ├── ycloud.js              # Envío WhatsApp + typing indicator (YCloud)
 │   ├── retell.js              # Voz telefónica (Retell) — opcional
 │   ├── tunnel.js              # Túnel público (solo local)
 │   ├── calendar.js            # Helper de tipos de negocio con calendario
-│   ├── schema.sql             # Esquema inicial (DESACTUALIZADO — ver sección 4)
-│   ├── migration-integraciones.sql  # Migración inicial (DESACTUALIZADA)
+│   ├── schema.sql             # Esquema consolidado y ACTUALIZADO (referencia única — ver sección 4)
+│   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
+│   ├── migration-integraciones.sql    # Migración inicial (OBSOLETA — solo historial, no ejecutar)
 │   └── .env                   # Credenciales (NUNCA a git)
 ├── admin/index.html           # Panel del superadmin (dueño del SaaS)
 ├── client/index.html          # Panel del cliente (dueño de cada negocio)
