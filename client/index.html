@@ -470,8 +470,8 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <div class="mbody">
       <input type="hidden" id="edit-id">
       <div class="g2" style="margin-bottom:12px">
-        <div class="fg"><label class="lbl" id="lbl-name">Nombre *</label><input type="text" id="p-name" placeholder="Dior Sauvage EDT 100ml"></div>
-        <div class="fg" id="fg-brand"><label class="lbl">Marca</label><input type="text" id="p-brand" placeholder="Dior"></div>
+        <div class="fg"><label class="lbl" id="lbl-name">Nombre *</label><input type="text" id="p-name" placeholder="Ej: Corte de cabello, Camiseta talla M, Perfume 100ml"></div>
+        <div class="fg" id="fg-brand"><label class="lbl">Marca</label><input type="text" id="p-brand" placeholder="Marca (si aplica)"></div>
       </div>
       <div class="g3" style="margin-bottom:12px">
         <div class="fg"><label class="lbl">Precio ($) *</label><input type="number" id="p-price" step="0.01" placeholder="89.99"></div>
@@ -479,10 +479,10 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
         <div class="fg" id="fg-stock"><label class="lbl">Stock</label><select id="p-stock"><option value="disponible">Disponible</option><option value="últimas unidades">Últimas unidades</option><option value="agotado">Agotado</option></select></div>
         <div class="fg" id="fg-duration" style="display:none"><label class="lbl">Duración (min)</label><select id="p-duration"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">1 hora</option><option value="90">1h 30min</option><option value="120">2 horas</option></select></div>
       </div>
-      <div class="fg" style="margin-bottom:12px"><label class="lbl" id="lbl-desc">Descripción</label><textarea id="p-desc" rows="3"></textarea></div>
+      <div class="fg" style="margin-bottom:12px"><label class="lbl" id="lbl-desc">Descripción</label><textarea id="p-desc" rows="3" placeholder="Detalles del producto o servicio: características, qué incluye, presentación..."></textarea></div>
       <div class="g2" style="margin-bottom:12px">
-        <div class="fg" id="fg-tags"><label class="lbl">Etiquetas</label><input type="text" id="p-tags" placeholder="hombre, fresco, regalo"></div>
-        <div class="fg" id="fg-sku"><label class="lbl">SKU</label><input type="text" id="p-sku" placeholder="DIOR-SAU-100"></div>
+        <div class="fg" id="fg-tags"><label class="lbl">Etiquetas</label><input type="text" id="p-tags" placeholder="Ej: nuevo, oferta, popular"></div>
+        <div class="fg" id="fg-sku"><label class="lbl">SKU</label><input type="text" id="p-sku" placeholder="Código interno (opcional)"></div>
       </div>
       <div class="fg" style="margin-bottom:10px">
         <label class="lbl">Imagen</label>
@@ -833,8 +833,8 @@ function openModal(id=null) {
   document.getElementById('fg-sku').style.display   = svc ? 'none' : ''
   document.getElementById('fg-duration').style.display = svc ? '' : 'none'
   document.getElementById('lbl-name').textContent = svc ? 'Nombre del servicio *' : 'Nombre *'
-  document.getElementById('p-name').placeholder = svc ? 'Corte de cabello' : 'Dior Sauvage EDT 100ml'
-  document.getElementById('p-desc').placeholder = svc ? 'Incluye lavado y peinado. Duración ~45 min.' : ''
+  document.getElementById('p-name').placeholder = svc ? 'Ej: Corte de cabello, Manicure, Consulta' : 'Ej: Camiseta talla M, Perfume 100ml, Producto'
+  document.getElementById('p-desc').placeholder = svc ? 'Detalles del servicio: qué incluye, duración...' : 'Detalles del producto: características, presentación...'
 
   document.getElementById('edit-id').value=id||''
   clearFile()
