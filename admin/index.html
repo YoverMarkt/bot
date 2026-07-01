@@ -193,6 +193,8 @@ tr:hover td{background:var(--paper)}
       <div class="ns">Herramientas</div>
       <div class="ni" onclick="goPage('sim',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Simulador</div>
       <div class="ni" onclick="goPage('webhooks',this);loadTunnelStatus()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>Conexiones</div>
+      <div class="ni" onclick="goPage('srvconfig',this);loadSrvSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93a10 10 0 0 0 14.14 14.14"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>Configuración</div>
+      <div class="ni" onclick="goPage('calc',this);calcUpdate()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10"/><line x1="12" y1="10" x2="12" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/></svg>Calculadora</div>
     </nav>
     <div class="sb-ft"><div class="sb-ft-l"><div class="pulse"></div><div class="sb-ft-t"><strong>Admin</strong></div></div><button class="out-btn" onclick="doLogout()">Salir</button></div>
   </aside>
@@ -361,6 +363,154 @@ tr:hover td{background:var(--paper)}
       </div>
     </div>
 
+    <!-- CONFIGURACIÓN DEL SERVIDOR -->
+    <div class="pg" id="pg-srvconfig">
+      <div class="ph"><div><h1>Configuración del servidor</h1><p>Claves globales de IA y servicios — se guardan en la base de datos</p></div></div>
+
+      <!-- IA -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-t">Inteligencia Artificial</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Elige qué IA usa el bot para responder. Puedes cambiarla en cualquier momento sin reiniciar el servidor.</p>
+
+        <div class="fg" style="margin-bottom:14px">
+          <label class="lbl">Proveedor de IA activo</label>
+          <select id="srv-ai-provider" onchange="toggleAiFields()">
+            <option value="groq">Groq (Llama) — GRATIS, funciona en todo país ⭐</option>
+            <option value="gemini">Google Gemini — GRATIS (puede requerir facturación)</option>
+            <option value="openai">ChatGPT (OpenAI)</option>
+            <option value="claude">Claude (Anthropic)</option>
+          </select>
+        </div>
+
+        <div id="srv-groq-fields" style="display:none">
+          <div class="fg"><label class="lbl">Groq API Key <span style="color:var(--muted);font-weight:400">— gratis en console.groq.com/keys</span></label>
+            <input type="password" id="srv-groq-key" placeholder="gsk_...">
+          </div>
+        </div>
+
+        <div id="srv-gemini-fields" style="display:none">
+          <div class="fg"><label class="lbl">Gemini API Key <span style="color:var(--muted);font-weight:400">— gratis en aistudio.google.com</span></label>
+            <input type="password" id="srv-gemini-key" placeholder="AIzaSy...">
+          </div>
+        </div>
+
+        <div id="srv-claude-fields">
+          <div class="fg"><label class="lbl">Anthropic API Key</label>
+            <input type="password" id="srv-anthropic-key" placeholder="sk-ant-api03-xxxxxxxx">
+          </div>
+        </div>
+
+        <div id="srv-openai-fields" style="display:none">
+          <div class="fg"><label class="lbl">OpenAI API Key</label>
+            <input type="password" id="srv-openai-key" placeholder="sk-proj-xxxxxxxx">
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+          <button class="btn btn-sm" onclick="verifySrvAI()" id="srv-ai-vfy-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Verificar conexión IA
+          </button>
+          <span id="srv-ai-vfy-result" style="font-size:12px;color:var(--muted)">Ingresa la key y verifica</span>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-t">Telegram (bot compartido de pruebas)</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Un solo bot para probar cualquier negocio sin WhatsApp real. Consíguelo en @BotFather.</p>
+        <div class="fg">
+          <label class="lbl">Telegram Bot Token</label>
+          <input type="password" id="srv-telegram-token" placeholder="1234567890:ABCxxxxxxxxxxxxxxxxxx">
+        </div>
+      </div>
+
+      <!-- Retell -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-t">Retell AI — Voz (opcional)</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Solo si ofreces llamadas de voz como servicio desde tu cuenta de Retell.</p>
+        <div class="fg">
+          <label class="lbl">Retell API Key</label>
+          <input type="password" id="srv-retell-key" placeholder="key_xxxxxxxxxx">
+        </div>
+      </div>
+
+      <!-- Botón guardar -->
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn btn-dark" onclick="saveSrvSettings()" id="srv-save-btn">Guardar configuración</button>
+        <span id="srv-save-result" style="font-size:13px;color:var(--muted)"></span>
+      </div>
+
+      <p style="font-size:11px;color:var(--faint);margin-top:16px">
+        Las claves se guardan encriptadas en la base de datos y tienen prioridad sobre el archivo .env.
+        El bot usa la nueva IA inmediatamente, sin reiniciar el servidor.
+      </p>
+    </div>
+
+    <!-- CALCULADORA DE PRECIOS -->
+    <div class="pg" id="pg-calc">
+      <div class="ph"><div><h1>Calculadora de precios</h1><p>Estima costos y cuánto cobrar a cada empresa</p></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start">
+
+        <!-- Entradas -->
+        <div class="card">
+          <div class="card-t">Datos del cliente</div>
+          <div class="fg"><label class="lbl">Clientes que escriben al mes</label><input type="number" id="cc-clients" value="1000" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">Mensajes promedio por conversación</label><input type="number" id="cc-msgs" value="8" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">% que envía FOTOS</label><input type="number" id="cc-photo" value="20" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">% que envía AUDIOS</label><input type="number" id="cc-audio" value="15" oninput="calcUpdate()"></div>
+          <hr style="border:none;border-top:1px solid var(--bd);margin:14px 0">
+          <div class="card-t" style="font-size:12px">Costos fijos y tarifas</div>
+          <div class="fg"><label class="lbl">Costo WhatsApp por mensaje ($)<span style="color:var(--faint)"> — servicio suele ser $0</span></label><input type="number" step="0.001" id="cc-wa" value="0" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">Costos fijos mensuales ($) — hosting, dominio</label><input type="number" step="1" id="cc-fixed" value="11" oninput="calcUpdate()"></div>
+          <div class="fg">
+            <label class="lbl">Multiplicador de precio (margen)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn" onclick="calcStep(-1)" style="padding:6px 12px;font-size:16px;font-weight:700">−</button>
+              <input type="number" step="0.5" id="cc-mult" value="3" oninput="calcUpdate()" style="text-align:center;font-weight:700;max-width:80px">
+              <button class="btn" onclick="calcStep(1)" style="padding:6px 12px;font-size:16px;font-weight:700">+</button>
+              <span style="font-size:12px;color:var(--faint)">×</span>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn" onclick="calcSetMult(3)" style="font-size:12px;padding:5px 10px">3x</button>
+              <button class="btn" onclick="calcSetMult(5)" style="font-size:12px;padding:5px 10px">5x</button>
+              <button class="btn" onclick="calcSetMult(8)" style="font-size:12px;padding:5px 10px">8x</button>
+              <button class="btn" onclick="calcSetMult(10)" style="font-size:12px;padding:5px 10px">10x</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resultados -->
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card" style="background:linear-gradient(135deg,#0c0c0c,#1a1a1a);color:#fff;border:none">
+            <div class="card-t" style="color:#fff">Desglose de costos</div>
+            <div id="calc-rows" style="font-size:13px;line-height:1.9"></div>
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,.15);margin:12px 0">
+            <div style="display:flex;justify-content:space-between;font-size:14px"><span style="opacity:.8">Costo total/mes</span><strong id="calc-cost">$0</strong></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.7;margin-top:4px"><span>Costo por cliente</span><span id="calc-percli">$0</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(199,242,107,.15);padding:12px 14px;border-radius:10px;margin-top:12px">
+              <div><div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Precio sugerido</div><div style="font-size:26px;font-weight:800;font-family:'Syne',sans-serif" id="calc-price">$0</div></div>
+              <div style="text-align:right"><div style="font-size:11px;opacity:.8">Ganancia/mes</div><div style="font-size:18px;font-weight:700;color:#c7f26b" id="calc-profit">$0</div></div>
+            </div>
+          </div>
+
+          <!-- Precio manual -->
+          <div class="card">
+            <div class="card-t">Compara tu precio</div>
+            <div class="fg"><label class="lbl">¿Cuánto piensas cobrar? ($/mes)</label><input type="number" step="1" id="cc-price" placeholder="Ej: 99" oninput="calcUpdate()"></div>
+            <div id="calc-manual" style="font-size:13px;line-height:2"></div>
+          </div>
+
+          <!-- Proyección anual -->
+          <div class="card">
+            <div class="card-t">Proyección anual</div>
+            <div id="calc-annual" style="font-size:13px;line-height:2"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -372,7 +522,7 @@ tr:hover td{background:var(--paper)}
       <input type="hidden" id="cm-id">
       <div class="section-divider">Datos del negocio</div>
       <div class="g2">
-        <div class="fg"><label class="lbl">Nombre del negocio *</label><input type="text" id="cm-name" placeholder="Perfumería Bella"></div>
+        <div class="fg"><label class="lbl">Nombre del negocio *</label><input type="text" id="cm-name" placeholder="Ej: Barbería Central, Tienda Bella, Clínica Sur"></div>
         <div class="fg"><label class="lbl">Tipo</label><select id="cm-type" onchange="toggleCalendarHint()">
           <option value="perfumería">Perfumería</option>
           <option value="barbería">Barbería</option>
@@ -405,6 +555,9 @@ tr:hover td{background:var(--paper)}
         </div>
       </div>
       <div class="fg"><label class="lbl">Notas internas</label><textarea id="cm-notes" rows="2" placeholder="Ej: Cliente referido por Juan, paga por transferencia..."></textarea></div>
+      <div class="fg"><label class="lbl">WhatsApp del dueño (para reportes)</label><input type="text" id="cm-owner-phone" placeholder="+593991234567">
+        <p style="font-size:11px;color:var(--muted);margin-top:4px">Solo este número podrá pedir reportes de ventas por WhatsApp al bot. Déjalo vacío si el dueño no usará reportes.</p>
+      </div>
 
       <div class="section-divider">WhatsApp / Canal</div>
       <div class="g2">
@@ -431,11 +584,8 @@ tr:hover td{background:var(--paper)}
 
       <!-- YCloud -->
       <div id="ycloud-fields">
-        <div class="g2">
-          <div class="fg"><label class="lbl">YCloud API Key</label><input type="text" id="cm-ycloud-key" placeholder="yc_live_xxxxxxxxx" onblur="scheduleVerify()"></div>
-          <div class="fg"><label class="lbl">YCloud Phone Number</label><input type="text" id="cm-ycloud-number" placeholder="+593991234567" onblur="scheduleVerify()"></div>
-        </div>
-        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">Webhook URL para YCloud: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/webhook/ycloud</code></p>
+        <div class="fg"><label class="lbl">YCloud API Key</label><input type="text" id="cm-ycloud-key" placeholder="yc_live_xxxxxxxxx" onblur="scheduleVerify()"></div>
+        <p style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px">El número de WhatsApp se toma del campo superior. Webhook: <code style="background:var(--paper2);padding:2px 5px;border-radius:4px">/webhook/ycloud</code></p>
       </div>
 
       <!-- Meta directo -->
@@ -467,6 +617,17 @@ tr:hover td{background:var(--paper)}
 
       <div class="section-divider">Integraciones opcionales</div>
 
+      <!-- IA por cliente -->
+      <div class="fg" style="margin-bottom:14px">
+        <label class="lbl">Inteligencia Artificial <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(sobrescribe la configuración global)</span></label>
+        <select id="cm-ai-provider">
+          <option value="">Usar configuración global del servidor</option>
+          <option value="claude">Claude (Anthropic)</option>
+          <option value="openai">ChatGPT (OpenAI)</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Si no eliges, el bot usa la IA activa en Configuración del servidor.</div>
+      </div>
+
       <!-- Cal.com -->
       <div id="calcom-section">
         <div class="fg"><label class="lbl">Cal.com — Enlace de reservas <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(solo negocios con citas)</span></label>
@@ -484,11 +645,50 @@ tr:hover td{background:var(--paper)}
       <div class="section-divider">Acceso al panel del cliente</div>
       <div class="g2">
         <div class="fg"><label class="lbl">Email del cliente</label><input type="email" id="cm-email" placeholder="dueno@negocio.com"></div>
-        <div class="fg"><label class="lbl">Contraseña inicial</label><input type="password" id="cm-password" placeholder="mínimo 6 caracteres"></div>
+        <div class="fg"><label class="lbl">Contraseña inicial</label>
+          <div style="position:relative">
+            <input type="password" id="cm-password" placeholder="mínimo 6 caracteres" style="padding-right:38px">
+            <button type="button" onclick="togglePassword('cm-password',this)" title="Mostrar/ocultar contraseña" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;color:var(--muted);display:flex;align-items:center">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
       <p style="font-size:11px;color:var(--muted)">El cliente usará este email y contraseña para entrar a su panel. No verá las credenciales de WhatsApp.</p>
     </div>
     <div class="mft"><button class="btn" onclick="closeClientModal()">Cancelar</button><button class="btn btn-dark" id="cm-save-btn" onclick="saveClient()">Guardar cliente</button></div>
+  </div>
+</div>
+
+<!-- MODAL PROMPT DEL BOT -->
+<div class="mbd" id="bot-prompt-modal">
+  <div class="modal" style="width:680px">
+    <div class="mhd">
+      <div>
+        <h2 id="bpm-title">Prompt del Bot</h2>
+        <div id="bpm-subtitle" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button class="mx" onclick="closeBotPromptModal()">×</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="bpm-id">
+      <div style="background:linear-gradient(135deg,#f0f9e8,#e8f5d4);border:1px solid #c8e6a0;border-radius:var(--rs);padding:12px 14px;margin-bottom:14px;font-size:12px;color:#3a6600;line-height:1.7">
+        💡 Define la <strong>personalidad del bot</strong> para este negocio: nombre del asistente, tono, saludo, despedida e instrucciones específicas.
+      </div>
+      <div class="fg">
+        <label class="lbl">Personalidad y saludo del asistente</label>
+        <textarea id="bpm-prompt" rows="10" placeholder="Eres Sofía, la asistente virtual de [Negocio].&#10;Tu tono es elegante y amigable.&#10;&#10;Saluda siempre con: &quot;¡Hola! Bienvenido/a a [Negocio], ¿en qué te puedo ayudar hoy?&quot;&#10;&#10;Cuando el cliente se despide responde: &quot;¡Fue un placer! Que tengas un excelente día 😊&quot;&#10;&#10;Siempre destaca la calidad y exclusividad de los productos.&#10;Nunca menciones a la competencia."></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:-4px">
+        <button class="btn" style="font-size:11px;padding:5px 10px" onclick="bpmTemplate('formal')">📋 Formal</button>
+        <button class="btn" style="font-size:11px;padding:5px 10px" onclick="bpmTemplate('casual')">😊 Casual</button>
+        <button class="btn" style="font-size:11px;padding:5px 10px" onclick="bpmTemplate('luxury')">✨ Lujo</button>
+      </div>
+    </div>
+    <div class="mft">
+      <button class="btn" onclick="closeBotPromptModal()">Cancelar</button>
+      <button class="btn btn-dark" onclick="saveBotPromptAdmin()">Guardar prompt</button>
+    </div>
   </div>
 </div>
 
@@ -703,6 +903,7 @@ function renderClients() {
           </button>
           <button class="btn btn-sm" onclick="viewClient('${c.id}')">Ver</button>
           <button class="btn btn-sm" onclick="editClient('${c.id}')">Editar</button>
+          <button class="btn btn-sm" onclick="openBotPrompt('${c.id}','${c.name.replace(/'/g,"\\'")}')">🤖 Bot</button>
           ${c.suspended
             ? `<button class="btn btn-sm btn-green" onclick="reactivate('${c.id}')">Reactivar</button>`
             : `<button class="btn btn-sm btn-red" onclick="suspend('${c.id}')">Suspender</button>`
@@ -846,6 +1047,76 @@ function populateBillingSelect() {
 // NAVEGACIÓN
 function goPage(name,el){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'));document.getElementById('pg-'+name).classList.add('on');el.classList.add('on')}
 
+// ── CALCULADORA DE PRECIOS ──
+// Costos unitarios (USD), basados en GPT-4o-mini
+const CALC = {
+  chatPerMsg:  0.0006,   // respuesta de chat (input+output con RAG)
+  visionPerImg:0.004,    // análisis de 1 foto
+  audioPerMin: 0.006,    // Whisper; ~0.5 min por nota = 0.003
+  audioAvgMin: 0.5
+}
+function calcSetMult(v){ document.getElementById('cc-mult').value=v; calcUpdate() }
+function calcStep(d){ const el=document.getElementById('cc-mult'); el.value=Math.max(1,(+el.value||3)+d*0.5); calcUpdate() }
+
+function calcUpdate(){
+  const n  = +(document.getElementById('cc-clients').value)||0
+  const m  = +(document.getElementById('cc-msgs').value)||0
+  const ph = (+(document.getElementById('cc-photo').value)||0)/100
+  const au = (+(document.getElementById('cc-audio').value)||0)/100
+  const wa = +(document.getElementById('cc-wa').value)||0
+  const fixed = +(document.getElementById('cc-fixed').value)||0
+  const mult = +(document.getElementById('cc-mult').value)||3
+
+  const totalMsgs = n * m
+  const cChat   = totalMsgs * CALC.chatPerMsg
+  const cVision = n * ph * CALC.visionPerImg
+  const cAudio  = n * au * CALC.audioAvgMin * CALC.audioPerMin
+  const cWa     = totalMsgs * wa
+  const cTotal  = cChat + cVision + cAudio + cWa + fixed
+
+  const price  = cTotal * mult
+  const profit = price - cTotal
+
+  const f = v => '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})
+  const f0 = v => '$'+v.toLocaleString('en-US',{maximumFractionDigits:0})
+  document.getElementById('calc-rows').innerHTML = `
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🤖 Chat IA (${totalMsgs.toLocaleString()} msgs)</span><span>${f(cChat)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">📸 Visión (${Math.round(n*ph)} fotos)</span><span>${f(cVision)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🎙️ Audio (${Math.round(n*au)} notas)</span><span>${f(cAudio)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">💬 WhatsApp</span><span>${f(cWa)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🖥️ Fijos (hosting, dominio)</span><span>${f(fixed)}</span></div>`
+  document.getElementById('calc-cost').textContent   = f(cTotal)
+  document.getElementById('calc-percli').textContent = n ? f(cTotal/n) : '$0'
+  document.getElementById('calc-price').textContent  = f(price)
+  document.getElementById('calc-profit').textContent = f(profit)
+
+  // Precio manual vs costo
+  const myPrice = +(document.getElementById('cc-price').value)||0
+  const mEl = document.getElementById('calc-manual')
+  if (myPrice > 0) {
+    const margin = myPrice - cTotal
+    const marginPct = cTotal>0 ? (margin/cTotal*100) : 0
+    const realMult = cTotal>0 ? (myPrice/cTotal) : 0
+    const ok = margin > 0
+    mEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Tu precio</span><strong>${f(myPrice)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Costo</span><span>${f(cTotal)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Ganancia</span><strong style="color:${ok?'#2e9e44':'#d63b2f'}">${f(margin)}</strong></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Margen</span><span style="color:${ok?'#2e9e44':'#d63b2f'}">${marginPct.toFixed(0)}% (${realMult.toFixed(1)}x)</span></div>
+      <div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:${ok?'rgba(46,158,68,.1)':'rgba(214,59,47,.1)'};font-size:12px;color:${ok?'#2e9e44':'#d63b2f'}">${ok? (marginPct>=200?'✅ Excelente margen':'✅ Rentable, pero podrías cobrar más') : '⚠️ Estás cobrando por debajo del costo'}</div>`
+  } else {
+    mEl.innerHTML = '<span style="color:var(--faint);font-size:12px">Escribe tu precio para ver el margen exacto.</span>'
+  }
+
+  // Proyección anual (con el precio sugerido)
+  document.getElementById('calc-annual').innerHTML = `
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Costo anual</span><span>${f0(cTotal*12)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Ingreso anual (precio sugerido)</span><span>${f0(price*12)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Ganancia anual</span><strong style="color:#2e9e44">${f0(profit*12)}</strong></div>
+    <hr style="border:none;border-top:1px solid var(--bd);margin:8px 0">
+    <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.8"><span>Si tuvieras 10 empresas así</span><strong>${f0(profit*12*10)}/año</strong></div>`
+}
+
 // MODAL CLIENTE
 function toggleProviderFields(){
   const p=document.getElementById('cm-provider').value
@@ -866,8 +1137,12 @@ function toggleCalendarHint(){
 function openClientModal(id=null) {
   document.getElementById('cm-id').value=id||''
   document.getElementById('cm-title').textContent=id?'Editar cliente':'Nuevo cliente'
+  // Limpiar SIEMPRE correo y contraseña para no arrastrar datos de otro negocio
+  document.getElementById('cm-email').value=''
+  document.getElementById('cm-password').value=''
   if (!id){
-    ;['cm-name','cm-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-ycloud-number','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-calcom','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
+    ;['cm-name','cm-phone','cm-owner-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-calcom','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
+  document.getElementById('cm-ai-provider').value=''
     document.getElementById('cm-plan').value='basic'
     document.getElementById('cm-provider').value='ycloud'
     toggleProviderFields()
@@ -893,8 +1168,14 @@ function onRateInput() {
   }
 }
 
-function editClient(id) {
-  const c=clients.find(x=>x.id===id); if(!c) return
+async function editClient(id) {
+  // Pedir el cliente COMPLETO (la lista no trae credenciales por seguridad)
+  let c
+  try {
+    const r = await fetch(`${API}/api/admin/clients/${id}`, { headers: H() })
+    c = r.ok ? await r.json() : clients.find(x=>x.id===id)
+  } catch { c = clients.find(x=>x.id===id) }
+  if(!c) return
   openClientModal(id)
   document.getElementById('cm-name').value=c.name||''
   document.getElementById('cm-type').value=c.type||'negocio'
@@ -905,20 +1186,35 @@ function editClient(id) {
   document.getElementById('cm-kapso-num').value=c.kapso_number_id||''
   document.getElementById('cm-kapso-verify').value=c.kapso_verify_token||''
   document.getElementById('cm-ycloud-key').value=c.ycloud_api_key||''
-  document.getElementById('cm-ycloud-number').value=c.ycloud_number||''
   document.getElementById('cm-meta-token').value=c.meta_token||''
   document.getElementById('cm-meta-phone').value=c.meta_phone_id||''
   document.getElementById('cm-meta-verify').value=c.meta_verify_token||''
   document.getElementById('cm-telegram-token').value=c.telegram_bot_token||''
+  document.getElementById('cm-ai-provider').value=c.ai_provider||''
   document.getElementById('cm-calcom').value=c.calcom_link||''
   document.getElementById('cm-retell').value=c.retell_agent_id||''
   document.getElementById('cm-notes').value=c.notes||''
+  document.getElementById('cm-owner-phone').value=c.owner_phone||''
   document.getElementById('cm-rate').value=c.monthly_rate||''
+  // Correo real de ESTE negocio (lo devuelve el GET); contraseña vacía = no se cambia
+  document.getElementById('cm-email').value=c.client_email||''
+  document.getElementById('cm-password').value=''
+  document.getElementById('cm-password').placeholder='Déjalo vacío para no cambiarla'
   document.getElementById('cm-rate-hint').style.display='none'
   if (c.plan_expires_at) document.getElementById('cm-expires').value=c.plan_expires_at.split('T')[0]
   toggleProviderFields()
   toggleCalendarHint()
   resetVfyStatus()
+}
+
+function togglePassword(inputId, btn){
+  const inp=document.getElementById(inputId)
+  const show = inp.type==='password'
+  inp.type = show ? 'text' : 'password'
+  // ojo abierto ↔ ojo tachado
+  btn.innerHTML = show
+    ? '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
 }
 
 function closeClientModal(){document.getElementById('client-modal').classList.remove('on')}
@@ -938,19 +1234,22 @@ async function saveClient() {
     kapso_number_id:document.getElementById('cm-kapso-num').value||null,
     kapso_verify_token:document.getElementById('cm-kapso-verify').value||null,
     ycloud_api_key:document.getElementById('cm-ycloud-key').value||null,
-    ycloud_number:document.getElementById('cm-ycloud-number').value||null,
+    ycloud_number:document.getElementById('cm-phone').value||null,
     meta_token:document.getElementById('cm-meta-token').value||null,
     meta_phone_id:document.getElementById('cm-meta-phone').value||null,
     meta_verify_token:document.getElementById('cm-meta-verify').value||null,
     telegram_bot_token:document.getElementById('cm-telegram-token').value||null,
+    ai_provider:document.getElementById('cm-ai-provider').value||null,
     calcom_link:document.getElementById('cm-calcom').value||null,
     retell_agent_id:document.getElementById('cm-retell').value||null,
     notes:document.getElementById('cm-notes').value||null,
+    owner_phone:document.getElementById('cm-owner-phone').value.trim()||null,
     monthly_rate:parseFloat(document.getElementById('cm-rate').value)||null
   }
   const expires=document.getElementById('cm-expires').value; if(expires) payload.plan_expires_at=expires
   const email=document.getElementById('cm-email').value.trim(), password=document.getElementById('cm-password').value
-  if (!id) { payload.client_email=email; payload.client_password=password }
+  if (email) payload.client_email = email
+  if (password) payload.client_password = password
   try {
     // Verificar credenciales antes de guardar
     const provider = document.getElementById('cm-provider').value
@@ -960,7 +1259,7 @@ async function saveClient() {
         method:'POST', headers:H(), body:JSON.stringify({
           provider,
           ycloud_api_key: document.getElementById('cm-ycloud-key').value,
-          ycloud_number:  document.getElementById('cm-ycloud-number').value,
+          ycloud_number:  document.getElementById('cm-phone').value,
           meta_token:     document.getElementById('cm-meta-token').value,
           meta_phone_id:  document.getElementById('cm-meta-phone').value,
           kapso_api_key:   document.getElementById('cm-kapso-key').value,
@@ -976,10 +1275,15 @@ async function saveClient() {
       }
     }
 
-    let r
-    if (id) r=await fetch(`${API}/api/admin/clients/${id}`,{method:'PUT',headers:H(),body:JSON.stringify(payload)})
-    else r=await fetch(`${API}/api/admin/clients`,{method:'POST',headers:H(),body:JSON.stringify(payload)})
-    if (!r.ok) throw new Error((await r.json()).error)
+    let r, rData
+    if (id) {
+      r = await fetch(`${API}/api/admin/clients/${id}`, { method:'PUT', headers:H(), body:JSON.stringify(payload) })
+      rData = await r.json()
+    } else {
+      r = await fetch(`${API}/api/admin/clients`, { method:'POST', headers:H(), body:JSON.stringify(payload) })
+      rData = await r.json()
+    }
+    if (!r.ok) throw new Error(rData.error)
     await Promise.all([loadClients(), loadBilling()])
     closeClientModal()
     toast(id?'✓ Cliente actualizado':'✓ Cliente creado — 12 meses generados en Facturación')
@@ -1064,6 +1368,39 @@ async function viewClient(id) {
 }
 function closeViewModal(){document.getElementById('view-modal').classList.remove('on')}
 
+// BOT PROMPT
+const BPM_TEMPLATES = {
+  formal: `Eres [Nombre], el asistente virtual oficial de [Negocio].\nTu tono es profesional y cortés. Siempre trata al cliente de "usted".\n\nSaludo: "Bienvenido/a a [Negocio], ¿en qué puedo asistirle hoy?"\nDespedida: "Ha sido un placer atenderle. Que tenga un excelente día."`,
+  casual: `Eres [Nombre], el asistente de [Negocio] 😊\nTu tono es cercano y entusiasta. Usa emojis con moderación.\n\nSaludo: "¡Hola! 👋 Bienvenido/a a [Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! Escríbenos cuando quieras 🙌"`,
+  luxury: `Eres [Nombre], asesor/a de lujo de [Negocio].\nTu tono es elegante y sofisticado. Cuida cada palabra.\n\nSaludo: "Bienvenido/a. En [Negocio] nos complace asesorarle personalmente."\nDespedida: "Ha sido un honor. Quedamos a su disposición."\n\nDestaca la exclusividad de cada producto. Nunca menciones precios sin antes presentar el valor.`
+}
+function bpmTemplate(t) { document.getElementById('bpm-prompt').value = BPM_TEMPLATES[t] || '' }
+
+async function openBotPrompt(id, name) {
+  document.getElementById('bpm-id').value = id
+  document.getElementById('bpm-title').textContent = 'Prompt del Bot'
+  document.getElementById('bpm-subtitle').textContent = name
+  document.getElementById('bpm-prompt').value = ''
+  document.getElementById('bot-prompt-modal').classList.add('on')
+  try {
+    const d = await fetch(`${API}/api/admin/clients/${id}/policies`, { headers: H() }).then(r => r.json())
+    document.getElementById('bpm-prompt').value = d.bot_prompt || ''
+  } catch {}
+}
+function closeBotPromptModal() { document.getElementById('bot-prompt-modal').classList.remove('on') }
+async function saveBotPromptAdmin() {
+  const id = document.getElementById('bpm-id').value
+  const prompt = document.getElementById('bpm-prompt').value
+  try {
+    const r = await fetch(`${API}/api/admin/clients/${id}/policies`, {
+      method: 'PUT', headers: H(), body: JSON.stringify({ bot_prompt: prompt })
+    })
+    if (!r.ok) throw new Error()
+    closeBotPromptModal()
+    toast('✓ Prompt guardado')
+  } catch { toast('Error al guardar', true) }
+}
+
 // BILLING
 function openBillingModal(){document.getElementById('billing-modal').classList.add('on')}
 function closeBillingModal(){document.getElementById('billing-modal').classList.remove('on')}
@@ -1113,7 +1450,7 @@ async function verifyProvider() {
   const payload = {
     provider,
     ycloud_api_key:     document.getElementById('cm-ycloud-key')?.value || '',
-    ycloud_number:      document.getElementById('cm-ycloud-number')?.value || '',
+    ycloud_number:      document.getElementById('cm-phone')?.value || '',
     meta_token:         document.getElementById('cm-meta-token')?.value || '',
     meta_phone_id:      document.getElementById('cm-meta-phone')?.value || '',
     kapso_number_id:    document.getElementById('cm-kapso-num')?.value || '',
@@ -1162,6 +1499,114 @@ async function quickVerify(id) {
 // Limpiar estado de verificación al abrir modal
 function resetVfyStatus() {
   setVfyStatus('idle', 'Ingresa las credenciales y verifica antes de guardar')
+}
+
+// ══════════════════════════════════════════════════════════
+// CONFIGURACIÓN DEL SERVIDOR
+// ══════════════════════════════════════════════════════════
+
+function toggleAiFields() {
+  const p = document.getElementById('srv-ai-provider').value
+  document.getElementById('srv-groq-fields').style.display   = p === 'groq'   ? 'block' : 'none'
+  document.getElementById('srv-gemini-fields').style.display = p === 'gemini' ? 'block' : 'none'
+  document.getElementById('srv-claude-fields').style.display = p === 'claude'  ? 'block' : 'none'
+  document.getElementById('srv-openai-fields').style.display = p === 'openai' ? 'block' : 'none'
+}
+
+async function loadSrvSettings() {
+  try {
+    const r = await fetch(`${API}/api/admin/server-settings`, { headers: H() })
+    const d = await r.json()
+    // Mostrar proveedor activo
+    const prov = d.ai_provider || 'claude'
+    document.getElementById('srv-ai-provider').value = prov
+    toggleAiFields()
+    // Mostrar estado (enmascarado) de cada key
+    setSrvKeyHint('srv-groq-key',      d.groq_api_key)
+    setSrvKeyHint('srv-gemini-key',    d.gemini_api_key)
+    setSrvKeyHint('srv-anthropic-key', d.anthropic_api_key)
+    setSrvKeyHint('srv-openai-key',    d.openai_api_key)
+    setSrvKeyHint('srv-telegram-token',d.telegram_bot_token)
+    setSrvKeyHint('srv-retell-key',    d.retell_api_key)
+  } catch(e) {}
+}
+
+function setSrvKeyHint(inputId, maskedVal) {
+  const el = document.getElementById(inputId)
+  if (!el) return
+  el.placeholder = maskedVal || el.placeholder
+}
+
+async function saveSrvSettings() {
+  const btn = document.getElementById('srv-save-btn')
+  const res = document.getElementById('srv-save-result')
+  btn.disabled = true
+  res.textContent = 'Guardando...'
+  res.style.color = 'var(--muted)'
+
+  const payload = {
+    ai_provider:       document.getElementById('srv-ai-provider').value,
+    groq_api_key:      document.getElementById('srv-groq-key').value      || undefined,
+    gemini_api_key:    document.getElementById('srv-gemini-key').value    || undefined,
+    anthropic_api_key: document.getElementById('srv-anthropic-key').value || undefined,
+    openai_api_key:    document.getElementById('srv-openai-key').value    || undefined,
+    telegram_bot_token:document.getElementById('srv-telegram-token').value|| undefined,
+    retell_api_key:    document.getElementById('srv-retell-key').value    || undefined,
+  }
+  // Quitar campos vacíos para no sobreescribir keys existentes con ''
+  Object.keys(payload).forEach(k => { if (!payload[k]) delete payload[k] })
+
+  try {
+    const r = await fetch(`${API}/api/admin/server-settings`, {
+      method: 'POST', headers: H(), body: JSON.stringify(payload)
+    })
+    const d = await r.json()
+    if (d.ok) {
+      res.textContent = '✅ Guardado correctamente'
+      res.style.color = '#2d7a00'
+      // Limpiar campos de password por seguridad
+      ;['srv-groq-key','srv-gemini-key','srv-anthropic-key','srv-openai-key','srv-telegram-token','srv-retell-key'].forEach(id => {
+        const el = document.getElementById(id)
+        if (el && el.value) { el.placeholder = '••••••' + el.value.slice(-4); el.value = '' }
+      })
+    } else {
+      res.textContent = '❌ ' + (d.error || 'Error al guardar')
+      res.style.color = 'var(--red)'
+    }
+  } catch(e) {
+    res.textContent = '❌ ' + e.message
+    res.style.color = 'var(--red)'
+  }
+  btn.disabled = false
+}
+
+async function verifySrvAI() {
+  const btn = document.getElementById('srv-ai-vfy-btn')
+  const res = document.getElementById('srv-ai-vfy-result')
+  const provider = document.getElementById('srv-ai-provider').value
+  btn.disabled = true
+  res.textContent = '⏳ Verificando...'
+  res.style.color = 'var(--muted)'
+
+  try {
+    const r = await fetch(`${API}/api/admin/server-settings/verify-ai`, {
+      method: 'POST', headers: H(),
+      body: JSON.stringify({
+        provider,
+        groq_api_key:      document.getElementById('srv-groq-key').value      || undefined,
+        gemini_api_key:    document.getElementById('srv-gemini-key').value    || undefined,
+        anthropic_api_key: document.getElementById('srv-anthropic-key').value || undefined,
+        openai_api_key:    document.getElementById('srv-openai-key').value    || undefined,
+      })
+    })
+    const d = await r.json()
+    res.textContent = d.ok ? '✅ ' + d.info : '❌ ' + d.info
+    res.style.color = d.ok ? '#2d7a00' : 'var(--red)'
+  } catch(e) {
+    res.textContent = '❌ ' + e.message
+    res.style.color = 'var(--red)'
+  }
+  btn.disabled = false
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1249,23 +1694,28 @@ async function simClear() {
 let tunnelBase = null
 
 const WH_PROVIDERS = [
-  { name:'YCloud',        cls:'p-ok',   path:'/webhook/ycloud',          desc:'YCloud → Webhooks → Add Endpoint' },
-  { name:'Kapso',         cls:'p-warn', path:'/webhook/kapso',           desc:'Kapso → Configuración → Webhook URL' },
+  { name:'YCloud',        cls:'p-ok',   path:'/webhook/ycloud',          desc:'YCloud → Webhooks → Add Endpoint', secret:true },
+  { name:'Kapso',         cls:'p-warn', path:'/webhook/kapso',           desc:'Kapso → Configuración → Webhook URL', secret:true },
   { name:'Meta',          cls:'p-gray', path:'/webhook',                 desc:'Meta → App → WhatsApp → Webhook URL' },
   { name:'Retell LLM',    cls:'p-ok',   path:'/api/retell/llm',          desc:'Retell → Agent → Custom LLM URL' },
   { name:'Retell Events', cls:'p-gray', path:'/api/retell/call-events',  desc:'Retell → Agent → Call Events URL' },
 ]
+let webhookSecret = ''   // lo entrega el backend (solo al superadmin)
 
 function renderWebhookRows(base) {
   const el = document.getElementById('wh-rows')
   if (!base) { el.innerHTML='<p style="color:var(--faint);font-size:13px;padding:8px 0">Inicia el túnel o ingresa una URL para ver las URLs.</p>'; return }
-  el.innerHTML = WH_PROVIDERS.map(p => `
+  el.innerHTML = WH_PROVIDERS.map(p => {
+    // YCloud/Kapso llevan ?secret= si hay un WEBHOOK_SECRET configurado
+    const url = base + p.path + (p.secret && webhookSecret ? `?secret=${webhookSecret}` : '')
+    return `
     <div class="wh-row">
       <span class="pill ${p.cls}" style="min-width:88px;text-align:center">${p.name}</span>
-      <div class="wh-url" title="${base+p.path}">${base+p.path}</div>
-      <button class="btn btn-sm" onclick="copyUrl('${base+p.path}')">Copiar</button>
+      <div class="wh-url" title="${url}">${url}</div>
+      <button class="btn btn-sm" onclick="copyUrl('${url}')">Copiar</button>
       <span style="font-size:11px;color:var(--faint);min-width:190px;flex-shrink:0">${p.desc}</span>
-    </div>`).join('')
+    </div>`
+  }).join('')
 }
 
 function copyUrl(url) {
@@ -1286,6 +1736,7 @@ async function loadTunnelStatus() {
   try {
     const r = await fetch(`${API}/api/admin/tunnel`, { headers: H() })
     const d = await r.json()
+    webhookSecret = d.webhookSecret || ''
     if (d.active && d.url) {
       tunnelBase = d.url
       document.getElementById('tunnel-url-text').textContent = d.url
@@ -1307,6 +1758,7 @@ async function startTunnel() {
     const r = await fetch(`${API}/api/admin/tunnel/start`, { method:'POST', headers:H() })
     const d = await r.json()
     if (!r.ok) throw new Error(d.error)
+    if (d.webhookSecret !== undefined) webhookSecret = d.webhookSecret || ''
     tunnelBase = d.url
     document.getElementById('tunnel-url-text').textContent = d.url
     document.getElementById('tunnel-url-text').className = 'tunnel-url-display'
@@ -1336,6 +1788,15 @@ async function stopTunnel() {
 }
 
 init()
+</script>
+<script>
+// Live-reload en desarrollo
+(function(){
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return
+  const es = new EventSource('/dev-reload')
+  es.onmessage = e => { if (e.data === 'reload') location.reload() }
+  es.onerror   = () => setTimeout(() => location.reload(), 2000)
+})()
 </script>
 </body>
 </html>

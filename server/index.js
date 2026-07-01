@@ -3,19 +3,71 @@ const cors    = require('cors')
 const bcrypt  = require('bcryptjs')
 const jwt     = require('jsonwebtoken')
 const path    = require('path')
+const fs      = require('fs')
+const rateLimit = require('express-rate-limit')
 require('dotenv').config()
 
 const Anthropic = require('@anthropic-ai/sdk')
-const axios   = require('axios')
-const db      = require('./db')
-const bot     = require('./bot')
-const retell  = require('./retell')
-const tunnel  = require('./tunnel')
+const axios     = require('axios')
+const db        = require('./db')
+const bot       = require('./bot')
+const reports   = require('./reports')
+const retell    = require('./retell')
+const tunnel    = require('./tunnel')
+const srvSettings = require('./settings')
 const { setupTelegram } = require('./telegram')
 const app     = express()
 
+// ── RED DE SEGURIDAD: el server NUNCA debe caerse por un error aislado ──
+process.on('uncaughtException', (err) => {
+  console.error('🛑 uncaughtException (server sigue vivo):', err.message)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('🛑 unhandledRejection (server sigue vivo):', reason?.message || reason)
+})
+
+const crypto = require('crypto')
 app.use(cors({ origin: '*' }))
-app.use(express.json({ limit: '10mb' }))
+// Capturar raw body para verificar firmas de webhooks (Meta)
+app.use(express.json({ limit: '10mb', verify: (req, _res, buf) => { req.rawBody = buf } }))
+
+// Verifica la firma HMAC-SHA256 de Meta. Solo se exige si META_APP_SECRET está configurado.
+function verifyMetaSignature(req) {
+  const secret = process.env.META_APP_SECRET
+  if (!secret) return true // no configurado → no se exige (no rompe setups existentes)
+  const sig = req.headers['x-hub-signature-256']
+  if (!sig || !req.rawBody) return false
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex')
+  try { return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) }
+  catch { return false }
+}
+
+// Verifica un secreto en la URL del webhook (?secret=...). Solo se exige si
+// WEBHOOK_SECRET está configurado → opt-in, no rompe los webhooks ya activos.
+// Configura la URL en YCloud/Kapso como: https://tu-dominio/webhook/ycloud?secret=<WEBHOOK_SECRET>
+function verifyWebhookSecret(req) {
+  const secret = process.env.WEBHOOK_SECRET
+  if (!secret) return true // no configurado → no se exige
+  const got = req.query.secret || req.headers['x-webhook-secret']
+  try { return !!got && crypto.timingSafeEqual(Buffer.from(String(got)), Buffer.from(secret)) }
+  catch { return false }
+}
+
+// ── RATE LIMITING ─────────────────────────────────────────
+// Login: máx 20 intentos FALLIDOS por IP cada 15 min (anti fuerza bruta).
+// Los logins exitosos no gastan el cupo, así que usuarios legítimos no se bloquean.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Demasiados intentos fallidos. Espera 15 minutos.' }
+})
+// Webhooks: máx 120 mensajes por IP por minuto (anti abuso de costos)
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 120,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'rate limit' }
+})
 
 // Paneles
 app.use('/admin',  express.static(path.join(__dirname, '../admin')))
@@ -42,10 +94,24 @@ function authClient(req, res, next) {
   catch { res.status(401).json({ error: 'Token inválido' }) }
 }
 
+// El permiso se valida en el SERVIDOR (no basta ocultar el menú). El dueño siempre pasa.
+function requirePermission(section) {
+  return (req, res, next) => {
+    if (req.user?.urole === 'owner') return next()
+    const perms = Array.isArray(req.user?.perms) ? req.user.perms : []
+    if (perms.includes(section)) return next()
+    return res.status(403).json({ error: 'No tienes permiso para esta sección' })
+  }
+}
+function requireOwner(req, res, next) {
+  if (req.user?.urole === 'owner') return next()
+  return res.status(403).json({ error: 'Solo el dueño puede hacer esto' })
+}
+
 // ══════════════════════════════════════════
 // ADMIN — LOGIN
 // ══════════════════════════════════════════
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', loginLimiter, (req, res) => {
   const { email, password } = req.body
   if (email !== process.env.ADMIN_EMAIL || password !== process.env.ADMIN_PASSWORD)
     return res.status(401).json({ error: 'Credenciales incorrectas' })
@@ -66,7 +132,10 @@ app.get('/api/admin/clients', authAdmin, async (req, res) => {
 
 app.get('/api/admin/clients/:id', authAdmin, async (req, res) => {
   const biz = await db.getBusinessById(req.params.id)
-  biz ? res.json(biz) : res.status(404).json({ error: 'No encontrado' })
+  if (!biz) return res.status(404).json({ error: 'No encontrado' })
+  // Adjuntar el correo real del usuario de ESTE negocio (para que el panel lo muestre al editar)
+  const user = await db.getClientUserByBusiness(req.params.id)
+  res.json({ ...biz, client_email: user?.email || '' })
 })
 
 app.post('/api/admin/clients', authAdmin, async (req, res) => {
@@ -75,8 +144,8 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
     kapso_api_key, kapso_number_id, kapso_verify_token,
     ycloud_api_key, ycloud_number,
     meta_token, meta_phone_id, meta_verify_token,
-    telegram_bot_token, calcom_link, retell_agent_id,
-    plan, plan_expires_at, client_email, client_password, notes, monthly_rate
+    telegram_bot_token, calcom_link, retell_agent_id, ai_provider,
+    plan, plan_expires_at, client_email, client_password, notes, monthly_rate, owner_phone
   } = req.body
   if (!name || !whatsapp_number) return res.status(400).json({ error: 'Nombre y número requeridos' })
   try {
@@ -88,6 +157,8 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
       kapso_api_key,     kapso_number_id,   kapso_verify_token,
       ycloud_api_key,    ycloud_number,
       meta_token,        meta_phone_id,   meta_verify_token,
+      ai_provider:       ai_provider || null,
+      owner_phone:       owner_phone || null,
       plan: plan || 'basic',
       plan_expires_at: plan_expires_at || null,
       active: true, bot_active: true, suspended: false, notes
@@ -108,8 +179,43 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
 })
 
 app.put('/api/admin/clients/:id', authAdmin, async (req, res) => {
-  await db.updateBusiness(req.params.id, req.body)
-  res.json({ ok: true })
+  // Solo columnas que existen en la tabla businesses (evita que un campo inválido
+  // como monthly_rate haga fallar TODO el update en silencio)
+  const ALLOWED = ['name','type','description','hours','address','phone','social','payment_methods',
+    'whatsapp_number','whatsapp_provider','plan','plan_expires_at','active','bot_active','suspended',
+    'notes','slogan','monthly_rate','owner_phone','ycloud_api_key','ycloud_number','kapso_api_key','kapso_number_id','kapso_verify_token',
+    'meta_token','meta_phone_id','meta_verify_token','telegram_bot_token','calcom_link','retell_agent_id','ai_provider']
+  const bizData = {}
+  for (const k of ALLOWED) if (k in req.body) bizData[k] = req.body[k]
+  if ('monthly_rate' in bizData) bizData.monthly_rate = parseFloat(bizData.monthly_rate) || null
+  try {
+    if (Object.keys(bizData).length) {
+      let { error } = await db.updateBusiness(req.params.id, bizData)
+      // Si la columna monthly_rate aún no existe en la BD, reintentar sin ella
+      if (error && 'monthly_rate' in bizData) {
+        delete bizData.monthly_rate
+        ;({ error } = await db.updateBusiness(req.params.id, bizData))
+      }
+      if (error) return res.status(500).json({ error: error.message })
+    }
+    // Si cambió el monto mensual → actualizar la facturación pendiente al nuevo valor
+    const rate = parseFloat(req.body.monthly_rate)
+    if (rate > 0) {
+      const existing = await db.countBilling(req.params.id)
+      if (existing > 0) {
+        await db.updatePendingBilling(req.params.id, rate)
+        console.log(`💳 Facturación pendiente actualizada a $${rate}/mes para ${req.params.id}`)
+      } else {
+        await db.createBillingBatch(db.generateYearBilling(req.params.id, rate))
+        console.log(`💳 12 meses generados a $${rate}/mes para ${req.params.id}`)
+      }
+    }
+    if (req.body.client_email) {
+      const hash = req.body.client_password ? await bcrypt.hash(req.body.client_password, 10) : null
+      await db.updateClientUser(req.params.id, req.body.client_email, hash)
+    }
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
 })
 
 app.delete('/api/admin/clients/:id', authAdmin, async (req, res) => {
@@ -175,7 +281,7 @@ app.put('/api/admin/billing/:id', authAdmin, async (req, res) => {
 // ══════════════════════════════════════════
 // CLIENT — LOGIN
 // ══════════════════════════════════════════
-app.post('/api/client/login', async (req, res) => {
+app.post('/api/client/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body
   try {
     const user = await db.getClientByEmail(email)
@@ -184,8 +290,10 @@ app.post('/api/client/login', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Contraseña incorrecta' })
     const biz = await db.getBusinessById(user.business_id)
     if (!biz?.active) return res.status(403).json({ error: 'Tu cuenta no está activa. Contacta al administrador.' })
-    const token = jwt.sign({ userId: user.id, businessId: user.business_id, role: 'client', email }, JWT(), { expiresIn: '7d' })
-    res.json({ token, business: { id: biz.id, name: biz.name, type: biz.type, suspended: biz.suspended, bot_active: biz.bot_active } })
+    const urole = user.role || 'owner'
+    const perms = Array.isArray(user.permissions) ? user.permissions : []
+    const token = jwt.sign({ userId: user.id, businessId: user.business_id, role: 'client', urole, perms, email }, JWT(), { expiresIn: '7d' })
+    res.json({ token, user: { name: user.name || '', role: urole, permissions: perms }, business: { id: biz.id, name: biz.name, type: biz.type, suspended: biz.suspended, bot_active: biz.bot_active } })
   } catch(e) { res.status(500).json({ error: e.message }) }
 })
 
@@ -197,23 +305,241 @@ app.get('/api/client/stats', authClient, async (req, res) => res.json(await db.g
 app.get('/api/client/business', authClient, async (req, res) => {
   const b = await db.getBusinessById(req.user.businessId)
   // Solo datos públicos — SIN credenciales de WhatsApp
-  res.json({ id: b.id, name: b.name, type: b.type, description: b.description, hours: b.hours, address: b.address, phone: b.phone, social: b.social, payment_methods: b.payment_methods, suspended: b.suspended, bot_active: b.bot_active })
+  res.json({ id: b.id, name: b.name, type: b.type, slogan: b.slogan, description: b.description, hours: b.hours, address: b.address, phone: b.phone, social: b.social, payment_methods: b.payment_methods, suspended: b.suspended, bot_active: b.bot_active })
+})
+
+// El cliente edita la identidad básica de su negocio (NO credenciales, NO plan — eso lo controla el admin)
+app.put('/api/client/business', authClient, async (req, res) => {
+  const allowed = ['name', 'slogan', 'description', 'hours', 'address', 'phone', 'social', 'payment_methods']
+  const data = {}
+  for (const k of allowed) if (k in req.body) data[k] = req.body[k]
+  try {
+    await db.updateBusiness(req.user.businessId, data)
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
 })
 
 app.get('/api/client/products',      authClient, async (req, res) => res.json(await db.getProducts(req.user.businessId)))
-app.get('/api/client/conversations', authClient, async (req, res) => res.json(await db.getConversations(req.user.businessId)))
-app.get('/api/client/policies',      authClient, async (req, res) => res.json(await db.getPolicies(req.user.businessId) || {}))
-app.put('/api/client/policies',      authClient, async (req, res) => { await db.upsertPolicies(req.user.businessId, req.body); res.json({ ok: true }) })
+app.get('/api/client/conversations', authClient, requirePermission('conversaciones'), async (req, res) => res.json(await db.getConversations(req.user.businessId)))
 
-app.post('/api/client/products', authClient, async (req, res) => {
+// ── SESIONES / MODO MANUAL ────────────────────────────────
+app.get('/api/client/sessions', authClient, requirePermission('conversaciones'), async (req, res) => {
+  try { res.json(await db.getSessions(req.user.businessId)) }
+  catch { res.json([]) }
+})
+
+app.put('/api/client/sessions/:phone/mode', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const { manual } = req.body
+  await db.upsertSession(req.user.businessId, req.params.phone, { manual_mode: !!manual, unread_owner: false })
+  res.json({ ok: true })
+})
+
+// Marcar un chat manual como atendido (calla la alarma de forma persistente)
+app.put('/api/client/sessions/:phone/read', authClient, requirePermission('conversaciones'), async (req, res) => {
+  await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { unread_owner: false })
+  res.json({ ok: true })
+})
+
+// Guardar/editar el nombre del contacto (para identificar quién escribe)
+app.put('/api/client/sessions/:phone/name', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const name = (req.body.name || '').trim().slice(0, 60)
+  await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { contact_name: name || null })
+  res.json({ ok: true })
+})
+
+// Envía un mensaje al cliente por su canal (Telegram o WhatsApp)
+async function sendToContact(biz, phone, message) {
+  if (phone.startsWith('tg_')) {
+    const chatId = phone.replace('tg_', '')
+    const tgBot = require('./telegram').getBotInstance()
+    if (tgBot) await tgBot.telegram.sendMessage(chatId, message)
+  } else {
+    const { sendWhatsAppMessage } = require('./bot')
+    await sendWhatsAppMessage(biz, phone, message)
+  }
+}
+
+app.post('/api/client/sessions/:phone/send', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const bizId = req.user.businessId
+  const phone = decodeURIComponent(req.params.phone)
+  const { message } = req.body
+  if (!message?.trim()) return res.status(400).json({ error: 'Mensaje vacío' })
+  try {
+    const biz = await db.getBusinessById(bizId)
+    await db.saveMessage(bizId, phone, 'owner', message)
+    await sendToContact(biz, phone, message)
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+app.get('/api/client/policies',      authClient, requireOwner, async (req, res) => res.json(await db.getPolicies(req.user.businessId) || {}))
+app.put('/api/client/policies',      authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, req.body); res.json({ ok: true }) })
+app.put('/api/client/bot-prompt',    authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, { bot_prompt: req.body.bot_prompt }); res.json({ ok: true }) })
+
+// ── HORARIOS ──────────────────────────────────────────────
+app.get('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getSchedule(req.user.businessId)))
+app.put('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => { await db.upsertSchedule(req.user.businessId, req.body.days); res.json({ ok: true }) })
+
+// ── RESERVAS ──────────────────────────────────────────────
+app.get('/api/client/bookings',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getBookings(req.user.businessId, req.query.from, req.query.to)))
+app.put('/api/client/bookings/:id/status', authClient, requirePermission('citas'), async (req, res) => {
+  const { status } = req.body
+  try {
+    const booking = await db.getBookingById(req.params.id)
+    await db.updateBookingStatus(req.params.id, status)
+
+    // Notificar al cliente por su canal (no bloquea la respuesta si falla)
+    if (booking && booking.contact_phone) {
+      const biz = await db.getBusinessById(req.user.businessId)
+      const fecha = booking.booking_date
+      const hora  = (booking.booking_time || '').slice(0, 5)
+      const svc   = booking.service ? ` de *${booking.service}*` : ''
+      let msg = null
+      if (status === 'confirmed') {
+        msg = `✅ ¡Tu cita${svc} quedó *confirmada* para el ${fecha} a las ${hora}! Te esperamos en ${biz.name} 😊`
+      } else if (status === 'cancelled') {
+        msg = `⚠️ Lamentamos informarte que tu cita${svc} del ${fecha} a las ${hora} fue *cancelada*. Si deseas, podemos agendarte en otro horario disponible. Escríbenos cuándo te conviene 🙏`
+      }
+      if (msg) {
+        sendToContact(biz, booking.contact_phone, msg)
+          .then(() => db.saveMessage(biz.id, booking.contact_phone, 'owner', msg))
+          .catch(e => console.error('❌ Notificación de reserva:', e.message))
+      }
+    }
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/client/products', authClient, requirePermission('catalogo'), async (req, res) => {
   const { name, price } = req.body
   if (!name || !price) return res.status(400).json({ error: 'Nombre y precio requeridos' })
   const { data, error } = await db.createProduct({ ...req.body, business_id: req.user.businessId, price: parseFloat(price), active: true })
-  error ? res.status(500).json({ error: error.message }) : res.status(201).json(data)
+  if (error) return res.status(500).json({ error: error.message })
+  // Generar embedding en segundo plano (RAG) — no bloquea la respuesta
+  bot.indexProduct(data).catch(() => {})
+  res.status(201).json(data)
 })
 
-app.put('/api/client/products/:id',    authClient, async (req, res) => { await db.updateProduct(req.params.id, req.body); res.json({ ok: true }) })
-app.delete('/api/client/products/:id', authClient, async (req, res) => { await db.deleteProduct(req.params.id); res.json({ ok: true }) })
+app.put('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => {
+  await db.updateProduct(req.params.id, req.body)
+  // Re-generar embedding tras editar
+  db.getProductById(req.params.id).then(p => p && bot.indexProduct(p)).catch(() => {})
+  res.json({ ok: true })
+})
+app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.params.id); res.json({ ok: true }) })
+
+// ── VENTAS (registro manual) Y PEDIDOS PENDIENTES ─────────
+// Prellenado del formulario: catálogo + lo que el bot ya cotizó en la conversación.
+app.get('/api/client/sessions/:phone/quote', authClient, requirePermission('ventas'), async (req, res) => {
+  const bizId = req.user.businessId
+  const phone = decodeURIComponent(req.params.phone)
+  try {
+    const [products, history, session] = await Promise.all([
+      db.getProducts(bizId),
+      db.getContactHistory(bizId, phone, 30),
+      db.getSession(bizId, phone)
+    ])
+    const text = history.map(h => h.content || '').join(' ').toLowerCase()
+    const suggested = products
+      .filter(p => p.name && text.includes(p.name.toLowerCase()))
+      .map(p => ({ product_id: p.id, product_name: p.name, unit_price: Number(p.price_sale || p.price || 0), quantity: 1 }))
+    res.json({
+      contact_name: session?.contact_name || '',
+      products: products.map(p => ({ id: p.id, name: p.name, price: Number(p.price_sale || p.price || 0) })),
+      suggested
+    })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// Registrar "Venta realizada"
+app.post('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
+  const bizId = req.user.businessId
+  const { contact_phone, contact_name, items } = req.body
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'La venta necesita al menos un ítem' })
+  try {
+    const norm = items.map(i => {
+      const qty = parseInt(i.quantity) || 1
+      const price = parseFloat(i.unit_price) || 0
+      return { product_id: i.product_id || null, product_name: (i.product_name || 'Producto').trim(), quantity: qty, unit_price: price, line_total: +(qty * price).toFixed(2) }
+    })
+    const total = +norm.reduce((s, i) => s + i.line_total, 0).toFixed(2)
+    const { data: sale, error } = await db.createSale({ business_id: bizId, contact_phone: contact_phone || null, contact_name: contact_name || null, total, status: 'completada', source: 'manual', created_by: req.user.userId || null })
+    if (error) return res.status(500).json({ error: error.message })
+    await db.addSaleItems(norm.map(i => ({ ...i, sale_id: sale.id, business_id: bizId })))
+    // Al registrar la venta, la conversación deja de figurar como pendiente
+    if (contact_phone) await db.upsertSession(bizId, contact_phone, { unread_owner: false })
+    res.status(201).json({ ...sale, items: norm })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// Anular venta (revierte el registro y el conteo)
+app.post('/api/client/sales/:id/void', authClient, requirePermission('ventas'), async (req, res) => {
+  try { await db.voidSale(req.user.businessId, req.params.id); res.json({ ok: true }) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// Ventas registradas de un contacto (para mostrarlas y poder anularlas)
+app.get('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
+  const phone = req.query.phone ? decodeURIComponent(req.query.phone) : null
+  if (!phone) return res.json([])
+  res.json(await db.getSalesByContact(req.user.businessId, phone))
+})
+
+// Pedidos / cotizaciones sin cerrar
+app.get('/api/client/pending-orders', authClient, requirePermission('reportes'), async (req, res) =>
+  res.json(await db.getPendingOrders(req.user.businessId)))
+
+// Datos de los 7 reportes para el panel del dueño (JSON) — filtrado por business_id (JWT)
+app.get('/api/client/reports', authClient, requirePermission('reportes'), async (req, res) => {
+  const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
+  try { res.json(await reports.getAllReports(req.user.businessId, period)) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
+const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
+app.get('/api/client/users', authClient, requireOwner, async (req, res) =>
+  res.json(await db.getClientUsers(req.user.businessId)))
+
+app.post('/api/client/users', authClient, requireOwner, async (req, res) => {
+  const { email, password, name, permissions } = req.body
+  if (!email || !password) return res.status(400).json({ error: 'Correo y contraseña requeridos' })
+  const perms = (Array.isArray(permissions) ? permissions : []).filter(p => VALID_PERMS.includes(p))
+  try {
+    const hash = await bcrypt.hash(password, 10)
+    const { data, error } = await db.createClientUser({ business_id: req.user.businessId, email: email.trim(), password_hash: hash, name: name || null, role: 'employee', permissions: perms })
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json({ id: data.id })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+app.put('/api/client/users/:id', authClient, requireOwner, async (req, res) => {
+  const { email, password, name, permissions } = req.body
+  const fields = {}
+  if (email) fields.email = email.trim()
+  if (name !== undefined) fields.name = name
+  if (Array.isArray(permissions)) fields.permissions = permissions.filter(p => VALID_PERMS.includes(p))
+  if (password) fields.password_hash = await bcrypt.hash(password, 10)
+  try {
+    if (Object.keys(fields).length) await db.updateClientUserById(req.user.businessId, req.params.id, fields)
+    res.json({ ok: true })
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/client/users/:id', authClient, requireOwner, async (req, res) => {
+  try { await db.deleteClientUserById(req.user.businessId, req.params.id); res.json({ ok: true }) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// Reindexar (generar embeddings) de los productos que aún no tienen — para catálogos existentes
+app.post('/api/client/reindex', authClient, requirePermission('catalogo'), async (req, res) => {
+  try {
+    const pending = await db.getProductsWithoutEmbedding(req.user.businessId)
+    res.json({ ok: true, pending: pending.length, message: pending.length ? `Indexando ${pending.length} productos en segundo plano…` : 'Todos los productos ya están indexados ✓' })
+    // Procesar en segundo plano, de a uno (evita rate limits)
+    for (const p of pending) { await bot.indexProduct(p) }
+    if (pending.length) console.log(`✅ [reindex] ${pending.length} productos indexados`)
+  } catch(e) { console.error('❌ reindex:', e.message) }
+})
 
 // ══════════════════════════════════════════
 // WEBHOOK — META (verificación hub)
@@ -227,7 +553,11 @@ app.get('/webhook', (req, res) => {
   res.sendStatus(403)
 })
 
-app.post('/webhook', async (req, res) => {
+app.post('/webhook', webhookLimiter, async (req, res) => {
+  if (!verifyMetaSignature(req)) {
+    console.warn('⚠️  Webhook Meta: firma inválida — rechazado')
+    return res.sendStatus(401)
+  }
   res.sendStatus(200)
   try {
     const body = req.body
@@ -242,13 +572,24 @@ app.post('/webhook', async (req, res) => {
       const reply = msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title || ''
       if (reply) await bot.handleMessage(from, reply, bizPhone)
     }
+    // Audio / nota de voz → transcribir con Whisper
+    if ((msg.type === 'audio' || msg.type === 'voice') && msg.audio?.id) {
+      const biz = await db.getBusinessByPhone(bizPhone)
+      if (biz?.meta_token) {
+        const media = await axios.get(`https://graph.facebook.com/v19.0/${msg.audio.id}`, { headers: { Authorization: `Bearer ${biz.meta_token}` }, timeout: 15000 })
+        const audioResp = await axios.get(media.data.url, { headers: { Authorization: `Bearer ${biz.meta_token}` }, responseType: 'arraybuffer', timeout: 20000 })
+        const text = await bot.transcribeAudio(Buffer.from(audioResp.data), 'audio.ogg')
+        if (text) { console.log(`🎙️  [Meta] audio transcrito: "${text}"`); await bot.handleMessage(from, text, bizPhone) }
+      }
+    }
   } catch(e) { console.error('❌ Webhook Meta:', e.message) }
 })
 
 // ══════════════════════════════════════════
 // WEBHOOK — KAPSO
 // ══════════════════════════════════════════
-app.post('/webhook/kapso', async (req, res) => {
+app.post('/webhook/kapso', webhookLimiter, async (req, res) => {
+  if (!verifyWebhookSecret(req)) return res.sendStatus(401)
   res.sendStatus(200)
   try {
     const body     = req.body
@@ -259,6 +600,16 @@ app.post('/webhook/kapso', async (req, res) => {
     if (from && text && bizPhone) {
       console.log(`📡 Kapso: de ${from} → ${bizPhone}: "${text}"`)
       await bot.handleMessage(from, text, bizPhone)
+    } else if (from && bizPhone) {
+      // Audio / nota de voz → transcribir con Whisper
+      const audioUrl = msg?.audio?.url || msg?.audio?.link || msg?.media?.url || body.audio?.url
+      if (audioUrl) {
+        const biz = await db.getBusinessByPhone(bizPhone)
+        const headers = (biz?.kapso_api_key || process.env.KAPSO_API_KEY) ? { Authorization: `Bearer ${biz?.kapso_api_key || process.env.KAPSO_API_KEY}` } : {}
+        const audioResp = await axios.get(audioUrl, { headers, responseType: 'arraybuffer', timeout: 20000 })
+        const trans = await bot.transcribeAudio(Buffer.from(audioResp.data), 'audio.ogg')
+        if (trans) { console.log(`🎙️  [Kapso] audio transcrito: "${trans}"`); await bot.handleMessage(from, trans, bizPhone) }
+      }
     }
   } catch(e) { console.error('❌ Webhook Kapso:', e.message) }
 })
@@ -266,19 +617,40 @@ app.post('/webhook/kapso', async (req, res) => {
 // ══════════════════════════════════════════
 // WEBHOOK — YCLOUD
 // ══════════════════════════════════════════
-app.post('/webhook/ycloud', async (req, res) => {
+app.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
+  if (!verifyWebhookSecret(req)) return res.sendStatus(401)
   res.sendStatus(200)
   try {
     const body = req.body
+    console.log(`📨 [YCloud webhook] recibido — type: ${body.type || '(sin type)'}`)
     if (body.type !== 'whatsapp.inbound_message.received') return
     const msg      = body.whatsappInboundMessage
-    if (!msg || msg.type !== 'text') return
+    if (!msg) return
     const from     = msg.from                         // número del cliente
     const bizPhone = msg.whatsappApiAccountPhoneNumber || msg.to  // número del negocio
-    const text     = msg.text?.body
-    if (from && text && bizPhone) {
-      console.log(`📡 YCloud: de ${from} → ${bizPhone}: "${text}"`)
-      await bot.handleMessage(from, text, bizPhone)
+    const inboundId = msg.id || msg.wamid                // ID para el typing indicator
+    if (!from || !bizPhone) return
+
+    if (msg.type === 'text' && msg.text?.body) {
+      console.log(`📡 YCloud: de ${from} → ${bizPhone}: "${msg.text.body}"`)
+      await bot.handleMessage(from, msg.text.body, bizPhone, { inboundId })
+    } else if (msg.type === 'audio' || msg.type === 'voice') {
+      // Audio / nota de voz → transcribir con Whisper
+      const audioUrl = msg.audio?.link || msg.audio?.url || msg.voice?.link
+      if (audioUrl) {
+        const audioResp = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 20000 })
+        const trans = await bot.transcribeAudio(Buffer.from(audioResp.data), 'audio.ogg')
+        if (trans) { console.log(`🎙️  [YCloud] audio transcrito: "${trans}"`); await bot.handleMessage(from, trans, bizPhone, { inboundId }) }
+      }
+    } else if (msg.type === 'image') {
+      // Imagen → identificar el producto con visión y responder
+      const imgUrl = msg.image?.link || msg.image?.url
+      if (imgUrl) {
+        const imgResp = await axios.get(imgUrl, { responseType: 'arraybuffer', timeout: 20000 })
+        const mime = imgResp.headers['content-type'] || 'image/jpeg'
+        console.log(`🖼️  [YCloud] imagen recibida de ${from}`)
+        await bot.handleImage(from, Buffer.from(imgResp.data), mime, bizPhone, { inboundId })
+      }
     }
   } catch(e) { console.error('❌ Webhook YCloud:', e.message) }
 })
@@ -301,16 +673,26 @@ async function verifyProvider(payload) {
           telegram_bot_token, retell_api_key } = payload
   try {
     if (provider === 'ycloud') {
-      const key = ycloud_api_key || process.env.YCLOUD_API_KEY
+      const key = (ycloud_api_key || process.env.YCLOUD_API_KEY || '').trim()
       if (!key) return { ok: false, info: 'Falta YCloud API Key' }
-      const r = await axios.get('https://api.ycloud.com/v2/whatsapp/phone-numbers', {
-        headers: { 'X-API-Key': key }, params: { page: 1, pageSize: 10 }, timeout: 8000
+      const r = await axios.get('https://api.ycloud.com/v2/whatsapp/phoneNumbers', {
+        headers: { 'X-API-Key': key, 'Accept': 'application/json' },
+        params: { page: 1, limit: 10 }, timeout: 10000
       })
-      const nums = r.data.items || []
-      const found = ycloud_number ? nums.find(n => n.phoneNumber?.includes(ycloud_number.replace('+',''))) : null
-      const info  = found
-        ? `✅ Número ${found.phoneNumber} — ${found.displayName || 'conectado'}`
-        : `${nums.length} número(s) en la cuenta YCloud`
+      const nums = r.data.items || r.data.data || []
+      const digits = (ycloud_number || '').replace(/\D/g, '')
+      const tail = digits.slice(-9)
+      const found = tail.length >= 8
+        ? nums.find(n => (n.phoneNumber || '').replace(/\D/g,'').slice(-9) === tail)
+        : null
+      if (!nums.length) return { ok: false, info: 'API Key válida pero NO hay números de WhatsApp en tu cuenta YCloud. Vincula tu número primero.' }
+      if (digits && !found) {
+        const lista = nums.map(n => n.phoneNumber).join(', ')
+        return { ok: false, info: `⚠️ La API Key sirve, pero el número ${ycloud_number} NO coincide con los de tu cuenta. Números disponibles: ${lista}` }
+      }
+      const info = found
+        ? `✅ Conectado: ${found.phoneNumber} — ${found.displayName || found.verifiedName || 'activo'}`
+        : `✅ API Key válida — ${nums.length} número(s) en tu cuenta. Ingresa el número para confirmar cuál usar.`
       return { ok: true, info }
     }
 
@@ -353,11 +735,15 @@ async function verifyProvider(payload) {
 
     return { ok: false, info: `Proveedor "${provider}" no reconocido` }
   } catch(e) {
+    const status = e.response?.status
     const msg = e.response?.data?.error?.message
            || e.response?.data?.message
            || e.response?.data?.description
            || e.message
-    return { ok: false, info: msg }
+    const hint = status === 401 || status === 403 ? ' (API Key inválida o sin permisos)'
+               : status === 404 ? ' (endpoint no encontrado)'
+               : ''
+    return { ok: false, info: (status ? `[HTTP ${status}] ` : '') + msg + hint }
   }
 }
 
@@ -383,14 +769,106 @@ app.post('/api/admin/clients/:id/verify', authAdmin, async (req, res) => {
 })
 
 // ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// CONFIGURACIÓN DEL SERVIDOR
+// ══════════════════════════════════════════
+
+app.get('/api/admin/server-settings', authAdmin, async (_, res) => {
+  const all = await srvSettings.getAll()
+  // Enmascarar keys para no exponer valores completos
+  const masked = {}
+  for (const [k, v] of Object.entries(all)) {
+    if (!v) { masked[k] = ''; continue }
+    if (k.includes('key') || k.includes('token')) {
+      masked[k] = v.length > 8 ? v.slice(0, 6) + '••••••' + v.slice(-4) : '••••••'
+    } else {
+      masked[k] = v
+    }
+  }
+  res.json(masked)
+})
+
+app.post('/api/admin/server-settings', authAdmin, async (req, res) => {
+  try {
+    await srvSettings.setMany(req.body)
+    res.json({ ok: true })
+  } catch(e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Verificar que las keys de IA funcionan
+app.post('/api/admin/server-settings/verify-ai', authAdmin, async (req, res) => {
+  const { provider, anthropic_api_key, openai_api_key, gemini_api_key, groq_api_key } = req.body
+  try {
+    if (provider === 'groq') {
+      const key = groq_api_key || await srvSettings.get('groq_api_key')
+      if (!key) return res.json({ ok: false, info: 'Falta Groq API Key' })
+      const groq = new (require('openai'))({ apiKey: key, baseURL: 'https://api.groq.com/openai/v1' })
+      const r = await groq.chat.completions.create({ model: 'llama-3.3-70b-versatile', max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] })
+      return res.json({ ok: true, info: `✅ Groq activo — ${r.model || 'llama-3.3-70b'}` })
+    }
+    if (provider === 'gemini') {
+      const key = gemini_api_key || await srvSettings.get('gemini_api_key')
+      if (!key) return res.json({ ok: false, info: 'Falta Gemini API Key' })
+      try {
+        const r = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          { contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 5 } },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        )
+        return res.json({ ok: !!r.data.candidates, info: r.data.candidates ? '✅ Gemini 2.0 Flash activo y conectado' : 'Respuesta inesperada' })
+      } catch(ge) {
+        // Si el modelo no existe (404), listar los modelos disponibles de la key
+        if (ge.response?.status === 404) {
+          try {
+            const list = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, { timeout: 10000 })
+            const flash = (list.data.models || [])
+              .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name))
+              .map(m => m.name.replace('models/', ''))
+            return res.json({ ok: false, info: `Modelo no disponible. Modelos 'flash' que SÍ tienes: ${flash.join(', ') || 'ninguno'}` })
+          } catch(le) { /* cae al error general */ }
+        }
+        throw ge
+      }
+    }
+    if (provider === 'openai') {
+      const key = openai_api_key || await srvSettings.get('openai_api_key')
+      if (!key) return res.json({ ok: false, info: 'Falta OpenAI API Key' })
+      const openai = new (require('openai'))({ apiKey: key })
+      const r = await openai.chat.completions.create({
+        model: 'gpt-4o-mini', max_tokens: 5,
+        messages: [{ role: 'user', content: 'ping' }]
+      })
+      return res.json({ ok: true, info: `GPT-4o Mini — ${r.model}` })
+    }
+    // Claude
+    const key = anthropic_api_key || await srvSettings.get('anthropic_api_key') || process.env.ANTHROPIC_API_KEY
+    if (!key) return res.json({ ok: false, info: 'Falta Anthropic API Key' })
+    const claude = new Anthropic({ apiKey: key })
+    const r = await claude.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 5,
+      messages: [{ role: 'user', content: 'ping' }]
+    })
+    return res.json({ ok: true, info: `Claude Sonnet activo — ${r.model}` })
+  } catch(e) {
+    // Mostrar el detalle real (ej: API key inválida, API no habilitada)
+    const detail = e.response?.data?.error?.message || e.message || 'Error de conexión'
+    const status = e.response?.status ? `[HTTP ${e.response.status}] ` : ''
+    res.json({ ok: false, info: (status + detail).slice(0, 160) })
+  }
+})
+
 // TÚNEL PÚBLICO (cloudflared / localtunnel)
 // ══════════════════════════════════════════
 app.get('/api/admin/tunnel', authAdmin, (_, res) => {
+  // Secreto de webhooks (solo se entrega al superadmin autenticado, es su propio secreto)
+  const webhookSecret = process.env.WEBHOOK_SECRET || ''
   // En producción con BASE_URL, siempre está "activo"
   if (process.env.BASE_URL) {
-    return res.json({ url: process.env.BASE_URL, active: true, provider: 'dominio propio', startedAt: null })
+    return res.json({ url: process.env.BASE_URL, active: true, provider: 'dominio propio', startedAt: null, webhookSecret })
   }
-  res.json(tunnel.getState())
+  res.json({ ...tunnel.getState(), webhookSecret })
 })
 
 app.post('/api/admin/tunnel/start', authAdmin, async (req, res) => {
@@ -427,24 +905,20 @@ app.post('/api/admin/simulate', authAdmin, async (req, res) => {
 
     await db.saveMessage(biz.id, simFrom, 'user', message)
 
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const r = await claude.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      system: bot.buildPrompt(biz, products, policies),
-      messages: [
-        ...history.map(h => ({ role: h.role, content: h.content })),
-        { role: 'user', content: message }
-      ]
-    })
-    const raw = r.content[0].text
+    // Usa el mismo motor que el bot real (respeta provider OpenAI/Claude configurado)
+    const raw = await bot.callAI(
+      bot.buildPrompt(biz, products, policies, false, message),
+      history, message, biz.ai_provider
+    )
 
     const imgMatch = raw.match(/##IMG##(https?:\/\/[^\s#]+)##/)
     const hasBooking = raw.includes('##BOOKING##')
-    let reply = raw.replace(/##IMG##[^\s#]+##/g, '').replace('##BOOKING##', '').trim()
-    if (hasBooking && biz.calcom_link) reply += `\n\n📅 Agenda tu cita aquí:\n${biz.calcom_link}`
+    const hasHandoff = /##\s*handoff\s*##/i.test(raw)
+    let reply = raw.replace(/##IMG##[^\s#]+##/g, '').replace(/##\s*handoff\s*##/gi, '').replace('##BOOKING##', '').trim()
+    if (hasHandoff) reply = 'Permítame un momento por favor 🙏 enseguida un asesor de nuestro equipo continuará con usted para ayudarle mejor ✨'
+    else if (hasBooking && biz.calcom_link) reply += `\n\n📅 Agenda tu cita aquí:\n${biz.calcom_link}`
 
-    await db.saveMessage(biz.id, simFrom, 'assistant', raw)
+    await db.saveMessage(biz.id, simFrom, 'assistant', reply)
     console.log(`🧪 [Sim] ${biz.name}: respondido`)
     res.json({ reply, image: imgMatch?.[1] || null })
   } catch(e) {
@@ -458,17 +932,50 @@ app.delete('/api/admin/simulate/:bizId/history', authAdmin, async (req, res) => 
   res.json({ ok: true })
 })
 
-// SUPABASE CONFIG — para Realtime en el frontend
-// La anon key es pública por diseño de Supabase, es seguro exponerla
-app.get('/api/admin/supabase-config', authAdmin, (_, res) => {
-  res.json({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_KEY })
-})
-app.get('/api/client/supabase-config', authClient, (_, res) => {
-  res.json({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_KEY })
-})
+// SUPABASE CONFIG — desactivado por seguridad.
+// El frontend ya no accede directo a la BD; usa polling vía endpoints autenticados.
+// Con RLS activo, exponer la key directa no aporta y amplía la superficie de ataque.
+app.get('/api/admin/supabase-config',  authAdmin,  (_, res) => res.json({}))
+app.get('/api/client/supabase-config', authClient, (_, res) => res.json({}))
 
 // HEALTH
 app.get('/api/health', (_, res) => res.json({ ok: true, time: new Date().toISOString() }))
+
+// ── LIVE RELOAD (solo en desarrollo) ─────────────────────
+if (!process.env.BASE_URL) {
+  const lrClients = new Set()
+
+  app.get('/dev-reload', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+    res.flushHeaders()
+    res.write('data: connected\n\n')
+    lrClients.add(res)
+    req.on('close', () => lrClients.delete(res))
+  })
+
+  const notify = () => lrClients.forEach(c => c.write('data: reload\n\n'))
+  const dirs   = [path.join(__dirname, '../admin'), path.join(__dirname, '../client')]
+  dirs.forEach(d => fs.watch(d, { recursive: true }, (_, f) => { if (f?.endsWith('.html') || f?.endsWith('.js') || f?.endsWith('.css')) notify() }))
+  console.log('♻️  Live-reload activo')
+}
+
+// ── IMÁGENES DE PRODUCTOS ─────────────────────────────────
+// Convierte base64 almacenado en BD a imagen servida por URL real
+app.get('/api/images/:productId', async (req, res) => {
+  const product = await db.getProductById(req.params.productId)
+  if (!product?.image_url) return res.status(404).send('No image')
+
+  if (product.image_url.startsWith('data:')) {
+    const [header, base64] = product.image_url.split(',')
+    const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg'
+    const buffer = Buffer.from(base64, 'base64')
+    res.set('Content-Type', mimeType)
+    res.set('Cache-Control', 'public, max-age=86400')
+    return res.send(buffer)
+  }
+
+  res.redirect(product.image_url)
+})
 
 // SPA fallbacks
 app.get('/admin/*',  (_, res) => res.sendFile(path.join(__dirname, '../admin/index.html')))
@@ -502,4 +1009,14 @@ app.listen(PORT, () => {
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)
   }).catch(e => console.error('❌ Telegram setup:', e.message))
+
+  // Auto-arrancar el túnel al iniciar (solo en local). Queda vivo toda la sesión del
+  // servidor → recargar la pestaña NO lo apaga; solo cambia al reiniciar el servidor.
+  if (!process.env.BASE_URL) {
+    setTimeout(() => {
+      tunnel.startTunnel(PORT)
+        .then(s => console.log(`🌐 Túnel automático: ${s.url}`))
+        .catch(e => console.log('⚠️  No se pudo auto-iniciar el túnel:', e.message))
+    }, 2500)
+  }
 })

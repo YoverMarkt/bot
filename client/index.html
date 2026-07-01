@@ -135,6 +135,87 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
 .loading{display:flex;align-items:center;gap:10px;padding:32px;color:var(--muted);font-size:13px;justify-content:center}
 .spin{width:18px;height:18px;border:2px solid var(--bd2);border-top-color:var(--ink);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+/* CHAT */
+.contact-item{padding:10px 12px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .12s}
+.contact-item:hover{background:var(--paper2)}
+.contact-item.active{background:#f0f9e8;border-left:3px solid var(--lime-d)}
+.contact-item.manual{border-left:3px solid #ffc107}
+.contact-ph{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.contact-preview{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.contact-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.contact-time{font-size:10px;color:var(--muted)}
+.bubble{max-width:75%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-wrap:break-word}
+.bubble.user{background:#e9e9eb;border-radius:12px 12px 12px 4px;align-self:flex-start}
+.bubble.bot{background:var(--ink);color:#fff;border-radius:12px 12px 4px 12px;align-self:flex-end}
+.bubble.owner{background:#d1f0d1;color:#1a4a1a;border-radius:12px 12px 4px 12px;align-self:flex-end;border:1px solid #a8d8a8}
+.bubble-wrap{display:flex;flex-direction:column}
+.bubble-time{font-size:10px;color:var(--muted);margin-top:3px}
+.bubble-time.right{text-align:right}
+/* CALENDARIO */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}
+.cal-header{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.cal-dh{text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:4px}
+.cal-day{min-height:52px;border:1px solid var(--bd);border-radius:var(--rs);padding:6px;cursor:pointer;transition:all .12s;position:relative}
+.cal-day:hover{border-color:var(--ink);background:#f9f9f9}
+.cal-day.today{border-color:var(--ink);background:var(--paper2)}
+.cal-day.selected{border-color:var(--lime-d);background:#f0f9e8}
+.cal-day.empty{background:transparent;border-color:transparent;cursor:default}
+.cal-day.other-month{opacity:.35}
+.cal-day-n{font-size:12px;font-weight:700;margin-bottom:4px}
+.cal-dots{display:flex;flex-wrap:wrap;gap:2px}
+.cal-dot{width:6px;height:6px;border-radius:50%}
+.cal-dot.pending{background:#ffc107}.cal-dot.confirmed{background:#28a745}.cal-dot.cancelled{background:#dc3545}
+/* Día con reservas — más vistoso */
+.cal-day.has-bookings{background:linear-gradient(135deg,#fff9e6,#fffdf5);border-color:#ffd966}
+.cal-day.has-bookings.today{border-color:var(--ink)}
+.cal-chip{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:99px;background:#ffc107;color:#5a4500;margin-top:2px;width:fit-content}
+.cal-chip.all-confirmed{background:#28a745;color:#fff}
+.cal-day-mini{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.3;font-weight:600}
+@keyframes bellPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+#booking-badge.ring{animation:bellPulse .5s ease 3}
+@keyframes navFlash{0%,100%{background:transparent}50%{background:rgba(255,193,7,.25)}}
+.ni.flash{animation:navFlash .8s ease 4}
+/* Banner de alarma */
+#alarm-banner{position:fixed;top:0;left:0;right:0;z-index:9999;display:none;align-items:center;gap:14px;padding:14px 20px;background:linear-gradient(135deg,#ff5252,#e53935);color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.25)}
+#alarm-banner.on{display:flex;animation:alarmIn .3s ease}
+@keyframes alarmIn{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+.alarm-ic{font-size:26px;animation:shake .6s ease infinite}
+@keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-15deg)}75%{transform:rotate(15deg)}}
+.alarm-txt{flex:1}
+.alarm-title{font-family:'Syne',sans-serif;font-weight:800;font-size:16px}
+.alarm-sub{font-size:12px;opacity:.92;margin-top:2px}
+.alarm-btn{padding:8px 16px;border-radius:8px;border:1.5px solid rgba(255,255,255,.5);background:transparent;color:#fff;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s}
+.alarm-btn:hover{background:rgba(255,255,255,.15)}
+.alarm-btn.primary{background:#fff;color:#e53935;border-color:#fff}
+.alarm-btn.primary:hover{opacity:.9}
+/* HORARIOS */
+.sch-day{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd)}
+.sch-day:last-child{border-bottom:none}
+.sch-toggle{position:relative;width:36px;height:20px;flex-shrink:0}
+.sch-toggle input{opacity:0;width:0;height:0}
+.sch-slider{position:absolute;inset:0;background:#ccc;border-radius:99px;cursor:pointer;transition:.3s}
+.sch-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.3s}
+.sch-toggle input:checked+.sch-slider{background:var(--lime-d)}
+.sch-toggle input:checked+.sch-slider:before{transform:translateX(16px)}
+.sch-label{font-size:13px;font-weight:600;width:90px;flex-shrink:0}
+.sch-times{display:flex;gap:8px;align-items:center;flex:1}
+.sch-times input[type=time]{width:110px;padding:5px 8px;font-size:12px}
+/* BOOKING CARD */
+.bk-card{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}
+.bk-card:last-child{border-bottom:none}
+.bk-info{font-size:13px}.bk-name{font-weight:600}.bk-detail{font-size:11px;color:var(--muted);margin-top:2px}
+.bk-actions{display:flex;gap:6px}
+.sess-card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
+.sess-card.manual{border-color:#ffc107;background:#fffdf0}
+.sess-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sess-phone{font-family:'DM Mono',monospace;font-size:12px;font-weight:600;flex:1}
+.sess-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em}
+.sess-badge.bot{background:#d4f7b0;color:#2d7a00}
+.sess-badge.manual{background:#ffc107;color:#5a4000}
+.sess-last{font-size:12px;color:var(--muted);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sess-input{flex:1;min-width:0;padding:7px 11px;border:1px solid var(--bd2);border-radius:var(--rs);font-size:13px;font-family:inherit;background:var(--paper)}
+.sess-send{padding:7px 14px;background:var(--ink);color:#fff;border:none;border-radius:var(--rs);font-size:12px;font-weight:600;cursor:pointer;font-family:'Syne',sans-serif;white-space:nowrap}
 @media(max-width:900px){.stats{grid-template-columns:1fr 1fr}.g2,.g3{grid-template-columns:1fr}}
 @media(max-width:640px){.sidebar{display:none}.pg-inner{padding:20px 16px}}
 </style>
@@ -166,11 +247,17 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <nav>
       <div class="ns">Mi negocio</div>
       <div class="ni on" onclick="goPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Inicio</div>
-      <div class="ni" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg>Catálogo<span class="ct" id="sb-cnt">0</span></div>
-      <div class="ni" onclick="goPage('conversations',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones</div>
-      <div class="ni" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
+      <div class="ni" data-perm="catalogo" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg><span id="nav-products-label">Catálogo</span><span class="ct" id="sb-cnt">0</span></div>
+      <div class="ni" data-perm="conversaciones" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
+      <div class="ni" data-perm="reportes" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
+      <div class="ni" data-perm="owner" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
+      <div class="ni" data-perm="owner" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
+      <div class="ni" data-perm="citas" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
+      <div class="ni" data-perm="citas" id="nav-calendar" style="display:none" onclick="goPage('calendar',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Reservas<span class="ct" id="booking-badge" style="display:none">0</span></div>
+      <div class="ni" data-perm="owner" id="nav-usuarios" onclick="goPage('usuarios',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Usuarios</div>
+      <div class="ni" data-perm="owner" onclick="goPage('settings',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Ajustes</div>
     </nav>
-    <div class="sb-ft"><div style="display:flex;align-items:center;gap:8px"><div class="pulse" id="bot-pulse"></div><div class="sb-ft-t" id="bot-status-text">Bot <strong>activo</strong></div></div><button class="out-btn" onclick="doLogout()">Salir</button></div>
+    <div class="sb-ft"><div style="display:flex;align-items:center;gap:8px"><div class="pulse" id="bot-pulse"></div><div class="sb-ft-t" id="bot-status-text">Bot <strong>activo</strong></div></div><div style="display:flex;gap:6px"><button class="out-btn" onclick="testAlarmSound()" title="Probar y activar el sonido">🔊</button><button class="out-btn" onclick="doLogout()">Salir</button></div></div>
   </aside>
 
   <main class="main">
@@ -207,18 +294,117 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <!-- CATÁLOGO -->
     <div class="pg" id="pg-products">
       <div class="pg-inner">
-        <div class="ph"><div><h1>Catálogo</h1><p>El bot usa estos productos para responder</p></div>
-          <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo producto</button>
+        <div class="ph"><div><h1 id="prod-page-title">Catálogo</h1><p>El bot usa esto para responder a tus clientes</p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="reindexCatalog()" title="Mejora la búsqueda inteligente del bot (catálogos grandes)">🔎 Reindexar</button>
+            <button class="btn btn-dark" id="btn-new-prod" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo producto</button>
+          </div>
         </div>
         <div class="pg-grid" id="prod-grid"></div>
+      </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div class="pg" id="pg-reportes">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Reportes de ventas</h1><p>Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p></div>
+          <div style="display:flex;gap:6px" id="rep-period">
+            <button class="btn btn-sm" data-p="hoy" onclick="setRepPeriod('hoy',this)">Hoy</button>
+            <button class="btn btn-sm on" data-p="semana" onclick="setRepPeriod('semana',this)">Semana</button>
+            <button class="btn btn-sm" data-p="mes" onclick="setRepPeriod('mes',this)">Mes</button>
+          </div>
+        </div>
+        <div id="rep-content"><p style="color:var(--muted)">Cargando…</p></div>
+      </div>
+    </div>
+
+    <!-- USUARIOS (empleados) -->
+    <div class="pg" id="pg-usuarios">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Usuarios y permisos</h1><p>Crea empleados con acceso limitado a tu panel.</p></div>
+          <button class="btn btn-dark" onclick="openUserModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nuevo empleado</button>
+        </div>
+        <div id="users-list"></div>
       </div>
     </div>
 
     <!-- CONVERSACIONES -->
     <div class="pg" id="pg-conversations">
       <div class="pg-inner">
-        <div class="ph"><div><h1>Conversaciones</h1><p>Mensajes que tu bot ha respondido</p></div></div>
-        <div class="card"><div id="conv-list"><div class="loading"><div class="spin"></div></div></div></div>
+        <div class="ph">
+          <div><h1>Conversaciones</h1><p>Gestiona los chats de tu bot en tiempo real</p></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="conv-refresh-dot" style="width:8px;height:8px;border-radius:50%;background:var(--lime);display:inline-block" title="Actualizando en tiempo real"></span>
+            <button class="btn" onclick="loadConversations()" style="font-size:12px">↻ Actualizar</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;height:calc(100vh - 160px);min-height:400px">
+          <!-- Lista de contactos -->
+          <div class="card" style="width:280px;flex-shrink:0;overflow-y:auto;padding:0">
+            <div id="conv-list" style="padding:8px"><div class="loading"><div class="spin"></div></div></div>
+          </div>
+          <!-- Panel de chat -->
+          <div class="card" style="flex:1;display:flex;flex-direction:column;padding:0;overflow:hidden">
+            <div id="chat-empty" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
+              Selecciona una conversación
+            </div>
+            <div id="chat-panel" style="display:none;flex-direction:column;height:100%">
+              <div id="chat-header" style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <div id="chat-phone" style="font-weight:700;font-size:14px"></div>
+                  <div id="chat-status" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+                </div>
+                <div id="chat-actions" style="display:flex;gap:6px"></div>
+              </div>
+              <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px"></div>
+              <div id="chat-input-area" style="display:none;padding:12px 16px;border-top:1px solid var(--bd);gap:8px">
+                <input id="chat-input" class="sess-input" placeholder="Escribe como dueño del negocio..." style="flex:1" onkeydown="if(event.key==='Enter')sendManualChat()">
+                <button class="btn btn-dark" onclick="sendManualChat()">Enviar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROMPT DEL BOT -->
+    <div class="pg" id="pg-botprompt">
+      <div class="pg-inner">
+        <div class="ph">
+          <div>
+            <h1>Prompt del Bot</h1>
+            <p>Define la personalidad, tono y saludo de tu asistente virtual</p>
+          </div>
+          <button class="btn btn-dark" onclick="saveBotPrompt()">Guardar prompt</button>
+        </div>
+
+        <div class="card" style="margin-bottom:14px;background:linear-gradient(135deg,#f0f9e8,#e8f5d4);border-color:#c8e6a0">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="font-size:22px;flex-shrink:0">💡</div>
+            <div>
+              <div style="font-size:12px;font-weight:700;color:#2d7a00;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">¿Qué escribir aquí?</div>
+              <div style="font-size:12px;color:#3a6600;line-height:1.7">
+                Define <strong>cómo quieres que suene tu bot</strong>: su nombre, cómo saluda, el tono (formal, amigable, elegante), qué puede y no puede decir.<br>
+                <span style="opacity:.8">Ejemplo: <em>"Eres Sofía, asistente de Perfumes Elite. Habla con elegancia y discreción. Siempre saluda con '¡Bienvenido a Perfumes Elite!' y trata al cliente de 'usted'."</em></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="fg">
+            <label class="lbl">Instrucciones de personalidad y saludo</label>
+            <textarea id="bot-prompt-txt" rows="12" placeholder="Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].&#10;&#10;Siempre saluda con: &quot;[tu saludo personalizado]&quot;&#10;&#10;Cuando el cliente se despide, responde con: &quot;[tu despedida]&quot;&#10;&#10;Nunca hables de [lo que quieres evitar].&#10;Siempre ofrece [algo que quieras destacar]."></textarea>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+            <button class="btn" onclick="insertTemplate('formal')" style="font-size:11px;padding:5px 10px">📋 Plantilla formal</button>
+            <button class="btn" onclick="insertTemplate('casual')" style="font-size:11px;padding:5px 10px">😊 Plantilla casual</button>
+            <button class="btn" onclick="insertTemplate('luxury')" style="font-size:11px;padding:5px 10px">✨ Plantilla lujo</button>
+          </div>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end">
+            <button class="btn btn-dark" onclick="saveBotPrompt()">Guardar prompt</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -236,6 +422,70 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       </div>
     </div>
 
+    <!-- HORARIOS -->
+    <div class="pg" id="pg-schedule">
+      <div class="pg-inner">
+        <div class="ph">
+          <div><h1>Horarios de atención</h1><p>El bot solo ofrecerá citas en estos días y horas</p></div>
+          <button class="btn btn-dark" onclick="saveSchedule()">Guardar horarios</button>
+        </div>
+        <div class="card">
+          <div class="fg" style="margin-bottom:18px">
+            <label class="lbl">Duración de cada cita</label>
+            <select id="sch-duration" style="max-width:220px">
+              <option value="30">30 minutos</option>
+              <option value="45">45 minutos</option>
+              <option value="60" selected>1 hora</option>
+              <option value="90">1 hora 30 min</option>
+              <option value="120">2 horas</option>
+            </select>
+          </div>
+          <div id="sch-days"></div>
+          <button class="btn btn-dark" onclick="saveSchedule()" style="margin-top:14px">Guardar horarios</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALENDARIO / RESERVAS -->
+    <div class="pg" id="pg-calendar">
+      <div class="pg-inner">
+        <div class="ph">
+          <div><h1>Reservas</h1><p>Citas agendadas por el bot</p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="calPrev()">‹</button>
+            <span id="cal-month-label" style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;align-self:center;min-width:140px;text-align:center"></span>
+            <button class="btn" onclick="calNext()">›</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div id="cal-grid"></div>
+        </div>
+        <div id="cal-day-detail" style="display:none">
+          <div class="card">
+            <div class="card-t" id="cal-day-title"></div>
+            <div id="cal-day-bookings"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AJUSTES -->
+    <div class="pg" id="pg-settings">
+      <div class="pg-inner">
+        <div class="ph">
+          <div><h1>Ajustes</h1><p>Identidad básica de tu negocio</p></div>
+          <button class="btn btn-dark" onclick="saveSettings()">Guardar cambios</button>
+        </div>
+        <div class="card">
+          <div class="fg"><label class="lbl">Nombre del negocio</label><input id="set-name" type="text" placeholder="Ej: Barbería El Corte"></div>
+          <div class="fg"><label class="lbl">Slogan / Lema</label><input id="set-slogan" type="text" placeholder="Ej: El mejor corte de la ciudad ✂️"></div>
+          <div class="fg"><label class="lbl">Descripción corta</label><textarea id="set-desc" rows="3" placeholder="Una o dos líneas sobre tu negocio."></textarea></div>
+          <button class="btn btn-dark" onclick="saveSettings()" style="margin-top:6px">Guardar cambios</button>
+          <p style="font-size:11px;color:var(--muted);margin-top:14px">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -246,18 +496,19 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <div class="mbody">
       <input type="hidden" id="edit-id">
       <div class="g2" style="margin-bottom:12px">
-        <div class="fg"><label class="lbl">Nombre *</label><input type="text" id="p-name" placeholder="Dior Sauvage EDT 100ml"></div>
-        <div class="fg"><label class="lbl">Marca</label><input type="text" id="p-brand" placeholder="Dior"></div>
+        <div class="fg"><label class="lbl" id="lbl-name">Nombre *</label><input type="text" id="p-name" placeholder="Ej: Corte de cabello, Camiseta talla M, Perfume 100ml"></div>
+        <div class="fg" id="fg-brand"><label class="lbl">Marca</label><input type="text" id="p-brand" placeholder="Marca (si aplica)"></div>
       </div>
       <div class="g3" style="margin-bottom:12px">
         <div class="fg"><label class="lbl">Precio ($) *</label><input type="number" id="p-price" step="0.01" placeholder="89.99"></div>
         <div class="fg"><label class="lbl">Precio oferta</label><input type="number" id="p-sale" step="0.01" placeholder="79.99"></div>
-        <div class="fg"><label class="lbl">Stock</label><select id="p-stock"><option value="disponible">Disponible</option><option value="últimas unidades">Últimas unidades</option><option value="agotado">Agotado</option></select></div>
+        <div class="fg" id="fg-stock"><label class="lbl">Stock</label><select id="p-stock"><option value="disponible">Disponible</option><option value="últimas unidades">Últimas unidades</option><option value="agotado">Agotado</option></select></div>
+        <div class="fg" id="fg-duration" style="display:none"><label class="lbl">Duración (min)</label><select id="p-duration"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">1 hora</option><option value="90">1h 30min</option><option value="120">2 horas</option></select></div>
       </div>
-      <div class="fg" style="margin-bottom:12px"><label class="lbl">Descripción</label><textarea id="p-desc" rows="3"></textarea></div>
+      <div class="fg" style="margin-bottom:12px"><label class="lbl" id="lbl-desc">Descripción</label><textarea id="p-desc" rows="3" placeholder="Detalles del producto o servicio: características, qué incluye, presentación..."></textarea></div>
       <div class="g2" style="margin-bottom:12px">
-        <div class="fg"><label class="lbl">Etiquetas</label><input type="text" id="p-tags" placeholder="hombre, fresco, regalo"></div>
-        <div class="fg"><label class="lbl">SKU</label><input type="text" id="p-sku" placeholder="DIOR-SAU-100"></div>
+        <div class="fg" id="fg-tags"><label class="lbl">Etiquetas</label><input type="text" id="p-tags" placeholder="Ej: nuevo, oferta, popular"></div>
+        <div class="fg" id="fg-sku"><label class="lbl">SKU</label><input type="text" id="p-sku" placeholder="Código interno (opcional)"></div>
       </div>
       <div class="fg" style="margin-bottom:10px">
         <label class="lbl">Imagen</label>
@@ -270,13 +521,63 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
   </div>
 </div>
 
+<!-- Modal: registrar venta realizada -->
+<div class="mbd" id="sale-modal">
+  <div class="modal">
+    <div class="mhd"><h2>💰 Registrar venta</h2><button class="mx" onclick="closeSaleModal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="sale-phone">
+      <div class="fg" style="margin-bottom:12px"><label class="lbl">Cliente</label><input type="text" id="sale-customer" placeholder="Nombre del cliente"></div>
+      <label class="lbl">Productos vendidos</label>
+      <p style="font-size:11px;color:var(--muted);margin:2px 0 8px">Prellenado con lo que el bot cotizó. Ajusta cantidad/precio o agrega ítems.</p>
+      <div id="sale-items"></div>
+      <button class="btn btn-sm" onclick="addSaleItemRow()" style="margin-top:6px">+ Agregar ítem</button>
+      <div style="text-align:right;margin-top:14px;font-size:16px;font-weight:700">Total: <span id="sale-total">$0.00</span></div>
+
+      <div id="sale-existing" style="margin-top:18px"></div>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeSaleModal()">Cancelar</button><button class="btn btn-dark" id="sale-save-btn" onclick="confirmSale()">Confirmar venta</button></div>
+  </div>
+</div>
+
+<!-- Modal: crear/editar empleado -->
+<div class="mbd" id="user-modal">
+  <div class="modal">
+    <div class="mhd"><h2 id="um-title">Nuevo empleado</h2><button class="mx" onclick="closeUserModal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="um-id">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="fg"><label class="lbl">Nombre</label><input type="text" id="um-name" placeholder="Nombre del empleado"></div>
+        <div class="fg"><label class="lbl">Correo *</label><input type="email" id="um-email" placeholder="empleado@negocio.com"></div>
+      </div>
+      <div class="fg" style="margin-bottom:14px"><label class="lbl">Contraseña <span id="um-pass-hint" style="font-weight:400;color:var(--muted)"></span></label><input type="password" id="um-pass" placeholder="mínimo 6 caracteres"></div>
+      <label class="lbl">¿Qué puede ver y usar?</label>
+      <div id="um-perms" style="display:flex;flex-direction:column;gap:10px;margin-top:8px"></div>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">Las secciones no marcadas no aparecen en su panel, y el servidor las bloquea aunque intente acceder directo.</p>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeUserModal()">Cancelar</button><button class="btn btn-dark" id="um-save" onclick="saveUser()">Guardar</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
+
+<!-- Banner de alarma de reserva nueva -->
+<div id="alarm-banner">
+  <div class="alarm-ic" id="alarm-ic">🔔</div>
+  <div class="alarm-txt">
+    <div class="alarm-title" id="alarm-title">¡Atención!</div>
+    <div class="alarm-sub" id="alarm-sub">Tienes pendientes por atender</div>
+  </div>
+  <button class="alarm-btn primary" id="alarm-action" onclick="goAttend()">Atender</button>
+  <button class="alarm-btn" onclick="silenceAlarm()">Silenciar</button>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const API = window.location.origin
 let TOKEN = localStorage.getItem('client_token')||''
 let BIZ   = JSON.parse(localStorage.getItem('client_biz')||'null')
+let USER  = JSON.parse(localStorage.getItem('client_user')||'null')
 let products = []
 
 let sbClient = null
@@ -363,7 +664,8 @@ function initRealtime() {
 
       sbClient.channel('client-changes-' + bizId)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `business_id=eq.${bizId}` }, () => { loadProducts() })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_history', filter: `business_id=eq.${bizId}` }, () => { loadStats(); if (document.getElementById('pg-conversations').classList.contains('on')) loadConversations() })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_history', filter: `business_id=eq.${bizId}` }, () => { loadStats(); loadConversations() })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_sessions', filter: `business_id=eq.${bizId}` }, () => { loadConversations() })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'businesses', filter: `id=eq.${bizId}` }, payload => {
           const b = payload.new
           if (b.suspended) {
@@ -396,12 +698,12 @@ async function doLogin() {
     const r=await fetch(`${API}/api/client/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})})
     const d=await r.json()
     if (!r.ok){err.textContent=d.error||'Credenciales incorrectas';err.style.display='block'}
-    else { TOKEN=d.token; BIZ=d.business; localStorage.setItem('client_token',TOKEN); localStorage.setItem('client_biz',JSON.stringify(BIZ)); bootApp() }
+    else { TOKEN=d.token; BIZ=d.business; USER=d.user||{role:'owner',permissions:[]}; localStorage.setItem('client_token',TOKEN); localStorage.setItem('client_biz',JSON.stringify(BIZ)); localStorage.setItem('client_user',JSON.stringify(USER)); bootApp() }
   } catch(e){err.textContent='Error de conexión';err.style.display='block'}
   btn.disabled=false; btn.textContent='Entrar →'
 }
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('sc-login').classList.contains('on'))doLogin()})
-function doLogout(){localStorage.removeItem('client_token');localStorage.removeItem('client_biz');TOKEN='';BIZ=null;location.reload()}
+function doLogout(){localStorage.removeItem('client_token');localStorage.removeItem('client_biz');localStorage.removeItem('client_user');TOKEN='';BIZ=null;USER=null;location.reload()}
 
 function bootApp() {
   document.getElementById('sc-login').classList.remove('on')
@@ -417,17 +719,64 @@ function bootApp() {
     document.getElementById('bot-pulse').style.background='var(--red)'
     document.getElementById('bot-status-text').innerHTML='Bot <strong style="color:var(--red)">suspendido</strong>'
   }
+  applyPermissions()
   loadAll()
   initRealtime(BIZ?.id)
+  if (can('conversaciones')) startConvRefresh()   // el polling/alarma solo si puede ver conversaciones
+}
+
+// ── PERMISOS (empleados) ──────────────────────────────────
+function can(perm){ return USER?.role === 'owner' || (Array.isArray(USER?.permissions) && USER.permissions.includes(perm)) }
+
+function applyPermissions() {
+  const owner = USER?.role === 'owner'
+  if (owner) return   // el dueño ve todo (horarios/reservas los maneja el tipo de negocio)
+  document.querySelectorAll('.ni[data-perm]').forEach(el => {
+    const p = el.getAttribute('data-perm')
+    const allowed = p !== 'owner' && Array.isArray(USER?.permissions) && USER.permissions.includes(p)
+    if (!allowed) el.style.display = 'none'
+  })
+  document.getElementById('sb-type').textContent = 'Empleado · BotPanel'
 }
 
 function H(){return{'Authorization':`Bearer ${TOKEN}`,'Content-Type':'application/json'}}
+
+// Escapa HTML para prevenir XSS al renderizar contenido de clientes
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+// ── AJUSTES (identidad básica) ──
+async function loadSettings(){
+  try {
+    const b = await fetch(`${API}/api/client/business`,{headers:H()}).then(r=>r.json())
+    document.getElementById('set-name').value = b.name || ''
+    document.getElementById('set-slogan').value = b.slogan || ''
+    document.getElementById('set-desc').value = b.description || ''
+  } catch {}
+}
+
+async function saveSettings(){
+  const payload = {
+    name: document.getElementById('set-name').value.trim(),
+    slogan: document.getElementById('set-slogan').value.trim(),
+    description: document.getElementById('set-desc').value.trim()
+  }
+  if (!payload.name) { toast('El nombre no puede estar vacío', true); return }
+  try {
+    const r = await fetch(`${API}/api/client/business`,{method:'PUT',headers:H(),body:JSON.stringify(payload)})
+    if (!r.ok) throw new Error()
+    // Reflejar el nuevo nombre en la barra lateral
+    if (BIZ) { BIZ.name = payload.name; localStorage.setItem('client_biz', JSON.stringify(BIZ)) }
+    document.getElementById('sb-name').textContent = payload.name
+    toast('✓ Ajustes guardados')
+  } catch { toast('Error al guardar', true) }
+}
 
 async function loadBusiness() {
   try {
     const r = await fetch(`${API}/api/client/business`, { headers: H() })
     if (!r.ok) return
     const biz = await r.json()
+    bizType = biz.type || ''
     lastBizSuspended = biz.suspended
     if (biz.suspended) {
       document.getElementById('susp-banner').style.display = 'block'
@@ -441,7 +790,27 @@ async function loadBusiness() {
   } catch {}
 }
 
-async function loadAll(){await Promise.all([loadStats(),loadProducts(),loadPolicies(),loadBusiness()])}
+const BOOKING_BIZ_TYPES = ['barbería','peluquería','salón de belleza','spa','restaurante','clínica','odontología','psicología','gym','barberia','peluqueria','salon de belleza','clinica','odontologia','psicologia']
+let bizType = ''
+
+async function loadAll(){
+  await Promise.all([loadStats(),loadProducts(),loadPolicies(),loadBotPrompt(),loadBusiness()])
+  // Mostrar calendario solo para negocios de citas
+  const isBookingBiz = BOOKING_BIZ_TYPES.some(t => bizType.toLowerCase().includes(t))
+  document.getElementById('nav-schedule').style.display = isBookingBiz ? '' : 'none'
+  document.getElementById('nav-calendar').style.display = isBookingBiz ? '' : 'none'
+  applyBizWording()
+  if (isBookingBiz) startBookingWatch()
+}
+
+// Adapta textos "producto"↔"servicio" según el tipo de negocio
+function applyBizWording(){
+  const svc = isServiceBiz()
+  const Cap = svc ? 'Servicios' : 'Catálogo'
+  const nav = document.getElementById('nav-products-label'); if (nav) nav.textContent = Cap
+  const btn = document.getElementById('btn-new-prod'); if (btn) btn.innerHTML = btn.innerHTML.replace(/Nuevo (producto|servicio)/, 'Nuevo '+(svc?'servicio':'producto'))
+  const h = document.getElementById('prod-page-title'); if (h) h.textContent = Cap
+}
 
 async function loadStats() {
   try {
@@ -459,7 +828,16 @@ function goPage(name,el) {
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'))
   document.getElementById('pg-'+name).classList.add('on')
   el.classList.add('on')
-  if (name==='conversations') loadConversations()
+  // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
+  // detectar handoffs a manual aunque el dueño esté en otra sección.
+  if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
+  if (name==='reportes') loadReports()
+  if (name==='usuarios') loadUsers()
+  if (name==='botprompt') loadBotPrompt()
+  if (name==='policies') loadPolicies()
+  if (name==='schedule') loadSchedule()
+  if (name==='calendar') loadCalendar()
+  if (name==='settings') loadSettings()
 }
 
 async function loadProducts() {
@@ -471,6 +849,143 @@ async function loadProducts() {
     document.getElementById('st-p').textContent=products.length
     document.getElementById('st-a').textContent=products.filter(p=>p.stock==='disponible').length
   } catch {}
+}
+
+// ── REPORTES (panel del dueño) ────────────────────────────
+let repPeriod = 'semana'
+const repMoney = n => '$' + (Number(n)||0).toFixed(2)
+
+function setRepPeriod(p, el) {
+  repPeriod = p
+  document.querySelectorAll('#rep-period .btn').forEach(b=>b.classList.remove('on'))
+  el.classList.add('on')
+  loadReports()
+}
+
+async function loadReports() {
+  const box = document.getElementById('rep-content')
+  box.innerHTML = '<p style="color:var(--muted)">Cargando…</p>'
+  try {
+    const r = await fetch(`${API}/api/client/reports?period=${repPeriod}`, { headers: H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    renderReports(await r.json())
+  } catch(e) { box.innerHTML = `<p style="color:var(--red)">Error cargando reportes: ${esc(e.message)}</p>` }
+}
+
+function repCard(title, body){ return `<div style="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:16px"><h3 style="font-size:14px;margin:0 0 10px">${title}</h3>${body}</div>` }
+function repEmpty(msg){ return `<p style="color:var(--muted);font-size:13px;margin:0">${msg}</p>` }
+
+function renderReports(d) {
+  const s = d.summary
+  const stat = (label,val) => `<div style="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px 16px;flex:1;min-width:120px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${label}</div><div style="font-size:22px;font-weight:700;margin-top:4px">${val}</div></div>`
+  const summaryRow = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${stat('Total vendido',repMoney(s.total))}${stat('Pedidos',s.orders)}${stat('Ítems',s.items)}${stat('Ticket promedio',repMoney(s.avg))}</div>`
+
+  const top = d.top.rows.length
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.top.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.qty} uds</strong> · ${repMoney(r.rev)}</li>`).join('')}</ol>`
+    : repEmpty('Sin ventas en el período.')
+  const rec = d.recurring.rows.length
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.recurring.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} compra(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
+    : repEmpty('Sin ventas en el período.')
+  const c = d.comparison
+  let trend
+  if (c.pct === null) trend = c.curTotal>0 ? '🚀 sin base anterior' : 'sin datos'
+  else trend = `<span style="color:${c.pct>=0?'#1a7f37':'var(--red)'}">${c.pct>=0?'▲ +':'▼ '}${c.pct.toFixed(1)}%</span>`
+  const comp = `<div style="font-size:13px;line-height:1.7">Actual: <strong>${repMoney(c.curTotal)}</strong> (${c.curOrders} pedidos)<br>Anterior: ${repMoney(c.prevTotal)} (${c.prevOrders} pedidos)<br>Variación: ${trend}</div>`
+  const low = d.lowMovement.rows.length
+    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.lowMovement.rows.map(p=>`<li style="margin-bottom:3px">${esc(p.name)} — ${p.qty} uds</li>`).join('')}</ul>`
+    : repEmpty('Todos tus productos tuvieron ventas. 🎉')
+  const stock = d.lowStock.rows.length
+    ? `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${d.lowStock.rows.map(p=>`<li style="margin-bottom:3px">${p.stock==='agotado'?'🔴':'🟡'} ${esc(p.name)} — ${p.stock}</li>`).join('')}</ul>`
+    : repEmpty('Nada agotado ni en últimas unidades. ✅')
+  const pend = d.pending.count
+    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.pending.rows.map(x=>`<li style="margin-bottom:3px">${esc(x.name)}${x.last_message?' — "'+esc(String(x.last_message).slice(0,40))+'"':''}</li>`).join('')}</ul>`
+    : repEmpty('No hay cotizaciones sin cerrar. ✅')
+
+  document.getElementById('rep-content').innerHTML = summaryRow +
+    `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+      ${repCard('🏆 Productos más vendidos', top)}
+      ${repCard('🤝 Clientes frecuentes', rec)}
+      ${repCard('📊 Comparación con período anterior', comp)}
+      ${repCard('🐌 Bajo movimiento (candidatos a promo)', low)}
+      ${repCard('📦 Stock bajo o agotado', stock)}
+      ${repCard('📋 Pedidos sin cerrar'+(d.pending.count?` (${d.pending.count})`:''), pend)}
+    </div>`
+}
+
+// ── USUARIOS Y PERMISOS (gestión, solo dueño) ─────────────
+const PERM_LABELS = {
+  catalogo:'📦 Catálogo (agregar y editar productos)',
+  conversaciones:'💬 Conversaciones (chatear con clientes)',
+  citas:'📅 Citas y horarios',
+  reportes:'📊 Reportes de ventas',
+  ventas:'💰 Registrar ventas'
+}
+
+let usersData = []
+async function loadUsers() {
+  try {
+    usersData = await fetch(`${API}/api/client/users`, { headers: H() }).then(r=>r.json())
+    const box = document.getElementById('users-list')
+    const dueño = usersData.filter(u=>u.role==='owner').map(u=>esc(u.email)).join(', ') || '—'
+    const emps = usersData.filter(u=>u.role!=='owner')
+    box.innerHTML = `<div style="margin-bottom:12px;color:var(--muted);font-size:13px">👑 Dueño: <strong>${dueño}</strong> (acceso total)</div>` +
+      (emps.length ? emps.map(u=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+          <div><strong>${esc(u.name||u.email)}</strong><div style="font-size:12px;color:var(--muted)">${esc(u.email)} · ${(u.permissions||[]).length} permiso(s)</div></div>
+          <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="openUserModal('${u.id}')">Editar</button><button class="btn btn-sm btn-red" onclick="deleteUser('${u.id}','${esc(u.email)}')">Eliminar</button></div>
+        </div>`).join('') : `<p style="color:var(--muted)">Aún no tienes empleados. Crea el primero con el botón de arriba.</p>`)
+  } catch(e){ document.getElementById('users-list').innerHTML = `<p style="color:var(--red)">No se pudo cargar.</p>` }
+}
+
+// Permisos sugeridos según el rubro (solo al CREAR; se pueden marcar/desmarcar todos).
+function defaultPermsForBiz(){
+  return isServiceBiz() ? ['citas','conversaciones'] : ['conversaciones','ventas','catalogo']
+}
+
+function openUserModal(id) {
+  const u = id ? usersData.find(x=>x.id===id) : null
+  document.getElementById('um-id').value = u?.id || ''
+  document.getElementById('um-title').textContent = u ? 'Editar empleado' : 'Nuevo empleado'
+  document.getElementById('um-name').value = u?.name || ''
+  document.getElementById('um-email').value = u?.email || ''
+  document.getElementById('um-pass').value = ''
+  document.getElementById('um-pass-hint').textContent = u ? '(déjalo vacío para no cambiarla)' : '*'
+  // Al editar: los permisos guardados. Al crear: sugerencia según el tipo de negocio.
+  const perms = u ? (u.permissions || []) : defaultPermsForBiz()
+  document.getElementById('um-perms').innerHTML = Object.entries(PERM_LABELS).map(([k,label])=>
+    `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" value="${k}" ${perms.includes(k)?'checked':''} style="width:auto;margin:0"> ${label}</label>`).join('')
+  document.getElementById('user-modal').classList.add('on')
+}
+function closeUserModal(){ document.getElementById('user-modal').classList.remove('on') }
+
+async function saveUser() {
+  const id = document.getElementById('um-id').value
+  const email = document.getElementById('um-email').value.trim()
+  const password = document.getElementById('um-pass').value
+  const name = document.getElementById('um-name').value.trim()
+  const permissions = [...document.querySelectorAll('#um-perms input:checked')].map(c=>c.value)
+  if (!email) return toast('El correo es obligatorio', true)
+  if (!id && password.length < 6) return toast('La contraseña debe tener al menos 6 caracteres', true)
+  const btn = document.getElementById('um-save'); btn.disabled=true; btn.textContent='Guardando...'
+  try {
+    const body = { email, name, permissions }
+    if (password) body.password = password
+    const r = await fetch(id ? `${API}/api/client/users/${id}` : `${API}/api/client/users`,
+      { method: id?'PUT':'POST', headers:H(), body:JSON.stringify(body) })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast(id?'✓ Empleado actualizado':'✓ Empleado creado')
+    closeUserModal(); loadUsers()
+  } catch(e){ toast('Error: '+e.message, true) }
+  btn.disabled=false; btn.textContent='Guardar'
+}
+
+async function deleteUser(id, email) {
+  if (!confirm(`¿Eliminar al empleado ${email}? Ya no podrá entrar al panel.`)) return
+  try {
+    const r = await fetch(`${API}/api/client/users/${id}`, { method:'DELETE', headers:H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast('✓ Empleado eliminado'); loadUsers()
+  } catch(e){ toast('Error: '+e.message, true) }
 }
 
 function sc(s){return s==='disponible'?'p-ok':s==='agotado'?'p-out':'p-low'}
@@ -504,8 +1019,23 @@ function renderDashProducts() {
 }
 
 // MODAL
+// ¿El negocio es de servicios (citas) o de productos (venta)?
+function isServiceBiz(){ return BOOKING_BIZ_TYPES.some(t => bizType.toLowerCase().includes(t)) }
+
 function openModal(id=null) {
-  document.getElementById('m-title').textContent=id?'Editar producto':'Nuevo producto'
+  const svc = isServiceBiz()
+  const word = svc ? 'servicio' : 'producto'
+  document.getElementById('m-title').textContent=(id?'Editar ':'Nuevo ')+word
+  // Adaptar campos según tipo de negocio
+  document.getElementById('fg-brand').style.display = svc ? 'none' : ''
+  document.getElementById('fg-stock').style.display = svc ? 'none' : ''
+  document.getElementById('fg-tags').style.display  = svc ? 'none' : ''
+  document.getElementById('fg-sku').style.display   = svc ? 'none' : ''
+  document.getElementById('fg-duration').style.display = svc ? '' : 'none'
+  document.getElementById('lbl-name').textContent = svc ? 'Nombre del servicio *' : 'Nombre *'
+  document.getElementById('p-name').placeholder = svc ? 'Ej: Corte de cabello, Manicure, Consulta' : 'Ej: Camiseta talla M, Perfume 100ml, Producto'
+  document.getElementById('p-desc').placeholder = svc ? 'Detalles del servicio: qué incluye, duración...' : 'Detalles del producto: características, presentación...'
+
   document.getElementById('edit-id').value=id||''
   clearFile()
   const p=id?products.find(x=>x.id===id):null
@@ -517,6 +1047,7 @@ function openModal(id=null) {
   document.getElementById('p-desc').value=p?.description||''
   document.getElementById('p-tags').value=(p?.tags||[]).join(', ')
   document.getElementById('p-sku').value=p?.external_sku||''
+  document.getElementById('p-duration').value=p?.duration_minutes||'30'
   document.getElementById('p-img').value=p?.image_url||''
   document.getElementById('prod-modal').classList.add('on')
 }
@@ -527,6 +1058,7 @@ async function saveProduct() {
   if (!name||isNaN(price)){toast('Nombre y precio son obligatorios',true);return}
   const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Guardando...'
   const payload={name,price,brand:document.getElementById('p-brand').value.trim()||null,price_sale:parseFloat(document.getElementById('p-sale').value)||null,stock:document.getElementById('p-stock').value,description:document.getElementById('p-desc').value.trim()||null,tags:document.getElementById('p-tags').value.split(',').map(t=>t.trim()).filter(Boolean),external_sku:document.getElementById('p-sku').value.trim()||null,image_url:document.getElementById('p-img').value.trim()||null}
+  if (isServiceBiz()) payload.duration_minutes=parseInt(document.getElementById('p-duration').value)
   const editId=document.getElementById('edit-id').value
   try {
     const r=await fetch(editId?`${API}/api/client/products/${editId}`:`${API}/api/client/products`,{method:editId?'PUT':'POST',headers:H(),body:JSON.stringify(payload)})
@@ -542,6 +1074,16 @@ async function delProduct(id) {
   await loadProducts(); toast('Producto eliminado')
 }
 
+// Reindexar catálogo (genera embeddings para la búsqueda inteligente del bot)
+async function reindexCatalog(){
+  try {
+    toast('Indexando catálogo… esto puede tardar un poco')
+    const r = await fetch(`${API}/api/client/reindex`,{method:'POST',headers:H()})
+    const d = await r.json()
+    toast(d.message || '✓ Indexación iniciada')
+  } catch { toast('Error al reindexar', true) }
+}
+
 function handleFile(e) {
   const f=e.target.files[0]; if (!f) return
   const r=new FileReader()
@@ -550,27 +1092,335 @@ function handleFile(e) {
 }
 function clearFile(){document.getElementById('upz').style.display='block';document.getElementById('uppv').classList.remove('on');document.getElementById('up-file').value=''}
 
-// CONVERSATIONS
+// CONVERSATIONS + SESIONES
+let sessionsData = {}
+let convsData = {}     // phone → messages[]
+let activePhone = null
+let convRefreshTimer = null
+let knownManualPhones = null  // para detectar nuevos chats que pasan a manual
+
 async function loadConversations() {
   try {
-    const r=await fetch(`${API}/api/client/conversations`,{headers:H()})
-    const convs=await r.json()
-    // Agrupar por contacto
-    const grouped={}
-    convs.forEach(m=>{if(!grouped[m.contact_phone])grouped[m.contact_phone]=[];grouped[m.contact_phone].push(m)})
-    const cl=document.getElementById('conv-list')
-    if (!Object.keys(grouped).length){cl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:16px 0">Sin conversaciones aún. Cuando alguien escriba al bot aparecerá aquí.</div>';return}
-    cl.innerHTML=Object.entries(grouped).map(([phone,msgs])=>`
-      <div class="conv-thread">
-        <div class="conv-phone">📱 ${phone}</div>
-        ${msgs.slice(-6).map(m=>`
-          <div class="conv-msg">
-            <div class="${m.role==='user'?'conv-dot-user':'conv-dot-bot'}"></div>
-            <div class="conv-msg-text">${m.content}</div>
-            <div class="conv-msg-time">${new Date(m.created_at).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}</div>
-          </div>`).join('')}
-      </div>`).join('')
-  } catch(e){document.getElementById('conv-list').innerHTML=`<p style="color:var(--red)">Error cargando: ${e.message}</p>`}
+    const [convs, sessions] = await Promise.all([
+      fetch(`${API}/api/client/conversations`, { headers: H() }).then(r => r.json()),
+      fetch(`${API}/api/client/sessions`, { headers: H() }).then(r => r.ok ? r.json() : []).catch(() => [])
+    ])
+    sessionsData = Object.fromEntries((sessions||[]).map(s => [s.contact_phone, s]))
+
+    // Aviso una sola vez (toast + notificación del SO) cuando aparece un chat manual nuevo
+    const manualPhones = new Set((sessions||[]).filter(s => s.manual_mode).map(s => s.contact_phone))
+    if (knownManualPhones !== null) {
+      const nuevosManual = [...manualPhones].filter(p => !knownManualPhones.has(p))
+      if (nuevosManual.length) {
+        const navConv = document.getElementById('nav-conv')
+        if (navConv) navConv.classList.add('flash')
+        // Notificación del SO: suena/aparece AUNQUE la pestaña esté en segundo plano
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try { new Notification('🙋 El bot pidió un asesor', { body: 'Un cliente necesita atención humana. Revisa Conversaciones.', requireInteraction: true, tag: 'handoff' }) } catch(e){}
+        }
+        toast('🙋 El bot pasó un chat a modo manual — necesita tu atención')
+      }
+    }
+    knownManualPhones = manualPhones
+
+    // ALARMA PERSISTENTE: suena mientras haya un chat manual SIN ATENDER (unread_owner)
+    if (alarmShouldRing()) { startAlarm(); startTitleFlash() }
+    else stopTitleFlash()
+
+    // Badge en nav si hay conversaciones en modo manual
+    const manualCount = manualPhones.size
+    const badge = document.getElementById('manual-badge')
+    badge.textContent = manualCount
+    badge.style.display = manualCount ? '' : 'none'
+
+    // Agrupar mensajes por contacto (la API devuelve DESC, invertimos a cronológico)
+    convsData = {}
+    convs.forEach(m => { if (!convsData[m.contact_phone]) convsData[m.contact_phone]=[]; convsData[m.contact_phone].push(m) })
+    Object.keys(convsData).forEach(p => convsData[p].reverse())
+
+    const cl = document.getElementById('conv-list')
+    const phones = Object.keys(convsData)
+    if (!phones.length) {
+      cl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:12px">Sin conversaciones aún.</div>'
+      return
+    }
+
+    // Ordenar: manuales primero, luego por último mensaje
+    phones.sort((a,b) => {
+      const am = sessionsData[a]?.manual_mode ? 1 : 0
+      const bm = sessionsData[b]?.manual_mode ? 1 : 0
+      if (bm !== am) return bm - am
+      const la = convsData[a].at(-1)?.created_at || ''
+      const lb = convsData[b].at(-1)?.created_at || ''
+      return lb.localeCompare(la)
+    })
+
+    cl.innerHTML = phones.map(phone => {
+      const sess     = sessionsData[phone]
+      const isManual = sess?.manual_mode
+      const msgs     = convsData[phone]
+      const last     = msgs.at(-1)
+      const time     = last ? new Date(last.created_at).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : ''
+      const preview  = last ? esc(last.content.slice(0,45))+(last.content.length>45?'…':'') : ''
+      const isActive = activePhone === phone
+      return `<div class="contact-item ${isManual?'manual':''} ${isActive?'active':''}" onclick="openChat('${encodeURIComponent(phone)}')">
+        <div class="contact-meta">
+          <span class="contact-ph">${esc(displayName(phone))}</span>
+          <span class="contact-time">${time}</span>
+        </div>
+        <div class="contact-preview">${isManual?'🤚 ':'🤖 '}${preview}</div>
+      </div>`
+    }).join('')
+
+    // Si hay un chat abierto, actualizar el panel sin perder el scroll (solo si hay msgs nuevos)
+    if (activePhone && convsData[activePhone]) renderChatPanel(activePhone)
+
+  } catch(e) { console.error('loadConversations:', e) }
+}
+
+// Nombre a mostrar: el guardado por el dueño, o el teléfono/Telegram
+function displayName(phone){
+  const n = sessionsData[phone]?.contact_name
+  if (n) return n
+  return phone.startsWith('tg_') ? 'Telegram ' + phone.slice(3) : phone
+}
+
+// Editar el nombre del contacto y guardarlo
+async function renameContact(phoneEnc){
+  const phone = decodeURIComponent(phoneEnc)
+  const actual = sessionsData[phone]?.contact_name || ''
+  const nuevo = prompt('Nombre del cliente (para identificarlo):', actual)
+  if (nuevo === null) return
+  try {
+    await fetch(`${API}/api/client/sessions/${phoneEnc}/name`, { method:'PUT', headers:H(), body:JSON.stringify({ name: nuevo.trim() }) })
+    if (sessionsData[phone]) sessionsData[phone].contact_name = nuevo.trim() || null
+    await loadConversations()
+    if (activePhone === phone) renderChatPanel(phone)
+    toast('✓ Nombre guardado')
+  } catch { toast('Error al guardar el nombre', true) }
+}
+
+function openChat(phoneEnc) {
+  activePhone = decodeURIComponent(phoneEnc)
+  // Marcar este chat como atendido → calla la alarma persistente
+  const s = sessionsData[activePhone]
+  if (s && s.manual_mode && s.unread_owner) {
+    s.unread_owner = false
+    alarmSilencedUntil = Date.now() + 10000  // gracia anti-rebote
+    stopAlarm()
+    fetch(`${API}/api/client/sessions/${phoneEnc}/read`, { method:'PUT', headers:H() }).catch(()=>{})
+  }
+  loadConversations()  // re-render lista para marcar activo
+  renderChatPanel(activePhone)
+}
+
+function renderChatPanel(phone) {
+  const msgs    = convsData[phone] || []
+  const sess    = sessionsData[phone]
+  const isManual = sess?.manual_mode
+  const phoneEnc = encodeURIComponent(phone)
+
+  document.getElementById('chat-empty').style.display = 'none'
+  const panel = document.getElementById('chat-panel')
+  panel.style.display = 'flex'
+
+  document.getElementById('chat-phone').innerHTML = `${esc(displayName(phone))} <span onclick="renameContact('${phoneEnc}')" style="cursor:pointer;font-size:12px;opacity:.6" title="Editar nombre">✏️</span>`
+  const realPhone = phone.replace('tg_','Telegram ')
+  document.getElementById('chat-status').textContent = (sess?.contact_name ? realPhone + ' · ' : '') + (isManual ? '🤚 Modo manual — respondiendo tú' : '🤖 Bot activo')
+
+  document.getElementById('chat-actions').innerHTML =
+    (can('ventas') ? `<button class="btn btn-sm" style="color:#1a7f37;border-color:rgba(26,127,55,.25)" onclick="openSaleModal('${phoneEnc}')">💰 Venta realizada</button>` : '') +
+    (isManual
+      ? `<button class="btn btn-sm" onclick="setMode('${phoneEnc}',false)">🤖 Activar bot</button>`
+      : `<button class="btn btn-sm" style="color:var(--red);border-color:rgba(240,61,47,.2)" onclick="setMode('${phoneEnc}',true)">🤚 Tomar control</button>`)
+
+  const chatMsgs = document.getElementById('chat-messages')
+  const wasAtBottom = chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight < 60
+  const prevCount = chatMsgs.dataset.count || 0
+
+  chatMsgs.innerHTML = msgs.map(m => {
+    const time = new Date(m.created_at).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})
+    const cls  = m.role === 'user' ? 'user' : (m.role === 'owner' ? 'owner' : 'bot')
+    return `<div class="bubble-wrap">
+      <div class="bubble ${cls}">${esc(m.content).replace(/\n/g,'<br>')}</div>
+      <div class="bubble-time ${cls!=='user'?'right':''}">${cls==='owner'?'Tú · ':''}${time}</div>
+    </div>`
+  }).join('')
+  chatMsgs.dataset.count = msgs.length
+
+  // Scroll al fondo si venía al fondo o hay msgs nuevos
+  if (wasAtBottom || msgs.length > prevCount) chatMsgs.scrollTop = chatMsgs.scrollHeight
+
+  // Input de envío
+  const inputArea = document.getElementById('chat-input-area')
+  inputArea.style.display = isManual ? 'flex' : 'none'
+}
+
+async function setMode(phoneEnc, manual) {
+  await fetch(`${API}/api/client/sessions/${phoneEnc}/mode`, { method:'PUT', headers:H(), body:JSON.stringify({manual}) })
+  attendManual()  // el dueño atendió → calla la alarma manual
+  await loadConversations()
+  toast(manual ? '🤚 Bot pausado — puedes responder tú' : '🤖 Bot reactivado')
+}
+
+async function sendManualChat() {
+  const msg = document.getElementById('chat-input')?.value?.trim()
+  if (!msg || !activePhone) return
+  document.getElementById('chat-input').value = ''
+  const phoneEnc = encodeURIComponent(activePhone)
+  try {
+    const r = await fetch(`${API}/api/client/sessions/${phoneEnc}/send`, { method:'POST', headers:H(), body:JSON.stringify({message:msg}) })
+    if (!r.ok) throw new Error((await r.json()).error)
+    attendManual()  // el dueño respondió → calla la alarma manual
+    await loadConversations()
+    toast('✓ Mensaje enviado')
+  } catch(e) { toast('Error: '+e.message, true) }
+}
+
+// Mantener compatibilidad con funciones antiguas que puedan quedar en el HTML
+async function sendManual(phoneEnc) { activePhone = decodeURIComponent(phoneEnc); await sendManualChat() }
+
+// ── REGISTRO DE VENTAS ────────────────────────────────────
+let saleCatalog = []   // [{id,name,price}] para los selects de ítems
+
+async function openSaleModal(phoneEnc) {
+  const phone = decodeURIComponent(phoneEnc)
+  document.getElementById('sale-phone').value = phone
+  document.getElementById('sale-items').innerHTML = ''
+  document.getElementById('sale-existing').innerHTML = ''
+  document.getElementById('sale-customer').value = displayName(phone)
+  try {
+    const r = await fetch(`${API}/api/client/sessions/${phoneEnc}/quote`, { headers: H() })
+    const d = await r.json()
+    saleCatalog = d.products || []
+    if (d.contact_name) document.getElementById('sale-customer').value = d.contact_name
+    const sugeridos = (d.suggested && d.suggested.length) ? d.suggested : [null]
+    sugeridos.forEach(it => addSaleItemRow(it))
+  } catch(e) {
+    saleCatalog = []
+    addSaleItemRow(null)
+  }
+  recalcSaleTotal()
+  loadContactSales(phone)
+  document.getElementById('sale-modal').classList.add('on')
+}
+function closeSaleModal(){ document.getElementById('sale-modal').classList.remove('on') }
+
+function addSaleItemRow(item) {
+  const opts = saleCatalog.map(p =>
+    `<option value="${p.id}" data-price="${p.price}" ${item && item.product_id===p.id?'selected':''}>${esc(p.name)}</option>`
+  ).join('')
+  const row = document.createElement('div')
+  row.className = 'sale-row'
+  row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center'
+  row.innerHTML =
+    `<select class="si-prod" style="flex:2" onchange="onSaleProdChange(this)"><option value="">— elige producto —</option>${opts}</select>
+     <input class="si-qty" type="number" min="1" value="${item?item.quantity||1:1}" style="width:58px" oninput="recalcSaleTotal()" title="Cantidad">
+     <input class="si-price" type="number" step="0.01" value="${item?Number(item.unit_price||0).toFixed(2):''}" placeholder="0.00" style="width:84px" oninput="recalcSaleTotal()" title="Precio unitario">
+     <button class="btn btn-sm" onclick="this.closest('.sale-row').remove();recalcSaleTotal()" title="Quitar">✕</button>`
+  document.getElementById('sale-items').appendChild(row)
+}
+function onSaleProdChange(sel) {
+  const opt = sel.options[sel.selectedIndex]
+  const price = opt?.getAttribute('data-price')
+  if (price) sel.closest('.sale-row').querySelector('.si-price').value = Number(price).toFixed(2)
+  recalcSaleTotal()
+}
+function recalcSaleTotal() {
+  let total = 0
+  document.querySelectorAll('#sale-items .sale-row').forEach(row => {
+    const q = parseFloat(row.querySelector('.si-qty').value) || 0
+    const p = parseFloat(row.querySelector('.si-price').value) || 0
+    total += q * p
+  })
+  document.getElementById('sale-total').textContent = '$' + total.toFixed(2)
+}
+
+async function confirmSale() {
+  const phone = document.getElementById('sale-phone').value
+  const items = [...document.querySelectorAll('#sale-items .sale-row')].map(row => {
+    const sel = row.querySelector('.si-prod')
+    const opt = sel.options[sel.selectedIndex]
+    return {
+      product_id: sel.value || null,
+      product_name: (sel.value && opt) ? opt.textContent : 'Producto',
+      quantity: parseInt(row.querySelector('.si-qty').value) || 1,
+      unit_price: parseFloat(row.querySelector('.si-price').value) || 0
+    }
+  }).filter(i => i.product_id)
+  if (!items.length) return toast('Agrega al menos un producto', true)
+  const btn = document.getElementById('sale-save-btn'); btn.disabled = true; btn.textContent = 'Guardando...'
+  try {
+    const r = await fetch(`${API}/api/client/sales`, { method:'POST', headers:H(), body:JSON.stringify({
+      contact_phone: phone, contact_name: document.getElementById('sale-customer').value.trim(), items
+    }) })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast('✓ Venta registrada')
+    closeSaleModal()
+    loadConversations()
+  } catch(e) { toast('Error: '+e.message, true) }
+  btn.disabled = false; btn.textContent = 'Confirmar venta'
+}
+
+async function loadContactSales(phone) {
+  try {
+    const r = await fetch(`${API}/api/client/sales?phone=${encodeURIComponent(phone)}`, { headers: H() })
+    const sales = await r.json()
+    if (!sales.length) return
+    document.getElementById('sale-existing').innerHTML =
+      `<label class="lbl">Ventas registradas de este cliente</label>` +
+      sales.map(s => {
+        const fecha = new Date(s.sold_at).toLocaleDateString('es')
+        const anulada = s.status === 'anulada'
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);${anulada?'opacity:.5':''}">
+          <span style="font-size:13px">${fecha} · <strong>$${Number(s.total).toFixed(2)}</strong> ${anulada?'<em>(anulada)</em>':''}</span>
+          ${anulada?'':`<button class="btn btn-sm btn-red" onclick="voidSale('${s.id}')">Anular venta</button>`}
+        </div>`
+      }).join('')
+  } catch(e) {}
+}
+
+async function voidSale(id) {
+  if (!confirm('¿Anular esta venta? Se revertirá del conteo y los reportes.')) return
+  try {
+    const r = await fetch(`${API}/api/client/sales/${id}/void`, { method:'POST', headers:H() })
+    if (!r.ok) throw new Error((await r.json()).error)
+    toast('✓ Venta anulada')
+    loadContactSales(document.getElementById('sale-phone').value)
+    loadConversations()
+  } catch(e) { toast('Error: '+e.message, true) }
+}
+
+// Auto-refresh cuando la página de conversaciones está activa
+function startConvRefresh() {
+  clearInterval(convRefreshTimer)
+  convRefreshTimer = setInterval(loadConversations, 3000)
+}
+function stopConvRefresh() { clearInterval(convRefreshTimer) }
+
+// BOT PROMPT
+async function loadBotPrompt() {
+  try {
+    const r=await fetch(`${API}/api/client/policies`,{headers:H()})
+    const d=await r.json()
+    document.getElementById('bot-prompt-txt').value=d.bot_prompt||''
+  } catch {}
+}
+async function saveBotPrompt() {
+  try {
+    const r=await fetch(`${API}/api/client/bot-prompt`,{method:'PUT',headers:H(),body:JSON.stringify({bot_prompt:document.getElementById('bot-prompt-txt').value})})
+    if (!r.ok) throw new Error()
+    toast('✓ Prompt del bot guardado')
+  } catch {toast('Error al guardar',true)}
+}
+const TEMPLATES = {
+  formal: `Eres [Nombre], el asistente virtual oficial de [Tu Negocio].\nTu tono es profesional y cortés. Siempre trata al cliente de "usted".\n\nSaludo inicial: "Bienvenido/a a [Tu Negocio], ¿en qué puedo asistirle hoy?"\nDespedida: "Ha sido un placer atenderle. Que tenga un excelente día."\n\nEvita expresiones informales o abreviaciones.`,
+  casual: `Eres [Nombre], el asistente amigable de [Tu Negocio] 😊\nTu tono es cercano, divertido y entusiasta. Usa emojis con moderación.\n\nSaludo inicial: "¡Hola! 👋 Bienvenido/a a [Tu Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! No dudes en escribirnos cuando quieras 🙌"\n\nSé natural y evita sonar como un robot.`,
+  luxury: `Eres [Nombre], asesor/a de lujo de [Tu Negocio].\nTu tono es elegante, sofisticado y exclusivo. Cuida cada palabra.\n\nSaludo inicial: "Bienvenido/a. En [Tu Negocio] nos complace asesorarle personalmente."\nDespedida: "Ha sido un honor. Quedamos a su disposición."\n\nDestaca la exclusividad y calidad de cada producto. Nunca menciones precios sin antes presentar el valor.`
+}
+function insertTemplate(type) {
+  document.getElementById('bot-prompt-txt').value = TEMPLATES[type] || ''
+  document.getElementById('bot-prompt-txt').focus()
 }
 
 // POLICIES
@@ -594,7 +1444,383 @@ async function savePolicies() {
 
 function toast(msg,err=false){const t=document.getElementById('toast');document.getElementById('toast-msg').textContent=msg;t.className='toast'+(err?' err':'');t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3200)}
 
+// ── HORARIOS ──────────────────────────────────────────────
+const DAYS_LABELS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+let scheduleData = {}
+
+async function loadSchedule() {
+  try {
+    const data = await fetch(`${API}/api/client/schedule`,{headers:H()}).then(r=>r.json())
+    scheduleData = Object.fromEntries(data.map(d=>[d.day_of_week, d]))
+    if (data[0]?.slot_duration) document.getElementById('sch-duration').value = data[0].slot_duration
+    renderSchedule()
+  } catch { renderSchedule() }
+}
+
+function renderSchedule() {
+  document.getElementById('sch-days').innerHTML = DAYS_LABELS.map((name,i) => {
+    const d = scheduleData[i] || {}
+    const active = d.is_active ?? (i >= 1 && i <= 5)
+    return `<div class="sch-day">
+      <label class="sch-toggle"><input type="checkbox" id="sch-active-${i}" ${active?'checked':''} onchange="toggleSchDay(${i})"><span class="sch-slider"></span></label>
+      <span class="sch-label">${name}</span>
+      <div class="sch-times" id="sch-times-${i}" style="${active?'':'opacity:.35;pointer-events:none'}">
+        <span style="font-size:11px;color:var(--muted)">Desde</span>
+        <input type="time" id="sch-open-${i}" value="${(d.open_time||'09:00').slice(0,5)}">
+        <span style="font-size:11px;color:var(--muted)">Hasta</span>
+        <input type="time" id="sch-close-${i}" value="${(d.close_time||'18:00').slice(0,5)}">
+      </div>
+    </div>`
+  }).join('')
+}
+
+function toggleSchDay(i) {
+  const active = document.getElementById('sch-active-'+i).checked
+  document.getElementById('sch-times-'+i).style.cssText = active ? '' : 'opacity:.35;pointer-events:none'
+}
+
+async function saveSchedule() {
+  const dur = parseInt(document.getElementById('sch-duration').value)
+  const days = DAYS_LABELS.map((_,i) => ({
+    day_of_week: i,
+    is_active:   document.getElementById('sch-active-'+i)?.checked || false,
+    open_time:   document.getElementById('sch-open-'+i)?.value || '09:00',
+    close_time:  document.getElementById('sch-close-'+i)?.value || '18:00',
+    slot_duration: dur
+  }))
+  try {
+    const r = await fetch(`${API}/api/client/schedule`,{method:'PUT',headers:H(),body:JSON.stringify({days})})
+    if (!r.ok) throw new Error()
+    toast('✓ Horarios guardados')
+  } catch { toast('Error al guardar',true) }
+}
+
+// ── CALENDARIO ────────────────────────────────────────────
+let calYear = new Date().getFullYear()
+let calMonth = new Date().getMonth()
+let allBookings = []
+let selectedDay = null
+
+function calPrev() { calMonth--; if (calMonth < 0){calMonth=11;calYear--}; renderCalendar() }
+function calNext() { calMonth++; if (calMonth > 11){calMonth=0;calYear++}; renderCalendar() }
+
+async function loadCalendar() {
+  try {
+    allBookings = await fetch(`${API}/api/client/bookings`,{headers:H()}).then(r=>r.json())
+    renderCalendar()
+    updateBookingBadge()
+  } catch {}
+}
+
+function updateBookingBadge() {
+  const pending = allBookings.filter(b=>b.status==='pending').length
+  const badge = document.getElementById('booking-badge')
+  badge.textContent = pending; badge.style.display = pending ? '' : 'none'
+}
+
+// ── NOTIFICACIÓN DE NUEVAS RESERVAS (campanita + aviso) ──
+let knownBookingIds = null
+let bookingWatchTimer = null
+
+// ── AUDIO DE ALARMA: 2 motores ──
+//  1) Web Audio  → suena fuerte en primer plano (lo que ya funcionaba)
+//  2) <audio> en bucle → sigue sonando en segundo plano (otra pestaña)
+let alarmAudio = null, audioCtx = null
+
+function buildAlarmUrl(){
+  // 1s de tono alterno (880↔1175 Hz) en WAV → se reproduce en bucle
+  const sr = 44100, n = sr
+  const ab = new ArrayBuffer(44 + n*2), dv = new DataView(ab)
+  const w = (o,s) => { for (let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)) }
+  w(0,'RIFF'); dv.setUint32(4, 36+n*2, true); w(8,'WAVE'); w(12,'fmt ')
+  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true)
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true)
+  w(36,'data'); dv.setUint32(40,n*2,true)
+  for (let i=0;i<n;i++){ const t=i/sr; const f=(t%0.5)<0.25?880:1175; dv.setInt16(44+i*2, Math.sin(2*Math.PI*f*t)*0.85*32767, true) }
+  return URL.createObjectURL(new Blob([ab], { type:'audio/wav' }))
+}
+function initAlarmAudio(){
+  if (!alarmAudio) { alarmAudio = new Audio(buildAlarmUrl()); alarmAudio.loop = true; alarmAudio.volume = 1.0 }
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext||window.webkitAudioContext)() } catch(e){} }
+}
+// Desbloquear ambos motores en el primer gesto del usuario
+function unlockAudio(){
+  initAlarmAudio()
+  try { if (audioCtx && audioCtx.state==='suspended') audioCtx.resume() } catch(e){}
+  try { alarmAudio.play().then(()=>{ alarmAudio.pause(); alarmAudio.currentTime=0 }).catch(()=>{}) } catch(e){}
+}
+document.addEventListener('click', unlockAudio)
+document.addEventListener('keydown', unlockAudio)
+document.addEventListener('touchstart', unlockAudio)
+
+// Beep con Web Audio (primer plano)
+function webBeep(){
+  if (!audioCtx) return
+  try {
+    if (audioCtx.state==='suspended') audioCtx.resume()
+    ;[988,1319,988,1319].forEach((f,i)=>{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain()
+      o.type='square'; o.frequency.value=f; o.connect(g); g.connect(audioCtx.destination)
+      const t=audioCtx.currentTime+i*0.18
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.5,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.16)
+      o.start(t); o.stop(t+0.18)
+    })
+  } catch(e){}
+}
+
+function playAlarm(){
+  initAlarmAudio()
+  webBeep()  // primer plano
+  try { alarmAudio.currentTime=0; alarmAudio.play().catch(()=>{}) } catch(e){}  // bucle (segundo plano)
+}
+
+// Botón de prueba: clic directo (desbloquea audio y verifica que funciona)
+function testAlarmSound(){
+  initAlarmAudio()
+  try { if (audioCtx && audioCtx.state==='suspended') audioCtx.resume() } catch(e){}
+  webBeep()
+  alarmAudio.currentTime = 0
+  alarmAudio.play().then(() => {
+    toast('🔊 Sonando… (se detiene en 3s)')
+    setTimeout(() => { alarmAudio.pause(); alarmAudio.currentTime = 0 }, 3000)
+  }).catch(e => {
+    toast('⚠️ Audio bloqueado por el navegador: ' + (e.name||e.message||'permiso'), true)
+  })
+}
+function stopAlarmSound(){
+  if (!alarmAudio) return
+  try { alarmAudio.pause(); alarmAudio.currentTime = 0 } catch(e){}
+}
+
+// ── ALARMA INSISTENTE: suena mientras haya pendientes SIN ATENDER (estado en BD) ──
+let alarmTimer = null
+let alarmStartedAt = 0
+let alarmSilencedUntil = 0      // si el dueño silencia, no vuelve a sonar por un rato
+const ALARM_MAX_MS = 180000     // 3 minutos seguidos máximo por tanda
+
+// ¿Hay algo sin atender? chats manuales con unread_owner, o reservas pendientes
+function alarmShouldRing(){
+  if (Date.now() < alarmSilencedUntil) return false
+  const pendingBookings = (allBookings||[]).some(b=>b.status==='pending')
+  const unattendedManual = Object.values(sessionsData||{}).some(s=>s.manual_mode && s.unread_owner)
+  return pendingBookings || unattendedManual
+}
+
+function startAlarm(){
+  const banner = document.getElementById('alarm-banner')
+  if (alarmTimer) { updateAlarmSub(); return } // ya sonando
+  alarmStartedAt = Date.now()
+  banner.classList.add('on')
+  updateAlarmSub()
+  playAlarm()  // beep Web Audio (primer plano) + <audio> en bucle (segundo plano)
+  // Re-beep cada 2.5s para primer plano; el <audio> ya hace su propio bucle continuo
+  alarmTimer = setInterval(() => {
+    if (!alarmShouldRing() || Date.now()-alarmStartedAt > ALARM_MAX_MS) { stopAlarm(); return }
+    webBeep()
+    updateAlarmSub()
+  }, 2500)
+}
+
+function stopAlarm(){
+  clearInterval(alarmTimer); alarmTimer = null
+  stopAlarmSound()
+  document.getElementById('alarm-banner').classList.remove('on')
+  stopTitleFlash()
+}
+
+// Silenciar: calla por 2 min (luego, si sigue sin atender, vuelve a sonar)
+function silenceAlarm(){ alarmSilencedUntil = Date.now() + 120000; stopAlarm(); stopTitleFlash() }
+
+// Parpadeo del título de la pestaña (visible aunque la pestaña esté en segundo plano)
+let titleFlashTimer = null
+const ORIG_TITLE = document.title
+function startTitleFlash(){
+  if (titleFlashTimer) return
+  let on = false
+  titleFlashTimer = setInterval(() => {
+    document.title = on ? '🔔 ¡ATENCIÓN! · BotPanel' : ORIG_TITLE
+    on = !on
+  }, 1000)
+}
+function stopTitleFlash(){
+  clearInterval(titleFlashTimer); titleFlashTimer = null
+  document.title = ORIG_TITLE
+}
+
+// Al volver a la pestaña: revisar y sonar de inmediato (el audio se reactiva con el foco)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    unlockAudio()
+    loadConversations()
+    if (alarmShouldRing()) startAlarm()
+  }
+})
+
+// El dueño atendió lo manual → marcar leído en la BD (calla la alarma de forma persistente)
+async function attendManual(){
+  const pend = Object.values(sessionsData||{}).filter(s => s.manual_mode && s.unread_owner)
+  if (!pend.length) return
+  // Ventana de gracia: evita que el polling re-dispare la alarma mientras el servidor confirma
+  alarmSilencedUntil = Date.now() + 10000
+  stopAlarm()
+  // Marcar leído y ESPERAR a que el servidor confirme (evita la condición de carrera)
+  await Promise.all(pend.map(s => {
+    sessionsData[s.contact_phone].unread_owner = false
+    return fetch(`${API}/api/client/sessions/${encodeURIComponent(s.contact_phone)}/read`, { method:'PUT', headers:H() }).catch(()=>{})
+  }))
+}
+
+function updateAlarmSub(){
+  const pend = (allBookings||[]).filter(b=>b.status==='pending').length
+  const manual = Object.values(sessionsData||{}).filter(s=>s.manual_mode && s.unread_owner).length
+  // Título e ícono según el motivo
+  let title, ic
+  if (manual && pend) { title = '🔔 ¡Tienes pendientes!'; ic = '🔔' }
+  else if (manual)    { title = '🙋 ¡Atiende a un cliente!'; ic = '🙋' }
+  else                { title = '🗓️ ¡Nueva reserva!'; ic = '🗓️' }
+  document.getElementById('alarm-title').textContent = title
+  document.getElementById('alarm-ic').textContent = ic
+  const parts = []
+  if (manual) parts.push(`${manual} cliente${manual!==1?'s':''} esperando respuesta`)
+  if (pend)   parts.push(`${pend} cita${pend!==1?'s':''} por confirmar/cancelar`)
+  document.getElementById('alarm-sub').textContent = parts.join(' · ') || 'Tienes pendientes por atender'
+}
+
+// Botón "Atender" del banner — lleva a lo que necesita atención
+function goAttend(){
+  const manual = Object.values(sessionsData||{}).some(s=>s.manual_mode && s.unread_owner)
+  alarmSilencedUntil = Date.now() + 10000  // gracia anti-rebote
+  stopAlarm()
+  if (manual) {
+    const navConv = document.getElementById('nav-conv')
+    if (navConv) goPage('conversations', navConv)
+  } else {
+    const navCal = document.getElementById('nav-calendar')
+    if (navCal) goPage('calendar', navCal)
+  }
+}
+
+function notifyNewBooking(b){
+  const badge = document.getElementById('booking-badge')
+  if (badge){ badge.classList.add('ring'); setTimeout(()=>badge.classList.remove('ring'),1700) }
+  const txt = `${b.contact_name||b.contact_phone} · ${b.service||'cita'} · ${b.booking_date} ${(b.booking_time||'').slice(0,5)}`
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('🔔 Nueva reserva', { body: txt })
+  }
+  toast('🔔 Nueva reserva: '+(b.contact_name||'un cliente'))
+}
+
+async function checkNewBookings(){
+  if (!isServiceBiz()) return
+  try {
+    const bk = await fetch(`${API}/api/client/bookings`,{headers:H()}).then(r=>r.json())
+    if (!Array.isArray(bk)) return
+    allBookings = bk
+    updateBookingBadge()
+    const ids = new Set(bk.map(b=>b.id))
+    if (knownBookingIds === null){ knownBookingIds = ids; return } // primera carga: no notificar
+    const nuevos = bk.filter(b => !knownBookingIds.has(b.id) && b.status !== 'cancelled')
+    knownBookingIds = ids
+    if (nuevos.length) {
+      nuevos.forEach(notifyNewBooking)
+      startAlarm() // alarma insistente hasta atender
+    }
+    // Apagar SOLO si nada necesita atención (reservas pendientes NI chats manuales sin atender)
+    if (!alarmShouldRing()) stopAlarm()
+    if (nuevos.length && document.getElementById('pg-calendar').classList.contains('on')) renderCalendar()
+  } catch {}
+}
+
+function startBookingWatch(){
+  clearInterval(bookingWatchTimer)
+  // Pedir permiso de notificaciones del navegador
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(()=>{})
+  }
+  checkNewBookings()
+  bookingWatchTimer = setInterval(checkNewBookings, 12000)
+}
+
+function renderCalendar() {
+  const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  document.getElementById('cal-month-label').textContent = `${MONTHS[calMonth]} ${calYear}`
+  const today = new Date()
+  const firstDay = new Date(calYear, calMonth, 1).getDay()
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate()
+
+  // Agrupar reservas por fecha
+  const byDate = {}
+  allBookings.forEach(b => { if (!byDate[b.booking_date]) byDate[b.booking_date]=[]; byDate[b.booking_date].push(b) })
+
+  let html = '<div class="cal-header">' + ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map(d=>`<div class="cal-dh">${d}</div>`).join('') + '</div>'
+  html += '<div class="cal-grid">'
+  for (let i=0; i<firstDay; i++) html += '<div class="cal-day empty"></div>'
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+    const isToday = today.getFullYear()===calYear && today.getMonth()===calMonth && today.getDate()===d
+    const isSelected = selectedDay === dateStr
+    const dayBookings = (byDate[dateStr] || []).filter(b=>b.status!=='cancelled')
+    const has = dayBookings.length > 0
+    const allConfirmed = has && dayBookings.every(b=>b.status==='confirmed')
+    // Primera cita (la más temprana) como vista previa
+    const firstB = has ? dayBookings.slice().sort((a,b)=>(a.booking_time||'').localeCompare(b.booking_time||''))[0] : null
+    const chip = has ? `<div class="cal-chip${allConfirmed?' all-confirmed':''}">🗓 ${dayBookings.length} cita${dayBookings.length>1?'s':''}</div>` : ''
+    const mini = firstB ? `<div class="cal-day-mini">${(firstB.booking_time||'').slice(0,5)} ${esc((firstB.contact_name||'').split(' ')[0]||'')}</div>` : ''
+    html += `<div class="cal-day${isToday?' today':''}${isSelected?' selected':''}${has?' has-bookings':''}" onclick="selectDay('${dateStr}')">
+      <div class="cal-day-n">${d}</div>
+      ${chip}${mini}
+    </div>`
+  }
+  html += '</div>'
+  document.getElementById('cal-grid').innerHTML = html
+  if (selectedDay) renderDayDetail(selectedDay)
+}
+
+function selectDay(dateStr) {
+  selectedDay = dateStr
+  renderCalendar()
+}
+
+function renderDayDetail(dateStr) {
+  const bookings = allBookings.filter(b=>b.booking_date===dateStr)
+  const detail = document.getElementById('cal-day-detail')
+  if (!bookings.length) { detail.style.display='none'; return }
+  detail.style.display = ''
+  const [y,m,d] = dateStr.split('-')
+  document.getElementById('cal-day-title').textContent = `${d}/${m}/${y} — ${bookings.length} cita(s)`
+  document.getElementById('cal-day-bookings').innerHTML = bookings.map(b => `
+    <div class="bk-card">
+      <div class="bk-info">
+        <div class="bk-name">🕐 ${b.booking_time?.slice(0,5)} — ${b.contact_name||b.contact_phone}</div>
+        <div class="bk-detail">${b.service||'Sin servicio especificado'} · <span style="color:${b.status==='confirmed'?'#28a745':b.status==='cancelled'?'#dc3545':'#856404'}">${b.status==='confirmed'?'Confirmada':b.status==='cancelled'?'Cancelada':'Pendiente'}</span></div>
+      </div>
+      <div class="bk-actions">
+        ${b.status==='pending'?`<button class="btn btn-sm" style="color:#28a745;border-color:rgba(40,167,69,.2)" onclick="updateBook('${b.id}','confirmed')">✓ Confirmar</button>`:''}
+        ${b.status!=='cancelled'?`<button class="btn btn-sm" style="color:var(--red);border-color:rgba(240,61,47,.2)" onclick="updateBook('${b.id}','cancelled')">✕ Cancelar</button>`:''}
+      </div>
+    </div>`).join('')
+}
+
+async function updateBook(id, status) {
+  await fetch(`${API}/api/client/bookings/${id}/status`,{method:'PUT',headers:H(),body:JSON.stringify({status})})
+  allBookings = allBookings.map(b=>b.id===id?{...b,status}:b)
+  renderCalendar()
+  updateBookingBadge()
+  // Apagar solo si nada más necesita atención
+  if (!alarmShouldRing()) stopAlarm(); else updateAlarmSub()
+  toast(status==='confirmed'?'✓ Cita confirmada — cliente notificado':'Cita cancelada — cliente notificado')
+}
+
 init()
+</script>
+<script>
+// Live-reload en desarrollo
+(function(){
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return
+  const es = new EventSource('/dev-reload')
+  es.onmessage = e => { if (e.data === 'reload') location.reload() }
+  es.onerror   = () => setTimeout(() => location.reload(), 2000)
+})()
 </script>
 </body>
 </html>

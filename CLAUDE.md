@@ -1,0 +1,173 @@
+# CLAUDE.md — BotPanel SaaS
+
+Guía obligatoria para trabajar en este proyecto sin romper la arquitectura ni el trabajo existente. Léela completa antes de actuar.
+
+---
+
+## AL INICIAR CUALQUIER TAREA (flujo obligatorio)
+
+1. **ORIENTARTE** — Ten presente estas reglas y el **MAPA DE SKILLS** (sección 10). Identifica qué skills aplican al pedido y consúltalas ANTES de actuar.
+2. **ACOTAR** — Reformula en una frase qué se va a cambiar y qué **NO** se va a tocar. Si el pedido es ambiguo, **pregunta antes de asumir**.
+3. **PROTEGER** — Si el cambio toca base de datos, RLS, auth, etiquetas/tools del bot o multi-tenancy → consulta **arquitecto-saas** (y **base-de-datos** / **seguridad-saas** si corresponde) antes de seguir.
+4. **PLAN** — Propón un plan breve (qué archivos se tocan y cómo) y **espera aprobación del usuario**. No escribas código hasta que el plan sea aprobado.
+5. **CAMBIO MÍNIMO** — Haz el cambio más pequeño que cumpla el pedido. No reescribas archivos enteros ni borres funciones, campos, endpoints o validaciones que no se pidieron.
+6. **VERIFICAR** — Corre las verificaciones según **tester-saas** (carga de módulos, sintaxis, arranque, smoke test).
+7. **REPORTAR** — Di qué archivos cambiaron, qué se verificó y qué **NO** se tocó.
+
+> Ante la duda, para y pregunta. Es preferible una pregunta de más que romper algo que ya funcionaba.
+
+---
+
+## 1. QUÉ ES EL PROYECTO
+
+**BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios como perfumerías, barberías, tiendas y clínicas: cada negocio tiene su propio bot (prompt, catálogo, horarios), su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, agenda citas, vende, y deriva a un humano cuando hace falta.
+
+---
+
+## 2. STACK OFICIAL (no se cambia sin pedido explícito)
+
+- **Node.js** ≥ 18 + **Express** ^4.19
+- **Supabase (PostgreSQL)** vía `@supabase/supabase-js` ^2.43, con **pgvector** (RAG)
+- **Auth:** `jsonwebtoken` ^9 (JWT) + `bcryptjs` ^2.4
+- **IA (multi-proveedor):** `openai` ^6.45 (OpenAI + compatible Groq), `@anthropic-ai/sdk` ^0.24 (Claude), Gemini (API nativo vía `axios`), Groq (vía SDK OpenAI con baseURL)
+- **WhatsApp:** YCloud (principal), Meta Graph API, Kapso — vía `axios`
+- **Telegram:** `telegraf` ^4.16
+- **HTTP:** `axios` ^1.7 · **Rate limit:** `express-rate-limit` ^8.5 · **CORS:** `cors`
+- **Túnel local:** `localtunnel` + `cloudflared` (solo desarrollo)
+- **Frontend:** HTML + CSS + JavaScript puro (sin framework)
+- **Sin TypeScript, sin linter, sin framework de tests, sin CI.**
+
+---
+
+## 3. ESTRUCTURA DEL PROYECTO
+
+```
+bot/
+├── server/                    # Backend Node.js + Express
+│   ├── index.js               # Servidor, rutas API, webhooks, auth middlewares
+│   ├── bot.js                 # Núcleo del bot: callAI, visión, audio, RAG, processMessage, etiquetas
+│   ├── db.js                  # TODO el acceso a Supabase (única capa de datos)
+│   ├── reports.js             # 7 reportes de ventas para el dueño (intención + validación owner_phone)
+│   ├── settings.js            # Config de keys de IA (tabla server_settings; panel > .env)
+│   ├── telegram.js            # Integración Telegram (telegraf)
+│   ├── ycloud.js              # Envío WhatsApp + typing indicator (YCloud)
+│   ├── retell.js              # Voz telefónica (Retell) — opcional
+│   ├── tunnel.js              # Túnel público (solo local)
+│   ├── calendar.js            # Helper de tipos de negocio con calendario
+│   ├── schema.sql             # Esquema consolidado y ACTUALIZADO (referencia única — ver sección 4)
+│   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
+│   ├── migration-integraciones.sql    # Migración inicial (OBSOLETA — solo historial, no ejecutar)
+│   └── .env                   # Credenciales (NUNCA a git)
+├── admin/index.html           # Panel del superadmin (dueño del SaaS)
+├── client/index.html          # Panel del cliente (dueño de cada negocio)
+└── CLAUDE.md / README.md
+```
+
+- **La llave de tenant es `business_id`** (en código, `req.user.businessId`). Cuando estas reglas digan "client_id", en este proyecto es **`business_id`**.
+
+---
+
+## 4. REGLAS INVIOLABLES
+
+1. **Aislamiento multi-tenant:** TODA consulta de datos de un negocio se filtra por **`business_id`**. En endpoints de cliente, el `business_id` SIEMPRE sale del JWT (`req.user.businessId`), **nunca** de un parámetro que el cliente pueda manipular. Toda tabla nueva nace con columna `business_id` + RLS. **Nunca** se desactiva ni se debilita una política RLS.
+2. **Service role key solo en el servidor.** `SUPABASE_SERVICE_KEY` jamás se expone al frontend ni se envía a `admin/` o `client/`. El frontend nunca habla directo con Supabase.
+3. **Nunca hardcodear secretos ni claves.** Usa variables de entorno o la tabla `server_settings` (vía `settings.js`). Las keys de IA y de WhatsApp por cliente se guardan en BD, no en código.
+4. **No reescribir archivos completos por cambios pequeños.** No borrar funciones, campos, endpoints ni validaciones que no se pidió tocar. Edición quirúrgica.
+5. **Las etiquetas/tools del bot siempre operan sobre el `business_id` de la conversación.** El bot resuelve el negocio por el canal (slug de Telegram o número de WhatsApp) y SOLO usa datos de ese negocio (catálogo, horarios, políticas, historial).
+6. **Checkout por WhatsApp, NO pasarelas de pago.** No se integran Stripe/PayPal/tarjetas. El cierre de venta se confirma por chat y se deriva al dueño (etiqueta `##VENTA##` → modo manual) para coordinar pago/entrega.
+7. **El bot nunca inventa datos.** Precios, productos y horarios salen solo de los datos del negocio inyectados en el prompt.
+
+> ✅ Esquema: `server/schema.sql` está **consolidado y actualizado** (refleja la base real: RLS activado, `bookings` con `booking_date`/`booking_time`/`duration_minutes`, todas las columnas y tablas vivas, y la función RAG `match_products`). `server/migration-integraciones.sql` quedó **OBSOLETO** (marcado como tal, solo historial — no ejecutar). Para el estado del esquema, usa `schema.sql` o consulta la BD.
+
+---
+
+## 5. CÓMO MANEJAR UN PEDIDO DE CAMBIO
+
+1. **Entender el alcance** y declarar en una frase qué SÍ y qué NO se toca.
+2. **Localizar los archivos mínimos** involucrados (casi todo el acceso a datos vive en `db.js`; la lógica del bot en `bot.js`; las rutas en `index.js`).
+3. **Cambio más pequeño posible** — edición quirúrgica, sin tocar lo no pedido.
+4. **Verificar** (tester-saas): cargar módulos, revisar sintaxis, arrancar, smoke test de la zona afectada.
+5. **Reportar** qué cambió, qué se verificó y qué quedó intacto.
+
+Para cambios amplios o ambiguos → **cambios-seguros**. Para tocar BD/RLS/auth/bot → **arquitecto-saas** primero.
+
+---
+
+## 6. COMANDOS DEL PROYECTO (reales, de package.json)
+
+```bash
+# Raíz
+npm start                 # node server/index.js  (producción)
+
+# server/
+cd server
+npm install               # instalar dependencias
+npm run dev               # nodemon index.js  (desarrollo, recarga al guardar)
+npm start                 # node index.js
+```
+
+> No hay scripts de `test`, `lint`, `build` ni `typecheck`. La verificación es manual (ver tester-saas). El servidor en local arranca un túnel Cloudflare automático; en producción usa `BASE_URL`.
+
+---
+
+## 7. CONVENCIONES DE CÓDIGO
+
+- **JavaScript (CommonJS):** `const x = require('...')`, `module.exports = { ... }`. Sin TypeScript.
+- **Funciones flecha** y `async/await`. Nada de callbacks anidados.
+- **Todo el acceso a Supabase pasa por `db.js`** — no consultes `sb.from(...)` desde `index.js` o `bot.js`; agrega/usa una función en `db.js`.
+- **Las keys de IA se leen siempre con `settings.get('...')`** (panel > .env), nunca `process.env` directo para IA salvo como fallback dentro de `settings.get`.
+- **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
+- **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
+- **Etiquetas del bot** en formato `##NOMBRE##` o `##NOMBRE:datos##`. Las existentes: `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##BOOKING##`, `##HANDOFF##`, `##VENTA##`/`##PEDIDO##`, `##IMG##`, `##CATALOG##`.
+- **Reportes del dueño (`server/reports.js`):** NO son etiquetas ni function-calling. Son una **capa de intención server-side** que corre en `processMessage` ANTES del flujo de atención: si quien escribe es el `owner_phone` del negocio y el texto pide un reporte, se responde el reporte (texto plano WhatsApp) y se corta; si no es el dueño o no es un reporte, devuelve `handled:false` y sigue el flujo normal. 7 reportes (ventas, top, bajo movimiento, comparación, clientes frecuentes, stock bajo, pendientes), todos filtrados por `business_id`. Las ventas se registran a mano desde el panel del cliente (tablas `sales` + `sale_items`).
+- **Nombres:** `camelCase` en JS; columnas y tablas en `snake_case`.
+
+---
+
+## 8. HIGIENE DE GIT
+
+- **Commits pequeños y descriptivos**, en español (ej: "fix: monto mensual no se guardaba al editar cliente").
+- **Punto limpio antes de un cambio grande**: confirma que el árbol está estable o haz commit de lo pendiente primero.
+- **NUNCA** `git reset --hard`, `git clean -fd`, ni borrar ramas sin **confirmación explícita** del usuario.
+- **NUNCA** subir `server/.env` (ya está en `.gitignore`). Si una credencial entra al diff, deténte y avisa.
+- Trabaja en rama si el cambio es grande; no commitees en `main` sin pedirlo.
+
+---
+
+## 9. IDIOMA
+
+- **Responde al usuario en español** (mercado Ecuador/Colombia).
+- **Textos del bot y de los paneles en español neutro.**
+- Código, nombres de variables y claves técnicas en inglés/snake_case según el patrón existente; comentarios en español.
+
+---
+
+## 10. MAPA DE SKILLS
+
+Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) correspondiente(s) en `.claude/skills/`. Varias pueden aplicar a la vez.
+
+| Situación / pedido | Skill a consultar |
+|--------------------|-------------------|
+| Tocar BD, RLS, auth, esquema, multi-tenancy o etiquetas/tools del bot | **arquitecto-saas** (primero) |
+| Modificar algo existente, pedido amplio o ambiguo, "mejora esto/todo" | **cambios-seguros** |
+| Después de CUALQUIER cambio, verificar que nada se rompió | **tester-saas** |
+| Tocar auth, secretos, encriptación, webhooks, endpoints públicos, datos sensibles | **seguridad-saas** |
+| Crear/modificar migraciones, tablas, índices, columnas o políticas RLS | **base-de-datos** |
+| Antes de commit o de abrir un PR: revisar el diff completo | **revisor-pr** |
+| Versionar: ramas, commits, push, PRs, merges (el "cómo" de Git/GitHub) | **git-github** |
+| Hay un error, bug o comportamiento inesperado | **debugging** |
+| Crear feature/endpoint/etiqueta nueva o cambiar comportamiento que otros consumen | **documentacion** |
+| Crear o editar el system prompt de un bot de cliente (perfumería, barbería, clínica…) | **prompts-de-bots** |
+
+**Combinaciones frecuentes:**
+- "Agrega una tabla/campo nuevo" → base-de-datos + arquitecto-saas + tester-saas + documentacion.
+- "Cambia el login / cómo se guardan las keys" → seguridad-saas + arquitecto-saas + tester-saas.
+- "El bot responde mal / no agenda / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
+- "Revisa esto antes de subirlo" → revisor-pr.
+
+---
+
+## 11. MÓDULOS FUTUROS (no construir hasta que haya demanda real)
+
+- **Sucursales / multi-local por negocio.** Un negocio con varios locales. Enfoque **aditivo** cuando se pida: tabla `locations` + columna `location_id` (nullable) en `products`, `sales`, `bookings`, `conversation_sessions`. Los negocios de un solo local quedan con `location_id` nulo (sin cambios). NO construir de forma especulativa: mete "impuesto de complejidad" a todos y toca multi-tenancy (filtrar por `business_id` **y** `location_id`). Requiere definir antes: ¿cada sucursal tiene su propio número de WhatsApp?, ¿comparten catálogo?, ¿un empleado pertenece a una o varias? Va con **arquitecto-saas**.
+- **Ventas por sucursal** (reporte) depende del módulo anterior.
