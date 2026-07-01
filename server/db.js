@@ -262,6 +262,17 @@ const getSaleById  = async (bizId, id) =>
 const getSalesByContact = async (bizId, phone) =>
   (await sb.from('sales').select('*, sale_items(*)').eq('business_id', bizId).eq('contact_phone', phone)
     .order('sold_at', { ascending: false }).limit(10)).data || []
+// Todas las ventas completadas (solo cliente + fecha) — para clientes nuevos/recurrentes
+const getSaleCustomers = async bizId =>
+  (await sb.from('sales').select('contact_phone, sold_at').eq('business_id', bizId).eq('status', 'completada')).data || []
+// Nº de clientes distintos que escribieron (rol 'user') en un rango — denominador de conversión
+const getWritersInRange = async (bizId, from, to) => {
+  let q = sb.from('conversation_history').select('contact_phone').eq('business_id', bizId).eq('role', 'user')
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+  const { data } = await q
+  return new Set((data || []).map(r => r.contact_phone).filter(Boolean)).size
+}
 const voidSale     = async (bizId, id) =>
   sb.from('sales').update({ status: 'anulada' }).eq('business_id', bizId).eq('id', id).eq('status', 'completada')
 
@@ -294,6 +305,7 @@ const getPendingOrders = async bizId => {
 module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
+  getSaleCustomers, getWritersInRange,
   getClientByEmail, getClientUserByBusiness, createClientUser, updateClientUser,
   getClientUsers, getClientUserById, updateClientUserById, deleteClientUserById,
   getProducts, getProductById, createProduct, updateProduct, deleteProduct,

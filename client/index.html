@@ -878,7 +878,8 @@ function repEmpty(msg){ return `<p style="color:var(--muted);font-size:13px;marg
 function renderReports(d) {
   const s = d.summary
   const stat = (label,val) => `<div style="background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px 16px;flex:1;min-width:120px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${label}</div><div style="font-size:22px;font-weight:700;margin-top:4px">${val}</div></div>`
-  const summaryRow = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${stat('Total vendido',repMoney(s.total))}${stat('Pedidos',s.orders)}${stat('Ítems',s.items)}${stat('Ticket promedio',repMoney(s.avg))}</div>`
+  const conv = (s.conversion===null||s.conversion===undefined) ? '—' : Math.round(s.conversion)+'%'
+  const summaryRow = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${stat('Total vendido',repMoney(s.total))}${stat('Pedidos',s.orders)}${stat('Ítems',s.items)}${stat('Ticket promedio',repMoney(s.avg))}${stat('Clientes nuevos',s.nuevos??0)}${stat('Recurrentes',s.recurrentes??0)}${stat('Conversión',conv)}</div>`
 
   const top = d.top.rows.length
     ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.top.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.qty} uds</strong> · ${repMoney(r.rev)}</li>`).join('')}</ol>`
@@ -900,10 +901,14 @@ function renderReports(d) {
   const pend = d.pending.count
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.pending.rows.map(x=>`<li style="margin-bottom:3px">${esc(x.name)}${x.last_message?' — "'+esc(String(x.last_message).slice(0,40))+'"':''}</li>`).join('')}</ul>`
     : repEmpty('No hay cotizaciones sin cerrar. ✅')
+  const seller = (d.bySeller && d.bySeller.rows.length)
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.bySeller.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} venta(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
+    : repEmpty('Sin ventas en el período.')
 
   document.getElementById('rep-content').innerHTML = summaryRow +
     `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
       ${repCard('🏆 Productos más vendidos', top)}
+      ${repCard('🧑‍💼 Ventas por vendedor', seller)}
       ${repCard('🤝 Clientes frecuentes', rec)}
       ${repCard('📊 Comparación con período anterior', comp)}
       ${repCard('🐌 Bajo movimiento (candidatos a promo)', low)}
