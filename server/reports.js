@@ -47,6 +47,7 @@ function detectReportIntent(text) {
   else if (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
   else if (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
   else if (has('cliente frecuente', 'clientes frecuentes', 'mejores clientes', 'quién compra', 'quien compra', 'recurrente', 'fideliz')) report = 'recurring'
+  else if (has('mis clientes', 'resumen de clientes', 'cuántos clientes', 'cuantos clientes', 'cartera de cliente', 'base de clientes', 'directorio de cliente', 'clientes inactivos', 'clientes en riesgo', 'clientes activos', 'reactivar')) report = 'customers'
   else if (has('menos vendido', 'bajo movimiento', 'no se vende', 'se vende poco', 'poco movimiento', 'liquidar', 'para promoción', 'para promocion')) report = 'low_movement'
   else if (has('más vendido', 'mas vendido', 'top producto', 'productos top', 'mejor producto', 'qué se vende', 'que se vende')) report = 'top'
   else if (has('stock', 'inventario', 'agotad', 'sin existencia', 'por acabarse', 'por agotarse')) report = 'low_stock'
@@ -286,6 +287,22 @@ async function getCustomerDirectory(bizId) {
   }).sort((a, b) => b.total - a.total)
 }
 
+// Resumen de la cartera de clientes (foto general, all-time) — para WhatsApp.
+// Reutiliza el directorio (que ya calcula estado, total y días sin comprar).
+async function computeCustomerSummary(bizId) {
+  const dir = await getCustomerDirectory(bizId)   // ya viene ordenado por total desc
+  const count = st => dir.filter(c => c.status === st).length
+  const top = dir.slice(0, 3).map(c => ({ name: c.name, total: c.total, orders: c.orders }))
+  const inact = dir.filter(c => c.status === 'inactivo').sort((a, b) => b.daysSince - a.daysSince)
+  return {
+    total: dir.length,
+    nuevos: count('nuevo'), frecuentes: count('frecuente'),
+    activos: count('activo'), inactivos: count('inactivo'),
+    top,
+    riesgo: { count: inact.length, rows: inact.slice(0, 3).map(c => ({ name: c.name, daysSince: c.daysSince })) }
+  }
+}
+
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
   const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers] = await Promise.all([
@@ -360,6 +377,20 @@ const fmtLostCustomers = d => !d.count
     d.rows.slice(0, 15).map(r => `${r.returning ? '🔁' : '🆕'} ${r.name}${r.phone && r.name !== r.phone ? ' (' + r.phone + ')' : ''} — ${r.reason}${fmtDate(r.lastAt) ? ' · ' + fmtDate(r.lastAt) : ''}`).join('\n') +
     (d.count > 15 ? `\n\n…y ${d.count - 15} más. Míralos completos en el panel.` : '')
 
+const fmtCustomerSummary = d => !d.total
+  ? `👥 Resumen de clientes\n\nAún no hay clientes con compras registradas.`
+  : `👥 Resumen de clientes\n\n` +
+    `Total: ${d.total} cliente(s)\n` +
+    `🆕 Nuevos: ${d.nuevos}   🤝 Frecuentes: ${d.frecuentes}\n` +
+    `🟢 Activos: ${d.activos}   😴 Inactivos: ${d.inactivos}\n\n` +
+    `🏆 Tus mejores clientes:\n` +
+    d.top.map((c, i) => `${['🥇','🥈','🥉'][i] || (i + 1) + '.'} ${c.name} — ${money(c.total)} · ${c.orders} compra(s)`).join('\n') +
+    (d.riesgo.count
+      ? `\n\n⚠️ ${d.riesgo.count} cliente(s) en riesgo (sin comprar +${INACTIVE_DAYS} días):\n` +
+        d.riesgo.rows.map(c => `• ${c.name} (hace ${c.daysSince} días)`).join('\n') +
+        (d.riesgo.count > d.riesgo.rows.length ? `\n…y ${d.riesgo.count - d.riesgo.rows.length} más. Reactívalos con una promo. 👉 Lista completa en el panel.` : '')
+      : '')
+
 async function runReport(bizId, intent) {
   const p = intent.period
   switch (intent.report) {
@@ -374,6 +405,7 @@ async function runReport(bizId, intent) {
     case 'most_consulted': return fmtMostConsulted(await computeMostConsulted(bizId, p))
     case 'abandoned':    return fmtAbandoned(await computeAbandoned(bizId, p))
     case 'lost':         return fmtLostCustomers(await computeLostCustomers(bizId, p))
+    case 'customers':    return fmtCustomerSummary(await computeCustomerSummary(bizId))
     default:             return null
   }
 }
