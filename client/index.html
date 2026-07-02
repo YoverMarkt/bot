@@ -250,6 +250,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       <div class="ni" data-perm="catalogo" onclick="goPage('products',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/></svg><span id="nav-products-label">Catálogo</span><span class="ct" id="sb-cnt">0</span></div>
       <div class="ni" data-perm="conversaciones" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
       <div class="ni" data-perm="reportes" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
+      <div class="ni" data-perm="reportes" onclick="goPage('clientes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg>Clientes</div>
       <div class="ni" data-perm="owner" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
       <div class="ni" data-perm="owner" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
       <div class="ni" data-perm="citas" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
@@ -315,6 +316,15 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
           </div>
         </div>
         <div id="rep-content"><p style="color:var(--muted)">Cargando…</p></div>
+      </div>
+    </div>
+
+    <!-- CLIENTES (directorio) -->
+    <div class="pg" id="pg-clientes">
+      <div class="pg-inner">
+        <div class="ph"><div><h1>Clientes</h1><p>Directorio de tus clientes con su historial de compras.</p></div></div>
+        <input type="text" id="cust-search" placeholder="🔎 Buscar por nombre o teléfono..." oninput="renderCustomers()" style="max-width:360px;margin-bottom:14px">
+        <div id="cust-content"><p style="color:var(--muted)">Cargando…</p></div>
       </div>
     </div>
 
@@ -832,6 +842,7 @@ function goPage(name,el) {
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
   if (name==='reportes') loadReports()
+  if (name==='clientes') loadCustomers()
   if (name==='usuarios') loadUsers()
   if (name==='botprompt') loadBotPrompt()
   if (name==='policies') loadPolicies()
@@ -991,6 +1002,46 @@ async function deleteUser(id, email) {
     if (!r.ok) throw new Error((await r.json()).error)
     toast('✓ Empleado eliminado'); loadUsers()
   } catch(e){ toast('Error: '+e.message, true) }
+}
+
+// ── DIRECTORIO DE CLIENTES ────────────────────────────────
+let customersData = []
+const CUST_BADGE = {
+  nuevo:     {t:'🆕 Nuevo',      c:'#1a7f37'},
+  frecuente: {t:'⭐ Frecuente',  c:'#8a6d00'},
+  activo:    {t:'Activo',        c:'var(--muted)'},
+  inactivo:  {t:'😴 Inactivo',   c:'var(--red)'}
+}
+async function loadCustomers() {
+  document.getElementById('cust-content').innerHTML = '<p style="color:var(--muted)">Cargando…</p>'
+  try {
+    customersData = await fetch(`${API}/api/client/customers`, { headers: H() }).then(r=>r.json())
+    renderCustomers()
+  } catch(e) { document.getElementById('cust-content').innerHTML = `<p style="color:var(--red)">No se pudo cargar.</p>` }
+}
+function renderCustomers() {
+  const q = (document.getElementById('cust-search').value || '').toLowerCase().trim()
+  const list = q
+    ? customersData.filter(c => (c.name||'').toLowerCase().includes(q) || (c.phone||'').toLowerCase().includes(q))
+    : customersData
+  const box = document.getElementById('cust-content')
+  if (!customersData.length) { box.innerHTML = repEmpty('Aún no hay clientes con compras registradas.'); return }
+  if (!list.length) { box.innerHTML = repEmpty('Ningún cliente coincide con la búsqueda.'); return }
+  const fecha = iso => { const d=new Date(iso); return d.toLocaleDateString('es') }
+  box.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--bd)">
+      <th style="padding:8px">Cliente</th><th style="padding:8px">Teléfono</th><th style="padding:8px">Última compra</th><th style="padding:8px">Total gastado</th><th style="padding:8px">Compras</th><th style="padding:8px">Estado</th>
+    </tr></thead><tbody>
+    ${list.map(c=>{const b=CUST_BADGE[c.status]||CUST_BADGE.activo;return `<tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:8px"><strong>${esc(c.name)}</strong></td>
+      <td style="padding:8px">${esc(c.phone)}</td>
+      <td style="padding:8px">${fecha(c.lastPurchase)} <span style="color:var(--muted)">(${c.daysSince}d)</span></td>
+      <td style="padding:8px">$${Number(c.total).toFixed(2)}</td>
+      <td style="padding:8px">${c.orders}</td>
+      <td style="padding:8px"><span style="color:${b.c};font-weight:600">${b.t}</span></td>
+    </tr>`}).join('')}
+    </tbody></table></div>
+    <p style="color:var(--muted);font-size:12px;margin-top:10px">${list.length} cliente(s)${q?' (filtrados)':''} · "Inactivo" = sin comprar hace más de 60 días.</p>`
 }
 
 function sc(s){return s==='disponible'?'p-ok':s==='agotado'?'p-out':'p-low'}

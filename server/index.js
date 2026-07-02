@@ -495,6 +495,12 @@ app.get('/api/client/reports', authClient, requirePermission('reportes'), async 
   catch(e) { res.status(500).json({ error: e.message }) }
 })
 
+// Directorio de clientes (solo lectura) — para la sección "Clientes" del panel
+app.get('/api/client/customers', authClient, requirePermission('reportes'), async (req, res) => {
+  try { res.json(await reports.getCustomerDirectory(req.user.businessId)) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
 // ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
 const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
 app.get('/api/client/users', authClient, requireOwner, async (req, res) =>
