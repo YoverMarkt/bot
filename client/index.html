@@ -921,12 +921,19 @@ function renderReports(d) {
   const abandoned = (d.abandoned && d.abandoned.rows.length)
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.abandoned.rows.map(r=>`<li style="margin-bottom:3px">${esc(r.name)} — ${r.consultas} consulta(s), 0 ventas</li>`).join('')}</ul>`
     : repEmpty('Nada consultado quedó sin venta. 👍')
+  const lc = d.lostCustomers
+  const repDate = iso => { const x=new Date(iso); return isNaN(x)?'':x.toLocaleDateString('es-EC',{day:'2-digit',month:'short'}) }
+  const lost = (lc && lc.count)
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Total: <strong>${lc.count}</strong> · 🔁 ya fueron clientes: ${lc.returning} · 🆕 nuevos: ${lc.nuevos} · 🔕 no respondió: ${lc.noRespondio}</div>`+
+      `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${lc.rows.map(r=>`<li style="margin-bottom:4px;display:flex;justify-content:space-between;gap:8px"><span>${r.returning?'🔁':'🆕'} ${esc(r.name)}</span><span style="color:var(--muted);white-space:nowrap">${r.reason==='No respondió'?'🔕 ':''}${esc(r.reason)}${repDate(r.lastAt)?' · '+repDate(r.lastAt):''}</span></li>`).join('')}</ul>`
+    : repEmpty('Nadie escribió sin comprar en el período. 🎉')
 
   document.getElementById('rep-content').innerHTML = summaryRow +
     `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
       ${repCard('🏆 Productos más vendidos', top)}
       ${repCard('🔎 Más consultados', consulted)}
       ${repCard('🛒 Productos abandonados (consultados sin vender)', abandoned)}
+      ${repCard('😟 Clientes perdidos (escribieron sin comprar)', lost)}
       ${repCard('🧑‍💼 Ventas por vendedor', seller)}
       ${repCard('🤝 Clientes frecuentes', rec)}
       ${repCard('📊 Comparación con período anterior', comp)}

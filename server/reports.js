@@ -36,13 +36,14 @@ function previousRange(period) {
 }
 
 // ── Detección de intención del dueño (para WhatsApp) ──────
-const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned']
+const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned', 'lost']
 function detectReportIntent(text) {
   const t = (text || '').toLowerCase()
   const has = (...ws) => ws.some(w => t.includes(w))
   let report = null
   if      (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'abandoned'
   else if (has('más consultad', 'mas consultad', 'más preguntad', 'mas preguntad', 'consultado', 'preguntan por', 'más interesados', 'mas interesados')) report = 'most_consulted'
+  else if (has('cliente perdido', 'clientes perdidos', 'clientes que no compr', 'no me compraron', 'no compraron', 'nunca compr', 'se perdieron', 'oportunidades perdidas', 'clientes que preguntaron')) report = 'lost'
   else if (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
   else if (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
   else if (has('cliente frecuente', 'clientes frecuentes', 'mejores clientes', 'quién compra', 'quien compra', 'recurrente', 'fideliz')) report = 'recurring'
@@ -205,6 +206,55 @@ async function computeAbandoned(bizId, period, limit = 10) {
   return { label, rows: Object.values(map).sort((a, b) => b.consultas - a.consultas).slice(0, limit) }
 }
 
+// Clientes perdidos: escribieron en el período pero NO compraron en él.
+// Razón automática "No respondió" cuando el negocio (assistant/owner) habló al final.
+// Badge: 🔁 ya fue cliente (compró alguna vez) vs 🆕 nuevo (nunca compró).
+const key9 = s => digits(s).slice(-9)   // clave flexible de teléfono (últimos 9 dígitos)
+async function computeLostCustomers(bizId, period, limit = 50) {
+  const { start, end, label } = rangeFor(period)
+  const [history, periodSales, allBuyers, sessions] = await Promise.all([
+    db.getHistoryInRange(bizId, start),
+    db.getSalesWithItems(bizId, start),
+    db.getSaleCustomers(bizId),
+    db.getSessions(bizId)
+  ])
+  // Compradores del período (excluir) y de siempre (para el badge)
+  const boughtInPeriod = new Set(periodSales.map(v => key9(v.contact_phone)).filter(Boolean))
+  const boughtEver     = new Set(allBuyers.map(c => key9(c.contact_phone)).filter(Boolean))
+  // Nombre por teléfono desde sesiones
+  const sessName = {}
+  for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[key9(s.contact_phone)] = s.contact_name
+  // Agrupar el historial por contacto
+  const byContact = {}
+  for (const h of history) {
+    if (!h.contact_phone) continue
+    const k = key9(h.contact_phone)
+    if (!byContact[k]) byContact[k] = { phone: h.contact_phone, wroteUser: false, lastAt: 0, lastRole: null }
+    const c = byContact[k]
+    if (h.role === 'user') c.wroteUser = true
+    const t = new Date(h.created_at).getTime()
+    if (t >= c.lastAt) { c.lastAt = t; c.lastRole = h.role }
+  }
+  const rows = []
+  for (const k in byContact) {
+    const c = byContact[k]
+    if (!c.wroteUser) continue            // solo quien realmente escribió
+    if (boughtInPeriod.has(k)) continue   // compró en el período → no es perdido
+    const reason = (c.lastRole === 'assistant' || c.lastRole === 'owner') ? 'No respondió' : 'Sin clasificar'
+    rows.push({
+      name: sessName[k] || c.phone,
+      phone: c.phone,
+      lastAt: new Date(c.lastAt).toISOString(),
+      reason,
+      returning: boughtEver.has(k)        // 🔁 ya fue cliente
+    })
+  }
+  rows.sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt))   // más recientes primero (accionable)
+  const noRespondio = rows.filter(r => r.reason === 'No respondió').length
+  const returning   = rows.filter(r => r.returning).length
+  return { label, count: rows.length, noRespondio, returning, nuevos: rows.length - returning, rows: rows.slice(0, limit) }
+}
+
 // Directorio de clientes (agrega ventas + sesiones por teléfono). Solo lectura.
 const INACTIVE_DAYS = 60
 async function getCustomerDirectory(bizId) {
@@ -238,12 +288,13 @@ async function getCustomerDirectory(bizId) {
 
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
-  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned] = await Promise.all([
+  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers] = await Promise.all([
     computeSummary(bizId, period), computeTop(bizId, period), computeLowMovement(bizId, period),
     computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId),
-    computeBySeller(bizId, period), computeMostConsulted(bizId, period), computeAbandoned(bizId, period)
+    computeBySeller(bizId, period), computeMostConsulted(bizId, period), computeAbandoned(bizId, period),
+    computeLostCustomers(bizId, period)
   ])
-  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned }
+  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -301,6 +352,14 @@ const fmtPending = d => !d.count
   : `📋 Pedidos / cotizaciones sin cerrar (${d.count})\n(conversaciones que no terminaron en venta — para recuperar)\n\n` +
     d.rows.map(s => `• ${s.name}${s.last_message ? ' — "' + String(s.last_message).slice(0, 40) + '"' : ''}`).join('\n')
 
+const fmtDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' }) }
+const fmtLostCustomers = d => !d.count
+  ? `😟 Clientes perdidos (${d.label})\n\n¡Bien! No hay clientes que escribieran sin comprar en el período. 🎉`
+  : `😟 Clientes perdidos (${d.label})\n(escribieron pero no compraron — para recuperar)\n\n` +
+    `Total: ${d.count} · 🔁 ya fueron clientes: ${d.returning} · 🆕 nuevos: ${d.nuevos} · 🔕 no respondió: ${d.noRespondio}\n\n` +
+    d.rows.slice(0, 15).map(r => `${r.returning ? '🔁' : '🆕'} ${r.name}${r.phone && r.name !== r.phone ? ' (' + r.phone + ')' : ''} — ${r.reason}${fmtDate(r.lastAt) ? ' · ' + fmtDate(r.lastAt) : ''}`).join('\n') +
+    (d.count > 15 ? `\n\n…y ${d.count - 15} más. Míralos completos en el panel.` : '')
+
 async function runReport(bizId, intent) {
   const p = intent.period
   switch (intent.report) {
@@ -314,6 +373,7 @@ async function runReport(bizId, intent) {
     case 'seller':       return fmtBySeller(await computeBySeller(bizId, p))
     case 'most_consulted': return fmtMostConsulted(await computeMostConsulted(bizId, p))
     case 'abandoned':    return fmtAbandoned(await computeAbandoned(bizId, p))
+    case 'lost':         return fmtLostCustomers(await computeLostCustomers(bizId, p))
     default:             return null
   }
 }
