@@ -66,9 +66,9 @@ function detectReportIntent(text) {
 async function computeSummary(bizId, period) {
   const { start, end, label } = rangeFor(period)
   const [sales, allCustomers, writers] = await Promise.all([
-    db.getSalesWithItems(bizId, start, end),
+    db.getSalesWithItems(bizId, start),
     db.getSaleCustomers(bizId),
-    db.getWritersInRange(bizId, start, end)
+    db.getWritersInRange(bizId, start)
   ])
   const total = sales.reduce((s, v) => s + Number(v.total || 0), 0)
   const items = sales.reduce((s, v) => s + (v.sale_items || []).reduce((a, i) => a + Number(i.quantity || 0), 0), 0)
@@ -100,7 +100,7 @@ async function computeSummary(bizId, period) {
 
 async function computeBySeller(bizId, period) {
   const { start, end, label } = rangeFor(period)
-  const [sales, users] = await Promise.all([db.getSalesWithItems(bizId, start, end), db.getClientUsers(bizId)])
+  const [sales, users] = await Promise.all([db.getSalesWithItems(bizId, start), db.getClientUsers(bizId)])
   const nameById = {}
   users.forEach(u => { nameById[u.id] = u.name || u.email })
   const map = {}
@@ -116,7 +116,7 @@ async function computeBySeller(bizId, period) {
 
 async function computeTop(bizId, period, limit = 5) {
   const { start, end, label } = rangeFor(period)
-  const sales = await db.getSalesWithItems(bizId, start, end)
+  const sales = await db.getSalesWithItems(bizId, start)
   const map = {}
   for (const v of sales) for (const i of (v.sale_items || [])) {
     const k = i.product_name || 'Producto'
@@ -129,7 +129,7 @@ async function computeTop(bizId, period, limit = 5) {
 
 async function computeLowMovement(bizId, period, threshold = 0) {
   const { start, end, label } = rangeFor(period)
-  const [sales, products] = await Promise.all([db.getSalesWithItems(bizId, start, end), db.getProducts(bizId)])
+  const [sales, products] = await Promise.all([db.getSalesWithItems(bizId, start), db.getProducts(bizId)])
   const sold = {}
   for (const v of sales) for (const i of (v.sale_items || [])) {
     const k = (i.product_name || '').toLowerCase()
@@ -144,7 +144,7 @@ async function computeLowMovement(bizId, period, threshold = 0) {
 async function computeComparison(bizId, period) {
   const cur = rangeFor(period), prev = previousRange(period)
   const [curSales, prevSales] = await Promise.all([
-    db.getSalesWithItems(bizId, cur.start, cur.end),
+    db.getSalesWithItems(bizId, cur.start),
     db.getSalesWithItems(bizId, prev.start, prev.end)
   ])
   const sum = arr => arr.reduce((s, v) => s + Number(v.total || 0), 0)
@@ -155,7 +155,7 @@ async function computeComparison(bizId, period) {
 
 async function computeRecurring(bizId, period, topN = 5) {
   const { start, end, label } = rangeFor(period)
-  const sales = await db.getSalesWithItems(bizId, start, end)
+  const sales = await db.getSalesWithItems(bizId, start)
   const map = {}
   for (const v of sales) {
     const k = v.contact_phone || 's/n'
@@ -178,7 +178,7 @@ async function computePending(bizId) {
 
 async function computeMostConsulted(bizId, period, limit = 5) {
   const { start, end, label } = rangeFor(period)
-  const rows = await db.getConsultationsInRange(bizId, start, end)
+  const rows = await db.getConsultationsInRange(bizId, start)
   const map = {}
   for (const r of rows) {
     if (!r.product_id) continue
@@ -191,8 +191,8 @@ async function computeMostConsulted(bizId, period, limit = 5) {
 async function computeAbandoned(bizId, period, limit = 10) {
   const { start, end, label } = rangeFor(period)
   const [consult, sales] = await Promise.all([
-    db.getConsultationsInRange(bizId, start, end),
-    db.getSalesWithItems(bizId, start, end)
+    db.getConsultationsInRange(bizId, start),
+    db.getSalesWithItems(bizId, start)
   ])
   const soldIds = new Set()
   for (const v of sales) for (const i of (v.sale_items || [])) if (i.product_id) soldIds.add(i.product_id)
