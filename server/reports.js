@@ -174,6 +174,37 @@ async function computePending(bizId) {
   return { count: list.length, rows: list.slice(0, 15).map(s => ({ name: s.contact_name || s.contact_phone, last_message: s.last_message || '' })) }
 }
 
+// Directorio de clientes (agrega ventas + sesiones por teléfono). Solo lectura.
+const INACTIVE_DAYS = 60
+async function getCustomerDirectory(bizId) {
+  const [sales, sessions] = await Promise.all([db.getCustomerSales(bizId), db.getSessions(bizId)])
+  const sessName = {}
+  for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[s.contact_phone] = s.contact_name
+  const map = {}
+  for (const v of sales) {
+    const ph = v.contact_phone
+    if (!ph) continue
+    if (!map[ph]) map[ph] = { phone: ph, name: v.contact_name || sessName[ph] || ph, orders: 0, total: 0, last: null, first: null }
+    const c = map[ph]
+    c.orders += 1
+    c.total += Number(v.total || 0)
+    const t = new Date(v.sold_at).getTime()
+    if (c.last === null || t > c.last) c.last = t
+    if (c.first === null || t < c.first) c.first = t
+    if ((!c.name || c.name === ph) && (v.contact_name || sessName[ph])) c.name = v.contact_name || sessName[ph]
+  }
+  const now = Date.now(), DAY = 86400000
+  return Object.values(map).map(c => {
+    const daysSince = Math.floor((now - c.last) / DAY)
+    let status
+    if (daysSince > INACTIVE_DAYS)                            status = 'inactivo'
+    else if (c.orders >= 3)                                   status = 'frecuente'
+    else if (c.orders === 1 && (now - c.first) / DAY <= 30)   status = 'nuevo'
+    else                                                      status = 'activo'
+    return { name: c.name, phone: c.phone, orders: c.orders, total: c.total, lastPurchase: new Date(c.last).toISOString(), daysSince, status }
+  }).sort((a, b) => b.total - a.total)
+}
+
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
   const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller] = await Promise.all([
@@ -261,4 +292,4 @@ async function handleOwnerMessage(biz, from, text) {
   }
 }
 
-module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports }
+module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory }
