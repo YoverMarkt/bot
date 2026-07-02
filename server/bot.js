@@ -555,6 +555,20 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
 
   const textLow = text.toLowerCase()
 
+  // Registrar consultas de productos: cuenta los productos que el cliente menciona
+  // (coincidencia por nombre/marca/etiqueta, no todo el RAG → preciso). Async, no bloquea.
+  try {
+    const mentioned = (products || []).filter(p => {
+      const n = (p.name || '').toLowerCase()
+      if (n && textLow.includes(n)) return true
+      if (n.split(/\s+/).some(w => w.length > 3 && textLow.includes(w))) return true
+      if (p.brand && p.brand.length > 2 && textLow.includes(p.brand.toLowerCase())) return true
+      if ((p.tags || []).some(t => t && t.length > 3 && textLow.includes(t.toLowerCase()))) return true
+      return false
+    }).slice(0, 5)
+    if (mentioned.length) db.recordConsultations(biz.id, mentioned.map(p => p.id)).catch(() => {})
+  } catch(e) {}
+
   // Detectar si el usuario pide catálogo o imágenes — el servidor lo maneja sin la IA
   const wantsCatalog = /catálogo|catalogo|todos los productos|ver productos|qué tienen|que tienen|lista de productos/i.test(text)
   const wantsImage   = /imagen|foto|ver|muéstrame|muestrame|cómo se ve|como se ve/i.test(text)
