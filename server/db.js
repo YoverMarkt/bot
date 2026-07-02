@@ -268,6 +268,19 @@ const getSaleCustomers = async bizId =>
 // Ventas completadas con nombre/monto — para el directorio de clientes
 const getCustomerSales = async bizId =>
   (await sb.from('sales').select('contact_phone, contact_name, total, sold_at').eq('business_id', bizId).eq('status', 'completada')).data || []
+// Registrar consultas de productos (un evento por producto mencionado por el cliente)
+const recordConsultations = async (bizId, productIds) => {
+  if (!Array.isArray(productIds) || !productIds.length) return
+  const rows = productIds.map(pid => ({ business_id: bizId, product_id: pid }))
+  return sb.from('product_consultations').insert(rows)
+}
+// Consultas en un rango, con el nombre del producto (para "más consultados"/"abandonados")
+const getConsultationsInRange = async (bizId, from, to) => {
+  let q = sb.from('product_consultations').select('product_id, products(name)').eq('business_id', bizId)
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+  return (await q).data || []
+}
 // Nº de clientes distintos que escribieron (rol 'user') en un rango — denominador de conversión
 const getWritersInRange = async (bizId, from, to) => {
   let q = sb.from('conversation_history').select('contact_phone').eq('business_id', bizId).eq('role', 'user')
@@ -309,6 +322,7 @@ module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
   getSaleCustomers, getCustomerSales, getWritersInRange,
+  recordConsultations, getConsultationsInRange,
   getClientByEmail, getClientUserByBusiness, createClientUser, updateClientUser,
   getClientUsers, getClientUserById, updateClientUserById, deleteClientUserById,
   getProducts, getProductById, createProduct, updateProduct, deleteProduct,

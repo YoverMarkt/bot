@@ -915,10 +915,18 @@ function renderReports(d) {
   const seller = (d.bySeller && d.bySeller.rows.length)
     ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.bySeller.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} venta(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
     : repEmpty('Sin ventas en el período.')
+  const consulted = (d.mostConsulted && d.mostConsulted.rows.length)
+    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.mostConsulted.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.count}</strong> consulta(s)</li>`).join('')}</ol>`
+    : repEmpty('Sin consultas registradas en el período.')
+  const abandoned = (d.abandoned && d.abandoned.rows.length)
+    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.abandoned.rows.map(r=>`<li style="margin-bottom:3px">${esc(r.name)} — ${r.consultas} consulta(s), 0 ventas</li>`).join('')}</ul>`
+    : repEmpty('Nada consultado quedó sin venta. 👍')
 
   document.getElementById('rep-content').innerHTML = summaryRow +
     `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
       ${repCard('🏆 Productos más vendidos', top)}
+      ${repCard('🔎 Más consultados', consulted)}
+      ${repCard('🛒 Productos abandonados (consultados sin vender)', abandoned)}
       ${repCard('🧑‍💼 Ventas por vendedor', seller)}
       ${repCard('🤝 Clientes frecuentes', rec)}
       ${repCard('📊 Comparación con período anterior', comp)}

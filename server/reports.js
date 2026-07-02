@@ -36,12 +36,14 @@ function previousRange(period) {
 }
 
 // ── Detección de intención del dueño (para WhatsApp) ──────
-const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller']
+const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned']
 function detectReportIntent(text) {
   const t = (text || '').toLowerCase()
   const has = (...ws) => ws.some(w => t.includes(w))
   let report = null
-  if      (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
+  if      (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'abandoned'
+  else if (has('más consultad', 'mas consultad', 'más preguntad', 'mas preguntad', 'consultado', 'preguntan por', 'más interesados', 'mas interesados')) report = 'most_consulted'
+  else if (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
   else if (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
   else if (has('cliente frecuente', 'clientes frecuentes', 'mejores clientes', 'quién compra', 'quien compra', 'recurrente', 'fideliz')) report = 'recurring'
   else if (has('menos vendido', 'bajo movimiento', 'no se vende', 'se vende poco', 'poco movimiento', 'liquidar', 'para promoción', 'para promocion')) report = 'low_movement'
@@ -174,6 +176,35 @@ async function computePending(bizId) {
   return { count: list.length, rows: list.slice(0, 15).map(s => ({ name: s.contact_name || s.contact_phone, last_message: s.last_message || '' })) }
 }
 
+async function computeMostConsulted(bizId, period, limit = 5) {
+  const { start, end, label } = rangeFor(period)
+  const rows = await db.getConsultationsInRange(bizId, start, end)
+  const map = {}
+  for (const r of rows) {
+    if (!r.product_id) continue
+    if (!map[r.product_id]) map[r.product_id] = { name: r.products?.name || 'Producto', count: 0 }
+    map[r.product_id].count++
+  }
+  return { label, rows: Object.values(map).sort((a, b) => b.count - a.count).slice(0, limit) }
+}
+
+async function computeAbandoned(bizId, period, limit = 10) {
+  const { start, end, label } = rangeFor(period)
+  const [consult, sales] = await Promise.all([
+    db.getConsultationsInRange(bizId, start, end),
+    db.getSalesWithItems(bizId, start, end)
+  ])
+  const soldIds = new Set()
+  for (const v of sales) for (const i of (v.sale_items || [])) if (i.product_id) soldIds.add(i.product_id)
+  const map = {}
+  for (const r of consult) {
+    if (!r.product_id || soldIds.has(r.product_id)) continue
+    if (!map[r.product_id]) map[r.product_id] = { name: r.products?.name || 'Producto', consultas: 0 }
+    map[r.product_id].consultas++
+  }
+  return { label, rows: Object.values(map).sort((a, b) => b.consultas - a.consultas).slice(0, limit) }
+}
+
 // Directorio de clientes (agrega ventas + sesiones por teléfono). Solo lectura.
 const INACTIVE_DAYS = 60
 async function getCustomerDirectory(bizId) {
@@ -207,12 +238,12 @@ async function getCustomerDirectory(bizId) {
 
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
-  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller] = await Promise.all([
+  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned] = await Promise.all([
     computeSummary(bizId, period), computeTop(bizId, period), computeLowMovement(bizId, period),
     computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId),
-    computeBySeller(bizId, period)
+    computeBySeller(bizId, period), computeMostConsulted(bizId, period), computeAbandoned(bizId, period)
   ])
-  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller }
+  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -227,6 +258,16 @@ const fmtBySeller = d => !d.rows.length
   ? `🧑‍💼 Ventas por vendedor (${d.label})\n\nSin ventas en el período.`
   : `🧑‍💼 Ventas por vendedor (${d.label})\n\n` +
     d.rows.map((r, i) => `${i + 1}. ${r.name} — ${r.orders} venta(s) · ${money(r.total)}`).join('\n')
+
+const fmtMostConsulted = d => !d.rows.length
+  ? `🔎 Productos más consultados (${d.label})\n\nSin consultas registradas en el período.`
+  : `🔎 Productos más consultados (${d.label})\n\n` +
+    d.rows.map((r, i) => `${['🥇','🥈','🥉'][i] || (i + 1) + '.'} ${r.name} — ${r.count} consulta(s)`).join('\n')
+
+const fmtAbandoned = d => !d.rows.length
+  ? `🛒 Productos abandonados (${d.label})\n\n¡Bien! Todo lo consultado tuvo ventas (o no hubo consultas).`
+  : `🛒 Productos abandonados (${d.label})\n(consultados pero sin ventas — oportunidad de recuperar)\n\n` +
+    d.rows.map(r => `• ${r.name} — ${r.consultas} consulta(s), 0 ventas`).join('\n')
 
 const fmtTop = d => !d.rows.length
   ? `🏆 Productos más vendidos (${d.label})\n\nSin ventas en el período.`
@@ -271,6 +312,8 @@ async function runReport(bizId, intent) {
     case 'low_stock':    return fmtLowStock(await computeLowStock(bizId))
     case 'pending':      return fmtPending(await computePending(bizId))
     case 'seller':       return fmtBySeller(await computeBySeller(bizId, p))
+    case 'most_consulted': return fmtMostConsulted(await computeMostConsulted(bizId, p))
+    case 'abandoned':    return fmtAbandoned(await computeAbandoned(bizId, p))
     default:             return null
   }
 }
