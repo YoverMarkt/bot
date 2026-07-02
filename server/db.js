@@ -289,6 +289,14 @@ const getWritersInRange = async (bizId, from, to) => {
   const { data } = await q
   return new Set((data || []).map(r => r.contact_phone).filter(Boolean)).size
 }
+// Historial (todos los roles) en un rango — para "clientes perdidos": saber quién
+// escribió y quién habló al final (razón "No respondió"). Solo campos necesarios.
+const getHistoryInRange = async (bizId, from, to) => {
+  let q = sb.from('conversation_history').select('contact_phone, role, created_at').eq('business_id', bizId)
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+  return (await q).data || []
+}
 const voidSale     = async (bizId, id) =>
   sb.from('sales').update({ status: 'anulada' }).eq('business_id', bizId).eq('id', id).eq('status', 'completada')
 
@@ -321,7 +329,7 @@ const getPendingOrders = async bizId => {
 module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
-  getSaleCustomers, getCustomerSales, getWritersInRange,
+  getSaleCustomers, getCustomerSales, getWritersInRange, getHistoryInRange,
   recordConsultations, getConsultationsInRange,
   getClientByEmail, getClientUserByBusiness, createClientUser, updateClientUser,
   getClientUsers, getClientUserById, updateClientUserById, deleteClientUserById,
