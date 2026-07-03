@@ -507,6 +507,13 @@ app.get('/api/client/alerts', authClient, requirePermission('reportes'), async (
   catch(e) { console.error('❌ alerts:', e.message); res.status(500).json({ error: 'No se pudieron cargar las alertas' }) }
 })
 
+// Dashboard (resumen + datos para gráficos) — pantalla de inicio del panel
+app.get('/api/client/dashboard', authClient, requirePermission('reportes'), async (req, res) => {
+  const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
+  try { res.json(await reports.getDashboard(req.user.businessId, period)) }
+  catch(e) { console.error('❌ dashboard:', e.message); res.status(500).json({ error: 'No se pudo cargar el dashboard' }) }
+})
+
 // ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
 const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
 app.get('/api/client/users', authClient, requireOwner, async (req, res) =>

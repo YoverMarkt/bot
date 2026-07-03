@@ -158,6 +158,7 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 | Hay un error, bug o comportamiento inesperado | **debugging** |
 | Crear feature/endpoint/etiqueta nueva o cambiar comportamiento que otros consumen | **documentacion** |
 | Crear o editar el system prompt de un bot de cliente (perfumería, barbería, clínica…) | **prompts-de-bots** |
+| Crear o modificar gráficos, dashboards, KPIs o visualizaciones en el panel | **graficos-dashboard** (usa la bundled **dataviz**) |
 
 **Combinaciones frecuentes:**
 - "Agrega una tabla/campo nuevo" → base-de-datos + arquitecto-saas + tester-saas + documentacion.
