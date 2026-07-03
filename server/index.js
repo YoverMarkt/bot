@@ -501,6 +501,12 @@ app.get('/api/client/customers', authClient, requirePermission('reportes'), asyn
   catch(e) { res.status(500).json({ error: e.message }) }
 })
 
+// Alertas del negocio (banner del panel) — vigila condiciones con los datos existentes
+app.get('/api/client/alerts', authClient, requirePermission('reportes'), async (req, res) => {
+  try { res.json(await reports.computeAlerts(req.user.businessId)) }
+  catch(e) { console.error('❌ alerts:', e.message); res.status(500).json({ error: 'No se pudieron cargar las alertas' }) }
+})
+
 // ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
 const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
 app.get('/api/client/users', authClient, requireOwner, async (req, res) =>
