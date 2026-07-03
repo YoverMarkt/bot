@@ -347,14 +347,37 @@ async function computeUnanswered(bizId, period, limit = 12) {
   return { label, count: gaps.length, unique: Object.keys(map).length, rows }
 }
 
+// Tendencia de ventas por día (línea). Rellena días sin ventas con 0 → línea continua.
+// Ventana: mes = 30 días, hoy/semana = 7 días (una línea de 1 punto no sirve).
+async function computeSalesTrend(bizId, period) {
+  const days = period === 'mes' ? 30 : 7
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (days - 1))
+  const sales = await db.getSalesWithItems(bizId, start.toISOString())
+  const key = d => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
+  const map = {}
+  for (const s of sales) {
+    const k = key(s.sold_at)
+    if (!map[k]) map[k] = { total: 0, orders: 0 }
+    map[k].total += Number(s.total || 0); map[k].orders++
+  }
+  const rows = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i)
+    const k = key(d)
+    rows.push({ date: k, label: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`, total: map[k]?.total || 0, orders: map[k]?.orders || 0 })
+  }
+  return { days, rows, total: rows.reduce((s, r) => s + r.total, 0) }
+}
+
 // ── Dashboard (resumen del negocio con datos para gráficos) ──
 async function getDashboard(bizId, period) {
-  const [summary, comp, top, cust, products] = await Promise.all([
+  const [summary, comp, top, cust, products, trend] = await Promise.all([
     computeSummary(bizId, period),
     computeComparison(bizId, period),
     computeTop(bizId, period, 6),
     computeCustomerSummary(bizId),
-    db.getProducts(bizId)
+    db.getProducts(bizId),
+    computeSalesTrend(bizId, period)
   ])
   const stock = { disponible: 0, ultimas: 0, agotado: 0 }
   for (const p of products) {
@@ -370,6 +393,7 @@ async function getDashboard(bizId, period) {
       clientes: cust.total, nuevos: summary.nuevos, recurrentes: summary.recurrentes
     },
     comparison: { curTotal: comp.curTotal, prevTotal: comp.prevTotal, pct: comp.pct },
+    trend,
     top: top.rows,
     customersByStatus: { nuevos: cust.nuevos, frecuentes: cust.frecuentes, activos: cust.activos, inactivos: cust.inactivos },
     stock
