@@ -514,6 +514,28 @@ app.get('/api/client/dashboard', authClient, requirePermission('reportes'), asyn
   catch(e) { console.error('❌ dashboard:', e.message); res.status(500).json({ error: 'No se pudo cargar el dashboard' }) }
 })
 
+// Onboarding: estado de configuración del negocio (guía de puesta en marcha)
+app.get('/api/client/onboarding', authClient, async (req, res) => {
+  try {
+    const bizId = req.user.businessId
+    const [nProds, pol, schedule, biz] = await Promise.all([
+      db.countProducts(bizId), db.getPolicies(bizId), db.getSchedule(bizId), db.getBusinessById(bizId)
+    ])
+    const has = v => !!(v && String(v).trim())
+    const polOk = pol && (has(pol.shipping) || has(pol.returns) || has(pol.discounts) || has(pol.bot_instructions))
+    const horarioOk = (Array.isArray(schedule) && schedule.some(s => s.is_active)) || has(biz?.hours)
+    const steps = [
+      { key: 'productos',  label: 'Sube tus productos o servicios',              done: nProds > 0,          hint: nProds > 0 ? `${nProds} cargado(s)` : '', page: 'products' },
+      { key: 'prompt',     label: 'Personaliza el prompt del bot',               done: has(pol?.bot_prompt), page: 'botprompt' },
+      { key: 'politicas',  label: 'Completa las políticas (envíos, garantía…)',  done: !!polOk,             page: 'policies' },
+      { key: 'horario',    label: 'Define tu horario de atención',               done: !!horarioOk,         page: 'schedule' },
+      { key: 'whatsapp',   label: 'Conecta tu WhatsApp',                         done: has(biz?.whatsapp_number), hint: has(biz?.whatsapp_number) ? biz.whatsapp_number : 'lo configura el administrador', page: null }
+    ]
+    const done = steps.filter(s => s.done).length
+    res.json({ steps, done, total: steps.length, pct: Math.round(done / steps.length * 100) })
+  } catch(e) { console.error('❌ onboarding:', e.message); res.status(500).json({ error: 'No se pudo cargar el onboarding' }) }
+})
+
 // ── USUARIOS / EMPLEADOS (solo el DUEÑO) ──────────────────
 const VALID_PERMS = ['catalogo', 'conversaciones', 'citas', 'reportes', 'ventas']
 app.get('/api/client/users', authClient, requireOwner, async (req, res) =>
