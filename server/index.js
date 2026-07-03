@@ -178,6 +178,9 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
       kapso_api_key,     kapso_number_id,   kapso_verify_token,
       ycloud_api_key,    ycloud_number,
       meta_token,        meta_phone_id,   meta_verify_token,
+      telegram_bot_token: telegram_bot_token || null,
+      calcom_link:       calcom_link || null,
+      retell_agent_id:   retell_agent_id || null,
       ai_provider:       ai_provider || null,
       owner_phone:       owner_phone || null,
       plan: plan || 'basic',
@@ -404,9 +407,12 @@ app.put('/api/client/schedule',  authClient, requirePermission('citas'), async (
 app.get('/api/client/bookings',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getBookings(req.user.businessId, req.query.from, req.query.to)))
 app.put('/api/client/bookings/:id/status', authClient, requirePermission('citas'), async (req, res) => {
   const { status } = req.body
+  if (!['pending', 'confirmed', 'cancelled', 'no_show'].includes(status)) return res.status(400).json({ error: 'Estado inválido' })
   try {
     const booking = await db.getBookingById(req.params.id)
-    await db.updateBookingStatus(req.params.id, status)
+    // Aislamiento: la reserva debe pertenecer a ESTE negocio
+    if (!booking || booking.business_id !== req.user.businessId) return res.status(404).json({ error: 'Reserva no encontrada' })
+    await db.updateBookingStatus(req.user.businessId, req.params.id, status)
 
     // Notificar al cliente por su canal (no bloquea la respuesta si falla)
     if (booking && booking.contact_phone) {
@@ -441,12 +447,12 @@ app.post('/api/client/products', authClient, requirePermission('catalogo'), asyn
 })
 
 app.put('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => {
-  await db.updateProduct(req.params.id, req.body)
+  await db.updateProduct(req.user.businessId, req.params.id, req.body)
   // Re-generar embedding tras editar
   db.getProductById(req.params.id).then(p => p && bot.indexProduct(p)).catch(() => {})
   res.json({ ok: true })
 })
-app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.params.id); res.json({ ok: true }) })
+app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.user.businessId, req.params.id); res.json({ ok: true }) })
 
 // ── VENTAS (registro manual) Y PEDIDOS PENDIENTES ─────────
 // Prellenado del formulario: catálogo + lo que el bot ya cotizó en la conversación.
