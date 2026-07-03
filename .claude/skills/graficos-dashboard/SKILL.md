@@ -27,6 +27,7 @@ Todos los gráficos del panel deben verse **premium y como un mismo sistema**: c
 En `client/index.html`:
 - `hBars(rows, {fmt, color})` — barras horizontales. `rows = [{label, value}]`.
 - `donut(segs, {center, centerLabel})` — dona. `segs = [{label, value, color}]`.
+- `lineChart(rows, {fmt})` — línea de tendencia (SVG). `rows = [{label, total}]`, días rellenos con 0 para línea continua. Datos vía `computeSalesTrend` en `reports.js`.
 - KPI tiles: clases `.kpi-row`, `.kpi`, `.kpi-l/v/d` (delta en verde `--c-good` / rojo `--red`).
 - Tarjeta contenedora: `.chart-card` + `.chart-grid` (grid responsive).
 
