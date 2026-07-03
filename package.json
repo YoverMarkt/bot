@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server/index.js",
+    "postinstall": "npm install --prefix server",
     "install:server": "cd server && npm install"
   },
   "engines": {
