@@ -923,6 +923,14 @@ function renderReports(d) {
     : repEmpty('Nada consultado quedó sin venta. 👍')
   const lc = d.lostCustomers
   const repDate = iso => { const x=new Date(iso); return isNaN(x)?'':x.toLocaleDateString('es-EC',{day:'2-digit',month:'short'}) }
+  const faq = (d.faq && d.faq.rows.length)
+    ? `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${d.faq.rows.map(r=>`<li style="margin-bottom:4px;display:flex;justify-content:space-between"><span>${r.emoji} ${esc(r.topic)}</span><strong>${r.count}</strong></li>`).join('')}</ul>`
+    : repEmpty('Aún no hay suficientes preguntas para clasificar.')
+  const unans = (d.unanswered && d.unanswered.count)
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${d.unanswered.count} pregunta(s) sin responder · ${d.unanswered.unique} distinta(s)</div>`+
+      `<ul style="margin:0;padding-left:18px;font-size:13px">${d.unanswered.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.question)}${r.count>1?` <span style="color:var(--muted)">(x${r.count})</span>`:''}</li>`).join('')}</ul>`+
+      `<div style="font-size:12px;color:var(--muted);margin-top:8px">💡 Agrega esta info al bot para que deje de fallar ahí.</div>`
+    : repEmpty('El bot respondió todo en el período. 🎉')
   const lost = (lc && lc.count)
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Total: <strong>${lc.count}</strong> · 🔁 ya fueron clientes: ${lc.returning} · 🆕 nuevos: ${lc.nuevos} · 🔕 no respondió: ${lc.noRespondio}</div>`+
       `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${lc.rows.map(r=>`<li style="margin-bottom:4px;display:flex;justify-content:space-between;gap:8px"><span>${r.returning?'🔁':'🆕'} ${esc(r.name)}</span><span style="color:var(--muted);white-space:nowrap">${r.reason==='No respondió'?'🔕 ':''}${esc(r.reason)}${repDate(r.lastAt)?' · '+repDate(r.lastAt):''}</span></li>`).join('')}</ul>`
@@ -934,6 +942,8 @@ function renderReports(d) {
       ${repCard('🔎 Más consultados', consulted)}
       ${repCard('🛒 Productos abandonados (consultados sin vender)', abandoned)}
       ${repCard('😟 Clientes perdidos (escribieron sin comprar)', lost)}
+      ${repCard('🧠 Preguntas más frecuentes', faq)}
+      ${repCard('❓ Preguntas que la IA no pudo responder', unans)}
       ${repCard('🧑‍💼 Ventas por vendedor', seller)}
       ${repCard('🤝 Clientes frecuentes', rec)}
       ${repCard('📊 Comparación con período anterior', comp)}

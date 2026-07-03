@@ -36,12 +36,13 @@ function previousRange(period) {
 }
 
 // ── Detección de intención del dueño (para WhatsApp) ──────
-const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned', 'lost']
+const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned', 'lost', 'ai']
 function detectReportIntent(text) {
   const t = (text || '').toLowerCase()
   const has = (...ws) => ws.some(w => t.includes(w))
   let report = null
-  if      (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'abandoned'
+  if      (has('reporte de ia', 'reporte ia', 'reporte de inteligencia', 'preguntas frecuentes', 'preguntas mas frecuentes', 'preguntas sin responder', 'preguntas que no', 'no supo responder', 'no pudo responder', 'no sabe el bot', 'huecos del bot', 'fallas del bot', 'le preguntan al bot')) report = 'ai'
+  else if (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'abandoned'
   else if (has('más consultad', 'mas consultad', 'más preguntad', 'mas preguntad', 'consultado', 'preguntan por', 'más interesados', 'mas interesados')) report = 'most_consulted'
   else if (has('cliente perdido', 'clientes perdidos', 'clientes que no compr', 'no me compraron', 'no compraron', 'nunca compr', 'se perdieron', 'oportunidades perdidas', 'clientes que preguntaron')) report = 'lost'
   else if (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
@@ -303,15 +304,58 @@ async function computeCustomerSummary(bizId) {
   }
 }
 
+// ── Reporte de IA (Fase 1, sin IA) ────────────────────────
+// Normaliza a minúsculas y sin acentos (para clasificar por reglas)
+const noAccents = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+// Temas frecuentes por palabras clave. El orden define el emoji; un mensaje puede caer en varios.
+const FAQ_TOPICS = [
+  { topic: 'Horarios',       emoji: '🕐', kw: ['horario', 'a que hora', 'que hora', 'abren', 'cierran', 'atienden', 'abierto', 'estan abiertos'] },
+  { topic: 'Precios',        emoji: '💲', kw: ['precio', 'cuesta', 'cuanto vale', 'cuanto es', 'cuanto sale', 'costo', 'valor', 'cuanto cuesta'] },
+  { topic: 'Envíos',         emoji: '🚚', kw: ['envio', 'envian', 'delivery', 'domicilio', 'a domicilio', 'despacho', 'me lo llevan', 'llega a', 'hacen envios'] },
+  { topic: 'Formas de pago', emoji: '💳', kw: ['pago', 'pagar', 'tarjeta', 'transferencia', 'efectivo', 'deposito', 'contra entrega', 'datafono', 'medios de pago'] },
+  { topic: 'Garantía/Cambios', emoji: '🛡️', kw: ['garantia', 'devolucion', 'devolver', 'cambio', 'reembolso', 'defectuoso', 'no funciona'] },
+  { topic: 'Ubicación',      emoji: '📍', kw: ['ubicacion', 'direccion', 'donde estan', 'donde queda', 'donde es', 'como llego', 'local', 'sucursal', 'tienda fisica'] },
+  { topic: 'Disponibilidad', emoji: '📦', kw: ['disponible', 'disponibilidad', 'en stock', 'hay stock', 'tienen en', 'les queda', 'quedan', 'existencia', 'agotado'] },
+  { topic: 'Promociones',    emoji: '🎁', kw: ['promocion', 'descuento', 'oferta', 'rebaja', 'promo', '2x1', 'combo'] }
+]
+async function computeFaq(bizId, period, limit = 8) {
+  const { start, label } = rangeFor(period)
+  const msgs = await db.getUserMessagesInRange(bizId, start)
+  const counts = {}
+  for (const m of msgs) {
+    const t = noAccents(m.content)
+    if (!t) continue
+    for (const f of FAQ_TOPICS) if (f.kw.some(k => t.includes(k))) counts[f.topic] = (counts[f.topic] || 0) + 1
+  }
+  const rows = FAQ_TOPICS
+    .map(f => ({ topic: f.topic, emoji: f.emoji, count: counts[f.topic] || 0 }))
+    .filter(r => r.count > 0).sort((a, b) => b.count - a.count).slice(0, limit)
+  return { label, analyzed: msgs.length, rows }
+}
+async function computeUnanswered(bizId, period, limit = 12) {
+  const { start, label } = rangeFor(period)
+  const gaps = await db.getAiGaps(bizId, start)
+  const map = {}
+  for (const g of gaps) {
+    const q = String(g.question || '').trim()
+    if (!q) continue
+    const k = noAccents(q).replace(/\s+/g, ' ')
+    if (!map[k]) map[k] = { question: q, count: 0 }
+    map[k].count++
+  }
+  const rows = Object.values(map).sort((a, b) => b.count - a.count).slice(0, limit)
+  return { label, count: gaps.length, unique: Object.keys(map).length, rows }
+}
+
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
-  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers] = await Promise.all([
+  const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered] = await Promise.all([
     computeSummary(bizId, period), computeTop(bizId, period), computeLowMovement(bizId, period),
     computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId),
     computeBySeller(bizId, period), computeMostConsulted(bizId, period), computeAbandoned(bizId, period),
-    computeLostCustomers(bizId, period)
+    computeLostCustomers(bizId, period), computeFaq(bizId, period), computeUnanswered(bizId, period)
   ])
-  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers }
+  return { period, summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -391,6 +435,25 @@ const fmtCustomerSummary = d => !d.total
         (d.riesgo.count > d.riesgo.rows.length ? `\n…y ${d.riesgo.count - d.riesgo.rows.length} más. Reactívalos con una promo. 👉 Lista completa en el panel.` : '')
       : '')
 
+const fmtAiReport = (faq, un) => {
+  let out = `🧠 Reporte de IA (${faq.label})\n`
+  // Bloque 1: preguntas frecuentes
+  out += `\n📊 Preguntas más frecuentes:\n`
+  out += faq.rows.length
+    ? faq.rows.map(r => `${r.emoji} ${r.topic} — ${r.count}`).join('\n')
+    : 'Sin preguntas suficientes para clasificar en el período.'
+  // Bloque 2: preguntas que el bot no pudo responder
+  out += `\n\n❓ Preguntas que la IA no pudo responder:\n`
+  if (!un.count) {
+    out += '¡Bien! El bot respondió todo en el período. 🎉'
+  } else {
+    out += un.rows.map(r => `• ${r.question}${r.count > 1 ? ` (x${r.count})` : ''}`).join('\n')
+    if (un.unique > un.rows.length) out += `\n…y ${un.unique - un.rows.length} más. 👉 Míralas en el panel.`
+    out += `\n\n💡 Agrega esta info al bot para que deje de fallar ahí.`
+  }
+  return out
+}
+
 async function runReport(bizId, intent) {
   const p = intent.period
   switch (intent.report) {
@@ -406,6 +469,7 @@ async function runReport(bizId, intent) {
     case 'abandoned':    return fmtAbandoned(await computeAbandoned(bizId, p))
     case 'lost':         return fmtLostCustomers(await computeLostCustomers(bizId, p))
     case 'customers':    return fmtCustomerSummary(await computeCustomerSummary(bizId))
+    case 'ai':           return fmtAiReport(await computeFaq(bizId, p), await computeUnanswered(bizId, p))
     default:             return null
   }
 }

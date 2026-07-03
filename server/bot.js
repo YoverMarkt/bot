@@ -648,6 +648,8 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
     const { error: sessErr } = await db.upsertSession(biz.id, from, { manual_mode: true, last_message: text, last_message_at: new Date().toISOString(), unread_owner: true })
     if (sessErr) console.error(`❌ upsertSession error:`, sessErr)
     else console.log(`🤚 [${biz.name}] manual_mode=true guardado para ${from}`)
+    // Reporte de IA: guardar la pregunta que el bot no supo responder (async, no bloquea)
+    db.recordAiGap(biz.id, from, text, hasHandoffTag ? 'handoff' : 'uncertain').catch(e => console.error('❌ recordAiGap:', e.message))
     await db.saveMessage(biz.id, from, 'assistant', handoffMsg)
     await sendFn(handoffMsg)
     return

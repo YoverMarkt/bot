@@ -212,6 +212,16 @@ create table if not exists product_consultations (
   created_at   timestamptz default now()
 );
 
+-- ── TABLA 14: Huecos de IA (preguntas que el bot no pudo responder) ──
+create table if not exists ai_gaps (
+  id            uuid primary key default gen_random_uuid(),
+  business_id   uuid references businesses(id) on delete cascade,
+  contact_phone text,            -- quién preguntó (contexto, opcional)
+  question      text not null,   -- la pregunta que el bot no supo responder
+  reason        text,            -- 'handoff' | 'uncertain'
+  created_at    timestamptz default now()
+);
+
 -- ── ÍNDICES ────────────────────────────────────────────────
 create index if not exists idx_products_biz      on products(business_id);
 create index if not exists idx_history_contact   on conversation_history(business_id, contact_phone);
@@ -229,6 +239,7 @@ create index if not exists idx_sale_items_sale    on sale_items(sale_id);
 create index if not exists idx_sale_items_biz_prod on sale_items(business_id, product_id);
 create index if not exists idx_pconsult_biz_date   on product_consultations(business_id, created_at);
 create index if not exists idx_pconsult_biz_prod   on product_consultations(business_id, product_id);
+create index if not exists idx_ai_gaps_biz_date    on ai_gaps(business_id, created_at);
 
 -- ── FUNCIÓN RAG: búsqueda de productos por significado ─────
 create or replace function match_products(query_embedding vector(1536), biz_id uuid, match_count int)
@@ -264,6 +275,7 @@ alter table server_settings       enable row level security;
 alter table sales                 enable row level security;
 alter table sale_items            enable row level security;
 alter table product_consultations enable row level security;
+alter table ai_gaps               enable row level security;
 
 -- ============================================================
 -- NOTA: el archivo migration-integraciones.sql quedó OBSOLETO.
