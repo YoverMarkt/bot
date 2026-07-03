@@ -168,7 +168,19 @@ const getBookings = async (bizId, from, to) => {
   return (await q).data || []
 }
 
-const createBooking = async data => sb.from('bookings').insert(data).select().single()
+// Crea una reserva evitando duplicados: si ya existe una cita igual (mismo negocio,
+// teléfono, fecha y hora, no cancelada), la devuelve en vez de crear otra. Esto protege
+// contra que el bot emita ##BOOK## dos veces en la misma conversación.
+const createBooking = async data => {
+  if (data.business_id && data.contact_phone && data.booking_date && data.booking_time) {
+    const { data: existing } = await sb.from('bookings').select('*')
+      .eq('business_id', data.business_id).eq('contact_phone', data.contact_phone)
+      .eq('booking_date', data.booking_date).eq('booking_time', data.booking_time)
+      .neq('status', 'cancelled').limit(1)
+    if (existing && existing.length) return { data: existing[0], error: null, duplicate: true }
+  }
+  return sb.from('bookings').insert(data).select().single()
+}
 
 const getBookingById = async id => (await sb.from('bookings').select('*').eq('id', id).single()).data
 

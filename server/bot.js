@@ -333,7 +333,7 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
     const slotLines = Object.entries(availableSlots).slice(0, 7).map(([date, { label, slots }]) =>
       `  ${label} (${date}): ${slots.join(', ')}`
     ).join('\n')
-    calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
+    calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. NUNCA adivines ni asumas la hora: incluye la etiqueta de reserva SOLO después de que el cliente haya ELEGIDO y CONFIRMADO una hora exacta de la lista; si todavía no eligió hora, pregúntala y NO pongas la etiqueta todavía. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
   } else if (!voiceMode && biz.calcom_link) {
     calendarLine = `\nRESERVAS/CITAS: Disponibles. Si el cliente quiere agendar, incluye ##BOOKING## en tu respuesta.`
   } else if (!voiceMode) {
@@ -369,7 +369,8 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
   // Reglas técnicas mínimas (mecánica de derivar) — NO imponen tono ni personalidad
   const funcRules = `INSTRUCCIONES TÉCNICAS (no cambian tu forma de hablar, solo cómo funciona el sistema):
 - No inventes precios ni información que no esté en los DATOS de arriba.
-- Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).`
+- Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
+- Cuando el cliente CONFIRME la compra (acepta el producto y su precio y ya toca coordinar pago o entrega), escribe tu mensaje normal y agrega al FINAL, en su propia línea, exactamente la etiqueta ##VENTA## (el sistema la usa para avisar al dueño; el cliente NO la ve). NO la pongas si el cliente todavía pregunta, compara o duda.`
 
   // Estilo por defecto SOLO si el dueño no definió su propio prompt
   const defaultStyle = `\n\nESTILO: Responde en español, amable y conciso.${voiceMode ? ' Es una llamada de voz: sin markdown ni emojis.' : ''} Si el cliente quiere comprar, pide nombre, dirección y método de pago.`
@@ -451,7 +452,10 @@ const SALE_PHRASES = [
   'gracias por tu compra','gracias por su compra','gracias por tu pedido','gracias por su pedido',
   'felicidades por tu compra','felicidades por su compra','felicitaciones por tu compra','felicitaciones por su compra',
   'coordinar la entrega','coordinaremos la entrega','para la entrega','su pedido está listo','tu pedido está listo',
-  'confirmar su pedido','confirmar tu pedido','compra realizada','pedido confirmado'
+  'confirmar su pedido','confirmar tu pedido','compra realizada','pedido confirmado',
+  // Cierres inequívocos (post-confirmación). NO incluir frases que el bot use en preguntas
+  // (ej. "¿desea proceder con la compra?") para evitar falsos positivos.
+  'gracias por su pedido','queda anotado su pedido','queda apartado','tu compra quedó registrada','su compra quedó registrada'
 ]
 
 // Normaliza: minúsculas, sin acentos, solo letras/números → array de palabras
@@ -789,4 +793,4 @@ async function handleImage(from, imageBuffer, mimeType, bizPhone, opts = {}) {
 }
 
 const sendWhatsAppMessage = (biz, to, text) => sendText(biz, to, text)
-module.exports = { handleMessage, handleImage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct }
+module.exports = { handleMessage, handleImage, processMessage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct }
