@@ -63,8 +63,13 @@ const createClientUser  = async data  => sb.from('client_users').insert(data).se
 const getProducts    = async bizId => (await sb.from('products').select('*').eq('business_id', bizId).eq('active', true).order('name')).data || []
 const getProductById = async id    => (await sb.from('products').select('*').eq('id', id).single()).data
 const createProduct  = async data  => sb.from('products').insert(data).select().single()
-const updateProduct  = async (id, data) => sb.from('products').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id)
-const deleteProduct  = async id    => sb.from('products').update({ active: false }).eq('id', id)
+// IMPORTANTE: filtran por business_id además del id → un negocio NO puede tocar
+// productos de otro (el backend usa service key y bypassa RLS; el filtro es la barrera).
+const updateProduct  = async (bizId, id, data) => {
+  const { business_id, id: _ignoreId, created_at, ...safe } = data   // evita reasignar dueño/id
+  return sb.from('products').update({ ...safe, updated_at: new Date().toISOString() }).eq('id', id).eq('business_id', bizId)
+}
+const deleteProduct  = async (bizId, id) => sb.from('products').update({ active: false }).eq('id', id).eq('business_id', bizId)
 const countProducts  = async bizId => (await sb.from('products').select('*', { count: 'exact', head: true }).eq('business_id', bizId).eq('active', true)).count || 0
 
 // ── RAG VECTORIAL ──
@@ -184,7 +189,7 @@ const createBooking = async data => {
 
 const getBookingById = async id => (await sb.from('bookings').select('*').eq('id', id).single()).data
 
-const updateBookingStatus = async (id, status) => sb.from('bookings').update({ status }).eq('id', id)
+const updateBookingStatus = async (bizId, id, status) => sb.from('bookings').update({ status }).eq('id', id).eq('business_id', bizId)
 
 const getAvailableSlots = async (bizId, daysAhead = 7) => {
   const schedule = await getSchedule(bizId)
