@@ -628,12 +628,13 @@ tr:hover td{background:var(--paper)}
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Si no eliges, el bot usa la IA activa en Configuración del servidor.</div>
       </div>
 
-      <!-- Cal.com -->
-      <div id="calcom-section">
-        <div class="fg"><label class="lbl">Cal.com — Enlace de reservas <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(solo negocios con citas)</span></label>
-          <input type="url" id="cm-calcom" placeholder="https://cal.com/tu-usuario/consulta-30min">
-          <div style="font-size:11px;color:var(--muted);margin-top:4px" id="calcom-hint">El bot incluirá este enlace automáticamente cuando el cliente quiera agendar una cita.</div>
-        </div>
+      <!-- Modo de operación -->
+      <div class="fg"><label class="lbl">Modo de operación</label>
+        <select id="cm-mode">
+          <option value="normal">🛒 Normal — solo venta y atención</option>
+          <option value="citas">📅 Con citas — activa el calendario de reservas</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px" id="mode-hint">"Con citas" hace que el bot ofrezca agendar (barbería, clínica, spa). "Normal" para tiendas, perfumerías, venta de agua, etc. El horario de atención se muestra en ambos modos.</div>
       </div>
 
       <!-- Retell AI -->
@@ -1128,10 +1129,12 @@ function toggleProviderFields(){
 
 const CALENDAR_TYPES=['barbería','peluquería','salón','spa','clínica','consultorio','odontología','psicología','gym','entrenamiento','restaurante','masajes','estetica','estética']
 function toggleCalendarHint(){
+  // Presugiere el modo según el tipo SOLO al crear (cm-id vacío); al editar respeta lo guardado.
   const t=document.getElementById('cm-type').value.toLowerCase()
   const needs=CALENDAR_TYPES.some(k=>t.includes(k))
-  const el=document.getElementById('calcom-hint')
-  if(el) el.style.color = needs ? 'var(--lime-d)' : 'var(--muted)'
+  const sel=document.getElementById('cm-mode')
+  const isNew=!document.getElementById('cm-id').value
+  if(sel && isNew) sel.value = needs ? 'citas' : 'normal'
 }
 
 function openClientModal(id=null) {
@@ -1141,7 +1144,8 @@ function openClientModal(id=null) {
   document.getElementById('cm-email').value=''
   document.getElementById('cm-password').value=''
   if (!id){
-    ;['cm-name','cm-phone','cm-owner-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-calcom','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
+    ;['cm-name','cm-phone','cm-owner-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
+    document.getElementById('cm-mode').value='normal'
   document.getElementById('cm-ai-provider').value=''
     document.getElementById('cm-plan').value='basic'
     document.getElementById('cm-provider').value='ycloud'
@@ -1191,7 +1195,7 @@ async function editClient(id) {
   document.getElementById('cm-meta-verify').value=c.meta_verify_token||''
   document.getElementById('cm-telegram-token').value=c.telegram_bot_token||''
   document.getElementById('cm-ai-provider').value=c.ai_provider||''
-  document.getElementById('cm-calcom').value=c.calcom_link||''
+  document.getElementById('cm-mode').value=c.takes_bookings?'citas':'normal'
   document.getElementById('cm-retell').value=c.retell_agent_id||''
   document.getElementById('cm-notes').value=c.notes||''
   document.getElementById('cm-owner-phone').value=c.owner_phone||''
@@ -1240,7 +1244,7 @@ async function saveClient() {
     meta_verify_token:document.getElementById('cm-meta-verify').value||null,
     telegram_bot_token:document.getElementById('cm-telegram-token').value||null,
     ai_provider:document.getElementById('cm-ai-provider').value||null,
-    calcom_link:document.getElementById('cm-calcom').value||null,
+    takes_bookings:document.getElementById('cm-mode').value==='citas',
     retell_agent_id:document.getElementById('cm-retell').value||null,
     notes:document.getElementById('cm-notes').value||null,
     owner_phone:document.getElementById('cm-owner-phone').value.trim()||null,

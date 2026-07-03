@@ -43,9 +43,11 @@ create table if not exists businesses (
   -- Telegram (token propio del negocio, opcional)
   telegram_bot_token  text,
   -- Integraciones
-  calcom_link         text,
+  calcom_link         text,          -- OBSOLETO (Cal.com retirado); columna huérfana, no se usa
   retell_agent_id     text,
   ai_provider         text,          -- override de IA por negocio (opcional)
+  -- Modo de operación: false = solo venta/atención · true = agenda citas (calendario)
+  takes_bookings      boolean not null default false,
   -- Negocio / facturación
   plan                text default 'basic',
   monthly_rate        numeric(10,2),

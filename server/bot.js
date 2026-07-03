@@ -326,16 +326,19 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
     ? `\n(Mostrando ${toShow.length} de ${allProducts.length} productos relevantes a la consulta)`
     : ''
 
-  // Slots disponibles para reservas propias (sin Cal.com)
+  // Slots disponibles para reservas propias (calendario a medida).
+  // Solo se ofrecen reservas a negocios en modo "Con citas" (takes_bookings).
+  // Una tienda/distribuidora (p. ej. venta de agua) puede tener horario de atención
+  // sin que el bot ofrezca "citas". El interruptor manda; si aún no está definido
+  // (BD sin migrar), se cae al tipo de negocio (businessNeedsCalendar) como respaldo.
   let calendarLine = ''
-  if (!voiceMode && availableSlots && Object.keys(availableSlots).length) {
+  const takesBookings = biz.takes_bookings ?? businessNeedsCalendar(biz.type)
+  if (!voiceMode && availableSlots && Object.keys(availableSlots).length && takesBookings) {
     // Mostrar TODOS los horarios reales del panel del dueño (sin recortar)
     const slotLines = Object.entries(availableSlots).slice(0, 7).map(([date, { label, slots }]) =>
       `  ${label} (${date}): ${slots.join(', ')}`
     ).join('\n')
     calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. NUNCA adivines ni asumas la hora: incluye la etiqueta de reserva SOLO después de que el cliente haya ELEGIDO y CONFIRMADO una hora exacta de la lista; si todavía no eligió hora, pregúntala y NO pongas la etiqueta todavía. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
-  } else if (!voiceMode && biz.calcom_link) {
-    calendarLine = `\nRESERVAS/CITAS: Disponibles. Si el cliente quiere agendar, incluye ##BOOKING## en tu respuesta.`
   } else if (!voiceMode) {
     // Sin sistema de reservas configurado — el bot lo maneja sin derivar a un asesor
     calendarLine = `\nRESERVAS: Este negocio no maneja reservas ni citas en línea. Si el cliente pregunta por agendar, explícalo amablemente y ofrécele ayuda con productos, pedidos o información. NO derives a un asesor por esto.`
@@ -625,12 +628,9 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
     } catch(e) { console.error('❌ Error creando reserva:', e.message) }
   }
 
-  if (finalText.includes('##BOOKING##') && biz.calcom_link) {
-    finalText = finalText.replace('##BOOKING##', '').trim()
-    finalText += `\n\n📅 Agenda tu cita aquí:\n${biz.calcom_link}`
-  } else {
-    finalText = finalText.replace('##BOOKING##', '').trim()
-  }
+  // Cal.com fue retirado: si la etiqueta ##BOOKING## apareciera por un prompt viejo,
+  // se limpia del texto (las reservas nativas usan ##BOOK:...## más arriba).
+  finalText = finalText.replace('##BOOKING##', '').trim()
 
   // Venta cerrada → avisar al dueño (modo manual + alarma). Se detecta por:
   //  (a) etiqueta ##VENTA##/##PEDIDO## si el prompt la usa, o
