@@ -1043,16 +1043,17 @@ function renderReports(d) {
   const summaryRow = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${stat('Total vendido',repMoney(s.total))}${stat('Pedidos',s.orders)}${stat('Ítems',s.items)}${stat('Ticket promedio',repMoney(s.avg))}${stat('Clientes nuevos',s.nuevos??0)}${stat('Recurrentes',s.recurrentes??0)}${stat('Conversión',conv)}</div>`
 
   const top = d.top.rows.length
-    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.top.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.qty} uds</strong> · ${repMoney(r.rev)}</li>`).join('')}</ol>`
+    ? hBars(d.top.rows.map(r=>({label:r.name,value:r.qty})),{fmt:v=>v+' uds'})
     : repEmpty('Sin ventas en el período.')
   const rec = d.recurring.rows.length
-    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.recurring.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} compra(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
+    ? hBars(d.recurring.rows.map(r=>({label:r.name,value:r.orders})),{fmt:v=>v+' compra(s)',color:'var(--c2)'})
     : repEmpty('Sin ventas en el período.')
   const c = d.comparison
   let trend
   if (c.pct === null) trend = c.curTotal>0 ? '🚀 sin base anterior' : 'sin datos'
   else trend = `<span style="color:${c.pct>=0?'#1a7f37':'var(--red)'}">${c.pct>=0?'▲ +':'▼ '}${c.pct.toFixed(1)}%</span>`
-  const comp = `<div style="font-size:13px;line-height:1.7">Actual: <strong>${repMoney(c.curTotal)}</strong> (${c.curOrders} pedidos)<br>Anterior: ${repMoney(c.prevTotal)} (${c.prevOrders} pedidos)<br>Variación: ${trend}</div>`
+  const comp = hBars([{label:esc(c.label||'Actual'),value:Math.round(c.curTotal)},{label:'Anterior',value:Math.round(c.prevTotal)}],{fmt:repMoney,color:'var(--c1)'})+
+    `<div style="font-size:12px;margin-top:10px;color:var(--muted)">${c.curOrders} vs ${c.prevOrders} pedidos · Variación: ${trend}</div>`
   const low = d.lowMovement.rows.length
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.lowMovement.rows.map(p=>`<li style="margin-bottom:3px">${esc(p.name)} — ${p.qty} uds</li>`).join('')}</ul>`
     : repEmpty('Todos tus productos tuvieron ventas. 🎉')
@@ -1063,18 +1064,18 @@ function renderReports(d) {
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.pending.rows.map(x=>`<li style="margin-bottom:3px">${esc(x.name)}${x.last_message?' — "'+esc(String(x.last_message).slice(0,40))+'"':''}</li>`).join('')}</ul>`
     : repEmpty('No hay cotizaciones sin cerrar. ✅')
   const seller = (d.bySeller && d.bySeller.rows.length)
-    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.bySeller.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — ${r.orders} venta(s) · ${repMoney(r.total)}</li>`).join('')}</ol>`
+    ? hBars(d.bySeller.rows.map(r=>({label:r.name,value:Math.round(r.total)})),{fmt:repMoney,color:'var(--c1)'})
     : repEmpty('Sin ventas en el período.')
   const consulted = (d.mostConsulted && d.mostConsulted.rows.length)
-    ? `<ol style="margin:0;padding-left:18px;font-size:13px">${d.mostConsulted.rows.map(r=>`<li style="margin-bottom:4px">${esc(r.name)} — <strong>${r.count}</strong> consulta(s)</li>`).join('')}</ol>`
+    ? hBars(d.mostConsulted.rows.map(r=>({label:r.name,value:r.count})),{fmt:v=>v+' cons.',color:'var(--c2)'})
     : repEmpty('Sin consultas registradas en el período.')
   const abandoned = (d.abandoned && d.abandoned.rows.length)
-    ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.abandoned.rows.map(r=>`<li style="margin-bottom:3px">${esc(r.name)} — ${r.consultas} consulta(s), 0 ventas</li>`).join('')}</ul>`
+    ? hBars(d.abandoned.rows.map(r=>({label:r.name,value:r.consultas})),{fmt:v=>v+' cons. · 0 ventas',color:'var(--c3)'})
     : repEmpty('Nada consultado quedó sin venta. 👍')
   const lc = d.lostCustomers
   const repDate = iso => { const x=new Date(iso); return isNaN(x)?'':x.toLocaleDateString('es-EC',{day:'2-digit',month:'short'}) }
   const faq = (d.faq && d.faq.rows.length)
-    ? `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${d.faq.rows.map(r=>`<li style="margin-bottom:4px;display:flex;justify-content:space-between"><span>${r.emoji} ${esc(r.topic)}</span><strong>${r.count}</strong></li>`).join('')}</ul>`
+    ? hBars(d.faq.rows.map(r=>({label:r.emoji+' '+r.topic,value:r.count})),{color:'var(--c1)'})
     : repEmpty('Aún no hay suficientes preguntas para clasificar.')
   const unans = (d.unanswered && d.unanswered.count)
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${d.unanswered.count} pregunta(s) sin responder · ${d.unanswered.unique} distinta(s)</div>`+
@@ -1086,21 +1087,33 @@ function renderReports(d) {
       `<ul style="margin:0;padding:0;list-style:none;font-size:13px">${lc.rows.map(r=>`<li style="margin-bottom:4px;display:flex;justify-content:space-between;gap:8px"><span>${r.returning?'🔁':'🆕'} ${esc(r.name)}</span><span style="color:var(--muted);white-space:nowrap">${r.reason==='No respondió'?'🔕 ':''}${esc(r.reason)}${repDate(r.lastAt)?' · '+repDate(r.lastAt):''}</span></li>`).join('')}</ul>`
     : repEmpty('Nadie escribió sin comprar en el período. 🎉')
 
-  document.getElementById('rep-content').innerHTML = summaryRow +
-    `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
-      ${repCard('🏆 Productos más vendidos', top)}
-      ${repCard('🔎 Más consultados', consulted)}
-      ${repCard('🛒 Productos abandonados (consultados sin vender)', abandoned)}
-      ${repCard('😟 Clientes perdidos (escribieron sin comprar)', lost)}
-      ${repCard('🧠 Preguntas más frecuentes', faq)}
-      ${repCard('❓ Preguntas que la IA no pudo responder', unans)}
-      ${repCard('🧑‍💼 Ventas por vendedor', seller)}
-      ${repCard('🤝 Clientes frecuentes', rec)}
-      ${repCard('📊 Comparación con período anterior', comp)}
-      ${repCard('🐌 Bajo movimiento (candidatos a promo)', low)}
-      ${repCard('📦 Stock bajo o agotado', stock)}
-      ${repCard('📋 Pedidos sin cerrar'+(d.pending.count?` (${d.pending.count})`:''), pend)}
+  const gCard = (g,title,body) => `<div data-g="${g}">${repCard(title,body)}</div>`
+  const cats = [['todos','Todos'],['ventas','💰 Ventas'],['productos','📦 Productos'],['clientes','👥 Clientes'],['bot','🤖 Bot']]
+  const chipBar = `<div id="rep-cats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">`+
+    cats.map((c,i)=>`<button class="btn btn-sm${i===0?' on':''}" data-cat="${c[0]}" onclick="filterReports('${c[0]}',this)">${c[1]}</button>`).join('')+`</div>`
+
+  document.getElementById('rep-content').innerHTML = summaryRow + chipBar +
+    `<div id="rep-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+      ${gCard('ventas','📊 Comparación con período anterior', comp)}
+      ${gCard('ventas','🧑‍💼 Ventas por vendedor', seller)}
+      ${gCard('ventas','📋 Pedidos sin cerrar'+(d.pending.count?` (${d.pending.count})`:''), pend)}
+      ${gCard('productos','🏆 Productos más vendidos', top)}
+      ${gCard('productos','🔎 Más consultados', consulted)}
+      ${gCard('productos','🛒 Productos abandonados (consultados sin vender)', abandoned)}
+      ${gCard('productos','🐌 Bajo movimiento (candidatos a promo)', low)}
+      ${gCard('productos','📦 Stock bajo o agotado', stock)}
+      ${gCard('clientes','🤝 Clientes frecuentes', rec)}
+      ${gCard('clientes','😟 Clientes perdidos (escribieron sin comprar)', lost)}
+      ${gCard('bot','🧠 Preguntas más frecuentes', faq)}
+      ${gCard('bot','❓ Preguntas que la IA no pudo responder', unans)}
     </div>`
+}
+function filterReports(cat, el) {
+  document.querySelectorAll('#rep-cats .btn').forEach(b=>b.classList.remove('on'))
+  el.classList.add('on')
+  document.querySelectorAll('#rep-grid [data-g]').forEach(d=>{
+    d.style.display = (cat==='todos' || d.getAttribute('data-g')===cat) ? '' : 'none'
+  })
 }
 
 // ── USUARIOS Y PERMISOS (gestión, solo dueño) ─────────────
