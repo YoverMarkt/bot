@@ -289,6 +289,13 @@ const getWritersInRange = async (bizId, from, to) => {
   const { data } = await q
   return new Set((data || []).map(r => r.contact_phone).filter(Boolean)).size
 }
+// Mensajes de clientes (role='user') con su texto en un rango — para "preguntas frecuentes"
+const getUserMessagesInRange = async (bizId, from, to) => {
+  let q = sb.from('conversation_history').select('content, contact_phone, created_at').eq('business_id', bizId).eq('role', 'user')
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+  return (await q).data || []
+}
 // Historial (todos los roles) en un rango — para "clientes perdidos": saber quién
 // escribió y quién habló al final (razón "No respondió"). Solo campos necesarios.
 const getHistoryInRange = async (bizId, from, to) => {
@@ -296,6 +303,19 @@ const getHistoryInRange = async (bizId, from, to) => {
   if (from) q = q.gte('created_at', from)
   if (to)   q = q.lte('created_at', to)
   return (await q).data || []
+}
+// Registrar un "hueco de IA": pregunta que el bot no supo responder (async, no bloquea)
+const recordAiGap = async (bizId, phone, question, reason = 'uncertain') => {
+  const q = String(question || '').trim().slice(0, 500)
+  if (!q) return
+  return sb.from('ai_gaps').insert({ business_id: bizId, contact_phone: phone, question: q, reason })
+}
+// Huecos de IA en un rango — para el "Reporte de IA"
+const getAiGaps = async (bizId, from, to) => {
+  let q = sb.from('ai_gaps').select('question, contact_phone, created_at').eq('business_id', bizId)
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+  return (await q.order('created_at', { ascending: false })).data || []
 }
 const voidSale     = async (bizId, id) =>
   sb.from('sales').update({ status: 'anulada' }).eq('business_id', bizId).eq('id', id).eq('status', 'completada')
@@ -329,8 +349,9 @@ const getPendingOrders = async bizId => {
 module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
-  getSaleCustomers, getCustomerSales, getWritersInRange, getHistoryInRange,
+  getSaleCustomers, getCustomerSales, getWritersInRange, getHistoryInRange, getUserMessagesInRange,
   recordConsultations, getConsultationsInRange,
+  recordAiGap, getAiGaps,
   getClientByEmail, getClientUserByBusiness, createClientUser, updateClientUser,
   getClientUsers, getClientUserById, updateClientUserById, deleteClientUserById,
   getProducts, getProductById, createProduct, updateProduct, deleteProduct,
