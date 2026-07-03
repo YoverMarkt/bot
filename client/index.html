@@ -307,6 +307,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
             <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar producto</button>
           </div>
         </div>
+        <div id="dash-onboarding"></div>
         <div id="dash-alerts"></div>
         <div id="dash-bi" style="margin-bottom:16px"></div>
         <div class="stats">
@@ -760,6 +761,7 @@ function bootApp() {
   applyPermissions()
   loadAll()
   loadDashboardBI()
+  loadOnboarding()
   initRealtime(BIZ?.id)
   if (can('conversaciones')) startConvRefresh()   // el polling/alarma solo si puede ver conversaciones
 }
@@ -862,6 +864,11 @@ async function loadStats() {
   } catch {}
 }
 
+// Navegar a una página desde un botón que no es del menú (ej. el checklist de onboarding)
+function goTo(name) {
+  const el = [...document.querySelectorAll('.ni')].find(n => (n.getAttribute('onclick')||'').includes(`'${name}'`))
+  goPage(name, el || document.querySelector('.ni'))
+}
 function goPage(name,el) {
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'))
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'))
@@ -870,7 +877,7 @@ function goPage(name,el) {
   // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
-  if (name==='dashboard') loadDashboardBI()
+  if (name==='dashboard') { loadDashboardBI(); loadOnboarding() }
   if (name==='reportes') { loadReports(); loadAlerts() }
   if (name==='clientes') loadCustomers()
   if (name==='usuarios') loadUsers()
@@ -1047,6 +1054,27 @@ function renderDashboardBI(d) {
       `<div class="chart-card"><h3>👥 Clientes por estado</h3>${donut(custSegs,{centerLabel:'clientes'})}</div>`+
       `<div class="chart-card"><h3>📦 Inventario</h3>${donut(stockSegs,{centerLabel:'productos'})}</div>`+
     `</div>`
+}
+
+// ── ONBOARDING (guía de puesta en marcha — solo dueño, solo si falta algo) ──
+async function loadOnboarding() {
+  const box = document.getElementById('dash-onboarding')
+  if (!box) return
+  if (USER?.role !== 'owner') { box.innerHTML = ''; return }
+  try {
+    const d = await fetch(`${API}/api/client/onboarding`, { headers: H() }).then(r => r.json())
+    if (!d.steps || d.pct >= 100) { box.innerHTML = ''; return }   // todo listo → no estorbar
+    const bar = `<div style="background:var(--paper2);border-radius:6px;height:8px;overflow:hidden;margin:10px 0 14px"><div style="height:100%;width:${d.pct}%;background:var(--lime-d);border-radius:6px;transition:width .5s"></div></div>`
+    const items = d.steps.map(s => `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:13px">`+
+      `<span style="font-size:15px">${s.done ? '✅' : '⬜'}</span>`+
+      `<span style="flex:1;${s.done ? 'color:var(--muted);text-decoration:line-through' : ''}">${esc(s.label)}${s.hint ? ` <span style="color:var(--muted);font-size:12px">· ${esc(s.hint)}</span>` : ''}</span>`+
+      `${(!s.done && s.page) ? `<button class="btn btn-sm" onclick="goTo('${s.page}')">Configurar →</button>` : ''}`+
+    `</div>`).join('')
+    box.innerHTML = `<div class="chart-card" style="border:1px solid var(--lime-d);margin-bottom:16px">`+
+      `<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🚀 Configura tu bot para vender</h3><strong style="font-family:'Syne',sans-serif;font-size:15px">${d.done}/${d.total}</strong></div>`+
+      bar + items +
+    `</div>`
+  } catch { box.innerHTML = '' }
 }
 
 async function loadReports() {
