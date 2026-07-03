@@ -18,6 +18,10 @@ const srvSettings = require('./settings')
 const { setupTelegram } = require('./telegram')
 const app     = express()
 
+// Railway/producción corre detrás de un proxy: sin esto express-rate-limit
+// no ve la IP real (bloquearía a todos) y puede lanzar error por X-Forwarded-For.
+app.set('trust proxy', 1)
+
 // ── RED DE SEGURIDAD: el server NUNCA debe caerse por un error aislado ──
 process.on('uncaughtException', (err) => {
   console.error('🛑 uncaughtException (server sigue vivo):', err.message)
@@ -25,6 +29,23 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('🛑 unhandledRejection (server sigue vivo):', reason?.message || reason)
 })
+
+// ── CHEQUEO DE ENTORNO (avisa fuerte si falta algo crítico en el deploy) ──
+function checkEnv() {
+  const critical = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'JWT_SECRET', 'ADMIN_EMAIL', 'ADMIN_PASSWORD']
+  const recommended = ['BASE_URL', 'WEBHOOK_SECRET']
+  const missing = critical.filter(k => !process.env[k] || !String(process.env[k]).trim())
+  const missingRec = recommended.filter(k => !process.env[k] || !String(process.env[k]).trim())
+  if (missing.length) {
+    console.error('\n❌ FALTAN variables CRÍTICAS (el panel/login no funcionará):', missing.join(', '))
+    console.error('   Configúralas en Railway → Variables antes de usar en producción.\n')
+  }
+  if (missingRec.length) {
+    console.warn('⚠️  Faltan variables recomendadas en producción:', missingRec.join(', '),
+      '\n   BASE_URL desactiva el túnel local y fija la URL; WEBHOOK_SECRET protege los webhooks.')
+  }
+  if (!missing.length) console.log('✅ Variables de entorno críticas: OK')
+}
 
 const crypto = require('crypto')
 app.use(cors({ origin: '*' }))
@@ -1037,6 +1058,7 @@ async function checkExpiredClients() {
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
+  checkEnv()
   console.log(`\n🚀 BotPanel corriendo en http://localhost:${PORT}`)
   console.log(`👑 Admin:   http://localhost:${PORT}/admin`)
   console.log(`👤 Cliente: http://localhost:${PORT}/client`)
