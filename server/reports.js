@@ -347,6 +347,42 @@ async function computeUnanswered(bizId, period, limit = 12) {
   return { label, count: gaps.length, unique: Object.keys(map).length, rows }
 }
 
+// ── Alertas (Fase 1: banner en el panel) ──────────────────
+// Vigila condiciones con los cálculos que ya existen y devuelve avisos
+// ordenados por severidad. Solo lectura, sin push (eso es Fase 2).
+async function computeAlerts(bizId) {
+  const [lowStock, pending, comp, cust, abandoned, unanswered, today, biz] = await Promise.all([
+    db.getLowStockProducts(bizId),
+    db.getPendingOrders(bizId),
+    computeComparison(bizId, 'semana'),
+    computeCustomerSummary(bizId),
+    computeAbandoned(bizId, 'mes'),
+    computeUnanswered(bizId, 'semana'),
+    computeSummary(bizId, 'hoy'),
+    db.getBusinessById(bizId)
+  ])
+  const alerts = []
+  const agotados = lowStock.filter(p => p.stock === 'agotado').length
+  const ultimas  = lowStock.filter(p => p.stock === 'últimas unidades').length
+  if (agotados) alerts.push({ level: 'critical', icon: '🔴', text: `${agotados} producto(s) agotado(s)` })
+  if (ultimas)  alerts.push({ level: 'warning',  icon: '🟡', text: `${ultimas} producto(s) en últimas unidades` })
+  if (pending.length) alerts.push({ level: 'warning', icon: '📋', text: `${pending.length} conversación(es) sin cerrar` })
+  if (comp.pct !== null && comp.pct <= -20) alerts.push({ level: 'warning', icon: '📉', text: `Ventas ${comp.pct.toFixed(0)}% vs semana pasada` })
+  if (comp.pct !== null && comp.pct >= 20)  alerts.push({ level: 'good',    icon: '📈', text: `Ventas +${comp.pct.toFixed(0)}% vs semana pasada` })
+  if (cust.riesgo.count)     alerts.push({ level: 'info', icon: '😴', text: `${cust.riesgo.count} cliente(s) en riesgo (reactivar)` })
+  if (abandoned.rows.length) alerts.push({ level: 'info', icon: '🛒', text: `${abandoned.rows.length} producto(s) consultado(s) sin vender` })
+  if (unanswered.count)      alerts.push({ level: 'info', icon: '🧠', text: `${unanswered.count} pregunta(s) que el bot no supo responder` })
+  if (new Date().getHours() >= 14 && today.orders === 0)
+    alerts.push({ level: 'info', icon: '🌙', text: 'Aún sin ventas registradas hoy' })
+  if (biz?.plan_expires_at) {
+    const days = Math.ceil((new Date(biz.plan_expires_at).getTime() - Date.now()) / 86400000)
+    if (days >= 0 && days <= 7) alerts.push({ level: 'critical', icon: '💳', text: `Tu plan vence en ${days} día(s)` })
+  }
+  const rank = { critical: 0, warning: 1, info: 2, good: 3 }
+  alerts.sort((a, b) => rank[a.level] - rank[b.level])
+  return { count: alerts.length, alerts }
+}
+
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId, period) {
   const [summary, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered] = await Promise.all([
@@ -491,4 +527,4 @@ async function handleOwnerMessage(biz, from, text) {
   }
 }
 
-module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory }
+module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory, computeAlerts }
