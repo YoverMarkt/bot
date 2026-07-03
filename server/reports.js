@@ -347,6 +347,35 @@ async function computeUnanswered(bizId, period, limit = 12) {
   return { label, count: gaps.length, unique: Object.keys(map).length, rows }
 }
 
+// ── Dashboard (resumen del negocio con datos para gráficos) ──
+async function getDashboard(bizId, period) {
+  const [summary, comp, top, cust, products] = await Promise.all([
+    computeSummary(bizId, period),
+    computeComparison(bizId, period),
+    computeTop(bizId, period, 6),
+    computeCustomerSummary(bizId),
+    db.getProducts(bizId)
+  ])
+  const stock = { disponible: 0, ultimas: 0, agotado: 0 }
+  for (const p of products) {
+    if (p.stock === 'agotado') stock.agotado++
+    else if (p.stock === 'últimas unidades') stock.ultimas++
+    else stock.disponible++
+  }
+  return {
+    period, label: summary.label,
+    kpis: {
+      total: summary.total, orders: summary.orders, avg: summary.avg,
+      conversion: summary.conversion, items: summary.items,
+      clientes: cust.total, nuevos: summary.nuevos, recurrentes: summary.recurrentes
+    },
+    comparison: { curTotal: comp.curTotal, prevTotal: comp.prevTotal, pct: comp.pct },
+    top: top.rows,
+    customersByStatus: { nuevos: cust.nuevos, frecuentes: cust.frecuentes, activos: cust.activos, inactivos: cust.inactivos },
+    stock
+  }
+}
+
 // ── Alertas (Fase 1: banner en el panel) ──────────────────
 // Vigila condiciones con los cálculos que ya existen y devuelve avisos
 // ordenados por severidad. Solo lectura, sin push (eso es Fase 2).
@@ -527,4 +556,4 @@ async function handleOwnerMessage(biz, from, text) {
   }
 }
 
-module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory, computeAlerts }
+module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory, computeAlerts, getDashboard }

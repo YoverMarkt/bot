@@ -5,7 +5,25 @@
 <title>BotPanel — Mi negocio</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#0c0c0c;--ink2:#1e1e1e;--paper:#f7f5f1;--paper2:#eeebe4;--paper3:#e4e0d7;--lime:#b5f23a;--lime-d:#93c92d;--lime-ink:#1a2d00;--red:#f03d2f;--amber:#f5a623;--sky:#2d6fff;--muted:#8a8378;--faint:#b8b3a8;--bd:rgba(12,12,12,0.09);--bd2:rgba(12,12,12,0.15);--r:12px;--rs:8px;--sh:0 1px 2px rgba(0,0,0,0.06),0 4px 16px rgba(0,0,0,0.04)}
+:root{--ink:#0c0c0c;--ink2:#1e1e1e;--paper:#f7f5f1;--paper2:#eeebe4;--paper3:#e4e0d7;--lime:#b5f23a;--lime-d:#93c92d;--lime-ink:#1a2d00;--red:#f03d2f;--amber:#f5a623;--sky:#2d6fff;--muted:#8a8378;--faint:#b8b3a8;--bd:rgba(12,12,12,0.09);--bd2:rgba(12,12,12,0.15);--r:12px;--rs:8px;--sh:0 1px 2px rgba(0,0,0,0.06),0 4px 16px rgba(0,0,0,0.04);
+/* Gráficos (paleta dataviz validada — CVD ΔE 24.2) */
+--c1:#2a78d6;--c2:#1baf7a;--c3:#eda100;--c4:#008300;--c-good:#0ca30c;--c-warn:#f5a623;--c-crit:#d03b3b;--c-bar:#1e1e1e;--grid:#e1e0d9;--axis:#c3c2b7}
+.chart-card{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:18px}
+.chart-card h3{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin:0 0 14px;color:var(--ink)}
+.hbar-row{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:10px;margin-bottom:9px;font-size:13px}
+.hbar-lbl{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbar-track{background:var(--paper2);border-radius:5px;height:16px;overflow:hidden;display:block}
+.hbar-fill{display:block;height:100%;border-radius:0 5px 5px 0;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.hbar-val{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600;white-space:nowrap}
+.lg-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:7px}
+.lg-sw{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.lg-val{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border:1px solid var(--bd);border-radius:var(--r);padding:16px}
+.kpi-l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.kpi-v{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;margin-top:6px;letter-spacing:-1px}
+.kpi-d{font-size:12px;font-weight:600;margin-top:3px}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
 *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
 body{font-family:'Instrument Sans',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
 .screen{display:none;min-height:100vh}.screen.on{display:flex}
@@ -280,8 +298,17 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <div class="pg on" id="pg-dashboard">
       <div class="pg-inner">
         <div class="ph"><div><h1 id="dash-h">Bienvenido</h1><p id="dash-sub">—</p></div>
-          <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar producto</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:none;gap:6px" id="dash-period">
+              <button class="btn btn-sm" data-p="hoy" onclick="setDashPeriod('hoy',this)">Hoy</button>
+              <button class="btn btn-sm on" data-p="semana" onclick="setDashPeriod('semana',this)">Semana</button>
+              <button class="btn btn-sm" data-p="mes" onclick="setDashPeriod('mes',this)">Mes</button>
+            </div>
+            <button class="btn btn-dark" onclick="openModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Agregar producto</button>
+          </div>
         </div>
+        <div id="dash-alerts"></div>
+        <div id="dash-bi" style="margin-bottom:16px"></div>
         <div class="stats">
           <div class="stat"><div class="stat-l">Productos</div><div class="stat-v g" id="st-p">—</div><div class="stat-s">En catálogo</div></div>
           <div class="stat"><div class="stat-l">Disponibles</div><div class="stat-v" id="st-a">—</div><div class="stat-s">Con stock</div></div>
@@ -732,6 +759,7 @@ function bootApp() {
   }
   applyPermissions()
   loadAll()
+  loadDashboardBI()
   initRealtime(BIZ?.id)
   if (can('conversaciones')) startConvRefresh()   // el polling/alarma solo si puede ver conversaciones
 }
@@ -842,6 +870,7 @@ function goPage(name,el) {
   // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
+  if (name==='dashboard') loadDashboardBI()
   if (name==='reportes') { loadReports(); loadAlerts() }
   if (name==='clientes') loadCustomers()
   if (name==='usuarios') loadUsers()
@@ -881,8 +910,8 @@ const ALERT_STYLE = {
   info:     { bg:'#e8f0fe', bd:'#b6ccf5', fg:'#1a4fa0' },
   good:     { bg:'#e6f4ea', bd:'#a6d8b6', fg:'#1a7f37' }
 }
-async function loadAlerts() {
-  const box = document.getElementById('alerts-banner')
+async function loadAlerts(targetId='alerts-banner') {
+  const box = document.getElementById(targetId)
   if (!box) return
   try {
     const r = await fetch(`${API}/api/client/alerts`, { headers: H() })
@@ -894,6 +923,104 @@ async function loadAlerts() {
         return `<span style="display:inline-flex;align-items:center;gap:6px;background:${s.bg};border:1px solid ${s.bd};color:${s.fg};border-radius:20px;padding:6px 12px;font-size:13px;font-weight:500">${a.icon} ${esc(a.text)}</span>` }).join('') +
       `</div>`
   } catch { box.innerHTML='' }
+}
+
+// ── GRÁFICOS (SVG/HTML a medida, sin dependencias — guía dataviz) ──
+// Barras horizontales: marca fina, extremo redondeado, anclada al inicio, valor directo.
+function hBars(rows, { fmt = (v=>v), color = 'var(--c-bar)' } = {}) {
+  const max = Math.max(1, ...rows.map(r => r.value))
+  if (!rows.length) return `<p style="color:var(--muted);font-size:13px;margin:0">Sin datos en el período.</p>`
+  return rows.map(r => {
+    const w = Math.max(2, (r.value / max) * 100)
+    return `<div class="hbar-row"><span class="hbar-lbl" title="${esc(r.label)}">${esc(r.label)}</span>`+
+      `<span class="hbar-track"><span class="hbar-fill" style="width:${w}%;background:${color}"></span></span>`+
+      `<span class="hbar-val">${esc(String(fmt(r.value)))}</span></div>`
+  }).join('')
+}
+// Dona: segmentos con gap de 2px a la superficie + leyenda con valores directos (regla de relieve).
+function donut(segs, { center = null, centerLabel = '' } = {}) {
+  const total = segs.reduce((s, x) => s + x.value, 0)
+  if (!total) return `<p style="color:var(--muted);font-size:13px;margin:0">Sin datos.</p>`
+  const gap = 1.4
+  let off = 0, arcs = ''
+  for (const s of segs) {
+    const pct = s.value / total * 100
+    const len = Math.max(pct - gap, 0.001)
+    arcs += `<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${s.color}" stroke-width="4.5" stroke-dasharray="${len} ${100 - len}" stroke-dashoffset="${-off}"><title>${esc(s.label)}: ${s.value} (${Math.round(pct)}%)</title></circle>`
+    off += pct
+  }
+  const legend = segs.filter(s => s.value > 0).map(s =>
+    `<div class="lg-row"><span class="lg-sw" style="background:${s.color}"></span>${esc(s.label)}<span class="lg-val">${s.value} · ${Math.round(s.value/total*100)}%</span></div>`).join('')
+  return `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">`+
+    `<svg viewBox="0 0 42 42" style="width:118px;height:118px;flex-shrink:0" role="img" aria-label="Gráfico de dona">`+
+      `<circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--paper2)" stroke-width="4.5"/>`+
+      `<g transform="rotate(-90 21 21)">${arcs}</g>`+
+      `<text x="21" y="20.5" text-anchor="middle" style="font:700 7px Syne,sans-serif;fill:var(--ink)">${center ?? total}</text>`+
+      `<text x="21" y="26" text-anchor="middle" style="font-size:2.7px;fill:var(--muted)">${esc(centerLabel)}</text>`+
+    `</svg><div style="flex:1;min-width:130px">${legend}</div></div>`
+}
+
+// ── DASHBOARD (bloque de inteligencia — solo si puede ver reportes) ──
+let dashPeriod = 'semana'
+function setDashPeriod(p, el) {
+  dashPeriod = p
+  document.querySelectorAll('#dash-period .btn').forEach(b => b.classList.remove('on'))
+  el.classList.add('on')
+  loadDashboardBI()
+}
+async function loadDashboardBI() {
+  if (!can('reportes')) return
+  const bi = document.getElementById('dash-bi')
+  document.getElementById('dash-period').style.display = 'flex'
+  bi.innerHTML = '<p style="color:var(--muted)">Cargando métricas…</p>'
+  loadAlerts('dash-alerts')
+  try {
+    const r = await fetch(`${API}/api/client/dashboard?period=${dashPeriod}`, { headers: H() })
+    if (!r.ok) throw new Error((await r.json()).error || 'error')
+    renderDashboardBI(await r.json())
+  } catch (e) { bi.innerHTML = `<p style="color:var(--red)">No se pudieron cargar las métricas: ${esc(e.message)}</p>` }
+}
+function renderDashboardBI(d) {
+  const k = d.kpis, money = repMoney
+  const conv = (k.conversion == null) ? '—' : Math.round(k.conversion) + '%'
+  const pct = d.comparison.pct
+  const delta = pct == null ? '' :
+    `<div class="kpi-d" style="color:${pct>=0?'var(--c-good)':'var(--red)'}">${pct>=0?'▲ +':'▼ '}${Math.abs(pct).toFixed(0)}% vs período anterior</div>`
+  const kpi = (l,v,extra='') => `<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v">${v}</div>${extra}</div>`
+  const kpiRow = `<div class="kpi-row">`+
+    kpi('Ventas ('+esc(d.label)+')', money(k.total), delta)+
+    kpi('Pedidos', k.orders)+
+    kpi('Ticket promedio', money(k.avg))+
+    kpi('Conversión', conv)+
+    kpi('Clientes', k.clientes)+
+  `</div>`
+
+  const topRows = d.top.map(t => ({ label: t.name, value: t.qty }))
+  const cs = d.customersByStatus
+  const custSegs = [
+    { label:'Nuevos', value:cs.nuevos, color:'var(--c1)' },
+    { label:'Frecuentes', value:cs.frecuentes, color:'var(--c2)' },
+    { label:'Activos', value:cs.activos, color:'var(--c3)' },
+    { label:'Inactivos', value:cs.inactivos, color:'var(--c4)' }
+  ]
+  const stockSegs = [
+    { label:'Disponible', value:d.stock.disponible, color:'var(--c-good)' },
+    { label:'Últimas unidades', value:d.stock.ultimas, color:'var(--c-warn)' },
+    { label:'Agotado', value:d.stock.agotado, color:'var(--c-crit)' }
+  ]
+  const cmp = d.comparison
+  const cmpRows = [
+    { label: d.label, value: Math.round(cmp.curTotal) },
+    { label: 'Anterior', value: Math.round(cmp.prevTotal) }
+  ]
+
+  document.getElementById('dash-bi').innerHTML = kpiRow +
+    `<div class="chart-grid">`+
+      `<div class="chart-card"><h3>💰 Ventas: ${esc(d.label)} vs anterior</h3>${hBars(cmpRows,{fmt:repMoney,color:'var(--c1)'})}</div>`+
+      `<div class="chart-card"><h3>🏆 Productos más vendidos</h3>${hBars(topRows,{fmt:v=>v+' uds'})}</div>`+
+      `<div class="chart-card"><h3>👥 Clientes por estado</h3>${donut(custSegs,{centerLabel:'clientes'})}</div>`+
+      `<div class="chart-card"><h3>📦 Inventario</h3>${donut(stockSegs,{centerLabel:'productos'})}</div>`+
+    `</div>`
 }
 
 async function loadReports() {
