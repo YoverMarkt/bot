@@ -365,6 +365,20 @@ app.put('/api/client/sessions/:phone/mode', authClient, requirePermission('conve
   res.json({ ok: true })
 })
 
+// Cerrar venta: devuelve la conversación al bot Y marca un corte de historial.
+// El próximo mensaje del cliente se trata como conversación nueva (no retoma el pedido).
+app.put('/api/client/sessions/:phone/close', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone)
+  const now = new Date().toISOString()
+  let { error } = await db.upsertSession(req.user.businessId, phone, { manual_mode: false, unread_owner: false, closed_sale_at: now })
+  // Si la columna closed_sale_at aún no existe (migración sin correr), al menos devuelve al bot
+  if (error && /closed_sale_at/.test(error.message || '')) {
+    ;({ error } = await db.upsertSession(req.user.businessId, phone, { manual_mode: false, unread_owner: false }))
+  }
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
+
 // Marcar un chat manual como atendido (calla la alarma de forma persistente)
 app.put('/api/client/sessions/:phone/read', authClient, requirePermission('conversaciones'), async (req, res) => {
   await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { unread_owner: false })

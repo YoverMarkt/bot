@@ -87,7 +87,7 @@ const getPolicies    = async bizId => (await sb.from('bot_policies').select('*')
 const upsertPolicies = async (bizId, data) => sb.from('bot_policies').upsert({ ...data, business_id: bizId, updated_at: new Date().toISOString() }, { onConflict: 'business_id' })
 
 const getConversations  = async (bizId, limit = 100) => (await sb.from('conversation_history').select('*').eq('business_id', bizId).order('created_at', { ascending: false }).limit(limit)).data || []
-const getContactHistory = async (bizId, phone, limit = 24) => { const { data } = await sb.from('conversation_history').select('role,content,created_at').eq('business_id', bizId).eq('contact_phone', phone).order('created_at', { ascending: false }).limit(limit); return (data || []).reverse() }
+const getContactHistory = async (bizId, phone, limit = 24, sinceTs = null) => { let q = sb.from('conversation_history').select('role,content,created_at').eq('business_id', bizId).eq('contact_phone', phone); if (sinceTs) q = q.gt('created_at', sinceTs); const { data } = await q.order('created_at', { ascending: false }).limit(limit); return (data || []).reverse() }
 const saveMessage       = async (bizId, phone, role, content) => {
   const res = await sb.from('conversation_history').insert({ business_id: bizId, contact_phone: phone, role, content })
   // Si la restricción aún no permite 'owner', guardar como 'assistant' para no perder el mensaje
