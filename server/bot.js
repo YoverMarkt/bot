@@ -292,7 +292,7 @@ function scheduleToText(schedule) {
 }
 
 // ── PROMPT DEL BOT ────────────────────────────────────────
-function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '', availableSlots = null, schedule = null, preFiltered = false) {
+function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '', availableSlots = null, schedule = null, preFiltered = false, postSale = false) {
   const allProducts = products || []
   let toShow
   if (preFiltered) {
@@ -402,7 +402,7 @@ Devoluciones: ${policies?.returns || 'Consultar directamente.'}
 Descuentos: ${policies?.discounts || 'Consultar directamente.'}
 ${policies?.bot_instructions ? `\nINSTRUCCIONES ADICIONALES DEL DUEÑO:\n${policies.bot_instructions}` : ''}
 
-${funcRules}${customPrompt ? '' : defaultStyle}`
+${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${funcRules}${customPrompt ? '' : defaultStyle}`
 }
 
 // Devuelve el Buffer de la imagen de un producto (base64 o URL externa)
@@ -543,11 +543,15 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
 
   const [policies, history, availableSlots, schedule, totalProducts] = await Promise.all([
     db.getPolicies(biz.id),
-    db.getContactHistory(biz.id, from, historyLimit),
+    // Corte de historial: si el dueño cerró la venta, el bot ignora lo anterior a ese punto
+    db.getContactHistory(biz.id, from, historyLimit, session?.closed_sale_at || null),
     db.getAvailableSlots(biz.id).catch(() => null),
     db.getSchedule(biz.id).catch(() => []),
     db.countProducts(biz.id).catch(() => 0)
   ])
+
+  // Post-venta: hubo un cierre y el bot aún no ha saludado tras ese corte (primer mensaje nuevo)
+  const postSale = !!(session?.closed_sale_at) && !history.some(m => m.role === 'assistant')
 
   // Selección de productos: RAG vectorial si el catálogo es grande, completo si es chico
   let products = []
@@ -585,7 +589,7 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
 
   let reply = ''
   try {
-    reply = await callAI(buildPrompt(biz, products, policies, false, text, availableSlots, schedule, preFiltered), history, text, biz.ai_provider)
+    reply = await callAI(buildPrompt(biz, products, policies, false, text, availableSlots, schedule, preFiltered, postSale), history, text, biz.ai_provider)
   } catch(e) {
     console.error('❌ IA:', e.message)
     reply = 'Disculpa, tuve un problema técnico. Intenta de nuevo 🙏'

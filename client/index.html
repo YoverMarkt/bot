@@ -1654,9 +1654,13 @@ async function confirmSale() {
       contact_phone: phone, contact_name: document.getElementById('sale-customer').value.trim(), items
     }) })
     if (!r.ok) throw new Error((await r.json()).error)
-    toast('✓ Venta registrada')
+    // Unificado: registrar la venta también CIERRA la conversación → el bot corta el
+    // historial y trata el próximo mensaje del cliente como contexto nuevo (post-venta).
+    await fetch(`${API}/api/client/sessions/${encodeURIComponent(phone)}/close`, { method:'PUT', headers:H() }).catch(()=>{})
+    toast('✓ Venta registrada — el bot arrancará conversación nueva')
     closeSaleModal()
     loadConversations()
+    if (activePhone === phone) renderChatPanel(phone)
   } catch(e) { toast('Error: '+e.message, true) }
   btn.disabled = false; btn.textContent = 'Confirmar venta'
 }
