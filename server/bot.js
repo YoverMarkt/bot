@@ -313,7 +313,9 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
   }
 
   const catalog = toShow.map(p => {
-    let l = `- ${p.name}${p.brand ? ` (${p.brand})` : ''} — $${parseFloat(p.price).toFixed(2)}`
+    // Precio 0 (o sin cargar) → "precio a consultar" para que el bot no diga "$0.00"
+    const precio = parseFloat(p.price) > 0 ? `$${parseFloat(p.price).toFixed(2)}` : 'precio a consultar'
+    let l = `- ${p.name}${p.brand ? ` (${p.brand})` : ''} — ${precio}`
     if (p.price_sale) l += ` (oferta: $${parseFloat(p.price_sale).toFixed(2)})`
     if (p.duration_minutes) l += ` — duración ${p.duration_minutes} min`
     else l += ` — ${p.stock}`
@@ -372,6 +374,7 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
   // Reglas técnicas mínimas (mecánica de derivar) — NO imponen tono ni personalidad
   const funcRules = `INSTRUCCIONES TÉCNICAS (no cambian tu forma de hablar, solo cómo funciona el sistema):
 - No inventes precios ni información que no esté en los DATOS de arriba.
+- EFICIENCIA: responde SIEMPRE en UN SOLO mensaje, completo y ordenado. No dividas la respuesta en varios envíos ni mandes mensajes de solo cortesía ("¡Claro!", "Un momento"). Da la información completa de una vez (qué es, precio si lo hay y el siguiente paso) y adelántate a la siguiente duda. Si necesitas varios datos del cliente (nombre, dirección, pago o una especificación), pídelos TODOS juntos en el mismo mensaje.
 - Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
 - Cuando el cliente CONFIRME la compra (acepta el producto y su precio y ya toca coordinar pago o entrega), escribe tu mensaje normal y agrega al FINAL, en su propia línea, exactamente la etiqueta ##VENTA## (el sistema la usa para avisar al dueño; el cliente NO la ve). NO la pongas si el cliente todavía pregunta, compara o duda.`
 

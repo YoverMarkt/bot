@@ -1299,7 +1299,8 @@ function renderProducts() {
       </div>
       <div class="pc-body">
         <div class="pc-name">${p.name}</div><div class="pc-brand">${p.brand||'—'}</div>
-        <div class="pc-price">$${parseFloat(p.price).toFixed(2)}${p.price_sale?`<span class="sl">$${parseFloat(p.price_sale).toFixed(2)}</span>`:''}</div>
+        ${p.external_sku?`<div class="pc-brand" style="font-family:'DM Mono',monospace">Cód: ${p.external_sku}</div>`:''}
+        <div class="pc-price">${parseFloat(p.price)>0?`$${parseFloat(p.price).toFixed(2)}`:`<span style="color:var(--muted);font-size:14px">a consultar</span>`}${p.price_sale?`<span class="sl">$${parseFloat(p.price_sale).toFixed(2)}</span>`:''}</div>
         <span class="pill ${sc(p.stock)}">${p.stock}</span>
         <div class="pc-tags">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
       </div>
@@ -1313,7 +1314,7 @@ function renderProducts() {
 function renderDashProducts() {
   document.getElementById('dash-prods').innerHTML=!products.length
     ?'<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin productos aún.</div>'
-    :products.slice(0,5).map(p=>`<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--bd)"><div style="width:34px;height:34px;background:var(--paper2);border-radius:7px;overflow:hidden;flex-shrink:0">${p.image_url?`<img src="${p.image_url}" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${p.name}</div><div style="font-size:11px;color:var(--muted)">${p.brand||''}</div></div><div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">$${parseFloat(p.price).toFixed(2)}</div></div>`).join('')
+    :products.slice(0,5).map(p=>`<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--bd)"><div style="width:34px;height:34px;background:var(--paper2);border-radius:7px;overflow:hidden;flex-shrink:0">${p.image_url?`<img src="${p.image_url}" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${p.name}</div><div style="font-size:11px;color:var(--muted)">${p.brand||''}</div></div><div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">${parseFloat(p.price)>0?`$${parseFloat(p.price).toFixed(2)}`:'a consultar'}</div></div>`).join('')
 }
 
 // MODAL
