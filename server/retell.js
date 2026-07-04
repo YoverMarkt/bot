@@ -65,7 +65,7 @@ async function handleRetellLLM(req, res) {
       .replace(/\*\*([^*]+)\*\*/g, '$1')
       .replace(/\*([^*]+)\*/g, '$1')
       .replace(/_([^_]+)_/g, '$1')
-      .replace(/##BOOKING##/g, 'Puedes agendar en línea. ¿Quieres que te dé el enlace?')
+      .replace(/##BOOKING##/g, '')
       .trim()
 
     await db.saveMessage(biz.id, `voice_${fromNumber}`, 'user', transcript?.at(-1)?.content || '')

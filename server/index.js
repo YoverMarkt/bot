@@ -165,13 +165,13 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
     kapso_api_key, kapso_number_id, kapso_verify_token,
     ycloud_api_key, ycloud_number,
     meta_token, meta_phone_id, meta_verify_token,
-    telegram_bot_token, calcom_link, retell_agent_id, ai_provider,
+    telegram_bot_token, retell_agent_id, ai_provider, takes_bookings,
     plan, plan_expires_at, client_email, client_password, notes, monthly_rate, owner_phone
   } = req.body
   if (!name || !whatsapp_number) return res.status(400).json({ error: 'Nombre y número requeridos' })
   try {
     const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
-    const { data: biz, error } = await db.createBusiness({
+    const bizPayload = {
       slug, name, type: type || 'negocio',
       whatsapp_number,
       whatsapp_provider: whatsapp_provider || 'ycloud',
@@ -179,14 +179,20 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
       ycloud_api_key,    ycloud_number,
       meta_token,        meta_phone_id,   meta_verify_token,
       telegram_bot_token: telegram_bot_token || null,
-      calcom_link:       calcom_link || null,
       retell_agent_id:   retell_agent_id || null,
+      takes_bookings:    takes_bookings === true,
       ai_provider:       ai_provider || null,
       owner_phone:       owner_phone || null,
       plan: plan || 'basic',
       plan_expires_at: plan_expires_at || null,
       active: true, bot_active: true, suspended: false, notes
-    })
+    }
+    let { data: biz, error } = await db.createBusiness(bizPayload)
+    // Si la columna takes_bookings aún no existe (migración sin correr), reintenta sin ella
+    if (error && /takes_bookings/.test(error.message || '')) {
+      const { takes_bookings: _omit, ...fallback } = bizPayload
+      ;({ data: biz, error } = await db.createBusiness(fallback))
+    }
     if (error) return res.status(500).json({ error: error.message })
     await db.upsertPolicies(biz.id, {})
     if (client_email && client_password) {
@@ -208,16 +214,17 @@ app.put('/api/admin/clients/:id', authAdmin, async (req, res) => {
   const ALLOWED = ['name','type','description','hours','address','phone','social','payment_methods',
     'whatsapp_number','whatsapp_provider','plan','plan_expires_at','active','bot_active','suspended',
     'notes','slogan','monthly_rate','owner_phone','ycloud_api_key','ycloud_number','kapso_api_key','kapso_number_id','kapso_verify_token',
-    'meta_token','meta_phone_id','meta_verify_token','telegram_bot_token','calcom_link','retell_agent_id','ai_provider']
+    'meta_token','meta_phone_id','meta_verify_token','telegram_bot_token','retell_agent_id','ai_provider','takes_bookings']
   const bizData = {}
   for (const k of ALLOWED) if (k in req.body) bizData[k] = req.body[k]
   if ('monthly_rate' in bizData) bizData.monthly_rate = parseFloat(bizData.monthly_rate) || null
   try {
     if (Object.keys(bizData).length) {
       let { error } = await db.updateBusiness(req.params.id, bizData)
-      // Si la columna monthly_rate aún no existe en la BD, reintentar sin ella
-      if (error && 'monthly_rate' in bizData) {
+      // Reintento si una columna aún no existe en la BD (migración sin correr): monthly_rate o takes_bookings
+      if (error && /(monthly_rate|takes_bookings)/.test(error.message || '')) {
         delete bizData.monthly_rate
+        delete bizData.takes_bookings
         ;({ error } = await db.updateBusiness(req.params.id, bizData))
       }
       if (error) return res.status(500).json({ error: error.message })
@@ -980,11 +987,9 @@ app.post('/api/admin/simulate', authAdmin, async (req, res) => {
     )
 
     const imgMatch = raw.match(/##IMG##(https?:\/\/[^\s#]+)##/)
-    const hasBooking = raw.includes('##BOOKING##')
     const hasHandoff = /##\s*handoff\s*##/i.test(raw)
     let reply = raw.replace(/##IMG##[^\s#]+##/g, '').replace(/##\s*handoff\s*##/gi, '').replace('##BOOKING##', '').trim()
     if (hasHandoff) reply = 'Permítame un momento por favor 🙏 enseguida un asesor de nuestro equipo continuará con usted para ayudarle mejor ✨'
-    else if (hasBooking && biz.calcom_link) reply += `\n\n📅 Agenda tu cita aquí:\n${biz.calcom_link}`
 
     await db.saveMessage(biz.id, simFrom, 'assistant', reply)
     console.log(`🧪 [Sim] ${biz.name}: respondido`)
