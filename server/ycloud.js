@@ -24,6 +24,15 @@ async function sendImage(apiKey, fromNumber, to, imageUrl, caption = '') {
   }, { headers: headers(apiKey) })
 }
 
+async function sendVideo(apiKey, fromNumber, to, videoUrl, caption = '') {
+  await axios.post(`${BASE}/whatsapp/messages`, {
+    from: fromNumber,
+    to,
+    type: 'video',
+    video: { link: videoUrl, caption }
+  }, { headers: headers(apiKey) })
+}
+
 // Marca el mensaje entrante como leído (✓✓ azul) y muestra "escribiendo…" al cliente.
 // El indicador se quita al enviar la respuesta o a los 25s.
 async function showTyping(apiKey, inboundMessageId) {
@@ -35,4 +44,4 @@ async function showTyping(apiKey, inboundMessageId) {
   )
 }
 
-module.exports = { sendText, sendImage, showTyping }
+module.exports = { sendText, sendImage, sendVideo, showTyping }

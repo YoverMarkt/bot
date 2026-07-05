@@ -13,6 +13,10 @@ const ALLOWED_KEYS = [
   'telegram_bot_token',
   'ycloud_verify_token',
   'retell_api_key',
+  // Cloudinary — media (imágenes + videos) de productos. Una sola cuenta para todo el SaaS.
+  'cloudinary_cloud_name',
+  'cloudinary_api_key',
+  'cloudinary_api_secret',
 ]
 
 // Cache en memoria para no ir a la BD en cada mensaje

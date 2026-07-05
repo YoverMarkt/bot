@@ -15,8 +15,19 @@ const reports   = require('./reports')
 const retell    = require('./retell')
 const tunnel    = require('./tunnel')
 const srvSettings = require('./settings')
+const cloud     = require('./cloudinary')
+const multer    = require('multer')
 const { setupTelegram } = require('./telegram')
 const app     = express()
+
+// Subida de media (imágenes/videos) en memoria → se reenvía a Cloudinary.
+// Límite 16MB (tope de WhatsApp para video). multipart no pasa por express.json.
+const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
+const mediaUpload = (req, res, next) => uploadMem.single('file')(req, res, err => {
+  if (err) return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+    .json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Archivo demasiado grande (máx 16MB)' : err.message })
+  next()
+})
 
 // Railway/producción corre detrás de un proxy: sin esto express-rate-limit
 // no ve la IP real (bloquearía a todos) y puede lanzar error por X-Forwarded-For.
@@ -506,10 +517,38 @@ app.post('/api/client/products', authClient, requirePermission('catalogo'), asyn
 })
 
 app.put('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => {
+  // Estado anterior para limpiar media reemplazada de Cloudinary (aislamiento: debe ser del negocio del JWT)
+  const prev = await db.getProductById(req.params.id)
+  if (prev && prev.business_id !== req.user.businessId) return res.status(404).json({ error: 'No encontrado' })
   await db.updateProduct(req.user.businessId, req.params.id, req.body)
+  // Si se reemplazó/quitó una imagen o video, borrar el archivo anterior de Cloudinary (ahorra storage)
+  if (prev) {
+    if (prev.image_public_id && req.body.image_public_id !== prev.image_public_id) cloud.deleteMedia(prev.image_public_id, 'image')
+    if (prev.video_public_id && req.body.video_public_id !== prev.video_public_id) cloud.deleteMedia(prev.video_public_id, 'video')
+  }
   // Re-generar embedding tras editar
   db.getProductById(req.params.id).then(p => p && bot.indexProduct(p)).catch(() => {})
   res.json({ ok: true })
+})
+
+// ── SUBIR MEDIA DE PRODUCTO (imagen o video) → Cloudinary ─────────
+// Recibe un archivo (multipart), lo sube a la carpeta del negocio y
+// devuelve { url, public_id, resource_type } para guardar en el producto.
+app.post('/api/client/media', authClient, requirePermission('catalogo'), mediaUpload, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' })
+    const mime = req.file.mimetype || ''
+    if (!mime.startsWith('image/') && !mime.startsWith('video/'))
+      return res.status(400).json({ error: 'Solo se permiten imágenes o videos' })
+    if (!(await cloud.isConfigured()))
+      return res.status(503).json({ error: 'Cloudinary no está configurado. Agrégalo en el panel de administración → Configuración.' })
+    const out = await cloud.uploadMedia(req.file.buffer, req.user.businessId)
+    console.log(`☁️  Media subida (${out.resource_type}) para negocio ${req.user.businessId}: ${out.public_id}`)
+    res.json(out)
+  } catch(e) {
+    console.error('❌ subir media:', e.message)
+    res.status(500).json({ error: 'No se pudo subir el archivo. Intenta de nuevo.' })
+  }
 })
 app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.user.businessId, req.params.id); res.json({ ok: true }) })
 
@@ -913,7 +952,7 @@ app.get('/api/admin/server-settings', authAdmin, async (_, res) => {
   const masked = {}
   for (const [k, v] of Object.entries(all)) {
     if (!v) { masked[k] = ''; continue }
-    if (k.includes('key') || k.includes('token')) {
+    if (k.includes('key') || k.includes('token') || k.includes('secret')) {
       masked[k] = v.length > 8 ? v.slice(0, 6) + '••••••' + v.slice(-4) : '••••••'
     } else {
       masked[k] = v

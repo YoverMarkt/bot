@@ -84,6 +84,9 @@ create table if not exists products (
                   check (stock in ('disponible','últimas unidades','agotado')),
   description     text,
   image_url       text,
+  video_url       text,                 -- URL pública del video (Cloudinary)
+  image_public_id text,                 -- id del archivo de imagen en Cloudinary (para borrarlo al reemplazar)
+  video_public_id text,                 -- id del archivo de video en Cloudinary
   tags            text[] default '{}',
   external_sku    text,
   duration_minutes int,                 -- para negocios de servicios/citas
