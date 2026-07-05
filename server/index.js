@@ -410,6 +410,13 @@ app.post('/api/client/tags', authClient, requirePermission('conversaciones'), as
     res.status(201).json(data)
   } catch(e) { res.status(500).json({ error: e.message }) }
 })
+app.put('/api/client/tags/:id', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const name = (req.body.name || '').trim().slice(0, 30)
+  if (!name) return res.status(400).json({ error: 'Nombre requerido' })
+  const { error } = await db.updateTag(req.user.businessId, req.params.id, { name, color: req.body.color })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
 app.delete('/api/client/tags/:id', authClient, requirePermission('conversaciones'), async (req, res) => {
   try { await db.deleteTag(req.user.businessId, req.params.id); res.json({ ok: true }) }
   catch(e) { res.status(500).json({ error: e.message }) }
