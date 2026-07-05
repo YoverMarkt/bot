@@ -315,7 +315,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
           <div class="stat"><div class="stat-l">Productos</div><div class="stat-v g" id="st-p">—</div><div class="stat-s">En catálogo</div></div>
           <div class="stat"><div class="stat-l">Disponibles</div><div class="stat-v" id="st-a">—</div><div class="stat-s">Con stock</div></div>
           <div class="stat"><div class="stat-l">Mensajes hoy</div><div class="stat-v" id="st-m">—</div><div class="stat-s">Respondidos</div></div>
-          <div class="stat"><div class="stat-l">Contactos</div><div class="stat-v" id="st-c">—</div><div class="stat-s">Clientes únicos</div></div>
+          <div class="stat"><div class="stat-l">Contactos</div><div class="stat-v" id="st-c">—</div><div class="stat-s">Personas que escribieron en el chat</div></div>
         </div>
         <div class="card"><div class="card-t">Productos recientes</div><div id="dash-prods"></div></div>
       </div>
@@ -574,9 +574,18 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       <div class="fg" style="margin-bottom:10px">
         <label class="lbl">Imagen</label>
         <div class="upz" id="upz"><input type="file" id="up-file" accept="image/*" onchange="handleFile(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg><p><strong>Clic o arrastra</strong></p><small>JPG, PNG hasta 5MB</small></div>
-        <div class="uppv" id="uppv"><img id="up-img" src="" alt=""><div><div id="up-name" style="font-size:13px;font-weight:600"></div><div id="up-size" style="font-size:11px;color:var(--muted)"></div><button class="btn btn-sm btn-red" onclick="clearFile()" style="margin-top:6px">Quitar</button></div></div>
+        <div class="uppv" id="uppv"><img id="up-img" src="" alt=""><div><div id="up-name" style="font-size:13px;font-weight:600"></div><div id="up-size" style="font-size:11px;color:var(--muted)"></div><div id="up-status" style="font-size:11px;margin-top:2px"></div><button class="btn btn-sm btn-red" onclick="clearFile()" style="margin-top:6px">Quitar</button></div></div>
+        <input type="hidden" id="p-img-pid">
       </div>
-      <div class="fg"><label class="lbl">O pega URL de imagen</label><input type="url" id="p-img" placeholder="https://..."></div>
+      <div class="fg" style="margin-bottom:16px"><label class="lbl">O pega URL de imagen</label><input type="url" id="p-img" placeholder="https://..."></div>
+
+      <div class="fg" style="margin-bottom:10px">
+        <label class="lbl">Video <span style="color:var(--muted);font-weight:400">— opcional (MP4 hasta 16MB)</span></label>
+        <div class="upz" id="upz-v"><input type="file" id="up-vfile" accept="video/*" onchange="handleVideo(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><p><strong>Clic o arrastra un video</strong></p><small>MP4 hasta 16MB</small></div>
+        <div class="uppv" id="uppv-v"><div style="flex:1"><div id="up-vname" style="font-size:13px;font-weight:600"></div><div id="up-vsize" style="font-size:11px;color:var(--muted)"></div><div id="up-vstatus" style="font-size:11px;margin-top:2px"></div><button class="btn btn-sm btn-red" onclick="clearVideo()" style="margin-top:6px">Quitar</button></div></div>
+        <input type="hidden" id="p-video-pid">
+      </div>
+      <div class="fg"><label class="lbl">O pega URL de video</label><input type="url" id="p-video" placeholder="https://..."></div>
     </div>
     <div class="mft"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-dark" id="save-btn" onclick="saveProduct()">Guardar producto</button></div>
   </div>
@@ -1444,7 +1453,7 @@ function openModal(id=null) {
   document.getElementById('p-desc').placeholder = svc ? 'Detalles del servicio: qué incluye, duración...' : 'Detalles del producto: características, presentación...'
 
   document.getElementById('edit-id').value=id||''
-  clearFile()
+  clearFile(); clearVideo()
   const p=id?products.find(x=>x.id===id):null
   document.getElementById('p-name').value=p?.name||''
   document.getElementById('p-brand').value=p?.brand||''
@@ -1456,6 +1465,9 @@ function openModal(id=null) {
   document.getElementById('p-sku').value=p?.external_sku||''
   document.getElementById('p-duration').value=p?.duration_minutes||'30'
   document.getElementById('p-img').value=p?.image_url||''
+  document.getElementById('p-img-pid').value=p?.image_public_id||''
+  document.getElementById('p-video').value=p?.video_url||''
+  document.getElementById('p-video-pid').value=p?.video_public_id||''
   document.getElementById('prod-modal').classList.add('on')
 }
 function closeModal(){document.getElementById('prod-modal').classList.remove('on')}
@@ -1464,7 +1476,7 @@ async function saveProduct() {
   const name=document.getElementById('p-name').value.trim(), price=parseFloat(document.getElementById('p-price').value)
   if (!name||isNaN(price)){toast('Nombre y precio son obligatorios',true);return}
   const btn=document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Guardando...'
-  const payload={name,price,brand:document.getElementById('p-brand').value.trim()||null,price_sale:parseFloat(document.getElementById('p-sale').value)||null,stock:document.getElementById('p-stock').value,description:document.getElementById('p-desc').value.trim()||null,tags:document.getElementById('p-tags').value.split(',').map(t=>t.trim()).filter(Boolean),external_sku:document.getElementById('p-sku').value.trim()||null,image_url:document.getElementById('p-img').value.trim()||null}
+  const payload={name,price,brand:document.getElementById('p-brand').value.trim()||null,price_sale:parseFloat(document.getElementById('p-sale').value)||null,stock:document.getElementById('p-stock').value,description:document.getElementById('p-desc').value.trim()||null,tags:document.getElementById('p-tags').value.split(',').map(t=>t.trim()).filter(Boolean),external_sku:document.getElementById('p-sku').value.trim()||null,image_url:document.getElementById('p-img').value.trim()||null,image_public_id:document.getElementById('p-img-pid').value.trim()||null,video_url:document.getElementById('p-video').value.trim()||null,video_public_id:document.getElementById('p-video-pid').value.trim()||null}
   if (isServiceBiz()) payload.duration_minutes=parseInt(document.getElementById('p-duration').value)
   const editId=document.getElementById('edit-id').value
   try {
@@ -1491,13 +1503,54 @@ async function reindexCatalog(){
   } catch { toast('Error al reindexar', true) }
 }
 
+// Imagen: preview instantáneo + subida real a Cloudinary (guarda URL + public_id)
 function handleFile(e) {
   const f=e.target.files[0]; if (!f) return
   const r=new FileReader()
-  r.onload=ev=>{document.getElementById('up-img').src=ev.target.result;document.getElementById('up-name').textContent=f.name;document.getElementById('up-size').textContent=(f.size/1024).toFixed(0)+' KB';document.getElementById('upz').style.display='none';document.getElementById('uppv').classList.add('on');document.getElementById('p-img').value=ev.target.result}
+  r.onload=ev=>{document.getElementById('up-img').src=ev.target.result}
   r.readAsDataURL(f)
+  document.getElementById('up-name').textContent=f.name
+  document.getElementById('up-size').textContent=(f.size/1024).toFixed(0)+' KB'
+  document.getElementById('upz').style.display='none'
+  document.getElementById('uppv').classList.add('on')
+  uploadMedia(f,'image')
 }
-function clearFile(){document.getElementById('upz').style.display='block';document.getElementById('uppv').classList.remove('on');document.getElementById('up-file').value=''}
+function clearFile(){document.getElementById('upz').style.display='block';document.getElementById('uppv').classList.remove('on');document.getElementById('up-file').value='';document.getElementById('up-status').textContent='';document.getElementById('p-img').value='';document.getElementById('p-img-pid').value=''}
+
+// Video: subida real a Cloudinary (no hay preview pesado, solo estado)
+function handleVideo(e) {
+  const f=e.target.files[0]; if (!f) return
+  document.getElementById('up-vname').textContent=f.name
+  document.getElementById('up-vsize').textContent=(f.size/1024/1024).toFixed(1)+' MB'
+  document.getElementById('upz-v').style.display='none'
+  document.getElementById('uppv-v').classList.add('on')
+  uploadMedia(f,'video')
+}
+function clearVideo(){document.getElementById('upz-v').style.display='block';document.getElementById('uppv-v').classList.remove('on');document.getElementById('up-vfile').value='';document.getElementById('up-vstatus').textContent='';document.getElementById('p-video').value='';document.getElementById('p-video-pid').value=''}
+
+// Sube el archivo al backend → Cloudinary. Rellena el campo de URL y el public_id ocultos.
+async function uploadMedia(file, kind) {
+  const isVideo = kind==='video'
+  const statusEl = document.getElementById(isVideo?'up-vstatus':'up-status')
+  const urlField = isVideo?'p-video':'p-img'
+  const pidField = isVideo?'p-video-pid':'p-img-pid'
+  const saveBtn  = document.getElementById('save-btn')
+  statusEl.textContent='⏳ Subiendo...'; statusEl.style.color='var(--muted)'
+  if (saveBtn) saveBtn.disabled=true
+  try {
+    const fd=new FormData(); fd.append('file', file)
+    // Solo Authorization: con FormData el navegador fija Content-Type con el boundary
+    const r=await fetch(`${API}/api/client/media`,{method:'POST',headers:{'Authorization':`Bearer ${TOKEN}`},body:fd})
+    const d=await r.json()
+    if (!r.ok) throw new Error(d.error||'Error al subir')
+    document.getElementById(urlField).value=d.url
+    document.getElementById(pidField).value=d.public_id
+    statusEl.textContent='✓ Subido'; statusEl.style.color='#2d7a00'
+  } catch(e) {
+    statusEl.textContent='❌ '+e.message; statusEl.style.color='var(--red)'
+  }
+  if (saveBtn) saveBtn.disabled=false
+}
 
 // CONVERSATIONS + SESIONES
 let sessionsData = {}

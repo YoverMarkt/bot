@@ -73,6 +73,32 @@ async function sendImage(biz, to, imageUrl, caption = '') {
   }
 }
 
+async function sendVideo(biz, to, videoUrl, caption = '') {
+  const provider = biz.whatsapp_provider || 'ycloud'
+  try {
+    if (provider === 'meta') {
+      await axios.post(
+        `https://graph.facebook.com/v19.0/${biz.meta_phone_id}/messages`,
+        { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'video', video: { link: videoUrl, caption } },
+        { headers: { 'Authorization': `Bearer ${biz.meta_token}`, 'Content-Type': 'application/json' } }
+      )
+    } else if (provider === 'kapso') {
+      const kapsoKey = biz.kapso_api_key || process.env.KAPSO_API_KEY
+      await axios.post(
+        'https://api.kapso.ai/v1/messages',
+        { number_id: biz.kapso_number_id, to, type: 'video', video: { url: videoUrl, caption } },
+        { headers: { 'Authorization': `Bearer ${kapsoKey}`, 'Content-Type': 'application/json' } }
+      )
+    } else {
+      const apiKey = biz.ycloud_api_key || process.env.YCLOUD_API_KEY
+      const from   = biz.ycloud_number  || biz.whatsapp_number
+      await ycloud.sendVideo(apiKey, from, to, videoUrl, caption)
+    }
+  } catch(e) {
+    console.error(`❌ [${provider}] sendVideo:`, e.message)
+  }
+}
+
 // ── TRANSCRIPCIÓN DE AUDIO (funciona con cualquier IA configurada) ──
 // Claude no transcribe audio → se usa automáticamente Groq/OpenAI/Gemini si están disponibles.
 async function transcribeAudio(buffer, filename = 'audio.ogg') {
@@ -337,6 +363,7 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
     if (p.description) l += `\n  ${p.description}`
     if (p.tags?.length)  l += ` | ${p.tags.join(', ')}`
     if (!voiceMode && p.image_url && p.image_url.startsWith('http')) l += `\n  [IMAGE:${p.image_url}]`
+    if (!voiceMode && p.video_url && p.video_url.startsWith('http')) l += `\n  (este producto tiene un video disponible: si el cliente quiere verlo, invítalo a pedirlo y el sistema se lo envía)`
     return l
   }).join('\n\n')
   const catalogNote = allProducts.length > toShow.length
@@ -516,7 +543,7 @@ async function humanizedSend(text, sendFn, sendTyping) {
 }
 
 // ── LÓGICA CENTRAL ────────────────────────────────────────
-async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) {
+async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, sendVideoFn) {
   if (biz.suspended) {
     await sendFn('⚠️ Este servicio tiene un pago pendiente. Contacta al administrador para regularizar tu cuenta. Disculpa los inconvenientes.')
     return console.log(`⛔ [${biz.name}] suspendido — aviso enviado`)
@@ -604,9 +631,9 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
     if (mentioned.length) db.recordConsultations(biz.id, mentioned.map(p => p.id)).catch(() => {})
   } catch(e) {}
 
-  // Detectar si el usuario pide catálogo o imágenes — el servidor lo maneja sin la IA
-  const wantsCatalog = /catálogo|catalogo|todos los productos|ver productos|qué tienen|que tienen|lista de productos/i.test(text)
+  // Detectar si el usuario pide ver una foto o un video de un producto — el servidor lo maneja
   const wantsImage   = /imagen|foto|ver|muéstrame|muestrame|cómo se ve|como se ve/i.test(text)
+  const wantsVideo   = /v[íi]deo/i.test(text)
 
   let reply = ''
   try {
@@ -695,40 +722,29 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping) 
 
   await humanizedSend(finalText, sendFn, sendTyping)
 
-  // — Envío de imágenes deshabilitado temporalmente (pendiente Supabase Storage) —
-  // eslint-disable-next-line no-constant-condition
-  if (false) {
-  const sendProduct = async (p, cap) => {
-    if (!p.image_url) return
-    try {
-      await sendImageFn(p.image_url, cap || p.name)
-      console.log(`🖼️  Imagen enviada: ${p.name}`)
-    } catch(e) {
-      console.error(`❌ Error enviando imagen de ${p.name}:`, e.message)
-    }
-  }
-
-  if (wantsCatalog) {
-    const withImages = (products || []).filter(p => p.image_url)
-    for (const p of withImages) {
-      await sendProduct(p, `${p.name} — $${parseFloat(p.price).toFixed(2)}`)
-    }
-  } else {
-    const combined = (reply + ' ' + text).toLowerCase()
-    const match = (products || []).find(p =>
-      (p.name  && combined.includes(p.name.toLowerCase())) ||
-      (p.brand && combined.includes(p.brand.toLowerCase()))
-    )
-    if (match) {
-      await sendProduct(match, match.name)
-    } else if (wantsImage) {
-      const withImages = (products || []).filter(p => p.image_url)
-      for (const p of withImages) {
-        await sendProduct(p, `${p.name} — $${parseFloat(p.price).toFixed(2)}`)
+  // — Envío de fotos/videos de producto (Cloudinary) —
+  // REGLA DE EFICIENCIA (Meta cobra por mensaje): NUNCA se vuelca el catálogo entero
+  // en imágenes. Solo se envía media del/los producto(s) que el cliente pidió ver
+  // explícitamente (foto/video), identificados por nombre o marca en la conversación (máx 3).
+  try {
+    if ((wantsImage || wantsVideo) && (sendImageFn || sendVideoFn)) {
+      const combined = (reply + ' ' + text).toLowerCase()
+      const targets = (products || []).filter(p =>
+        (p.name  && p.name.length  > 2 && combined.includes(p.name.toLowerCase())) ||
+        (p.brand && p.brand.length > 2 && combined.includes(p.brand.toLowerCase()))
+      ).slice(0, 3)
+      for (const p of targets) {
+        if (wantsImage && p.image_url && sendImageFn) {
+          try { await sendImageFn(p.image_url, p.name); console.log(`🖼️  Imagen enviada: ${p.name}`) }
+          catch(e) { console.error(`❌ enviando imagen de ${p.name}:`, e.message) }
+        }
+        if (wantsVideo && p.video_url && sendVideoFn) {
+          try { await sendVideoFn(p.video_url, p.name); console.log(`🎬 Video enviado: ${p.name}`) }
+          catch(e) { console.error(`❌ enviando video de ${p.name}:`, e.message) }
+        }
       }
     }
-  }
-  } // fin bloque imágenes deshabilitado
+  } catch(e) { console.error('❌ envío de media:', e.message) }
 
   await db.saveMessage(biz.id, from, 'assistant', finalText)
   console.log(`🤖 [${biz.name}] respondido`)
@@ -770,7 +786,8 @@ async function runMessage(from, text, bizPhone, opts = {}) {
           else await opts.ctx.replyWithPhoto({ url }, { caption: cap })
         } catch(e) { console.error('❌ TG foto:', e.message) }
       },
-      () => opts.ctx.sendChatAction('typing')   // "escribiendo…" en Telegram
+      () => opts.ctx.sendChatAction('typing'),   // "escribiendo…" en Telegram
+      async (url, cap) => { try { await opts.ctx.replyWithVideo({ url }, { caption: cap }) } catch(e) { console.error('❌ TG video:', e.message) } }
     )
   }
 
@@ -782,7 +799,8 @@ async function runMessage(from, text, bizPhone, opts = {}) {
     biz, from, text,
     t  => sendText(biz, from, t),
     (url, cap) => sendImage(biz, from, url, cap),
-    () => sendTyping(biz, opts.inboundId)        // indicador real "escribiendo…" en WhatsApp (YCloud)
+    () => sendTyping(biz, opts.inboundId),        // indicador real "escribiendo…" en WhatsApp (YCloud)
+    (url, cap) => sendVideo(biz, from, url, cap)
   )
 }
 
@@ -806,7 +824,8 @@ async function handleImage(from, imageBuffer, mimeType, bizPhone, opts = {}) {
       biz, from, query,
       t => opts.ctx.reply(t),
       async (url, cap) => { try { const buf = await getImageBuffer({ image_url: url }); if (buf) await opts.ctx.replyWithPhoto({ source: buf }, { caption: cap }) } catch(e){} },
-      () => opts.ctx.sendChatAction('typing')
+      () => opts.ctx.sendChatAction('typing'),
+      async (url, cap) => { try { await opts.ctx.replyWithVideo({ url }, { caption: cap }) } catch(e) { console.error('❌ TG video:', e.message) } }
     )
   }
 
@@ -816,7 +835,8 @@ async function handleImage(from, imageBuffer, mimeType, bizPhone, opts = {}) {
     biz, from, query,
     t => sendText(biz, from, t),
     (url, cap) => sendImage(biz, from, url, cap),
-    () => sendTyping(biz, opts.inboundId)
+    () => sendTyping(biz, opts.inboundId),
+    (url, cap) => sendVideo(biz, from, url, cap)
   )
 }
 

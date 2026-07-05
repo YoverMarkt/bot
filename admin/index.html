@@ -415,6 +415,21 @@ tr:hover td{background:var(--paper)}
         </div>
       </div>
 
+      <!-- Cloudinary (media: imágenes + videos de productos) -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-t">Cloudinary — Imágenes y videos</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Aloja las fotos y videos de los productos y los sirve por URL a WhatsApp/Telegram. Crea una cuenta gratis en cloudinary.com → Dashboard, y copia aquí los 3 datos.</p>
+        <div class="fg" style="margin-bottom:12px"><label class="lbl">Cloud name</label>
+          <input type="text" id="srv-cld-name" placeholder="tu-cloud-name">
+        </div>
+        <div class="fg" style="margin-bottom:12px"><label class="lbl">API Key</label>
+          <input type="text" id="srv-cld-key" placeholder="123456789012345">
+        </div>
+        <div class="fg"><label class="lbl">API Secret</label>
+          <input type="password" id="srv-cld-secret" placeholder="••••••••••••">
+        </div>
+      </div>
+
       <!-- Telegram -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-t">Telegram (bot compartido de pruebas)</div>
@@ -1532,6 +1547,9 @@ async function loadSrvSettings() {
     setSrvKeyHint('srv-openai-key',    d.openai_api_key)
     setSrvKeyHint('srv-telegram-token',d.telegram_bot_token)
     setSrvKeyHint('srv-retell-key',    d.retell_api_key)
+    setSrvKeyHint('srv-cld-name',      d.cloudinary_cloud_name)
+    setSrvKeyHint('srv-cld-key',       d.cloudinary_api_key)
+    setSrvKeyHint('srv-cld-secret',    d.cloudinary_api_secret)
   } catch(e) {}
 }
 
@@ -1556,6 +1574,9 @@ async function saveSrvSettings() {
     openai_api_key:    document.getElementById('srv-openai-key').value    || undefined,
     telegram_bot_token:document.getElementById('srv-telegram-token').value|| undefined,
     retell_api_key:    document.getElementById('srv-retell-key').value    || undefined,
+    cloudinary_cloud_name: document.getElementById('srv-cld-name').value   || undefined,
+    cloudinary_api_key:    document.getElementById('srv-cld-key').value     || undefined,
+    cloudinary_api_secret: document.getElementById('srv-cld-secret').value  || undefined,
   }
   // Quitar campos vacíos para no sobreescribir keys existentes con ''
   Object.keys(payload).forEach(k => { if (!payload[k]) delete payload[k] })
@@ -1569,7 +1590,7 @@ async function saveSrvSettings() {
       res.textContent = '✅ Guardado correctamente'
       res.style.color = '#2d7a00'
       // Limpiar campos de password por seguridad
-      ;['srv-groq-key','srv-gemini-key','srv-anthropic-key','srv-openai-key','srv-telegram-token','srv-retell-key'].forEach(id => {
+      ;['srv-groq-key','srv-gemini-key','srv-anthropic-key','srv-openai-key','srv-telegram-token','srv-retell-key','srv-cld-key','srv-cld-secret'].forEach(id => {
         const el = document.getElementById(id)
         if (el && el.value) { el.placeholder = '••••••' + el.value.slice(-4); el.value = '' }
       })
