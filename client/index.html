@@ -269,6 +269,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       <div class="ni" data-perm="conversaciones" onclick="goPage('conversations',this)" id="nav-conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Conversaciones<span class="ct" id="manual-badge" style="display:none;background:rgba(255,193,7,.3);color:#856404">!</span></div>
       <div class="ni" data-perm="reportes" onclick="goPage('reportes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Reportes</div>
       <div class="ni" data-perm="reportes" onclick="goPage('clientes',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg>Clientes</div>
+      <div class="ni" data-perm="reportes" id="nav-reactivar" onclick="goPage('reactivar',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 109-9 9 9 0 00-9 9z"/><path d="M3 12H1m2 0a9 9 0 019-9"/><polyline points="12 7 12 12 15 14"/></svg>Reactivar</div>
       <div class="ni" data-perm="owner" onclick="goPage('botprompt',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm0 5v5l3 3"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Prompt del Bot</div>
       <div class="ni" data-perm="owner" onclick="goPage('policies',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Políticas del bot</div>
       <div class="ni" data-perm="citas" id="nav-schedule" style="display:none" onclick="goPage('schedule',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Horarios</div>
@@ -343,6 +344,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
             <button class="btn btn-sm" data-p="mes" onclick="setRepPeriod('mes',this)">Mes</button>
           </div>
         </div>
+        <div style="margin-bottom:12px"><button class="btn btn-sm" onclick="goPage('reactivar',document.getElementById('nav-reactivar'))">👥 Clientes sin escribir (reactivar)</button></div>
         <div id="alerts-banner"></div>
         <div id="rep-content"><p style="color:var(--muted)">Cargando…</p></div>
       </div>
@@ -354,6 +356,25 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
         <div class="ph"><div><h1>Clientes</h1><p>Directorio de tus clientes con su historial de compras.</p></div></div>
         <input type="text" id="cust-search" placeholder="🔎 Buscar por nombre o teléfono..." oninput="renderCustomers()" style="max-width:360px;margin-bottom:14px">
         <div id="cust-content"><p style="color:var(--muted)">Cargando…</p></div>
+      </div>
+    </div>
+
+    <!-- REACTIVAR (clientes sin escribir hace tiempo) -->
+    <div class="pg" id="pg-reactivar">
+      <div class="pg-inner">
+        <div class="ph">
+          <div><h1>Clientes sin escribir</h1><p>Consultaron y hace tiempo no vuelven. Ideal para reactivar.</p></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="inact-days" onchange="loadInactive()" style="max-width:150px">
+              <option value="7">+7 días</option>
+              <option value="15" selected>+15 días</option>
+              <option value="30">+30 días</option>
+              <option value="60">+60 días</option>
+            </select>
+            <button class="btn btn-sm btn-dark" onclick="exportInactiveCSV()">⬇️ Exportar Excel/CSV</button>
+          </div>
+        </div>
+        <div id="inact-content"><p style="color:var(--muted)">Cargando…</p></div>
       </div>
     </div>
 
@@ -465,7 +486,7 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
     <div class="pg" id="pg-schedule">
       <div class="pg-inner">
         <div class="ph">
-          <div><h1>Horarios de atención</h1><p>El bot solo ofrecerá citas en estos días y horas</p></div>
+          <div><h1>Horarios de atención</h1><p>Tu horario. El bot avisará a quien escriba fuera de este horario. (En modo "Con citas", además se ofrecen turnos en estas horas.)</p></div>
           <button class="btn btn-dark" onclick="saveSchedule()">Guardar horarios</button>
         </div>
         <div class="card">
@@ -838,7 +859,9 @@ async function loadAll(){
   await Promise.all([loadStats(),loadProducts(),loadPolicies(),loadBotPrompt(),loadBusiness()])
   // Mostrar calendario solo para negocios de citas
   const isBookingBiz = BOOKING_BIZ_TYPES.some(t => bizType.toLowerCase().includes(t))
-  document.getElementById('nav-schedule').style.display = isBookingBiz ? '' : 'none'
+  // Horarios: visible para TODOS los negocios (horario de atención; el bot avisa fuera
+  // de horario). Respeta permisos: el dueño siempre lo ve; empleados con permiso "citas".
+  document.getElementById('nav-schedule').style.display = can('citas') ? '' : 'none'
   document.getElementById('nav-calendar').style.display = isBookingBiz ? '' : 'none'
   applyBizWording()
   if (isBookingBiz) startBookingWatch()
@@ -873,19 +896,71 @@ function goPage(name,el) {
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'))
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('on'))
   document.getElementById('pg-'+name).classList.add('on')
-  el.classList.add('on')
+  el?.classList.add('on')
   // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
   // detectar handoffs a manual aunque el dueño esté en otra sección.
   if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
   if (name==='dashboard') { loadDashboardBI(); loadOnboarding() }
   if (name==='reportes') { loadReports(); loadAlerts() }
   if (name==='clientes') loadCustomers()
+  if (name==='reactivar') loadInactive()
   if (name==='usuarios') loadUsers()
   if (name==='botprompt') loadBotPrompt()
   if (name==='policies') loadPolicies()
   if (name==='schedule') loadSchedule()
   if (name==='calendar') loadCalendar()
   if (name==='settings') loadSettings()
+}
+
+// ── CLIENTES SIN ESCRIBIR (reactivar) ─────────────────────
+let inactiveData = []
+async function loadInactive() {
+  const days = document.getElementById('inact-days')?.value || 15
+  const box = document.getElementById('inact-content')
+  box.innerHTML = '<p style="color:var(--muted)">Cargando…</p>'
+  try {
+    const r = await fetch(`${API}/api/client/inactive-contacts?days=${days}`, { headers: H() })
+    inactiveData = await r.json()
+    renderInactive()
+  } catch(e) { box.innerHTML = `<p style="color:var(--red)">Error: ${esc(e.message)}</p>` }
+}
+function renderInactive() {
+  const box = document.getElementById('inact-content')
+  if (!Array.isArray(inactiveData) || !inactiveData.length) {
+    box.innerHTML = '<p style="color:var(--muted);padding:20px 0">🎉 Nadie sin escribir en ese rango. ¡Todos al día!</p>'; return
+  }
+  const rows = inactiveData.map(c => `
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:8px 6px;font-weight:600">${esc(c.name)}</td>
+      <td style="font-family:'DM Mono',monospace">${esc(c.phone)}</td>
+      <td>${c.daysSince} días</td>
+      <td style="max-width:280px;color:var(--muted)">${esc(c.lastMessage)||'—'}</td>
+      <td>${c.hasPurchased ? '🔁 Cliente' : '🆕 Solo consultó'}</td>
+      <td style="text-align:right">${c.total>0?'$'+Number(c.total).toFixed(2):'—'}</td>
+    </tr>`).join('')
+  box.innerHTML = `
+    <p style="color:var(--muted);font-size:12px;margin-bottom:10px">${inactiveData.length} cliente(s) sin escribir · 🔁 ya te compró · 🆕 solo consultó.</p>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left;border-bottom:2px solid var(--bd);color:var(--muted);font-size:11px;text-transform:uppercase">
+        <th style="padding:8px 6px">Cliente</th><th>Teléfono</th><th>Sin escribir</th><th>Qué preguntó</th><th>Estado</th><th style="text-align:right">Total</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table></div>`
+}
+function exportInactiveCSV() {
+  if (!Array.isArray(inactiveData) || !inactiveData.length) return toast('No hay datos para exportar', true)
+  const q = s => `"${String(s??'').replace(/"/g,'""')}"`
+  const head = ['Nombre','Telefono','Dias sin escribir','Ultima vez','Ultimo mensaje','Ya compro','Pedidos','Total gastado']
+  const lines = [head.join(',')].concat(inactiveData.map(c => [
+    q(c.name), q(c.phone), c.daysSince, q(new Date(c.lastMessageAt).toLocaleDateString('es')),
+    q(c.lastMessage), c.hasPurchased?'Si':'No', c.orders, Number(c.total).toFixed(2)
+  ].join(',')))
+  const csv = '﻿' + lines.join('\r\n')  // BOM: Excel abre acentos bien
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `clientes-reactivar-${new Date().toISOString().slice(0,10)}.csv`
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  toast('✓ Exportado')
 }
 
 async function loadProducts() {

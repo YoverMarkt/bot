@@ -291,6 +291,21 @@ function scheduleToText(schedule) {
   return ordered.map(s => `${DAYS[s.day_of_week]} de ${s.open_time.slice(0,5)} a ${s.close_time.slice(0,5)}`).join(', ')
 }
 
+// ¿El cliente escribe FUERA del horario de atención? (hora local de Ecuador)
+// Sin horario configurado → false (no se avisa nada).
+function isOutsideHours(schedule) {
+  const active = (schedule || []).filter(s => s.is_active)
+  if (!active.length) return false
+  const local = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+  const dow = local.getDay()
+  const mins = local.getHours() * 60 + local.getMinutes()
+  const cfg = active.find(s => s.day_of_week === dow)
+  if (!cfg) return true // hoy el negocio no atiende
+  const [oh, om] = String(cfg.open_time).split(':').map(Number)
+  const [ch, cm] = String(cfg.close_time).split(':').map(Number)
+  return mins < (oh * 60 + om) || mins >= (ch * 60 + cm)
+}
+
 // ── PROMPT DEL BOT ────────────────────────────────────────
 function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '', availableSlots = null, schedule = null, preFiltered = false, postSale = false) {
   const allProducts = products || []
@@ -345,6 +360,12 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
     // Sin sistema de reservas configurado — el bot lo maneja sin derivar a un asesor
     calendarLine = `\nRESERVAS: Este negocio no maneja reservas ni citas en línea. Si el cliente pregunta por agendar, explícalo amablemente y ofrécele ayuda con productos, pedidos o información. NO derives a un asesor por esto.`
   }
+
+  // Aviso "fuera de horario": si el cliente escribe fuera del horario de atención,
+  // el bot lo menciona con amabilidad (sin gastar un mensaje aparte) y sigue atendiendo.
+  const outsideHoursNote = (!voiceMode && isOutsideHours(schedule))
+    ? `\n⏰ NOTA: El cliente está escribiendo FUERA del horario de atención (${scheduleToText(schedule)}). Atiéndele con normalidad, pero al INICIO de tu respuesta menciónale con amabilidad que en este momento están fuera del horario de atención y que en horario también puede atenderle una persona del equipo si lo necesita. Dilo solo una vez, no en cada mensaje.`
+    : ''
 
   // Reemplaza variables del prompt con datos reales del negocio.
   // Soporta {{variable}} (recomendado) y [Variable] (compatibilidad anterior).
@@ -402,7 +423,7 @@ Devoluciones: ${policies?.returns || 'Consultar directamente.'}
 Descuentos: ${policies?.discounts || 'Consultar directamente.'}
 ${policies?.bot_instructions ? `\nINSTRUCCIONES ADICIONALES DEL DUEÑO:\n${policies.bot_instructions}` : ''}
 
-${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${funcRules}${customPrompt ? '' : defaultStyle}`
+${outsideHoursNote}${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${funcRules}${customPrompt ? '' : defaultStyle}`
 }
 
 // Devuelve el Buffer de la imagen de un producto (base64 o URL externa)

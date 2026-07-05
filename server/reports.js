@@ -158,11 +158,13 @@ async function computeComparison(bizId, period) {
 
 async function computeRecurring(bizId, period, topN = 5) {
   const { start, end, label } = rangeFor(period)
-  const sales = await db.getSalesWithItems(bizId, start)
+  const [sales, sessions] = await Promise.all([db.getSalesWithItems(bizId, start), db.getSessions(bizId)])
+  const sessName = {}
+  for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[key9(s.contact_phone)] = s.contact_name
   const map = {}
   for (const v of sales) {
     const k = v.contact_phone || 's/n'
-    if (!map[k]) map[k] = { name: v.contact_name || v.contact_phone || 'Cliente', orders: 0, total: 0 }
+    if (!map[k]) map[k] = { name: sessName[key9(v.contact_phone)] || v.contact_name || v.contact_phone || 'Cliente', orders: 0, total: 0 }
     map[k].orders += 1
     map[k].total += Number(v.total || 0)
   }
@@ -262,19 +264,19 @@ const INACTIVE_DAYS = 60
 async function getCustomerDirectory(bizId) {
   const [sales, sessions] = await Promise.all([db.getCustomerSales(bizId), db.getSessions(bizId)])
   const sessName = {}
-  for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[s.contact_phone] = s.contact_name
+  for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[key9(s.contact_phone)] = s.contact_name
   const map = {}
   for (const v of sales) {
     const ph = v.contact_phone
     if (!ph) continue
-    if (!map[ph]) map[ph] = { phone: ph, name: v.contact_name || sessName[ph] || ph, orders: 0, total: 0, last: null, first: null }
+    if (!map[ph]) map[ph] = { phone: ph, name: v.contact_name || sessName[key9(ph)] || ph, orders: 0, total: 0, last: null, first: null }
     const c = map[ph]
     c.orders += 1
     c.total += Number(v.total || 0)
     const t = new Date(v.sold_at).getTime()
     if (c.last === null || t > c.last) c.last = t
     if (c.first === null || t < c.first) c.first = t
-    if ((!c.name || c.name === ph) && (v.contact_name || sessName[ph])) c.name = v.contact_name || sessName[ph]
+    if ((!c.name || c.name === ph) && (v.contact_name || sessName[key9(ph)])) c.name = v.contact_name || sessName[key9(ph)]
   }
   const now = Date.now(), DAY = 86400000
   return Object.values(map).map(c => {
@@ -284,8 +286,43 @@ async function getCustomerDirectory(bizId) {
     else if (c.orders >= 3)                                   status = 'frecuente'
     else if (c.orders === 1 && (now - c.first) / DAY <= 30)   status = 'nuevo'
     else                                                      status = 'activo'
-    return { name: c.name, phone: c.phone, orders: c.orders, total: c.total, lastPurchase: new Date(c.last).toISOString(), daysSince, status }
+    // El nombre editado en Conversaciones (sesión) manda sobre el de la venta
+    return { name: sessName[key9(c.phone)] || c.name, phone: c.phone, orders: c.orders, total: c.total, lastPurchase: new Date(c.last).toISOString(), daysSince, status }
   }).sort((a, b) => b.total - a.total)
+}
+
+// Contactos que hace >= days días no nos escriben (para reactivar). Cruza con ventas
+// para marcar si ya compraron (cliente) o solo consultaron (nunca compró). Solo lectura.
+async function getInactiveContacts(bizId, days = 15) {
+  const [sessions, sales] = await Promise.all([db.getSessions(bizId), db.getCustomerSales(bizId)])
+  const buy = {}
+  for (const v of sales) {
+    const ph = v.contact_phone
+    if (!ph) continue
+    if (!buy[ph]) buy[ph] = { orders: 0, total: 0 }
+    buy[ph].orders += 1
+    buy[ph].total += Number(v.total || 0)
+  }
+  const now = Date.now(), DAY = 86400000
+  const rows = []
+  for (const s of sessions) {
+    const ph = s.contact_phone
+    if (!ph || !s.last_message_at) continue
+    const daysSince = Math.floor((now - new Date(s.last_message_at).getTime()) / DAY)
+    if (daysSince < days) continue
+    const b = buy[ph]
+    rows.push({
+      name: s.contact_name || ph,
+      phone: ph,
+      daysSince,
+      lastMessageAt: s.last_message_at,
+      lastMessage: (s.last_message || '').slice(0, 140),
+      hasPurchased: !!b,
+      orders: b ? b.orders : 0,
+      total: b ? b.total : 0
+    })
+  }
+  return rows.sort((a, b) => b.daysSince - a.daysSince)
 }
 
 // Resumen de la cartera de clientes (foto general, all-time) — para WhatsApp.
@@ -567,7 +604,9 @@ async function runReport(bizId, intent) {
 async function handleOwnerMessage(biz, from, text) {
   if (!biz?.owner_phone || !samePhone(from, biz.owner_phone)) return { handled: false }
   const intent = detectReportIntent(text)
-  if (!intent) return { handled: false }
+  // Es el DUEÑO pero no pidió un reporte claro: NO lo tratamos como cliente ni lo
+  // derivamos a un humano. Se queda en "modo reportes" y recibe el menú de ayuda.
+  if (!intent) return { handled: true, reply: '📊 Soy tu asistente de reportes. Pídeme, por ejemplo:\n\n• "ventas de hoy / semana / mes"\n• "productos más vendidos"\n• "clientes frecuentes" · "clientes perdidos"\n• "stock bajo" · "pedidos pendientes"\n• "reporte de IA"\n\n(Para probar el bot como cliente, escríbele desde otro número 😉)' }
   if (REPORTS_TIME_BOUND.includes(intent.report) && !intent.period) {
     return { handled: true, reply: '📅 ¿De qué período querés el reporte? Responde: *hoy*, *semana* o *mes*.' }
   }
@@ -580,4 +619,4 @@ async function handleOwnerMessage(biz, from, text) {
   }
 }
 
-module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory, computeAlerts, getDashboard }
+module.exports = { handleOwnerMessage, detectReportIntent, samePhone, getAllReports, getCustomerDirectory, getInactiveContacts, computeAlerts, getDashboard }
