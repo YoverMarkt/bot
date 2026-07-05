@@ -115,6 +115,7 @@ const upsertSession = async (bizId, phone, data) =>
 // ── ETIQUETAS de conversación (el dueño crea las suyas) ────
 const getTags   = async bizId       => (await sb.from('conversation_tags').select('*').eq('business_id', bizId).order('created_at')).data || []
 const createTag = async (bizId, d)  => sb.from('conversation_tags').insert({ business_id: bizId, name: d.name, color: d.color || '#2a78d6' }).select().single()
+const updateTag = async (bizId, id, d) => sb.from('conversation_tags').update({ name: d.name, color: d.color }).eq('id', id).eq('business_id', bizId)
 const deleteTag = async (bizId, id) => sb.from('conversation_tags').delete().eq('id', id).eq('business_id', bizId)
 
 const getBilling          = async ()    => (await sb.from('billing').select('*,businesses(name)').order('period_start', { ascending: false })).data || []
@@ -382,7 +383,7 @@ module.exports = {
   getConversations, getContactHistory, saveMessage,
   clearSimHistory,
   getSession, getSessions, upsertSession,
-  getTags, createTag, deleteTag,
+  getTags, createTag, updateTag, deleteTag,
   getBilling, createBilling, createBillingBatch, updateBillingStatus, generateYearBilling, countBilling, updatePendingBilling,
   getAdminStats, getClientStats,
   getSchedule, upsertSchedule, getBookings, createBooking, getBookingById, updateBookingStatus, getAvailableSlots

@@ -611,13 +611,26 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
       <div id="tags-assign-list" style="display:flex;flex-direction:column;gap:8px"></div>
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)">
         <label class="lbl">Crear nueva etiqueta</label>
-        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
-          <input id="new-tag-name" placeholder="Ej: VIP, Mayorista, Deuda..." maxlength="30" style="flex:1" onkeydown="if(event.key==='Enter')createTagDef()">
-          <input id="new-tag-color" type="color" value="#2a78d6" title="Color" style="width:40px;height:36px;padding:2px;cursor:pointer;border:1px solid var(--bd);border-radius:8px">
+        <div id="tag-color-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px"></div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="new-tag-name" placeholder="Nombre de la etiqueta" maxlength="30" style="flex:1" onkeydown="if(event.key==='Enter')createTagDef()">
           <button class="btn btn-dark btn-sm" onclick="createTagDef()">Crear</button>
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- MODAL NOMBRE DEL CONTACTO -->
+<div class="mbd" id="name-modal">
+  <div class="modal" style="width:400px">
+    <div class="mhd"><h2>✏️ Nombre del cliente</h2><button class="mx" onclick="closeNameModal()">×</button></div>
+    <div style="padding:18px 22px">
+      <div class="fg"><label class="lbl">Nombre (para identificarlo)</label>
+        <input type="text" id="name-input" placeholder="Ej: Juan Pérez" maxlength="60" onkeydown="if(event.key==='Enter')saveNameModal()">
+      </div>
+    </div>
+    <div class="mft"><button class="btn" onclick="closeNameModal()">Cancelar</button><button class="btn btn-dark" onclick="saveNameModal()">Guardar</button></div>
   </div>
 </div>
 
@@ -1581,7 +1594,13 @@ function displayName(phone){
 
 // Editar el nombre del contacto y guardarlo
 // ── ETIQUETAS de conversación ─────────────────────────────
+const TAG_COLORS = ['#ef5350','#ff9800','#ffd54f','#66bb6a','#26a69a','#42a5f5','#5c6bc0','#ab47bc','#ec407a','#78909c']
+let selectedTagColor = TAG_COLORS[0]
+let editingTag = null, editTagColor = null, editTagName = ''
 let tagsData = []
+// Texto blanco u oscuro según el color, para que siempre se lea
+function textColorFor(bg){ const c=String(bg||'').replace('#',''); if(c.length<6) return '#fff'; const r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16); return (r*0.299+g*0.587+b*0.114)>150?'#1e1e1e':'#fff' }
+function tagChip(name,color){ return `<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:99px;color:${textColorFor(color)};background:${color}">${esc(name)}</span>` }
 async function loadTags(){
   try { const r = await fetch(`${API}/api/client/tags`, { headers:H() }); tagsData = await r.json(); if(!Array.isArray(tagsData)) tagsData = [] }
   catch(e){ tagsData = [] }
@@ -1589,23 +1608,55 @@ async function loadTags(){
 function tagById(id){ return tagsData.find(t => t.id === id) }
 function renderTagChips(ids){
   if (!Array.isArray(ids) || !ids.length) return ''
-  return ids.map(id => { const t = tagById(id); return t ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${t.color}">${esc(t.name)}</span>` : '' }).join('')
+  return ids.map(id => { const t = tagById(id); return t ? tagChip(t.name,t.color) : '' }).join('')
 }
-function openTagsModal(){ if(!activePhone) return; renderTagsAssign(); document.getElementById('tags-modal').classList.add('on') }
+function openTagsModal(){ if(!activePhone) return; selectedTagColor = TAG_COLORS[0]; renderColorPicker(); renderTagsAssign(); document.getElementById('tags-modal').classList.add('on') }
 function closeTagsModal(){ document.getElementById('tags-modal').classList.remove('on') }
+function renderColorPicker(){
+  document.getElementById('tag-color-picker').innerHTML = TAG_COLORS.map(c =>
+    `<button type="button" onclick="selectTagColor('${c}')" title="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;border:3px solid ${c===selectedTagColor?'#1e1e1e':'#fff'};box-shadow:0 0 0 1px var(--bd)"></button>`
+  ).join('')
+}
+function selectTagColor(c){ selectedTagColor = c; renderColorPicker() }
 function renderTagsAssign(){
   const sess = sessionsData[activePhone]
   const assigned = new Set(Array.isArray(sess?.tags) ? sess.tags : [])
   const box = document.getElementById('tags-assign-list')
   if (!tagsData.length){ box.innerHTML = '<p style="color:var(--muted);font-size:12px">Aún no tienes etiquetas. Crea la primera abajo 👇</p>'; return }
-  box.innerHTML = tagsData.map(t => `
-    <div style="display:flex;align-items:center;gap:8px">
+  box.innerHTML = tagsData.map(t => {
+    if (editingTag === t.id){
+      const swatches = TAG_COLORS.map(c => `<button type="button" onclick="selectEditColor('${c}')" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:3px solid ${c===editTagColor?'#1e1e1e':'#fff'};box-shadow:0 0 0 1px var(--bd)"></button>`).join('')
+      return `<div style="display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--paper2);border-radius:10px">
+        <input type="text" id="edit-tag-name" value="${esc(editTagName)}" maxlength="30" onkeydown="if(event.key==='Enter')saveTagEdit('${t.id}')">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${swatches}</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="btn btn-sm" onclick="cancelEditTag()">Cancelar</button>
+          <button class="btn btn-dark btn-sm" onclick="saveTagEdit('${t.id}')">Guardar</button>
+        </div>
+      </div>`
+    }
+    return `<div style="display:flex;align-items:center;gap:8px">
       <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
         <input type="checkbox" ${assigned.has(t.id)?'checked':''} onchange="toggleTag('${t.id}',this.checked)">
-        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${t.color}">${esc(t.name)}</span>
+        ${tagChip(t.name,t.color)}
       </label>
+      <button class="btn btn-sm" title="Editar etiqueta" onclick="startEditTag('${t.id}')">✏️</button>
       <button class="btn btn-sm btn-red" title="Borrar etiqueta" onclick="deleteTagDef('${t.id}')">🗑</button>
-    </div>`).join('')
+    </div>`
+  }).join('')
+}
+function startEditTag(id){ const t=tagById(id); if(!t) return; editingTag=id; editTagColor=t.color; editTagName=t.name; renderTagsAssign(); setTimeout(()=>document.getElementById('edit-tag-name')?.focus(),40) }
+function cancelEditTag(){ editingTag=null; renderTagsAssign() }
+function selectEditColor(c){ const cur=document.getElementById('edit-tag-name'); if(cur) editTagName=cur.value; editTagColor=c; renderTagsAssign() }
+async function saveTagEdit(id){
+  const name=(document.getElementById('edit-tag-name')?.value||'').trim()
+  if(!name) return toast('Escribe un nombre',true)
+  const r=await fetch(`${API}/api/client/tags/${id}`,{method:'PUT',headers:H(),body:JSON.stringify({name,color:editTagColor})})
+  if(!r.ok) return toast('Error al guardar',true)
+  editingTag=null
+  await loadTags(); renderTagsAssign()
+  if(activePhone) document.getElementById('chat-tags').innerHTML=renderTagChips(sessionsData[activePhone]?.tags)
+  toast('✓ Etiqueta actualizada')
 }
 async function toggleTag(id, on){
   const sess = sessionsData[activePhone]; if(!sess) return
@@ -1618,8 +1669,7 @@ async function toggleTag(id, on){
 async function createTagDef(){
   const name = document.getElementById('new-tag-name').value.trim()
   if (!name) return toast('Escribe un nombre', true)
-  const color = document.getElementById('new-tag-color').value
-  const r = await fetch(`${API}/api/client/tags`, { method:'POST', headers:H(), body:JSON.stringify({name,color}) })
+  const r = await fetch(`${API}/api/client/tags`, { method:'POST', headers:H(), body:JSON.stringify({name,color:selectedTagColor}) })
   if (!r.ok) return toast('Error al crear la etiqueta', true)
   document.getElementById('new-tag-name').value = ''
   await loadTags(); renderTagsAssign(); toast('✓ Etiqueta creada')
@@ -1632,16 +1682,25 @@ async function deleteTagDef(id){
   toast('✓ Etiqueta borrada')
 }
 
-async function renameContact(phoneEnc){
-  const phone = decodeURIComponent(phoneEnc)
-  const actual = sessionsData[phone]?.contact_name || ''
-  const nuevo = prompt('Nombre del cliente (para identificarlo):', actual)
-  if (nuevo === null) return
+// ── Editar nombre del contacto (modal propio, no prompt del navegador) ──
+let namePhone = null
+function renameContact(phoneEnc){
+  namePhone = decodeURIComponent(phoneEnc)
+  document.getElementById('name-input').value = sessionsData[namePhone]?.contact_name || ''
+  document.getElementById('name-modal').classList.add('on')
+  setTimeout(()=>document.getElementById('name-input')?.focus(), 50)
+}
+function closeNameModal(){ document.getElementById('name-modal').classList.remove('on') }
+async function saveNameModal(){
+  if (!namePhone) return
+  const nuevo = document.getElementById('name-input').value.trim()
+  const phoneEnc = encodeURIComponent(namePhone)
   try {
-    await fetch(`${API}/api/client/sessions/${phoneEnc}/name`, { method:'PUT', headers:H(), body:JSON.stringify({ name: nuevo.trim() }) })
-    if (sessionsData[phone]) sessionsData[phone].contact_name = nuevo.trim() || null
+    await fetch(`${API}/api/client/sessions/${phoneEnc}/name`, { method:'PUT', headers:H(), body:JSON.stringify({ name: nuevo }) })
+    if (sessionsData[namePhone]) sessionsData[namePhone].contact_name = nuevo || null
+    closeNameModal()
     await loadConversations()
-    if (activePhone === phone) renderChatPanel(phone)
+    if (activePhone === namePhone) renderChatPanel(namePhone)
     toast('✓ Nombre guardado')
   } catch { toast('Error al guardar el nombre', true) }
 }
