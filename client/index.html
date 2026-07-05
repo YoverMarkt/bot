@@ -413,8 +413,9 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
                 <div>
                   <div id="chat-phone" style="font-weight:700;font-size:14px"></div>
                   <div id="chat-status" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+                  <div id="chat-tags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div>
                 </div>
-                <div id="chat-actions" style="display:flex;gap:6px"></div>
+                <div id="chat-actions" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"></div>
               </div>
               <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px"></div>
               <div id="chat-input-area" style="display:none;padding:12px 16px;border-top:1px solid var(--bd);gap:8px">
@@ -601,6 +602,25 @@ textarea{resize:vertical;min-height:70px;line-height:1.6}
 </div>
 
 <!-- Modal: crear/editar empleado -->
+<!-- MODAL ETIQUETAS -->
+<div class="mbd" id="tags-modal">
+  <div class="modal" style="width:420px">
+    <div class="mhd"><h2>🏷️ Etiquetas de la conversación</h2><button class="mx" onclick="closeTagsModal()">×</button></div>
+    <div style="padding:18px 22px">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Marca las etiquetas de este cliente:</p>
+      <div id="tags-assign-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)">
+        <label class="lbl">Crear nueva etiqueta</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+          <input id="new-tag-name" placeholder="Ej: VIP, Mayorista, Deuda..." maxlength="30" style="flex:1" onkeydown="if(event.key==='Enter')createTagDef()">
+          <input id="new-tag-color" type="color" value="#2a78d6" title="Color" style="width:40px;height:36px;padding:2px;cursor:pointer;border:1px solid var(--bd);border-radius:8px">
+          <button class="btn btn-dark btn-sm" onclick="createTagDef()">Crear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="mbd" id="user-modal">
   <div class="modal">
     <div class="mhd"><h2 id="um-title">Nuevo empleado</h2><button class="mx" onclick="closeUserModal()">×</button></div>
@@ -899,7 +919,7 @@ function goPage(name,el) {
   el?.classList.add('on')
   // El polling de conversaciones corre SIEMPRE (no solo en esta página) para
   // detectar handoffs a manual aunque el dueño esté en otra sección.
-  if (name==='conversations') { loadConversations(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
+  if (name==='conversations') { loadConversations(); loadTags(); document.getElementById('nav-conv')?.classList.remove('flash'); attendManual() }
   if (name==='dashboard') { loadDashboardBI(); loadOnboarding() }
   if (name==='reportes') { loadReports(); loadAlerts() }
   if (name==='clientes') loadCustomers()
@@ -1560,6 +1580,58 @@ function displayName(phone){
 }
 
 // Editar el nombre del contacto y guardarlo
+// ── ETIQUETAS de conversación ─────────────────────────────
+let tagsData = []
+async function loadTags(){
+  try { const r = await fetch(`${API}/api/client/tags`, { headers:H() }); tagsData = await r.json(); if(!Array.isArray(tagsData)) tagsData = [] }
+  catch(e){ tagsData = [] }
+}
+function tagById(id){ return tagsData.find(t => t.id === id) }
+function renderTagChips(ids){
+  if (!Array.isArray(ids) || !ids.length) return ''
+  return ids.map(id => { const t = tagById(id); return t ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${t.color}">${esc(t.name)}</span>` : '' }).join('')
+}
+function openTagsModal(){ if(!activePhone) return; renderTagsAssign(); document.getElementById('tags-modal').classList.add('on') }
+function closeTagsModal(){ document.getElementById('tags-modal').classList.remove('on') }
+function renderTagsAssign(){
+  const sess = sessionsData[activePhone]
+  const assigned = new Set(Array.isArray(sess?.tags) ? sess.tags : [])
+  const box = document.getElementById('tags-assign-list')
+  if (!tagsData.length){ box.innerHTML = '<p style="color:var(--muted);font-size:12px">Aún no tienes etiquetas. Crea la primera abajo 👇</p>'; return }
+  box.innerHTML = tagsData.map(t => `
+    <div style="display:flex;align-items:center;gap:8px">
+      <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer">
+        <input type="checkbox" ${assigned.has(t.id)?'checked':''} onchange="toggleTag('${t.id}',this.checked)">
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${t.color}">${esc(t.name)}</span>
+      </label>
+      <button class="btn btn-sm btn-red" title="Borrar etiqueta" onclick="deleteTagDef('${t.id}')">🗑</button>
+    </div>`).join('')
+}
+async function toggleTag(id, on){
+  const sess = sessionsData[activePhone]; if(!sess) return
+  let tags = Array.isArray(sess.tags) ? [...sess.tags] : []
+  if (on){ if(!tags.includes(id)) tags.push(id) } else { tags = tags.filter(x => x !== id) }
+  await fetch(`${API}/api/client/sessions/${encodeURIComponent(activePhone)}/tags`, { method:'PUT', headers:H(), body:JSON.stringify({tags}) })
+  sess.tags = tags
+  document.getElementById('chat-tags').innerHTML = renderTagChips(tags)
+}
+async function createTagDef(){
+  const name = document.getElementById('new-tag-name').value.trim()
+  if (!name) return toast('Escribe un nombre', true)
+  const color = document.getElementById('new-tag-color').value
+  const r = await fetch(`${API}/api/client/tags`, { method:'POST', headers:H(), body:JSON.stringify({name,color}) })
+  if (!r.ok) return toast('Error al crear la etiqueta', true)
+  document.getElementById('new-tag-name').value = ''
+  await loadTags(); renderTagsAssign(); toast('✓ Etiqueta creada')
+}
+async function deleteTagDef(id){
+  if (!confirm('¿Borrar esta etiqueta? Se quitará de todas las conversaciones.')) return
+  await fetch(`${API}/api/client/tags/${id}`, { method:'DELETE', headers:H() })
+  await loadTags(); renderTagsAssign()
+  if (activePhone) renderChatPanel(activePhone)
+  toast('✓ Etiqueta borrada')
+}
+
 async function renameContact(phoneEnc){
   const phone = decodeURIComponent(phoneEnc)
   const actual = sessionsData[phone]?.contact_name || ''
@@ -1604,9 +1676,12 @@ function renderChatPanel(phone) {
 
   document.getElementById('chat-actions').innerHTML =
     (can('ventas') ? `<button class="btn btn-sm" style="color:#1a7f37;border-color:rgba(26,127,55,.25)" onclick="openSaleModal('${phoneEnc}')">💰 Venta realizada</button>` : '') +
+    `<button class="btn btn-sm" onclick="openTagsModal()">🏷️ Etiquetas</button>` +
+    `<button class="btn btn-sm" onclick="renameContact('${phoneEnc}')">✏️ Nombre</button>` +
     (isManual
       ? `<button class="btn btn-sm" onclick="setMode('${phoneEnc}',false)">🤖 Activar bot</button>`
       : `<button class="btn btn-sm" style="color:var(--red);border-color:rgba(240,61,47,.2)" onclick="setMode('${phoneEnc}',true)">🤚 Tomar control</button>`)
+  document.getElementById('chat-tags').innerHTML = renderTagChips(sess?.tags)
 
   const chatMsgs = document.getElementById('chat-messages')
   const wasAtBottom = chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight < 60

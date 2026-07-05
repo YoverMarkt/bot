@@ -396,6 +396,33 @@ app.put('/api/client/sessions/:phone/name', authClient, requirePermission('conve
   res.json({ ok: true })
 })
 
+// ── ETIQUETAS de conversación (el dueño crea las suyas) ────
+app.get('/api/client/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
+  try { res.json(await db.getTags(req.user.businessId)) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+app.post('/api/client/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const name = (req.body.name || '').trim().slice(0, 30)
+  if (!name) return res.status(400).json({ error: 'Nombre requerido' })
+  try {
+    const { data, error } = await db.createTag(req.user.businessId, { name, color: req.body.color })
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json(data)
+  } catch(e) { res.status(500).json({ error: e.message }) }
+})
+app.delete('/api/client/tags/:id', authClient, requirePermission('conversaciones'), async (req, res) => {
+  try { await db.deleteTag(req.user.businessId, req.params.id); res.json({ ok: true }) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+// Asignar las etiquetas de una conversación (array de IDs)
+app.put('/api/client/sessions/:phone/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone)
+  const tags = Array.isArray(req.body.tags) ? req.body.tags : []
+  const { error } = await db.upsertSession(req.user.businessId, phone, { tags })
+  if (error) return res.status(500).json({ error: /tags/.test(error.message || '') ? 'Falta correr la migración de etiquetas' : error.message })
+  res.json({ ok: true })
+})
+
 // Envía un mensaje al cliente por su canal (Telegram o WhatsApp)
 async function sendToContact(biz, phone, message) {
   if (phone.startsWith('tg_')) {

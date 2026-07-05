@@ -125,8 +125,20 @@ create table if not exists conversation_sessions (
   unread_owner    boolean default false,
   last_message    text,
   last_message_at timestamptz default now(),
+  closed_sale_at  timestamptz,                 -- corte de historial al cerrar una venta
+  tags            jsonb default '[]'::jsonb,   -- ids de conversation_tags asignadas
   unique (business_id, contact_phone)
 );
+
+-- Etiquetas de conversación (el dueño crea las suyas): nombre + color
+create table if not exists conversation_tags (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid references businesses(id) on delete cascade,
+  name        text not null,
+  color       text default '#2a78d6',
+  created_at  timestamptz default now()
+);
+create index if not exists idx_conv_tags_biz on conversation_tags(business_id);
 
 -- ── TABLA 7: Horarios de atención (para reservas) ──────────
 create table if not exists business_schedule (
