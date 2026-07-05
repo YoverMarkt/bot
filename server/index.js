@@ -90,9 +90,13 @@ const webhookLimiter = rateLimit({
   message: { error: 'rate limit' }
 })
 
-// Paneles
-app.use('/admin',  express.static(path.join(__dirname, '../admin')))
-app.use('/client', express.static(path.join(__dirname, '../client')))
+// Paneles — el HTML NO se cachea (siempre última versión); así un cambio en el
+// panel se ve al recargar, sin quedar pegado en una versión vieja del navegador.
+const noCacheHtml = (res, filePath) => {
+  if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+}
+app.use('/admin',  express.static(path.join(__dirname, '../admin'),  { setHeaders: noCacheHtml }))
+app.use('/client', express.static(path.join(__dirname, '../client'), { setHeaders: noCacheHtml }))
 app.get('/', (_, res) => res.redirect('/admin'))
 
 const JWT = () => process.env.JWT_SECRET
@@ -546,6 +550,13 @@ app.get('/api/client/reports', authClient, requirePermission('reportes'), async 
 // Directorio de clientes (solo lectura) — para la sección "Clientes" del panel
 app.get('/api/client/customers', authClient, requirePermission('reportes'), async (req, res) => {
   try { res.json(await reports.getCustomerDirectory(req.user.businessId)) }
+  catch(e) { res.status(500).json({ error: e.message }) }
+})
+
+// Clientes sin escribir hace tiempo (para reactivar) — solo lectura
+app.get('/api/client/inactive-contacts', authClient, requirePermission('reportes'), async (req, res) => {
+  const days = Math.max(1, parseInt(req.query.days) || 15)
+  try { res.json(await reports.getInactiveContacts(req.user.businessId, days)) }
   catch(e) { res.status(500).json({ error: e.message }) }
 })
 
