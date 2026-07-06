@@ -17,6 +17,23 @@ async function configure() {
 
 async function isConfigured() { return configure() }
 
+// Verifica que las llaves realmente funcionan (ping a la API de Cloudinary).
+// Acepta llaves por parámetro (verificar antes de guardar) o usa las guardadas.
+async function verify(override = {}) {
+  const cloud_name = override.cloud_name || await settings.get('cloudinary_cloud_name')
+  const api_key    = override.api_key    || await settings.get('cloudinary_api_key')
+  const api_secret = override.api_secret || await settings.get('cloudinary_api_secret')
+  if (!cloud_name || !api_key || !api_secret) {
+    return { ok: false, info: 'Faltan datos de Cloudinary (cloud name, API key o secret)' }
+  }
+  cloudinary.config({ cloud_name, api_key, api_secret, secure: true })
+  const r = await cloudinary.api.ping()   // { status: 'ok' } si las llaves son válidas
+  return {
+    ok: r?.status === 'ok',
+    info: r?.status === 'ok' ? `✅ Cloudinary conectado — cloud "${cloud_name}"` : 'Respuesta inesperada'
+  }
+}
+
 // Sube un buffer (imagen o video) a la carpeta del negocio.
 // resource_type 'auto' → Cloudinary detecta si es imagen o video.
 // Devuelve { url, public_id, resource_type }.
@@ -46,4 +63,4 @@ async function deleteMedia(publicId, resourceType = 'image') {
   }
 }
 
-module.exports = { isConfigured, uploadMedia, deleteMedia }
+module.exports = { isConfigured, verify, uploadMedia, deleteMedia }

@@ -1503,9 +1503,14 @@ async function reindexCatalog(){
   } catch { toast('Error al reindexar', true) }
 }
 
+// Límites estándar de WhatsApp para media (imagen 5 MB, video 16 MB)
+const MEDIA_LIMITS = { image: 5*1024*1024, video: 16*1024*1024 }
+const fmtMB = bytes => (bytes/1024/1024).toFixed(1)+' MB'
+
 // Imagen: preview instantáneo + subida real a Cloudinary (guarda URL + public_id)
 function handleFile(e) {
   const f=e.target.files[0]; if (!f) return
+  if (f.size > MEDIA_LIMITS.image) { toast(`La imagen supera el límite de WhatsApp. Máximo 5 MB, tu imagen pesa ${fmtMB(f.size)}.`, true); e.target.value=''; return }
   const r=new FileReader()
   r.onload=ev=>{document.getElementById('up-img').src=ev.target.result}
   r.readAsDataURL(f)
@@ -1520,6 +1525,7 @@ function clearFile(){document.getElementById('upz').style.display='block';docume
 // Video: subida real a Cloudinary (no hay preview pesado, solo estado)
 function handleVideo(e) {
   const f=e.target.files[0]; if (!f) return
+  if (f.size > MEDIA_LIMITS.video) { toast(`El video supera el límite de WhatsApp. Máximo 16 MB, tu video pesa ${fmtMB(f.size)}.`, true); e.target.value=''; return }
   document.getElementById('up-vname').textContent=f.name
   document.getElementById('up-vsize').textContent=(f.size/1024/1024).toFixed(1)+' MB'
   document.getElementById('upz-v').style.display='none'
