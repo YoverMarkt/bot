@@ -362,8 +362,8 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
     else l += ` — ${p.stock}`
     if (p.description) l += `\n  ${p.description}`
     if (p.tags?.length)  l += ` | ${p.tags.join(', ')}`
-    if (!voiceMode && p.image_url && p.image_url.startsWith('http')) l += `\n  [IMAGE:${p.image_url}]`
-    if (!voiceMode && p.video_url && p.video_url.startsWith('http')) l += `\n  (este producto tiene un video disponible: si el cliente quiere verlo, invítalo a pedirlo y el sistema se lo envía)`
+    if (!voiceMode && p.image_url && p.image_url.startsWith('http')) l += `\n  (este producto tiene una foto disponible: si el cliente quiere verla, invítalo a pedirla y el sistema se la envía — NUNCA escribas el enlace)`
+    if (!voiceMode && p.video_url && p.video_url.startsWith('http')) l += `\n  (este producto tiene un video disponible: si el cliente quiere verlo, invítalo a pedirlo y el sistema se lo envía — NUNCA escribas el enlace)`
     return l
   }).join('\n\n')
   const catalogNote = allProducts.length > toShow.length
@@ -424,7 +424,8 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
 - No inventes precios ni información que no esté en los DATOS de arriba.
 - EFICIENCIA: responde SIEMPRE en UN SOLO mensaje, completo y ordenado. No dividas la respuesta en varios envíos ni mandes mensajes de solo cortesía ("¡Claro!", "Un momento"). Da la información completa de una vez (qué es, precio si lo hay y el siguiente paso) y adelántate a la siguiente duda. Si necesitas varios datos del cliente (nombre, dirección, pago o una especificación), pídelos TODOS juntos en el mismo mensaje.
 - Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
-- Cuando el cliente CONFIRME la compra (acepta el producto y su precio y ya toca coordinar pago o entrega), escribe tu mensaje normal y agrega al FINAL, en su propia línea, exactamente la etiqueta ##VENTA## (el sistema la usa para avisar al dueño; el cliente NO la ve). NO la pongas si el cliente todavía pregunta, compara o duda.`
+- Cuando el cliente CONFIRME la compra (acepta el producto y su precio y ya toca coordinar pago o entrega), escribe tu mensaje normal y agrega al FINAL, en su propia línea, exactamente la etiqueta ##VENTA## (el sistema la usa para avisar al dueño; el cliente NO la ve). NO la pongas si el cliente todavía pregunta, compara o duda.
+- FOTOS Y VIDEOS: si el cliente pide ver una foto o un video de un producto, responde breve y natural (ej.: "Con gusto, permítame y se lo muestro 😊"). NO afirmes qué tipo de archivo es, NO des por hecho que exista y NUNCA escribas enlaces: el sistema se encarga de enviarle EXACTAMENTE la media que ese producto tenga (o de avisarle si no hay). Si no estás seguro de a cuál producto se refiere, pregúntaselo antes.`
 
   // Estilo por defecto SOLO si el dueño no definió su propio prompt
   const defaultStyle = `\n\nESTILO: Responde en español, amable y conciso.${voiceMode ? ' Es una llamada de voz: sin markdown ni emojis.' : ''} Si el cliente quiere comprar, pide nombre, dirección y método de pago.`
@@ -632,8 +633,8 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   } catch(e) {}
 
   // Detectar si el usuario pide ver una foto o un video de un producto — el servidor lo maneja
-  const wantsImage   = /imagen|foto|ver|muéstrame|muestrame|cómo se ve|como se ve/i.test(text)
-  const wantsVideo   = /v[íi]deo/i.test(text)
+  const wantsImage   = /imagen|im[aá]genes|foto|fotos|mu[eé]strame|muestrame|ens[eé][ñn]ame|ensename|c[oó]mo se ve|como se ve/i.test(text)
+  const wantsVideo   = /v[íi]deos?/i.test(text)
 
   let reply = ''
   try {
@@ -647,6 +648,11 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   let finalText = reply
     .replace(/##IMG##[\s\S]*?(##|$)/g, '')
     .replace(/##CATALOG##/g, '')
+    // Red de seguridad: si el modelo filtró el marcador o el enlace de la media, se quitan
+    // (la foto/video se envían aparte como archivo, el cliente no debe ver la URL)
+    .replace(/\[IMAGE:[^\]]*\]/gi, '')
+    .replace(/https?:\/\/res\.cloudinary\.com\/\S+/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim()
 
   // Reserva nativa ##BOOK:nombre|fecha|hora|servicio##
@@ -722,25 +728,58 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
 
   await humanizedSend(finalText, sendFn, sendTyping)
 
-  // — Envío de fotos/videos de producto (Cloudinary) —
-  // REGLA DE EFICIENCIA (Meta cobra por mensaje): NUNCA se vuelca el catálogo entero
-  // en imágenes. Solo se envía media del/los producto(s) que el cliente pidió ver
-  // explícitamente (foto/video), identificados por nombre o marca en la conversación (máx 3).
+  // — Envío de fotos/videos de producto (Cloudinary) — PRECISO Y ESTRICTO —
+  // Identifica UN producto (el que se está hablando) y envía SOLO la media que ESE
+  // producto realmente tiene, diferenciando imagen/video/ambos/ninguno. Nunca manda
+  // media de un producto que no se pidió, ni afirma tener algo que no existe.
+  // (Meta cobra por mensaje → jamás se vuelca el catálogo.)
   try {
-    if ((wantsImage || wantsVideo) && (sendImageFn || sendVideoFn)) {
-      const combined = (reply + ' ' + text).toLowerCase()
-      const targets = (products || []).filter(p =>
-        (p.name  && p.name.length  > 2 && combined.includes(p.name.toLowerCase())) ||
-        (p.brand && p.brand.length > 2 && combined.includes(p.brand.toLowerCase()))
-      ).slice(0, 3)
-      for (const p of targets) {
-        if (wantsImage && p.image_url && sendImageFn) {
-          try { await sendImageFn(p.image_url, p.name); console.log(`🖼️  Imagen enviada: ${p.name}`) }
-          catch(e) { console.error(`❌ enviando imagen de ${p.name}:`, e.message) }
-        }
-        if (wantsVideo && p.video_url && sendVideoFn) {
-          try { await sendVideoFn(p.video_url, p.name); console.log(`🎬 Video enviado: ${p.name}`) }
-          catch(e) { console.error(`❌ enviando video de ${p.name}:`, e.message) }
+    if ((wantsImage || wantsVideo) && sendFn) {
+      const fullCatalog = preFiltered ? await db.getProducts(biz.id) : (products || [])
+      const norm = s => (s || '').toLowerCase()
+      // Qué tan claramente un texto se refiere a un producto:
+      // nombre completo (100) > SKU (90) > marca (50) > nº de palabras distintivas (>=6 letras) presentes.
+      const scoreOf = (p, hay) => {
+        const h = norm(hay), name = norm(p.name)
+        if (name.length > 4 && h.includes(name)) return 100
+        if (p.external_sku && norm(p.external_sku).length >= 4 && h.includes(norm(p.external_sku))) return 90
+        if (p.brand && norm(p.brand).length > 2 && h.includes(norm(p.brand))) return 50
+        const toks = [...new Set(name.split(/[\s\-\/",()]+/).filter(w => w.length >= 6))]
+        return toks.filter(w => h.includes(w)).length
+      }
+      // Busca el producto objetivo de lo MÁS reciente a lo más viejo (mensaje actual → respuesta → historial).
+      // Exige match confiable (>= 2) para no adivinar y mandar el producto equivocado.
+      const layers = [text, reply, ...(history || []).slice().reverse().slice(0, 8).map(h => h.content || '')]
+      let target = null
+      for (const layer of layers) {
+        let best = null, bestScore = 0
+        for (const p of fullCatalog) { const s = scoreOf(p, layer); if (s > bestScore) { bestScore = s; best = p } }
+        if (bestScore >= 2) { target = best; break }
+      }
+
+      if (!target) {
+        console.log(`ℹ️  [${biz.name}] pidió foto/video pero no identifiqué con certeza el producto → no se envía media`)
+      } else {
+        const hasImg = !!(target.image_url && String(target.image_url).startsWith('http'))
+        const hasVid = !!(target.video_url && String(target.video_url).startsWith('http'))
+        const sendImg = async () => { try { await sendImageFn(target.image_url, target.name); console.log(`🖼️  Imagen enviada: ${target.name}`) } catch(e){ console.error('❌ img:', e.message) } }
+        const sendVid = async () => { try { await sendVideoFn(target.video_url, target.name); console.log(`🎬 Video enviado: ${target.name}`) } catch(e){ console.error('❌ video:', e.message) } }
+        const sinMedia = 'De ese producto todavía no tengo foto ni video 🙏, pero con gusto le doy todos los detalles.'
+
+        if (wantsImage && wantsVideo) {                 // pidió ambos
+          if (hasImg && sendImageFn) await sendImg()
+          if (hasVid && sendVideoFn) await sendVid()
+          if (!hasImg && !hasVid) await sendFn(sinMedia)
+          else if (!hasImg) await sendFn('De ese producto no tengo foto, solo el video 👆')
+          else if (!hasVid) await sendFn('De ese producto no tengo video, solo la foto 👆')
+        } else if (wantsImage) {                          // pidió foto
+          if (hasImg && sendImageFn) await sendImg()
+          else if (hasVid && sendVideoFn) { await sendFn('De ese producto no tengo foto, pero le comparto un video 👇'); await sendVid() }
+          else await sendFn(sinMedia)
+        } else if (wantsVideo) {                          // pidió video
+          if (hasVid && sendVideoFn) await sendVid()
+          else if (hasImg && sendImageFn) { await sendFn('De ese producto no tengo video, pero le comparto una foto 👇'); await sendImg() }
+          else await sendFn(sinMedia)
         }
       }
     }

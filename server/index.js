@@ -540,6 +540,13 @@ app.post('/api/client/media', authClient, requirePermission('catalogo'), mediaUp
     const mime = req.file.mimetype || ''
     if (!mime.startsWith('image/') && !mime.startsWith('video/'))
       return res.status(400).json({ error: 'Solo se permiten imágenes o videos' })
+    // Límites estándar de WhatsApp: imagen 5 MB, video 16 MB
+    const isVideo = mime.startsWith('video/')
+    const max = isVideo ? 16 * 1024 * 1024 : 5 * 1024 * 1024
+    if (req.file.size > max) {
+      const pesa = (req.file.size / 1024 / 1024).toFixed(1)
+      return res.status(413).json({ error: `El archivo supera el límite de WhatsApp (${isVideo ? '16 MB para video' : '5 MB para imagen'}). Tu archivo pesa ${pesa} MB.` })
+    }
     if (!(await cloud.isConfigured()))
       return res.status(503).json({ error: 'Cloudinary no está configurado. Agrégalo en el panel de administración → Configuración.' })
     const out = await cloud.uploadMedia(req.file.buffer, req.user.businessId)
@@ -714,6 +721,32 @@ app.post('/api/client/reindex', authClient, requirePermission('catalogo'), async
   } catch(e) { console.error('❌ reindex:', e.message) }
 })
 
+// ── ANTI-DUPLICADOS DE WEBHOOK (todos los proveedores) ─────────────
+// YCloud/Meta/Kapso REINTENTAN la entrega si creen que no llegó (timeout,
+// reinicio del server, cambio de túnel). Sin esta defensa, un mensaje viejo
+// re-entregado hace que el bot le escriba "solo" al cliente (mensaje fantasma).
+const seenInbound = new Map()              // msgId -> timestamp de procesado
+const SEEN_TTL = 15 * 60 * 1000            // ventana típica de reintentos
+function isDuplicateInbound(msgId) {
+  if (!msgId) return false                 // sin ID no se puede dedup (no bloquear)
+  const now = Date.now()
+  if (seenInbound.size > 5000) {           // limpieza perezosa
+    for (const [k, t] of seenInbound) if (now - t > SEEN_TTL) seenInbound.delete(k)
+  }
+  if (seenInbound.has(msgId)) return true
+  seenInbound.set(msgId, now)
+  return false
+}
+// Descarta mensajes demasiado viejos (reintentos tardíos que cruzan un reinicio,
+// donde el dedup en memoria ya no los recuerda). Umbral amplio para no perder
+// mensajes legítimos si el server estuvo caído un momento.
+function isStaleInbound(ts) {
+  if (!ts) return false
+  const t = typeof ts === 'number' ? (ts > 1e12 ? ts : ts * 1000) : Date.parse(ts)
+  if (isNaN(t)) return false
+  return (Date.now() - t) > 10 * 60 * 1000   // >10 min = re-entrega vieja
+}
+
 // ══════════════════════════════════════════
 // WEBHOOK — META (verificación hub)
 // ══════════════════════════════════════════
@@ -738,6 +771,7 @@ app.post('/webhook', webhookLimiter, async (req, res) => {
     const value = body.entry?.[0]?.changes?.[0]?.value
     if (!value?.messages?.length) return
     const msg      = value.messages[0]
+    if (isDuplicateInbound(msg.id) || isStaleInbound(msg.timestamp)) return console.log(`🔁 [Meta] mensaje duplicado/viejo ignorado (${msg.id || 'sin id'})`)
     const from     = msg.from
     const bizPhone = value.metadata?.display_phone_number
     if (msg.type === 'text') await bot.handleMessage(from, msg.text.body, bizPhone)
@@ -767,6 +801,7 @@ app.post('/webhook/kapso', webhookLimiter, async (req, res) => {
   try {
     const body     = req.body
     const msg      = body.message || body.messages?.[0]
+    if (isDuplicateInbound(msg?.id || body.id)) return console.log(`🔁 [Kapso] mensaje duplicado ignorado (${msg?.id || body.id})`)
     const from     = msg?.from || body.from
     const text     = msg?.text?.body || msg?.body || body.text
     const bizPhone = body.to || body.number_id
@@ -803,6 +838,7 @@ app.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     const bizPhone = msg.whatsappApiAccountPhoneNumber || msg.to  // número del negocio
     const inboundId = msg.id || msg.wamid                // ID para el typing indicator
     if (!from || !bizPhone) return
+    if (isDuplicateInbound(inboundId) || isStaleInbound(msg.sendTime)) return console.log(`🔁 [YCloud] mensaje duplicado/viejo ignorado (${inboundId || 'sin id'})`)
 
     if (msg.type === 'text' && msg.text?.body) {
       console.log(`📡 YCloud: de ${from} → ${bizPhone}: "${msg.text.body}"`)
@@ -1028,6 +1064,23 @@ app.post('/api/admin/server-settings/verify-ai', authAdmin, async (req, res) => 
     // Mostrar el detalle real (ej: API key inválida, API no habilitada)
     const detail = e.response?.data?.error?.message || e.message || 'Error de conexión'
     const status = e.response?.status ? `[HTTP ${e.response.status}] ` : ''
+    res.json({ ok: false, info: (status + detail).slice(0, 160) })
+  }
+})
+
+// Verificar que las llaves de Cloudinary funcionan (ping)
+app.post('/api/admin/server-settings/verify-cloudinary', authAdmin, async (req, res) => {
+  const { cloudinary_cloud_name, cloudinary_api_key, cloudinary_api_secret } = req.body
+  try {
+    const r = await cloud.verify({
+      cloud_name: cloudinary_cloud_name,
+      api_key:    cloudinary_api_key,
+      api_secret: cloudinary_api_secret
+    })
+    res.json(r)
+  } catch(e) {
+    const detail = e.error?.message || e.message || 'Error de conexión'
+    const status = e.http_code ? `[HTTP ${e.http_code}] ` : ''
     res.json({ ok: false, info: (status + detail).slice(0, 160) })
   }
 })
