@@ -339,6 +339,27 @@ function scheduleToText(schedule) {
 
 // ¿El cliente escribe FUERA del horario de atención? (hora local de Ecuador)
 // Sin horario configurado → false (no se avisa nada).
+// Mensaje oficial de fuera de horario (lo envía el SERVIDOR, no la IA):
+// lista ordenada Lunes→Domingo con emojis, armada desde el horario REAL del negocio.
+const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+function buildScheduleMessage(biz, schedule) {
+  const active = (schedule || []).filter(s => s.is_active)
+  const fmt = t => String(t).slice(0, 5)                    // '09:00:00' → '09:00'
+  const order = [1, 2, 3, 4, 5, 6, 0]                       // Lunes → Domingo
+  const lines = order.map(d => {
+    const cfg = active.find(s => s.day_of_week === d)
+    return cfg
+      ? `🕐 *${DAY_NAMES[d]}:* ${fmt(cfg.open_time)} – ${fmt(cfg.close_time)}`
+      : `🚫 *${DAY_NAMES[d]}:* cerrado`
+  })
+  return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
+}
+
+// Anti-repetición del aviso de fuera de horario: se avisa UNA vez y luego
+// silencio hasta reabrir (si sigue cerrado muchas horas después, se avisa de nuevo).
+const offHoursNotified = new Map()   // bizId::phone -> timestamp del último aviso
+const OFF_HOURS_RENOTIFY = 6 * 60 * 60 * 1000   // 6 horas
+
 function isOutsideHours(schedule) {
   const active = (schedule || []).filter(s => s.is_active)
   if (!active.length) return false
@@ -611,6 +632,30 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
     return
   }
 
+  // ── FUERA DE HORARIO (corte por CÓDIGO, no por prompt) ────
+  // Si el negocio tiene horario configurado y está cerrado: el servidor envía
+  // UNA vez la lista de horarios y luego guarda silencio hasta la reapertura.
+  // El dueño no se ve afectado (sus reportes se atienden arriba); si el negocio
+  // no tiene horario cargado, el bot atiende 24/7 como siempre.
+  const schedule = await db.getSchedule(biz.id).catch(() => [])
+  if (isOutsideHours(schedule)) {
+    await db.saveMessage(biz.id, from, 'user', text)
+    await db.upsertSession(biz.id, from, { last_message: text, last_message_at: new Date().toISOString() })
+    const offKey = biz.id + '::' + from
+    const lastNotice = offHoursNotified.get(offKey) || 0
+    if (Date.now() - lastNotice > OFF_HOURS_RENOTIFY) {
+      if (offHoursNotified.size > 5000) offHoursNotified.clear()   // limpieza simple
+      offHoursNotified.set(offKey, Date.now())
+      const offMsg = buildScheduleMessage(biz, schedule)
+      await sendFn(offMsg)
+      await db.saveMessage(biz.id, from, 'assistant', offMsg)
+      console.log(`🌙 [${biz.name}] fuera de horario — horarios enviados a ${from}`)
+    } else {
+      console.log(`🌙 [${biz.name}] fuera de horario — silencio (ya avisado) — ${from}`)
+    }
+    return
+  }
+
   // Mostrar "escribiendo…" YA (mientras la IA piensa) — se quita al enviar la respuesta
   if (sendTyping) { try { await sendTyping() } catch(e){} }
 
@@ -618,13 +663,13 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   const needsMemory = /vez pasada|anterior|última vez|last time|antes|pedí|ordené|compré/i.test(text)
   const historyLimit = needsMemory ? 24 : 8
 
-  const [policies, history, availableSlots, schedule, totalProducts] = await Promise.all([
+  const [policies, history, availableSlots, totalProducts] = await Promise.all([
     db.getPolicies(biz.id),
     // Corte de historial: si el dueño cerró la venta, el bot ignora lo anterior a ese punto
     db.getContactHistory(biz.id, from, historyLimit, session?.closed_sale_at || null),
     db.getAvailableSlots(biz.id).catch(() => null),
-    db.getSchedule(biz.id).catch(() => []),
     db.countProducts(biz.id).catch(() => 0)
+    // (schedule ya se cargó arriba para el corte de fuera de horario)
   ])
 
   // Post-venta: hubo un cierre y el bot aún no ha saludado tras ese corte (primer mensaje nuevo)
@@ -959,4 +1004,4 @@ async function handleImage(from, imageBuffer, mimeType, bizPhone, opts = {}) {
 }
 
 const sendWhatsAppMessage = (biz, to, text) => sendText(biz, to, text)
-module.exports = { handleMessage, handleImage, processMessage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct }
+module.exports = { handleMessage, handleImage, processMessage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct, isOutsideHours, buildScheduleMessage }

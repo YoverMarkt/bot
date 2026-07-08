@@ -1158,8 +1158,8 @@ function renderDashboardBI(d) {
   ]
   const cmp = d.comparison
   const cmpRows = [
-    { label: d.label, value: Math.round(cmp.curTotal) },
-    { label: 'Anterior', value: Math.round(cmp.prevTotal) }
+    { label: d.label, value: Number(cmp.curTotal) || 0 },
+    { label: 'Anterior', value: Number(cmp.prevTotal) || 0 }
   ]
 
   const tr = d.trend || { rows: [] }
@@ -1223,7 +1223,7 @@ function renderReports(d) {
   let trend
   if (c.pct === null) trend = c.curTotal>0 ? '🚀 sin base anterior' : 'sin datos'
   else trend = `<span style="color:${c.pct>=0?'#1a7f37':'var(--red)'}">${c.pct>=0?'▲ +':'▼ '}${c.pct.toFixed(1)}%</span>`
-  const comp = hBars([{label:esc(c.label||'Actual'),value:Math.round(c.curTotal)},{label:'Anterior',value:Math.round(c.prevTotal)}],{fmt:repMoney,color:'var(--c1)'})+
+  const comp = hBars([{label:esc(c.label||'Actual'),value:Number(c.curTotal)||0},{label:'Anterior',value:Number(c.prevTotal)||0}],{fmt:repMoney,color:'var(--c1)'})+
     `<div style="font-size:12px;margin-top:10px;color:var(--muted)">${c.curOrders} vs ${c.prevOrders} pedidos · Variación: ${trend}</div>`
   const low = d.lowMovement.rows.length
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.lowMovement.rows.map(p=>`<li style="margin-bottom:3px">${esc(p.name)} — ${p.qty} uds</li>`).join('')}</ul>`
@@ -1235,7 +1235,7 @@ function renderReports(d) {
     ? `<ul style="margin:0;padding-left:18px;font-size:13px">${d.pending.rows.map(x=>`<li style="margin-bottom:3px">${esc(x.name)}${x.last_message?' — "'+esc(String(x.last_message).slice(0,40))+'"':''}</li>`).join('')}</ul>`
     : repEmpty('No hay cotizaciones sin cerrar. ✅')
   const seller = (d.bySeller && d.bySeller.rows.length)
-    ? hBars(d.bySeller.rows.map(r=>({label:r.name,value:Math.round(r.total)})),{fmt:repMoney,color:'var(--c1)'})
+    ? hBars(d.bySeller.rows.map(r=>({label:r.name,value:Number(r.total)||0})),{fmt:repMoney,color:'var(--c1)'})
     : repEmpty('Sin ventas en el período.')
   const consulted = (d.mostConsulted && d.mostConsulted.rows.length)
     ? hBars(d.mostConsulted.rows.map(r=>({label:r.name,value:r.count})),{fmt:v=>v+' cons.',color:'var(--c2)'})
