@@ -20,6 +20,8 @@ Guía obligatoria para trabajar en este proyecto sin romper la arquitectura ni e
 
 ## 1. QUÉ ES EL PROYECTO
 
+> 📐 **Arquitectura objetivo y plan de migración:** ver **`ARQUITECTURA.md`** (decidido 2026-07-06: migración GRADUAL a monorepo con server ordenado en routes/services + paneles en React+Vite+TS; patrón estrangulador, nunca big-bang; regla: todo lo NUEVO nace en la estructura nueva). Leerlo antes de crear archivos o features nuevas.
+
 **BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios como perfumerías, barberías, tiendas y clínicas: cada negocio tiene su propio bot (prompt, catálogo, horarios), su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, agenda citas, vende, y deriva a un humano cuando hace falta.
 
 ---
