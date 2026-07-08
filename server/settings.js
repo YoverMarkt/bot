@@ -9,7 +9,8 @@ const ALLOWED_KEYS = [
   'openai_api_key',
   'gemini_api_key',
   'groq_api_key',
-  'ai_provider',        // 'claude' | 'openai' | 'gemini' | 'groq'
+  'deepseek_api_key',
+  'ai_provider',        // 'claude' | 'openai' | 'gemini' | 'groq' | 'deepseek'
   'telegram_bot_token',
   'ycloud_verify_token',
   'retell_api_key',
