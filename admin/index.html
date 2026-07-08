@@ -376,6 +376,7 @@ tr:hover td{background:var(--paper)}
           <label class="lbl">Proveedor de IA activo</label>
           <select id="srv-ai-provider" onchange="toggleAiFields()">
             <option value="groq">Groq (Llama) — GRATIS, funciona en todo país ⭐</option>
+            <option value="deepseek">DeepSeek — muy barato, buena calidad (solo texto; audio/fotos los cubren las otras keys)</option>
             <option value="gemini">Google Gemini — GRATIS (puede requerir facturación)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
             <option value="claude">Claude (Anthropic)</option>
@@ -385,6 +386,12 @@ tr:hover td{background:var(--paper)}
         <div id="srv-groq-fields" style="display:none">
           <div class="fg"><label class="lbl">Groq API Key <span style="color:var(--muted);font-weight:400">— gratis en console.groq.com/keys</span></label>
             <input type="password" id="srv-groq-key" placeholder="gsk_...">
+          </div>
+        </div>
+
+        <div id="srv-deepseek-fields" style="display:none">
+          <div class="fg"><label class="lbl">DeepSeek API Key <span style="color:var(--muted);font-weight:400">— en platform.deepseek.com. ⚠️ Requiere al menos una key de Groq/OpenAI/Gemini activa para audio y fotos</span></label>
+            <input type="password" id="srv-deepseek-key" placeholder="sk-...">
           </div>
         </div>
 
@@ -483,7 +490,8 @@ tr:hover td{background:var(--paper)}
           <div class="fg"><label class="lbl">% que envía AUDIOS</label><input type="number" id="cc-audio" value="15" oninput="calcUpdate()"></div>
           <hr style="border:none;border-top:1px solid var(--bd);margin:14px 0">
           <div class="card-t" style="font-size:12px">Costos fijos y tarifas</div>
-          <div class="fg"><label class="lbl">Costo WhatsApp por mensaje ($)<span style="color:var(--faint)"> — servicio suele ser $0</span></label><input type="number" step="0.001" id="cc-wa" value="0" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">Costo Meta por mensaje SALIENTE ($)<span style="color:var(--faint)"> — desde el 1 de octubre Meta cobra TODOS los mensajes salientes, incluidos los de servicio (antes gratis). Pon aquí tu tarifa real de Meta/YCloud</span></label><input type="number" step="0.001" id="cc-wa" value="0.01" oninput="calcUpdate()"></div>
+          <div class="fg"><label class="lbl">Colchón de seguridad Meta (%)<span style="color:var(--faint)"> — modelo TODO INCLUIDO: tú absorbes Meta, este colchón te cubre si el cliente conversa más de lo estimado</span></label><input type="number" step="5" id="cc-buffer" value="20" oninput="calcUpdate()"></div>
           <div class="fg"><label class="lbl">Costos fijos mensuales ($) — hosting, dominio</label><input type="number" step="1" id="cc-fixed" value="11" oninput="calcUpdate()"></div>
           <div class="fg">
             <label class="lbl">Multiplicador de precio (margen)</label>
@@ -511,7 +519,7 @@ tr:hover td{background:var(--paper)}
             <div style="display:flex;justify-content:space-between;font-size:14px"><span style="opacity:.8">Costo total/mes</span><strong id="calc-cost">$0</strong></div>
             <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.7;margin-top:4px"><span>Costo por cliente</span><span id="calc-percli">$0</span></div>
             <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(199,242,107,.15);padding:12px 14px;border-radius:10px;margin-top:12px">
-              <div><div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Precio sugerido</div><div style="font-size:26px;font-weight:800;font-family:'Syne',sans-serif" id="calc-price">$0</div></div>
+              <div><div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.05em">Precio sugerido (todo incluido)</div><div style="font-size:26px;font-weight:800;font-family:'Syne',sans-serif" id="calc-price">$0</div></div>
               <div style="text-align:right"><div style="font-size:11px;opacity:.8">Ganancia/mes</div><div style="font-size:18px;font-weight:700;color:#c7f26b" id="calc-profit">$0</div></div>
             </div>
           </div>
@@ -644,6 +652,9 @@ tr:hover td{background:var(--paper)}
         <label class="lbl">Inteligencia Artificial <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">(sobrescribe la configuración global)</span></label>
         <select id="cm-ai-provider">
           <option value="">Usar configuración global del servidor</option>
+          <option value="groq">Groq (Llama)</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="gemini">Google Gemini</option>
           <option value="claude">Claude (Anthropic)</option>
           <option value="openai">ChatGPT (OpenAI)</option>
         </select>
@@ -657,6 +668,15 @@ tr:hover td{background:var(--paper)}
           <option value="citas">📅 Con citas — activa el calendario de reservas</option>
         </select>
         <div style="font-size:11px;color:var(--muted);margin-top:4px" id="mode-hint">"Con citas" hace que el bot ofrezca agendar (barbería, clínica, spa). "Normal" para tiendas, perfumerías, venta de agua, etc. El horario de atención se muestra en ambos modos.</div>
+      </div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label class="lbl">Modo venta</label>
+        <select id="cm-sales">
+          <option value="vende">🧾 Vende — el bot cierra pedidos y el sistema envía el total oficial</option>
+          <option value="informa">💬 Solo informativo — asesora y deriva al asesor si quieren comprar</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">"Vende" para pizzerías, tiendas, distribuidoras. "Solo informativo" para negocios que prefieren cerrar las ventas con un humano (ej. MasPura). En ambos casos los precios y totales los calcula el sistema, nunca la IA.</div>
       </div>
 
       <!-- Retell AI -->
@@ -1087,14 +1107,19 @@ function calcUpdate(){
   const ph = (+(document.getElementById('cc-photo').value)||0)/100
   const au = (+(document.getElementById('cc-audio').value)||0)/100
   const wa = +(document.getElementById('cc-wa').value)||0
+  const buf = (+(document.getElementById('cc-buffer').value)||0)/100
   const fixed = +(document.getElementById('cc-fixed').value)||0
   const mult = +(document.getElementById('cc-mult').value)||3
 
   const totalMsgs = n * m
+  // Meta cobra por mensaje SALIENTE (lo que envía el bot ≈ la mitad de la conversación).
+  // Modelo TODO INCLUIDO: el colchón (%) cubre si el cliente conversa más de lo estimado.
+  // Gracias a la regla de eficiencia (una sola respuesta completa por turno) no se paga de más.
+  const outMsgs = Math.ceil(totalMsgs / 2)
   const cChat   = totalMsgs * CALC.chatPerMsg
   const cVision = n * ph * CALC.visionPerImg
   const cAudio  = n * au * CALC.audioAvgMin * CALC.audioPerMin
-  const cWa     = totalMsgs * wa
+  const cWa     = outMsgs * wa * (1 + buf)
   const cTotal  = cChat + cVision + cAudio + cWa + fixed
 
   const price  = cTotal * mult
@@ -1106,7 +1131,7 @@ function calcUpdate(){
     <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🤖 Chat IA (${totalMsgs.toLocaleString()} msgs)</span><span>${f(cChat)}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="opacity:.75">📸 Visión (${Math.round(n*ph)} fotos)</span><span>${f(cVision)}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🎙️ Audio (${Math.round(n*au)} notas)</span><span>${f(cAudio)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">💬 WhatsApp</span><span>${f(cWa)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="opacity:.75">💬 WhatsApp Meta (${outMsgs.toLocaleString()} salientes ${buf>0?`+${Math.round(buf*100)}% colchón`:''})</span><span>${f(cWa)}</span></div>
     <div style="display:flex;justify-content:space-between"><span style="opacity:.75">🖥️ Fijos (hosting, dominio)</span><span>${f(fixed)}</span></div>`
   document.getElementById('calc-cost').textContent   = f(cTotal)
   document.getElementById('calc-percli').textContent = n ? f(cTotal/n) : '$0'
@@ -1126,6 +1151,7 @@ function calcUpdate(){
       <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Costo</span><span>${f(cTotal)}</span></div>
       <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Ganancia</span><strong style="color:${ok?'#2e9e44':'#d63b2f'}">${f(margin)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span style="opacity:.7">Margen</span><span style="color:${ok?'#2e9e44':'#d63b2f'}">${marginPct.toFixed(0)}% (${realMult.toFixed(1)}x)</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="opacity:.7">De tu precio, Meta se lleva</span><span>${f(cWa)} (${Math.round(cWa/myPrice*100)}%)</span></div>
       <div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:${ok?'rgba(46,158,68,.1)':'rgba(214,59,47,.1)'};font-size:12px;color:${ok?'#2e9e44':'#d63b2f'}">${ok? (marginPct>=200?'✅ Excelente margen':'✅ Rentable, pero podrías cobrar más') : '⚠️ Estás cobrando por debajo del costo'}</div>`
   } else {
     mEl.innerHTML = '<span style="color:var(--faint);font-size:12px">Escribe tu precio para ver el margen exacto.</span>'
@@ -1168,6 +1194,7 @@ function openClientModal(id=null) {
   if (!id){
     ;['cm-name','cm-phone','cm-owner-phone','cm-kapso-key','cm-kapso-num','cm-kapso-verify','cm-ycloud-key','cm-meta-token','cm-meta-phone','cm-meta-verify','cm-telegram-token','cm-retell','cm-email','cm-password','cm-notes','cm-rate'].forEach(i=>{const el=document.getElementById(i);if(el)el.value=''})
     document.getElementById('cm-mode').value='normal'
+    document.getElementById('cm-sales').value='vende'
   document.getElementById('cm-ai-provider').value=''
     document.getElementById('cm-plan').value='basic'
     document.getElementById('cm-provider').value='ycloud'
@@ -1218,6 +1245,7 @@ async function editClient(id) {
   document.getElementById('cm-telegram-token').value=c.telegram_bot_token||''
   document.getElementById('cm-ai-provider').value=c.ai_provider||''
   document.getElementById('cm-mode').value=c.takes_bookings?'citas':'normal'
+  document.getElementById('cm-sales').value=c.takes_orders===false?'informa':'vende'
   document.getElementById('cm-retell').value=c.retell_agent_id||''
   document.getElementById('cm-notes').value=c.notes||''
   document.getElementById('cm-owner-phone').value=c.owner_phone||''
@@ -1267,6 +1295,7 @@ async function saveClient() {
     telegram_bot_token:document.getElementById('cm-telegram-token').value||null,
     ai_provider:document.getElementById('cm-ai-provider').value||null,
     takes_bookings:document.getElementById('cm-mode').value==='citas',
+    takes_orders:document.getElementById('cm-sales').value!=='informa',
     retell_agent_id:document.getElementById('cm-retell').value||null,
     notes:document.getElementById('cm-notes').value||null,
     owner_phone:document.getElementById('cm-owner-phone').value.trim()||null,
@@ -1534,6 +1563,7 @@ function resetVfyStatus() {
 function toggleAiFields() {
   const p = document.getElementById('srv-ai-provider').value
   document.getElementById('srv-groq-fields').style.display   = p === 'groq'   ? 'block' : 'none'
+  document.getElementById('srv-deepseek-fields').style.display = p === 'deepseek' ? 'block' : 'none'
   document.getElementById('srv-gemini-fields').style.display = p === 'gemini' ? 'block' : 'none'
   document.getElementById('srv-claude-fields').style.display = p === 'claude'  ? 'block' : 'none'
   document.getElementById('srv-openai-fields').style.display = p === 'openai' ? 'block' : 'none'
@@ -1549,6 +1579,7 @@ async function loadSrvSettings() {
     toggleAiFields()
     // Mostrar estado (enmascarado) de cada key
     setSrvKeyHint('srv-groq-key',      d.groq_api_key)
+    setSrvKeyHint('srv-deepseek-key',  d.deepseek_api_key)
     setSrvKeyHint('srv-gemini-key',    d.gemini_api_key)
     setSrvKeyHint('srv-anthropic-key', d.anthropic_api_key)
     setSrvKeyHint('srv-openai-key',    d.openai_api_key)
@@ -1576,6 +1607,7 @@ async function saveSrvSettings() {
   const payload = {
     ai_provider:       document.getElementById('srv-ai-provider').value,
     groq_api_key:      document.getElementById('srv-groq-key').value      || undefined,
+    deepseek_api_key:  document.getElementById('srv-deepseek-key').value  || undefined,
     gemini_api_key:    document.getElementById('srv-gemini-key').value    || undefined,
     anthropic_api_key: document.getElementById('srv-anthropic-key').value || undefined,
     openai_api_key:    document.getElementById('srv-openai-key').value    || undefined,
@@ -1597,7 +1629,7 @@ async function saveSrvSettings() {
       res.textContent = '✅ Guardado correctamente'
       res.style.color = '#2d7a00'
       // Limpiar campos de password por seguridad
-      ;['srv-groq-key','srv-gemini-key','srv-anthropic-key','srv-openai-key','srv-telegram-token','srv-retell-key','srv-cld-key','srv-cld-secret'].forEach(id => {
+      ;['srv-groq-key','srv-deepseek-key','srv-gemini-key','srv-anthropic-key','srv-openai-key','srv-telegram-token','srv-retell-key','srv-cld-key','srv-cld-secret'].forEach(id => {
         const el = document.getElementById(id)
         if (el && el.value) { el.placeholder = '••••••' + el.value.slice(-4); el.value = '' }
       })
@@ -1626,6 +1658,7 @@ async function verifySrvAI() {
       body: JSON.stringify({
         provider,
         groq_api_key:      document.getElementById('srv-groq-key').value      || undefined,
+        deepseek_api_key:  document.getElementById('srv-deepseek-key').value  || undefined,
         gemini_api_key:    document.getElementById('srv-gemini-key').value    || undefined,
         anthropic_api_key: document.getElementById('srv-anthropic-key').value || undefined,
         openai_api_key:    document.getElementById('srv-openai-key').value    || undefined,

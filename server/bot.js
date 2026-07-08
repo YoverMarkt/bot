@@ -5,6 +5,8 @@ const db        = require('./db')
 const ycloud    = require('./ycloud')
 const settings  = require('./settings')
 const reports   = require('./reports')
+const moneyCore = require('./money')      // núcleo de dinero: la IA conversa, el código calcula
+const payments  = require('./payments')   // pasarelas (enchufable; hoy sin pasarela)
 const { businessNeedsCalendar } = require('./calendar')
 require('dotenv').config()
 
@@ -259,6 +261,24 @@ async function callAI(systemPrompt, history, userMessage, bizAiProvider = null) 
     return r.choices[0].message.content
   }
 
+  if (provider === 'deepseek') {
+    const apiKey = await settings.get('deepseek_api_key')
+    if (!apiKey) throw new Error('Falta DeepSeek API Key en Configuración del servidor')
+    // DeepSeek es compatible con OpenAI → reutilizamos el SDK con otra baseURL.
+    // Solo texto: audio y visión los cubren los otros proveedores (sentidos automáticos).
+    const deepseek = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
+    const r = await deepseek.chat.completions.create({
+      model: 'deepseek-chat',
+      max_tokens: 800,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history.map(normalize),
+        { role: 'user', content: userMessage }
+      ]
+    })
+    return r.choices[0].message.content
+  }
+
   if (provider === 'gemini') {
     const apiKey = await settings.get('gemini_api_key')
     if (!apiKey) throw new Error('Falta Gemini API Key en Configuración del servidor')
@@ -319,6 +339,27 @@ function scheduleToText(schedule) {
 
 // ¿El cliente escribe FUERA del horario de atención? (hora local de Ecuador)
 // Sin horario configurado → false (no se avisa nada).
+// Mensaje oficial de fuera de horario (lo envía el SERVIDOR, no la IA):
+// lista ordenada Lunes→Domingo con emojis, armada desde el horario REAL del negocio.
+const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+function buildScheduleMessage(biz, schedule) {
+  const active = (schedule || []).filter(s => s.is_active)
+  const fmt = t => String(t).slice(0, 5)                    // '09:00:00' → '09:00'
+  const order = [1, 2, 3, 4, 5, 6, 0]                       // Lunes → Domingo
+  const lines = order.map(d => {
+    const cfg = active.find(s => s.day_of_week === d)
+    return cfg
+      ? `🕐 *${DAY_NAMES[d]}:* ${fmt(cfg.open_time)} – ${fmt(cfg.close_time)}`
+      : `🚫 *${DAY_NAMES[d]}:* cerrado`
+  })
+  return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
+}
+
+// Anti-repetición del aviso de fuera de horario: se avisa UNA vez y luego
+// silencio hasta reabrir (si sigue cerrado muchas horas después, se avisa de nuevo).
+const offHoursNotified = new Map()   // bizId::phone -> timestamp del último aviso
+const OFF_HOURS_RENOTIFY = 6 * 60 * 60 * 1000   // 6 horas
+
 function isOutsideHours(schedule) {
   const active = (schedule || []).filter(s => s.is_active)
   if (!active.length) return false
@@ -420,11 +461,19 @@ function buildPrompt(biz, products, policies, voiceMode = false, userQuery = '',
   }
 
   // Reglas técnicas mínimas (mecánica de derivar) — NO imponen tono ni personalidad
+  // Modo venta por negocio: true (default) = el bot cierra pedidos con ##PEDIDO##;
+  // false = solo informativo → deriva al asesor si el cliente quiere comprar.
+  const takesOrders = biz.takes_orders !== false
+  const orderRule = takesOrders
+    ? `- Cuando el cliente CONFIRME la compra (acepta el/los producto(s) y ya toca coordinar pago o entrega), escribe tu mensaje normal SIN mencionar totales y agrega al FINAL, en su propia línea, la etiqueta ##PEDIDO:nombre del producto x cantidad## usando los nombres EXACTOS del catálogo de arriba; si son varios productos sepáralos con ";". Ejemplo: ##PEDIDO:Pizza Familiar Pepperoni x2; Coca Cola 1.5L x1##. El sistema calcula el TOTAL oficial con los precios reales de la base y le envía el resumen al cliente (el cliente NO ve la etiqueta). NO la pongas si el cliente todavía pregunta, compara o duda.`
+    : `- Este negocio NO gestiona ventas por el bot: si el cliente quiere comprar, cotizar o cerrar un pedido, NO lo gestiones tú — respóndele con amabilidad que un asesor del equipo continuará con él y agrega al FINAL ##HANDOFF## (el sistema deriva el chat). NUNCA pidas datos de pago ni confirmes pedidos.`
+
   const funcRules = `INSTRUCCIONES TÉCNICAS (no cambian tu forma de hablar, solo cómo funciona el sistema):
 - No inventes precios ni información que no esté en los DATOS de arriba.
 - EFICIENCIA: responde SIEMPRE en UN SOLO mensaje, completo y ordenado. No dividas la respuesta en varios envíos ni mandes mensajes de solo cortesía ("¡Claro!", "Un momento"). Da la información completa de una vez (qué es, precio si lo hay y el siguiente paso) y adelántate a la siguiente duda. Si necesitas varios datos del cliente (nombre, dirección, pago o una especificación), pídelos TODOS juntos en el mismo mensaje.
 - Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
-- Cuando el cliente CONFIRME la compra (acepta el producto y su precio y ya toca coordinar pago o entrega), escribe tu mensaje normal y agrega al FINAL, en su propia línea, exactamente la etiqueta ##VENTA## (el sistema la usa para avisar al dueño; el cliente NO la ve). NO la pongas si el cliente todavía pregunta, compara o duda.
+${orderRule}
+- DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente.
 - FOTOS Y VIDEOS: si el cliente pide ver una foto o un video de un producto, responde breve y natural (ej.: "Con gusto, permítame y se lo muestro 😊"). NO afirmes qué tipo de archivo es, NO des por hecho que exista y NUNCA escribas enlaces: el sistema se encarga de enviarle EXACTAMENTE la media que ese producto tenga (o de avisarle si no hay). Si no estás seguro de a cuál producto se refiere, pregúntaselo antes.`
 
   // Estilo por defecto SOLO si el dueño no definió su propio prompt
@@ -583,6 +632,30 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
     return
   }
 
+  // ── FUERA DE HORARIO (corte por CÓDIGO, no por prompt) ────
+  // Si el negocio tiene horario configurado y está cerrado: el servidor envía
+  // UNA vez la lista de horarios y luego guarda silencio hasta la reapertura.
+  // El dueño no se ve afectado (sus reportes se atienden arriba); si el negocio
+  // no tiene horario cargado, el bot atiende 24/7 como siempre.
+  const schedule = await db.getSchedule(biz.id).catch(() => [])
+  if (isOutsideHours(schedule)) {
+    await db.saveMessage(biz.id, from, 'user', text)
+    await db.upsertSession(biz.id, from, { last_message: text, last_message_at: new Date().toISOString() })
+    const offKey = biz.id + '::' + from
+    const lastNotice = offHoursNotified.get(offKey) || 0
+    if (Date.now() - lastNotice > OFF_HOURS_RENOTIFY) {
+      if (offHoursNotified.size > 5000) offHoursNotified.clear()   // limpieza simple
+      offHoursNotified.set(offKey, Date.now())
+      const offMsg = buildScheduleMessage(biz, schedule)
+      await sendFn(offMsg)
+      await db.saveMessage(biz.id, from, 'assistant', offMsg)
+      console.log(`🌙 [${biz.name}] fuera de horario — horarios enviados a ${from}`)
+    } else {
+      console.log(`🌙 [${biz.name}] fuera de horario — silencio (ya avisado) — ${from}`)
+    }
+    return
+  }
+
   // Mostrar "escribiendo…" YA (mientras la IA piensa) — se quita al enviar la respuesta
   if (sendTyping) { try { await sendTyping() } catch(e){} }
 
@@ -590,13 +663,13 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   const needsMemory = /vez pasada|anterior|última vez|last time|antes|pedí|ordené|compré/i.test(text)
   const historyLimit = needsMemory ? 24 : 8
 
-  const [policies, history, availableSlots, schedule, totalProducts] = await Promise.all([
+  const [policies, history, availableSlots, totalProducts] = await Promise.all([
     db.getPolicies(biz.id),
     // Corte de historial: si el dueño cerró la venta, el bot ignora lo anterior a ese punto
     db.getContactHistory(biz.id, from, historyLimit, session?.closed_sale_at || null),
     db.getAvailableSlots(biz.id).catch(() => null),
-    db.getSchedule(biz.id).catch(() => []),
     db.countProducts(biz.id).catch(() => 0)
+    // (schedule ya se cargó arriba para el corte de fuera de horario)
   ])
 
   // Post-venta: hubo un cierre y el bot aún no ha saludado tras ese corte (primer mensaje nuevo)
@@ -693,13 +766,24 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   // se limpia del texto (las reservas nativas usan ##BOOK:...## más arriba).
   finalText = finalText.replace('##BOOKING##', '').trim()
 
+  // ── NÚCLEO DE DINERO: ##PEDIDO:producto x cantidad; ...## ──
+  // La IA solo arma la LISTA del pedido; los precios y el TOTAL los calcula el
+  // SERVIDOR leyendo la base (la IA jamás decide un monto). Aquí solo se captura
+  // el payload; el pedido se procesa después de enviar la respuesta.
+  let pedidoPayload = null
+  const pedidoMatch = finalText.match(/##\s*PEDIDO\s*:\s*([^#]+)##/i)
+  if (pedidoMatch) {
+    pedidoPayload = pedidoMatch[1].trim()
+    finalText = finalText.replace(pedidoMatch[0], '').trim()
+  }
+
   // Venta cerrada → avisar al dueño (modo manual + alarma). Se detecta por:
-  //  (a) etiqueta ##VENTA##/##PEDIDO## si el prompt la usa, o
-  //  (b) frases típicas de cierre de venta (respaldo, funciona con tu prompt actual)
+  //  (a) etiqueta ##PEDIDO:...## (nueva, con detalle) o ##VENTA##/##PEDIDO## simples, o
+  //  (b) frases típicas de cierre de venta (respaldo, funciona con prompts existentes)
   const saleTag = /##\s*(venta|pedido)\s*##/i.test(finalText)
   finalText = finalText.replace(/##\s*(venta|pedido)\s*##/gi, '').trim()
   const saleLow = finalText.toLowerCase()
-  const hasSale = saleTag || SALE_PHRASES.some(p => saleLow.includes(p))
+  const hasSale = saleTag || !!pedidoPayload || SALE_PHRASES.some(p => saleLow.includes(p))
 
   // Detectar handoff → la IA emite ##HANDOFF## cuando no puede ayudar (detección confiable)
   // Respaldo: frases de incertidumbre por si el modelo no usa la etiqueta
@@ -727,6 +811,46 @@ async function processMessage(biz, from, text, sendFn, sendImageFn, sendTyping, 
   }
 
   await humanizedSend(finalText, sendFn, sendTyping)
+
+  // ── Procesar el pedido (##PEDIDO##): total oficial calculado por CÓDIGO ──
+  // Resolución ESTRICTA contra el catálogo real: si UN solo ítem no se resuelve
+  // con certeza (o no tiene precio), NO se envía ningún total — el chat ya quedó
+  // en manual (hasSale) y el dueño lo cierra a mano. Con dinero no se adivina.
+  // Blindaje modo informativo: si el negocio NO vende por bot (takes_orders=false),
+  // se ignora cualquier ##PEDIDO## que el modelo emita por error (el chat igual
+  // pasó a manual por hasSale → el dueño lo atiende; jamás se crea un pedido).
+  if (pedidoPayload && biz.takes_orders === false) {
+    console.log(`🚫 [${biz.name}] ##PEDIDO## ignorado — negocio en modo informativo (takes_orders=false)`)
+    pedidoPayload = null
+  }
+  if (pedidoPayload) {
+    try {
+      const fullCatalog = preFiltered ? await db.getProducts(biz.id) : (products || [])
+      const parsed = moneyCore.parseItems(pedidoPayload)
+      const { resolved, unresolved } = moneyCore.resolveItems(parsed, fullCatalog)
+      if (parsed.length && !unresolved.length) {
+        const order = moneyCore.computeOrder(resolved)
+        const { data: saved, error: ordErr } = await db.createOrder({
+          business_id: biz.id,
+          contact_phone: from,
+          contact_name: session?.contact_name || null,
+          status: 'pendiente',
+          subtotal: order.subtotal,
+          discount: order.discount,
+          total: order.total
+        }, order.items)
+        if (ordErr) throw new Error(ordErr.message)
+        const payLink = await payments.createPaymentLink(biz, saved)   // hoy null; mañana DeUna u otra
+        if (payLink) await db.updateOrder(biz.id, saved.id, { payment_link: payLink })
+        const summary = moneyCore.buildSummary(order, payLink)
+        await sendFn(summary)
+        await db.saveMessage(biz.id, from, 'assistant', summary)
+        console.log(`🧾 [${biz.name}] Pedido #${saved.id.slice(0, 8)} — total oficial $${order.total.toFixed(2)} (${order.items.length} ítems) — ${from}`)
+      } else {
+        console.log(`⚠️ [${biz.name}] Pedido SIN total oficial — ítems no resueltos: ${unresolved.join(' | ') || '(vacío)'} — pasa al dueño`)
+      }
+    } catch(e) { console.error('❌ procesando pedido:', e.message) }
+  }
 
   // — Envío de fotos/videos de producto (Cloudinary) — PRECISO Y ESTRICTO —
   // Identifica UN producto (el que se está hablando) y envía SOLO la media que ESE
@@ -880,4 +1004,4 @@ async function handleImage(from, imageBuffer, mimeType, bizPhone, opts = {}) {
 }
 
 const sendWhatsAppMessage = (biz, to, text) => sendText(biz, to, text)
-module.exports = { handleMessage, handleImage, processMessage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct }
+module.exports = { handleMessage, handleImage, processMessage, buildPrompt, callAI, sendWhatsAppMessage, transcribeAudio, embedText, indexProduct, isOutsideHours, buildScheduleMessage }

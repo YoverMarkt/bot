@@ -180,7 +180,7 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
     kapso_api_key, kapso_number_id, kapso_verify_token,
     ycloud_api_key, ycloud_number,
     meta_token, meta_phone_id, meta_verify_token,
-    telegram_bot_token, retell_agent_id, ai_provider, takes_bookings,
+    telegram_bot_token, retell_agent_id, ai_provider, takes_bookings, takes_orders,
     plan, plan_expires_at, client_email, client_password, notes, monthly_rate, owner_phone
   } = req.body
   if (!name || !whatsapp_number) return res.status(400).json({ error: 'Nombre y número requeridos' })
@@ -196,6 +196,7 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
       telegram_bot_token: telegram_bot_token || null,
       retell_agent_id:   retell_agent_id || null,
       takes_bookings:    takes_bookings === true,
+      takes_orders:      takes_orders !== false,   // default: el bot vende; false = solo informativo
       ai_provider:       ai_provider || null,
       owner_phone:       owner_phone || null,
       plan: plan || 'basic',
@@ -203,9 +204,9 @@ app.post('/api/admin/clients', authAdmin, async (req, res) => {
       active: true, bot_active: true, suspended: false, notes
     }
     let { data: biz, error } = await db.createBusiness(bizPayload)
-    // Si la columna takes_bookings aún no existe (migración sin correr), reintenta sin ella
-    if (error && /takes_bookings/.test(error.message || '')) {
-      const { takes_bookings: _omit, ...fallback } = bizPayload
+    // Si takes_bookings/takes_orders aún no existen (migración sin correr), reintenta sin ellas
+    if (error && /(takes_bookings|takes_orders)/.test(error.message || '')) {
+      const { takes_bookings: _omit, takes_orders: _omit2, ...fallback } = bizPayload
       ;({ data: biz, error } = await db.createBusiness(fallback))
     }
     if (error) return res.status(500).json({ error: error.message })
@@ -229,17 +230,18 @@ app.put('/api/admin/clients/:id', authAdmin, async (req, res) => {
   const ALLOWED = ['name','type','description','hours','address','phone','social','payment_methods',
     'whatsapp_number','whatsapp_provider','plan','plan_expires_at','active','bot_active','suspended',
     'notes','slogan','monthly_rate','owner_phone','ycloud_api_key','ycloud_number','kapso_api_key','kapso_number_id','kapso_verify_token',
-    'meta_token','meta_phone_id','meta_verify_token','telegram_bot_token','retell_agent_id','ai_provider','takes_bookings']
+    'meta_token','meta_phone_id','meta_verify_token','telegram_bot_token','retell_agent_id','ai_provider','takes_bookings','takes_orders']
   const bizData = {}
   for (const k of ALLOWED) if (k in req.body) bizData[k] = req.body[k]
   if ('monthly_rate' in bizData) bizData.monthly_rate = parseFloat(bizData.monthly_rate) || null
   try {
     if (Object.keys(bizData).length) {
       let { error } = await db.updateBusiness(req.params.id, bizData)
-      // Reintento si una columna aún no existe en la BD (migración sin correr): monthly_rate o takes_bookings
-      if (error && /(monthly_rate|takes_bookings)/.test(error.message || '')) {
+      // Reintento si una columna aún no existe en la BD (migración sin correr)
+      if (error && /(monthly_rate|takes_bookings|takes_orders)/.test(error.message || '')) {
         delete bizData.monthly_rate
         delete bizData.takes_bookings
+        delete bizData.takes_orders
         ;({ error } = await db.updateBusiness(req.params.id, bizData))
       }
       if (error) return res.status(500).json({ error: error.message })
@@ -558,6 +560,10 @@ app.post('/api/client/media', authClient, requirePermission('catalogo'), mediaUp
   }
 })
 app.delete('/api/client/products/:id', authClient, requirePermission('catalogo'), async (req, res) => { await db.deleteProduct(req.user.businessId, req.params.id); res.json({ ok: true }) })
+
+// ── PEDIDOS DEL BOT (núcleo de dinero: totales oficiales server-side) ──
+app.get('/api/client/orders', authClient, requirePermission('ventas'), async (req, res) =>
+  res.json(await db.getOrders(req.user.businessId)))
 
 // ── VENTAS (registro manual) Y PEDIDOS PENDIENTES ─────────
 // Prellenado del formulario: catálogo + lo que el bot ya cotizó en la conversación.
@@ -1008,7 +1014,7 @@ app.post('/api/admin/server-settings', authAdmin, async (req, res) => {
 
 // Verificar que las keys de IA funcionan
 app.post('/api/admin/server-settings/verify-ai', authAdmin, async (req, res) => {
-  const { provider, anthropic_api_key, openai_api_key, gemini_api_key, groq_api_key } = req.body
+  const { provider, anthropic_api_key, openai_api_key, gemini_api_key, groq_api_key, deepseek_api_key } = req.body
   try {
     if (provider === 'groq') {
       const key = groq_api_key || await srvSettings.get('groq_api_key')
@@ -1016,6 +1022,13 @@ app.post('/api/admin/server-settings/verify-ai', authAdmin, async (req, res) => 
       const groq = new (require('openai'))({ apiKey: key, baseURL: 'https://api.groq.com/openai/v1' })
       const r = await groq.chat.completions.create({ model: 'llama-3.3-70b-versatile', max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] })
       return res.json({ ok: true, info: `✅ Groq activo — ${r.model || 'llama-3.3-70b'}` })
+    }
+    if (provider === 'deepseek') {
+      const key = deepseek_api_key || await srvSettings.get('deepseek_api_key')
+      if (!key) return res.json({ ok: false, info: 'Falta DeepSeek API Key' })
+      const deepseek = new (require('openai'))({ apiKey: key, baseURL: 'https://api.deepseek.com' })
+      const r = await deepseek.chat.completions.create({ model: 'deepseek-chat', max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] })
+      return res.json({ ok: true, info: `✅ DeepSeek activo — ${r.model || 'deepseek-chat'}` })
     }
     if (provider === 'gemini') {
       const key = gemini_api_key || await srvSettings.get('gemini_api_key')

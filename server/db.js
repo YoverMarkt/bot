@@ -276,6 +276,23 @@ const updateClientUserById = async (bizId, id, fields) =>
 const deleteClientUserById = async (bizId, id) =>
   sb.from('client_users').delete().eq('business_id', bizId).eq('id', id).eq('role', 'employee')
 
+// ── PEDIDOS (núcleo de dinero: total oficial calculado por código) ──
+// La cabecera y los ítems se insertan juntos; si los ítems fallan, se borra
+// la cabecera para no dejar pedidos huérfanos sin detalle.
+const createOrder = async (order, items) => {
+  const { data, error } = await sb.from('orders').insert(order).select().single()
+  if (error || !data) return { error }
+  const rows = items.map(i => ({ ...i, order_id: data.id, business_id: order.business_id }))
+  const { error: e2 } = await sb.from('order_items').insert(rows)
+  if (e2) { await sb.from('orders').delete().eq('id', data.id); return { error: e2 } }
+  return { data }
+}
+const getOrders = async (bizId, limit = 100) =>
+  (await sb.from('orders').select('*, order_items(*)').eq('business_id', bizId)
+    .order('created_at', { ascending: false }).limit(limit)).data || []
+const updateOrder = async (bizId, id, data) =>
+  sb.from('orders').update({ ...data, updated_at: new Date().toISOString() }).eq('id', id).eq('business_id', bizId)
+
 // ── VENTAS Y REPORTES ─────────────────────────────────────
 // Toda función filtra por business_id (aislamiento multi-tenant).
 const createSale   = async data  => sb.from('sales').insert(data).select().single()
@@ -371,6 +388,7 @@ const getPendingOrders = async bizId => {
 
 module.exports = {
   getBusinessById, getBusinessBySlug, getBusinessByPhone, getAllBusinesses, createBusiness, updateBusiness, suspendBusiness, reactivateBusiness, deleteBusiness, getExpiredBusinesses,
+  createOrder, getOrders, updateOrder,
   createSale, addSaleItems, getSaleById, getSalesByContact, voidSale, getSalesWithItems, getLowStockProducts, getPendingOrders,
   getSaleCustomers, getCustomerSales, getWritersInRange, getHistoryInRange, getUserMessagesInRange,
   recordConsultations, getConsultationsInRange,
