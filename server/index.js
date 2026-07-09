@@ -11,7 +11,6 @@ const Anthropic = require('@anthropic-ai/sdk')
 const axios     = require('axios')
 const db        = require('./db')
 const bot       = require('./bot')
-const reports   = require('./reports')
 const retell    = require('./retell')
 const tunnel    = require('./tunnel')
 const srvSettings = require('./settings')
@@ -101,7 +100,7 @@ app.use('/client', express.static(path.join(__dirname, '../client'), { setHeader
 app.get('/', (_, res) => res.redirect('/admin'))
 
 // ── AUTH MIDDLEWARES (viven en middleware/auth.js — Fase 1 de ARQUITECTURA.md) ──
-const { JWT, authAdmin, authClient, requirePermission, requireOwner } = require('./middleware/auth')
+const { JWT, authAdmin, authClient, requireOwner } = require('./middleware/auth')
 
 // ══════════════════════════════════════════
 // ADMIN — LOGIN
@@ -327,243 +326,22 @@ app.put('/api/client/business', authClient, async (req, res) => {
 })
 
 // (GET /api/client/products vive en routes/products.routes.js)
-app.get('/api/client/conversations', authClient, requirePermission('conversaciones'), async (req, res) => res.json(await db.getConversations(req.user.businessId)))
+// ── CONVERSACIONES/ETIQUETAS, VENTAS, REPORTES y CITAS: viven en routes/ (Fase 1) ──
+app.use(require('./routes/sessions.routes'))
+app.use(require('./routes/sales.routes'))
+app.use(require('./routes/reports.routes'))
+app.use(require('./routes/bookings.routes'))
 
-// ── SESIONES / MODO MANUAL ────────────────────────────────
-app.get('/api/client/sessions', authClient, requirePermission('conversaciones'), async (req, res) => {
-  try { res.json(await db.getSessions(req.user.businessId)) }
-  catch { res.json([]) }
-})
-
-app.put('/api/client/sessions/:phone/mode', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const { manual } = req.body
-  await db.upsertSession(req.user.businessId, req.params.phone, { manual_mode: !!manual, unread_owner: false })
-  res.json({ ok: true })
-})
-
-// Cerrar venta: devuelve la conversación al bot Y marca un corte de historial.
-// El próximo mensaje del cliente se trata como conversación nueva (no retoma el pedido).
-app.put('/api/client/sessions/:phone/close', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const phone = decodeURIComponent(req.params.phone)
-  const now = new Date().toISOString()
-  let { error } = await db.upsertSession(req.user.businessId, phone, { manual_mode: false, unread_owner: false, closed_sale_at: now })
-  // Si la columna closed_sale_at aún no existe (migración sin correr), al menos devuelve al bot
-  if (error && /closed_sale_at/.test(error.message || '')) {
-    ;({ error } = await db.upsertSession(req.user.businessId, phone, { manual_mode: false, unread_owner: false }))
-  }
-  if (error) return res.status(500).json({ error: error.message })
-  res.json({ ok: true })
-})
-
-// Marcar un chat manual como atendido (calla la alarma de forma persistente)
-app.put('/api/client/sessions/:phone/read', authClient, requirePermission('conversaciones'), async (req, res) => {
-  await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { unread_owner: false })
-  res.json({ ok: true })
-})
-
-// Guardar/editar el nombre del contacto (para identificar quién escribe)
-app.put('/api/client/sessions/:phone/name', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const name = (req.body.name || '').trim().slice(0, 60)
-  await db.upsertSession(req.user.businessId, decodeURIComponent(req.params.phone), { contact_name: name || null })
-  res.json({ ok: true })
-})
-
-// ── ETIQUETAS de conversación (el dueño crea las suyas) ────
-app.get('/api/client/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
-  try { res.json(await db.getTags(req.user.businessId)) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-app.post('/api/client/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const name = (req.body.name || '').trim().slice(0, 30)
-  if (!name) return res.status(400).json({ error: 'Nombre requerido' })
-  try {
-    const { data, error } = await db.createTag(req.user.businessId, { name, color: req.body.color })
-    if (error) return res.status(500).json({ error: error.message })
-    res.status(201).json(data)
-  } catch(e) { res.status(500).json({ error: e.message }) }
-})
-app.put('/api/client/tags/:id', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const name = (req.body.name || '').trim().slice(0, 30)
-  if (!name) return res.status(400).json({ error: 'Nombre requerido' })
-  const { error } = await db.updateTag(req.user.businessId, req.params.id, { name, color: req.body.color })
-  if (error) return res.status(500).json({ error: error.message })
-  res.json({ ok: true })
-})
-app.delete('/api/client/tags/:id', authClient, requirePermission('conversaciones'), async (req, res) => {
-  try { await db.deleteTag(req.user.businessId, req.params.id); res.json({ ok: true }) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-// Asignar las etiquetas de una conversación (array de IDs)
-app.put('/api/client/sessions/:phone/tags', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const phone = decodeURIComponent(req.params.phone)
-  const tags = Array.isArray(req.body.tags) ? req.body.tags : []
-  const { error } = await db.upsertSession(req.user.businessId, phone, { tags })
-  if (error) return res.status(500).json({ error: /tags/.test(error.message || '') ? 'Falta correr la migración de etiquetas' : error.message })
-  res.json({ ok: true })
-})
-
-// Envía un mensaje al cliente por su canal (Telegram o WhatsApp)
-async function sendToContact(biz, phone, message) {
-  if (phone.startsWith('tg_')) {
-    const chatId = phone.replace('tg_', '')
-    const tgBot = require('./telegram').getBotInstance()
-    if (tgBot) await tgBot.telegram.sendMessage(chatId, message)
-  } else {
-    const { sendWhatsAppMessage } = require('./bot')
-    await sendWhatsAppMessage(biz, phone, message)
-  }
-}
-
-app.post('/api/client/sessions/:phone/send', authClient, requirePermission('conversaciones'), async (req, res) => {
-  const bizId = req.user.businessId
-  const phone = decodeURIComponent(req.params.phone)
-  const { message } = req.body
-  if (!message?.trim()) return res.status(400).json({ error: 'Mensaje vacío' })
-  try {
-    const biz = await db.getBusinessById(bizId)
-    await db.saveMessage(bizId, phone, 'owner', message)
-    await sendToContact(biz, phone, message)
-    res.json({ ok: true })
-  } catch(e) { res.status(500).json({ error: e.message }) }
-})
 app.get('/api/client/policies',      authClient, requireOwner, async (req, res) => res.json(await db.getPolicies(req.user.businessId) || {}))
 app.put('/api/client/policies',      authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, req.body); res.json({ ok: true }) })
 app.put('/api/client/bot-prompt',    authClient, requireOwner, async (req, res) => { await db.upsertPolicies(req.user.businessId, { bot_prompt: req.body.bot_prompt }); res.json({ ok: true }) })
-
-// ── HORARIOS ──────────────────────────────────────────────
-app.get('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getSchedule(req.user.businessId)))
-app.put('/api/client/schedule',  authClient, requirePermission('citas'), async (req, res) => { await db.upsertSchedule(req.user.businessId, req.body.days); res.json({ ok: true }) })
-
-// ── RESERVAS ──────────────────────────────────────────────
-app.get('/api/client/bookings',  authClient, requirePermission('citas'), async (req, res) => res.json(await db.getBookings(req.user.businessId, req.query.from, req.query.to)))
-app.put('/api/client/bookings/:id/status', authClient, requirePermission('citas'), async (req, res) => {
-  const { status } = req.body
-  if (!['pending', 'confirmed', 'cancelled', 'no_show'].includes(status)) return res.status(400).json({ error: 'Estado inválido' })
-  try {
-    const booking = await db.getBookingById(req.params.id)
-    // Aislamiento: la reserva debe pertenecer a ESTE negocio
-    if (!booking || booking.business_id !== req.user.businessId) return res.status(404).json({ error: 'Reserva no encontrada' })
-    await db.updateBookingStatus(req.user.businessId, req.params.id, status)
-
-    // Notificar al cliente por su canal (no bloquea la respuesta si falla)
-    if (booking && booking.contact_phone) {
-      const biz = await db.getBusinessById(req.user.businessId)
-      const fecha = booking.booking_date
-      const hora  = (booking.booking_time || '').slice(0, 5)
-      const svc   = booking.service ? ` de *${booking.service}*` : ''
-      let msg = null
-      if (status === 'confirmed') {
-        msg = `✅ ¡Tu cita${svc} quedó *confirmada* para el ${fecha} a las ${hora}! Te esperamos en ${biz.name} 😊`
-      } else if (status === 'cancelled') {
-        msg = `⚠️ Lamentamos informarte que tu cita${svc} del ${fecha} a las ${hora} fue *cancelada*. Si deseas, podemos agendarte en otro horario disponible. Escríbenos cuándo te conviene 🙏`
-      }
-      if (msg) {
-        sendToContact(biz, booking.contact_phone, msg)
-          .then(() => db.saveMessage(biz.id, booking.contact_phone, 'owner', msg))
-          .catch(e => console.error('❌ Notificación de reserva:', e.message))
-      }
-    }
-    res.json({ ok: true })
-  } catch(e) { res.status(500).json({ error: e.message }) }
-})
 
 // ── CATÁLOGO (productos + media) y PEDIDOS: viven en routes/ (Fase 1) ──
 app.use(require('./routes/products.routes'))
 app.use(require('./routes/orders.routes'))
 
-// ── VENTAS (registro manual) Y PEDIDOS PENDIENTES ─────────
-// Prellenado del formulario: catálogo + lo que el bot ya cotizó en la conversación.
-app.get('/api/client/sessions/:phone/quote', authClient, requirePermission('ventas'), async (req, res) => {
-  const bizId = req.user.businessId
-  const phone = decodeURIComponent(req.params.phone)
-  try {
-    const [products, history, session] = await Promise.all([
-      db.getProducts(bizId),
-      db.getContactHistory(bizId, phone, 30),
-      db.getSession(bizId, phone)
-    ])
-    const text = history.map(h => h.content || '').join(' ').toLowerCase()
-    const suggested = products
-      .filter(p => p.name && text.includes(p.name.toLowerCase()))
-      .map(p => ({ product_id: p.id, product_name: p.name, unit_price: Number(p.price_sale || p.price || 0), quantity: 1 }))
-    res.json({
-      contact_name: session?.contact_name || '',
-      products: products.map(p => ({ id: p.id, name: p.name, price: Number(p.price_sale || p.price || 0) })),
-      suggested
-    })
-  } catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Registrar "Venta realizada"
-app.post('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
-  const bizId = req.user.businessId
-  const { contact_phone, contact_name, items } = req.body
-  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'La venta necesita al menos un ítem' })
-  try {
-    const norm = items.map(i => {
-      const qty = parseInt(i.quantity) || 1
-      const price = parseFloat(i.unit_price) || 0
-      return { product_id: i.product_id || null, product_name: (i.product_name || 'Producto').trim(), quantity: qty, unit_price: price, line_total: +(qty * price).toFixed(2) }
-    })
-    const total = +norm.reduce((s, i) => s + i.line_total, 0).toFixed(2)
-    const { data: sale, error } = await db.createSale({ business_id: bizId, contact_phone: contact_phone || null, contact_name: contact_name || null, total, status: 'completada', source: 'manual', created_by: req.user.userId || null })
-    if (error) return res.status(500).json({ error: error.message })
-    await db.addSaleItems(norm.map(i => ({ ...i, sale_id: sale.id, business_id: bizId })))
-    // Al registrar la venta, la conversación deja de figurar como pendiente
-    if (contact_phone) await db.upsertSession(bizId, contact_phone, { unread_owner: false })
-    res.status(201).json({ ...sale, items: norm })
-  } catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Anular venta (revierte el registro y el conteo)
-app.post('/api/client/sales/:id/void', authClient, requirePermission('ventas'), async (req, res) => {
-  try { await db.voidSale(req.user.businessId, req.params.id); res.json({ ok: true }) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Ventas registradas de un contacto (para mostrarlas y poder anularlas)
-app.get('/api/client/sales', authClient, requirePermission('ventas'), async (req, res) => {
-  const phone = req.query.phone ? decodeURIComponent(req.query.phone) : null
-  if (!phone) return res.json([])
-  res.json(await db.getSalesByContact(req.user.businessId, phone))
-})
-
-// Pedidos / cotizaciones sin cerrar
-app.get('/api/client/pending-orders', authClient, requirePermission('reportes'), async (req, res) =>
-  res.json(await db.getPendingOrders(req.user.businessId)))
-
-// Datos de los 7 reportes para el panel del dueño (JSON) — filtrado por business_id (JWT)
-app.get('/api/client/reports', authClient, requirePermission('reportes'), async (req, res) => {
-  const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
-  try { res.json(await reports.getAllReports(req.user.businessId, period)) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Directorio de clientes (solo lectura) — para la sección "Clientes" del panel
-app.get('/api/client/customers', authClient, requirePermission('reportes'), async (req, res) => {
-  try { res.json(await reports.getCustomerDirectory(req.user.businessId)) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Clientes sin escribir hace tiempo (para reactivar) — solo lectura
-app.get('/api/client/inactive-contacts', authClient, requirePermission('reportes'), async (req, res) => {
-  const days = Math.max(1, parseInt(req.query.days) || 15)
-  try { res.json(await reports.getInactiveContacts(req.user.businessId, days)) }
-  catch(e) { res.status(500).json({ error: e.message }) }
-})
-
-// Alertas del negocio (banner del panel) — vigila condiciones con los datos existentes
-app.get('/api/client/alerts', authClient, requirePermission('reportes'), async (req, res) => {
-  try { res.json(await reports.computeAlerts(req.user.businessId)) }
-  catch(e) { console.error('❌ alerts:', e.message); res.status(500).json({ error: 'No se pudieron cargar las alertas' }) }
-})
-
-// Dashboard (resumen + datos para gráficos) — pantalla de inicio del panel
-app.get('/api/client/dashboard', authClient, requirePermission('reportes'), async (req, res) => {
-  const period = ['hoy', 'semana', 'mes'].includes(req.query.period) ? req.query.period : 'mes'
-  try { res.json(await reports.getDashboard(req.user.businessId, period)) }
-  catch(e) { console.error('❌ dashboard:', e.message); res.status(500).json({ error: 'No se pudo cargar el dashboard' }) }
-})
+// (VENTAS, quote, pending-orders, reports, customers, inactive-contacts,
+//  alerts y dashboard viven en routes/sales.routes.js y routes/reports.routes.js)
 
 // Onboarding: estado de configuración del negocio (guía de puesta en marcha)
 app.get('/api/client/onboarding', authClient, async (req, res) => {
