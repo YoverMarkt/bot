@@ -89,8 +89,6 @@ export default function Clients() {
           </table>
         </div>
       )}
-      <p className="text-xs text-stone-500 mt-3">Facturación, configuración del servidor, simulador y calculadora siguen en el <a className="underline" href="/admin">panel actual</a> hasta migrar esas secciones.</p>
-
       {editing && (
         <ClientModal
           id={editing === 'new' ? null : editing}
