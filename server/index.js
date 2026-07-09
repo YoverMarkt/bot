@@ -59,6 +59,9 @@ app.use('/client', express.static(path.join(__dirname, '../client'), { setHeader
 // Convive con el panel viejo (/client) hasta migrar todas las secciones.
 app.use('/app', express.static(path.join(__dirname, '../apps/client/dist'), { setHeaders: noCacheHtml }))
 app.get('/app/*', (_, res) => res.sendFile(path.join(__dirname, '../apps/client/dist/index.html')))
+// Panel ADMIN nuevo (React — Fase 3): convive con el admin viejo (/admin)
+app.use('/app-admin', express.static(path.join(__dirname, '../apps/admin/dist'), { setHeaders: noCacheHtml }))
+app.get('/app-admin/*', (_, res) => res.sendFile(path.join(__dirname, '../apps/admin/dist/index.html')))
 app.get('/', (_, res) => res.redirect('/admin'))
 
 // ══════════════════════════════════════════
