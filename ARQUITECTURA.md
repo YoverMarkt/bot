@@ -129,8 +129,8 @@ bot/                                  ← monorepo (npm workspaces)
 
 | Fase | Qué se hace | El sistema viejo… |
 |---|---|---|
-| **0. Cimientos** | Railway + **dominio propio** + Supabase Pro (**backups**) + npm workspaces + CI (lint + `@ts-check` en dinero) + Sentry | …sigue atendiendo clientes, intacto |
-| **1. Server ordenado** | Crear `routes/` y `services/`; mover módulo por módulo (primeros: `money`, `payments` — ya nacieron limpios). `@ts-check` → `.ts` gradual | …convive; `index.js` se adelgaza pieza a pieza |
+| **0. Cimientos** | Railway + **dominio propio** + Supabase Pro (**backups**) + npm workspaces + CI (lint + `@ts-check` en dinero) + Sentry — *parte gratis ✅ HECHA 2026-07-08 (CI + ESLint + @ts-check + 16 tests de dinero); parte pagada (Railway/dominio/Supabase Pro/Sentry) agendada para el mes siguiente* | …sigue atendiendo clientes, intacto |
+| **1. Server ordenado** — ✅ **HECHA 2026-07-08** (`index.js`: 1277→162 líneas; 10 routers + middleware/auth + services/notify; rutas verificadas idénticas endpoint por endpoint). La conversión `@ts-check` → `.ts` sigue gradual | Crear `routes/` y `services/`; mover módulo por módulo (primeros: `money`, `payments` — ya nacieron limpios). `@ts-check` → `.ts` gradual | …convive; `index.js` se adelgaza pieza a pieza |
 | **2. Panel cliente React** | `apps/client` con Vite. Migrar por feature empezando por **Conversaciones** (la más usada), luego Ventas → Reportes → resto. Express sirve la app nueva cuando cada sección esté lista | …el HTML viejo responde hasta que su sección muere |
 | **3. Panel admin React** | Igual (solo lo usa el dueño del SaaS — menos urgente) | …igual |
 | **4. Landing Next.js** | Web pública con SEO (precios, comparativas, testimonios) | no existe hoy — todo es ganancia |
