@@ -1,0 +1,17 @@
+{
+  // ── Chequeo de tipos GRADUAL (barandilla de la migración) ──
+  // checkJs:false → solo se revisan los archivos que llevan // @ts-check
+  // arriba (hoy: los módulos de dinero y media). Al migrar un archivo a .ts
+  // (ver ARQUITECTURA.md) la línea @ts-check se elimina: TS pasa a ser nativo.
+  // Verificar en terminal/CI con: npx tsc --noEmit -p .
+  "compilerOptions": {
+    "checkJs": false,
+    "strict": false,
+    "noEmit": true,
+    "module": "nodenext",
+    "target": "es2022",
+    "moduleResolution": "nodenext",
+    "skipLibCheck": true
+  },
+  "exclude": ["node_modules"]
+}

@@ -1,3 +1,4 @@
+// @ts-check
 // ── NÚCLEO DE DINERO ─────────────────────────────────────────────────
 // Regla de oro del proyecto: la IA conversa, el CÓDIGO calcula.
 // La IA solo emite ##PEDIDO:producto x cantidad; ...##. Este módulo:
