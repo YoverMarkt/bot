@@ -55,6 +55,10 @@ const noCacheHtml = (res, filePath) => {
 }
 app.use('/admin',  express.static(path.join(__dirname, '../admin'),  { setHeaders: noCacheHtml }))
 app.use('/client', express.static(path.join(__dirname, '../client'), { setHeaders: noCacheHtml }))
+// Panel NUEVO (React — Fase 2 de ARQUITECTURA.md): se sirve el build en /app.
+// Convive con el panel viejo (/client) hasta migrar todas las secciones.
+app.use('/app', express.static(path.join(__dirname, '../apps/client/dist'), { setHeaders: noCacheHtml }))
+app.get('/app/*', (_, res) => res.sendFile(path.join(__dirname, '../apps/client/dist/index.html')))
 app.get('/', (_, res) => res.redirect('/admin'))
 
 // ══════════════════════════════════════════
