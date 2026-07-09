@@ -8,7 +8,9 @@ import Conversations from './features/conversations/Conversations'
 import Catalog from './features/catalog/Catalog'
 import Sales from './features/sales/Sales'
 import Reports from './features/reports/Reports'
-import ComingSoon from './components/ComingSoon'
+import Customers from './features/customers/Customers'
+import Bookings from './features/bookings/Bookings'
+import Settings from './features/settings/Settings'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,9 +37,9 @@ export default function App() {
               <Route path="/catalog" element={<Catalog />} />
               <Route path="/sales" element={<Sales />} />
               <Route path="/reports" element={<Reports />} />
-              <Route path="/customers" element={<ComingSoon title="Clientes" />} />
-              <Route path="/bookings" element={<ComingSoon title="Citas" />} />
-              <Route path="/settings" element={<ComingSoon title="Configuración" />} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/bookings" element={<Bookings />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Route>
