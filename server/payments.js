@@ -1,3 +1,4 @@
+// @ts-check
 // ── PASARELAS DE PAGO (abstracción enchufable) ───────────────────────
 // El núcleo de dinero (money.js + orders) ya calcula el total oficial por
 // código. Este módulo es el ÚNICO punto donde se conecta una pasarela.

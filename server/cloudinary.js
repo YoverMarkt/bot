@@ -1,3 +1,4 @@
+// @ts-check
 // ── CLOUDINARY — media (imágenes + videos) de productos ──────────────
 // Una sola cuenta Cloudinary para todo el SaaS. Los archivos se separan
 // por carpeta `botpanel/{business_id}` → aislamiento por negocio.

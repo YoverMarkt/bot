@@ -1,0 +1,41 @@
+# ── CI de BotPanel ────────────────────────────────────────────────────
+# Corre en cada push/PR: sintaxis + lint + tipos (@ts-check) + tests de
+# dinero. NO necesita secretos (los tests son funciones puras, sin BD).
+# Si esto está en rojo, NO se mergea (barandilla de la migración).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    name: Lint + Tipos + Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Sintaxis de todos los módulos
+        run: for f in *.js; do node --check "$f"; done
+
+      - name: ESLint (errores reales bloquean)
+        run: npm run lint
+
+      - name: Tipos (@ts-check en módulos de dinero)
+        run: npm run typecheck
+
+      - name: Tests del núcleo de dinero
+        run: npm test

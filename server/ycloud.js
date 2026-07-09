@@ -1,3 +1,4 @@
+// @ts-check
 const axios = require('axios')
 
 const BASE = 'https://api.ycloud.com/v2'
