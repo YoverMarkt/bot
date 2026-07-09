@@ -5,6 +5,7 @@ import Login from './features/auth/Login'
 import Layout from './components/Layout'
 import Dashboard from './features/dashboard/Dashboard'
 import Conversations from './features/conversations/Conversations'
+import Catalog from './features/catalog/Catalog'
 import ComingSoon from './components/ComingSoon'
 
 const queryClient = new QueryClient({
@@ -29,7 +30,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/conversations" element={<Conversations />} />
-              <Route path="/catalog" element={<ComingSoon title="Catálogo" />} />
+              <Route path="/catalog" element={<Catalog />} />
               <Route path="/sales" element={<ComingSoon title="Ventas" />} />
               <Route path="/reports" element={<ComingSoon title="Reportes" />} />
               <Route path="/customers" element={<ComingSoon title="Clientes" />} />
