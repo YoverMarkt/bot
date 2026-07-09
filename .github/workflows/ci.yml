@@ -60,3 +60,24 @@ jobs:
 
       - name: Type-check + build (tsc + vite)
         run: npm run build
+
+  panel-admin:
+    name: Panel admin (React + TS) — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Type-check + build (tsc + vite)
+        run: npm run build
