@@ -7,6 +7,7 @@ import Dashboard from './features/dashboard/Dashboard'
 import Conversations from './features/conversations/Conversations'
 import Catalog from './features/catalog/Catalog'
 import Sales from './features/sales/Sales'
+import Reports from './features/reports/Reports'
 import ComingSoon from './components/ComingSoon'
 
 const queryClient = new QueryClient({
@@ -33,7 +34,7 @@ export default function App() {
               <Route path="/conversations" element={<Conversations />} />
               <Route path="/catalog" element={<Catalog />} />
               <Route path="/sales" element={<Sales />} />
-              <Route path="/reports" element={<ComingSoon title="Reportes" />} />
+              <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<ComingSoon title="Clientes" />} />
               <Route path="/bookings" element={<ComingSoon title="Citas" />} />
               <Route path="/settings" element={<ComingSoon title="Configuración" />} />
