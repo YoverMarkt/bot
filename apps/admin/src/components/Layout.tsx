@@ -2,16 +2,12 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
 
 const SECTIONS = [
-  { to: '/',        label: 'Inicio',   icon: '🏠' },
-  { to: '/clients', label: 'Negocios', icon: '🏪' },
-]
-
-// Secciones aún en el panel viejo (se migran por fases — estrangulador)
-const LEGACY = [
-  { href: '/admin', label: 'Facturación' },
-  { href: '/admin', label: 'Configuración' },
-  { href: '/admin', label: 'Simulador' },
-  { href: '/admin', label: 'Calculadora' },
+  { to: '/',           label: 'Inicio',        icon: '🏠' },
+  { to: '/clients',    label: 'Negocios',      icon: '🏪' },
+  { to: '/billing',    label: 'Facturación',   icon: '💳' },
+  { to: '/simulator',  label: 'Simulador',     icon: '🧪' },
+  { to: '/settings',   label: 'Configuración', icon: '⚙️' },
+  { to: '/calculator', label: 'Calculadora',   icon: '🧮' },
 ]
 
 export default function Layout() {
@@ -41,13 +37,10 @@ export default function Layout() {
             </NavLink>
           ))}
           <div className="pt-3 mt-3 border-t border-stone-800">
-            <div className="px-3 pb-1 text-[10px] uppercase tracking-wide text-stone-600">En el panel actual</div>
-            {LEGACY.map(l => (
-              <a key={l.label} href={l.href}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-800">
-                🚧 {l.label}
-              </a>
-            ))}
+            <a href="/admin"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-800">
+              🗂 Panel clásico
+            </a>
           </div>
         </nav>
         <div className="p-3 border-t border-stone-800">
