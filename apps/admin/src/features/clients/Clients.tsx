@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as adm from './api'
 import type { BusinessRow } from './api'
+import ClientModal from './ClientModal'
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -9,6 +10,7 @@ const fmtDate = (iso: string | null) =>
 export default function Clients() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<string | 'new' | null>(null)
   const { data: clients = [], isLoading } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
 
   const filtered = useMemo(() => {
@@ -38,8 +40,8 @@ export default function Clients() {
         <div className="flex gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o número…"
             className="rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-green-500" />
-          <a href="/admin" className="rounded-lg border border-stone-700 text-stone-300 px-3 py-2 text-sm hover:bg-stone-800"
-            title="Crear/editar negocios sigue en el panel actual mientras se migra">➕ Crear (panel actual)</a>
+          <button onClick={() => setEditing('new')}
+            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">➕ Nuevo negocio</button>
         </div>
       </div>
 
@@ -67,6 +69,8 @@ export default function Clients() {
                   <td className="px-4 py-3 text-stone-400">{fmtDate(c.plan_expires_at)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2 justify-end">
+                      <button onClick={() => setEditing(c.id)}
+                        className="rounded-lg border border-stone-700 text-stone-300 text-xs px-2.5 py-1.5 hover:bg-stone-800">✏️ Editar</button>
                       <button onClick={() => mBot.mutate({ id: c.id, on: !c.bot_active })}
                         className="rounded-lg border border-stone-700 text-stone-300 text-xs px-2.5 py-1.5 hover:bg-stone-800"
                         title={c.bot_active ? 'Pausar el bot (deja de responder)' : 'Reactivar el bot'}>
@@ -85,7 +89,15 @@ export default function Clients() {
           </table>
         </div>
       )}
-      <p className="text-xs text-stone-500 mt-3">Crear/editar negocios (credenciales, prompt, calculadora, simulador) sigue en el <a className="underline" href="/admin">panel actual</a> hasta migrar esas secciones.</p>
+      <p className="text-xs text-stone-500 mt-3">Facturación, configuración del servidor, simulador y calculadora siguen en el <a className="underline" href="/admin">panel actual</a> hasta migrar esas secciones.</p>
+
+      {editing && (
+        <ClientModal
+          id={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh() }}
+        />
+      )}
     </div>
   )
 }
