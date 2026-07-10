@@ -70,6 +70,9 @@ export default function Layout() {
           ))}
         </nav>
         <div className="p-3 border-t border-stone-100">
+          <a href="/client-legacy" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-stone-50">
+            🗂 Panel clásico
+          </a>
           <div className="px-3 pb-2 text-xs text-stone-500 truncate">{user?.name || 'Sesión activa'}</div>
           <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-50">
             🚪 Cerrar sesión

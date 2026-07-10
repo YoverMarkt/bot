@@ -48,3 +48,9 @@ export const sendMessage = (phone: string, message: string) =>
 
 export const createTag = (name: string, color: string) =>
   api<Tag>('/api/client/tags', { method: 'POST', body: JSON.stringify({ name, color }) })
+
+export const updateTag = (id: string, name: string, color: string) =>
+  api(`/api/client/tags/${id}`, { method: 'PUT', body: JSON.stringify({ name, color }) })
+
+export const deleteTag = (id: string) =>
+  api(`/api/client/tags/${id}`, { method: 'DELETE' })
