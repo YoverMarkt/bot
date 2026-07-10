@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import * as convApi from './api'
 import type { Session, Msg, Tag } from './api'
 
@@ -21,6 +22,7 @@ const fmtTime = (iso: string) => {
 
 export default function Conversations() {
   const qc = useQueryClient()
+  const navigate = useNavigate()   // "Registrar venta" navega a /sales prellenado
   const [selected, setSelected] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
@@ -158,6 +160,14 @@ export default function Conversations() {
                   className={`text-sm rounded-lg px-3 py-1.5 font-medium border ${sess.manual_mode ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-green-300 bg-green-50 text-green-800'}`}
                 >
                   {sess.manual_mode ? '🤚 Manual — activar bot' : '🤖 Bot activo — tomar chat'}
+                </button>
+
+                {/* Registrar venta (prellenada con este contacto, igual que el viejo) */}
+                <button
+                  onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
+                  className="text-sm rounded-lg px-3 py-1.5 font-medium border border-stone-200 hover:bg-stone-50"
+                >
+                  💰 Registrar venta
                 </button>
 
                 {/* Venta realizada */}

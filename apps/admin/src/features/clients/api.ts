@@ -71,3 +71,26 @@ export const updateClient = (id: string, p: BusinessPayload) =>
 
 export const verifyProvider = (payload: Record<string, string | undefined>) =>
   api<{ ok: boolean; info: string }>('/api/admin/verify-provider', { method: 'POST', body: JSON.stringify(payload) })
+
+// ── Herramientas por negocio (paridad con el admin viejo) ──
+export type ClientProduct = { id: string; name: string }
+export type ClientMsg = { contact_phone: string; role: string; content: string; created_at: string }
+
+export const getClientProducts = (id: string) =>
+  api<ClientProduct[]>(`/api/admin/clients/${id}/products`)
+
+export const getClientConversations = (id: string) =>
+  api<ClientMsg[]>(`/api/admin/clients/${id}/conversations`)
+
+export const getClientPolicies = (id: string) =>
+  api<{ bot_prompt?: string | null; shipping?: string | null }>(`/api/admin/clients/${id}/policies`)
+
+export const saveClientPolicies = (id: string, p: Record<string, string>) =>
+  api(`/api/admin/clients/${id}/policies`, { method: 'PUT', body: JSON.stringify(p) })
+
+// Verificar credenciales GUARDADAS de un negocio (botón de la tabla)
+export const verifyClient = (id: string) =>
+  api<{ ok: boolean; info: string }>(`/api/admin/clients/${id}/verify`, { method: 'POST' })
+
+export const deleteClient = (id: string) =>
+  api(`/api/admin/clients/${id}`, { method: 'DELETE' })

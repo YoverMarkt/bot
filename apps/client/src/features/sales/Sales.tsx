@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as salesApi from './api'
 import type { Order, SaleItem } from './api'
@@ -17,7 +18,10 @@ const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 export default function Sales() {
-  const [tab, setTab] = useState<'orders' | 'register' | 'history'>('orders')
+  // Prellenado desde Conversaciones (botón "Registrar venta" del chat)
+  const [params] = useSearchParams()
+  const prefillPhone = params.get('phone') ?? ''
+  const [tab, setTab] = useState<'orders' | 'register' | 'history'>(prefillPhone ? 'register' : 'orders')
   return (
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -35,7 +39,7 @@ export default function Sales() {
         </div>
       </div>
       {tab === 'orders' && <BotOrders />}
-      {tab === 'register' && <RegisterSale />}
+      {tab === 'register' && <RegisterSale prefillPhone={prefillPhone} />}
       {tab === 'history' && <SalesByContact />}
     </div>
   )
@@ -85,10 +89,10 @@ function BotOrders() {
 }
 
 // ── Registrar venta manual (con prellenado desde la conversación) ──
-function RegisterSale() {
+function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
   const qc = useQueryClient()
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: salesApi.getProducts })
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(prefillPhone)
   const [name, setName] = useState('')
   const [items, setItems] = useState<Omit<SaleItem, 'line_total'>[]>([])
   const [msg, setMsg] = useState('')
@@ -101,6 +105,9 @@ function RegisterSale() {
     const price = Number(p.price_sale) > 0 ? Number(p.price_sale) : Number(p.price) || 0
     setItems(prev => [...prev, { product_id: p.id, product_name: p.name, quantity: 1, unit_price: price }])
   }
+
+  // Al llegar desde el chat: traer la cotización de ese contacto automáticamente
+  useEffect(() => { if (prefillPhone) loadQuote() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadQuote() {
     if (!phone.trim()) return

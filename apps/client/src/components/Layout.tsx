@@ -1,26 +1,40 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
+import { useBusinessInfo, isBookingBiz, isServiceBiz } from '../lib/biz'
+import { useAttention, AlarmBanner } from './AlarmSystem'
 
-// Secciones del panel. `perm` controla visibilidad para empleados
-// (el dueño ve todo; el SERVIDOR valida siempre, esto es solo UI).
-const SECTIONS = [
-  { to: '/',              label: 'Inicio',         icon: '🏠', perm: 'reportes' },
-  { to: '/conversations', label: 'Conversaciones', icon: '💬', perm: 'conversaciones' },
-  { to: '/catalog',       label: 'Catálogo',       icon: '📦', perm: 'catalogo' },
-  { to: '/sales',         label: 'Ventas',         icon: '🛒', perm: 'ventas' },
-  { to: '/reports',       label: 'Reportes',       icon: '📊', perm: 'reportes' },
-  { to: '/customers',     label: 'Clientes',       icon: '👥', perm: 'reportes' },
-  { to: '/bookings',      label: 'Citas',          icon: '📅', perm: 'citas' },
-  { to: '/settings',      label: 'Configuración',  icon: '⚙️', perm: null },
-]
+// Secciones del panel (mismas reglas del panel viejo):
+// · `perm` controla visibilidad para empleados (el dueño ve todo; el SERVIDOR valida siempre)
+// · Reservas SOLO para negocios de citas (barbería, clínica…) — Mas Pura no la ve
+// · Horarios para TODOS (horario de atención; el bot avisa fuera de horario)
+// · Catálogo se llama "Servicios" en negocios de servicios
 
 export default function Layout() {
   const navigate = useNavigate()
   const user = session.user
   const biz = session.business
+  const { data: bizInfo } = useBusinessInfo()
 
+  const bookingBiz = isBookingBiz(bizInfo?.type)
   const canSee = (perm: string | null) =>
     !perm || user?.role === 'owner' || (user?.permissions ?? []).includes(perm)
+
+  const att = useAttention({
+    watchSessions: canSee('conversaciones'),
+    watchBookings: bookingBiz && canSee('citas'),
+  })
+
+  const SECTIONS: { to: string; label: string; icon: string; perm: string | null; badge?: string | number }[] = [
+    { to: '/',              label: 'Inicio',         icon: '🏠', perm: 'reportes' },
+    { to: '/conversations', label: 'Conversaciones', icon: '💬', perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
+    { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: '📦', perm: 'catalogo' },
+    { to: '/sales',         label: 'Ventas',         icon: '🛒', perm: 'ventas' },
+    { to: '/reports',       label: 'Reportes',       icon: '📊', perm: 'reportes' },
+    { to: '/customers',     label: 'Clientes',       icon: '👥', perm: 'reportes' },
+    ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: '📅', perm: 'citas', badge: att.pending.length || undefined }] : []),
+    { to: '/schedule',      label: 'Horarios',       icon: '🕐', perm: 'citas' },
+    { to: '/settings',      label: 'Configuración',  icon: '⚙️', perm: null },
+  ]
 
   function logout() {
     session.clear()
@@ -45,7 +59,13 @@ export default function Layout() {
                 }`
               }
             >
-              <span>{s.icon}</span> {s.label}
+              <span>{s.icon}</span>
+              <span className="flex-1">{s.label}</span>
+              {s.badge !== undefined && (
+                <span className="text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 px-1.5 py-0.5 min-w-5 text-center">
+                  {s.badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -61,6 +81,9 @@ export default function Layout() {
       <main className="flex-1 min-w-0 p-6">
         <Outlet />
       </main>
+
+      {/* Alarma global (chats manuales sin atender + reservas pendientes) */}
+      <AlarmBanner manual={att.manual} pending={att.pending} bookings={att.bookings} />
     </div>
   )
 }
