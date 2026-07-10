@@ -37,7 +37,7 @@ export default function Layout() {
             </NavLink>
           ))}
           <div className="pt-3 mt-3 border-t border-stone-800">
-            <a href="/admin"
+            <a href="/admin-legacy"
               className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-800">
               🗂 Panel clásico
             </a>
