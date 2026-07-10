@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
@@ -18,10 +19,17 @@ const ALERT_STYLE: Record<Alert['level'], string> = {
 
 const PERIODS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes']] as const
 
+// Categorías del panel viejo (filterReports): cada card pertenece a un grupo
+const CATS = [['todos', 'Todos'], ['ventas', '💰 Ventas'], ['productos', '📦 Productos'], ['clientes', '👥 Clientes'], ['bot', '🤖 Bot']] as const
+type Cat = typeof CATS[number][0]
+
 export default function Reports() {
   const [period, setPeriod] = useState<string>('mes')
+  const [cat, setCat] = useState<Cat>('todos')
   const { data, isLoading, error } = useQuery({ queryKey: ['reports', period], queryFn: () => getReports(period) })
   const { data: alertsData } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts, staleTime: 60_000 })
+
+  const show = (g: Cat) => cat === 'todos' || cat === g
 
   return (
     <div>
@@ -40,6 +48,13 @@ export default function Reports() {
         </div>
       </div>
 
+      {/* Atajo a reactivar (igual que el viejo) */}
+      <div className="mb-4">
+        <Link to="/customers" className="inline-block rounded-lg border border-stone-200 bg-white text-sm text-stone-700 px-3 py-1.5 hover:bg-stone-50">
+          👥 Clientes sin escribir (reactivar)
+        </Link>
+      </div>
+
       {/* Banner de alertas */}
       {alertsData && alertsData.alerts.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2">
@@ -50,6 +65,16 @@ export default function Reports() {
           ))}
         </div>
       )}
+
+      {/* Filtro por categoría (mismas del panel viejo) */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {CATS.map(([v, l]) => (
+          <button key={v} onClick={() => setCat(v)}
+            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
 
       {isLoading && <p className="text-stone-500">Calculando reportes…</p>}
       {error && <p className="text-red-600">❌ {(error as Error).message}</p>}
@@ -68,6 +93,7 @@ export default function Reports() {
 
           <div className="grid md:grid-cols-2 gap-4">
             {/* Comparación */}
+            {show('ventas') && (<>
             <Card title={`💰 Ventas: ${data.comparison.label} vs anterior`}>
               <Bars color={C1} rows={[
                 { label: data.comparison.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
@@ -82,14 +108,18 @@ export default function Reports() {
                     </span>}
               </p>
             </Card>
+            </>)}
 
             {/* Top productos */}
+            {show('productos') && (<>
             <Card title="🏆 Productos más vendidos">
               {data.top.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
                 <Bars color={INK} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
             </Card>
+            </>)}
 
             {/* Clientes frecuentes */}
+            {show('clientes') && (<>
             <Card title="🔁 Clientes frecuentes">
               {data.recurring.rows.length === 0 ? <Empty msg="Aún sin clientes recurrentes." /> :
                 <ul className="text-sm space-y-1.5">
@@ -101,36 +131,46 @@ export default function Reports() {
                   ))}
                 </ul>}
             </Card>
+            </>)}
 
             {/* Vendedores */}
+            {show('ventas') && (<>
             <Card title="🧑‍💼 Ventas por vendedor">
               {data.bySeller.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
                 <Bars color={C1} rows={data.bySeller.rows.map(r => ({ label: r.name, value: Number(r.total) || 0, text: money(r.total) }))} />}
             </Card>
+            </>)}
 
             {/* Más consultados (c2 → regla de relieve: valor directo SIEMPRE) */}
+            {show('productos') && (<>
             <Card title="👀 Productos más consultados">
               {data.mostConsulted.rows.length === 0 ? <Empty msg="Sin consultas registradas." /> :
                 <Bars color={C2} rows={data.mostConsulted.rows.map(r => ({ label: r.name, value: r.count, text: `${r.count} consultas` }))} />}
             </Card>
+            </>)}
 
             {/* Abandonados */}
+            {show('productos') && (<>
             <Card title="🛒 Consultados pero sin venta">
               {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado. 🎉" /> :
                 <ul className="text-sm space-y-1">
                   {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.consultas} consultas</span></li>)}
                 </ul>}
             </Card>
+            </>)}
 
             {/* Bajo movimiento */}
+            {show('productos') && (<>
             <Card title="📉 Bajo movimiento">
               {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas. 🎉" /> :
                 <ul className="text-sm space-y-1">
                   {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.qty} uds</span></li>)}
                 </ul>}
             </Card>
+            </>)}
 
             {/* Stock bajo (colores de ESTADO reservados) */}
+            {show('productos') && (<>
             <Card title="📦 Stock bajo">
               {data.lowStock.rows.length === 0 ? <Empty msg="Nada agotado ni en últimas unidades. ✅" /> :
                 <ul className="text-sm space-y-1">
@@ -143,16 +183,20 @@ export default function Reports() {
                   ))}
                 </ul>}
             </Card>
+            </>)}
 
             {/* Pendientes */}
+            {show('ventas') && (<>
             <Card title={`📋 Cotizaciones sin cerrar (${data.pending.count})`}>
               {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar. ✅" /> :
                 <ul className="text-sm space-y-1">
                   {data.pending.rows.map((r, i) => <li key={i} className="truncate text-stone-700">{r.name}{r.last_message ? <span className="text-stone-400"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
                 </ul>}
             </Card>
+            </>)}
 
             {/* Clientes perdidos */}
+            {show('clientes') && (<>
             <Card title={`😞 Clientes perdidos (${data.lostCustomers.count})`}>
               {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar. 🎉" /> :
                 <>
@@ -167,8 +211,10 @@ export default function Reports() {
                   </ul>
                 </>}
             </Card>
+            </>)}
 
             {/* Reporte de IA: FAQ + sin responder */}
+            {show('bot') && (<>
             <Card title="🧠 Preguntas frecuentes (IA)">
               {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
                 <Bars color={INK} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: `${r.emoji} ${r.topic}`, value: r.count, text: String(r.count) }))} />}
@@ -180,6 +226,7 @@ export default function Reports() {
                   {data.unanswered.rows.map((r, i) => <li key={i} className="text-stone-700 truncate">“{r.question ?? '—'}” <span className="text-stone-400">×{r.count}</span></li>)}
                 </ul>}
             </Card>
+            </>)}
           </div>
         </>
       )}

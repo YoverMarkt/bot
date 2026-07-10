@@ -10,6 +10,7 @@ import Sales from './features/sales/Sales'
 import Reports from './features/reports/Reports'
 import Customers from './features/customers/Customers'
 import Bookings from './features/bookings/Bookings'
+import Schedule from './features/bookings/Schedule'
 import Settings from './features/settings/Settings'
 
 const queryClient = new QueryClient({
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/bookings" element={<Bookings />} />
+              <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

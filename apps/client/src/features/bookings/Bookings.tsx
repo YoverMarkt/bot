@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 
-// ── Tipos (tablas bookings y business_schedule del server) ──
+// ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
+// calendario MENSUAL con chips por día + detalle del día + vista lista.
 type Booking = {
   id: string
   contact_name: string | null
@@ -15,16 +16,7 @@ type Booking = {
   notes: string | null
 }
 
-type ScheduleDay = {
-  day_of_week: number
-  open_time: string
-  close_time: string
-  slot_duration?: number
-  is_active: boolean
-}
-
-const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
-const ORDER = [1, 2, 3, 4, 5, 6, 0]   // Lunes → Domingo
+const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
   pending:   { label: '⏳ Pendiente',  cls: 'bg-amber-50 text-amber-700' },
@@ -33,19 +25,36 @@ const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = 
   no_show:   { label: '👻 No asistió', cls: 'bg-red-50 text-red-600' },
 }
 
-const iso = (d: Date) => d.toISOString().slice(0, 10)
-
 export default function Bookings() {
-  const [tab, setTab] = useState<'agenda' | 'horarios'>('agenda')
+  const [tab, setTab] = useState<'calendario' | 'lista'>('calendario')
+  const qc = useQueryClient()
+
+  const { data: bookings = [], isLoading } = useQuery({
+    queryKey: ['bookings-all'],
+    queryFn: () => api<Booking[]>('/api/client/bookings'),
+    refetchInterval: 15_000,
+  })
+
+  const mStatus = useMutation({
+    mutationFn: (v: { id: string; status: Booking['status'] }) =>
+      api(`/api/client/bookings/${v.id}/status`, { method: 'PUT', body: JSON.stringify({ status: v.status }) }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['bookings-all'] })
+      qc.invalidateQueries({ queryKey: ['bookings-watch'] })
+    },
+  })
+
+  const pending = bookings.filter(b => b.status === 'pending').length
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Citas</h1>
-          <p className="text-sm text-stone-500">Reservas que el bot agenda + tu horario de atención</p>
+          <h1 className="text-2xl font-bold text-stone-900">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
+          <p className="text-sm text-stone-500">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
         </div>
         <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
-          {([['agenda', '📅 Agenda'], ['horarios', '🕐 Horarios']] as const).map(([v, l]) => (
+          {([['calendario', '🗓 Calendario'], ['lista', '📋 Lista']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>
               {l}
@@ -53,31 +62,102 @@ export default function Bookings() {
           ))}
         </div>
       </div>
-      {tab === 'agenda' ? <Agenda /> : <Schedule />}
+      {isLoading ? <p className="text-stone-500">Cargando reservas…</p> :
+        tab === 'calendario'
+          ? <Calendar bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />
+          : <Lista bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />}
     </div>
   )
 }
 
-// ── Agenda de reservas (confirmar / cancelar avisa al cliente por su canal) ──
-function Agenda() {
-  const qc = useQueryClient()
+// ── Calendario mensual (igual que el viejo: chips por día + detalle) ──
+function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status']) => void }) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const prev = () => { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
+  const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1) }
+
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const byDate: Record<string, Booking[]> = {}
+  for (const b of bookings) (byDate[b.booking_date] ??= []).push(b)
+
+  const dayBookings = selected ? (byDate[selected] ?? []) : []
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-3">
+        <button onClick={prev} className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm hover:bg-stone-50">←</button>
+        <span className="font-semibold text-stone-900 min-w-40 text-center">{MONTHS[month]} {year}</span>
+        <button onClick={next} className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm hover:bg-stone-50">→</button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-stone-200 p-3 overflow-x-auto">
+        <div className="grid grid-cols-7 gap-1 min-w-[560px]">
+          {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
+            <div key={d} className="text-center text-[11px] uppercase tracking-wide text-stone-400 py-1">{d}</div>
+          ))}
+          {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            const isToday = now.getFullYear() === year && now.getMonth() === month && now.getDate() === d
+            const dayBk = (byDate[dateStr] ?? []).filter(b => b.status !== 'cancelled')
+            const allConfirmed = dayBk.length > 0 && dayBk.every(b => b.status === 'confirmed')
+            const firstB = dayBk.slice().sort((a, b) => (a.booking_time || '').localeCompare(b.booking_time || ''))[0]
+            return (
+              <button key={d} onClick={() => setSelected(dateStr)}
+                className={`text-left rounded-lg border p-1.5 min-h-16 align-top transition-colors ${
+                  selected === dateStr ? 'border-green-500 ring-1 ring-green-500' :
+                  isToday ? 'border-green-300 bg-green-50/50' : 'border-stone-100 hover:border-stone-300'}`}>
+                <div className={`text-xs font-semibold ${isToday ? 'text-green-700' : 'text-stone-600'}`}>{d}</div>
+                {dayBk.length > 0 && (
+                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                    🗓 {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
+                  </div>
+                )}
+                {firstB && (
+                  <div className="text-[10px] text-stone-500 truncate mt-0.5">
+                    {(firstB.booking_time || '').slice(0, 5)} {(firstB.contact_name || '').split(' ')[0]}
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Detalle del día seleccionado */}
+      {selected && dayBookings.length > 0 && (
+        <div className="bg-white rounded-xl border border-stone-200 p-4 mt-4">
+          <h3 className="font-semibold text-stone-900 mb-3">
+            {selected.split('-').reverse().join('/')} — {dayBookings.length} cita(s)
+          </h3>
+          <div className="space-y-2">
+            {dayBookings.map(b => <BookingCard key={b.id} b={b} onStatus={onStatus} />)}
+          </div>
+        </div>
+      )}
+      {selected && dayBookings.length === 0 && (
+        <p className="text-sm text-stone-500 mt-3">Sin citas el {selected.split('-').reverse().join('/')}.</p>
+      )}
+    </div>
+  )
+}
+
+// ── Vista de lista (rango de fechas, como la Agenda anterior) ──
+function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status']) => void }) {
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
   const today = new Date()
   const [from, setFrom] = useState(iso(today))
   const [to, setTo] = useState(iso(new Date(today.getTime() + 30 * 86400000)))
-
-  const { data: bookings = [], isLoading } = useQuery({
-    queryKey: ['bookings', from, to],
-    queryFn: () => api<Booking[]>(`/api/client/bookings?from=${from}&to=${to}`),
-    refetchInterval: 15_000,
-  })
-
-  const mStatus = useMutation({
-    mutationFn: (v: { id: string; status: Booking['status'] }) =>
-      api(`/api/client/bookings/${v.id}/status`, { method: 'PUT', body: JSON.stringify({ status: v.status }) }),
-    onSettled: () => qc.invalidateQueries({ queryKey: ['bookings'] }),
-  })
-
   const input = 'rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+
+  const filtered = bookings
+    .filter(b => b.booking_date >= from && b.booking_date <= to)
+    .sort((a, b) => (a.booking_date + a.booking_time).localeCompare(b.booking_date + b.booking_time))
 
   return (
     <div>
@@ -87,106 +167,51 @@ function Agenda() {
         <label className="text-sm text-stone-600">al</label>
         <input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
       </div>
-
-      {isLoading ? <p className="text-stone-500">Cargando agenda…</p> :
-        bookings.length === 0 ? (
-          <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
-            <div className="text-3xl mb-2">📅</div>
-            <p className="text-stone-700 font-medium">Sin citas en este rango.</p>
-            <p className="text-sm text-stone-500 mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {bookings.map(b => (
-              <div key={b.id} className="bg-white rounded-xl border border-stone-200 p-4 flex items-center gap-4 flex-wrap">
-                <div className="text-center shrink-0 bg-stone-50 rounded-lg px-3 py-2">
-                  <div className="text-xs text-stone-500">{b.booking_date}</div>
-                  <div className="font-bold text-stone-900">{(b.booking_time || '').slice(0, 5)}</div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-stone-900 truncate">{b.contact_name || b.contact_phone}</div>
-                  <div className="text-xs text-stone-500">
-                    {b.service || 'Servicio no indicado'}{b.duration_minutes ? ` · ${b.duration_minutes} min` : ''} · {b.contact_phone}
-                  </div>
-                </div>
-                <span className={`text-[11px] font-semibold rounded px-2 py-0.5 shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</span>
-                {b.status === 'pending' && (
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => mStatus.mutate({ id: b.id, status: 'confirmed' })}
-                      className="rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5">✅ Confirmar</button>
-                    <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) mStatus.mutate({ id: b.id, status: 'cancelled' }) }}
-                      className="rounded-lg border border-red-200 text-red-600 text-xs font-semibold px-3 py-1.5 hover:bg-red-50">Cancelar</button>
-                  </div>
-                )}
-                {b.status === 'confirmed' && (
-                  <button onClick={() => mStatus.mutate({ id: b.id, status: 'no_show' })}
-                    className="rounded-lg border border-stone-200 text-stone-500 text-xs px-3 py-1.5 hover:bg-stone-50 shrink-0">Marcar no asistió</button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      <p className="text-xs text-stone-400 mt-3">Confirmar o cancelar le avisa automáticamente al cliente por su canal (WhatsApp/Telegram).</p>
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
+          <div className="text-3xl mb-2">📅</div>
+          <p className="text-stone-700 font-medium">Sin citas en este rango.</p>
+          <p className="text-sm text-stone-500 mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(b => <BookingCard key={b.id} b={b} onStatus={onStatus} withDate />)}
+        </div>
+      )}
     </div>
   )
 }
 
-// ── Horario de atención (fuera de horario el bot responde con esta lista) ──
-function Schedule() {
-  const qc = useQueryClient()
-  const { data: saved = [], isLoading } = useQuery({
-    queryKey: ['schedule'],
-    queryFn: () => api<ScheduleDay[]>('/api/client/schedule'),
-  })
-  const [draft, setDraft] = useState<ScheduleDay[] | null>(null)
-  const [msg, setMsg] = useState('')
-
-  // Editor con los 7 días (rellena los que falten con default inactivo)
-  const days: ScheduleDay[] = draft ?? ORDER.map(d =>
-    saved.find(s => s.day_of_week === d) ??
-    { day_of_week: d, open_time: '09:00', close_time: '18:00', slot_duration: 60, is_active: false }
-  )
-
-  const update = (dow: number, patch: Partial<ScheduleDay>) =>
-    setDraft(days.map(d => d.day_of_week === dow ? { ...d, ...patch } : d))
-
-  const mSave = useMutation({
-    mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days }) }),
-    onSuccess: () => { setMsg('✅ Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error al guardar'}`),
-  })
-
-  if (isLoading) return <p className="text-stone-500">Cargando horario…</p>
-
-  const time = 'rounded border border-stone-300 px-2 py-1 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-40'
-
+function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: string, s: Booking['status']) => void; withDate?: boolean }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-xl">
-      {days.map(d => (
-        <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-stone-50 last:border-0">
-          <label className="flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-stone-800 cursor-pointer">
-            <input type="checkbox" checked={d.is_active} onChange={e => update(d.day_of_week, { is_active: e.target.checked })} />
-            {DAY_NAMES[d.day_of_week]}
-          </label>
-          {d.is_active ? (
-            <>
-              <input type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
-              <span className="text-stone-400 text-sm">a</span>
-              <input type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
-            </>
-          ) : (
-            <span className="text-sm text-stone-400">🚫 Cerrado</span>
-          )}
-        </div>
-      ))}
-      <div className="flex items-center justify-between mt-4">
-        <p className="text-xs text-stone-400 max-w-[280px]">Fuera de este horario, el bot informa los horarios UNA vez y guarda silencio hasta la reapertura.</p>
-        <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
-          {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
-        </button>
+    <div className="bg-white rounded-xl border border-stone-200 p-4 flex items-center gap-4 flex-wrap">
+      <div className="text-center shrink-0 bg-stone-50 rounded-lg px-3 py-2">
+        {withDate && <div className="text-xs text-stone-500">{b.booking_date}</div>}
+        <div className="font-bold text-stone-900">🕐 {(b.booking_time || '').slice(0, 5)}</div>
       </div>
-      {msg && <p className="text-sm text-stone-600 mt-3">{msg}</p>}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-stone-900 truncate">{b.contact_name || b.contact_phone}</div>
+        <div className="text-xs text-stone-500">
+          {b.service || 'Servicio no indicado'}{b.duration_minutes ? ` · ${b.duration_minutes} min` : ''} · {b.contact_phone}
+        </div>
+      </div>
+      <span className={`text-[11px] font-semibold rounded px-2 py-0.5 shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</span>
+      {b.status === 'pending' && (
+        <div className="flex gap-2 shrink-0">
+          <button onClick={() => onStatus(b.id, 'confirmed')}
+            className="rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5">✓ Confirmar</button>
+          <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
+            className="rounded-lg border border-red-200 text-red-600 text-xs font-semibold px-3 py-1.5 hover:bg-red-50">✕ Cancelar</button>
+        </div>
+      )}
+      {b.status === 'confirmed' && (
+        <div className="flex gap-2 shrink-0">
+          <button onClick={() => onStatus(b.id, 'no_show')}
+            className="rounded-lg border border-stone-200 text-stone-500 text-xs px-3 py-1.5 hover:bg-stone-50">Marcar no asistió</button>
+          <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
+            className="rounded-lg border border-red-200 text-red-600 text-xs px-3 py-1.5 hover:bg-red-50">✕ Cancelar</button>
+        </div>
+      )}
     </div>
   )
 }
