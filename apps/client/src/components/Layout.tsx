@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { useBusinessInfo, isBookingBiz, isServiceBiz } from '../lib/biz'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, Archive, LogOut } from 'lucide-react'
 import { useAttention, AlarmBanner } from './AlarmSystem'
 
 // Secciones del panel (mismas reglas del panel viejo):
@@ -37,18 +38,18 @@ export default function Layout() {
   })
 
   // Menú IDÉNTICO al panel viejo (mismo orden, mismas secciones)
-  const SECTIONS: { to: string; label: string; icon: string; perm: string | null; badge?: string | number; badgeTone?: 'alert' | 'count' }[] = [
-    { to: '/',              label: 'Inicio',            icon: '🏠', perm: null },
-    { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: '📦', perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
-    { to: '/conversations', label: 'Conversaciones',    icon: '💬', perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
-    { to: '/reports',       label: 'Reportes',          icon: '📊', perm: 'reportes' },
-    { to: '/customers',     label: 'Clientes',          icon: '👥', perm: 'reportes' },
-    { to: '/reactivate',    label: 'Reactivar',         icon: '🔄', perm: 'reportes' },
-    { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: '🤖', perm: 'owner' },
-    { to: '/schedule',      label: 'Horarios',          icon: '🕐', perm: 'citas' },
-    ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: '📅', perm: 'citas', badge: att.pending.length || undefined }] : []),
-    { to: '/users',         label: 'Usuarios',          icon: '👤', perm: 'owner' },
-    { to: '/settings',      label: 'Ajustes',           icon: '⚙️', perm: 'owner' },
+  const SECTIONS: { to: string; label: string; icon: React.ComponentType<{ className?: string }>; perm: string | null; badge?: string | number; badgeTone?: 'alert' | 'count' }[] = [
+    { to: '/',              label: 'Inicio',            icon: Home, perm: null },
+    { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: Package, perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
+    { to: '/conversations', label: 'Conversaciones',    icon: MessageSquare, perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
+    { to: '/reports',       label: 'Reportes',          icon: BarChart3, perm: 'reportes' },
+    { to: '/customers',     label: 'Clientes',          icon: Users, perm: 'reportes' },
+    { to: '/reactivate',    label: 'Reactivar',         icon: RotateCcw, perm: 'reportes' },
+    { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: Bot, perm: 'owner' },
+    { to: '/schedule',      label: 'Horarios',          icon: Clock, perm: 'citas' },
+    ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: Calendar, perm: 'citas', badge: att.pending.length || undefined }] : []),
+    { to: '/users',         label: 'Usuarios',          icon: UserRound, perm: 'owner' },
+    { to: '/settings',      label: 'Ajustes',           icon: Settings, perm: 'owner' },
   ]
 
   function logout() {
@@ -74,7 +75,7 @@ export default function Layout() {
                 }`
               }
             >
-              <span>{s.icon}</span>
+              <s.icon className="w-4 h-4" />
               <span className="flex-1">{s.label}</span>
               {s.badge !== undefined && (
                 <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-5 text-center ${
@@ -88,11 +89,11 @@ export default function Layout() {
         </nav>
         <div className="p-3 border-t border-border/60">
           <a href="/client-legacy" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground/80 hover:bg-muted/50">
-            🗂 Panel clásico
+            <Archive className="w-4 h-4" /> Panel clásico
           </a>
           <div className="px-3 pb-2 text-xs text-muted-foreground truncate">{user?.name || 'Sesión activa'}</div>
           <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50">
-            🚪 Cerrar sesión
+            <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
           </button>
         </div>
       </aside>

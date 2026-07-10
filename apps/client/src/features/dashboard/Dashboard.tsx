@@ -11,9 +11,9 @@ import { useBusinessInfo } from '../../lib/biz'
 // clientes/inventario + banner de alertas + checklist de onboarding.
 
 // Paleta del sistema (skill graficos-dashboard — CVD-safe, orden fijo)
-const C1 = '#2a78d6', C2 = '#1baf7a', C3 = '#eda100', C4 = '#008300'
+const C1 = 'var(--chart-1)', C2 = 'var(--chart-2)', C3 = 'var(--chart-3)', C4 = 'var(--chart-4)'
 const GOOD = '#22c55e', WARN = '#f59e0b', CRIT = '#ef4444'
-const INK = '#1e1e1e'
+const INK = 'var(--foreground)'
 
 type DashboardData = {
   period: string
@@ -284,9 +284,9 @@ function LineChart({ rows }: { rows: { label: string; total: number }[] }) {
               <title>{r.label}: {money(r.total)}</title>
             </circle>
             {r.total > 0 && (
-              <text x={x(i)} y={y(r.total) - 8} textAnchor="middle" fontSize="10" fill="#57534e">{money(r.total)}</text>
+              <text x={x(i)} y={y(r.total) - 8} textAnchor="middle" fontSize="10" fill="var(--muted-foreground)">{money(r.total)}</text>
             )}
-            <text x={x(i)} y={H + 14} textAnchor="middle" fontSize="10" fill="#a8a29e">{r.label}</text>
+            <text x={x(i)} y={H + 14} textAnchor="middle" fontSize="10" fill="var(--muted-foreground)">{r.label}</text>
           </g>
         ))}
       </svg>
@@ -314,7 +314,7 @@ function Donut({ segs, center }: { segs: { label: string; value: number; color: 
           </circle>
         })}
         <text x="55" y="52" textAnchor="middle" fontSize="18" fontWeight="700" fill={INK}>{total}</text>
-        <text x="55" y="66" textAnchor="middle" fontSize="9" fill="#a8a29e">{center}</text>
+        <text x="55" y="66" textAnchor="middle" fontSize="9" fill="var(--muted-foreground)">{center}</text>
       </svg>
       <ul className="text-sm space-y-1.5">
         {segs.map((s, i) => (

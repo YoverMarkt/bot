@@ -7,7 +7,7 @@
 
 /* Tema del panel (alineado al estilo actual del producto) */
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -26,11 +26,11 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.627 0.194 149.214);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: #2a78d6;   /* c1 azul */
+  --chart-2: #1baf7a;   /* c2 aqua */
+  --chart-3: #eda100;   /* c3 ámbar */
+  --chart-4: #008300;   /* c4 verde */
+  --chart-5: #1e1e1e;   /* tinta serie única */
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
