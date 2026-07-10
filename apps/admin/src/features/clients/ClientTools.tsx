@@ -25,7 +25,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
             <div><strong className="text-foreground/90">Tipo:</strong> {c.type || '—'}</div>
             <div><strong className="text-foreground/90">Número:</strong> {c.whatsapp_number || '—'}</div>
             <div><strong className="text-foreground/90">Plan:</strong> <span className="capitalize">{c.plan || '—'}</span></div>
-            <div><strong className="text-foreground/90">Estado:</strong> {c.suspended ? '⛔ Suspendido' : '✅ Activo'}</div>
+            <div><strong className="text-foreground/90">Estado:</strong> {c.suspended ? 'Suspendido' : 'Activo'}</div>
           </div>
           <div className="rounded-xl bg-muted/60 p-4 text-sm text-foreground/80 space-y-1">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Estadísticas</div>

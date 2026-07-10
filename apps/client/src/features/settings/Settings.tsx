@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
+import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar } from 'lucide-react'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
@@ -30,7 +31,7 @@ export default function Settings() {
 export function Locked() {
   return (
     <div className="bg-card rounded-xl border p-8 text-center">
-      <div className="text-3xl mb-2">🔒</div>
+      <Lock className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
       <p className="text-foreground/90 font-medium">Solo el dueño puede ver esta sección.</p>
     </div>
   )
@@ -118,10 +119,15 @@ export function BotForm() {
 // El permiso "citas" también controla la sección Horarios (todos los
 // negocios la tienen); su nombre se adapta al tipo de negocio.
 const permsForBiz = (bookingBiz: boolean) => [
-  ['catalogo', '📦 Catálogo'], ['conversaciones', '💬 Conversaciones'],
-  ['ventas', '🛒 Ventas'], ['reportes', '📊 Reportes'],
-  ['citas', bookingBiz ? '📅 Citas y horarios' : '🕐 Horarios'],
+  ['catalogo', 'Catálogo'], ['conversaciones', 'Conversaciones'],
+  ['ventas', 'Ventas'], ['reportes', 'Reportes'],
+  ['citas', bookingBiz ? 'Citas y horarios' : 'Horarios'],
 ] as const
+// iconos de cada permiso (misma línea Lucide)
+export const PERM_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  catalogo: Package, conversaciones: MessageSquare, ventas: ShoppingCart, reportes: BarChart3, citas: Clock,
+}
+void Calendar
 
 export function Team() {
   const qc = useQueryClient()
@@ -158,7 +164,7 @@ export function Team() {
             <div key={u.id} className="border border-border/60 rounded-lg p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium text-sm text-foreground">{u.name || u.email} {u.role === 'owner' && <span className="text-[10px] bg-primary/10 text-primary rounded px-1.5 py-0.5 ml-1">DUEÑO</span>}</div>
+                  <div className="font-medium text-sm text-foreground">{u.name || u.email} {u.role === 'owner' && <span className="text-[10px] bg-primary/10 text-primary rounded px-1.5 py-0.5 ml-1"><Crown className="w-3 h-3 inline mr-0.5" />DUEÑO</span>}</div>
                   <div className="text-xs text-muted-foreground/80">{u.email}</div>
                 </div>
                 {u.role !== 'owner' && (

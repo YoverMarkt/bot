@@ -5,6 +5,7 @@ import { api, session } from '../../api/client'
 import { getAlerts } from '../reports/api'
 import { getProducts } from '../catalog/api'
 import { useBusinessInfo } from '../../lib/biz'
+import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus } from 'lucide-react'
 
 // ── INICIO (port fiel del dashboard BI del panel viejo):
 // KPIs + línea de ventas por día + comparación + top + donas de
@@ -117,7 +118,7 @@ export default function Dashboard() {
           )}
           <button onClick={() => navigate('/catalog?new=1')}
             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2">
-            + Agregar producto
+            <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
           </button>
         </div>
       </div>
@@ -125,7 +126,7 @@ export default function Dashboard() {
       {/* Banner de suspendido (igual que el viejo) */}
       {bizInfo?.suspended && (
         <div className="rounded-xl bg-gradient-to-r from-red-600 to-red-400 text-white text-sm font-semibold px-5 py-4 mb-5">
-          ⛔ Tu cuenta está suspendida — el bot no responde a tus clientes. Contacta a soporte para reactivarla.
+          Tu cuenta está suspendida — el bot no responde a tus clientes. Contacta a soporte para reactivarla.
         </div>
       )}
 
@@ -156,20 +157,20 @@ export default function Dashboard() {
 
       {/* Gráficos (mismo grid del viejo) */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card title={`📈 Ventas por día (últimos ${data.trend?.days ?? 7} días)`} full>
+        <Card title={`Ventas por día (últimos ${data.trend?.days ?? 7} días)`} icon={TrendingUp} full>
           <LineChart rows={data.trend?.rows ?? []} />
         </Card>
-        <Card title={`💰 Ventas: ${data.label} vs anterior`}>
+        <Card title={`Ventas: ${data.label} vs anterior`} icon={DollarSign}>
           <Bars color={C1} rows={[
             { label: data.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
             { label: 'Anterior', value: Number(data.comparison.prevTotal) || 0, text: money(data.comparison.prevTotal) },
           ]} />
         </Card>
-        <Card title="🏆 Productos más vendidos">
+        <Card title="Productos más vendidos" icon={Trophy}>
           {data.top.length === 0 ? <p className="text-sm text-muted-foreground">Sin ventas en el período.</p> :
             <Bars color={INK} rows={data.top.map(t => ({ label: t.name, value: t.qty, text: `${t.qty} uds` }))} />}
         </Card>
-        <Card title="👥 Clientes por estado">
+        <Card title="Clientes por estado" icon={Users}>
           <Donut center="clientes" segs={[
             { label: 'Nuevos', value: cs?.nuevos ?? 0, color: C1 },
             { label: 'Frecuentes', value: cs?.frecuentes ?? 0, color: C2 },
@@ -177,7 +178,7 @@ export default function Dashboard() {
             { label: 'Inactivos', value: cs?.inactivos ?? 0, color: C4 },
           ]} />
         </Card>
-        <Card title="📦 Inventario">
+        <Card title="Inventario" icon={Package}>
           <Donut center="productos" segs={[
             { label: 'Disponible', value: data.stock.disponible, color: GOOD },
             { label: 'Últimas unidades', value: data.stock.ultimas, color: WARN },
@@ -225,7 +226,7 @@ function OnboardingCard({ d }: { d: Onboarding }) {
   return (
     <div className="bg-white rounded-xl border-2 border-green-300 p-5 mb-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-foreground">🚀 Configura tu bot para vender</h2>
+        <h2 className="font-semibold text-foreground flex items-center gap-2"><Rocket className="w-4 h-4 text-primary" /> Configura tu bot para vender</h2>
         <strong className="text-foreground">{d.done}/{d.total}</strong>
       </div>
       <div className="h-2 bg-muted rounded-full overflow-hidden my-3">
@@ -257,10 +258,10 @@ function Kpi({ label, value, sub, good }: { label: string; value: string; sub: s
   )
 }
 
-function Card({ title, children, full }: { title: string; children: React.ReactNode; full?: boolean }) {
+function Card({ title, icon: Icon, children, full }: { title: string; icon?: React.ComponentType<{ className?: string }>; children: React.ReactNode; full?: boolean }) {
   return (
     <div className={`bg-card rounded-xl border p-5 ${full ? 'lg:col-span-2' : ''}`}>
-      <h2 className="font-semibold text-foreground mb-3">{title}</h2>
+      <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2">{Icon && <Icon className="w-4 h-4 text-muted-foreground" />}{title}</h2>
       {children}
     </div>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
+import { RadioTower, Search } from 'lucide-react'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
@@ -180,7 +181,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             {/* Canal WhatsApp */}
             <div className="rounded-xl border p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-foreground">📡 Canal de WhatsApp</span>
+                <span className="inline-flex items-center gap-1.5"><RadioTower className="w-4 h-4" /> Canal de WhatsApp</span>
                 <select className={`${input} !w-44`} value={f.whatsapp_provider} onChange={set('whatsapp_provider')}>
                   <option value="ycloud">YCloud</option>
                   <option value="meta">Meta (oficial)</option>
@@ -211,7 +212,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <button type="button" onClick={verify} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">
-                  🔍 Verificar credenciales
+                  <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar credenciales</span>
                 </button>
                 {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
               </div>

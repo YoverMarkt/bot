@@ -4,6 +4,7 @@ import * as adm from './api'
 import type { BusinessRow } from './api'
 import ClientModal from './ClientModal'
 import { ViewModal, PromptModal } from './ClientTools'
+import { Check, Trash2, Bot as BotIcon, Plus, Eye } from 'lucide-react'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -62,7 +63,7 @@ export default function Clients() {
           <p className="text-sm text-muted-foreground">Gestiona todos los negocios de tu plataforma</p>
         </div>
         <button onClick={() => setEditing('new')}
-          className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">+ Nuevo cliente</button>
+          className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo cliente</span></button>
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : (
@@ -95,20 +96,20 @@ export default function Clients() {
                   <td className="px-3 py-3">
                     <div className="flex gap-1 flex-wrap">
                       <button onClick={() => quickVerify(c)} title="Verificar conexión del proveedor"
-                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted">✓</button>
+                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><Check className="w-3.5 h-3.5" /></button>
                       <button onClick={() => setViewing(c)}
-                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted">Ver</button>
+                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Ver</span></button>
                       <button onClick={() => setEditing(c.id)}
                         className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted">Editar</button>
                       <button onClick={() => setPrompting(c)}
-                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted">🤖 Bot</button>
+                        className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><BotIcon className="w-3.5 h-3.5" /> Bot</span></button>
                       {c.suspended
                         ? <button onClick={() => mReactivate.mutate(c.id)}
                             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-2 py-1.5">Reactivar</button>
                         : <button onClick={() => { if (confirm(`¿Suspender a ${c.name}? Su bot dejará de atender.`)) mSuspend.mutate(c.id) }}
                             className="rounded-lg border border-destructive/40 text-destructive text-xs px-2 py-1.5 hover:bg-destructive/10">Suspender</button>}
                       <button onClick={() => del(c)} title="Eliminar cliente"
-                        className="rounded-lg border border-destructive/40 text-destructive text-xs px-2 py-1.5 hover:bg-destructive/10">🗑</button>
+                        className="rounded-lg border border-destructive/40 text-destructive text-xs px-2 py-1.5 hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                     {vfy[c.id] && <div className="text-[11px] text-muted-foreground mt-1 max-w-72">{vfy[c.id]}</div>}
                   </td>

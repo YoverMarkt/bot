@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import * as convApi from './api'
 import { session } from '../../api/client'
+import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
 
 // Polling con la optimización de egress documentada en CLAUDE.md §11:
@@ -80,10 +81,10 @@ export default function Conversations() {
       {/* Lista de conversaciones */}
       <div className="w-80 shrink-0 bg-card rounded-xl border flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
-          <span className="font-semibold text-foreground">💬 Conversaciones</span>
+          <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-primary/100 animate-pulse" title="Actualizando en tiempo real" />
-            <button onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar">↻</button>
+            <button onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -102,8 +103,8 @@ export default function Conversations() {
               </div>
               <div className="flex items-center gap-1 mt-0.5">
                 {s.manual_mode
-                  ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 shrink-0">🤚 MANUAL</span>
-                  : <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0">🤖 BOT</span>}
+                  ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 shrink-0"><Hand className="w-3 h-3 inline mr-0.5" />MANUAL</span>
+                  : <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0"><BotIcon className="w-3 h-3 inline mr-0.5" />BOT</span>}
                 <span className="text-xs text-muted-foreground truncate">{s.last_message || ''}</span>
               </div>
               {(s.tags ?? []).length > 0 && (
@@ -142,7 +143,7 @@ export default function Conversations() {
                   </button>
                 )}
                 <div className="text-xs text-muted-foreground/80">
-                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? '🤚 Modo manual — respondiendo tú' : '🤖 Bot activo'}
+                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? 'Modo manual — respondiendo tú' : 'Bot activo'}
                 </div>
               </div>
 
@@ -151,13 +152,13 @@ export default function Conversations() {
                 {canVentas && (
                   <button onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-green-300 text-primary hover:bg-primary/10">
-                    💰 Venta realizada
+                    <span className="inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Venta realizada</span>
                   </button>
                 )}
 
                 {/* Etiquetas */}
                 <div className="relative">
-                  <button onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50">🏷️ Etiquetas</button>
+                  <button onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></button>
                   {tagsOpen && (
                     <TagPicker
                       tags={tags} selected={sess.tags ?? []}
@@ -176,18 +177,18 @@ export default function Conversations() {
 
                 {/* Nombre */}
                 <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}
-                  className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50">✏️ Nombre</button>
+                  className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></button>
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
                   <button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-border hover:bg-muted/50">
-                    🤖 Activar bot
+                    <span className="inline-flex items-center gap-1.5"><BotIcon className="w-4 h-4" /> Activar bot</span>
                   </button>
                 ) : (
                   <button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-destructive/30 text-destructive hover:bg-destructive/10">
-                    🤚 Tomar control
+                    <span className="inline-flex items-center gap-1.5"><Hand className="w-4 h-4" /> Tomar control</span>
                   </button>
                 )}
               </div>
