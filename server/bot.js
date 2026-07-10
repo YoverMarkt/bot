@@ -8,7 +8,7 @@ const reports   = require('./reports')
 const moneyCore = require('./money')      // núcleo de dinero: la IA conversa, el código calcula
 const payments  = require('./payments')   // pasarelas (enchufable; hoy sin pasarela)
 const { businessNeedsCalendar } = require('./calendar')
-require('dotenv').config()
+require('dotenv').config({ path: require('path').join(__dirname, '.env') })
 
 // ── ENVÍO DE MENSAJES WhatsApp ────────────────────────────
 // Indicador "escribiendo…" real en WhatsApp (YCloud) usando el ID del mensaje entrante

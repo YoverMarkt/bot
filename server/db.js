@@ -1,5 +1,5 @@
 const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
+require('dotenv').config({ path: require('path').join(__dirname, '.env') })
 
 // Backend usa la SECRET key (service_role) para bypassear RLS.
 // Fallback a SUPABASE_KEY si aún no se configuró la secret.

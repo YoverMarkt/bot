@@ -102,17 +102,18 @@ Para cambios amplios o ambiguos → **cambios-seguros**. Para tocar BD/RLS/auth/
 ## 6. COMANDOS DEL PROYECTO (reales, de package.json)
 
 ```bash
-# Raíz
+# Raíz (monorepo con npm workspaces — UN solo lockfile e install para todo)
+npm install               # instala server + apps/client + apps/admin de una vez
 npm start                 # node server/index.js  (producción)
+npm run dev               # nodemon del server (desarrollo, recarga al guardar)
+npm run build             # build de los dos paneles React (client + admin)
+npm run check             # lint + tipos (@ts-check) + tests de dinero del server
+npm test                  # solo los tests (Vitest)
 
-# server/
-cd server
-npm install               # instalar dependencias
-npm run dev               # nodemon index.js  (desarrollo, recarga al guardar)
-npm start                 # node index.js
+# También se puede trabajar dentro de cada workspace (cd server && npm run dev, etc.)
 ```
 
-> No hay scripts de `test`, `lint`, `build` ni `typecheck`. La verificación es manual (ver tester-saas). El servidor en local arranca un túnel Cloudflare automático; en producción usa `BASE_URL`.
+> Los workspaces son `@botpanel/server`, `@botpanel/client` y `@botpanel/admin`. El CI corre `check` + builds en cada PR. El servidor en local arranca un túnel Cloudflare automático; en producción usa `BASE_URL`.
 
 ---
 
