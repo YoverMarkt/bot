@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
 import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
 // serie única = tinta INK; c1 azul para comparación/vendedores; c2 aqua SIEMPRE
@@ -47,10 +48,10 @@ export default function Reports() {
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
           {PERIODS.map(([v, l]) => (
-            <button key={v} onClick={() => setPeriod(v)}
+            <Button key={v} onClick={() => setPeriod(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${period === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -76,15 +77,15 @@ export default function Reports() {
       {/* Filtro por categoría (mismas del panel viejo) */}
       <div className="mb-4 flex flex-wrap gap-2">
         {CATS.map(([v, l]) => (
-          <button key={v} onClick={() => setCat(v)}
+          <Button key={v} onClick={() => setCat(v)}
             className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-border text-muted-foreground hover:bg-muted/50'}`}>
             {l}
-          </button>
+          </Button>
         ))}
       </div>
 
       {isLoading && <p className="text-muted-foreground">Calculando reportes…</p>}
-      {error && <p className="text-destructive">❌ {(error as Error).message}</p>}
+      {error && <p className="text-destructive">✗ {(error as Error).message}</p>}
       {data && (
         <>
           {/* Resumen del período */}
@@ -126,7 +127,7 @@ export default function Reports() {
             {/* Pendientes */}
             {show('ventas') && (<>
             <Card title={`Pedidos sin cerrar${data.pending.count ? ` (${data.pending.count})` : ''}`} icon={ClipboardList}>
-              {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar. ✅" /> :
+              {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar." /> :
                 <ul className="text-sm space-y-1">
                   {data.pending.rows.map((r, i) => <li key={i} className="truncate text-foreground/90">{r.name}{r.last_message ? <span className="text-muted-foreground/80"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
                 </ul>}
@@ -149,7 +150,7 @@ export default function Reports() {
             {/* Abandonados */}
             {show('productos') && (<>
             <Card title="Productos abandonados (consultados sin vender)" icon={ShoppingCart}>
-              {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado. 🎉" /> :
+              {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado." /> :
                 <ul className="text-sm space-y-1">
                   {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.consultas} consultas</span></li>)}
                 </ul>}
@@ -158,7 +159,7 @@ export default function Reports() {
             {/* Bajo movimiento */}
             {show('productos') && (<>
             <Card title="Bajo movimiento (candidatos a promo)" icon={Snail}>
-              {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas. 🎉" /> :
+              {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas." /> :
                 <ul className="text-sm space-y-1">
                   {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.qty} uds</span></li>)}
                 </ul>}
@@ -167,7 +168,7 @@ export default function Reports() {
             {/* Stock bajo (colores de ESTADO reservados) */}
             {show('productos') && (<>
             <Card title="Stock bajo o agotado" icon={Package}>
-              {data.lowStock.rows.length === 0 ? <Empty msg="Nada agotado ni en últimas unidades. ✅" /> :
+              {data.lowStock.rows.length === 0 ? <Empty msg="Nada agotado ni en últimas unidades." /> :
                 <ul className="text-sm space-y-1">
                   {data.lowStock.rows.map((r, i) => (
                     <li key={i} className="flex items-center gap-2">
@@ -196,7 +197,7 @@ export default function Reports() {
             {/* Clientes perdidos */}
             {show('clientes') && (<>
             <Card title="Clientes perdidos (escribieron sin comprar)" icon={Frown}>
-              {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar. 🎉" /> :
+              {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar." /> :
                 <>
                   <p className="text-xs text-muted-foreground mb-2">🔁 {data.lostCustomers.returning} ya-cliente · 🆕 {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
                   <ul className="text-sm space-y-1">
@@ -218,7 +219,7 @@ export default function Reports() {
             </Card>
 
             <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>
-              {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo. 💪" /> :
+              {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo." /> :
                 <ul className="text-sm space-y-1">
                   {data.unanswered.rows.map((r, i) => <li key={i} className="text-foreground/90 truncate">“{r.question ?? '—'}” <span className="text-muted-foreground/80">×{r.count}</span></li>)}
                 </ul>}

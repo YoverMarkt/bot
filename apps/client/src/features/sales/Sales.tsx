@@ -5,6 +5,8 @@ import * as salesApi from './api'
 import { api } from '../../api/client'
 import { Receipt, Lightbulb } from 'lucide-react'
 import type { Order, SaleItem } from './api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const { money, cents } = salesApi
 
@@ -33,10 +35,10 @@ export default function Sales() {
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
           {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => setTab(v)}
+            <Button key={v} onClick={() => setTab(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -126,7 +128,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       if (q.contact_name) setName(q.contact_name)
       if (q.suggested.length) {
         setItems(q.suggested.map(s => ({ product_id: s.product_id, product_name: s.product_name, quantity: s.quantity, unit_price: s.unit_price })))
-        setMsg(`💡 ${q.suggested.length} producto(s) sugeridos desde la conversación`)
+        setMsg(`${q.suggested.length} producto(s) sugeridos desde la conversación`)
       } else setMsg('Sin sugerencias de la conversación — agrega los productos abajo')
     } catch { setMsg('No se encontró conversación con ese número') }
   }
@@ -138,10 +140,10 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       if (prefillPhone) await api(`/api/client/sessions/${encodeURIComponent(prefillPhone)}/close`, { method: 'PUT' }).catch(() => {})
     },
     onSuccess: () => {
-      setItems([]); setPhone(''); setName(''); setMsg('✅ Venta registrada — ya cuenta en tus reportes')
+      setItems([]); setPhone(''); setName(''); setMsg('✓ Venta registrada — ya cuenta en tus reportes')
       qc.invalidateQueries({ queryKey: ['orders'] })
     },
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error al registrar'}`),
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error al registrar'}`),
   })
 
   const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
@@ -152,13 +154,13 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
         <div>
           <label className="text-xs font-medium text-muted-foreground">Teléfono del cliente</label>
           <div className="flex gap-2">
-            <input className={`${input} flex-1`} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
-            <button onClick={loadQuote} type="button" className="rounded-lg border border-border px-3 text-sm hover:bg-muted/50" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></button>
+            <Input className={`${input} flex-1`} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
+            <Button onClick={loadQuote} type="button" className="rounded-lg border border-border px-3 text-sm hover:bg-muted/50" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></Button>
           </div>
         </div>
         <div>
           <label className="text-xs font-medium text-muted-foreground">Nombre</label>
-          <input className={`${input} w-full`} value={name} onChange={e => setName(e.target.value)} placeholder="opcional" />
+          <Input className={`${input} w-full`} value={name} onChange={e => setName(e.target.value)} placeholder="opcional" />
         </div>
       </div>
 
@@ -171,22 +173,22 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       {items.map((it, idx) => (
         <div key={idx} className="flex items-center gap-2 mb-2 text-sm">
           <span className="flex-1 truncate text-foreground">{it.product_name}</span>
-          <input type="number" min={1} max={99} value={it.quantity}
+          <Input type="number" min={1} max={99} value={it.quantity}
             onChange={e => setItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))}
             className={`${input} w-16 text-center`} />
           <span className="text-muted-foreground">× {money(it.unit_price)}</span>
           <span className="w-20 text-right font-medium">{money(cents(it.quantity * it.unit_price))}</span>
-          <button onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 px-1">✕</button>
+          <Button onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 px-1">✕</Button>
         </div>
       ))}
 
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/60">
         <span className="font-bold text-lg text-foreground">Total: {money(total)}</span>
-        <button
+        <Button
           onClick={() => mSave.mutate()} disabled={!items.length || mSave.isPending}
           className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
-          {mSave.isPending ? 'Registrando…' : '✅ Registrar venta'}
-        </button>
+          {mSave.isPending ? 'Registrando…' : '✓ Registrar venta'}
+        </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
     </div>
@@ -213,9 +215,9 @@ function SalesByContact() {
   return (
     <div className="max-w-2xl">
       <form onSubmit={e => { e.preventDefault(); setSearched(phone.trim()) }} className="flex gap-2 mb-4">
-        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)"
+        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)"
           className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-        <button className="rounded-lg bg-stone-800 text-white font-semibold px-4 text-sm">Buscar</button>
+        <Button className="rounded-lg bg-stone-800 text-white font-semibold px-4 text-sm">Buscar</Button>
       </form>
       {isFetching && <p className="text-muted-foreground text-sm">Buscando…</p>}
       {searched && !isFetching && sales.length === 0 && <p className="text-muted-foreground text-sm">Sin ventas registradas para ese número.</p>}
@@ -230,8 +232,8 @@ function SalesByContact() {
               {(s.sale_items ?? s.items ?? []).map((i, idx) => <div key={idx}>{i.quantity} × {i.product_name} — {money(i.line_total)}</div>)}
             </div>
             {s.status === 'completada' && (
-              <button onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }}
-                className="mt-2 text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Anular venta</button>
+              <Button onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }}
+                className="mt-2 text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Anular venta</Button>
             )}
           </div>
         ))}

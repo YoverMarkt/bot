@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as adm from './api'
 import type { BusinessRow } from './api'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 // ── Herramientas por negocio (paridad con el admin viejo):
 // 👁 Ver negocio (datos + estadísticas + últimas conversaciones)
@@ -47,7 +49,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
           ))}
         </div>
         <div className="flex justify-end mt-4">
-          <button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cerrar</button>
+          <Button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cerrar</Button>
         </div>
       </div>
     </div>
@@ -57,7 +59,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
 // Mismas plantillas del admin viejo
 const BPM_TEMPLATES: Record<string, string> = {
   formal: `Eres [Nombre], el asistente virtual oficial de [Negocio].\nTu tono es profesional y cortés. Siempre trata al cliente de "usted".\n\nSaludo: "Bienvenido/a a [Negocio], ¿en qué puedo asistirle hoy?"\nDespedida: "Ha sido un placer atenderle. Que tenga un excelente día."`,
-  casual: `Eres [Nombre], el asistente de [Negocio] 😊\nTu tono es cercano y entusiasta. Usa emojis con moderación.\n\nSaludo: "¡Hola! 👋 Bienvenido/a a [Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! Escríbenos cuando quieras 🙌"`,
+  casual: `Eres [Nombre], el asistente de [Negocio] 😊\nTu tono es cercano y entusiasta. Usa emojis con moderación.\n\nSaludo: "¡Hola! 👋 Bienvenido/a a [Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! Escríbenos cuando quieras"`,
   luxury: `Eres [Nombre], asesor/a de lujo de [Negocio].\nTu tono es elegante y sofisticado. Cuida cada palabra.\n\nSaludo: "Bienvenido/a. En [Negocio] nos complace asesorarle personalmente."\nDespedida: "Ha sido un honor. Quedamos a su disposición."\n\nDestaca la exclusividad de cada producto. Nunca menciones precios sin antes presentar el valor.`,
 }
 
@@ -74,9 +76,9 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
     setSaving(true); setMsg('')
     try {
       await adm.saveClientPolicies(c.id, { bot_prompt: prompt })
-      setMsg('✅ Prompt guardado')
+      setMsg('✓ Prompt guardado')
       setTimeout(onClose, 800)
-    } catch (e) { setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`) }
+    } catch (e) { setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
     setSaving(false)
   }
 
@@ -87,23 +89,23 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
         <p className="text-sm text-muted-foreground mb-3">{c.name}</p>
         <div className="flex gap-2 mb-2">
           {Object.keys(BPM_TEMPLATES).map(t => (
-            <button key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}
+            <Button key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}
               className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1 capitalize hover:bg-muted">
               Plantilla {t}
-            </button>
+            </Button>
           ))}
         </div>
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={14}
+        <Textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={14}
           className="w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
           placeholder="Eres el asistente virtual de…" />
         <p className="text-[11px] text-muted-foreground mt-1">⚠️ El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
         <div className="flex items-center justify-end gap-3 mt-3">
           {msg && <span className="text-sm text-foreground/80">{msg}</span>}
-          <button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
-          <button onClick={save} disabled={saving}
+          <Button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
+          <Button onClick={save} disabled={saving}
             className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : 'Guardar prompt'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

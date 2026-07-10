@@ -6,7 +6,7 @@ export default function Dashboard() {
   const { data: clients = [] } = useQuery({ queryKey: ['adm-clients'], queryFn: getClients })
 
   if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
-  if (error) return <p className="text-destructive">❌ {(error as Error).message}</p>
+  if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
   if (!data) return null
 
   const cards = [

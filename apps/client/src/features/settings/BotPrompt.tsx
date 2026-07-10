@@ -3,6 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { Locked } from './Settings'
 import { Lightbulb, ClipboardList, Smile, Sparkles } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
@@ -10,7 +12,7 @@ type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?
 // Plantillas del panel viejo (TEMPLATES)
 const TEMPLATES = {
   formal: `Eres [Nombre], el asistente virtual oficial de [Tu Negocio].\nTu tono es profesional y cortés. Siempre trata al cliente de "usted".\n\nSaludo inicial: "Bienvenido/a a [Tu Negocio], ¿en qué puedo asistirle hoy?"\nDespedida: "Ha sido un placer atenderle. Que tenga un excelente día."\n\nEvita expresiones informales o abreviaciones.`,
-  casual: `Eres [Nombre], el asistente amigable de [Tu Negocio] 😊\nTu tono es cercano, divertido y entusiasta. Usa emojis con moderación.\n\nSaludo inicial: "¡Hola! 👋 Bienvenido/a a [Tu Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! No dudes en escribirnos cuando quieras 🙌"\n\nSé natural y evita sonar como un robot.`,
+  casual: `Eres [Nombre], el asistente amigable de [Tu Negocio] 😊\nTu tono es cercano, divertido y entusiasta. Usa emojis con moderación.\n\nSaludo inicial: "¡Hola! 👋 Bienvenido/a a [Tu Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! No dudes en escribirnos cuando quieras"\n\nSé natural y evita sonar como un robot.`,
   luxury: `Eres [Nombre], asesor/a de lujo de [Tu Negocio].\nTu tono es elegante, sofisticado y exclusivo. Cuida cada palabra.\n\nSaludo inicial: "Bienvenido/a. En [Tu Negocio] nos complace asesorarle personalmente."\nDespedida: "Ha sido un honor. Quedamos a su disposición."\n\nDestaca la exclusividad y calidad de cada producto. Nunca menciones precios sin antes presentar el valor.`,
 }
 
@@ -23,8 +25,8 @@ export default function BotPrompt() {
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify({ bot_prompt: value }) }),
-    onSuccess: () => setMsg('✅ Prompt guardado — el bot ya responde con esto'),
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => setMsg('✓ Prompt guardado — el bot ya responde con esto'),
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
   })
 
   if (!isOwner) return <Locked />
@@ -48,19 +50,19 @@ export default function BotPrompt() {
       </div>
       <div className="bg-card rounded-xl border p-5 max-w-2xl">
         <label className="text-xs font-medium text-muted-foreground">Instrucciones de personalidad y saludo</label>
-        <textarea rows={12} value={value} onChange={e => setDraft(e.target.value)}
+        <Textarea rows={12} value={value} onChange={e => setDraft(e.target.value)}
           className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
         <div className="flex gap-2 flex-wrap mt-2">
-          <button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></button>
-          <button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Smile className="w-3.5 h-3.5" /> Plantilla casual</span></button>
-          <button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Plantilla lujo</span></button>
+          <Button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></Button>
+          <Button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Smile className="w-3.5 h-3.5" /> Plantilla casual</span></Button>
+          <Button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Plantilla lujo</span></Button>
         </div>
         <div className="flex justify-end mt-3">
-          <button onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}
+          <Button onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}
             className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {mSave.isPending ? 'Guardando…' : 'Guardar prompt'}
-          </button>
+          </Button>
         </div>
         {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       </div>
@@ -83,8 +85,8 @@ function PoliciesCard() {
       shipping: f?.shipping ?? null, returns: f?.returns ?? null,
       discounts: f?.discounts ?? null, bot_instructions: f?.bot_instructions ?? null,
     }) }),
-    onSuccess: () => setMsg('✅ Políticas guardadas — el bot ya responde con esto'),
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => setMsg('✓ Políticas guardadas — el bot ya responde con esto'),
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
   })
 
   if (isLoading || !f) return null
@@ -95,16 +97,16 @@ function PoliciesCard() {
       <h2 className="font-semibold text-foreground mb-1">Políticas del bot</h2>
       <p className="text-xs text-muted-foreground mb-3">El bot responde usando esta información</p>
       <div className="space-y-3">
-        <div><label className="text-xs font-medium text-muted-foreground">Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Descuentos</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Instrucciones especiales para el bot</label><textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Envíos</label><Textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Devoluciones</label><Textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Descuentos</label><Textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Instrucciones especiales para el bot</label><Textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end mt-3">
-        <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
           className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar políticas'}
-        </button>
+        </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
     </div>

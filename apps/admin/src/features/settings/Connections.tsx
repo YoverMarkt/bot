@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Globe, Square, Play } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 // ── Conexiones (sección propia, igual que el admin viejo):
 // túnel público + URLs de webhooks por proveedor listas para copiar.
@@ -21,9 +22,9 @@ export default function Connections() {
   const [msg, setMsg] = useState('')
 
   async function start() {
-    setMsg('⏳ Iniciando túnel (puede tardar ~15s)…')
+    setMsg('Iniciando túnel (puede tardar ~15s)…')
     try { await cfg.startTunnel(); setMsg(''); qc.invalidateQueries({ queryKey: ['adm-tunnel'] }) }
-    catch (e) { setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`) }
+    catch (e) { setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
   async function stop() {
     await cfg.stopTunnel(); setMsg('🔌 Túnel detenido')
@@ -44,11 +45,11 @@ export default function Connections() {
             <div className={`font-mono text-sm mt-1 break-all ${base ? 'text-primary' : 'text-muted-foreground/70'}`}>
               {base || 'Sin túnel activo'}
             </div>
-            {tunnel?.active && <div className="text-xs text-muted-foreground mt-0.5">✅ Activo — {tunnel.provider}</div>}
+            {tunnel?.active && <div className="text-xs text-muted-foreground mt-0.5">Activo — {tunnel.provider}</div>}
           </div>
           {tunnel?.active
-            ? <button onClick={stop} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></button>
-            : <button onClick={start} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></button>}
+            ? <Button onClick={stop} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></Button>
+            : <Button onClick={start} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></Button>}
         </div>
         {msg && <p className="text-xs text-muted-foreground mb-2">{msg}</p>}
 
@@ -61,7 +62,7 @@ export default function Connections() {
                 <div key={p.name} className="flex items-center gap-2 text-xs">
                   <span className="shrink-0 w-24 text-center rounded bg-muted border border-input text-foreground/80 px-2 py-1">{p.name}</span>
                   <span className="flex-1 min-w-0 truncate font-mono text-muted-foreground" title={url}>{url}</span>
-                  <button onClick={() => copy(url)} className="shrink-0 rounded border border-input text-foreground/80 px-2 py-1 hover:bg-muted">Copiar</button>
+                  <Button onClick={() => copy(url)} className="shrink-0 rounded border border-input text-foreground/80 px-2 py-1 hover:bg-muted">Copiar</Button>
                   <span className="shrink-0 hidden lg:inline text-muted-foreground/70">{p.desc}</span>
                 </div>
               )

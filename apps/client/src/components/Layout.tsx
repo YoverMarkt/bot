@@ -4,6 +4,7 @@ import { api, session } from '../api/client'
 import { useBusinessInfo, isBookingBiz, isServiceBiz } from '../lib/biz'
 import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, Archive, LogOut } from 'lucide-react'
 import { useAttention, AlarmBanner } from './AlarmSystem'
+import { Button } from '@/components/ui/button'
 
 // Secciones del panel (mismas reglas del panel viejo):
 // · `perm` controla visibilidad para empleados (el dueño ve todo; el SERVIDOR valida siempre)
@@ -92,9 +93,9 @@ export default function Layout() {
             <Archive className="w-4 h-4" /> Panel clásico
           </a>
           <div className="px-3 pb-2 text-xs text-muted-foreground truncate">{user?.name || 'Sesión activa'}</div>
-          <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50">
+          <Button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
-          </button>
+          </Button>
         </div>
       </aside>
 

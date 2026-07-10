@@ -6,6 +6,7 @@ import { getAlerts } from '../reports/api'
 import { getProducts } from '../catalog/api'
 import { useBusinessInfo } from '../../lib/biz'
 import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 // ── INICIO (port fiel del dashboard BI del panel viejo):
 // KPIs + línea de ventas por día + comparación + top + donas de
@@ -87,7 +88,7 @@ export default function Dashboard() {
   })
 
   if (canReports && isLoading) return <p className="text-muted-foreground">Cargando tu negocio…</p>
-  if (error) return <p className="text-destructive">❌ {(error as Error).message}</p>
+  if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
 
   const k = data?.kpis
   const pct = data?.comparison.pct ?? null
@@ -105,21 +106,21 @@ export default function Dashboard() {
           {canReports && (
             <div className="flex gap-1 bg-card border rounded-lg p-1">
               {PERIODS.map(p => (
-                <button
+                <Button
                   key={p.value} onClick={() => setPeriod(p.value)}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     period === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'
                   }`}
                 >
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
           )}
-          <button onClick={() => navigate('/catalog?new=1')}
+          <Button onClick={() => navigate('/catalog?new=1')}
             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2">
             <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -234,13 +235,13 @@ function OnboardingCard({ d }: { d: Onboarding }) {
       </div>
       {d.steps.map((s, i) => (
         <div key={i} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0 text-sm">
-          <span>{s.done ? '✅' : '⬜'}</span>
+          <span>{s.done ? '✓' : '⬜'}</span>
           <span className={`flex-1 ${s.done ? 'text-muted-foreground/80 line-through' : 'text-foreground/90'}`}>
             {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
           </span>
           {!s.done && s.page && (
-            <button onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
-              className="rounded-lg border border-border text-xs px-2.5 py-1 hover:bg-muted/50">Configurar →</button>
+            <Button onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
+              className="rounded-lg border border-border text-xs px-2.5 py-1 hover:bg-muted/50">Configurar →</Button>
           )}
         </div>
       ))}
