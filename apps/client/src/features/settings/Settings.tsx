@@ -10,11 +10,6 @@ type BusinessData = {
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
-const PERMS = [
-  ['catalogo', '📦 Catálogo'], ['conversaciones', '💬 Conversaciones'],
-  ['ventas', '🛒 Ventas'], ['reportes', '📊 Reportes'], ['citas', '📅 Citas'],
-] as const
-
 const input = 'w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
 
 export default function Settings() {
@@ -24,7 +19,7 @@ export default function Settings() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-stone-900">Ajustes</h1>
-        <p className="text-sm text-stone-500">Identidad de tu negocio (lo que el bot usa para presentarse)</p>
+        <p className="text-sm text-stone-500">Identidad básica de tu negocio</p>
       </div>
       <BusinessForm />
     </div>
@@ -40,15 +35,15 @@ export function Locked() {
   )
 }
 
-// ── Identidad del negocio (lo que el bot usa para presentarse) ──
+// ── Identidad del negocio (Ajustes del viejo: SOLO nombre, slogan y descripción) ──
 export function BusinessForm() {
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
-  const [draft, setDraft] = useState<BusinessData | null>(null)
+  const [draft, setDraft] = useState<Partial<BusinessData> | null>(null)
   const [msg, setMsg] = useState('')
   const f = draft ?? data
 
   const mSave = useMutation({
-    mutationFn: () => api('/api/client/business', { method: 'PUT', body: JSON.stringify(f) }),
+    mutationFn: () => api('/api/client/business', { method: 'PUT', body: JSON.stringify({ name: f?.name, slogan: f?.slogan, description: f?.description }) }),
     onSuccess: () => setMsg('✅ Guardado — el bot ya usa estos datos'),
     onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
   })
@@ -58,23 +53,20 @@ export function BusinessForm() {
     setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-2xl">
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-xs font-medium text-stone-600">Nombre</label><input className={input} value={f.name ?? ''} onChange={set('name')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Slogan</label><input className={input} value={f.slogan ?? ''} onChange={set('slogan')} /></div>
-        <div className="col-span-2"><label className="text-xs font-medium text-stone-600">Descripción</label><textarea className={input} rows={2} value={f.description ?? ''} onChange={set('description')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Dirección</label><input className={input} value={f.address ?? ''} onChange={set('address')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Teléfono</label><input className={input} value={f.phone ?? ''} onChange={set('phone')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Redes sociales</label><input className={input} value={f.social ?? ''} onChange={set('social')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Métodos de pago</label><input className={input} value={f.payment_methods ?? ''} onChange={set('payment_methods')} /></div>
+    <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-xl">
+      <div className="space-y-3">
+        <div><label className="text-xs font-medium text-stone-600">Nombre del negocio</label><input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
+        <div><label className="text-xs font-medium text-stone-600">Slogan / Lema</label><input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad ✂️" /></div>
+        <div><label className="text-xs font-medium text-stone-600">Descripción corta</label><textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
       </div>
       <div className="flex justify-end mt-4">
         <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          className="rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar cambios'}
         </button>
       </div>
       {msg && <p className="text-sm text-stone-600 mt-2">{msg}</p>}
+      <p className="text-[11px] text-stone-400 mt-3">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
     </div>
   )
 }
@@ -120,87 +112,105 @@ export function BotForm() {
   )
 }
 
-// ── Equipo: empleados con permisos por sección ──
+// ── Usuarios y permisos (clon de pg-usuarios del viejo): lista con el
+// dueño arriba, tarjetas de empleados con Editar/Eliminar y modal.
+const PERM_LABELS: Record<string, string> = {
+  catalogo: '📦 Catálogo (agregar y editar productos)',
+  conversaciones: '💬 Conversaciones (chatear con clientes)',
+  citas: '📅 Citas y horarios',
+  reportes: '📊 Reportes de ventas',
+  ventas: '💰 Registrar ventas',
+}
+
 export function Team() {
   const qc = useQueryClient()
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
-  const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
-  const [msg, setMsg] = useState('')
+  const [modal, setModal] = useState<TeamUser | 'new' | null>(null)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['team'] })
-
-  const mCreate = useMutation({
-    mutationFn: () => api('/api/client/users', { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); setMsg('✅ Empleado creado'); refresh() },
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
-  })
   const mDelete = useMutation({ mutationFn: (id: string) => api(`/api/client/users/${id}`, { method: 'DELETE' }), onSettled: refresh })
-  const mPerms = useMutation({
-    mutationFn: (v: { id: string; permissions: string[] }) => api(`/api/client/users/${v.id}`, { method: 'PUT', body: JSON.stringify({ permissions: v.permissions }) }),
-    onSettled: refresh,
-  })
-
-  const togglePerm = (list: string[], p: string) => list.includes(p) ? list.filter(x => x !== p) : [...list, p]
 
   if (isLoading) return <p className="text-stone-500">Cargando equipo…</p>
+  const dueño = users.filter(u => u.role === 'owner').map(u => u.email).join(', ') || '—'
+  const emps = users.filter(u => u.role !== 'owner')
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
-      <div className="bg-white rounded-xl border border-stone-200 p-5">
-        <h2 className="font-semibold text-stone-900 mb-3">Tu equipo ({users.length})</h2>
-        {users.length === 0 && <p className="text-sm text-stone-500">Solo tú por ahora. Crea cuentas para tus empleados con permisos limitados.</p>}
-        <div className="space-y-3">
-          {users.map(u => (
-            <div key={u.id} className="border border-stone-100 rounded-lg p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-sm text-stone-900">{u.name || u.email} {u.role === 'owner' && <span className="text-[10px] bg-green-50 text-green-700 rounded px-1.5 py-0.5 ml-1">DUEÑO</span>}</div>
-                  <div className="text-xs text-stone-400">{u.email}</div>
-                </div>
-                {u.role !== 'owner' && (
-                  <button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
-                    className="text-xs text-red-600 border border-red-200 rounded px-2 py-1 hover:bg-red-50">Eliminar</button>
-                )}
-              </div>
-              {u.role !== 'owner' && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {PERMS.map(([p, label]) => (
-                    <label key={p} className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
-                      <input type="checkbox" checked={(u.permissions ?? []).includes(p)}
-                        onChange={() => mPerms.mutate({ id: u.id, permissions: togglePerm(u.permissions ?? [], p) })} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+    <div className="max-w-2xl">
+      <div className="flex justify-end mb-3">
+        <button onClick={() => setModal('new')}
+          className="rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2">+ Nuevo empleado</button>
       </div>
+      <p className="text-sm text-stone-500 mb-3">👑 Dueño: <strong className="text-stone-800">{dueño}</strong> (acceso total)</p>
+      {emps.length === 0 && <p className="text-sm text-stone-500">Aún no tienes empleados. Crea el primero con el botón de arriba.</p>}
+      {emps.map(u => (
+        <div key={u.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-xl px-4 py-3 mb-2">
+          <div>
+            <strong className="text-sm text-stone-900">{u.name || u.email}</strong>
+            <div className="text-xs text-stone-500">{u.email} · {(u.permissions ?? []).length} permiso(s)</div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setModal(u)} className="text-xs rounded-lg border border-stone-200 px-2.5 py-1.5 hover:bg-stone-50">Editar</button>
+            <button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
+              className="text-xs rounded-lg border border-red-200 text-red-600 px-2.5 py-1.5 hover:bg-red-50">Eliminar</button>
+          </div>
+        </div>
+      ))}
+      {modal && <UserModal user={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSaved={() => { setModal(null); refresh() }} />}
+    </div>
+  )
+}
 
-      <div className="bg-white rounded-xl border border-stone-200 p-5">
-        <h2 className="font-semibold text-stone-900 mb-3">+ Nuevo empleado</h2>
+function UserModal({ user, onClose, onSaved }: { user: TeamUser | null; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({
+    name: user?.name ?? '', email: user?.email ?? '', password: '',
+    permissions: user?.permissions ?? [] as string[],
+  })
+  const [msg, setMsg] = useState('')
+  const [saving, setSaving] = useState(false)
+  const toggle = (p: string) => setF(v => ({ ...v, permissions: v.permissions.includes(p) ? v.permissions.filter(x => x !== p) : [...v.permissions, p] }))
+
+  async function save() {
+    if (!user && (!f.email || !f.password)) { setMsg('Correo y contraseña son obligatorios'); return }
+    setSaving(true)
+    try {
+      if (user) {
+        const body: Record<string, unknown> = { name: f.name, permissions: f.permissions }
+        if (f.password) body.password = f.password
+        await api(`/api/client/users/${user.id}`, { method: 'PUT', body: JSON.stringify(body) })
+      } else {
+        await api('/api/client/users', { method: 'POST', body: JSON.stringify(f) })
+      }
+      onSaved()
+    } catch (e) { setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`); setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 bg-black/50 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 my-12" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-stone-900 mb-3">{user ? 'Editar empleado' : 'Nuevo empleado'}</h2>
         <div className="space-y-3">
-          <div><label className="text-xs font-medium text-stone-600">Nombre</label><input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-stone-600">Correo *</label><input className={input} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-stone-600">Contraseña *</label><input className={input} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Nombre</label><input className={input} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Correo {user ? '' : '*'}</label><input className={input} type="email" value={f.email} disabled={!!user} onChange={e => setF({ ...f, email: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Contraseña {user ? '(solo si cambia)' : '*'}</label><input className={input} type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></div>
           <div>
             <label className="text-xs font-medium text-stone-600">Permisos (qué secciones puede ver)</label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {PERMS.map(([p, label]) => (
-                <label key={p} className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
-                  <input type="checkbox" checked={form.permissions.includes(p)}
-                    onChange={() => setForm({ ...form, permissions: togglePerm(form.permissions, p) })} />
+            <div className="space-y-1.5 mt-1">
+              {Object.entries(PERM_LABELS).map(([p, label]) => (
+                <label key={p} className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
+                  <input type="checkbox" checked={f.permissions.includes(p)} onChange={() => toggle(p)} />
                   {label}
                 </label>
               ))}
             </div>
           </div>
-          <button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending}
-            className="w-full rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2 text-sm">
-            {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
+        </div>
+        {msg && <p className="text-sm text-red-600 mt-2">{msg}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="rounded-lg border border-stone-200 text-stone-600 px-4 py-2 text-sm hover:bg-stone-50">Cancelar</button>
+          <button onClick={save} disabled={saving}
+            className="rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+            {saving ? 'Guardando…' : 'Guardar'}
           </button>
-          {msg && <p className="text-sm text-stone-600">{msg}</p>}
         </div>
       </div>
     </div>
