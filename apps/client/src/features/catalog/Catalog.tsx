@@ -243,13 +243,13 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
 
         {/* Media: imagen + video → Cloudinary */}
         <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="rounded-lg border border-dashed border-stone-300 p-3">
+          <div className="rounded-lg border border-dashed border-input p-3">
             <div className="text-xs font-semibold text-foreground/90 mb-1">📷 Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
             <Input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
-          <div className="rounded-lg border border-dashed border-stone-300 p-3">
+          <div className="rounded-lg border border-dashed border-input p-3">
             <div className="text-xs font-semibold text-foreground/90 mb-1">🎬 Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
             {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
             <Input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />

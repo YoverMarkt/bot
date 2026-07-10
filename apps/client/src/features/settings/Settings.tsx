@@ -67,7 +67,7 @@ export function BusinessForm() {
       </div>
       <div className="flex justify-end mt-4">
         <Button variant="ghost" onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-stone-900 hover:bg-accent disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>
