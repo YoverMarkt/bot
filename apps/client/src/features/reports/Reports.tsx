@@ -48,7 +48,7 @@ export default function Reports() {
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
           {PERIODS.map(([v, l]) => (
-            <Button key={v} onClick={() => setPeriod(v)}
+            <Button variant="ghost" key={v} onClick={() => setPeriod(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${period === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
             </Button>
@@ -77,7 +77,7 @@ export default function Reports() {
       {/* Filtro por categoría (mismas del panel viejo) */}
       <div className="mb-4 flex flex-wrap gap-2">
         {CATS.map(([v, l]) => (
-          <Button key={v} onClick={() => setCat(v)}
+          <Button variant="ghost" key={v} onClick={() => setCat(v)}
             className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-border text-muted-foreground hover:bg-muted/50'}`}>
             {l}
           </Button>

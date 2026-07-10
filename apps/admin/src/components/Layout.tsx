@@ -47,7 +47,7 @@ export default function Layout() {
           </div>
         </nav>
         <div className="p-3 border-t border-border">
-          <Button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
+          <Button variant="ghost" onClick={logout} className="w-full justify-start text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
           </Button>
         </div>
