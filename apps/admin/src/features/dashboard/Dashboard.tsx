@@ -10,29 +10,29 @@ export default function Dashboard() {
   if (!data) return null
 
   const cards = [
-    { label: 'Negocios totales', value: data.totalClients, icon: '🏪' },
-    { label: 'Bots activos', value: data.activeClients, icon: '🤖' },
-    { label: 'Suspendidos', value: data.suspendedClients, icon: '⛔' },
-    { label: 'Mensajes (últimas 24h)', value: data.messagesToday, icon: '💬' },
+    { label: 'Total clientes', value: data.totalClients, sub: 'Negocios registrados' },
+    { label: 'Activos', value: data.activeClients, sub: 'Bots funcionando' },
+    { label: 'Suspendidos', value: data.suspendedClients, sub: 'Pago pendiente' },
+    { label: 'Mensajes hoy', value: data.messagesToday, sub: 'En todos los bots' },
   ]
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-1">Inicio</h1>
-      <p className="text-sm text-stone-400 mb-6">El pulso de tu SaaS</p>
+      <h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1>
+      <p className="text-sm text-stone-400 mb-6">Visión general de tu negocio</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map(c => (
           <div key={c.label} className="bg-stone-900 rounded-xl border border-stone-800 p-5">
-            <div className="text-2xl mb-1">{c.icon}</div>
-            <div className="text-3xl font-bold text-white">{c.value}</div>
-            <div className="text-xs uppercase tracking-wide text-stone-500 mt-1">{c.label}</div>
+            <div className="text-xs uppercase tracking-wide text-stone-500">{c.label}</div>
+            <div className="text-3xl font-bold text-white mt-1">{c.value}</div>
+            <div className="text-xs text-stone-500 mt-1">{c.sub}</div>
           </div>
         ))}
       </div>
 
       {/* Últimos negocios (renderDashRecent del panel viejo) */}
       <div className="bg-stone-900 rounded-xl border border-stone-800 p-5 mt-6 max-w-2xl">
-        <h2 className="text-sm font-semibold text-white mb-2">🏪 Negocios recientes</h2>
+        <h2 className="text-sm font-semibold text-white mb-2">Clientes recientes</h2>
         {clients.length === 0 && <p className="text-sm text-stone-500">Sin clientes aún.</p>}
         {clients.slice(0, 6).map(c => (
           <div key={c.id} className="flex items-center gap-3 py-2.5 border-b border-stone-800/60 last:border-0">
