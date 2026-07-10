@@ -32,14 +32,14 @@ export default function PoliciesPage() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-stone-900">Políticas del bot</h1>
-        <p className="text-sm text-stone-500">Envíos, devoluciones, descuentos e instrucciones extra</p>
+        <p className="text-sm text-stone-500">El bot responde usando esta información</p>
       </div>
       <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-2xl">
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="text-xs font-medium text-stone-600">🚚 Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-          <div><label className="text-xs font-medium text-stone-600">↩️ Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
-          <div><label className="text-xs font-medium text-stone-600">🏷️ Descuentos (informativo)</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-          <div><label className="text-xs font-medium text-stone-600">📌 Instrucciones extra</label><textarea className={input} rows={3} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div className="space-y-3">
+          <div><label className="text-xs font-medium text-stone-600">Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Descuentos</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Instrucciones especiales para el bot</label><textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
         </div>
         <div className="flex justify-end mt-3">
           <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
