@@ -7,7 +7,7 @@ import { getClients } from '../clients/api'
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
 
-const PER_PAGE = 10
+const PER_PAGE = 12   // BILLING_PER_PAGE del viejo
 const input = 'rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
 
 const money = (v: number | string) =>
@@ -69,9 +69,7 @@ export default function Billing() {
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Facturación</h1>
-          <p className="text-sm text-stone-400">
-            {filtered.length === records.length ? `${records.length} registros` : `${filtered.length} de ${records.length}`}
-          </p>
+          <p className="text-sm text-stone-400">Historial de pagos y cobros pendientes</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select className={input} value={fClient} onChange={e => { setFClient(e.target.value); setPage(1) }}>
@@ -79,14 +77,14 @@ export default function Billing() {
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select className={input} value={fStatus} onChange={e => { setFStatus(e.target.value); setPage(1) }}>
-            <option value="">Todos los estados</option>
+            <option value="">Todos</option>
             <option value="pending">Pendiente</option>
-            <option value="paid">Pagado</option>
             <option value="overdue">Vencido</option>
+            <option value="paid">Pagado</option>
             <option value="future">Próximo</option>
           </select>
           <button onClick={() => setShowNew(true)}
-            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">➕ Nuevo cargo</button>
+            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">+ Nuevo registro</button>
         </div>
       </div>
 
@@ -191,7 +189,7 @@ function NewCharge({ clients, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 z-30 bg-black/60 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
       <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-2xl p-6 my-12">
-        <h2 className="text-lg font-bold text-white mb-4">Nuevo cargo</h2>
+        <h2 className="text-lg font-bold text-white mb-4">Nuevo registro</h2>
         <div className="space-y-3">
           <div>
             <span className={lbl}>Cliente *</span>
@@ -219,7 +217,7 @@ function NewCharge({ clients, onClose, onSaved }: {
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" onClick={onClose} className="rounded-lg border border-stone-700 text-stone-300 px-4 py-2 text-sm hover:bg-stone-800">Cancelar</button>
           <button disabled={saving} className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
-            {saving ? 'Guardando…' : 'Crear cargo'}
+            {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
       </form>
