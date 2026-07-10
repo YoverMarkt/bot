@@ -22,6 +22,7 @@ export default function Schedule() {
     queryFn: () => api<ScheduleDay[]>('/api/client/schedule'),
   })
   const [draft, setDraft] = useState<ScheduleDay[] | null>(null)
+  const [duration, setDuration] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
   const days: ScheduleDay[] = draft ?? ORDER.map(d =>
@@ -32,8 +33,9 @@ export default function Schedule() {
   const update = (dow: number, patch: Partial<ScheduleDay>) =>
     setDraft(days.map(d => d.day_of_week === dow ? { ...d, ...patch } : d))
 
+  const dur = duration ?? saved.find(d => d.slot_duration)?.slot_duration ?? 60
   const mSave = useMutation({
-    mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days }) }),
+    mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days: days.map(d => ({ ...d, slot_duration: dur })) }) }),
     onSuccess: () => { setMsg('✅ Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
     onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error al guardar'}`),
   })
@@ -46,9 +48,21 @@ export default function Schedule() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-stone-900">Horarios de atención</h1>
-        <p className="text-sm text-stone-500">Fuera de este horario, el bot informa los horarios UNA vez y guarda silencio hasta la reapertura.</p>
+        <p className="text-sm text-stone-500">Tu horario. El bot avisará a quien escriba fuera de este horario. (En modo "Con citas", además se ofrecen turnos en estas horas.)</p>
       </div>
       <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-xl">
+        {/* Duración de cada cita (select del viejo) */}
+        <div className="mb-4">
+          <label className="text-xs font-medium text-stone-600 block mb-1">Duración de cada cita</label>
+          <select value={dur} onChange={e => { setDuration(parseInt(e.target.value)); if (!draft) setDraft(days) }}
+            className="rounded-lg border border-stone-300 px-3 py-2 text-sm max-w-56 focus:outline-none focus:ring-2 focus:ring-green-500">
+            <option value={30}>30 minutos</option>
+            <option value={45}>45 minutos</option>
+            <option value={60}>1 hora</option>
+            <option value={90}>1 hora 30 min</option>
+            <option value={120}>2 horas</option>
+          </select>
+        </div>
         {days.map(d => (
           <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-stone-50 last:border-0">
             <label className="flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-stone-800 cursor-pointer">
@@ -67,7 +81,7 @@ export default function Schedule() {
           </div>
         ))}
         <div className="flex justify-end mt-4">
-          <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
+          <button onClick={() => mSave.mutate()} disabled={(!draft && duration === null) || mSave.isPending}
             className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
             {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
           </button>
