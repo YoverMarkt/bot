@@ -4,7 +4,7 @@ import { api, session } from '../../api/client'
 import { Locked } from './Settings'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
-type Policies = { bot_prompt?: string | null }
+type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 
 // Plantillas del panel viejo (TEMPLATES)
 const TEMPLATES = {
@@ -33,7 +33,7 @@ export default function BotPrompt() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-stone-900">Prompt del Bot</h1>
-        <p className="text-sm text-stone-500">Define la personalidad, tono y saludo de tu asistente virtual</p>
+        <p className="text-sm text-stone-500">Personalidad, tono y saludo de tu bot + las políticas con las que responde</p>
       </div>
 
       {/* Card de ayuda del viejo */}
@@ -63,6 +63,49 @@ export default function BotPrompt() {
         </div>
         {msg && <p className="text-sm text-stone-600 mt-2">{msg}</p>}
       </div>
+
+      {/* Políticas del bot (unidas aquí por decisión del usuario 2026-07-10) */}
+      <PoliciesCard />
+    </div>
+  )
+}
+
+function PoliciesCard() {
+  const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
+  const [draft, setDraft] = useState<Policies | null>(null)
+  const [msg, setMsg] = useState('')
+  const f = draft ?? data
+  const input = 'w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+
+  const mSave = useMutation({
+    mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify({
+      shipping: f?.shipping ?? null, returns: f?.returns ?? null,
+      discounts: f?.discounts ?? null, bot_instructions: f?.bot_instructions ?? null,
+    }) }),
+    onSuccess: () => setMsg('✅ Políticas guardadas — el bot ya responde con esto'),
+    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+  })
+
+  if (isLoading || !f) return null
+  const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-2xl mt-5">
+      <h2 className="font-semibold text-stone-900 mb-1">Políticas del bot</h2>
+      <p className="text-xs text-stone-500 mb-3">El bot responde usando esta información</p>
+      <div className="space-y-3">
+        <div><label className="text-xs font-medium text-stone-600">Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><label className="text-xs font-medium text-stone-600">Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><label className="text-xs font-medium text-stone-600">Descuentos</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><label className="text-xs font-medium text-stone-600">Instrucciones especiales para el bot</label><textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+      </div>
+      <div className="flex justify-end mt-3">
+        <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
+          className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          {mSave.isPending ? 'Guardando…' : 'Guardar políticas'}
+        </button>
+      </div>
+      {msg && <p className="text-sm text-stone-600 mt-2">{msg}</p>}
     </div>
   )
 }

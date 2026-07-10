@@ -14,7 +14,6 @@ import Bookings from './features/bookings/Bookings'
 import Schedule from './features/bookings/Schedule'
 import Settings from './features/settings/Settings'
 import BotPrompt from './features/settings/BotPrompt'
-import PoliciesPage from './features/settings/Policies'
 import Users from './features/settings/Users'
 
 const queryClient = new QueryClient({
@@ -45,7 +44,7 @@ export default function App() {
               <Route path="/customers" element={<Customers />} />
               <Route path="/reactivate" element={<Reactivar />} />
               <Route path="/bot-prompt" element={<BotPrompt />} />
-              <Route path="/policies" element={<PoliciesPage />} />
+              <Route path="/policies" element={<Navigate to="/bot-prompt" replace />} />
               <Route path="/users" element={<Users />} />
               <Route path="/bookings" element={<Bookings />} />
               <Route path="/schedule" element={<Schedule />} />
