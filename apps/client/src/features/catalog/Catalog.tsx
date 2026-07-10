@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
@@ -18,6 +19,11 @@ export default function Catalog() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
+  // "+ Agregar producto" del Inicio llega con ?new=1 y abre el modal directo (como el viejo)
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    if (params.get('new') === '1') { setEditing('new'); setParams({}, { replace: true }) }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   const [toast, setToast] = useState('')
 
   const { data: products = [], isLoading } = useQuery({ queryKey: ['products'], queryFn: catApi.getProducts })

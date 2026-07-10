@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, session } from '../../api/client'
 import { getAlerts } from '../reports/api'
+import { getProducts } from '../catalog/api'
+import { useBusinessInfo } from '../../lib/biz'
 
 // ── INICIO (port fiel del dashboard BI del panel viejo):
 // KPIs + línea de ventas por día + comparación + top + donas de
@@ -58,11 +60,17 @@ const PERIODS = [
 ] as const
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState<string>('mes')
-  const isOwner = session.user?.role === 'owner'
+  const [period, setPeriod] = useState<string>('semana')   // el viejo arranca en Semana
+  const navigate = useNavigate()
+  const user = session.user
+  const isOwner = user?.role === 'owner'
+  const canReports = isOwner || (user?.permissions ?? []).includes('reportes')
+  const { data: bizInfo } = useBusinessInfo()
+  const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: getProducts })
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard', period],
     queryFn: () => api<DashboardData>(`/api/client/dashboard?period=${period}`),
+    enabled: canReports,
   })
   const { data: alertsData } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts, staleTime: 60_000 })
   const { data: onboarding } = useQuery({
@@ -77,35 +85,49 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
-  if (isLoading) return <p className="text-stone-500">Cargando tu negocio…</p>
+  if (canReports && isLoading) return <p className="text-stone-500">Cargando tu negocio…</p>
   if (error) return <p className="text-red-600">❌ {(error as Error).message}</p>
-  if (!data) return null
 
-  const k = data.kpis
-  const pct = data.comparison.pct
-  const conv = k.conversion == null ? '—' : `${Math.round(k.conversion)}%`
-  const cs = data.customersByStatus
+  const k = data?.kpis
+  const pct = data?.comparison.pct ?? null
+  const conv = k?.conversion == null ? '—' : `${Math.round(k.conversion)}%`
+  const cs = data?.customersByStatus
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Inicio</h1>
-          <p className="text-sm text-stone-500">Resumen de {data.label}</p>
+          <h1 className="text-2xl font-bold text-stone-900">Hola, {session.business?.name || ''}!</h1>
+          <p className="text-sm text-stone-500">Panel de gestión de tu bot de WhatsApp</p>
         </div>
-        <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
-          {PERIODS.map(p => (
-            <button
-              key={p.value} onClick={() => setPeriod(p.value)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                period === p.value ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {canReports && (
+            <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
+              {PERIODS.map(p => (
+                <button
+                  key={p.value} onClick={() => setPeriod(p.value)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    period === p.value ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => navigate('/catalog?new=1')}
+            className="rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2">
+            + Agregar producto
+          </button>
         </div>
       </div>
+
+      {/* Banner de suspendido (igual que el viejo) */}
+      {bizInfo?.suspended && (
+        <div className="rounded-xl bg-gradient-to-r from-red-600 to-red-400 text-white text-sm font-semibold px-5 py-4 mb-5">
+          ⛔ Tu cuenta está suspendida — el bot no responde a tus clientes. Contacta a soporte para reactivarla.
+        </div>
+      )}
 
       {/* Checklist de onboarding (solo dueño, solo si falta algo) */}
       {onboarding?.steps && onboarding.pct < 100 && <OnboardingCard d={onboarding} />}
@@ -121,16 +143,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Contadores rápidos del panel viejo */}
-      {quick && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-          <Kpi label="Productos" value={String(quick.totalProducts)} sub="En catálogo" />
-          <Kpi label="Disponibles" value={String(quick.availableProducts)} sub="Con stock" />
-          <Kpi label="Mensajes hoy" value={String(quick.messagesToday)} sub="Respondidos" />
-          <Kpi label="Contactos" value={String(quick.totalContacts)} sub="Personas que han escrito" />
-        </div>
-      )}
-
+      {/* BI (solo con permiso de reportes, como el viejo) */}
+      {canReports && data && k && (<>
       {/* KPIs (mismos 5 del viejo) */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
         <Kpi label={`Ventas (${data.label})`} value={money(k.total)} sub={pct === null ? '' : `${pct >= 0 ? '▲ +' : '▼ '}${Math.abs(pct).toFixed(0)}% vs período anterior`} good={pct !== null && pct >= 0} />
@@ -171,6 +185,37 @@ export default function Dashboard() {
           ]} />
         </Card>
       </div>
+      </>)}
+
+      {/* Contadores (mismos 4 del viejo, debajo del BI) */}
+      {quick && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4 mb-4">
+          <Kpi label="Productos" value={String(quick.totalProducts)} sub="En catálogo" />
+          <Kpi label="Disponibles" value={String(quick.availableProducts)} sub="Con stock" />
+          <Kpi label="Mensajes hoy" value={String(quick.messagesToday)} sub="Respondidos" />
+          <Kpi label="Contactos" value={String(quick.totalContacts)} sub="Personas que escribieron en el chat" />
+        </div>
+      )}
+
+      {/* Productos recientes (igual que el viejo: 5, con foto, marca y precio) */}
+      <Card title="Productos recientes">
+        {products.length === 0
+          ? <p className="text-sm text-stone-500">Sin productos aún.</p>
+          : products.slice(0, 5).map(p => (
+            <div key={p.id} className="flex items-center gap-3 py-2 border-b border-stone-100 last:border-0">
+              <div className="w-9 h-9 rounded-lg bg-stone-100 overflow-hidden shrink-0">
+                {p.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-stone-900 truncate">{p.name}</div>
+                <div className="text-xs text-stone-400">{p.brand || ''}</div>
+              </div>
+              <div className="font-mono text-sm font-medium text-stone-900 shrink-0">
+                {Number(p.price) > 0 ? `$${Number(p.price).toFixed(2)}` : 'a consultar'}
+              </div>
+            </div>
+          ))}
+      </Card>
     </div>
   )
 }
