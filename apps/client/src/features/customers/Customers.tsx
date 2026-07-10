@@ -28,64 +28,57 @@ export default function Customers() {
 function Directory() {
   const { data: customers = [], isLoading } = useQuery({ queryKey: ['customers'], queryFn: custApi.getCustomers })
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'todos' | Customer['status']>('todos')
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
-    return customers
-      .filter(c => filter === 'todos' || c.status === filter)
-      .filter(c => !q || c.name.toLowerCase().includes(q) || c.phone.includes(q))
-  }, [customers, search, filter])
+    return q ? customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q)) : customers
+  }, [customers, search])
 
-  if (isLoading) return <p className="text-stone-500">Cargando directorio…</p>
+  if (isLoading) return <p className="text-stone-500">Cargando…</p>
 
-  const counts = customers.reduce((acc, c) => { acc[c.status] = (acc[c.status] ?? 0) + 1; return acc }, {} as Record<string, number>)
+  const fecha = (iso: string) => new Date(iso).toLocaleDateString('es')
 
   return (
     <div>
-      <div className="flex gap-2 mb-4 flex-wrap items-center">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono…"
-          className="rounded-lg border border-stone-300 px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-green-500" />
-        {(['todos', 'nuevo', 'frecuente', 'activo', 'inactivo'] as const).map(s => (
-          <button key={s} onClick={() => setFilter(s)}
-            className={`text-xs rounded-lg px-2.5 py-1.5 font-medium border ${filter === s ? 'border-green-600 bg-green-50 text-green-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}>
-            {s === 'todos' ? `Todos (${customers.length})` : `${STATUS_BADGE[s].label} (${counts[s] ?? 0})`}
-          </button>
-        ))}
-      </div>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔎 Buscar por nombre o teléfono..."
+        className="rounded-lg border border-stone-300 px-3 py-2 text-sm w-full max-w-sm mb-4 focus:outline-none focus:ring-2 focus:ring-green-500" />
 
-      {filtered.length === 0 ? (
-        <p className="text-sm text-stone-500">No hay clientes{search || filter !== 'todos' ? ' con ese filtro' : ' aún — se llenan solos al registrar ventas'}.</p>
+      {!customers.length ? (
+        <p className="text-sm text-stone-500">Aún no hay clientes con compras registradas.</p>
+      ) : !filtered.length ? (
+        <p className="text-sm text-stone-500">Ningún cliente coincide con la búsqueda.</p>
       ) : (
-        <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-100">
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3 text-right">Compras</th>
-                <th className="px-4 py-3 text-right">Total gastado</th>
-                <th className="px-4 py-3 text-right">Última compra</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(c => (
-                <tr key={c.phone} className="border-b border-stone-50 hover:bg-stone-50">
-                  <td className="px-4 py-2.5">
-                    <div className="font-medium text-stone-900">{c.name}</div>
-                    <div className="text-xs text-stone-400">{c.phone}</div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-[11px] font-semibold rounded px-2 py-0.5 ${STATUS_BADGE[c.status].cls}`}>{STATUS_BADGE[c.status].label}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">{c.orders}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold">{money(c.total)}</td>
-                  <td className="px-4 py-2.5 text-right text-stone-500">hace {c.daysSince} día(s)</td>
+        <>
+          <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-stone-500 border-b border-stone-100">
+                  <th className="px-3 py-2">Cliente</th>
+                  <th className="px-3 py-2">Teléfono</th>
+                  <th className="px-3 py-2">Última compra</th>
+                  <th className="px-3 py-2">Total gastado</th>
+                  <th className="px-3 py-2">Compras</th>
+                  <th className="px-3 py-2">Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map(c => (
+                  <tr key={c.phone} className="border-b border-stone-50 hover:bg-stone-50">
+                    <td className="px-3 py-2 font-semibold text-stone-900">{c.name}</td>
+                    <td className="px-3 py-2 text-stone-600">{c.phone}</td>
+                    <td className="px-3 py-2 text-stone-600">{fecha(c.lastPurchase)} <span className="text-stone-400">({c.daysSince}d)</span></td>
+                    <td className="px-3 py-2 font-mono">{money(c.total)}</td>
+                    <td className="px-3 py-2">{c.orders}</td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[11px] font-semibold rounded px-2 py-0.5 ${STATUS_BADGE[c.status].cls}`}>{STATUS_BADGE[c.status].label}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-stone-400 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
+        </>
       )}
     </div>
   )
@@ -109,50 +102,50 @@ export function Reactivate() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <label className="text-sm text-stone-600">Sin escribir hace</label>
+      <div className="flex items-center gap-2 mb-4 flex-wrap justify-end">
         <select value={days} onChange={e => setDays(parseInt(e.target.value))}
-          className="rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-          {[7, 15, 30, 60, 90].map(d => <option key={d} value={d}>{d} días o más</option>)}
+          className="rounded-lg border border-stone-300 px-3 py-2 text-sm max-w-36 focus:outline-none focus:ring-2 focus:ring-green-500">
+          {[7, 15, 30, 60].map(d => <option key={d} value={d}>+{d} días</option>)}
         </select>
         <button onClick={exportExcel} disabled={!rows.length}
-          className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm">
-          📤 Exportar a Excel ({rows.length})
+          className="rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm">
+          ⬇️ Exportar Excel/CSV
         </button>
       </div>
 
-      {isLoading ? <p className="text-stone-500">Buscando contactos…</p> :
-        rows.length === 0 ? <p className="text-sm text-stone-500">🎉 Nadie lleva {days}+ días sin escribir.</p> : (
-          <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-100">
-                  <th className="px-4 py-3">Contacto</th>
-                  <th className="px-4 py-3 text-right">Días sin escribir</th>
-                  <th className="px-4 py-3">Historial</th>
-                  <th className="px-4 py-3">Último mensaje</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.phone} className="border-b border-stone-50 hover:bg-stone-50">
-                    <td className="px-4 py-2.5">
-                      <div className="font-medium text-stone-900">{r.name}</div>
-                      <div className="text-xs text-stone-400">{r.phone}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-amber-700">{r.daysSince}</td>
-                    <td className="px-4 py-2.5">
-                      {r.hasPurchased
-                        ? <span className="text-xs text-green-700">🛒 {r.orders} compra(s) · {money(r.total)}</span>
-                        : <span className="text-xs text-stone-400">Solo preguntó</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-stone-500 max-w-[280px] truncate">{r.lastMessage ?? ''}</td>
+      {isLoading ? <p className="text-stone-500">Cargando…</p> :
+        rows.length === 0 ? <p className="text-sm text-stone-500 py-5">🎉 Nadie sin escribir en ese rango. ¡Todos al día!</p> : (
+          <>
+            <p className="text-xs text-stone-400 mb-2.5">{rows.length} cliente(s) sin escribir · 🔁 ya te compró · 🆕 solo consultó.</p>
+            <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-stone-500 border-b-2 border-stone-100">
+                    <th className="px-3 py-2">Cliente</th>
+                    <th className="px-3 py-2">Teléfono</th>
+                    <th className="px-3 py-2">Sin escribir</th>
+                    <th className="px-3 py-2">Qué preguntó</th>
+                    <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2 text-right">Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.phone} className="border-b border-stone-50 hover:bg-stone-50">
+                      <td className="px-3 py-2 font-semibold text-stone-900">{r.name}</td>
+                      <td className="px-3 py-2 font-mono text-stone-600">{r.phone}</td>
+                      <td className="px-3 py-2">{r.daysSince} días</td>
+                      <td className="px-3 py-2 text-stone-500 max-w-72 truncate">{r.lastMessage || '—'}</td>
+                      <td className="px-3 py-2">{r.hasPurchased ? '🔁 Cliente' : '🆕 Solo consultó'}</td>
+                      <td className="px-3 py-2 text-right font-mono">{Number(r.total) > 0 ? money(r.total) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
     </div>
   )
 }
+
