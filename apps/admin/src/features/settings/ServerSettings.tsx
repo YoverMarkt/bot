@@ -6,9 +6,9 @@ import * as cfg from './api'
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
 // Telegram/Retell, y túnel público con URLs de webhooks listas para copiar.
 
-const input = 'w-full rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
-const label = 'text-xs font-medium text-stone-400'
-const card = 'bg-stone-900 rounded-xl border border-stone-800 p-5 mb-5'
+const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+const label = 'text-xs font-medium text-muted-foreground'
+const card = 'bg-card rounded-xl border p-5 mb-5'
 
 const AI_FIELDS: Record<string, { key: string; label: string; ph: string }> = {
   groq:     { key: 'groq_api_key',      label: 'Groq API Key',      ph: 'gsk_…' },
@@ -72,12 +72,12 @@ export default function ServerSettings() {
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-bold text-white mb-1">Configuración del servidor</h1>
-      <p className="text-sm text-stone-400 mb-6">Keys globales de IA, Cloudinary y conexiones. Las keys guardadas se muestran enmascaradas.</p>
+      <h1 className="text-2xl font-bold text-foreground mb-1">Configuración del servidor</h1>
+      <p className="text-sm text-muted-foreground mb-6">Keys globales de IA, Cloudinary y conexiones. Las keys guardadas se muestran enmascaradas.</p>
 
       {/* IA global */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-white mb-3">🤖 Proveedor de IA activo (global)</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3">🤖 Proveedor de IA activo (global)</h2>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className={label}>Proveedor</span>
@@ -90,21 +90,21 @@ export default function ServerSettings() {
             </select>
           </div>
           <div>
-            <span className={label}>{aiField.label} {saved[aiField.key] && <em className="text-stone-500 not-italic">— guardada: {saved[aiField.key]}</em>}</span>
+            <span className={label}>{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</span>
             <input className={input} type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyAI} className="rounded-lg border border-stone-700 text-stone-300 text-xs px-3 py-1.5 hover:bg-stone-800">🔍 Verificar conexión</button>
-          <span className="text-xs text-stone-300">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
+          <button onClick={verifyAI} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">🔍 Verificar conexión</button>
+          <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
         </div>
       </section>
 
       {/* Cloudinary */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-white mb-3">☁️ Cloudinary — Imágenes y videos</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3">☁️ Cloudinary — Imágenes y videos</h2>
         <div className="grid grid-cols-3 gap-3">
-          <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-stone-500 not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
+          <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
             <input className={input} value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
           <div><span className={label}>API Key</span>
             <input className={input} value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
@@ -112,28 +112,28 @@ export default function ServerSettings() {
             <input className={input} type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyCloudinary} className="rounded-lg border border-stone-700 text-stone-300 text-xs px-3 py-1.5 hover:bg-stone-800">🔍 Verificar conexión</button>
-          <span className="text-xs text-stone-300">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
+          <button onClick={verifyCloudinary} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">🔍 Verificar conexión</button>
+          <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
         </div>
       </section>
 
       {/* Otras conexiones */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-white mb-3">🔌 Otras conexiones</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3">🔌 Otras conexiones</h2>
         <div className="grid grid-cols-2 gap-3">
-          <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-stone-500 not-italic">— guardado</em>}</span>
+          <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</span>
             <input className={input} type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
-          <div><span className={label}>Retell API Key (voz) {saved.retell_api_key && <em className="text-stone-500 not-italic">— guardada</em>}</span>
+          <div><span className={label}>Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</span>
             <input className={input} type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
         </div>
       </section>
 
       <div className="flex items-center gap-3 mb-8">
         <button onClick={save} disabled={busy}
-          className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
           Guardar configuración
         </button>
-        <span className="text-sm text-stone-300">{saveMsg}</span>
+        <span className="text-sm text-foreground/80">{saveMsg}</span>
       </div>
 
     </div>

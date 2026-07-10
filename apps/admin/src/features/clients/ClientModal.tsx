@@ -6,8 +6,8 @@ import type { BusinessPayload } from './api'
 // identidad, canal WhatsApp por proveedor (con verificación real),
 // modos (citas / venta), IA por negocio, plan/tarifa y acceso del dueño.
 
-const input = 'w-full rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
-const label = 'text-xs font-medium text-stone-400'
+const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
+const label = 'text-xs font-medium text-muted-foreground'
 
 const EMPTY = {
   name: '', type: 'negocio', whatsapp_number: '', owner_phone: '',
@@ -135,10 +135,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
   return (
     <div className="fixed inset-0 z-30 bg-black/60 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-2xl bg-stone-900 border border-stone-800 rounded-2xl p-6 my-8">
-        <h2 className="text-lg font-bold text-white mb-4">{id ? 'Editar negocio' : 'Nuevo negocio'}</h2>
+      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-2xl bg-card border rounded-2xl p-6 my-8">
+        <h2 className="text-lg font-bold text-foreground mb-4">{id ? 'Editar negocio' : 'Nuevo negocio'}</h2>
 
-        {loading ? <p className="text-stone-400">Cargando datos…</p> : (
+        {loading ? <p className="text-muted-foreground">Cargando datos…</p> : (
           <>
             {/* Identidad */}
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -178,9 +178,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             </div>
 
             {/* Canal WhatsApp */}
-            <div className="rounded-xl border border-stone-800 p-4 mb-4">
+            <div className="rounded-xl border p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-white">📡 Canal de WhatsApp</span>
+                <span className="text-sm font-semibold text-foreground">📡 Canal de WhatsApp</span>
                 <select className={`${input} !w-44`} value={f.whatsapp_provider} onChange={set('whatsapp_provider')}>
                   <option value="ycloud">YCloud</option>
                   <option value="meta">Meta (oficial)</option>
@@ -210,10 +210,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 <div><span className={label}>Retell Agent ID (voz telefónica, opcional)</span><input className={input} value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
               </div>
               <div className="flex items-center gap-3 mt-3">
-                <button type="button" onClick={verify} className="rounded-lg border border-stone-700 text-stone-300 text-xs px-3 py-1.5 hover:bg-stone-800">
+                <button type="button" onClick={verify} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">
                   🔍 Verificar credenciales
                 </button>
-                {vfy && <span className="text-xs text-stone-300">{vfy}</span>}
+                {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
               </div>
             </div>
 
@@ -234,11 +234,11 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               <div><span className={label}>Notas internas</span><input className={input} value={f.notes} onChange={set('notes')} /></div>
             </div>
 
-            {error && <p className="text-sm text-red-400 mb-3">❌ {error}</p>}
+            {error && <p className="text-sm text-destructive mb-3">❌ {error}</p>}
 
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg border border-stone-700 text-stone-300 px-4 py-2 text-sm hover:bg-stone-800">Cancelar</button>
-              <button disabled={saving} className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+              <button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
+              <button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
                 {saving ? 'Guardando…' : id ? 'Guardar cambios' : 'Crear negocio'}
               </button>
             </div>

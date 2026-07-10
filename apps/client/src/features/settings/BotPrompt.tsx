@@ -27,13 +27,13 @@ export default function BotPrompt() {
   })
 
   if (!isOwner) return <Locked />
-  if (isLoading) return <p className="text-stone-500">Cargando…</p>
+  if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
 
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-stone-900">Prompt del Bot</h1>
-        <p className="text-sm text-stone-500">Personalidad, tono y saludo de tu bot + las políticas con las que responde</p>
+        <h1 className="text-2xl font-bold text-foreground">Prompt del Bot</h1>
+        <p className="text-sm text-muted-foreground">Personalidad, tono y saludo de tu bot + las políticas con las que responde</p>
       </div>
 
       {/* Card de ayuda del viejo */}
@@ -45,23 +45,23 @@ export default function BotPrompt() {
           <span className="opacity-80">Ejemplo: <em>"Eres Sofía, asistente de Perfumes Elite. Habla con elegancia y discreción. Siempre saluda con '¡Bienvenido a Perfumes Elite!' y trata al cliente de 'usted'."</em></span>
         </div>
       </div>
-      <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-2xl">
-        <label className="text-xs font-medium text-stone-600">Instrucciones de personalidad y saludo</label>
+      <div className="bg-card rounded-xl border p-5 max-w-2xl">
+        <label className="text-xs font-medium text-muted-foreground">Instrucciones de personalidad y saludo</label>
         <textarea rows={12} value={value} onChange={e => setDraft(e.target.value)}
-          className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
         <div className="flex gap-2 flex-wrap mt-2">
-          <button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-stone-200 px-2.5 py-1 hover:bg-stone-50">📋 Plantilla formal</button>
-          <button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-stone-200 px-2.5 py-1 hover:bg-stone-50">😊 Plantilla casual</button>
-          <button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-stone-200 px-2.5 py-1 hover:bg-stone-50">✨ Plantilla lujo</button>
+          <button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">📋 Plantilla formal</button>
+          <button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">😊 Plantilla casual</button>
+          <button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">✨ Plantilla lujo</button>
         </div>
         <div className="flex justify-end mt-3">
           <button onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}
-            className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {mSave.isPending ? 'Guardando…' : 'Guardar prompt'}
           </button>
         </div>
-        {msg && <p className="text-sm text-stone-600 mt-2">{msg}</p>}
+        {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       </div>
 
       {/* Políticas del bot (unidas aquí por decisión del usuario 2026-07-10) */}
@@ -75,7 +75,7 @@ function PoliciesCard() {
   const [draft, setDraft] = useState<Policies | null>(null)
   const [msg, setMsg] = useState('')
   const f = draft ?? data
-  const input = 'w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+  const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify({
@@ -90,22 +90,22 @@ function PoliciesCard() {
   const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-2xl mt-5">
-      <h2 className="font-semibold text-stone-900 mb-1">Políticas del bot</h2>
-      <p className="text-xs text-stone-500 mb-3">El bot responde usando esta información</p>
+    <div className="bg-card rounded-xl border p-5 max-w-2xl mt-5">
+      <h2 className="font-semibold text-foreground mb-1">Políticas del bot</h2>
+      <p className="text-xs text-muted-foreground mb-3">El bot responde usando esta información</p>
       <div className="space-y-3">
-        <div><label className="text-xs font-medium text-stone-600">Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Descuentos</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-stone-600">Instrucciones especiales para el bot</label><textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Envíos</label><textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Devoluciones</label><textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Descuentos</label><textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Instrucciones especiales para el bot</label><textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end mt-3">
         <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar políticas'}
         </button>
       </div>
-      {msg && <p className="text-sm text-stone-600 mt-2">{msg}</p>}
+      {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
     </div>
   )
 }

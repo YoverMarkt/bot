@@ -20,32 +20,32 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex bg-stone-950">
-      <aside className="w-60 shrink-0 bg-stone-900 border-r border-stone-800 flex flex-col">
-        <div className="px-5 py-4 border-b border-stone-800">
-          <div className="font-bold text-white">👑 BotPanel</div>
-          <div className="text-xs text-stone-500">Superadmin</div>
+    <div className="min-h-screen flex bg-background">
+      <aside className="w-60 shrink-0 bg-card border-r flex flex-col">
+        <div className="px-5 py-4 border-b border-border">
+          <div className="font-bold text-foreground">👑 BotPanel</div>
+          <div className="text-xs text-muted-foreground">Superadmin</div>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {SECTIONS.map(s => (
             <NavLink key={s.to} to={s.to} end={s.to === '/'}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-green-600/15 text-green-400' : 'text-stone-400 hover:bg-stone-800'
+                  isActive ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
                 }`
               }>
               <span>{s.icon}</span> {s.label}
             </NavLink>
           ))}
-          <div className="pt-3 mt-3 border-t border-stone-800">
+          <div className="pt-3 mt-3 border-t border-border">
             <a href="/admin-legacy"
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-500 hover:bg-stone-800">
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
               🗂 Panel clásico
             </a>
           </div>
         </nav>
-        <div className="p-3 border-t border-stone-800">
-          <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-stone-400 hover:bg-stone-800">
+        <div className="p-3 border-t border-border">
+          <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
             🚪 Cerrar sesión
           </button>
         </div>

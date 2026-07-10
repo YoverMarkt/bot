@@ -8,7 +8,7 @@ import { getClients } from '../clients/api'
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
 
 const PER_PAGE = 12   // BILLING_PER_PAGE del viejo
-const input = 'rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+const input = 'rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
 const money = (v: number | string) =>
   '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -23,9 +23,9 @@ const isFuture = (b: BillingRow) => {
 }
 
 function StatusPill({ b }: { b: BillingRow }) {
-  if (isFuture(b)) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-stone-400">Próximo</span>
-  if (b.status === 'paid') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-green-400">Pagado</span>
-  if (b.status === 'overdue') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-red-500/10 text-red-400">Vencido</span>
+  if (isFuture(b)) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-muted-foreground">Próximo</span>
+  if (b.status === 'paid') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Pagado</span>
+  if (b.status === 'overdue') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Vencido</span>
   return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-400">Pendiente</span>
 }
 
@@ -68,8 +68,8 @@ export default function Billing() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Facturación</h1>
-          <p className="text-sm text-stone-400">Historial de pagos y cobros pendientes</p>
+          <h1 className="text-2xl font-bold text-foreground">Facturación</h1>
+          <p className="text-sm text-muted-foreground">Historial de pagos y cobros pendientes</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select className={input} value={fClient} onChange={e => { setFClient(e.target.value); setPage(1) }}>
@@ -84,15 +84,15 @@ export default function Billing() {
             <option value="future">Próximo</option>
           </select>
           <button onClick={() => setShowNew(true)}
-            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">+ Nuevo registro</button>
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">+ Nuevo registro</button>
         </div>
       </div>
 
-      {isLoading ? <p className="text-stone-400">Cargando facturación…</p> : (
-        <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-x-auto">
+      {isLoading ? <p className="text-muted-foreground">Cargando facturación…</p> : (
+        <div className="bg-card rounded-xl border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-800">
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
                 <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">Mes</th>
                 <th className="px-4 py-3">Monto</th>
@@ -102,18 +102,18 @@ export default function Billing() {
             </thead>
             <tbody>
               {!pageData.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-stone-500">Sin registros para los filtros aplicados</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Sin registros para los filtros aplicados</td></tr>
               )}
               {pageData.map(b => (
-                <tr key={b.id} className={`border-b border-stone-800/60 hover:bg-stone-800/40 ${isFuture(b) ? 'opacity-45' : ''}`}>
-                  <td className="px-4 py-3 font-medium text-white">{b.businesses?.name || '—'}</td>
-                  <td className="px-4 py-3 text-stone-300 capitalize text-xs">{mesLabel(b.period_start)}</td>
-                  <td className="px-4 py-3 font-mono text-stone-200">{money(b.amount)}</td>
+                <tr key={b.id} className={`border-b border-border/60 hover:bg-muted/40 ${isFuture(b) ? 'opacity-45' : ''}`}>
+                  <td className="px-4 py-3 font-medium text-foreground">{b.businesses?.name || '—'}</td>
+                  <td className="px-4 py-3 text-foreground/80 capitalize text-xs">{mesLabel(b.period_start)}</td>
+                  <td className="px-4 py-3 font-mono text-foreground/90">{money(b.amount)}</td>
                   <td className="px-4 py-3"><StatusPill b={b} /></td>
                   <td className="px-4 py-3 text-right">
                     {b.status !== 'paid' && (
                       <button onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}
-                        className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-semibold px-2.5 py-1.5">
+                        className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed text-foreground text-xs font-semibold px-2.5 py-1.5">
                         Marcar pagado
                       </button>
                     )}
@@ -127,25 +127,25 @@ export default function Billing() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
-          <span className="text-xs text-stone-500">
+          <span className="text-xs text-muted-foreground">
             Mostrando {(curPage - 1) * PER_PAGE + 1}–{Math.min(curPage * PER_PAGE, filtered.length)} de {filtered.length}
           </span>
           <div className="flex gap-1">
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}
-              className="rounded-lg border border-stone-700 text-stone-300 text-xs px-2.5 py-1.5 disabled:opacity-30">←</button>
+              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">←</button>
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(p => p === 1 || p === totalPages || Math.abs(p - curPage) <= 2)
               .map((p, i, arr) => (
                 <span key={p} className="flex">
-                  {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1 text-stone-600">…</span>}
+                  {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1 text-muted-foreground/70">…</span>}
                   <button onClick={() => setPage(p)}
-                    className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-green-600 text-white font-semibold' : 'border border-stone-700 text-stone-300'}`}>
+                    className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {p}
                   </button>
                 </span>
               ))}
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}
-              className="rounded-lg border border-stone-700 text-stone-300 text-xs px-2.5 py-1.5 disabled:opacity-30">→</button>
+              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">→</button>
           </div>
         </div>
       )}
@@ -163,8 +163,8 @@ function NewCharge({ clients, onClose, onSaved }: {
   const [f, setF] = useState({ business_id: '', amount: '', status: 'pending', period_start: '', period_end: '', notes: '' })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const lbl = 'text-xs font-medium text-stone-400'
-  const inp = 'w-full rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+  const lbl = 'text-xs font-medium text-muted-foreground'
+  const inp = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -188,8 +188,8 @@ function NewCharge({ clients, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-30 bg-black/60 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-2xl p-6 my-12">
-        <h2 className="text-lg font-bold text-white mb-4">Nuevo registro</h2>
+      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-md bg-card border rounded-2xl p-6 my-12">
+        <h2 className="text-lg font-bold text-foreground mb-4">Nuevo registro</h2>
         <div className="space-y-3">
           <div>
             <span className={lbl}>Cliente *</span>
@@ -213,10 +213,10 @@ function NewCharge({ clients, onClose, onSaved }: {
           </div>
           <div><span className={lbl}>Notas</span><input className={inp} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
         </div>
-        {error && <p className="text-sm text-red-400 mt-3">❌ {error}</p>}
+        {error && <p className="text-sm text-destructive mt-3">❌ {error}</p>}
         <div className="flex justify-end gap-2 mt-5">
-          <button type="button" onClick={onClose} className="rounded-lg border border-stone-700 text-stone-300 px-4 py-2 text-sm hover:bg-stone-800">Cancelar</button>
-          <button disabled={saving} className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          <button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
+          <button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>

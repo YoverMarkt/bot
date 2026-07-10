@@ -20,9 +20,9 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
   pending:   { label: '⏳ Pendiente',  cls: 'bg-amber-50 text-amber-700' },
-  confirmed: { label: '✅ Confirmada', cls: 'bg-green-50 text-green-700' },
-  cancelled: { label: '❌ Cancelada',  cls: 'bg-stone-100 text-stone-500' },
-  no_show:   { label: '👻 No asistió', cls: 'bg-red-50 text-red-600' },
+  confirmed: { label: '✅ Confirmada', cls: 'bg-primary/10 text-primary' },
+  cancelled: { label: '❌ Cancelada',  cls: 'bg-muted text-muted-foreground' },
+  no_show:   { label: '👻 No asistió', cls: 'bg-red-50 text-destructive' },
 }
 
 export default function Bookings() {
@@ -50,19 +50,19 @@ export default function Bookings() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
-          <p className="text-sm text-stone-500">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
+          <h1 className="text-2xl font-bold text-foreground">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
+          <p className="text-sm text-muted-foreground">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
         </div>
-        <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
+        <div className="flex gap-1 bg-card border rounded-lg p-1">
           {([['calendario', '🗓 Calendario'], ['lista', '📋 Lista']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
             </button>
           ))}
         </div>
       </div>
-      {isLoading ? <p className="text-stone-500">Cargando reservas…</p> :
+      {isLoading ? <p className="text-muted-foreground">Cargando reservas…</p> :
         tab === 'calendario'
           ? <Calendar bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />
           : <Lista bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />}
@@ -90,15 +90,15 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <button onClick={prev} className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm hover:bg-stone-50">←</button>
-        <span className="font-semibold text-stone-900 min-w-40 text-center">{MONTHS[month]} {year}</span>
-        <button onClick={next} className="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm hover:bg-stone-50">→</button>
+        <button onClick={prev} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">←</button>
+        <span className="font-semibold text-foreground min-w-40 text-center">{MONTHS[month]} {year}</span>
+        <button onClick={next} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">→</button>
       </div>
 
-      <div className="bg-white rounded-xl border border-stone-200 p-3 overflow-x-auto">
+      <div className="bg-card rounded-xl border p-3 overflow-x-auto">
         <div className="grid grid-cols-7 gap-1 min-w-[560px]">
           {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
-            <div key={d} className="text-center text-[11px] uppercase tracking-wide text-stone-400 py-1">{d}</div>
+            <div key={d} className="text-center text-[11px] uppercase tracking-wide text-muted-foreground/80 py-1">{d}</div>
           ))}
           {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(d => {
@@ -111,15 +111,15 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
               <button key={d} onClick={() => setSelected(dateStr)}
                 className={`text-left rounded-lg border p-1.5 min-h-16 align-top transition-colors ${
                   selected === dateStr ? 'border-green-500 ring-1 ring-green-500' :
-                  isToday ? 'border-green-300 bg-green-50/50' : 'border-stone-100 hover:border-stone-300'}`}>
-                <div className={`text-xs font-semibold ${isToday ? 'text-green-700' : 'text-stone-600'}`}>{d}</div>
+                  isToday ? 'border-green-300 bg-primary/10/50' : 'border-border/60 hover:border-stone-300'}`}>
+                <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
                 {dayBk.length > 0 && (
-                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary' : 'bg-amber-100 text-amber-800'}`}>
                     🗓 {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
                   </div>
                 )}
                 {firstB && (
-                  <div className="text-[10px] text-stone-500 truncate mt-0.5">
+                  <div className="text-[10px] text-muted-foreground truncate mt-0.5">
                     {(firstB.booking_time || '').slice(0, 5)} {(firstB.contact_name || '').split(' ')[0]}
                   </div>
                 )}
@@ -131,8 +131,8 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
 
       {/* Detalle del día seleccionado */}
       {selected && dayBookings.length > 0 && (
-        <div className="bg-white rounded-xl border border-stone-200 p-4 mt-4">
-          <h3 className="font-semibold text-stone-900 mb-3">
+        <div className="bg-card rounded-xl border p-4 mt-4">
+          <h3 className="font-semibold text-foreground mb-3">
             {selected.split('-').reverse().join('/')} — {dayBookings.length} cita(s)
           </h3>
           <div className="space-y-2">
@@ -141,7 +141,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
         </div>
       )}
       {selected && dayBookings.length === 0 && (
-        <p className="text-sm text-stone-500 mt-3">Sin citas el {selected.split('-').reverse().join('/')}.</p>
+        <p className="text-sm text-muted-foreground mt-3">Sin citas el {selected.split('-').reverse().join('/')}.</p>
       )}
     </div>
   )
@@ -153,7 +153,7 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
   const today = new Date()
   const [from, setFrom] = useState(iso(today))
   const [to, setTo] = useState(iso(new Date(today.getTime() + 30 * 86400000)))
-  const input = 'rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+  const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   const filtered = bookings
     .filter(b => b.booking_date >= from && b.booking_date <= to)
@@ -162,16 +162,16 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <label className="text-sm text-stone-600">Del</label>
+        <label className="text-sm text-muted-foreground">Del</label>
         <input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} />
-        <label className="text-sm text-stone-600">al</label>
+        <label className="text-sm text-muted-foreground">al</label>
         <input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
       </div>
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
+        <div className="bg-card rounded-xl border p-8 text-center">
           <div className="text-3xl mb-2">📅</div>
-          <p className="text-stone-700 font-medium">Sin citas en este rango.</p>
-          <p className="text-sm text-stone-500 mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
+          <p className="text-foreground/90 font-medium">Sin citas en este rango.</p>
+          <p className="text-sm text-muted-foreground mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -184,14 +184,14 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
 
 function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: string, s: Booking['status']) => void; withDate?: boolean }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4 flex items-center gap-4 flex-wrap">
-      <div className="text-center shrink-0 bg-stone-50 rounded-lg px-3 py-2">
-        {withDate && <div className="text-xs text-stone-500">{b.booking_date}</div>}
-        <div className="font-bold text-stone-900">🕐 {(b.booking_time || '').slice(0, 5)}</div>
+    <div className="bg-card rounded-xl border p-4 flex items-center gap-4 flex-wrap">
+      <div className="text-center shrink-0 bg-muted/50 rounded-lg px-3 py-2">
+        {withDate && <div className="text-xs text-muted-foreground">{b.booking_date}</div>}
+        <div className="font-bold text-foreground">🕐 {(b.booking_time || '').slice(0, 5)}</div>
       </div>
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-stone-900 truncate">{b.contact_name || b.contact_phone}</div>
-        <div className="text-xs text-stone-500">
+        <div className="font-medium text-foreground truncate">{b.contact_name || b.contact_phone}</div>
+        <div className="text-xs text-muted-foreground">
           {b.service || 'Servicio no indicado'}{b.duration_minutes ? ` · ${b.duration_minutes} min` : ''} · {b.contact_phone}
         </div>
       </div>
@@ -199,17 +199,17 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
           <button onClick={() => onStatus(b.id, 'confirmed')}
-            className="rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5">✓ Confirmar</button>
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5">✓ Confirmar</button>
           <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-red-200 text-red-600 text-xs font-semibold px-3 py-1.5 hover:bg-red-50">✕ Cancelar</button>
+            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10">✕ Cancelar</button>
         </div>
       )}
       {b.status === 'confirmed' && (
         <div className="flex gap-2 shrink-0">
           <button onClick={() => onStatus(b.id, 'no_show')}
-            className="rounded-lg border border-stone-200 text-stone-500 text-xs px-3 py-1.5 hover:bg-stone-50">Marcar no asistió</button>
+            className="rounded-lg border border-border text-muted-foreground text-xs px-3 py-1.5 hover:bg-muted/50">Marcar no asistió</button>
           <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-red-200 text-red-600 text-xs px-3 py-1.5 hover:bg-red-50">✕ Cancelar</button>
+            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10">✕ Cancelar</button>
         </div>
       )}
     </div>

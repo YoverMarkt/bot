@@ -56,37 +56,37 @@ export default function Simulator() {
     <div className="flex flex-col h-[calc(100vh-3rem)]">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Simulador de Bot</h1>
-          <p className="text-sm text-stone-400">Prueba el bot de cualquier negocio sin WhatsApp real</p>
+          <h1 className="text-2xl font-bold text-foreground">Simulador de Bot</h1>
+          <p className="text-sm text-muted-foreground">Prueba el bot de cualquier negocio sin WhatsApp real</p>
         </div>
         <div className="flex gap-2">
           <select value={bizId} onChange={e => selectBiz(e.target.value)}
-            className="rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm min-w-56 focus:outline-none focus:ring-2 focus:ring-green-500">
+            className="rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm min-w-56 focus:outline-none focus:ring-2 focus:ring-ring">
             <option value="">— Elige un negocio —</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {bizId && (
-            <button onClick={clear} className="rounded-lg border border-red-900 text-red-400 text-sm px-3 py-2 hover:bg-red-950">🗑 Limpiar chat</button>
+            <button onClick={clear} className="rounded-lg border border-destructive/40 text-destructive text-sm px-3 py-2 hover:bg-destructive/10">🗑 Limpiar chat</button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col bg-stone-900 rounded-xl border border-stone-800 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col bg-card rounded-xl border overflow-hidden">
         {/* Barra del chat */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-stone-800 bg-stone-900">
-          <div className="w-9 h-9 rounded-full bg-green-600/20 text-green-400 flex items-center justify-center font-bold">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
+          <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
             {biz ? biz.name.charAt(0).toUpperCase() : '🤖'}
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">{biz?.name || 'Ningún negocio seleccionado'}</div>
-            <div className="text-xs text-stone-500">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
+            <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>
+            <div className="text-xs text-muted-foreground">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
           </div>
         </div>
 
         {/* Mensajes */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {!msgs.length && !typing && (
-            <div className="h-full flex flex-col items-center justify-center text-stone-600 text-sm gap-2">
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/70 text-sm gap-2">
               <span className="text-3xl">💬</span>
               <p>{biz ? 'Escribe un mensaje como si fueras un cliente.' : 'Selecciona un negocio para probar su bot.'}</p>
             </div>
@@ -94,20 +94,20 @@ export default function Simulator() {
           {msgs.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                m.role === 'user' ? 'bg-green-600 text-white rounded-br-sm' : 'bg-stone-800 text-stone-100 rounded-bl-sm'
+                m.role === 'user' ? 'bg-primary text-foreground rounded-br-sm' : 'bg-muted text-stone-100 rounded-bl-sm'
               }`}>
                 {m.text}
               </div>
               {m.image && (
-                <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-stone-700"
+                <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-input"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
               )}
-              <span className="text-[10px] text-stone-600 mt-1">{m.at}</span>
+              <span className="text-[10px] text-muted-foreground/70 mt-1">{m.at}</span>
             </div>
           ))}
           {typing && (
             <div className="flex items-start">
-              <div className="bg-stone-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5">
+              <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5">
                 {[0, 1, 2].map(i => (
                   <span key={i} className="w-2 h-2 rounded-full bg-stone-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
@@ -118,14 +118,14 @@ export default function Simulator() {
         </div>
 
         {/* Input */}
-        <div className="flex gap-2 p-3 border-t border-stone-800">
+        <div className="flex gap-2 p-3 border-t border-border">
           <input value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             disabled={!bizId}
             placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'}
-            className="flex-1 rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50" />
+            className="flex-1 rounded-lg bg-muted border border-input text-foreground px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" />
           <button onClick={send} disabled={!bizId || typing || !text.trim()}
-            className="rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-semibold px-5 py-2.5 text-sm">
+            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 text-foreground font-semibold px-5 py-2.5 text-sm">
             Enviar
           </button>
         </div>
