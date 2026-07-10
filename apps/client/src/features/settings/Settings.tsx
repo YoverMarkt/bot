@@ -112,105 +112,93 @@ export function BotForm() {
   )
 }
 
-// ── Usuarios y permisos (clon de pg-usuarios del viejo): lista con el
-// dueño arriba, tarjetas de empleados con Editar/Eliminar y modal.
-const PERM_LABELS: Record<string, string> = {
-  catalogo: '📦 Catálogo (agregar y editar productos)',
-  conversaciones: '💬 Conversaciones (chatear con clientes)',
-  citas: '📅 Citas y horarios',
-  reportes: '📊 Reportes de ventas',
-  ventas: '💰 Registrar ventas',
-}
+// ── Equipo (propuesta elegida por el usuario 2026-07-10): lista con
+// permisos editables en línea + formulario de nuevo empleado al lado.
+const PERMS = [
+  ['catalogo', '📦 Catálogo'], ['conversaciones', '💬 Conversaciones'],
+  ['ventas', '🛒 Ventas'], ['reportes', '📊 Reportes'], ['citas', '📅 Citas'],
+] as const
 
 export function Team() {
   const qc = useQueryClient()
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
-  const [modal, setModal] = useState<TeamUser | 'new' | null>(null)
+  const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
+  const [msg, setMsg] = useState('')
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['team'] })
+
+  const mCreate = useMutation({
+    mutationFn: () => api('/api/client/users', { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); setMsg('✅ Empleado creado'); refresh() },
+    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+  })
   const mDelete = useMutation({ mutationFn: (id: string) => api(`/api/client/users/${id}`, { method: 'DELETE' }), onSettled: refresh })
+  const mPerms = useMutation({
+    mutationFn: (v: { id: string; permissions: string[] }) => api(`/api/client/users/${v.id}`, { method: 'PUT', body: JSON.stringify({ permissions: v.permissions }) }),
+    onSettled: refresh,
+  })
+
+  const togglePerm = (list: string[], p: string) => list.includes(p) ? list.filter(x => x !== p) : [...list, p]
 
   if (isLoading) return <p className="text-stone-500">Cargando equipo…</p>
-  const dueño = users.filter(u => u.role === 'owner').map(u => u.email).join(', ') || '—'
-  const emps = users.filter(u => u.role !== 'owner')
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex justify-end mb-3">
-        <button onClick={() => setModal('new')}
-          className="rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2">+ Nuevo empleado</button>
-      </div>
-      <p className="text-sm text-stone-500 mb-3">👑 Dueño: <strong className="text-stone-800">{dueño}</strong> (acceso total)</p>
-      {emps.length === 0 && <p className="text-sm text-stone-500">Aún no tienes empleados. Crea el primero con el botón de arriba.</p>}
-      {emps.map(u => (
-        <div key={u.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-xl px-4 py-3 mb-2">
-          <div>
-            <strong className="text-sm text-stone-900">{u.name || u.email}</strong>
-            <div className="text-xs text-stone-500">{u.email} · {(u.permissions ?? []).length} permiso(s)</div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setModal(u)} className="text-xs rounded-lg border border-stone-200 px-2.5 py-1.5 hover:bg-stone-50">Editar</button>
-            <button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
-              className="text-xs rounded-lg border border-red-200 text-red-600 px-2.5 py-1.5 hover:bg-red-50">Eliminar</button>
-          </div>
-        </div>
-      ))}
-      {modal && <UserModal user={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSaved={() => { setModal(null); refresh() }} />}
-    </div>
-  )
-}
-
-function UserModal({ user, onClose, onSaved }: { user: TeamUser | null; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({
-    name: user?.name ?? '', email: user?.email ?? '', password: '',
-    permissions: user?.permissions ?? [] as string[],
-  })
-  const [msg, setMsg] = useState('')
-  const [saving, setSaving] = useState(false)
-  const toggle = (p: string) => setF(v => ({ ...v, permissions: v.permissions.includes(p) ? v.permissions.filter(x => x !== p) : [...v.permissions, p] }))
-
-  async function save() {
-    if (!user && (!f.email || !f.password)) { setMsg('Correo y contraseña son obligatorios'); return }
-    setSaving(true)
-    try {
-      if (user) {
-        const body: Record<string, unknown> = { name: f.name, permissions: f.permissions }
-        if (f.password) body.password = f.password
-        await api(`/api/client/users/${user.id}`, { method: 'PUT', body: JSON.stringify(body) })
-      } else {
-        await api('/api/client/users', { method: 'POST', body: JSON.stringify(f) })
-      }
-      onSaved()
-    } catch (e) { setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`); setSaving(false) }
-  }
-
-  return (
-    <div className="fixed inset-0 z-30 bg-black/50 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-2xl p-5 my-12" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-stone-900 mb-3">{user ? 'Editar empleado' : 'Nuevo empleado'}</h2>
+    <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
+      <div className="bg-white rounded-xl border border-stone-200 p-5">
+        <h2 className="font-semibold text-stone-900 mb-3">Tu equipo ({users.length})</h2>
+        {users.length === 0 && <p className="text-sm text-stone-500">Solo tú por ahora. Crea cuentas para tus empleados con permisos limitados.</p>}
         <div className="space-y-3">
-          <div><label className="text-xs font-medium text-stone-600">Nombre</label><input className={input} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-stone-600">Correo {user ? '' : '*'}</label><input className={input} type="email" value={f.email} disabled={!!user} onChange={e => setF({ ...f, email: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-stone-600">Contraseña {user ? '(solo si cambia)' : '*'}</label><input className={input} type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></div>
+          {users.map(u => (
+            <div key={u.id} className="border border-stone-100 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm text-stone-900">{u.name || u.email} {u.role === 'owner' && <span className="text-[10px] bg-green-50 text-green-700 rounded px-1.5 py-0.5 ml-1">DUEÑO</span>}</div>
+                  <div className="text-xs text-stone-400">{u.email}</div>
+                </div>
+                {u.role !== 'owner' && (
+                  <button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
+                    className="text-xs text-red-600 border border-red-200 rounded px-2 py-1 hover:bg-red-50">Eliminar</button>
+                )}
+              </div>
+              {u.role !== 'owner' && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {PERMS.map(([p, label]) => (
+                    <label key={p} className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
+                      <input type="checkbox" checked={(u.permissions ?? []).includes(p)}
+                        onChange={() => mPerms.mutate({ id: u.id, permissions: togglePerm(u.permissions ?? [], p) })} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-stone-200 p-5">
+        <h2 className="font-semibold text-stone-900 mb-3">+ Nuevo empleado</h2>
+        <div className="space-y-3">
+          <div><label className="text-xs font-medium text-stone-600">Nombre</label><input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Correo *</label><input className={input} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-stone-600">Contraseña *</label><input className={input} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
           <div>
             <label className="text-xs font-medium text-stone-600">Permisos (qué secciones puede ver)</label>
-            <div className="space-y-1.5 mt-1">
-              {Object.entries(PERM_LABELS).map(([p, label]) => (
-                <label key={p} className="flex items-center gap-2 text-sm text-stone-700 cursor-pointer">
-                  <input type="checkbox" checked={f.permissions.includes(p)} onChange={() => toggle(p)} />
+            <div className="flex flex-wrap gap-2 mt-1">
+              {PERMS.map(([p, label]) => (
+                <label key={p} className="flex items-center gap-1 text-xs text-stone-600 cursor-pointer">
+                  <input type="checkbox" checked={form.permissions.includes(p)}
+                    onChange={() => setForm({ ...form, permissions: togglePerm(form.permissions, p) })} />
                   {label}
                 </label>
               ))}
             </div>
           </div>
-        </div>
-        {msg && <p className="text-sm text-red-600 mt-2">{msg}</p>}
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="rounded-lg border border-stone-200 text-stone-600 px-4 py-2 text-sm hover:bg-stone-50">Cancelar</button>
-          <button onClick={save} disabled={saving}
-            className="rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
-            {saving ? 'Guardando…' : 'Guardar'}
+          <button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending}
+            className="w-full rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2 text-sm">
+            {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
           </button>
+          {msg && <p className="text-sm text-stone-600">{msg}</p>}
         </div>
       </div>
     </div>
