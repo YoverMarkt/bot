@@ -6,9 +6,9 @@ import { getReports, getAlerts, money, type Alert } from './api'
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
 // serie única = tinta INK; c1 azul para comparación/vendedores; c2 aqua SIEMPRE
 // con valor directo (regla de relieve). Estados reservados para stock/alertas.
-const INK = '#1e1e1e'
-const C1 = '#2a78d6'
-const C2 = '#1baf7a'
+const INK = 'var(--foreground)'
+const C1 = 'var(--chart-1)'
+const C2 = 'var(--chart-2)'
 
 const ALERT_STYLE: Record<Alert['level'], string> = {
   critical: 'bg-red-50 border-red-200 text-red-800',

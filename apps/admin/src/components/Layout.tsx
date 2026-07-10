@@ -1,14 +1,15 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
+import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut } from 'lucide-react'
 
 const SECTIONS = [
-  { to: '/',            label: 'Dashboard',     icon: '🏠' },
-  { to: '/clients',     label: 'Clientes',      icon: '👥' },
-  { to: '/billing',     label: 'Facturación',   icon: '💳' },
-  { to: '/simulator',   label: 'Simulador',     icon: '💬' },
-  { to: '/connections', label: 'Conexiones',    icon: '🔌' },
-  { to: '/settings',    label: 'Configuración', icon: '⚙️' },
-  { to: '/calculator',  label: 'Calculadora',   icon: '🧮' },
+  { to: '/',            label: 'Dashboard',     icon: LayoutDashboard },
+  { to: '/clients',     label: 'Clientes',      icon: Users },
+  { to: '/billing',     label: 'Facturación',   icon: CreditCard },
+  { to: '/simulator',   label: 'Simulador',     icon: MessageSquare },
+  { to: '/connections', label: 'Conexiones',    icon: Plug },
+  { to: '/settings',    label: 'Configuración', icon: Settings },
+  { to: '/calculator',  label: 'Calculadora',   icon: Calculator },
 ]
 
 export default function Layout() {
@@ -34,19 +35,19 @@ export default function Layout() {
                   isActive ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted'
                 }`
               }>
-              <span>{s.icon}</span> {s.label}
+              <s.icon className="w-4 h-4" /> {s.label}
             </NavLink>
           ))}
           <div className="pt-3 mt-3 border-t border-border">
             <a href="/admin-legacy"
               className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
-              🗂 Panel clásico
+              <Archive className="w-4 h-4" /> Panel clásico
             </a>
           </div>
         </nav>
         <div className="p-3 border-t border-border">
           <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
-            🚪 Cerrar sesión
+            <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
           </button>
         </div>
       </aside>

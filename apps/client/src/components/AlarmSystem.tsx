@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { Bell } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
 
@@ -150,7 +151,7 @@ export function AlarmBanner({ manual, pending, bookings }: {
       {/* Botón discreto para probar el sonido (desbloquea el audio del navegador) */}
       <button onClick={test} title="Probar sonido de alarma"
         className="fixed bottom-4 right-4 z-40 rounded-full bg-card border shadow w-9 h-9 text-sm hover:bg-muted/50"
-        style={{ display: toast ? 'none' : undefined }}>🔔</button>
+        style={{ display: toast ? 'none' : undefined }}><Bell className="w-4 h-4 mx-auto" /></button>
     </>
   )
 }
