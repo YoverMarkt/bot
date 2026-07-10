@@ -11,6 +11,7 @@ import { api } from '../api/client'
 import { Bell, BellOff, Check, Hand, CalendarPlus } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
+import { Button } from '@/components/ui/button'
 
 type Booking = {
   id: string; contact_name: string | null; contact_phone: string
@@ -121,8 +122,8 @@ export function AlarmBanner({ manual, pending, bookings }: {
 
   function test() {
     snd.testAlarmSound(
-      () => { setToast('🔊 Sonando… (se detiene en 3s)'); setTimeout(() => setToast(''), 3200) },
-      (m) => { setToast(`⚠️ Audio bloqueado por el navegador: ${m}`); setTimeout(() => setToast(''), 4000) },
+      () => { setToast('Sonando… (se detiene en 3s)'); setTimeout(() => setToast(''), 3200) },
+      (m) => { setToast(`Atención: Audio bloqueado por el navegador: ${m}`); setTimeout(() => setToast(''), 4000) },
     )
   }
 
@@ -142,17 +143,17 @@ export function AlarmBanner({ manual, pending, bookings }: {
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>
           </div>
-          <button onClick={attend} className="rounded-lg bg-white text-red-700 font-bold text-xs px-3 py-2 inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Atender</button>
-          <button onClick={silence} className="rounded-lg border border-white/50 text-white text-xs px-3 py-2 inline-flex items-center gap-1"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</button>
+          <Button onClick={attend} className="rounded-lg bg-white text-red-700 font-bold text-xs px-3 py-2 inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Atender</Button>
+          <Button onClick={silence} className="rounded-lg border border-white/50 text-white text-xs px-3 py-2 inline-flex items-center gap-1"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</Button>
         </div>
       )}
       {toast && (
         <div className="fixed bottom-4 right-4 z-50 bg-stone-900 text-white text-sm rounded-xl px-4 py-2.5 shadow-xl">{toast}</div>
       )}
       {/* Botón discreto para probar el sonido (desbloquea el audio del navegador) */}
-      <button onClick={test} title="Probar sonido de alarma"
+      <Button onClick={test} title="Probar sonido de alarma"
         className="fixed bottom-4 right-4 z-40 rounded-full bg-card border shadow w-9 h-9 text-sm hover:bg-muted/50"
-        style={{ display: toast ? 'none' : undefined }}><Bell className="w-4 h-4 mx-auto" /></button>
+        style={{ display: toast ? 'none' : undefined }}><Bell className="w-4 h-4 mx-auto" /></Button>
     </>
   )
 }

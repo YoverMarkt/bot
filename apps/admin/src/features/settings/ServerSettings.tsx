@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // Configuración del servidor — paridad con el panel viejo:
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
@@ -38,23 +40,23 @@ export default function ServerSettings() {
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   async function verifyAI() {
-    setAiMsg('⏳ Verificando…')
+    setAiMsg('Verificando…')
     try {
       const r = await cfg.verifyAI({ provider: activeProvider, [aiField.key]: val(aiField.key) || undefined })
-      setAiMsg(`${r.ok ? '✅' : '❌'} ${r.info}`)
-    } catch (e) { setAiMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`) }
+      setAiMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
+    } catch (e) { setAiMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
 
   async function verifyCloudinary() {
-    setCldMsg('⏳ Verificando…')
+    setCldMsg('Verificando…')
     try {
       const r = await cfg.verifyCloudinary({
         cloudinary_cloud_name: val('cloudinary_cloud_name') || undefined,
         cloudinary_api_key: val('cloudinary_api_key') || undefined,
         cloudinary_api_secret: val('cloudinary_api_secret') || undefined,
       })
-      setCldMsg(`${r.ok ? '✅' : '❌'} ${r.info}`)
-    } catch (e) { setCldMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`) }
+      setCldMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
+    } catch (e) { setCldMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
 
   async function save() {
@@ -63,10 +65,10 @@ export default function ServerSettings() {
     for (const [k, v] of Object.entries(f)) if (v.trim()) payload[k] = v.trim()
     try {
       await cfg.saveServerSettings(payload)
-      setSaveMsg('✅ Guardado correctamente')
+      setSaveMsg('✓ Guardado correctamente')
       setF({}) // limpiar campos: las keys quedan enmascaradas del server
       qc.invalidateQueries({ queryKey: ['adm-settings'] })
-    } catch (e) { setSaveMsg(`❌ ${e instanceof Error ? e.message : 'Error al guardar'}`) }
+    } catch (e) { setSaveMsg(`✗ ${e instanceof Error ? e.message : 'Error al guardar'}`) }
     setBusy(false)
   }
 
@@ -92,11 +94,11 @@ export default function ServerSettings() {
           </div>
           <div>
             <span className={label}>{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</span>
-            <input className={input} type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
+            <Input className={input} type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyAI} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></button>
+          <Button variant="outline" size="sm" onClick={verifyAI} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
         </div>
       </section>
@@ -106,14 +108,14 @@ export default function ServerSettings() {
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Cloud className="w-4 h-4" /> Cloudinary — Imágenes y videos</h2>
         <div className="grid grid-cols-3 gap-3">
           <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
-            <input className={input} value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
+            <Input className={input} value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
           <div><span className={label}>API Key</span>
-            <input className={input} value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
+            <Input className={input} value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
           <div><span className={label}>API Secret</span>
-            <input className={input} type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
+            <Input className={input} type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyCloudinary} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></button>
+          <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
         </div>
       </section>
@@ -123,17 +125,17 @@ export default function ServerSettings() {
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
         <div className="grid grid-cols-2 gap-3">
           <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</span>
-            <input className={input} type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
+            <Input className={input} type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
           <div><span className={label}>Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</span>
-            <input className={input} type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
+            <Input className={input} type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
         </div>
       </section>
 
       <div className="flex items-center gap-3 mb-8">
-        <button onClick={save} disabled={busy}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+        <Button onClick={save} disabled={busy}
+          >
           Guardar configuración
-        </button>
+        </Button>
         <span className="text-sm text-foreground/80">{saveMsg}</span>
       </div>
 

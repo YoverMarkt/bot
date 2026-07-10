@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
 import { RadioTower, Search } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
@@ -67,7 +69,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   }
 
   async function verify() {
-    setVfy('⏳ Verificando credenciales…')
+    setVfy('Verificando credenciales…')
     try {
       const r = await adm.verifyProvider({
         provider: f.whatsapp_provider,
@@ -79,8 +81,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         kapso_number_id: f.kapso_number_id || undefined,
         telegram_bot_token: f.telegram_bot_token || undefined,
       })
-      setVfy(`${r.ok ? '✅' : '❌'} ${r.info}`)
-    } catch (e) { setVfy(`❌ ${e instanceof Error ? e.message : 'Error'}`) }
+      setVfy(`${r.ok ? '✓' : '✗'} ${r.info}`)
+    } catch (e) { setVfy(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
 
   async function save(e: React.FormEvent) {
@@ -112,7 +114,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     setSaving(true)
     // Verificar credenciales antes de guardar (igual que el viejo: avisa, pero guarda)
     if (f.whatsapp_provider !== 'telegram' || f.telegram_bot_token) {
-      setVfy('⏳ Verificando credenciales…')
+      setVfy('Verificando credenciales…')
       try {
         const vr = await adm.verifyProvider({
           provider: f.whatsapp_provider,
@@ -122,8 +124,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
           kapso_api_key: f.kapso_api_key || undefined, kapso_number_id: f.kapso_number_id || undefined,
           telegram_bot_token: f.telegram_bot_token || undefined,
         })
-        setVfy(vr.ok ? `✅ ${vr.info}` : `⚠️ ${vr.info} — guardando de todas formas…`)
-      } catch { setVfy('⚠️ No se pudo verificar — guardando de todas formas…') }
+        setVfy(vr.ok ? `✓ ${vr.info}` : `Atención: ${vr.info} — guardando de todas formas…`)
+      } catch { setVfy('Atención: No se pudo verificar — guardando de todas formas…') }
     }
     try {
       if (id) await adm.updateClient(id, payload)
@@ -143,10 +145,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
           <>
             {/* Identidad */}
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div><span className={label}>Nombre *</span><input className={input} value={f.name} onChange={set('name')} placeholder="Pizzería Don Luigi" /></div>
-              <div><span className={label}>Tipo de negocio</span><input className={input} value={f.type} onChange={set('type')} placeholder="pizzería, barbería, tienda…" /></div>
-              <div><span className={label}>WhatsApp del negocio *</span><input className={input} value={f.whatsapp_number} onChange={set('whatsapp_number')} placeholder="+593…" /></div>
-              <div><span className={label}>WhatsApp del dueño (reportes)</span><input className={input} value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
+              <div><span className={label}>Nombre *</span><Input className={input} value={f.name} onChange={set('name')} placeholder="Pizzería Don Luigi" /></div>
+              <div><span className={label}>Tipo de negocio</span><Input className={input} value={f.type} onChange={set('type')} placeholder="pizzería, barbería, tienda…" /></div>
+              <div><span className={label}>WhatsApp del negocio *</span><Input className={input} value={f.whatsapp_number} onChange={set('whatsapp_number')} placeholder="+593…" /></div>
+              <div><span className={label}>WhatsApp del dueño (reportes)</span><Input className={input} value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
             </div>
 
             {/* Modos */}
@@ -190,30 +192,30 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </select>
               </div>
               {f.whatsapp_provider === 'ycloud' && (
-                <div><span className={label}>YCloud API Key</span><input className={input} type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} /></div>
+                <div><span className={label}>YCloud API Key</span><Input className={input} type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} /></div>
               )}
               {f.whatsapp_provider === 'meta' && (
                 <div className="grid grid-cols-3 gap-3">
-                  <div><span className={label}>Meta Token</span><input className={input} type="password" value={f.meta_token} onChange={set('meta_token')} /></div>
-                  <div><span className={label}>Phone ID</span><input className={input} value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
-                  <div><span className={label}>Verify Token</span><input className={input} value={f.meta_verify_token} onChange={set('meta_verify_token')} /></div>
+                  <div><span className={label}>Meta Token</span><Input className={input} type="password" value={f.meta_token} onChange={set('meta_token')} /></div>
+                  <div><span className={label}>Phone ID</span><Input className={input} value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
+                  <div><span className={label}>Verify Token</span><Input className={input} value={f.meta_verify_token} onChange={set('meta_verify_token')} /></div>
                 </div>
               )}
               {f.whatsapp_provider === 'kapso' && (
                 <div className="grid grid-cols-3 gap-3">
-                  <div><span className={label}>Kapso API Key</span><input className={input} type="password" value={f.kapso_api_key} onChange={set('kapso_api_key')} /></div>
-                  <div><span className={label}>Number ID</span><input className={input} value={f.kapso_number_id} onChange={set('kapso_number_id')} /></div>
-                  <div><span className={label}>Verify Token</span><input className={input} value={f.kapso_verify_token} onChange={set('kapso_verify_token')} /></div>
+                  <div><span className={label}>Kapso API Key</span><Input className={input} type="password" value={f.kapso_api_key} onChange={set('kapso_api_key')} /></div>
+                  <div><span className={label}>Number ID</span><Input className={input} value={f.kapso_number_id} onChange={set('kapso_number_id')} /></div>
+                  <div><span className={label}>Verify Token</span><Input className={input} value={f.kapso_verify_token} onChange={set('kapso_verify_token')} /></div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <div><span className={label}>Telegram Bot Token (opcional, para pruebas)</span><input className={input} type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} /></div>
-                <div><span className={label}>Retell Agent ID (voz telefónica, opcional)</span><input className={input} value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
+                <div><span className={label}>Telegram Bot Token (opcional, para pruebas)</span><Input className={input} type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} /></div>
+                <div><span className={label}>Retell Agent ID (voz telefónica, opcional)</span><Input className={input} value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
               </div>
               <div className="flex items-center gap-3 mt-3">
-                <button type="button" onClick={verify} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">
+                <Button variant="outline" size="sm" type="button" onClick={verify} >
                   <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar credenciales</span>
-                </button>
+                </Button>
                 {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
               </div>
             </div>
@@ -228,20 +230,20 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <option value="premium">Premium</option>
                 </select>
               </div>
-              <div><span className={label}>Tarifa mensual ($)</span><input className={input} type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
-              <div><span className={label}>Plan vence</span><input className={input} type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
-              <div><span className={label}>Correo del dueño (panel)</span><input className={input} type="email" value={f.client_email} onChange={set('client_email')} /></div>
-              <div><span className={label}>Contraseña {id ? '(solo si cambia)' : 'del panel'}</span><input className={input} type="password" value={f.client_password} onChange={set('client_password')} /></div>
-              <div><span className={label}>Notas internas</span><input className={input} value={f.notes} onChange={set('notes')} /></div>
+              <div><span className={label}>Tarifa mensual ($)</span><Input className={input} type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
+              <div><span className={label}>Plan vence</span><Input className={input} type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
+              <div><span className={label}>Correo del dueño (panel)</span><Input className={input} type="email" value={f.client_email} onChange={set('client_email')} /></div>
+              <div><span className={label}>Contraseña {id ? '(solo si cambia)' : 'del panel'}</span><Input className={input} type="password" value={f.client_password} onChange={set('client_password')} /></div>
+              <div><span className={label}>Notas internas</span><Input className={input} value={f.notes} onChange={set('notes')} /></div>
             </div>
 
-            {error && <p className="text-sm text-destructive mb-3">❌ {error}</p>}
+            {error && <p className="text-sm text-destructive mb-3">✗ {error}</p>}
 
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
-              <button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+              <Button variant="outline" size="sm" type="button" onClick={onClose} >Cancelar</Button>
+              <Button disabled={saving} >
                 {saving ? 'Guardando…' : id ? 'Guardar cambios' : 'Crear negocio'}
-              </button>
+              </Button>
             </div>
           </>
         )}

@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { getClients } from '../clients/api'
 import { Trash2, MessageSquare } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
@@ -41,7 +43,7 @@ export default function Simulator() {
       })
       if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, at: now() }])
     } catch (e) {
-      setMsgs(m => [...m, { role: 'bot', text: `⚠️ Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
+      setMsgs(m => [...m, { role: 'bot', text: `Atención: Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
     }
     setTyping(false)
     scroll()
@@ -67,7 +69,7 @@ export default function Simulator() {
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {bizId && (
-            <button onClick={clear} className="rounded-lg border border-destructive/40 text-destructive text-sm px-3 py-2 hover:bg-destructive/10"><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></button>
+            <Button onClick={clear} className="rounded-lg border border-destructive/40 text-destructive text-sm px-3 py-2 hover:bg-destructive/10"><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></Button>
           )}
         </div>
       </div>
@@ -120,15 +122,15 @@ export default function Simulator() {
 
         {/* Input */}
         <div className="flex gap-2 p-3 border-t border-border">
-          <input value={text} onChange={e => setText(e.target.value)}
+          <Input value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             disabled={!bizId}
             placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'}
             className="flex-1 rounded-lg bg-muted border border-input text-foreground px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" />
-          <button onClick={send} disabled={!bizId || typing || !text.trim()}
+          <Button onClick={send} disabled={!bizId || typing || !text.trim()}
             className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 text-foreground font-semibold px-5 py-2.5 text-sm">
             Enviar
-          </button>
+          </Button>
         </div>
       </div>
     </div>

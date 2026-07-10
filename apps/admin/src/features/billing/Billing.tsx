@@ -4,6 +4,8 @@ import * as bill from './api'
 import type { BillingRow } from './api'
 import { getClients } from '../clients/api'
 import { Plus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
@@ -84,8 +86,8 @@ export default function Billing() {
             <option value="paid">Pagado</option>
             <option value="future">Próximo</option>
           </select>
-          <button onClick={() => setShowNew(true)}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></button>
+          <Button onClick={() => setShowNew(true)}
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></Button>
         </div>
       </div>
 
@@ -113,10 +115,10 @@ export default function Billing() {
                   <td className="px-4 py-3"><StatusPill b={b} /></td>
                   <td className="px-4 py-3 text-right">
                     {b.status !== 'paid' && (
-                      <button onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}
+                      <Button onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}
                         className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed text-foreground text-xs font-semibold px-2.5 py-1.5">
                         Marcar pagado
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -132,21 +134,21 @@ export default function Billing() {
             Mostrando {(curPage - 1) * PER_PAGE + 1}–{Math.min(curPage * PER_PAGE, filtered.length)} de {filtered.length}
           </span>
           <div className="flex gap-1">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}
-              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">←</button>
+            <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}
+              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">←</Button>
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(p => p === 1 || p === totalPages || Math.abs(p - curPage) <= 2)
               .map((p, i, arr) => (
                 <span key={p} className="flex">
                   {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1 text-muted-foreground/70">…</span>}
-                  <button onClick={() => setPage(p)}
+                  <Button onClick={() => setPage(p)}
                     className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {p}
-                  </button>
+                  </Button>
                 </span>
               ))}
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}
-              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">→</button>
+            <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}
+              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">→</Button>
           </div>
         </div>
       )}
@@ -200,7 +202,7 @@ function NewCharge({ clients, onClose, onSaved }: {
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><span className={lbl}>Monto ($) *</span><input className={inp} type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
+            <div><span className={lbl}>Monto ($) *</span><Input className={inp} type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
             <div>
               <span className={lbl}>Estado</span>
               <select className={inp} value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
@@ -209,17 +211,17 @@ function NewCharge({ clients, onClose, onSaved }: {
                 <option value="overdue">Vencido</option>
               </select>
             </div>
-            <div><span className={lbl}>Inicio del período</span><input className={inp} type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
-            <div><span className={lbl}>Fin del período</span><input className={inp} type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>
+            <div><span className={lbl}>Inicio del período</span><Input className={inp} type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
+            <div><span className={lbl}>Fin del período</span><Input className={inp} type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>
           </div>
-          <div><span className={lbl}>Notas</span><input className={inp} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
+          <div><span className={lbl}>Notas</span><Input className={inp} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
         </div>
-        {error && <p className="text-sm text-destructive mt-3">❌ {error}</p>}
+        {error && <p className="text-sm text-destructive mt-3">✗ {error}</p>}
         <div className="flex justify-end gap-2 mt-5">
-          <button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</button>
-          <button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
+          <Button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : 'Guardar'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Ban } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 
 // ── Horario de atención — para TODOS los negocios (igual que el panel
 // viejo): fuera de horario el bot responde la lista UNA vez y calla.
@@ -37,8 +40,8 @@ export default function Schedule() {
   const dur = duration ?? saved.find(d => d.slot_duration)?.slot_duration ?? 60
   const mSave = useMutation({
     mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days: days.map(d => ({ ...d, slot_duration: dur })) }) }),
-    onSuccess: () => { setMsg('✅ Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error al guardar'}`),
+    onSuccess: () => { setMsg('✓ Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error al guardar'}`),
   })
 
   if (isLoading) return <p className="text-muted-foreground">Cargando horario…</p>
@@ -67,14 +70,14 @@ export default function Schedule() {
         {days.map(d => (
           <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
             <label className="flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-foreground cursor-pointer">
-              <input type="checkbox" checked={d.is_active} onChange={e => update(d.day_of_week, { is_active: e.target.checked })} />
+              <Checkbox checked={d.is_active} onCheckedChange={v => update(d.day_of_week, { is_active: v === true })} />
               {DAY_NAMES[d.day_of_week]}
             </label>
             {d.is_active ? (
               <>
-                <input type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
+                <Input type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
                 <span className="text-muted-foreground/80 text-sm">a</span>
-                <input type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
+                <Input type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
               </>
             ) : (
               <span className="text-sm text-muted-foreground/80 inline-flex items-center gap-1"><Ban className="w-3.5 h-3.5" /> Cerrado</span>
@@ -82,10 +85,10 @@ export default function Schedule() {
           </div>
         ))}
         <div className="flex justify-end mt-4">
-          <button onClick={() => mSave.mutate()} disabled={(!draft && duration === null) || mSave.isPending}
+          <Button onClick={() => mSave.mutate()} disabled={(!draft && duration === null) || mSave.isPending}
             className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
-          </button>
+          </Button>
         </div>
         {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
       </div>

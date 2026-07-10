@@ -4,6 +4,9 @@ import { Search, Film, Plus } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const money = (n: string | number | null) => {
   const v = Number(n)
@@ -49,7 +52,7 @@ export default function Catalog() {
   async function handleReindex() {
     flash('🧠 Indexando catálogo…')
     try { const r = await catApi.reindex(); flash(r.message || '✓ Indexación iniciada') }
-    catch { flash('❌ Error al reindexar') }
+    catch { flash('✗ Error al reindexar') }
   }
 
   return (
@@ -60,16 +63,16 @@ export default function Catalog() {
           <p className="text-sm text-muted-foreground">{products.length} producto(s) — lo que el bot ofrece a tus clientes</p>
         </div>
         <div className="flex gap-2">
-          <input
+          <Input
             value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…"
             className="rounded-lg border border-input px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <button onClick={handleReindex} className="rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-muted/50" title="Regenera la búsqueda inteligente del bot">
+          <Button onClick={handleReindex} className="rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-muted/50" title="Regenera la búsqueda inteligente del bot">
             <span className="inline-flex items-center gap-1.5"><Search className="w-4 h-4" /> Reindexar</span>
-          </button>
-          <button onClick={() => setEditing('new')} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">
+          </Button>
+          <Button onClick={() => setEditing('new')} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">
             <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -97,9 +100,9 @@ export default function Catalog() {
                   <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</span>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => setEditing(p)} className="flex-1 rounded-lg border border-border py-1.5 text-xs font-medium hover:bg-muted/50">✏️ Editar</button>
-                  <button onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }}
-                    className="rounded-lg border border-destructive/30 text-destructive px-3 py-1.5 text-xs font-medium hover:bg-destructive/10">🗑️</button>
+                  <Button onClick={() => setEditing(p)} className="flex-1 rounded-lg border border-border py-1.5 text-xs font-medium hover:bg-muted/50">✏️ Editar</Button>
+                  <Button onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }}
+                    className="rounded-lg border border-destructive/30 text-destructive px-3 py-1.5 text-xs font-medium hover:bg-destructive/10">🗑️</Button>
                 </div>
               </div>
             </div>
@@ -149,17 +152,17 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     const limit = catApi.MEDIA_LIMITS[kind]
     const setStatus = kind === 'image' ? setImgStatus : setVidStatus
     if (file.size > limit) {
-      setStatus(`❌ Supera el límite de WhatsApp: máximo ${kind === 'image' ? '5 MB' : '16 MB'}, tu archivo pesa ${catApi.fmtMB(file.size)}.`)
+      setStatus(`✗ Supera el límite de WhatsApp: máximo ${kind === 'image' ? '5 MB' : '16 MB'}, tu archivo pesa ${catApi.fmtMB(file.size)}.`)
       return
     }
-    setStatus('⏳ Subiendo…'); setUploading(true)
+    setStatus('Subiendo…'); setUploading(true)
     try {
       const out = await catApi.uploadMedia(file)
       if (kind === 'image') setF(prev => ({ ...prev, image_url: out.url, image_public_id: out.public_id }))
       else setF(prev => ({ ...prev, video_url: out.url, video_public_id: out.public_id }))
       setStatus('✓ Subido')
     } catch (e) {
-      setStatus(`❌ ${e instanceof Error ? e.message : 'Error al subir'}`)
+      setStatus(`✗ ${e instanceof Error ? e.message : 'Error al subir'}`)
     } finally { setUploading(false) }
   }
 
@@ -202,23 +205,23 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Nombre *</label>
-            <input className={input} value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
+            <Input className={input} value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Marca</label>
-            <input className={input} value={f.brand} onChange={set('brand')} />
+            <Input className={input} value={f.brand} onChange={set('brand')} />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">SKU</label>
-            <input className={input} value={f.external_sku} onChange={set('external_sku')} />
+            <Input className={input} value={f.external_sku} onChange={set('external_sku')} />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Precio * ($)</label>
-            <input className={input} type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
+            <Input className={input} type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Precio oferta ($)</label>
-            <input className={input} type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
+            <Input className={input} type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
           </div>
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Stock</label>
@@ -230,11 +233,11 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
           </div>
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Descripción</label>
-            <textarea className={input} rows={3} value={f.description} onChange={set('description')} />
+            <Textarea className={input} rows={3} value={f.description} onChange={set('description')} />
           </div>
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Etiquetas (separadas por coma)</label>
-            <input className={input} value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
+            <Input className={input} value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
           </div>
         </div>
 
@@ -243,24 +246,24 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
           <div className="rounded-lg border border-dashed border-stone-300 p-3">
             <div className="text-xs font-semibold text-foreground/90 mb-1">📷 Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
-            <input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
+            <Input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
           <div className="rounded-lg border border-dashed border-stone-300 p-3">
             <div className="text-xs font-semibold text-foreground/90 mb-1">🎬 Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
             {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
-            <input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
+            <Input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
             {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive mb-3">❌ {error}</p>}
+        {error && <p className="text-sm text-destructive mb-3">✗ {error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted/50">Cancelar</button>
-          <button disabled={saving || uploading} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted/50">Cancelar</Button>
+          <Button disabled={saving || uploading} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : uploading ? 'Espera la subida…' : 'Guardar producto'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

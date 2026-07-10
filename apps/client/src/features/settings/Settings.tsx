@@ -3,6 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
@@ -46,8 +50,8 @@ export function BusinessForm() {
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/business', { method: 'PUT', body: JSON.stringify({ name: f?.name, slogan: f?.slogan, description: f?.description }) }),
-    onSuccess: () => setMsg('✅ Guardado — el bot ya usa estos datos'),
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => setMsg('✓ Guardado — el bot ya usa estos datos'),
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
   })
 
   if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
@@ -57,15 +61,15 @@ export function BusinessForm() {
   return (
     <div className="bg-card rounded-xl border p-5 max-w-xl">
       <div className="space-y-3">
-        <div><label className="text-xs font-medium text-muted-foreground">Nombre del negocio</label><input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad ✂️" /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Descripción corta</label><textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Nombre del negocio</label><Input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><Input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad ✂️" /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Descripción corta</label><Textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
       </div>
       <div className="flex justify-end mt-4">
-        <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
           className="rounded-lg bg-stone-900 hover:bg-accent disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar cambios'}
-        </button>
+        </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       <p className="text-[11px] text-muted-foreground/80 mt-3">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
@@ -82,8 +86,8 @@ export function BotForm() {
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify(f) }),
-    onSuccess: () => setMsg('✅ Guardado — el bot ya responde con esto'),
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => setMsg('✓ Guardado — el bot ya responde con esto'),
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
   })
 
   if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
@@ -93,21 +97,21 @@ export function BotForm() {
     <div className="bg-card rounded-xl border p-5 max-w-2xl space-y-4">
       <div>
         <label className="text-xs font-medium text-muted-foreground">🤖 Prompt del bot (su personalidad y forma de atender)</label>
-        <textarea className={`${input} font-mono text-xs`} rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
+        <Textarea className={`${input} font-mono text-xs`} rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
           placeholder="Eres el asistente virtual de…" />
         <p className="text-[11px] text-muted-foreground/80 mt-1">⚠️ El prompt es la personalidad; los precios, totales y descuentos SIEMPRE los calcula el sistema (regla de dinero).</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-xs font-medium text-muted-foreground">🚚 Envíos</label><textarea className={input} rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">↩️ Devoluciones</label><textarea className={input} rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">🏷️ Descuentos (informativo)</label><textarea className={input} rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">📌 Instrucciones extra</label><textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">🚚 Envíos</label><Textarea className={input} rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">↩️ Devoluciones</label><Textarea className={input} rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">🏷️ Descuentos (informativo)</label><Textarea className={input} rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">📌 Instrucciones extra</label><Textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end">
-        <button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
           className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
           {mSave.isPending ? 'Guardando…' : 'Guardar bot'}
-        </button>
+        </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </div>
@@ -141,8 +145,8 @@ export function Team() {
 
   const mCreate = useMutation({
     mutationFn: () => api('/api/client/users', { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); setMsg('✅ Empleado creado'); refresh() },
-    onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); setMsg('✓ Empleado creado'); refresh() },
+    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
   })
   const mDelete = useMutation({ mutationFn: (id: string) => api(`/api/client/users/${id}`, { method: 'DELETE' }), onSettled: refresh })
   const mPerms = useMutation({
@@ -168,16 +172,16 @@ export function Team() {
                   <div className="text-xs text-muted-foreground/80">{u.email}</div>
                 </div>
                 {u.role !== 'owner' && (
-                  <button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
-                    className="text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Eliminar</button>
+                  <Button onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
+                    className="text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Eliminar</Button>
                 )}
               </div>
               {u.role !== 'owner' && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {PERMS.map(([p, label]) => (
                     <label key={p} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                      <input type="checkbox" checked={(u.permissions ?? []).includes(p)}
-                        onChange={() => mPerms.mutate({ id: u.id, permissions: togglePerm(u.permissions ?? [], p) })} />
+                      <Checkbox checked={(u.permissions ?? []).includes(p)}
+                        onCheckedChange={() => mPerms.mutate({ id: u.id, permissions: togglePerm(u.permissions ?? [], p) })} />
                       {label}
                     </label>
                   ))}
@@ -191,25 +195,25 @@ export function Team() {
       <div className="bg-card rounded-xl border p-5">
         <h2 className="font-semibold text-foreground mb-3">+ Nuevo empleado</h2>
         <div className="space-y-3">
-          <div><label className="text-xs font-medium text-muted-foreground">Nombre</label><input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-muted-foreground">Correo *</label><input className={input} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-muted-foreground">Contraseña *</label><input className={input} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-muted-foreground">Nombre</label><Input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-muted-foreground">Correo *</label><Input className={input} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          <div><label className="text-xs font-medium text-muted-foreground">Contraseña *</label><Input className={input} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Permisos (qué secciones puede ver)</label>
             <div className="flex flex-wrap gap-2 mt-1">
               {PERMS.map(([p, label]) => (
                 <label key={p} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                  <input type="checkbox" checked={form.permissions.includes(p)}
-                    onChange={() => setForm({ ...form, permissions: togglePerm(form.permissions, p) })} />
+                  <Checkbox checked={form.permissions.includes(p)}
+                    onCheckedChange={() => setForm({ ...form, permissions: togglePerm(form.permissions, p) })} />
                   {label}
                 </label>
               ))}
             </div>
           </div>
-          <button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending}
+          <Button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending}
             className="w-full rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold py-2 text-sm">
             {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
-          </button>
+          </Button>
           {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
         </div>
       </div>

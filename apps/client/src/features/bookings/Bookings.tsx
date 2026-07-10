@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Check, X, Clock } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
 // calendario MENSUAL con chips por día + detalle del día + vista lista.
@@ -56,10 +58,10 @@ export default function Bookings() {
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
           {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => setTab(v)}
+            <Button key={v} onClick={() => setTab(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -91,9 +93,9 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <button onClick={prev} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">←</button>
+        <Button onClick={prev} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">←</Button>
         <span className="font-semibold text-foreground min-w-40 text-center">{MONTHS[month]} {year}</span>
-        <button onClick={next} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">→</button>
+        <Button onClick={next} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">→</Button>
       </div>
 
       <div className="bg-card rounded-xl border p-3 overflow-x-auto">
@@ -109,7 +111,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
             const allConfirmed = dayBk.length > 0 && dayBk.every(b => b.status === 'confirmed')
             const firstB = dayBk.slice().sort((a, b) => (a.booking_time || '').localeCompare(b.booking_time || ''))[0]
             return (
-              <button key={d} onClick={() => setSelected(dateStr)}
+              <Button key={d} onClick={() => setSelected(dateStr)}
                 className={`text-left rounded-lg border p-1.5 min-h-16 align-top transition-colors ${
                   selected === dateStr ? 'border-green-500 ring-1 ring-green-500' :
                   isToday ? 'border-green-300 bg-primary/10/50' : 'border-border/60 hover:border-stone-300'}`}>
@@ -124,7 +126,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
                     {(firstB.booking_time || '').slice(0, 5)} {(firstB.contact_name || '').split(' ')[0]}
                   </div>
                 )}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -164,9 +166,9 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <label className="text-sm text-muted-foreground">Del</label>
-        <input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} />
+        <Input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} />
         <label className="text-sm text-muted-foreground">al</label>
-        <input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
+        <Input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
       </div>
       {filtered.length === 0 ? (
         <div className="bg-card rounded-xl border p-8 text-center">
@@ -199,18 +201,18 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
       <span className={`text-[11px] font-semibold rounded px-2 py-0.5 shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</span>
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
-          <button onClick={() => onStatus(b.id, 'confirmed')}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></button>
-          <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></button>
+          <Button onClick={() => onStatus(b.id, 'confirmed')}
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></Button>
+          <Button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
+            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
         </div>
       )}
       {b.status === 'confirmed' && (
         <div className="flex gap-2 shrink-0">
-          <button onClick={() => onStatus(b.id, 'no_show')}
-            className="rounded-lg border border-border text-muted-foreground text-xs px-3 py-1.5 hover:bg-muted/50">Marcar no asistió</button>
-          <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></button>
+          <Button onClick={() => onStatus(b.id, 'no_show')}
+            className="rounded-lg border border-border text-muted-foreground text-xs px-3 py-1.5 hover:bg-muted/50">Marcar no asistió</Button>
+          <Button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
+            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
         </div>
       )}
     </div>

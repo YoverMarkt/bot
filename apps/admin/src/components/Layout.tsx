@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
 import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 const SECTIONS = [
   { to: '/',            label: 'Dashboard',     icon: LayoutDashboard },
@@ -46,9 +47,9 @@ export default function Layout() {
           </div>
         </nav>
         <div className="p-3 border-t border-border">
-          <button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
+          <Button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
-          </button>
+          </Button>
         </div>
       </aside>
       <main className="flex-1 min-w-0 p-6">

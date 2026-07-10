@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import * as custApi from './api'
 import { Repeat2, Sparkles, Download } from 'lucide-react'
 import type { Customer } from './api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const { money } = custApi
 
@@ -41,7 +43,7 @@ function Directory() {
 
   return (
     <div>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔎 Buscar por nombre o teléfono..."
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono..."
         className="rounded-lg border border-input px-3 py-2 text-sm w-full max-w-sm mb-4 focus:outline-none focus:ring-2 focus:ring-ring" />
 
       {!customers.length ? (
@@ -108,14 +110,14 @@ export function Reactivate() {
           className="rounded-lg border border-input px-3 py-2 text-sm max-w-36 focus:outline-none focus:ring-2 focus:ring-ring">
           {[7, 15, 30, 60].map(d => <option key={d} value={d}>+{d} días</option>)}
         </select>
-        <button onClick={exportExcel} disabled={!rows.length}
+        <Button onClick={exportExcel} disabled={!rows.length}
           className="rounded-lg bg-stone-900 hover:bg-accent disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm">
           <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Exportar Excel/CSV</span>
-        </button>
+        </Button>
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando…</p> :
-        rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">Nadie sin escribir en ese rango. ¡Todos al día! 🎉</p> : (
+        rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">Nadie sin escribir en ese rango. ¡Todos al día!</p> : (
           <>
             <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · "Cliente" ya te compró · "Solo consultó" aún no.</p>
             <div className="bg-card rounded-xl border overflow-x-auto">

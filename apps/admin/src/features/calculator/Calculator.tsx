@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { ClipboardList, DollarSign, Target, TrendingUp, Bot as BotIcon, Camera, Mic, MessageSquare, Server } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // Calculadora de precios — Modelo B (TODO INCLUIDO): tú absorbes el costo
 // de Meta y cobras un solo pago mensual. Misma fórmula que el panel viejo:
@@ -67,29 +69,29 @@ export default function Calculator() {
         <section className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Datos del cliente</h2>
           <div className="grid grid-cols-2 gap-3">
-            <div><span className={label}>Clientes que escriben al mes</span><input className={input} type="number" value={f.clients} onChange={set('clients')} /></div>
-            <div><span className={label}>Mensajes por conversación</span><input className={input} type="number" value={f.msgs} onChange={set('msgs')} /></div>
-            <div><span className={label}>% que envía FOTOS</span><input className={input} type="number" value={f.photo} onChange={set('photo')} /></div>
-            <div><span className={label}>% que envía AUDIOS</span><input className={input} type="number" value={f.audio} onChange={set('audio')} /></div>
+            <div><span className={label}>Clientes que escriben al mes</span><Input className={input} type="number" value={f.clients} onChange={set('clients')} /></div>
+            <div><span className={label}>Mensajes por conversación</span><Input className={input} type="number" value={f.msgs} onChange={set('msgs')} /></div>
+            <div><span className={label}>% que envía FOTOS</span><Input className={input} type="number" value={f.photo} onChange={set('photo')} /></div>
+            <div><span className={label}>% que envía AUDIOS</span><Input className={input} type="number" value={f.audio} onChange={set('audio')} /></div>
             <div>
               <span className={label}>Costo Meta por mensaje SALIENTE ($)</span>
-              <input className={input} type="number" step="0.001" value={f.wa} onChange={set('wa')} />
+              <Input className={input} type="number" step="0.001" value={f.wa} onChange={set('wa')} />
             </div>
             <div>
               <span className={label}>Colchón de seguridad Meta (%)</span>
-              <input className={input} type="number" step="5" value={f.buffer} onChange={set('buffer')} />
+              <Input className={input} type="number" step="5" value={f.buffer} onChange={set('buffer')} />
             </div>
-            <div><span className={label}>Costos fijos mensuales ($)</span><input className={input} type="number" value={f.fixed} onChange={set('fixed')} /></div>
+            <div><span className={label}>Costos fijos mensuales ($)</span><Input className={input} type="number" value={f.fixed} onChange={set('fixed')} /></div>
             <div>
               <span className={label}>Multiplicador de precio</span>
               <div className="flex gap-1.5 items-center">
                 {[3, 5, 8, 10].map(v => (
-                  <button key={v} onClick={() => setF(p => ({ ...p, mult: String(v) }))}
+                  <Button key={v} onClick={() => setF(p => ({ ...p, mult: String(v) }))}
                     className={`rounded-lg text-xs px-2.5 py-2 ${Number(f.mult) === v ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {v}x
-                  </button>
+                  </Button>
                 ))}
-                <input className={`${input} !w-16 text-center font-bold`} type="number" step="0.5" value={f.mult} onChange={set('mult')} />
+                <Input className={`${input} !w-16 text-center font-bold`} type="number" step="0.5" value={f.mult} onChange={set('mult')} />
               </div>
             </div>
           </div>
@@ -128,7 +130,7 @@ export default function Calculator() {
         {/* Precio manual */}
         <section className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> ¿Cuánto piensas cobrar?</h2>
-          <input className={input} type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
+          <Input className={input} type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
           {myPrice > 0 ? (
             <div className="mt-3 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Tu precio</span><strong className="text-foreground font-mono">{money(myPrice)}</strong></div>
@@ -137,7 +139,7 @@ export default function Calculator() {
               <div className="flex justify-between"><span className="text-muted-foreground">Margen</span><span className={ok ? 'text-primary' : 'text-destructive'}>{marginPct.toFixed(0)}% ({realMult.toFixed(1)}x)</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">De tu precio, Meta se lleva</span><span className="text-foreground/90 font-mono">{money(cWa)} ({Math.round((cWa / myPrice) * 100)}%)</span></div>
               <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${ok ? 'bg-primary/10 text-primary' : 'bg-red-600/10 text-destructive'}`}>
-                {ok ? (marginPct >= 200 ? '✅ Excelente margen' : '✅ Rentable, pero podrías cobrar más') : '⚠️ Estás cobrando por debajo del costo'}
+                {ok ? (marginPct >= 200 ? '✓ Excelente margen' : '✓ Rentable, pero podrías cobrar más') : 'Atención: Estás cobrando por debajo del costo'}
               </div>
             </div>
           ) : (

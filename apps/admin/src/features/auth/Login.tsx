@@ -54,7 +54,7 @@ export default function Login() {
               <Input id="password" type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••" autoComplete="current-password" />
             </div>
-            {error && <p className="text-sm text-destructive">❌ {error}</p>}
+            {error && <p className="text-sm text-destructive">✗ {error}</p>}
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? 'Entrando…' : 'Entrar'}
             </Button>
