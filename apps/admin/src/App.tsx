@@ -8,6 +8,7 @@ import Clients from './features/clients/Clients'
 import Billing from './features/billing/Billing'
 import Simulator from './features/simulator/Simulator'
 import ServerSettings from './features/settings/ServerSettings'
+import Connections from './features/settings/Connections'
 import Calculator from './features/calculator/Calculator'
 
 const queryClient = new QueryClient({
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="/billing" element={<Billing />} />
               <Route path="/simulator" element={<Simulator />} />
               <Route path="/settings" element={<ServerSettings />} />
+              <Route path="/connections" element={<Connections />} />
               <Route path="/calculator" element={<Calculator />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

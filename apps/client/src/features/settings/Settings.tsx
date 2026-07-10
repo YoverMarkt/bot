@@ -19,40 +19,29 @@ const input = 'w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus
 
 export default function Settings() {
   const isOwner = session.user?.role === 'owner'
-  const [tab, setTab] = useState<'negocio' | 'bot' | 'equipo'>('negocio')
-
-  if (!isOwner) return (
-    <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
-      <div className="text-3xl mb-2">🔒</div>
-      <p className="text-stone-700 font-medium">Solo el dueño puede ver la configuración.</p>
-    </div>
-  )
-
+  if (!isOwner) return <Locked />
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-900">Configuración</h1>
-          <p className="text-sm text-stone-500">Identidad del negocio, personalidad del bot y tu equipo</p>
-        </div>
-        <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
-          {([['negocio', '🏪 Negocio'], ['bot', '🤖 Bot'], ['equipo', '👥 Equipo']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-stone-900">Ajustes</h1>
+        <p className="text-sm text-stone-500">Identidad de tu negocio (lo que el bot usa para presentarse)</p>
       </div>
-      {tab === 'negocio' && <BusinessForm />}
-      {tab === 'bot' && <BotForm />}
-      {tab === 'equipo' && <Team />}
+      <BusinessForm />
+    </div>
+  )
+}
+
+export function Locked() {
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 p-8 text-center">
+      <div className="text-3xl mb-2">🔒</div>
+      <p className="text-stone-700 font-medium">Solo el dueño puede ver esta sección.</p>
     </div>
   )
 }
 
 // ── Identidad del negocio (lo que el bot usa para presentarse) ──
-function BusinessForm() {
+export function BusinessForm() {
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
   const [draft, setDraft] = useState<BusinessData | null>(null)
   const [msg, setMsg] = useState('')
@@ -91,7 +80,7 @@ function BusinessForm() {
 }
 
 // ── Bot: prompt (personalidad) + políticas ──
-function BotForm() {
+export function BotForm() {
   const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
   const [draft, setDraft] = useState<Policies | null>(null)
   const [msg, setMsg] = useState('')
@@ -132,7 +121,7 @@ function BotForm() {
 }
 
 // ── Equipo: empleados con permisos por sección ──
-function Team() {
+export function Team() {
   const qc = useQueryClient()
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
