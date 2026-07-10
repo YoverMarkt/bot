@@ -6,7 +6,8 @@ const express = require('express')
 const cors    = require('cors')
 const path    = require('path')
 const fs      = require('fs')
-require('dotenv').config()
+// path absoluto: así `npm start` funciona igual desde la raíz del monorepo o desde server/
+require('dotenv').config({ path: path.join(__dirname, '.env') })
 
 const db     = require('./db')
 const bot    = require('./bot')

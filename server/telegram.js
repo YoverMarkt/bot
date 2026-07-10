@@ -9,7 +9,7 @@ async function restoreSession(chatId) {
   const from = `tg_${chatId}`
   try {
     const { createClient } = require('@supabase/supabase-js')
-    require('dotenv').config()
+    require('dotenv').config({ path: require('path').join(__dirname, '.env') })
     const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY)
     const { data } = await sb
       .from('conversation_history')

@@ -1,10 +1,18 @@
 {
   "name": "botpanel-saas",
   "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "apps/client",
+    "apps/admin"
+  ],
   "scripts": {
     "start": "node server/index.js",
-    "postinstall": "npm install --prefix server",
-    "install:server": "cd server && npm install"
+    "dev": "npm run dev -w @botpanel/server",
+    "build": "npm run build -w @botpanel/client && npm run build -w @botpanel/admin",
+    "check": "npm run check -w @botpanel/server",
+    "test": "npm test -w @botpanel/server"
   },
   "engines": {
     "node": ">=18.0.0"
