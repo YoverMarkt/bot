@@ -35,8 +35,8 @@ export default function Reports() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Reportes</h1>
-          <p className="text-sm text-stone-500">Los mismos 7+ reportes que puedes pedirle al bot por WhatsApp</p>
+          <h1 className="text-2xl font-bold text-stone-900">Reportes de ventas</h1>
+          <p className="text-sm text-stone-500">Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p>
         </div>
         <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
           {PERIODS.map(([v, l]) => (
@@ -94,7 +94,7 @@ export default function Reports() {
           <div className="grid md:grid-cols-2 gap-4">
             {/* Comparación */}
             {show('ventas') && (<>
-            <Card title={`💰 Ventas: ${data.comparison.label} vs anterior`}>
+            <Card title="📊 Comparación con período anterior">
               <Bars color={C1} rows={[
                 { label: data.comparison.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
                 { label: 'Anterior', value: Number(data.comparison.prevTotal) || 0, text: money(data.comparison.prevTotal) },
@@ -109,30 +109,6 @@ export default function Reports() {
               </p>
             </Card>
             </>)}
-
-            {/* Top productos */}
-            {show('productos') && (<>
-            <Card title="🏆 Productos más vendidos">
-              {data.top.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
-                <Bars color={INK} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
-            </Card>
-            </>)}
-
-            {/* Clientes frecuentes */}
-            {show('clientes') && (<>
-            <Card title="🔁 Clientes frecuentes">
-              {data.recurring.rows.length === 0 ? <Empty msg="Aún sin clientes recurrentes." /> :
-                <ul className="text-sm space-y-1.5">
-                  {data.recurring.rows.map((r, i) => (
-                    <li key={i} className="flex justify-between">
-                      <span className="text-stone-700 truncate">{['🥇','🥈','🥉'][i] ?? `${i + 1}.`} {r.name}</span>
-                      <span className="text-stone-500 shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
-                    </li>
-                  ))}
-                </ul>}
-            </Card>
-            </>)}
-
             {/* Vendedores */}
             {show('ventas') && (<>
             <Card title="🧑‍💼 Ventas por vendedor">
@@ -140,38 +116,50 @@ export default function Reports() {
                 <Bars color={C1} rows={data.bySeller.rows.map(r => ({ label: r.name, value: Number(r.total) || 0, text: money(r.total) }))} />}
             </Card>
             </>)}
-
+            {/* Pendientes */}
+            {show('ventas') && (<>
+            <Card title={`📋 Pedidos sin cerrar${data.pending.count ? ` (${data.pending.count})` : ''}`}>
+              {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar. ✅" /> :
+                <ul className="text-sm space-y-1">
+                  {data.pending.rows.map((r, i) => <li key={i} className="truncate text-stone-700">{r.name}{r.last_message ? <span className="text-stone-400"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
+                </ul>}
+            </Card>
+            </>)}
+            {/* Top productos */}
+            {show('productos') && (<>
+            <Card title="🏆 Productos más vendidos">
+              {data.top.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
+                <Bars color={INK} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
+            </Card>
+            </>)}
             {/* Más consultados (c2 → regla de relieve: valor directo SIEMPRE) */}
             {show('productos') && (<>
-            <Card title="👀 Productos más consultados">
+            <Card title="🔎 Más consultados">
               {data.mostConsulted.rows.length === 0 ? <Empty msg="Sin consultas registradas." /> :
                 <Bars color={C2} rows={data.mostConsulted.rows.map(r => ({ label: r.name, value: r.count, text: `${r.count} consultas` }))} />}
             </Card>
             </>)}
-
             {/* Abandonados */}
             {show('productos') && (<>
-            <Card title="🛒 Consultados pero sin venta">
+            <Card title="🛒 Productos abandonados (consultados sin vender)">
               {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado. 🎉" /> :
                 <ul className="text-sm space-y-1">
                   {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.consultas} consultas</span></li>)}
                 </ul>}
             </Card>
             </>)}
-
             {/* Bajo movimiento */}
             {show('productos') && (<>
-            <Card title="📉 Bajo movimiento">
+            <Card title="🐌 Bajo movimiento (candidatos a promo)">
               {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas. 🎉" /> :
                 <ul className="text-sm space-y-1">
                   {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.qty} uds</span></li>)}
                 </ul>}
             </Card>
             </>)}
-
             {/* Stock bajo (colores de ESTADO reservados) */}
             {show('productos') && (<>
-            <Card title="📦 Stock bajo">
+            <Card title="📦 Stock bajo o agotado">
               {data.lowStock.rows.length === 0 ? <Empty msg="Nada agotado ni en últimas unidades. ✅" /> :
                 <ul className="text-sm space-y-1">
                   {data.lowStock.rows.map((r, i) => (
@@ -184,20 +172,23 @@ export default function Reports() {
                 </ul>}
             </Card>
             </>)}
-
-            {/* Pendientes */}
-            {show('ventas') && (<>
-            <Card title={`📋 Cotizaciones sin cerrar (${data.pending.count})`}>
-              {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar. ✅" /> :
-                <ul className="text-sm space-y-1">
-                  {data.pending.rows.map((r, i) => <li key={i} className="truncate text-stone-700">{r.name}{r.last_message ? <span className="text-stone-400"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
+            {/* Clientes frecuentes */}
+            {show('clientes') && (<>
+            <Card title="🤝 Clientes frecuentes">
+              {data.recurring.rows.length === 0 ? <Empty msg="Aún sin clientes recurrentes." /> :
+                <ul className="text-sm space-y-1.5">
+                  {data.recurring.rows.map((r, i) => (
+                    <li key={i} className="flex justify-between">
+                      <span className="text-stone-700 truncate">{['🥇','🥈','🥉'][i] ?? `${i + 1}.`} {r.name}</span>
+                      <span className="text-stone-500 shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
+                    </li>
+                  ))}
                 </ul>}
             </Card>
             </>)}
-
             {/* Clientes perdidos */}
             {show('clientes') && (<>
-            <Card title={`😞 Clientes perdidos (${data.lostCustomers.count})`}>
+            <Card title="😟 Clientes perdidos (escribieron sin comprar)">
               {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar. 🎉" /> :
                 <>
                   <p className="text-xs text-stone-500 mb-2">🔁 {data.lostCustomers.returning} ya-cliente · 🆕 {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
@@ -212,15 +203,14 @@ export default function Reports() {
                 </>}
             </Card>
             </>)}
-
             {/* Reporte de IA: FAQ + sin responder */}
             {show('bot') && (<>
-            <Card title="🧠 Preguntas frecuentes (IA)">
+            <Card title="🧠 Preguntas más frecuentes">
               {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
                 <Bars color={INK} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: `${r.emoji} ${r.topic}`, value: r.count, text: String(r.count) }))} />}
             </Card>
 
-            <Card title={`❓ El bot no supo responder (${data.unanswered.count})`}>
+            <Card title="❓ Preguntas que la IA no pudo responder">
               {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo. 💪" /> :
                 <ul className="text-sm space-y-1">
                   {data.unanswered.rows.map((r, i) => <li key={i} className="text-stone-700 truncate">“{r.question ?? '—'}” <span className="text-stone-400">×{r.count}</span></li>)}
