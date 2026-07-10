@@ -60,9 +60,12 @@ bot/
 │   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
 │   ├── migration-integraciones.sql    # Migración inicial (OBSOLETA — solo historial, no ejecutar)
 │   └── .env                   # Credenciales (NUNCA a git)
-├── admin/index.html           # Panel del superadmin (dueño del SaaS)
-├── client/index.html          # Panel del cliente (dueño de cada negocio)
-└── CLAUDE.md / README.md
+├── apps/
+│   ├── admin/                 # Panel del superadmin (React+Vite+TS) — OFICIAL, servido en /app-admin
+│   └── client/                # Panel del cliente (React+Vite+TS) — OFICIAL, servido en /app
+├── admin/index.html           # Panel viejo del superadmin (LEGACY — respaldo en /admin-legacy; se borra tras validar)
+├── client/index.html          # Panel viejo del cliente (LEGACY — respaldo en /client-legacy; se borra tras validar)
+└── CLAUDE.md / README.md / ARQUITECTURA.md
 ```
 
 - **La llave de tenant es `business_id`** (en código, `req.user.businessId`). Cuando estas reglas digan "client_id", en este proyecto es **`business_id`**.

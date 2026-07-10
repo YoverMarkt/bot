@@ -53,16 +53,21 @@ app.use(express.json({ limit: '10mb', verify: (req, _res, buf) => { req.rawBody 
 const noCacheHtml = (res, filePath) => {
   if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
 }
-app.use('/admin',  express.static(path.join(__dirname, '../admin'),  { setHeaders: noCacheHtml }))
-app.use('/client', express.static(path.join(__dirname, '../client'), { setHeaders: noCacheHtml }))
-// Panel NUEVO (React — Fase 2 de ARQUITECTURA.md): se sirve el build en /app.
-// Convive con el panel viejo (/client) hasta migrar todas las secciones.
+// CORTE (Fases 2-3 completas): los paneles React son los OFICIALES.
+// Los viejos quedan de respaldo en /admin-legacy y /client-legacy hasta
+// validarlos con uso real; después se borran (patrón estrangulador).
+app.use('/admin-legacy',  express.static(path.join(__dirname, '../admin'),  { setHeaders: noCacheHtml }))
+app.use('/client-legacy', express.static(path.join(__dirname, '../client'), { setHeaders: noCacheHtml }))
+// Panel del cliente (React — Fase 2): build servido en /app
 app.use('/app', express.static(path.join(__dirname, '../apps/client/dist'), { setHeaders: noCacheHtml }))
 app.get('/app/*', (_, res) => res.sendFile(path.join(__dirname, '../apps/client/dist/index.html')))
-// Panel ADMIN nuevo (React — Fase 3): convive con el admin viejo (/admin)
+// Panel admin (React — Fase 3): build servido en /app-admin
 app.use('/app-admin', express.static(path.join(__dirname, '../apps/admin/dist'), { setHeaders: noCacheHtml }))
 app.get('/app-admin/*', (_, res) => res.sendFile(path.join(__dirname, '../apps/admin/dist/index.html')))
-app.get('/', (_, res) => res.redirect('/admin'))
+// Las URLs de siempre llevan a los paneles nuevos (marcadores viejos siguen funcionando)
+app.get(['/admin', '/admin/*'],   (_, res) => res.redirect('/app-admin'))
+app.get(['/client', '/client/*'], (_, res) => res.redirect('/app'))
+app.get('/', (_, res) => res.redirect('/app-admin'))
 
 // ══════════════════════════════════════════
 // RUTAS (Fase 1 — ver ARQUITECTURA.md)
@@ -123,9 +128,9 @@ app.get('/api/images/:productId', async (req, res) => {
   res.redirect(product.image_url)
 })
 
-// SPA fallbacks
-app.get('/admin/*',  (_, res) => res.sendFile(path.join(__dirname, '../admin/index.html')))
-app.get('/client/*', (_, res) => res.sendFile(path.join(__dirname, '../client/index.html')))
+// SPA fallbacks de los paneles de respaldo
+app.get('/admin-legacy/*',  (_, res) => res.sendFile(path.join(__dirname, '../admin/index.html')))
+app.get('/client-legacy/*', (_, res) => res.sendFile(path.join(__dirname, '../client/index.html')))
 
 async function checkExpiredClients() {
   try {
@@ -144,8 +149,8 @@ const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
   checkEnv()
   console.log(`\n🚀 BotPanel corriendo en http://localhost:${PORT}`)
-  console.log(`👑 Admin:   http://localhost:${PORT}/admin`)
-  console.log(`👤 Cliente: http://localhost:${PORT}/client`)
+  console.log(`👑 Admin:   http://localhost:${PORT}/app-admin (respaldo: /admin-legacy)`)
+  console.log(`👤 Cliente: http://localhost:${PORT}/app (respaldo: /client-legacy)`)
   console.log(`📡 Webhook: http://localhost:${PORT}/webhook\n`)
 
   // Verificar vencimientos al arrancar y cada hora
