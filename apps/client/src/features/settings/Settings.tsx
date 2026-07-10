@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
+import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
@@ -114,13 +115,18 @@ export function BotForm() {
 
 // ── Equipo (propuesta elegida por el usuario 2026-07-10): lista con
 // permisos editables en línea + formulario de nuevo empleado al lado.
-const PERMS = [
+// El permiso "citas" también controla la sección Horarios (todos los
+// negocios la tienen); su nombre se adapta al tipo de negocio.
+const permsForBiz = (bookingBiz: boolean) => [
   ['catalogo', '📦 Catálogo'], ['conversaciones', '💬 Conversaciones'],
-  ['ventas', '🛒 Ventas'], ['reportes', '📊 Reportes'], ['citas', '📅 Citas'],
+  ['ventas', '🛒 Ventas'], ['reportes', '📊 Reportes'],
+  ['citas', bookingBiz ? '📅 Citas y horarios' : '🕐 Horarios'],
 ] as const
 
 export function Team() {
   const qc = useQueryClient()
+  const { data: bizInfo } = useBusinessInfo()
+  const PERMS = permsForBiz(isBookingBiz(bizInfo?.type))
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
   const [msg, setMsg] = useState('')
