@@ -45,7 +45,6 @@ export default function Layout() {
     { to: '/customers',     label: 'Clientes',          icon: '👥', perm: 'reportes' },
     { to: '/reactivate',    label: 'Reactivar',         icon: '🔄', perm: 'reportes' },
     { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: '🤖', perm: 'owner' },
-    { to: '/policies',      label: 'Políticas del bot', icon: '📋', perm: 'owner' },
     { to: '/schedule',      label: 'Horarios',          icon: '🕐', perm: 'citas' },
     ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: '📅', perm: 'citas', badge: att.pending.length || undefined }] : []),
     { to: '/users',         label: 'Usuarios',          icon: '👤', perm: 'owner' },
