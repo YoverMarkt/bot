@@ -40,22 +40,22 @@ export default function Schedule() {
     onError: (e) => setMsg(`❌ ${e instanceof Error ? e.message : 'Error al guardar'}`),
   })
 
-  if (isLoading) return <p className="text-stone-500">Cargando horario…</p>
+  if (isLoading) return <p className="text-muted-foreground">Cargando horario…</p>
 
-  const time = 'rounded border border-stone-300 px-2 py-1 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-40'
+  const time = 'rounded border border-input px-2 py-1 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-40'
 
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-stone-900">Horarios de atención</h1>
-        <p className="text-sm text-stone-500">Tu horario. El bot avisará a quien escriba fuera de este horario. (En modo "Con citas", además se ofrecen turnos en estas horas.)</p>
+        <h1 className="text-2xl font-bold text-foreground">Horarios de atención</h1>
+        <p className="text-sm text-muted-foreground">Tu horario. El bot avisará a quien escriba fuera de este horario. (En modo "Con citas", además se ofrecen turnos en estas horas.)</p>
       </div>
-      <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-xl">
+      <div className="bg-card rounded-xl border p-5 max-w-xl">
         {/* Duración de cada cita (select del viejo) */}
         <div className="mb-4">
-          <label className="text-xs font-medium text-stone-600 block mb-1">Duración de cada cita</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Duración de cada cita</label>
           <select value={dur} onChange={e => { setDuration(parseInt(e.target.value)); if (!draft) setDraft(days) }}
-            className="rounded-lg border border-stone-300 px-3 py-2 text-sm max-w-56 focus:outline-none focus:ring-2 focus:ring-green-500">
+            className="rounded-lg border border-input px-3 py-2 text-sm max-w-56 focus:outline-none focus:ring-2 focus:ring-ring">
             <option value={30}>30 minutos</option>
             <option value={45}>45 minutos</option>
             <option value={60}>1 hora</option>
@@ -64,29 +64,29 @@ export default function Schedule() {
           </select>
         </div>
         {days.map(d => (
-          <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-stone-50 last:border-0">
-            <label className="flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-stone-800 cursor-pointer">
+          <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
+            <label className="flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-foreground cursor-pointer">
               <input type="checkbox" checked={d.is_active} onChange={e => update(d.day_of_week, { is_active: e.target.checked })} />
               {DAY_NAMES[d.day_of_week]}
             </label>
             {d.is_active ? (
               <>
                 <input type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
-                <span className="text-stone-400 text-sm">a</span>
+                <span className="text-muted-foreground/80 text-sm">a</span>
                 <input type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
               </>
             ) : (
-              <span className="text-sm text-stone-400">🚫 Cerrado</span>
+              <span className="text-sm text-muted-foreground/80">🚫 Cerrado</span>
             )}
           </div>
         ))}
         <div className="flex justify-end mt-4">
           <button onClick={() => mSave.mutate()} disabled={(!draft && duration === null) || mSave.isPending}
-            className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
           </button>
         </div>
-        {msg && <p className="text-sm text-stone-600 mt-3">{msg}</p>}
+        {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
       </div>
     </div>
   )

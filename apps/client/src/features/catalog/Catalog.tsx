@@ -10,7 +10,7 @@ const money = (n: string | number | null) => {
 }
 
 const STOCK_STYLE: Record<Product['stock'], string> = {
-  'disponible': 'bg-green-50 text-green-700',
+  'disponible': 'bg-primary/10 text-primary',
   'últimas unidades': 'bg-amber-50 text-amber-700',
   'agotado': 'bg-red-50 text-red-700',
 }
@@ -55,18 +55,18 @@ export default function Catalog() {
     <div>
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Catálogo</h1>
-          <p className="text-sm text-stone-500">{products.length} producto(s) — lo que el bot ofrece a tus clientes</p>
+          <h1 className="text-2xl font-bold text-foreground">Catálogo</h1>
+          <p className="text-sm text-muted-foreground">{products.length} producto(s) — lo que el bot ofrece a tus clientes</p>
         </div>
         <div className="flex gap-2">
           <input
             value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…"
-            className="rounded-lg border border-stone-300 px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="rounded-lg border border-input px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <button onClick={handleReindex} className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm hover:bg-stone-50" title="Regenera la búsqueda inteligente del bot">
+          <button onClick={handleReindex} className="rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-muted/50" title="Regenera la búsqueda inteligente del bot">
             🧠 Reindexar
           </button>
-          <button onClick={() => setEditing('new')} className="rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 text-sm">
+          <button onClick={() => setEditing('new')} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">
             + Agregar producto
           </button>
         </div>
@@ -74,36 +74,36 @@ export default function Catalog() {
 
       {toast && <div className="mb-4 rounded-lg bg-stone-900 text-white text-sm px-4 py-2 inline-block">{toast}</div>}
 
-      {isLoading ? <p className="text-stone-500">Cargando catálogo…</p> : (
+      {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(p => (
-            <div key={p.id} className="bg-white rounded-xl border border-stone-200 overflow-hidden flex flex-col">
-              <div className="h-36 bg-stone-100 flex items-center justify-center overflow-hidden relative">
+            <div key={p.id} className="bg-card rounded-xl border overflow-hidden flex flex-col">
+              <div className="h-36 bg-muted flex items-center justify-center overflow-hidden relative">
                 {p.image_url
                   ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
                   : <span className="text-3xl text-stone-300">📦</span>}
                 {p.video_url && <span className="absolute top-2 right-2 text-[10px] bg-black/70 text-white rounded px-1.5 py-0.5">🎬 video</span>}
               </div>
               <div className="p-3 flex-1 flex flex-col">
-                <div className="font-medium text-sm text-stone-900 leading-snug">{p.name}</div>
-                <div className="text-xs text-stone-500">{p.brand || ''}{p.external_sku ? ` · SKU ${p.external_sku}` : ''}</div>
+                <div className="font-medium text-sm text-foreground leading-snug">{p.name}</div>
+                <div className="text-xs text-muted-foreground">{p.brand || ''}{p.external_sku ? ` · SKU ${p.external_sku}` : ''}</div>
                 <div className="mt-auto pt-2 flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-stone-900">{money(p.price_sale && Number(p.price_sale) > 0 ? p.price_sale : p.price)}</span>
+                    <span className="font-bold text-foreground">{money(p.price_sale && Number(p.price_sale) > 0 ? p.price_sale : p.price)}</span>
                     {p.price_sale && Number(p.price_sale) > 0 && Number(p.price) > 0 &&
-                      <span className="text-xs text-stone-400 line-through ml-1.5">{money(p.price)}</span>}
+                      <span className="text-xs text-muted-foreground/80 line-through ml-1.5">{money(p.price)}</span>}
                   </div>
                   <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</span>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => setEditing(p)} className="flex-1 rounded-lg border border-stone-200 py-1.5 text-xs font-medium hover:bg-stone-50">✏️ Editar</button>
+                  <button onClick={() => setEditing(p)} className="flex-1 rounded-lg border border-border py-1.5 text-xs font-medium hover:bg-muted/50">✏️ Editar</button>
                   <button onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }}
-                    className="rounded-lg border border-red-200 text-red-600 px-3 py-1.5 text-xs font-medium hover:bg-red-50">🗑️</button>
+                    className="rounded-lg border border-destructive/30 text-destructive px-3 py-1.5 text-xs font-medium hover:bg-destructive/10">🗑️</button>
                 </div>
               </div>
             </div>
           ))}
-          {filtered.length === 0 && <p className="text-sm text-stone-500 col-span-full">No hay productos{search ? ' que coincidan con la búsqueda' : ' aún — agrega el primero'}.</p>}
+          {filtered.length === 0 && <p className="text-sm text-muted-foreground col-span-full">No hay productos{search ? ' que coincidan con la búsqueda' : ' aún — agrega el primero'}.</p>}
         </div>
       )}
 
@@ -191,36 +191,36 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     } finally { setSaving(false) }
   }
 
-  const input = 'w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500'
+  const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   return (
     <div className="fixed inset-0 z-30 bg-black/40 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-lg bg-white rounded-2xl p-6 my-8">
-        <h2 className="text-lg font-bold text-stone-900 mb-4">{product ? 'Editar producto' : 'Nuevo producto'}</h2>
+      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-lg bg-card rounded-2xl border p-6 my-8">
+        <h2 className="text-lg font-bold text-foreground mb-4">{product ? 'Editar producto' : 'Nuevo producto'}</h2>
 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div className="col-span-2">
-            <label className="text-xs font-medium text-stone-600">Nombre *</label>
+            <label className="text-xs font-medium text-muted-foreground">Nombre *</label>
             <input className={input} value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
           </div>
           <div>
-            <label className="text-xs font-medium text-stone-600">Marca</label>
+            <label className="text-xs font-medium text-muted-foreground">Marca</label>
             <input className={input} value={f.brand} onChange={set('brand')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-stone-600">SKU</label>
+            <label className="text-xs font-medium text-muted-foreground">SKU</label>
             <input className={input} value={f.external_sku} onChange={set('external_sku')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-stone-600">Precio * ($)</label>
+            <label className="text-xs font-medium text-muted-foreground">Precio * ($)</label>
             <input className={input} type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-stone-600">Precio oferta ($)</label>
+            <label className="text-xs font-medium text-muted-foreground">Precio oferta ($)</label>
             <input className={input} type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
           </div>
           <div className="col-span-2">
-            <label className="text-xs font-medium text-stone-600">Stock</label>
+            <label className="text-xs font-medium text-muted-foreground">Stock</label>
             <select className={input} value={f.stock} onChange={set('stock')}>
               <option value="disponible">Disponible</option>
               <option value="últimas unidades">Últimas unidades</option>
@@ -228,11 +228,11 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             </select>
           </div>
           <div className="col-span-2">
-            <label className="text-xs font-medium text-stone-600">Descripción</label>
+            <label className="text-xs font-medium text-muted-foreground">Descripción</label>
             <textarea className={input} rows={3} value={f.description} onChange={set('description')} />
           </div>
           <div className="col-span-2">
-            <label className="text-xs font-medium text-stone-600">Etiquetas (separadas por coma)</label>
+            <label className="text-xs font-medium text-muted-foreground">Etiquetas (separadas por coma)</label>
             <input className={input} value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
           </div>
         </div>
@@ -240,24 +240,24 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         {/* Media: imagen + video → Cloudinary */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="rounded-lg border border-dashed border-stone-300 p-3">
-            <div className="text-xs font-semibold text-stone-700 mb-1">📷 Imagen <span className="font-normal text-stone-400">(máx 5 MB)</span></div>
+            <div className="text-xs font-semibold text-foreground/90 mb-1">📷 Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
             <input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
           <div className="rounded-lg border border-dashed border-stone-300 p-3">
-            <div className="text-xs font-semibold text-stone-700 mb-1">🎬 Video <span className="font-normal text-stone-400">(máx 16 MB)</span></div>
-            {f.video_url && <div className="text-[11px] text-green-700 mb-2">✓ Video cargado</div>}
+            <div className="text-xs font-semibold text-foreground/90 mb-1">🎬 Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
+            {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
             <input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
             {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 mb-3">❌ {error}</p>}
+        {error && <p className="text-sm text-destructive mb-3">❌ {error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-stone-200 px-4 py-2 text-sm hover:bg-stone-50">Cancelar</button>
-          <button disabled={saving || uploading} className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2 text-sm">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted/50">Cancelar</button>
+          <button disabled={saving || uploading} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : uploading ? 'Espera la subida…' : 'Guardar producto'}
           </button>
         </div>

@@ -49,7 +49,7 @@ const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`   // centavos EXA
 const ALERT_STYLE: Record<string, string> = {
   critical: 'bg-red-50 border-red-200 text-red-800',
   warning:  'bg-amber-50 border-amber-200 text-amber-800',
-  good:     'bg-green-50 border-green-200 text-green-800',
+  good:     'bg-primary/10 border-green-200 text-primary',
   info:     'bg-blue-50 border-blue-200 text-blue-800',
 }
 
@@ -85,8 +85,8 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
-  if (canReports && isLoading) return <p className="text-stone-500">Cargando tu negocio…</p>
-  if (error) return <p className="text-red-600">❌ {(error as Error).message}</p>
+  if (canReports && isLoading) return <p className="text-muted-foreground">Cargando tu negocio…</p>
+  if (error) return <p className="text-destructive">❌ {(error as Error).message}</p>
 
   const k = data?.kpis
   const pct = data?.comparison.pct ?? null
@@ -97,17 +97,17 @@ export default function Dashboard() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Hola, {session.business?.name || ''}!</h1>
-          <p className="text-sm text-stone-500">Panel de gestión de tu bot de WhatsApp</p>
+          <h1 className="text-2xl font-bold text-foreground">Hola, {session.business?.name || ''}!</h1>
+          <p className="text-sm text-muted-foreground">Panel de gestión de tu bot de WhatsApp</p>
         </div>
         <div className="flex items-center gap-2">
           {canReports && (
-            <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
+            <div className="flex gap-1 bg-card border rounded-lg p-1">
               {PERIODS.map(p => (
                 <button
                   key={p.value} onClick={() => setPeriod(p.value)}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    period === p.value ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'
+                    period === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'
                   }`}
                 >
                   {p.label}
@@ -116,7 +116,7 @@ export default function Dashboard() {
             </div>
           )}
           <button onClick={() => navigate('/catalog?new=1')}
-            className="rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2">
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2">
             + Agregar producto
           </button>
         </div>
@@ -166,7 +166,7 @@ export default function Dashboard() {
           ]} />
         </Card>
         <Card title="🏆 Productos más vendidos">
-          {data.top.length === 0 ? <p className="text-sm text-stone-500">Sin ventas en el período.</p> :
+          {data.top.length === 0 ? <p className="text-sm text-muted-foreground">Sin ventas en el período.</p> :
             <Bars color={INK} rows={data.top.map(t => ({ label: t.name, value: t.qty, text: `${t.qty} uds` }))} />}
         </Card>
         <Card title="👥 Clientes por estado">
@@ -200,17 +200,17 @@ export default function Dashboard() {
       {/* Productos recientes (igual que el viejo: 5, con foto, marca y precio) */}
       <Card title="Productos recientes">
         {products.length === 0
-          ? <p className="text-sm text-stone-500">Sin productos aún.</p>
+          ? <p className="text-sm text-muted-foreground">Sin productos aún.</p>
           : products.slice(0, 5).map(p => (
-            <div key={p.id} className="flex items-center gap-3 py-2 border-b border-stone-100 last:border-0">
-              <div className="w-9 h-9 rounded-lg bg-stone-100 overflow-hidden shrink-0">
+            <div key={p.id} className="flex items-center gap-3 py-2 border-b border-border/60 last:border-0">
+              <div className="w-9 h-9 rounded-lg bg-muted overflow-hidden shrink-0">
                 {p.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-stone-900 truncate">{p.name}</div>
-                <div className="text-xs text-stone-400">{p.brand || ''}</div>
+                <div className="text-sm font-semibold text-foreground truncate">{p.name}</div>
+                <div className="text-xs text-muted-foreground/80">{p.brand || ''}</div>
               </div>
-              <div className="font-mono text-sm font-medium text-stone-900 shrink-0">
+              <div className="font-mono text-sm font-medium text-foreground shrink-0">
                 {Number(p.price) > 0 ? `$${Number(p.price).toFixed(2)}` : 'a consultar'}
               </div>
             </div>
@@ -225,21 +225,21 @@ function OnboardingCard({ d }: { d: Onboarding }) {
   return (
     <div className="bg-white rounded-xl border-2 border-green-300 p-5 mb-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-stone-900">🚀 Configura tu bot para vender</h2>
-        <strong className="text-stone-900">{d.done}/{d.total}</strong>
+        <h2 className="font-semibold text-foreground">🚀 Configura tu bot para vender</h2>
+        <strong className="text-foreground">{d.done}/{d.total}</strong>
       </div>
-      <div className="h-2 bg-stone-100 rounded-full overflow-hidden my-3">
+      <div className="h-2 bg-muted rounded-full overflow-hidden my-3">
         <div className="h-full bg-green-600 rounded-full transition-all" style={{ width: `${d.pct}%` }} />
       </div>
       {d.steps.map((s, i) => (
-        <div key={i} className="flex items-center gap-3 py-2 border-b border-stone-50 last:border-0 text-sm">
+        <div key={i} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0 text-sm">
           <span>{s.done ? '✅' : '⬜'}</span>
-          <span className={`flex-1 ${s.done ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
-            {s.label}{s.hint && <span className="text-stone-400 text-xs"> · {s.hint}</span>}
+          <span className={`flex-1 ${s.done ? 'text-muted-foreground/80 line-through' : 'text-foreground/90'}`}>
+            {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
           </span>
           {!s.done && s.page && (
             <button onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
-              className="rounded-lg border border-stone-200 text-xs px-2.5 py-1 hover:bg-stone-50">Configurar →</button>
+              className="rounded-lg border border-border text-xs px-2.5 py-1 hover:bg-muted/50">Configurar →</button>
           )}
         </div>
       ))}
@@ -249,18 +249,18 @@ function OnboardingCard({ d }: { d: Onboarding }) {
 
 function Kpi({ label, value, sub, good }: { label: string; value: string; sub: string; good?: boolean }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-4">
-      <div className="text-[10px] uppercase tracking-wide text-stone-500">{label}</div>
-      <div className="text-2xl font-bold text-stone-900 mt-1">{value}</div>
-      {sub && <div className={`text-xs mt-1 ${good === undefined ? 'text-stone-500' : good ? 'text-green-700' : 'text-red-600'}`}>{sub}</div>}
+    <div className="bg-card rounded-xl border p-4">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-2xl font-bold text-foreground mt-1">{value}</div>
+      {sub && <div className={`text-xs mt-1 ${good === undefined ? 'text-muted-foreground' : good ? 'text-primary' : 'text-destructive'}`}>{sub}</div>}
     </div>
   )
 }
 
 function Card({ title, children, full }: { title: string; children: React.ReactNode; full?: boolean }) {
   return (
-    <div className={`bg-white rounded-xl border border-stone-200 p-5 ${full ? 'lg:col-span-2' : ''}`}>
-      <h2 className="font-semibold text-stone-900 mb-3">{title}</h2>
+    <div className={`bg-card rounded-xl border p-5 ${full ? 'lg:col-span-2' : ''}`}>
+      <h2 className="font-semibold text-foreground mb-3">{title}</h2>
       {children}
     </div>
   )
@@ -268,7 +268,7 @@ function Card({ title, children, full }: { title: string; children: React.ReactN
 
 // ── Gráfico de línea (SVG puro — skill graficos-dashboard) ──
 function LineChart({ rows }: { rows: { label: string; total: number }[] }) {
-  if (!rows.length) return <p className="text-sm text-stone-500">Sin datos aún.</p>
+  if (!rows.length) return <p className="text-sm text-muted-foreground">Sin datos aún.</p>
   const W = 700, H = 160, PAD = 8
   const max = Math.max(...rows.map(r => r.total), 0.01)
   const x = (i: number) => PAD + (i * (W - 2 * PAD)) / Math.max(rows.length - 1, 1)
@@ -297,7 +297,7 @@ function LineChart({ rows }: { rows: { label: string; total: number }[] }) {
 // ── Dona (SVG puro) con leyenda al lado — nunca color como única identidad ──
 function Donut({ segs, center }: { segs: { label: string; value: number; color: string }[]; center: string }) {
   const total = segs.reduce((s, x) => s + x.value, 0)
-  if (!total) return <p className="text-sm text-stone-500">Sin datos aún.</p>
+  if (!total) return <p className="text-sm text-muted-foreground">Sin datos aún.</p>
   const R = 42, CIRC = 2 * Math.PI * R
   let acc = 0
   return (
@@ -320,8 +320,8 @@ function Donut({ segs, center }: { segs: { label: string; value: number; color: 
         {segs.map((s, i) => (
           <li key={i} className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-            <span className="text-stone-700">{s.label}</span>
-            <span className="text-stone-500 font-semibold ml-1">{s.value}</span>
+            <span className="text-foreground/90">{s.label}</span>
+            <span className="text-muted-foreground font-semibold ml-1">{s.value}</span>
           </li>
         ))}
       </ul>
@@ -337,10 +337,10 @@ function Bars({ rows, color }: { rows: { label: string; value: number; text: str
       {rows.map((r, i) => (
         <div key={i} title={`${r.label}: ${r.text}`}>
           <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-stone-700 truncate">{r.label}</span>
-            <span className="text-stone-500 shrink-0 ml-2">{r.text}</span>
+            <span className="text-foreground/90 truncate">{r.label}</span>
+            <span className="text-muted-foreground shrink-0 ml-2">{r.text}</span>
           </div>
-          <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${Math.max((r.value / max) * 100, 2)}%`, backgroundColor: color }} />
           </div>
         </div>

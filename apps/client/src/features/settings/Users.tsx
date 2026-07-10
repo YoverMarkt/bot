@@ -8,8 +8,8 @@ export default function Users() {
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-stone-900">Usuarios y permisos</h1>
-        <p className="text-sm text-stone-500">Crea empleados con acceso limitado a tu panel</p>
+        <h1 className="text-2xl font-bold text-foreground">Usuarios y permisos</h1>
+        <p className="text-sm text-muted-foreground">Crea empleados con acceso limitado a tu panel</p>
       </div>
       <Team />
     </div>

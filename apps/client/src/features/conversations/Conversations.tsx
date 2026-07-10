@@ -78,33 +78,33 @@ export default function Conversations() {
   return (
     <div className="h-[calc(100vh-3rem)] flex gap-4">
       {/* Lista de conversaciones */}
-      <div className="w-80 shrink-0 bg-white rounded-xl border border-stone-200 flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-stone-100 flex items-center justify-between">
-          <span className="font-semibold text-stone-900">💬 Conversaciones</span>
+      <div className="w-80 shrink-0 bg-card rounded-xl border flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
+          <span className="font-semibold text-foreground">💬 Conversaciones</span>
           <span className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Actualizando en tiempo real" />
-            <button onClick={refresh} className="text-xs text-stone-500 hover:text-stone-800" title="Actualizar">↻</button>
+            <span className="w-2 h-2 rounded-full bg-primary/100 animate-pulse" title="Actualizando en tiempo real" />
+            <button onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar">↻</button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {sessions.length === 0 && <p className="p-4 text-sm text-stone-500">Aún no hay conversaciones.</p>}
+          {sessions.length === 0 && <p className="p-4 text-sm text-muted-foreground">Aún no hay conversaciones.</p>}
           {sessions.map(s => (
             <button
               key={s.contact_phone} onClick={() => openChat(s)}
-              className={`w-full text-left px-4 py-3 border-b border-stone-50 hover:bg-stone-50 transition-colors ${selected === s.contact_phone ? 'bg-green-50' : ''}`}
+              className={`w-full text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${selected === s.contact_phone ? 'bg-primary/10' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-sm text-stone-900 truncate">
+                <span className="font-medium text-sm text-foreground truncate">
                   {s.unread_owner && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 animate-pulse" />}
                   {s.contact_name || s.contact_phone}
                 </span>
-                <span className="text-[11px] text-stone-400 shrink-0">{fmtTime(s.last_message_at)}</span>
+                <span className="text-[11px] text-muted-foreground/80 shrink-0">{fmtTime(s.last_message_at)}</span>
               </div>
               <div className="flex items-center gap-1 mt-0.5">
                 {s.manual_mode
                   ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 shrink-0">🤚 MANUAL</span>
-                  : <span className="text-[10px] font-semibold text-green-700 bg-green-50 rounded px-1.5 py-0.5 shrink-0">🤖 BOT</span>}
-                <span className="text-xs text-stone-500 truncate">{s.last_message || ''}</span>
+                  : <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0">🤖 BOT</span>}
+                <span className="text-xs text-muted-foreground truncate">{s.last_message || ''}</span>
               </div>
               {(s.tags ?? []).length > 0 && (
                 <div className="flex gap-1 mt-1 flex-wrap">
@@ -120,28 +120,28 @@ export default function Conversations() {
       </div>
 
       {/* Chat */}
-      <div className="flex-1 min-w-0 bg-white rounded-xl border border-stone-200 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 bg-card rounded-xl border flex flex-col overflow-hidden">
         {!sess ? (
-          <div className="flex-1 flex items-center justify-center text-stone-400 text-sm">Elige una conversación para verla aquí</div>
+          <div className="flex-1 flex items-center justify-center text-muted-foreground/80 text-sm">Elige una conversación para verla aquí</div>
         ) : (
           <>
             {/* Encabezado del chat */}
-            <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3 flex-wrap">
+            <div className="px-4 py-3 border-b border-border/60 flex items-center gap-3 flex-wrap">
               <div className="min-w-0">
                 {renaming ? (
                   <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
                     <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-                      className="rounded border border-stone-300 px-2 py-1 text-sm w-44" placeholder="Nombre del contacto" />
-                    <button className="text-sm text-green-700 font-semibold px-1">✓</button>
-                    <button type="button" onClick={() => setRenaming(false)} className="text-sm text-stone-400 px-1">✕</button>
+                      className="rounded border border-input px-2 py-1 text-sm w-44" placeholder="Nombre del contacto" />
+                    <button className="text-sm text-primary font-semibold px-1">✓</button>
+                    <button type="button" onClick={() => setRenaming(false)} className="text-sm text-muted-foreground/80 px-1">✕</button>
                   </form>
                 ) : (
                   <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
-                    className="font-semibold text-stone-900 truncate hover:underline">
+                    className="font-semibold text-foreground truncate hover:underline">
                     {sess.contact_name || sess.contact_phone} <span className="text-stone-300 text-xs">✏️</span>
                   </button>
                 )}
-                <div className="text-xs text-stone-400">
+                <div className="text-xs text-muted-foreground/80">
                   {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? '🤚 Modo manual — respondiendo tú' : '🤖 Bot activo'}
                 </div>
               </div>
@@ -150,14 +150,14 @@ export default function Conversations() {
                 {/* Venta realizada (abre el modal de venta, como el viejo) */}
                 {canVentas && (
                   <button onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-green-300 text-green-800 hover:bg-green-50">
+                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-green-300 text-primary hover:bg-primary/10">
                     💰 Venta realizada
                   </button>
                 )}
 
                 {/* Etiquetas */}
                 <div className="relative">
-                  <button onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-stone-200 px-3 py-1.5 hover:bg-stone-50">🏷️ Etiquetas</button>
+                  <button onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50">🏷️ Etiquetas</button>
                   {tagsOpen && (
                     <TagPicker
                       tags={tags} selected={sess.tags ?? []}
@@ -176,17 +176,17 @@ export default function Conversations() {
 
                 {/* Nombre */}
                 <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}
-                  className="text-sm rounded-lg border border-stone-200 px-3 py-1.5 hover:bg-stone-50">✏️ Nombre</button>
+                  className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50">✏️ Nombre</button>
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
                   <button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-stone-200 hover:bg-stone-50">
+                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-border hover:bg-muted/50">
                     🤖 Activar bot
                   </button>
                 ) : (
                   <button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-red-200 text-red-600 hover:bg-red-50">
+                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-destructive/30 text-destructive hover:bg-destructive/10">
                     🤚 Tomar control
                   </button>
                 )}
@@ -194,19 +194,19 @@ export default function Conversations() {
             </div>
 
             {/* Mensajes */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-stone-50">
-              {chat.length === 0 && <p className="text-sm text-stone-400 text-center mt-8">Sin mensajes recientes (se muestran los últimos 100 del negocio).</p>}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-muted/50">
+              {chat.length === 0 && <p className="text-sm text-muted-foreground/80 text-center mt-8">Sin mensajes recientes (se muestran los últimos 100 del negocio).</p>}
               {chat.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
                   <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
-                    m.role === 'user' ? 'bg-white border border-stone-200 text-stone-800'
+                    m.role === 'user' ? 'bg-card border text-foreground'
                     : m.role === 'owner' ? 'bg-blue-600 text-white'
-                    : 'bg-green-600 text-white'
+                    : 'bg-primary text-primary-foreground'
                   }`}>
                     {m.role === 'owner' && <div className="text-[10px] opacity-80 mb-0.5">Tú (manual)</div>}
                     {m.role === 'assistant' && <div className="text-[10px] opacity-80 mb-0.5">🤖 Bot</div>}
                     {m.content}
-                    <div className={`text-[10px] mt-1 ${m.role === 'user' ? 'text-stone-400' : 'opacity-70'}`}>{fmtTime(m.created_at)}</div>
+                    <div className={`text-[10px] mt-1 ${m.role === 'user' ? 'text-muted-foreground/80' : 'opacity-70'}`}>{fmtTime(m.created_at)}</div>
                   </div>
                 </div>
               ))}
@@ -215,14 +215,14 @@ export default function Conversations() {
 
             {/* Enviar — SOLO en modo manual, como el viejo */}
             {sess.manual_mode && (
-            <form onSubmit={e => { e.preventDefault(); send() }} className="p-3 border-t border-stone-100 flex gap-2">
+            <form onSubmit={e => { e.preventDefault(); send() }} className="p-3 border-t border-border/60 flex gap-2">
               <input
                 value={draft} onChange={e => setDraft(e.target.value)}
                 placeholder="Escribe como dueño del negocio..." 
-                className="flex-1 rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button disabled={!draft.trim() || mSend.isPending}
-                className="rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-4 text-sm">
+                className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-4 text-sm">
                 Enviar
               </button>
             </form>
@@ -252,18 +252,18 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
   const [editColor, setEditColor] = useState(TAG_COLORS[0])
 
   return (
-    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white rounded-xl border border-stone-200 shadow-lg p-3">
+    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-card rounded-xl border shadow-lg p-3">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold text-stone-900">Etiquetas del chat</span>
-        <button onClick={onClose} className="text-stone-400 text-sm">✕</button>
+        <span className="text-sm font-semibold text-foreground">Etiquetas del chat</span>
+        <button onClick={onClose} className="text-muted-foreground/80 text-sm">✕</button>
       </div>
       <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
-        {tags.length === 0 && <p className="text-xs text-stone-500">Aún no tienes etiquetas — crea la primera abajo.</p>}
+        {tags.length === 0 && <p className="text-xs text-muted-foreground">Aún no tienes etiquetas — crea la primera abajo.</p>}
         {tags.map(t => editing?.id === t.id ? (
-          <form key={t.id} className="rounded border border-stone-200 p-2"
+          <form key={t.id} className="rounded border border-border p-2"
             onSubmit={async e => { e.preventDefault(); await onUpdate(t.id, editName.trim() || t.name, editColor); setEditing(null) }}>
             <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
-              className="w-full rounded border border-stone-300 px-2 py-1 text-sm mb-1.5" />
+              className="w-full rounded border border-input px-2 py-1 text-sm mb-1.5" />
             <div className="flex gap-1 mb-1.5 flex-wrap">
               {TAG_COLORS.map(c => (
                 <button key={c} type="button" onClick={() => setEditColor(c)}
@@ -273,14 +273,14 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
             </div>
             <div className="flex gap-1">
               <button className="flex-1 rounded bg-stone-800 text-white text-xs py-1">Guardar</button>
-              <button type="button" onClick={() => setEditing(null)} className="rounded border border-stone-200 text-xs px-2">✕</button>
+              <button type="button" onClick={() => setEditing(null)} className="rounded border border-border text-xs px-2">✕</button>
             </div>
           </form>
         ) : (
-          <div key={t.id} className="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-stone-50 group">
+          <div key={t.id} className="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-muted/50 group">
             <input type="checkbox" checked={selected.includes(t.id)} onChange={() => onToggle(t.id)} className="cursor-pointer" />
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-            <span className="text-stone-700 truncate flex-1">{t.name}</span>
+            <span className="text-foreground/90 truncate flex-1">{t.name}</span>
             <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-xs"
               onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}>✏️</button>
             <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-xs"
@@ -295,10 +295,10 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
           setSaving(true)
           try { await onCreate(name.trim(), color); setName('') } finally { setSaving(false) }
         }}
-        className="border-t border-stone-100 pt-2"
+        className="border-t border-border/60 pt-2"
       >
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Nueva etiqueta…"
-          className="w-full rounded border border-stone-300 px-2 py-1 text-sm mb-2" />
+          className="w-full rounded border border-input px-2 py-1 text-sm mb-2" />
         <div className="flex gap-1 mb-2 flex-wrap">
           {TAG_COLORS.map(c => (
             <button key={c} type="button" onClick={() => setColor(c)}

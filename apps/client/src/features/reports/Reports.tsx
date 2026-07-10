@@ -13,7 +13,7 @@ const C2 = '#1baf7a'
 const ALERT_STYLE: Record<Alert['level'], string> = {
   critical: 'bg-red-50 border-red-200 text-red-800',
   warning:  'bg-amber-50 border-amber-200 text-amber-800',
-  good:     'bg-green-50 border-green-200 text-green-800',
+  good:     'bg-primary/10 border-green-200 text-primary',
   info:     'bg-blue-50 border-blue-200 text-blue-800',
 }
 
@@ -35,13 +35,13 @@ export default function Reports() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900">Reportes de ventas</h1>
-          <p className="text-sm text-stone-500">Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p>
+          <h1 className="text-2xl font-bold text-foreground">Reportes de ventas</h1>
+          <p className="text-sm text-muted-foreground">Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p>
         </div>
-        <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
+        <div className="flex gap-1 bg-card border rounded-lg p-1">
           {PERIODS.map(([v, l]) => (
             <button key={v} onClick={() => setPeriod(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${period === v ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${period === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
             </button>
           ))}
@@ -50,7 +50,7 @@ export default function Reports() {
 
       {/* Atajo a reactivar (igual que el viejo) */}
       <div className="mb-4">
-        <Link to="/reactivate" className="inline-block rounded-lg border border-stone-200 bg-white text-sm text-stone-700 px-3 py-1.5 hover:bg-stone-50">
+        <Link to="/reactivate" className="inline-block rounded-lg border border-border bg-white text-sm text-foreground/90 px-3 py-1.5 hover:bg-muted/50">
           👥 Clientes sin escribir (reactivar)
         </Link>
       </div>
@@ -70,14 +70,14 @@ export default function Reports() {
       <div className="mb-4 flex flex-wrap gap-2">
         {CATS.map(([v, l]) => (
           <button key={v} onClick={() => setCat(v)}
-            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}>
+            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-border text-muted-foreground hover:bg-muted/50'}`}>
             {l}
           </button>
         ))}
       </div>
 
-      {isLoading && <p className="text-stone-500">Calculando reportes…</p>}
-      {error && <p className="text-red-600">❌ {(error as Error).message}</p>}
+      {isLoading && <p className="text-muted-foreground">Calculando reportes…</p>}
+      {error && <p className="text-destructive">❌ {(error as Error).message}</p>}
       {data && (
         <>
           {/* Resumen del período */}
@@ -99,11 +99,11 @@ export default function Reports() {
                 { label: data.comparison.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
                 { label: 'Anterior', value: Number(data.comparison.prevTotal) || 0, text: money(data.comparison.prevTotal) },
               ]} />
-              <p className="text-xs text-stone-500 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 {data.comparison.curOrders} vs {data.comparison.prevOrders} pedidos · Variación:{' '}
                 {data.comparison.pct === null
                   ? (data.comparison.curTotal > 0 ? '🚀 sin base anterior' : 'sin datos')
-                  : <span className={data.comparison.pct >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>
+                  : <span className={data.comparison.pct >= 0 ? 'text-primary font-semibold' : 'text-destructive font-semibold'}>
                       {data.comparison.pct >= 0 ? '▲ +' : '▼ '}{data.comparison.pct.toFixed(1)}%
                     </span>}
               </p>
@@ -121,7 +121,7 @@ export default function Reports() {
             <Card title={`📋 Pedidos sin cerrar${data.pending.count ? ` (${data.pending.count})` : ''}`}>
               {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar. ✅" /> :
                 <ul className="text-sm space-y-1">
-                  {data.pending.rows.map((r, i) => <li key={i} className="truncate text-stone-700">{r.name}{r.last_message ? <span className="text-stone-400"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
+                  {data.pending.rows.map((r, i) => <li key={i} className="truncate text-foreground/90">{r.name}{r.last_message ? <span className="text-muted-foreground/80"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
                 </ul>}
             </Card>
             </>)}
@@ -144,7 +144,7 @@ export default function Reports() {
             <Card title="🛒 Productos abandonados (consultados sin vender)">
               {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado. 🎉" /> :
                 <ul className="text-sm space-y-1">
-                  {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.consultas} consultas</span></li>)}
+                  {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.consultas} consultas</span></li>)}
                 </ul>}
             </Card>
             </>)}
@@ -153,7 +153,7 @@ export default function Reports() {
             <Card title="🐌 Bajo movimiento (candidatos a promo)">
               {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas. 🎉" /> :
                 <ul className="text-sm space-y-1">
-                  {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-stone-700">{r.name}</span><span className="text-stone-500 ml-2 shrink-0">{r.qty} uds</span></li>)}
+                  {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.qty} uds</span></li>)}
                 </ul>}
             </Card>
             </>)}
@@ -165,8 +165,8 @@ export default function Reports() {
                   {data.lowStock.rows.map((r, i) => (
                     <li key={i} className="flex items-center gap-2">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.stock === 'agotado' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                      <span className="truncate text-stone-700 flex-1">{r.name}</span>
-                      <span className="text-xs text-stone-500">{r.stock}</span>
+                      <span className="truncate text-foreground/90 flex-1">{r.name}</span>
+                      <span className="text-xs text-muted-foreground">{r.stock}</span>
                     </li>
                   ))}
                 </ul>}
@@ -179,8 +179,8 @@ export default function Reports() {
                 <ul className="text-sm space-y-1.5">
                   {data.recurring.rows.map((r, i) => (
                     <li key={i} className="flex justify-between">
-                      <span className="text-stone-700 truncate">{['🥇','🥈','🥉'][i] ?? `${i + 1}.`} {r.name}</span>
-                      <span className="text-stone-500 shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
+                      <span className="text-foreground/90 truncate">{['🥇','🥈','🥉'][i] ?? `${i + 1}.`} {r.name}</span>
+                      <span className="text-muted-foreground shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
                     </li>
                   ))}
                 </ul>}
@@ -191,12 +191,12 @@ export default function Reports() {
             <Card title="😟 Clientes perdidos (escribieron sin comprar)">
               {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar. 🎉" /> :
                 <>
-                  <p className="text-xs text-stone-500 mb-2">🔁 {data.lostCustomers.returning} ya-cliente · 🆕 {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
+                  <p className="text-xs text-muted-foreground mb-2">🔁 {data.lostCustomers.returning} ya-cliente · 🆕 {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
                   <ul className="text-sm space-y-1">
                     {data.lostCustomers.rows.map((r, i) => (
                       <li key={i} className="flex justify-between">
-                        <span className="truncate text-stone-700">{r.returning ? '🔁' : '🆕'} {r.name}</span>
-                        {r.reason && <span className="text-xs text-stone-400 shrink-0 ml-2">{r.reason}</span>}
+                        <span className="truncate text-foreground/90">{r.returning ? '🔁' : '🆕'} {r.name}</span>
+                        {r.reason && <span className="text-xs text-muted-foreground/80 shrink-0 ml-2">{r.reason}</span>}
                       </li>
                     ))}
                   </ul>
@@ -213,7 +213,7 @@ export default function Reports() {
             <Card title="❓ Preguntas que la IA no pudo responder">
               {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo. 💪" /> :
                 <ul className="text-sm space-y-1">
-                  {data.unanswered.rows.map((r, i) => <li key={i} className="text-stone-700 truncate">“{r.question ?? '—'}” <span className="text-stone-400">×{r.count}</span></li>)}
+                  {data.unanswered.rows.map((r, i) => <li key={i} className="text-foreground/90 truncate">“{r.question ?? '—'}” <span className="text-muted-foreground/80">×{r.count}</span></li>)}
                 </ul>}
             </Card>
             </>)}
@@ -226,8 +226,8 @@ export default function Reports() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 p-5">
-      <h2 className="font-semibold text-stone-900 mb-3">{title}</h2>
+    <div className="bg-card rounded-xl border p-5">
+      <h2 className="font-semibold text-foreground mb-3">{title}</h2>
       {children}
     </div>
   )
@@ -235,15 +235,15 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white rounded-xl border border-stone-200 px-3 py-2.5">
-      <div className="text-[10px] uppercase tracking-wide text-stone-500">{label}</div>
-      <div className="text-lg font-bold text-stone-900">{value}</div>
+    <div className="bg-card rounded-xl border px-3 py-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-lg font-bold text-foreground">{value}</div>
     </div>
   )
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <p className="text-sm text-stone-500">{msg}</p>
+  return <p className="text-sm text-muted-foreground">{msg}</p>
 }
 
 // Barras horizontales (skill graficos-dashboard): CSS puro, marca fina con
@@ -256,10 +256,10 @@ function Bars({ rows, color }: { rows: { label: string; value: number; text: str
       {rows.map((r, i) => (
         <div key={i} title={`${r.label}: ${r.text}`}>
           <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-stone-700 truncate">{r.label}</span>
-            <span className="text-stone-500 shrink-0 ml-2">{r.text}</span>
+            <span className="text-foreground/90 truncate">{r.label}</span>
+            <span className="text-muted-foreground shrink-0 ml-2">{r.text}</span>
           </div>
-          <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${Math.max((r.value / max) * 100, 2)}%`, backgroundColor: color }} />
           </div>
         </div>
