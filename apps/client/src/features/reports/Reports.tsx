@@ -50,7 +50,7 @@ export default function Reports() {
 
       {/* Atajo a reactivar (igual que el viejo) */}
       <div className="mb-4">
-        <Link to="/customers" className="inline-block rounded-lg border border-stone-200 bg-white text-sm text-stone-700 px-3 py-1.5 hover:bg-stone-50">
+        <Link to="/reactivate" className="inline-block rounded-lg border border-stone-200 bg-white text-sm text-stone-700 px-3 py-1.5 hover:bg-stone-50">
           👥 Clientes sin escribir (reactivar)
         </Link>
       </div>
