@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -6,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 // Se sirve desde Express en /app-admin; el admin viejo sigue en /admin
 // hasta migrar todas las secciones (patrón estrangulador).
 export default defineConfig({
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   plugins: [react(), tailwindcss()],
   base: '/app-admin/',
   server: {
