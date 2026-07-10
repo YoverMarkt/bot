@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { Search, Film, Plus } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
@@ -64,10 +65,10 @@ export default function Catalog() {
             className="rounded-lg border border-input px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button onClick={handleReindex} className="rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-muted/50" title="Regenera la búsqueda inteligente del bot">
-            🧠 Reindexar
+            <span className="inline-flex items-center gap-1.5"><Search className="w-4 h-4" /> Reindexar</span>
           </button>
           <button onClick={() => setEditing('new')} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">
-            + Agregar producto
+            <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
           </button>
         </div>
       </div>
@@ -82,7 +83,7 @@ export default function Catalog() {
                 {p.image_url
                   ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
                   : <span className="text-3xl text-stone-300">📦</span>}
-                {p.video_url && <span className="absolute top-2 right-2 text-[10px] bg-black/70 text-white rounded px-1.5 py-0.5">🎬 video</span>}
+                {p.video_url && <span className="absolute top-2 right-2 text-[10px] bg-black/70 text-white rounded px-1.5 py-0.5"><Film className="w-3 h-3 inline mr-0.5" />video</span>}
               </div>
               <div className="p-3 flex-1 flex flex-col">
                 <div className="font-medium text-sm text-foreground leading-snug">{p.name}</div>

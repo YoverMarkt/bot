@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ClipboardList, DollarSign, Target, TrendingUp, Bot as BotIcon, Camera, Mic, MessageSquare, Server } from 'lucide-react'
 
 // Calculadora de precios — Modelo B (TODO INCLUIDO): tú absorbes el costo
 // de Meta y cobras un solo pago mensual. Misma fórmula que el panel viejo:
@@ -46,11 +47,11 @@ export default function Calculator() {
   const ok = margin > 0
 
   const rows = [
-    { icon: '🤖', name: `Chat IA (${totalMsgs.toLocaleString()} msgs)`, cost: cChat },
-    { icon: '📸', name: `Visión (${Math.round(n * ph)} fotos)`, cost: cVision },
-    { icon: '🎙️', name: `Audio (${Math.round(n * au)} notas)`, cost: cAudio },
-    { icon: '💬', name: `WhatsApp Meta (${outMsgs.toLocaleString()} salientes${buf > 0 ? ` +${Math.round(buf * 100)}% colchón` : ''})`, cost: cWa },
-    { icon: '🖥️', name: 'Fijos (hosting, dominio)', cost: fixed },
+    { icon: BotIcon, name: `Chat IA (${totalMsgs.toLocaleString()} msgs)`, cost: cChat },
+    { icon: Camera, name: `Visión (${Math.round(n * ph)} fotos)`, cost: cVision },
+    { icon: Mic, name: `Audio (${Math.round(n * au)} notas)`, cost: cAudio },
+    { icon: MessageSquare, name: `WhatsApp Meta (${outMsgs.toLocaleString()} salientes${buf > 0 ? ` +${Math.round(buf * 100)}% colchón` : ''})`, cost: cWa },
+    { icon: Server, name: 'Fijos (hosting, dominio)', cost: fixed },
   ]
 
   return (
@@ -64,7 +65,7 @@ export default function Calculator() {
       <div className="grid lg:grid-cols-2 gap-5">
         {/* Entradas */}
         <section className={card}>
-          <h2 className="text-sm font-semibold text-foreground mb-3">📋 Datos del cliente</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Datos del cliente</h2>
           <div className="grid grid-cols-2 gap-3">
             <div><span className={label}>Clientes que escriben al mes</span><input className={input} type="number" value={f.clients} onChange={set('clients')} /></div>
             <div><span className={label}>Mensajes por conversación</span><input className={input} type="number" value={f.msgs} onChange={set('msgs')} /></div>
@@ -100,11 +101,11 @@ export default function Calculator() {
 
         {/* Resultado */}
         <section className={card}>
-          <h2 className="text-sm font-semibold text-foreground mb-3">💰 Tu costo real</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><DollarSign className="w-4 h-4" /> Tu costo real</h2>
           <div className="space-y-1.5 text-sm">
             {rows.map(r => (
               <div key={r.name} className="flex justify-between">
-                <span className="text-muted-foreground">{r.icon} {r.name}</span>
+                <span className="text-muted-foreground inline-flex items-center gap-1.5"><r.icon className="w-3.5 h-3.5" /> {r.name}</span>
                 <span className="text-foreground/90 font-mono">{money(r.cost)}</span>
               </div>
             ))}
@@ -126,7 +127,7 @@ export default function Calculator() {
 
         {/* Precio manual */}
         <section className={card}>
-          <h2 className="text-sm font-semibold text-foreground mb-3">🎯 ¿Cuánto piensas cobrar?</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> ¿Cuánto piensas cobrar?</h2>
           <input className={input} type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
           {myPrice > 0 ? (
             <div className="mt-3 space-y-1.5 text-sm">
@@ -146,7 +147,7 @@ export default function Calculator() {
 
         {/* Proyección anual */}
         <section className={card}>
-          <h2 className="text-sm font-semibold text-foreground mb-3">📈 Proyección anual (precio sugerido)</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Proyección anual (precio sugerido)</h2>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Costo anual</span><span className="text-foreground/90 font-mono">{money0(cTotal * 12)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Ingreso anual</span><span className="text-foreground/90 font-mono">{money0(price * 12)}</span></div>

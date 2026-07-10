@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { Ban } from 'lucide-react'
 
 // ── Horario de atención — para TODOS los negocios (igual que el panel
 // viejo): fuera de horario el bot responde la lista UNA vez y calla.
@@ -76,7 +77,7 @@ export default function Schedule() {
                 <input type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
               </>
             ) : (
-              <span className="text-sm text-muted-foreground/80">🚫 Cerrado</span>
+              <span className="text-sm text-muted-foreground/80 inline-flex items-center gap-1"><Ban className="w-3.5 h-3.5" /> Cerrado</span>
             )}
           </div>
         ))}

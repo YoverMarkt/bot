@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { Check, X, Clock } from 'lucide-react'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
 // calendario MENSUAL con chips por día + detalle del día + vista lista.
@@ -19,10 +20,10 @@ type Booking = {
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
-  pending:   { label: '⏳ Pendiente',  cls: 'bg-amber-50 text-amber-700' },
-  confirmed: { label: '✅ Confirmada', cls: 'bg-primary/10 text-primary' },
-  cancelled: { label: '❌ Cancelada',  cls: 'bg-muted text-muted-foreground' },
-  no_show:   { label: '👻 No asistió', cls: 'bg-red-50 text-destructive' },
+  pending:   { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700' },
+  confirmed: { label: 'Confirmada', cls: 'bg-primary/10 text-primary' },
+  cancelled: { label: 'Cancelada',  cls: 'bg-muted text-muted-foreground' },
+  no_show:   { label: 'No asistió', cls: 'bg-red-50 text-destructive' },
 }
 
 export default function Bookings() {
@@ -54,7 +55,7 @@ export default function Bookings() {
           <p className="text-sm text-muted-foreground">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
-          {([['calendario', '🗓 Calendario'], ['lista', '📋 Lista']] as const).map(([v, l]) => (
+          {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
@@ -115,7 +116,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
                 <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
                 {dayBk.length > 0 && (
                   <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary' : 'bg-amber-100 text-amber-800'}`}>
-                    🗓 {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
+                    {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
                   </div>
                 )}
                 {firstB && (
@@ -187,7 +188,7 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
     <div className="bg-card rounded-xl border p-4 flex items-center gap-4 flex-wrap">
       <div className="text-center shrink-0 bg-muted/50 rounded-lg px-3 py-2">
         {withDate && <div className="text-xs text-muted-foreground">{b.booking_date}</div>}
-        <div className="font-bold text-foreground">🕐 {(b.booking_time || '').slice(0, 5)}</div>
+        <div className="font-bold text-foreground"><Clock className="w-3.5 h-3.5 inline mr-1" />{(b.booking_time || '').slice(0, 5)}</div>
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-foreground truncate">{b.contact_name || b.contact_phone}</div>
@@ -199,9 +200,9 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
           <button onClick={() => onStatus(b.id, 'confirmed')}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5">✓ Confirmar</button>
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></button>
           <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10">✕ Cancelar</button>
+            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></button>
         </div>
       )}
       {b.status === 'confirmed' && (
@@ -209,7 +210,7 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
           <button onClick={() => onStatus(b.id, 'no_show')}
             className="rounded-lg border border-border text-muted-foreground text-xs px-3 py-1.5 hover:bg-muted/50">Marcar no asistió</button>
           <button onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10">✕ Cancelar</button>
+            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></button>
         </div>
       )}
     </div>

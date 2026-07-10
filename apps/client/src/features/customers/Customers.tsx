@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as custApi from './api'
+import { Repeat2, Sparkles, Download } from 'lucide-react'
 import type { Customer } from './api'
 
 const { money } = custApi
 
 const STATUS_BADGE: Record<Customer['status'], { label: string; cls: string }> = {
-  nuevo:     { label: '🆕 Nuevo',      cls: 'bg-blue-50 text-blue-700' },
-  frecuente: { label: '⭐ Frecuente',  cls: 'bg-primary/10 text-primary' },
-  activo:    { label: '✅ Activo',     cls: 'bg-muted text-muted-foreground' },
-  inactivo:  { label: '😴 Inactivo',   cls: 'bg-amber-50 text-amber-700' },
+  nuevo:     { label: 'Nuevo',      cls: 'bg-blue-50 text-blue-700' },
+  frecuente: { label: 'Frecuente',  cls: 'bg-primary/10 text-primary' },
+  activo:    { label: 'Activo',     cls: 'bg-muted text-muted-foreground' },
+  inactivo:  { label: 'Inactivo',   cls: 'bg-amber-50 text-amber-700' },
 }
 
 export default function Customers() {
@@ -109,14 +110,14 @@ export function Reactivate() {
         </select>
         <button onClick={exportExcel} disabled={!rows.length}
           className="rounded-lg bg-stone-900 hover:bg-accent disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm">
-          ⬇️ Exportar Excel/CSV
+          <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Exportar Excel/CSV</span>
         </button>
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando…</p> :
-        rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">🎉 Nadie sin escribir en ese rango. ¡Todos al día!</p> : (
+        rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">Nadie sin escribir en ese rango. ¡Todos al día! 🎉</p> : (
           <>
-            <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · 🔁 ya te compró · 🆕 solo consultó.</p>
+            <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · "Cliente" ya te compró · "Solo consultó" aún no.</p>
             <div className="bg-card rounded-xl border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -136,7 +137,7 @@ export function Reactivate() {
                       <td className="px-3 py-2 font-mono text-muted-foreground">{r.phone}</td>
                       <td className="px-3 py-2">{r.daysSince} días</td>
                       <td className="px-3 py-2 text-muted-foreground max-w-72 truncate">{r.lastMessage || '—'}</td>
-                      <td className="px-3 py-2">{r.hasPurchased ? '🔁 Cliente' : '🆕 Solo consultó'}</td>
+                      <td className="px-3 py-2">{r.hasPurchased ? <span className="inline-flex items-center gap-1"><Repeat2 className="w-3.5 h-3.5" />Cliente</span> : <span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" />Solo consultó</span>}</td>
                       <td className="px-3 py-2 text-right font-mono">{Number(r.total) > 0 ? money(r.total) : '—'}</td>
                     </tr>
                   ))}

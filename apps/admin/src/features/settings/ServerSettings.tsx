@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
+import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
 
 // Configuración del servidor — paridad con el panel viejo:
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
@@ -77,7 +78,7 @@ export default function ServerSettings() {
 
       {/* IA global */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-foreground mb-3">🤖 Proveedor de IA activo (global)</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><BotIcon className="w-4 h-4" /> Proveedor de IA activo (global)</h2>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className={label}>Proveedor</span>
@@ -95,14 +96,14 @@ export default function ServerSettings() {
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyAI} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">🔍 Verificar conexión</button>
+          <button onClick={verifyAI} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></button>
           <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
         </div>
       </section>
 
       {/* Cloudinary */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-foreground mb-3">☁️ Cloudinary — Imágenes y videos</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Cloud className="w-4 h-4" /> Cloudinary — Imágenes y videos</h2>
         <div className="grid grid-cols-3 gap-3">
           <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
             <input className={input} value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
@@ -112,14 +113,14 @@ export default function ServerSettings() {
             <input className={input} type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
         </div>
         <div className="flex items-center gap-3 mt-3">
-          <button onClick={verifyCloudinary} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted">🔍 Verificar conexión</button>
+          <button onClick={verifyCloudinary} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></button>
           <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
         </div>
       </section>
 
       {/* Otras conexiones */}
       <section className={card}>
-        <h2 className="text-sm font-semibold text-foreground mb-3">🔌 Otras conexiones</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
         <div className="grid grid-cols-2 gap-3">
           <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</span>
             <input className={input} type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>

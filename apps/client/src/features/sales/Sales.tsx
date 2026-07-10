@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as salesApi from './api'
 import { api } from '../../api/client'
+import { Receipt, Lightbulb } from 'lucide-react'
 import type { Order, SaleItem } from './api'
 
 const { money, cents } = salesApi
@@ -31,7 +32,7 @@ export default function Sales() {
           <p className="text-sm text-muted-foreground">Pedidos del bot con total oficial + registro manual</p>
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
-          {([['orders', '🧾 Pedidos del bot'], ['register', '➕ Registrar venta'], ['history', '🔎 Por contacto']] as const).map(([v, l]) => (
+          {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {l}
@@ -44,7 +45,7 @@ export default function Sales() {
         <div className="grid lg:grid-cols-2 gap-4 items-start">
           <RegisterSale prefillPhone={prefillPhone} />
           <div>
-            <h2 className="font-semibold text-foreground mb-3">🧾 Ventas que hizo el bot (resumen)</h2>
+            <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2"><Receipt className="w-4 h-4 text-muted-foreground" /> Ventas que hizo el bot (resumen)</h2>
             <BotOrders />
           </div>
         </div>
@@ -152,7 +153,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
           <label className="text-xs font-medium text-muted-foreground">Teléfono del cliente</label>
           <div className="flex gap-2">
             <input className={`${input} flex-1`} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
-            <button onClick={loadQuote} type="button" className="rounded-lg border border-border px-3 text-sm hover:bg-muted/50" title="Traer lo cotizado en la conversación">💡</button>
+            <button onClick={loadQuote} type="button" className="rounded-lg border border-border px-3 text-sm hover:bg-muted/50" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></button>
           </div>
         </div>
         <div>

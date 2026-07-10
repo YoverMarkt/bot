@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as bill from './api'
 import type { BillingRow } from './api'
 import { getClients } from '../clients/api'
+import { Plus } from 'lucide-react'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
@@ -84,7 +85,7 @@ export default function Billing() {
             <option value="future">Próximo</option>
           </select>
           <button onClick={() => setShowNew(true)}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">+ Nuevo registro</button>
+            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></button>
         </div>
       </div>
 

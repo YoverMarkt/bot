@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { Bell } from 'lucide-react'
+import { Bell, BellOff, Check, Hand, CalendarPlus } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
 
@@ -126,9 +126,9 @@ export function AlarmBanner({ manual, pending, bookings }: {
     )
   }
 
-  const title = manual.length && pending.length ? '🔔 ¡Tienes pendientes!'
-    : manual.length ? '🙋 ¡Atiende a un cliente!'
-    : '🗓️ ¡Nueva reserva!'
+  const title = manual.length && pending.length ? '¡Tienes pendientes!'
+    : manual.length ? '¡Atiende a un cliente!'
+    : '¡Nueva reserva!'
   const parts = []
   if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
   if (pending.length) parts.push(`${pending.length} cita${pending.length !== 1 ? 's' : ''} por confirmar/cancelar`)
@@ -137,12 +137,13 @@ export function AlarmBanner({ manual, pending, bookings }: {
     <>
       {ringing && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white rounded-2xl shadow-2xl px-5 py-3 flex items-center gap-4 animate-pulse">
+          {manual.length ? <Hand className="w-5 h-5" /> : <CalendarPlus className="w-5 h-5" />}
           <div>
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>
           </div>
-          <button onClick={attend} className="rounded-lg bg-white text-red-700 font-bold text-xs px-3 py-2">✅ Atender</button>
-          <button onClick={silence} className="rounded-lg border border-white/50 text-white text-xs px-3 py-2">🔕 Silenciar 2 min</button>
+          <button onClick={attend} className="rounded-lg bg-white text-red-700 font-bold text-xs px-3 py-2 inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Atender</button>
+          <button onClick={silence} className="rounded-lg border border-white/50 text-white text-xs px-3 py-2 inline-flex items-center gap-1"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</button>
         </div>
       )}
       {toast && (

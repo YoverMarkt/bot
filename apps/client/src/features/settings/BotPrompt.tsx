@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { Locked } from './Settings'
+import { Lightbulb, ClipboardList, Smile, Sparkles } from 'lucide-react'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
@@ -38,7 +39,7 @@ export default function BotPrompt() {
 
       {/* Card de ayuda del viejo */}
       <div className="rounded-xl border border-lime-300 bg-gradient-to-br from-lime-50 to-lime-100 p-4 mb-4 max-w-2xl flex gap-3">
-        <div className="text-xl shrink-0">💡</div>
+        <Lightbulb className="w-5 h-5 shrink-0 text-lime-700" />
         <div className="text-xs leading-relaxed text-lime-900">
           <div className="font-bold uppercase tracking-wide text-lime-800 mb-1">¿Qué escribir aquí?</div>
           Define <strong>cómo quieres que suene tu bot</strong>: su nombre, cómo saluda, el tono (formal, amigable, elegante), qué puede y no puede decir.<br />
@@ -51,9 +52,9 @@ export default function BotPrompt() {
           className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
         <div className="flex gap-2 flex-wrap mt-2">
-          <button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">📋 Plantilla formal</button>
-          <button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">😊 Plantilla casual</button>
-          <button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50">✨ Plantilla lujo</button>
+          <button onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></button>
+          <button onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Smile className="w-3.5 h-3.5" /> Plantilla casual</span></button>
+          <button onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Plantilla lujo</span></button>
         </div>
         <div className="flex justify-end mt-3">
           <button onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}
