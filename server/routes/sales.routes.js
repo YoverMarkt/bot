@@ -12,15 +12,22 @@ router.get('/api/client/sessions/:phone/quote', authClient, requirePermission('v
   const bizId = req.user.businessId
   const phone = decodeURIComponent(req.params.phone)
   try {
-    const [products, history, session] = await Promise.all([
+    const [products, session, orders] = await Promise.all([
       db.getProducts(bizId),
-      db.getContactHistory(bizId, phone, 30),
-      db.getSession(bizId, phone)
+      db.getSession(bizId, phone),
+      db.getOrders(bizId, 100)
     ])
-    const text = history.map(h => h.content || '').join(' ').toLowerCase()
-    const suggested = products
-      .filter(p => p.name && text.includes(p.name.toLowerCase()))
-      .map(p => ({ product_id: p.id, product_name: p.name, unit_price: Number(p.price_sale || p.price || 0), quantity: 1 }))
+    // Solo el PEDIDO FINAL confirmado por el bot (núcleo de dinero).
+    // Si el cliente solo preguntó y no cerró pedido, NO se sugiere nada:
+    // el dueño arma la venta a mano (decisión del usuario 2026-07-10).
+    const lastOrder = (orders || []).find(o =>
+      o.contact_phone === phone && ['pendiente', 'confirmado'].includes(o.status))
+    const suggested = (lastOrder?.order_items || []).map(i => ({
+      product_id: i.product_id,
+      product_name: i.product_name,
+      unit_price: Number(i.unit_price) || 0,
+      quantity: parseInt(i.quantity) || 1
+    }))
     res.json({
       contact_name: session?.contact_name || '',
       products: products.map(p => ({ id: p.id, name: p.name, price: Number(p.price_sale || p.price || 0) })),
