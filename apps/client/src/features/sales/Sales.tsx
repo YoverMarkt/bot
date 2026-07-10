@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as salesApi from './api'
+import { api } from '../../api/client'
 import type { Order, SaleItem } from './api'
 
 const { money, cents } = salesApi
@@ -39,7 +40,15 @@ export default function Sales() {
         </div>
       </div>
       {tab === 'orders' && <BotOrders />}
-      {tab === 'register' && <RegisterSale prefillPhone={prefillPhone} />}
+      {tab === 'register' && (
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+          <RegisterSale prefillPhone={prefillPhone} />
+          <div>
+            <h2 className="font-semibold text-stone-900 mb-3">🧾 Ventas que hizo el bot (resumen)</h2>
+            <BotOrders />
+          </div>
+        </div>
+      )}
       {tab === 'history' && <SalesByContact />}
     </div>
   )
@@ -122,7 +131,11 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
   }
 
   const mSave = useMutation({
-    mutationFn: () => salesApi.registerSale({ contact_phone: phone.trim() || null, contact_name: name.trim() || null, items }),
+    mutationFn: async () => {
+      await salesApi.registerSale({ contact_phone: phone.trim() || null, contact_name: name.trim() || null, items })
+      // Si venimos de una conversación, registrarla también la CIERRA (el bot arranca contexto nuevo)
+      if (prefillPhone) await api(`/api/client/sessions/${encodeURIComponent(prefillPhone)}/close`, { method: 'PUT' }).catch(() => {})
+    },
     onSuccess: () => {
       setItems([]); setPhone(''); setName(''); setMsg('✅ Venta registrada — ya cuenta en tus reportes')
       qc.invalidateQueries({ queryKey: ['orders'] })
