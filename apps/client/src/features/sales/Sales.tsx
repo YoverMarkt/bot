@@ -217,7 +217,7 @@ function SalesByContact() {
       <form onSubmit={e => { e.preventDefault(); setSearched(phone.trim()) }} className="flex gap-2 mb-4">
         <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)"
           className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-        <Button variant="ghost" className="rounded-lg bg-stone-800 text-white font-semibold px-4 text-sm">Buscar</Button>
+        <Button variant="ghost" className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 text-sm">Buscar</Button>
       </form>
       {isFetching && <p className="text-muted-foreground text-sm">Buscando…</p>}
       {searched && !isFetching && sales.length === 0 && <p className="text-muted-foreground text-sm">Sin ventas registradas para ese número.</p>}

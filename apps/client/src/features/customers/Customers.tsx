@@ -111,7 +111,7 @@ export function Reactivate() {
           {[7, 15, 30, 60].map(d => <option key={d} value={d}>+{d} días</option>)}
         </select>
         <Button variant="ghost" onClick={exportExcel} disabled={!rows.length}
-          className="rounded-lg bg-stone-900 hover:bg-accent disabled:opacity-50 text-white font-semibold px-4 py-2 text-sm">
+          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-4 py-2 text-sm">
           <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Exportar Excel/CSV</span>
         </Button>
       </div>

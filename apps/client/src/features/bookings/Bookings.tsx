@@ -114,7 +114,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
               <button key={d} onClick={() => setSelected(dateStr)}
                 className={`text-left rounded-lg border p-1.5 min-h-16 align-top transition-colors ${
                   selected === dateStr ? 'border-green-500 ring-1 ring-green-500' :
-                  isToday ? 'border-green-300 bg-primary/10/50' : 'border-border/60 hover:border-stone-300'}`}>
+                  isToday ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-input'}`}>
                 <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
                 {dayBk.length > 0 && (
                   <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary' : 'bg-amber-100 text-amber-800'}`}>
