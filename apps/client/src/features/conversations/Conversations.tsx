@@ -87,13 +87,13 @@ export default function Conversations() {
           <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-primary/100 animate-pulse" title="Actualizando en tiempo real" />
-            <Button onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
+            <Button variant="ghost" onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto">
           {sessions.length === 0 && <p className="p-4 text-sm text-muted-foreground">Aún no hay conversaciones.</p>}
           {sessions.map(s => (
-            <Button
+            <button
               key={s.contact_phone} onClick={() => openChat(s)}
               className={`w-full text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${selected === s.contact_phone ? 'bg-primary/10' : ''}`}
             >
@@ -118,7 +118,7 @@ export default function Conversations() {
                   })}
                 </div>
               )}
-            </Button>
+            </button>
           ))}
         </div>
       </div>
@@ -136,14 +136,14 @@ export default function Conversations() {
                   <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
                     <Input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
                       className="rounded border border-input px-2 py-1 text-sm w-44" placeholder="Nombre del contacto" />
-                    <Button className="text-sm text-primary font-semibold px-1">✓</Button>
-                    <Button type="button" onClick={() => setRenaming(false)} className="text-sm text-muted-foreground/80 px-1">✕</Button>
+                    <Button variant="ghost" className="text-sm text-primary font-semibold px-1">✓</Button>
+                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)} className="text-sm text-muted-foreground/80 px-1">✕</Button>
                   </form>
                 ) : (
-                  <Button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
+                  <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
                     className="font-semibold text-foreground truncate hover:underline">
                     {sess.contact_name || sess.contact_phone} <span className="text-stone-300 text-xs">✏️</span>
-                  </Button>
+                  </button>
                 )}
                 <div className="text-xs text-muted-foreground/80">
                   {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? 'Modo manual — respondiendo tú' : 'Bot activo'}
@@ -153,7 +153,7 @@ export default function Conversations() {
               <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                 {/* Venta realizada (abre el modal de venta, como el viejo) */}
                 {canVentas && (
-                  <Button onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
+                  <Button variant="ghost" onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-green-300 text-primary hover:bg-primary/10">
                     <span className="inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Venta realizada</span>
                   </Button>
@@ -161,7 +161,7 @@ export default function Conversations() {
 
                 {/* Etiquetas */}
                 <div className="relative">
-                  <Button onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></Button>
+                  <Button variant="ghost" onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></Button>
                   {tagsOpen && (
                     <TagPicker
                       tags={tags} selected={sess.tags ?? []}
@@ -179,17 +179,17 @@ export default function Conversations() {
                 </div>
 
                 {/* Nombre */}
-                <Button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}
+                <Button variant="ghost" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}
                   className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
-                  <Button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}
+                  <Button variant="ghost" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-border hover:bg-muted/50">
                     <span className="inline-flex items-center gap-1.5"><BotIcon className="w-4 h-4" /> Activar bot</span>
                   </Button>
                 ) : (
-                  <Button onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}
+                  <Button variant="ghost" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}
                     className="text-sm rounded-lg px-3 py-1.5 font-medium border border-destructive/30 text-destructive hover:bg-destructive/10">
                     <span className="inline-flex items-center gap-1.5"><Hand className="w-4 h-4" /> Tomar control</span>
                   </Button>
@@ -225,7 +225,7 @@ export default function Conversations() {
                 placeholder="Escribe como dueño del negocio..." 
                 className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
-              <Button disabled={!draft.trim() || mSend.isPending}
+              <Button variant="ghost" disabled={!draft.trim() || mSend.isPending}
                 className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-4 text-sm">
                 Enviar
               </Button>
@@ -259,7 +259,7 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
     <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-card rounded-xl border shadow-lg p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-semibold text-foreground">Etiquetas del chat</span>
-        <Button onClick={onClose} className="text-muted-foreground/80 text-sm">✕</Button>
+        <Button variant="ghost" onClick={onClose} className="text-muted-foreground/80 text-sm">✕</Button>
       </div>
       <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
         {tags.length === 0 && <p className="text-xs text-muted-foreground">Aún no tienes etiquetas — crea la primera abajo.</p>}
@@ -270,14 +270,14 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
               className="w-full rounded border border-input px-2 py-1 text-sm mb-1.5" />
             <div className="flex gap-1 mb-1.5 flex-wrap">
               {TAG_COLORS.map(c => (
-                <Button key={c} type="button" onClick={() => setEditColor(c)}
+                <button key={c} type="button" onClick={() => setEditColor(c)}
                   className={`w-4 h-4 rounded-full border-2 ${editColor === c ? 'border-stone-800' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} />
               ))}
             </div>
             <div className="flex gap-1">
-              <Button className="flex-1 rounded bg-stone-800 text-white text-xs py-1">Guardar</Button>
-              <Button type="button" onClick={() => setEditing(null)} className="rounded border border-border text-xs px-2">✕</Button>
+              <Button variant="ghost" className="flex-1 rounded bg-stone-800 text-white text-xs py-1">Guardar</Button>
+              <Button variant="ghost" type="button" onClick={() => setEditing(null)} className="rounded border border-border text-xs px-2">✕</Button>
             </div>
           </form>
         ) : (
@@ -285,10 +285,10 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
             <Checkbox checked={selected.includes(t.id)} onCheckedChange={() => onToggle(t.id)} className="cursor-pointer" />
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
             <span className="text-foreground/90 truncate flex-1">{t.name}</span>
-            <Button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-xs"
-              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}>✏️</Button>
-            <Button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-xs"
-              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}>🗑</Button>
+            <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-xs"
+              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}>✏️</button>
+            <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-xs"
+              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}>🗑</button>
           </div>
         ))}
       </div>
@@ -305,12 +305,12 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
           className="w-full rounded border border-input px-2 py-1 text-sm mb-2" />
         <div className="flex gap-1 mb-2 flex-wrap">
           {TAG_COLORS.map(c => (
-            <Button key={c} type="button" onClick={() => setColor(c)}
+            <button key={c} type="button" onClick={() => setColor(c)}
               className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-stone-800' : 'border-transparent'}`}
               style={{ backgroundColor: c }} />
           ))}
         </div>
-        <Button disabled={!name.trim() || saving} className="w-full rounded bg-stone-800 text-white text-sm py-1.5 disabled:opacity-50">
+        <Button variant="ghost" disabled={!name.trim() || saving} className="w-full rounded bg-stone-800 text-white text-sm py-1.5 disabled:opacity-50">
           {saving ? 'Creando…' : '+ Crear etiqueta'}
         </Button>
       </form>

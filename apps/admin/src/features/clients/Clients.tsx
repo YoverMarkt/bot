@@ -63,7 +63,7 @@ export default function Clients() {
           <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
           <p className="text-sm text-muted-foreground">Gestiona todos los negocios de tu plataforma</p>
         </div>
-        <Button onClick={() => setEditing('new')}
+        <Button variant="ghost" onClick={() => setEditing('new')}
           className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo cliente</span></Button>
       </div>
 
@@ -96,20 +96,20 @@ export default function Clients() {
                   <td className="px-3 py-3">{botPill(c)}</td>
                   <td className="px-3 py-3">
                     <div className="flex gap-1 flex-wrap">
-                      <Button onClick={() => quickVerify(c)} title="Verificar conexión del proveedor"
+                      <Button variant="ghost" onClick={() => quickVerify(c)} title="Verificar conexión del proveedor"
                         className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><Check className="w-3.5 h-3.5" /></Button>
-                      <Button onClick={() => setViewing(c)}
+                      <Button variant="ghost" onClick={() => setViewing(c)}
                         className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Ver</span></Button>
-                      <Button onClick={() => setEditing(c.id)}
+                      <Button variant="ghost" onClick={() => setEditing(c.id)}
                         className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted">Editar</Button>
-                      <Button onClick={() => setPrompting(c)}
+                      <Button variant="ghost" onClick={() => setPrompting(c)}
                         className="rounded-lg border border-input text-foreground/80 text-xs px-2 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><BotIcon className="w-3.5 h-3.5" /> Bot</span></Button>
                       {c.suspended
-                        ? <Button onClick={() => mReactivate.mutate(c.id)}
+                        ? <Button variant="ghost" onClick={() => mReactivate.mutate(c.id)}
                             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-2 py-1.5">Reactivar</Button>
-                        : <Button onClick={() => { if (confirm(`¿Suspender a ${c.name}? Su bot dejará de atender.`)) mSuspend.mutate(c.id) }}
+                        : <Button variant="ghost" onClick={() => { if (confirm(`¿Suspender a ${c.name}? Su bot dejará de atender.`)) mSuspend.mutate(c.id) }}
                             className="rounded-lg border border-destructive/40 text-destructive text-xs px-2 py-1.5 hover:bg-destructive/10">Suspender</Button>}
-                      <Button onClick={() => del(c)} title="Eliminar cliente"
+                      <Button variant="ghost" onClick={() => del(c)} title="Eliminar cliente"
                         className="rounded-lg border border-destructive/40 text-destructive text-xs px-2 py-1.5 hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                     {vfy[c.id] && <div className="text-[11px] text-muted-foreground mt-1 max-w-72">{vfy[c.id]}</div>}

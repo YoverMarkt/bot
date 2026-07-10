@@ -106,7 +106,7 @@ export default function Dashboard() {
           {canReports && (
             <div className="flex gap-1 bg-card border rounded-lg p-1">
               {PERIODS.map(p => (
-                <Button
+                <Button variant="ghost"
                   key={p.value} onClick={() => setPeriod(p.value)}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     period === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'
@@ -117,7 +117,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-          <Button onClick={() => navigate('/catalog?new=1')}
+          <Button variant="ghost" onClick={() => navigate('/catalog?new=1')}
             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2">
             <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
           </Button>
@@ -240,7 +240,7 @@ function OnboardingCard({ d }: { d: Onboarding }) {
             {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
           </span>
           {!s.done && s.page && (
-            <Button onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
+            <Button variant="ghost" onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
               className="rounded-lg border border-border text-xs px-2.5 py-1 hover:bg-muted/50">Configurar →</Button>
           )}
         </div>

@@ -241,7 +241,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" type="button" onClick={onClose} >Cancelar</Button>
-              <Button disabled={saving} >
+              <Button disabled={saving}>
                 {saving ? 'Guardando…' : id ? 'Guardar cambios' : 'Crear negocio'}
               </Button>
             </div>

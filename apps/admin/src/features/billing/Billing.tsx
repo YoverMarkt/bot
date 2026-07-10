@@ -86,7 +86,7 @@ export default function Billing() {
             <option value="paid">Pagado</option>
             <option value="future">Próximo</option>
           </select>
-          <Button onClick={() => setShowNew(true)}
+          <Button variant="ghost" onClick={() => setShowNew(true)}
             className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm"><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></Button>
         </div>
       </div>
@@ -115,7 +115,7 @@ export default function Billing() {
                   <td className="px-4 py-3"><StatusPill b={b} /></td>
                   <td className="px-4 py-3 text-right">
                     {b.status !== 'paid' && (
-                      <Button onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}
+                      <Button variant="ghost" onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}
                         className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed text-foreground text-xs font-semibold px-2.5 py-1.5">
                         Marcar pagado
                       </Button>
@@ -134,20 +134,20 @@ export default function Billing() {
             Mostrando {(curPage - 1) * PER_PAGE + 1}–{Math.min(curPage * PER_PAGE, filtered.length)} de {filtered.length}
           </span>
           <div className="flex gap-1">
-            <Button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}
+            <Button variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}
               className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">←</Button>
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(p => p === 1 || p === totalPages || Math.abs(p - curPage) <= 2)
               .map((p, i, arr) => (
                 <span key={p} className="flex">
                   {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1 text-muted-foreground/70">…</span>}
-                  <Button onClick={() => setPage(p)}
+                  <Button variant="ghost" onClick={() => setPage(p)}
                     className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {p}
                   </Button>
                 </span>
               ))}
-            <Button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}
+            <Button variant="ghost" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}
               className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1.5 disabled:opacity-30">→</Button>
           </div>
         </div>
@@ -218,8 +218,8 @@ function NewCharge({ clients, onClose, onSaved }: {
         </div>
         {error && <p className="text-sm text-destructive mt-3">✗ {error}</p>}
         <div className="flex justify-end gap-2 mt-5">
-          <Button type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
-          <Button disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button variant="ghost" type="button" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
+          <Button variant="ghost" disabled={saving} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : 'Guardar'}
           </Button>
         </div>

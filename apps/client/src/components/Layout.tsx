@@ -93,7 +93,7 @@ export default function Layout() {
             <Archive className="w-4 h-4" /> Panel clásico
           </a>
           <div className="px-3 pb-2 text-xs text-muted-foreground truncate">{user?.name || 'Sesión activa'}</div>
-          <Button onClick={logout} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50">
+          <Button variant="ghost" onClick={logout} className="w-full justify-start text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
           </Button>
         </div>

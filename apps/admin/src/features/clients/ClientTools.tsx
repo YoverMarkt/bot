@@ -49,7 +49,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
           ))}
         </div>
         <div className="flex justify-end mt-4">
-          <Button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cerrar</Button>
+          <Button variant="ghost" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cerrar</Button>
         </div>
       </div>
     </div>
@@ -89,7 +89,7 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
         <p className="text-sm text-muted-foreground mb-3">{c.name}</p>
         <div className="flex gap-2 mb-2">
           {Object.keys(BPM_TEMPLATES).map(t => (
-            <Button key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}
+            <Button variant="ghost" key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}
               className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1 capitalize hover:bg-muted">
               Plantilla {t}
             </Button>
@@ -101,8 +101,8 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
         <p className="text-[11px] text-muted-foreground mt-1">⚠️ El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
         <div className="flex items-center justify-end gap-3 mt-3">
           {msg && <span className="text-sm text-foreground/80">{msg}</span>}
-          <Button onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
-          <Button onClick={save} disabled={saving}
+          <Button variant="ghost" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
+          <Button variant="ghost" onClick={save} disabled={saving}
             className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
             {saving ? 'Guardando…' : 'Guardar prompt'}
           </Button>
