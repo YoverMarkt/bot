@@ -49,6 +49,7 @@ export type BusinessDetail = BusinessRow & {
   kapso_number_id: string | null
   kapso_verify_token: string | null
   telegram_bot_token: string | null
+  retell_agent_id: string | null
   ai_provider: string | null
   takes_bookings: boolean | null
   takes_orders: boolean | null

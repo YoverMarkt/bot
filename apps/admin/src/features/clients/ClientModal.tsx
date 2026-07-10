@@ -14,7 +14,7 @@ const EMPTY = {
   whatsapp_provider: 'ycloud', ycloud_api_key: '',
   meta_token: '', meta_phone_id: '', meta_verify_token: '',
   kapso_api_key: '', kapso_number_id: '', kapso_verify_token: '',
-  telegram_bot_token: '',
+  telegram_bot_token: '', retell_agent_id: '',
   ai_provider: '', mode: 'normal', sales: 'vende',
   plan: 'basic', monthly_rate: '', plan_expires_at: '',
   client_email: '', client_password: '', notes: '',
@@ -39,6 +39,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         meta_token: c.meta_token ?? '', meta_phone_id: c.meta_phone_id ?? '', meta_verify_token: c.meta_verify_token ?? '',
         kapso_api_key: c.kapso_api_key ?? '', kapso_number_id: c.kapso_number_id ?? '', kapso_verify_token: c.kapso_verify_token ?? '',
         telegram_bot_token: c.telegram_bot_token ?? '',
+        retell_agent_id: c.retell_agent_id ?? '',
         ai_provider: c.ai_provider ?? '',
         mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
@@ -52,8 +53,17 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     }).catch(e => { setError(e instanceof Error ? e.message : 'Error'); setLoading(false) })
   }, [id])
 
-  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setF(prev => ({ ...prev, [k]: e.target.value }))
+  const CALENDAR_TYPES = ['barbería', 'peluquería', 'salón', 'spa', 'clínica', 'consultorio', 'odontología', 'psicología', 'gym', 'entrenamiento', 'restaurante', 'masajes', 'estetica', 'estética']
+
+  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setF(prev => {
+      const next = { ...prev, [k]: value }
+      // Presugerir el modo según el tipo SOLO al crear (al editar se respeta lo guardado)
+      if (k === 'type' && !id) next.mode = CALENDAR_TYPES.some(t => value.toLowerCase().includes(t)) ? 'citas' : 'normal'
+      return next
+    })
+  }
 
   async function verify() {
     setVfy('⏳ Verificando credenciales…')
@@ -76,6 +86,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     e.preventDefault()
     setError('')
     if (!f.name.trim() || !f.whatsapp_number.trim()) { setError('Nombre y número de WhatsApp son obligatorios'); return }
+    if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('La tarifa mensual es obligatoria al crear (genera la facturación)'); return }
     const payload: BusinessPayload = {
       name: f.name.trim(), type: f.type.trim() || 'negocio',
       whatsapp_number: f.whatsapp_number.trim(),
@@ -86,6 +97,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       meta_token: f.meta_token || null, meta_phone_id: f.meta_phone_id || null, meta_verify_token: f.meta_verify_token || null,
       kapso_api_key: f.kapso_api_key || null, kapso_number_id: f.kapso_number_id || null, kapso_verify_token: f.kapso_verify_token || null,
       telegram_bot_token: f.telegram_bot_token || null,
+      retell_agent_id: f.retell_agent_id || null,
       ai_provider: f.ai_provider || null,
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
@@ -97,6 +109,21 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     if (f.client_email) payload.client_email = f.client_email.trim()
     if (f.client_password) payload.client_password = f.client_password
     setSaving(true)
+    // Verificar credenciales antes de guardar (igual que el viejo: avisa, pero guarda)
+    if (f.whatsapp_provider !== 'telegram' || f.telegram_bot_token) {
+      setVfy('⏳ Verificando credenciales…')
+      try {
+        const vr = await adm.verifyProvider({
+          provider: f.whatsapp_provider,
+          ycloud_api_key: f.ycloud_api_key || undefined,
+          ycloud_number: f.whatsapp_number || undefined,
+          meta_token: f.meta_token || undefined, meta_phone_id: f.meta_phone_id || undefined,
+          kapso_api_key: f.kapso_api_key || undefined, kapso_number_id: f.kapso_number_id || undefined,
+          telegram_bot_token: f.telegram_bot_token || undefined,
+        })
+        setVfy(vr.ok ? `✅ ${vr.info}` : `⚠️ ${vr.info} — guardando de todas formas…`)
+      } catch { setVfy('⚠️ No se pudo verificar — guardando de todas formas…') }
+    }
     try {
       if (id) await adm.updateClient(id, payload)
       else await adm.createClient(payload)
@@ -178,7 +205,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <div><span className={label}>Verify Token</span><input className={input} value={f.kapso_verify_token} onChange={set('kapso_verify_token')} /></div>
                 </div>
               )}
-              <div className="mt-3"><span className={label}>Telegram Bot Token (opcional, para pruebas)</span><input className={input} type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} /></div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div><span className={label}>Telegram Bot Token (opcional, para pruebas)</span><input className={input} type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} /></div>
+                <div><span className={label}>Retell Agent ID (voz telefónica, opcional)</span><input className={input} value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
+              </div>
               <div className="flex items-center gap-3 mt-3">
                 <button type="button" onClick={verify} className="rounded-lg border border-stone-700 text-stone-300 text-xs px-3 py-1.5 hover:bg-stone-800">
                   🔍 Verificar credenciales

@@ -33,6 +33,9 @@ type Onboarding = {
   done: number; total: number; pct: number
 }
 
+// Contadores rápidos del panel viejo (loadStats)
+type QuickStats = { totalProducts: number; availableProducts: number; messagesToday: number; totalContacts: number }
+
 // Mapa de páginas del viejo → rutas del panel React (para el checklist)
 const PAGE_ROUTE: Record<string, string> = {
   products: '/catalog', botprompt: '/settings', policies: '/settings',
@@ -66,6 +69,11 @@ export default function Dashboard() {
     queryKey: ['onboarding'],
     queryFn: () => api<Onboarding>('/api/client/onboarding'),
     enabled: isOwner,
+    staleTime: 60_000,
+  })
+  const { data: quick } = useQuery({
+    queryKey: ['quick-stats'],
+    queryFn: () => api<QuickStats>('/api/client/stats'),
     staleTime: 60_000,
   })
 
@@ -110,6 +118,16 @@ export default function Dashboard() {
               {a.icon} {a.text}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Contadores rápidos del panel viejo */}
+      {quick && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+          <Kpi label="Productos" value={String(quick.totalProducts)} sub="En catálogo" />
+          <Kpi label="Disponibles" value={String(quick.availableProducts)} sub="Con stock" />
+          <Kpi label="Mensajes hoy" value={String(quick.messagesToday)} sub="Respondidos" />
+          <Kpi label="Contactos" value={String(quick.totalContacts)} sub="Personas que han escrito" />
         </div>
       )}
 

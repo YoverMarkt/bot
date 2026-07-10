@@ -149,6 +149,8 @@ export default function Conversations() {
                         mTags.mutate({ phone: sess.contact_phone, tags: [...cur] })
                       }}
                       onCreate={async (name, color) => { await convApi.createTag(name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
+                      onUpdate={async (id, name, color) => { await convApi.updateTag(id, name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
+                      onDelete={async (id) => { await convApi.deleteTag(id); qc.invalidateQueries({ queryKey: ['tags'] }); refresh() }}
                       onClose={() => setTagsOpen(false)}
                     />
                   )}
@@ -220,15 +222,20 @@ export default function Conversations() {
 }
 
 // Popover de etiquetas: asignar existentes + crear nueva con color
-function TagPicker({ tags, selected, onToggle, onCreate, onClose }: {
+function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onClose }: {
   tags: Tag[]; selected: string[]
   onToggle: (id: string) => void
   onCreate: (name: string, color: string) => Promise<void>
+  onUpdate: (id: string, name: string, color: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>
   onClose: () => void
 }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(TAG_COLORS[0])
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState<Tag | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState(TAG_COLORS[0])
 
   return (
     <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white rounded-xl border border-stone-200 shadow-lg p-3">
@@ -238,12 +245,33 @@ function TagPicker({ tags, selected, onToggle, onCreate, onClose }: {
       </div>
       <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
         {tags.length === 0 && <p className="text-xs text-stone-500">Aún no tienes etiquetas — crea la primera abajo.</p>}
-        {tags.map(t => (
-          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer rounded px-1 py-0.5 hover:bg-stone-50">
-            <input type="checkbox" checked={selected.includes(t.id)} onChange={() => onToggle(t.id)} />
+        {tags.map(t => editing?.id === t.id ? (
+          <form key={t.id} className="rounded border border-stone-200 p-2"
+            onSubmit={async e => { e.preventDefault(); await onUpdate(t.id, editName.trim() || t.name, editColor); setEditing(null) }}>
+            <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+              className="w-full rounded border border-stone-300 px-2 py-1 text-sm mb-1.5" />
+            <div className="flex gap-1 mb-1.5 flex-wrap">
+              {TAG_COLORS.map(c => (
+                <button key={c} type="button" onClick={() => setEditColor(c)}
+                  className={`w-4 h-4 rounded-full border-2 ${editColor === c ? 'border-stone-800' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
+            <div className="flex gap-1">
+              <button className="flex-1 rounded bg-stone-800 text-white text-xs py-1">Guardar</button>
+              <button type="button" onClick={() => setEditing(null)} className="rounded border border-stone-200 text-xs px-2">✕</button>
+            </div>
+          </form>
+        ) : (
+          <div key={t.id} className="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-stone-50 group">
+            <input type="checkbox" checked={selected.includes(t.id)} onChange={() => onToggle(t.id)} className="cursor-pointer" />
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-            <span className="text-stone-700 truncate">{t.name}</span>
-          </label>
+            <span className="text-stone-700 truncate flex-1">{t.name}</span>
+            <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-xs"
+              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}>✏️</button>
+            <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-xs"
+              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}>🗑</button>
+          </div>
         ))}
       </div>
       <form
