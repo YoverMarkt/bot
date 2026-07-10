@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { session } from '../api/client'
+import { useQuery } from '@tanstack/react-query'
+import { api, session } from '../api/client'
 import { useBusinessInfo, isBookingBiz, isServiceBiz } from '../lib/biz'
 import { useAttention, AlarmBanner } from './AlarmSystem'
 
@@ -23,15 +24,22 @@ export default function Layout() {
     return (user?.permissions ?? []).includes(perm)
   }
 
+  // Contador de productos junto a "Catálogo" (sb-cnt del panel viejo)
+  const { data: quick } = useQuery({
+    queryKey: ['quick-stats'],
+    queryFn: () => api<{ totalProducts: number }>('/api/client/stats'),
+    staleTime: 60_000,
+  })
+
   const att = useAttention({
     watchSessions: canSee('conversaciones'),
     watchBookings: bookingBiz && canSee('citas'),
   })
 
   // Menú IDÉNTICO al panel viejo (mismo orden, mismas secciones)
-  const SECTIONS: { to: string; label: string; icon: string; perm: string | null; badge?: string | number }[] = [
+  const SECTIONS: { to: string; label: string; icon: string; perm: string | null; badge?: string | number; badgeTone?: 'alert' | 'count' }[] = [
     { to: '/',              label: 'Inicio',            icon: '🏠', perm: null },
-    { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: '📦', perm: 'catalogo' },
+    { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: '📦', perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
     { to: '/conversations', label: 'Conversaciones',    icon: '💬', perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
     { to: '/reports',       label: 'Reportes',          icon: '📊', perm: 'reportes' },
     { to: '/customers',     label: 'Clientes',          icon: '👥', perm: 'reportes' },
@@ -70,7 +78,9 @@ export default function Layout() {
               <span>{s.icon}</span>
               <span className="flex-1">{s.label}</span>
               {s.badge !== undefined && (
-                <span className="text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 px-1.5 py-0.5 min-w-5 text-center">
+                <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-5 text-center ${
+                  s.badgeTone === 'count' ? 'bg-stone-100 text-stone-600' : 'bg-amber-100 text-amber-800'
+                }`}>
                   {s.badge}
                 </span>
               )}
