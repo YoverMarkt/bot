@@ -16,24 +16,32 @@ export default function Layout() {
   const { data: bizInfo } = useBusinessInfo()
 
   const bookingBiz = isBookingBiz(bizInfo?.type)
-  const canSee = (perm: string | null) =>
-    !perm || user?.role === 'owner' || (user?.permissions ?? []).includes(perm)
+  const canSee = (perm: string | null) => {
+    if (!perm) return true
+    if (user?.role === 'owner') return true
+    if (perm === 'owner') return false
+    return (user?.permissions ?? []).includes(perm)
+  }
 
   const att = useAttention({
     watchSessions: canSee('conversaciones'),
     watchBookings: bookingBiz && canSee('citas'),
   })
 
+  // Menú IDÉNTICO al panel viejo (mismo orden, mismas secciones)
   const SECTIONS: { to: string; label: string; icon: string; perm: string | null; badge?: string | number }[] = [
-    { to: '/',              label: 'Inicio',         icon: '🏠', perm: 'reportes' },
-    { to: '/conversations', label: 'Conversaciones', icon: '💬', perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
+    { to: '/',              label: 'Inicio',            icon: '🏠', perm: null },
     { to: '/catalog',       label: isServiceBiz(bizInfo?.type) ? 'Servicios' : 'Catálogo', icon: '📦', perm: 'catalogo' },
-    { to: '/sales',         label: 'Ventas',         icon: '🛒', perm: 'ventas' },
-    { to: '/reports',       label: 'Reportes',       icon: '📊', perm: 'reportes' },
-    { to: '/customers',     label: 'Clientes',       icon: '👥', perm: 'reportes' },
+    { to: '/conversations', label: 'Conversaciones',    icon: '💬', perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
+    { to: '/reports',       label: 'Reportes',          icon: '📊', perm: 'reportes' },
+    { to: '/customers',     label: 'Clientes',          icon: '👥', perm: 'reportes' },
+    { to: '/reactivate',    label: 'Reactivar',         icon: '🔄', perm: 'reportes' },
+    { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: '🤖', perm: 'owner' },
+    { to: '/policies',      label: 'Políticas del bot', icon: '📋', perm: 'owner' },
+    { to: '/schedule',      label: 'Horarios',          icon: '🕐', perm: 'citas' },
     ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: '📅', perm: 'citas', badge: att.pending.length || undefined }] : []),
-    { to: '/schedule',      label: 'Horarios',       icon: '🕐', perm: 'citas' },
-    { to: '/settings',      label: 'Configuración',  icon: '⚙️', perm: null },
+    { to: '/users',         label: 'Usuarios',          icon: '👤', perm: 'owner' },
+    { to: '/settings',      label: 'Ajustes',           icon: '⚙️', perm: 'owner' },
   ]
 
   function logout() {

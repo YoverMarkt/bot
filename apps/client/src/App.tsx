@@ -9,9 +9,13 @@ import Catalog from './features/catalog/Catalog'
 import Sales from './features/sales/Sales'
 import Reports from './features/reports/Reports'
 import Customers from './features/customers/Customers'
+import Reactivar from './features/customers/Reactivar'
 import Bookings from './features/bookings/Bookings'
 import Schedule from './features/bookings/Schedule'
 import Settings from './features/settings/Settings'
+import BotPrompt from './features/settings/BotPrompt'
+import PoliciesPage from './features/settings/Policies'
+import Users from './features/settings/Users'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +43,10 @@ export default function App() {
               <Route path="/sales" element={<Sales />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
+              <Route path="/reactivate" element={<Reactivar />} />
+              <Route path="/bot-prompt" element={<BotPrompt />} />
+              <Route path="/policies" element={<PoliciesPage />} />
+              <Route path="/users" element={<Users />} />
               <Route path="/bookings" element={<Bookings />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />

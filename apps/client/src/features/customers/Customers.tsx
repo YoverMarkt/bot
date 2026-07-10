@@ -13,24 +13,13 @@ const STATUS_BADGE: Record<Customer['status'], { label: string; cls: string }> =
 }
 
 export default function Customers() {
-  const [tab, setTab] = useState<'directory' | 'reactivate'>('directory')
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-900">Clientes</h1>
-          <p className="text-sm text-stone-500">Directorio de compradores y contactos por reactivar</p>
-        </div>
-        <div className="flex gap-1 bg-white border border-stone-200 rounded-lg p-1">
-          {([['directory', '📇 Directorio'], ['reactivate', '📤 Reactivar']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-green-600 text-white' : 'text-stone-600 hover:bg-stone-50'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-stone-900">Clientes</h1>
+        <p className="text-sm text-stone-500">Directorio de tus clientes con su historial de compras.</p>
       </div>
-      {tab === 'directory' ? <Directory /> : <Reactivate />}
+      <Directory />
     </div>
   )
 }
@@ -103,7 +92,7 @@ function Directory() {
 }
 
 // ── Reactivar: contactos con tiempo sin escribir + exportar a Excel ──
-function Reactivate() {
+export function Reactivate() {
   const [days, setDays] = useState(15)
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inactive', days],

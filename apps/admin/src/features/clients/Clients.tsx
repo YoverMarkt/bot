@@ -53,14 +53,14 @@ export default function Clients() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Negocios</h1>
+          <h1 className="text-2xl font-bold text-white">Clientes</h1>
           <p className="text-sm text-stone-400">{clients.length} cliente(s) del SaaS</p>
         </div>
         <div className="flex gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o número…"
             className="rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-green-500" />
           <button onClick={() => setEditing('new')}
-            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">➕ Nuevo negocio</button>
+            className="rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold px-4 py-2 text-sm">➕ Nuevo cliente</button>
         </div>
       </div>
 

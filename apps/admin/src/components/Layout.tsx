@@ -2,12 +2,13 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
 
 const SECTIONS = [
-  { to: '/',           label: 'Inicio',        icon: '🏠' },
-  { to: '/clients',    label: 'Negocios',      icon: '🏪' },
-  { to: '/billing',    label: 'Facturación',   icon: '💳' },
-  { to: '/simulator',  label: 'Simulador',     icon: '🧪' },
-  { to: '/settings',   label: 'Configuración', icon: '⚙️' },
-  { to: '/calculator', label: 'Calculadora',   icon: '🧮' },
+  { to: '/',            label: 'Dashboard',     icon: '🏠' },
+  { to: '/clients',     label: 'Clientes',      icon: '👥' },
+  { to: '/billing',     label: 'Facturación',   icon: '💳' },
+  { to: '/simulator',   label: 'Simulador',     icon: '💬' },
+  { to: '/connections', label: 'Conexiones',    icon: '🔌' },
+  { to: '/settings',    label: 'Configuración', icon: '⚙️' },
+  { to: '/calculator',  label: 'Calculadora',   icon: '🧮' },
 ]
 
 export default function Layout() {
