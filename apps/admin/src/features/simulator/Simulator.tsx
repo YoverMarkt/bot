@@ -56,13 +56,13 @@ export default function Simulator() {
     <div className="flex flex-col h-[calc(100vh-3rem)]">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Simulador de bot</h1>
-          <p className="text-sm text-stone-400">Prueba el bot de cualquier negocio sin gastar mensajes de WhatsApp</p>
+          <h1 className="text-2xl font-bold text-white">Simulador de Bot</h1>
+          <p className="text-sm text-stone-400">Prueba el bot de cualquier negocio sin WhatsApp real</p>
         </div>
         <div className="flex gap-2">
           <select value={bizId} onChange={e => selectBiz(e.target.value)}
             className="rounded-lg bg-stone-800 border border-stone-700 text-white px-3 py-2 text-sm min-w-56 focus:outline-none focus:ring-2 focus:ring-green-500">
-            <option value="">Elige un negocio…</option>
+            <option value="">— Elige un negocio —</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {bizId && (

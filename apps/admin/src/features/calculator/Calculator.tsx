@@ -82,7 +82,7 @@ export default function Calculator() {
             <div>
               <span className={label}>Multiplicador de precio</span>
               <div className="flex gap-1.5 items-center">
-                {[2, 3, 4, 5].map(v => (
+                {[3, 5, 8, 10].map(v => (
                   <button key={v} onClick={() => setF(p => ({ ...p, mult: String(v) }))}
                     className={`rounded-lg text-xs px-2.5 py-2 ${Number(f.mult) === v ? 'bg-green-600 text-white font-semibold' : 'border border-stone-700 text-stone-300'}`}>
                     {v}x
