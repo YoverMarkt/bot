@@ -17,7 +17,7 @@ export default function Dashboard() {
   ]
 
   return (
-    <div>
+    <div className="flex-1 flex flex-col min-h-0">
       <h1 className="text-2xl font-bold text-foreground mb-1">Dashboard</h1>
       <p className="text-sm text-muted-foreground mb-6">Visión general de tu negocio</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -31,7 +31,7 @@ export default function Dashboard() {
       </div>
 
       {/* Últimos negocios (renderDashRecent del panel viejo) */}
-      <div className="bg-card rounded-xl border p-5 mt-6">
+      <div className="bg-card rounded-xl border p-5 mt-6 flex-1">
         <h2 className="text-sm font-semibold text-foreground mb-2">Clientes recientes</h2>
         {clients.length === 0 && <p className="text-sm text-muted-foreground">Sin clientes aún.</p>}
         {clients.slice(0, 6).map(c => (
