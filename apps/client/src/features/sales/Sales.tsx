@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as salesApi from './api'
 import { api } from '../../api/client'
-import { Receipt, Lightbulb } from 'lucide-react'
+import { Receipt, Lightbulb, Check, X } from 'lucide-react'
 import type { Order, SaleItem } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,7 +63,7 @@ function BotOrders() {
   if (isLoading) return <p className="text-muted-foreground">Cargando pedidos…</p>
   if (!orders.length) return (
     <div className="bg-card rounded-xl border p-8 text-center">
-      <div className="text-3xl mb-2">🧾</div>
+      <Receipt className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
       <p className="text-foreground/90 font-medium">Aún no hay pedidos del bot.</p>
       <p className="text-sm text-muted-foreground mt-1">Cuando un cliente confirme una compra por WhatsApp, el pedido aparece aquí con su total oficial calculado por el sistema.</p>
     </div>
@@ -92,7 +92,7 @@ function BotOrders() {
           </div>
           <div className="mt-2 pt-2 border-t border-border/60 flex justify-between items-center">
             {Number(o.discount) > 0 && <span className="text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
-            <span className="ml-auto font-bold text-foreground">💰 Total: {money(o.total)}</span>
+            <span className="ml-auto font-bold text-foreground">Total: {money(o.total)}</span>
           </div>
         </div>
       ))}
@@ -178,7 +178,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
             className={`${input} w-16 text-center`} />
           <span className="text-muted-foreground">× {money(it.unit_price)}</span>
           <span className="w-20 text-right font-medium">{money(cents(it.quantity * it.unit_price))}</span>
-          <Button variant="ghost" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
+          <Button variant="ghost" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}><X className="w-4 h-4" /></Button>
         </div>
       ))}
 
@@ -186,7 +186,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
         <span className="font-bold text-lg text-foreground">Total: {money(total)}</span>
         <Button
           onClick={() => mSave.mutate()} disabled={!items.length || mSave.isPending}>
-          {mSave.isPending ? 'Registrando…' : '✓ Registrar venta'}
+          {mSave.isPending ? 'Registrando…' : <span className="inline-flex items-center gap-1.5"><Check className="w-4 h-4" /> Registrar venta</span>}
         </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}

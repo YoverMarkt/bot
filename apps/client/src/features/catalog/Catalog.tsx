@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Film, Plus } from 'lucide-react'
+import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
@@ -46,11 +46,11 @@ export default function Catalog() {
 
   const mDelete = useMutation({
     mutationFn: catApi.deleteProduct,
-    onSuccess: () => { refresh(); flash('🗑️ Producto eliminado') },
+    onSuccess: () => { refresh(); flash('Producto eliminado') },
   })
 
   async function handleReindex() {
-    flash('🧠 Indexando catálogo…')
+    flash('Indexando catálogo…')
     try { const r = await catApi.reindex(); flash(r.message || '✓ Indexación iniciada') }
     catch { flash('✗ Error al reindexar') }
   }
@@ -84,7 +84,7 @@ export default function Catalog() {
               <div className="h-36 bg-muted flex items-center justify-center overflow-hidden relative">
                 {p.image_url
                   ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                  : <span className="text-3xl text-stone-300">📦</span>}
+                  : <Package className="w-9 h-9 text-muted-foreground/40" />}
                 {p.video_url && <span className="absolute top-2 right-2 text-[10px] bg-black/70 text-white rounded px-1.5 py-0.5"><Film className="w-3 h-3 inline mr-0.5" />video</span>}
               </div>
               <div className="p-3 flex-1 flex flex-col">
@@ -99,8 +99,8 @@ export default function Catalog() {
                   <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</span>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1 text-xs">✏️ Editar</Button>
-                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }} className="text-xs">🗑️</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1 text-xs"><span className="inline-flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editar</span></Button>
+                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }} className="text-xs"><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
             </div>
@@ -242,13 +242,13 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         {/* Media: imagen + video → Cloudinary */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="rounded-lg border border-dashed border-input p-3">
-            <div className="text-xs font-semibold text-foreground/90 mb-1">📷 Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
+            <div className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
             <Input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
           <div className="rounded-lg border border-dashed border-input p-3">
-            <div className="text-xs font-semibold text-foreground/90 mb-1">🎬 Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
+            <div className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Film className="w-3.5 h-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
             {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
             <Input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
             {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Crown } from 'lucide-react'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -38,7 +39,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="text-3xl mb-1">👑</div>
+          <Crown className="w-8 h-8 mx-auto mb-1 text-primary" />
           <CardTitle className="text-xl">BotPanel — Superadmin</CardTitle>
           <CardDescription>Acceso del dueño de la plataforma</CardDescription>
         </CardHeader>

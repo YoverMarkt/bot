@@ -4,6 +4,7 @@ import * as adm from './api'
 import type { BusinessRow } from './api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Smartphone, Bot as BotIcon, TriangleAlert } from 'lucide-react'
 
 // ── Herramientas por negocio (paridad con el admin viejo):
 // 👁 Ver negocio (datos + estadísticas + últimas conversaciones)
@@ -41,8 +42,8 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
           {convs.length === 0 && <p className="text-sm text-muted-foreground">Sin mensajes todavía.</p>}
           {convs.slice(0, 20).map((m, i) => (
             <div key={i} className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
-              <div className={`text-[11px] font-semibold mb-0.5 ${m.role === 'user' ? 'text-blue-400' : 'text-primary'}`}>
-                {m.role === 'user' ? `📱 ${m.contact_phone}` : '🤖 Bot'}
+              <div className={`text-[11px] font-semibold mb-0.5 flex items-center gap-1 ${m.role === 'user' ? 'text-blue-400' : 'text-primary'}`}>
+                {m.role === 'user' ? <><Smartphone className="w-3 h-3" /> {m.contact_phone}</> : <><BotIcon className="w-3 h-3" /> Bot</>}
               </div>
               <div className="text-foreground/80 whitespace-pre-wrap break-words">{(m.content || '').slice(0, 300)}</div>
             </div>
@@ -96,7 +97,7 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
         </div>
         <Textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={14} className="w-full text-xs font-mono"
           placeholder="Eres el asistente virtual de…" />
-        <p className="text-[11px] text-muted-foreground mt-1">⚠️ El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
+        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
         <div className="flex items-center justify-end gap-3 mt-3">
           {msg && <span className="text-sm text-foreground/80">{msg}</span>}
           <Button variant="outline" onClick={onClose}>Cancelar</Button>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
-import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar } from 'lucide-react'
+import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -62,7 +62,7 @@ export function BusinessForm() {
     <div className="bg-card rounded-xl border p-5 max-w-xl">
       <div className="space-y-3">
         <div><label className="text-xs font-medium text-muted-foreground">Nombre del negocio</label><Input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><Input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad ✂️" /></div>
+        <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><Input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
         <div><label className="text-xs font-medium text-muted-foreground">Descripción corta</label><Textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
       </div>
       <div className="flex justify-end mt-4">
@@ -95,16 +95,16 @@ export function BotForm() {
   return (
     <div className="bg-card rounded-xl border p-5 max-w-2xl space-y-4">
       <div>
-        <label className="text-xs font-medium text-muted-foreground">🤖 Prompt del bot (su personalidad y forma de atender)</label>
+        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><BotIcon className="w-3.5 h-3.5" /> Prompt del bot (su personalidad y forma de atender)</label>
         <Textarea className={`${input} font-mono text-xs`} rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
           placeholder="Eres el asistente virtual de…" />
-        <p className="text-[11px] text-muted-foreground/80 mt-1">⚠️ El prompt es la personalidad; los precios, totales y descuentos SIEMPRE los calcula el sistema (regla de dinero).</p>
+        <p className="text-[11px] text-muted-foreground/80 mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; los precios, totales y descuentos SIEMPRE los calcula el sistema (regla de dinero).</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-xs font-medium text-muted-foreground">🚚 Envíos</label><Textarea className={input} rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">↩️ Devoluciones</label><Textarea className={input} rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">🏷️ Descuentos (informativo)</label><Textarea className={input} rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">📌 Instrucciones extra</label><Textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Truck className="w-3.5 h-3.5" /> Envíos</label><Textarea className={input} rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Undo2 className="w-3.5 h-3.5" /> Devoluciones</label><Textarea className={input} rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Tag className="w-3.5 h-3.5" /> Descuentos (informativo)</label><Textarea className={input} rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Pin className="w-3.5 h-3.5" /> Instrucciones extra</label><Textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end">
         <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>

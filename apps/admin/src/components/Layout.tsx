@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
-import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut, Crown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 const SECTIONS = [
@@ -25,7 +25,7 @@ export default function Layout() {
     <div className="min-h-screen flex bg-background">
       <aside className="w-60 shrink-0 bg-card border-r flex flex-col">
         <div className="px-5 py-4 border-b border-border">
-          <div className="font-bold text-foreground">👑 BotPanel</div>
+          <div className="font-bold text-foreground flex items-center gap-2"><Crown className="w-4 h-4 text-primary" /> BotPanel</div>
           <div className="text-xs text-muted-foreground">Superadmin</div>
         </div>
         <nav className="flex-1 p-3 space-y-1">

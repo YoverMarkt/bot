@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Bot } from 'lucide-react'
 
 type LoginResponse = { token: string; business: Business; user?: PanelUser; error?: string }
 
@@ -40,7 +41,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-muted px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="text-3xl mb-1">🤖</div>
+          <Bot className="w-8 h-8 mx-auto mb-1 text-primary" />
           <CardTitle className="text-xl">Panel de tu negocio</CardTitle>
           <CardDescription>Inicia sesión para continuar</CardDescription>
         </CardHeader>
