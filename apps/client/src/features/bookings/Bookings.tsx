@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import { Check, X, Clock } from 'lucide-react'
+import { Check, X, Clock, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -172,7 +172,7 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
       </div>
       {filtered.length === 0 ? (
         <div className="bg-card rounded-xl border p-8 text-center">
-          <div className="text-3xl mb-2">📅</div>
+          <CalendarDays className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
           <p className="text-foreground/90 font-medium">Sin citas en este rango.</p>
           <p className="text-sm text-muted-foreground mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
         </div>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
-import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon } from 'lucide-react'
+import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
@@ -110,7 +110,7 @@ export default function Reports() {
               <p className="text-xs text-muted-foreground mt-2">
                 {data.comparison.curOrders} vs {data.comparison.prevOrders} pedidos · Variación:{' '}
                 {data.comparison.pct === null
-                  ? (data.comparison.curTotal > 0 ? '🚀 sin base anterior' : 'sin datos')
+                  ? (data.comparison.curTotal > 0 ? 'sin base anterior' : 'sin datos')
                   : <span className={data.comparison.pct >= 0 ? 'text-primary font-semibold' : 'text-destructive font-semibold'}>
                       {data.comparison.pct >= 0 ? '▲ +' : '▼ '}{data.comparison.pct.toFixed(1)}%
                     </span>}
@@ -187,7 +187,7 @@ export default function Reports() {
                 <ul className="text-sm space-y-1.5">
                   {data.recurring.rows.map((r, i) => (
                     <li key={i} className="flex justify-between">
-                      <span className="text-foreground/90 truncate">{['🥇','🥈','🥉'][i] ?? `${i + 1}.`} {r.name}</span>
+                      <span className="text-foreground/90 truncate"><span className={`font-semibold ${i < 3 ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}.</span> {r.name}</span>
                       <span className="text-muted-foreground shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
                     </li>
                   ))}
@@ -199,11 +199,11 @@ export default function Reports() {
             <Card title="Clientes perdidos (escribieron sin comprar)" icon={Frown}>
               {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar." /> :
                 <>
-                  <p className="text-xs text-muted-foreground mb-2">🔁 {data.lostCustomers.returning} ya-cliente · 🆕 {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
+                  <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1 flex-wrap"><Repeat2 className="w-3.5 h-3.5" /> {data.lostCustomers.returning} ya-cliente · <Sparkles className="w-3.5 h-3.5" /> {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
                   <ul className="text-sm space-y-1">
                     {data.lostCustomers.rows.map((r, i) => (
                       <li key={i} className="flex justify-between">
-                        <span className="truncate text-foreground/90">{r.returning ? '🔁' : '🆕'} {r.name}</span>
+                        <span className="truncate text-foreground/90 flex items-center gap-1.5">{r.returning ? <Repeat2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <Sparkles className="w-3.5 h-3.5 text-muted-foreground shrink-0" />} {r.name}</span>
                         {r.reason && <span className="text-xs text-muted-foreground/80 shrink-0 ml-2">{r.reason}</span>}
                       </li>
                     ))}
@@ -215,7 +215,7 @@ export default function Reports() {
             {show('bot') && (<>
             <Card title="Preguntas más frecuentes" icon={Brain}>
               {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
-                <Bars color={INK} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: `${r.emoji} ${r.topic}`, value: r.count, text: String(r.count) }))} />}
+                <Bars color={INK} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
             </Card>
 
             <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>

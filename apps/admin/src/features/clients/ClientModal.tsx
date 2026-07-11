@@ -156,15 +156,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               <div>
                 <span className={label}>Modo de operación</span>
                 <select className={input} value={f.mode} onChange={set('mode')}>
-                  <option value="normal">🛒 Normal — venta/atención</option>
-                  <option value="citas">📅 Con citas — agenda</option>
+                  <option value="normal">Normal — venta/atención</option>
+                  <option value="citas">Con citas — agenda</option>
                 </select>
               </div>
               <div>
                 <span className={label}>Modo venta</span>
                 <select className={input} value={f.sales} onChange={set('sales')}>
-                  <option value="vende">🧾 Vende — cierra pedidos</option>
-                  <option value="informa">💬 Solo informativo</option>
+                  <option value="vende">Vende — cierra pedidos</option>
+                  <option value="informa">Solo informativo</option>
                 </select>
               </div>
               <div>

@@ -5,7 +5,7 @@ import { api, session } from '../../api/client'
 import { getAlerts } from '../reports/api'
 import { getProducts } from '../catalog/api'
 import { useBusinessInfo } from '../../lib/biz'
-import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus } from 'lucide-react'
+import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus, CircleCheck, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // ── INICIO (port fiel del dashboard BI del panel viejo):
@@ -234,7 +234,7 @@ function OnboardingCard({ d }: { d: Onboarding }) {
       </div>
       {d.steps.map((s, i) => (
         <div key={i} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0 text-sm">
-          <span>{s.done ? '✓' : '⬜'}</span>
+          {s.done ? <CircleCheck className="w-4 h-4 text-primary shrink-0" /> : <Circle className="w-4 h-4 text-muted-foreground/40 shrink-0" />}
           <span className={`flex-1 ${s.done ? 'text-muted-foreground/80 line-through' : 'text-foreground/90'}`}>
             {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
           </span>

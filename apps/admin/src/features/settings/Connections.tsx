@@ -27,7 +27,7 @@ export default function Connections() {
     catch (e) { setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
   async function stop() {
-    await cfg.stopTunnel(); setMsg('🔌 Túnel detenido')
+    await cfg.stopTunnel(); setMsg('Túnel detenido')
     qc.invalidateQueries({ queryKey: ['adm-tunnel'] })
   }
   const copy = (url: string) => navigator.clipboard.writeText(url)

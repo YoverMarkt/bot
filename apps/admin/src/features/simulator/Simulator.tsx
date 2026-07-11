@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { getClients } from '../clients/api'
-import { Trash2, MessageSquare } from 'lucide-react'
+import { Trash2, MessageSquare, Bot as BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -78,7 +78,7 @@ export default function Simulator() {
         {/* Barra del chat */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
           <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
-            {biz ? biz.name.charAt(0).toUpperCase() : '🤖'}
+            {biz ? biz.name.charAt(0).toUpperCase() : <BotIcon className="w-4 h-4" />}
           </div>
           <div>
             <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>

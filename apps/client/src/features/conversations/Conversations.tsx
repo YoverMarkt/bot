@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import * as convApi from './api'
 import { session } from '../../api/client'
-import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon } from 'lucide-react'
+import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, Check, X, Trash2 } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -135,13 +135,13 @@ export default function Conversations() {
                 {renaming ? (
                   <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
                     <Input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="w-44" placeholder="Nombre del contacto" />
-                    <Button variant="ghost">✓</Button>
-                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)}>✕</Button>
+                    <Button variant="ghost"><Check className="w-4 h-4" /></Button>
+                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)}><X className="w-4 h-4" /></Button>
                   </form>
                 ) : (
                   <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
                     className="font-semibold text-foreground truncate hover:underline">
-                    {sess.contact_name || sess.contact_phone} <span className="text-stone-300 text-xs">✏️</span>
+                    {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
                   </button>
                 )}
                 <div className="text-xs text-muted-foreground/80">
@@ -203,7 +203,7 @@ export default function Conversations() {
                     : 'bg-primary text-primary-foreground'
                   }`}>
                     {m.role === 'owner' && <div className="text-[10px] opacity-80 mb-0.5">Tú (manual)</div>}
-                    {m.role === 'assistant' && <div className="text-[10px] opacity-80 mb-0.5">🤖 Bot</div>}
+                    {m.role === 'assistant' && <div className="text-[10px] opacity-80 mb-0.5 flex items-center gap-1"><BotIcon className="w-3 h-3" /> Bot</div>}
                     {m.content}
                     <div className={`text-[10px] mt-1 ${m.role === 'user' ? 'text-muted-foreground/80' : 'opacity-70'}`}>{fmtTime(m.created_at)}</div>
                   </div>
@@ -269,7 +269,7 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
             </div>
             <div className="flex gap-1">
               <Button variant="ghost" size="sm" className="flex-1 text-xs">Guardar</Button>
-              <Button variant="outline" size="sm" type="button" onClick={() => setEditing(null)} className="text-xs">✕</Button>
+              <Button variant="outline" size="sm" type="button" onClick={() => setEditing(null)} className="text-xs"><X className="w-3.5 h-3.5" /></Button>
             </div>
           </form>
         ) : (
@@ -277,10 +277,10 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
             <Checkbox checked={selected.includes(t.id)} onCheckedChange={() => onToggle(t.id)} className="cursor-pointer" />
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
             <span className="text-foreground/90 truncate flex-1">{t.name}</span>
-            <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-xs"
-              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}>✏️</button>
-            <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-xs"
-              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}>🗑</button>
+            <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
+              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}><Pencil className="w-3.5 h-3.5" /></button>
+            <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         ))}
       </div>
