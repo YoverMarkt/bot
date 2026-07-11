@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Globe, Square, Play } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
@@ -20,15 +20,14 @@ const WH_PROVIDERS = [
 export default function Connections() {
   const qc = useQueryClient()
   const { data: tunnel } = useQuery({ queryKey: ['adm-tunnel'], queryFn: cfg.getTunnel })
-  const [msg, setMsg] = useState('')
 
   async function start() {
-    setMsg('Iniciando túnel (puede tardar ~15s)…')
-    try { await cfg.startTunnel(); setMsg(''); qc.invalidateQueries({ queryKey: ['adm-tunnel'] }) }
-    catch (e) { setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+    toast.info('Iniciando túnel (puede tardar ~15s)…')
+    try { await cfg.startTunnel(); toast.success('Túnel activo'); qc.invalidateQueries({ queryKey: ['adm-tunnel'] }) }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Error') }
   }
   async function stop() {
-    await cfg.stopTunnel(); setMsg('Túnel detenido')
+    await cfg.stopTunnel(); toast.success('Túnel detenido')
     qc.invalidateQueries({ queryKey: ['adm-tunnel'] })
   }
   const copy = (url: string) => navigator.clipboard.writeText(url)
@@ -52,7 +51,6 @@ export default function Connections() {
             ? <Button variant="outline" size="sm" onClick={stop} className="text-xs"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></Button>
             : <Button size="sm" onClick={start} className="text-xs"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></Button>}
         </div>
-        {msg && <p className="text-xs text-muted-foreground mb-2">{msg}</p>}
 
         {base && (
           <div className="mt-3 space-y-2">

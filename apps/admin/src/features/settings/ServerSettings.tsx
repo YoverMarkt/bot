@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -33,7 +34,6 @@ export default function ServerSettings() {
   const [provider, setProvider] = useState('')
   const [aiMsg, setAiMsg] = useState('')
   const [cldMsg, setCldMsg] = useState('')
-  const [saveMsg, setSaveMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
   const activeProvider = provider || saved.ai_provider || 'claude'
@@ -62,15 +62,15 @@ export default function ServerSettings() {
   }
 
   async function save() {
-    setBusy(true); setSaveMsg('Guardando…')
+    setBusy(true)
     const payload: Record<string, string> = { ai_provider: activeProvider }
     for (const [k, v] of Object.entries(f)) if (v.trim()) payload[k] = v.trim()
     try {
       await cfg.saveServerSettings(payload)
-      setSaveMsg('✓ Guardado correctamente')
+      toast.success('Guardado correctamente')
       setF({}) // limpiar campos: las keys quedan enmascaradas del server
       qc.invalidateQueries({ queryKey: ['adm-settings'] })
-    } catch (e) { setSaveMsg(`✗ ${e instanceof Error ? e.message : 'Error al guardar'}`) }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Error al guardar') }
     setBusy(false)
   }
 
@@ -141,7 +141,6 @@ export default function ServerSettings() {
           >
           Guardar configuración
         </Button>
-        <span className="text-sm text-foreground/80">{saveMsg}</span>
       </div>
 
     </div>

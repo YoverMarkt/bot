@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { useAttention, AlarmBanner } from './AlarmSystem'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 
 // Secciones del panel (mismas reglas del panel viejo):
 // · `perm` controla visibilidad para empleados (el dueño ve todo; el SERVIDOR valida siempre)
@@ -115,6 +116,9 @@ export default function Layout() {
 
       {/* Alarma global (chats manuales sin atender + reservas pendientes) */}
       <AlarmBanner manual={att.manual} pending={att.pending} bookings={att.bookings} />
+
+      {/* Notificaciones de la librería (Sonner) */}
+      <Toaster position="bottom-right" />
     </div>
   )
 }

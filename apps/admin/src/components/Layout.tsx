@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calc
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { Button } from '@/components/ui/button'
+import { Toaster } from '@/components/ui/sonner'
 
 const SECTIONS = [
   { to: '/',            label: 'Dashboard',     icon: LayoutDashboard },
@@ -64,6 +65,9 @@ export default function Layout() {
       <main className="flex-1 min-w-0 p-6 flex flex-col">
         <Outlet />
       </main>
+
+      {/* Notificaciones de la librería (Sonner) */}
+      <Toaster position="bottom-right" />
     </div>
   )
 }

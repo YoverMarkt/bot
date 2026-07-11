@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Ban } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -29,7 +30,6 @@ export default function Schedule() {
   })
   const [draft, setDraft] = useState<ScheduleDay[] | null>(null)
   const [duration, setDuration] = useState<number | null>(null)
-  const [msg, setMsg] = useState('')
 
   const days: ScheduleDay[] = draft ?? ORDER.map(d =>
     saved.find(s => s.day_of_week === d) ??
@@ -42,8 +42,8 @@ export default function Schedule() {
   const dur = duration ?? saved.find(d => d.slot_duration)?.slot_duration ?? 60
   const mSave = useMutation({
     mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days: days.map(d => ({ ...d, slot_duration: dur })) }) }),
-    onSuccess: () => { setMsg('✓ Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error al guardar'}`),
+    onSuccess: () => { toast.success('Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   })
 
   if (isLoading) return <p className="text-muted-foreground">Cargando horario…</p>
@@ -93,7 +93,6 @@ export default function Schedule() {
             {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
           </Button>
         </div>
-        {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
       </Card>
     </div>
   )

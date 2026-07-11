@@ -11,6 +11,7 @@ import { api } from '../api/client'
 import { Bell, BellOff, Check, Hand, CalendarPlus } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
+import { toast as sonnerToast } from 'sonner'
 import { Button } from '@/components/ui/button'
 
 type Booking = {
@@ -46,7 +47,6 @@ export function AlarmBanner({ manual, pending, bookings }: {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [ringing, setRinging] = useState(false)
-  const [toast, setToast] = useState('')
   const silencedUntil = useRef(0)
   const startedAt = useRef(0)
   const beepTimer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -122,8 +122,8 @@ export function AlarmBanner({ manual, pending, bookings }: {
 
   function test() {
     snd.testAlarmSound(
-      () => { setToast('Sonando… (se detiene en 3s)'); setTimeout(() => setToast(''), 3200) },
-      (m) => { setToast(`Atención: Audio bloqueado por el navegador: ${m}`); setTimeout(() => setToast(''), 4000) },
+      () => sonnerToast.info('Sonando… (se detiene en 3s)'),
+      (m) => sonnerToast.warning(`Audio bloqueado por el navegador: ${m}`),
     )
   }
 
@@ -147,12 +147,8 @@ export function AlarmBanner({ manual, pending, bookings }: {
           <Button variant="outline" size="sm" onClick={silence} className="text-xs"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</Button>
         </div>
       )}
-      {toast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-foreground text-background text-sm rounded-xl px-4 py-2.5 shadow-xl">{toast}</div>
-      )}
       {/* Botón discreto para probar el sonido (desbloquea el audio del navegador) */}
-      <Button variant="outline" onClick={test} title="Probar sonido de alarma" className="w-9 h-9"
-        style={{ display: toast ? 'none' : undefined }}><Bell className="w-4 h-4 mx-auto" /></Button>
+      <Button variant="outline" onClick={test} title="Probar sonido de alarma" className="w-9 h-9"><Bell className="w-4 h-4 mx-auto" /></Button>
     </>
   )
 }

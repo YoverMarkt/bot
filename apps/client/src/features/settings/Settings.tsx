@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -46,13 +47,12 @@ export function Locked() {
 export function BusinessForm() {
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
   const [draft, setDraft] = useState<Partial<BusinessData> | null>(null)
-  const [msg, setMsg] = useState('')
   const f = draft ?? data
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/business', { method: 'PUT', body: JSON.stringify({ name: f?.name, slogan: f?.slogan, description: f?.description }) }),
-    onSuccess: () => setMsg('✓ Guardado — el bot ya usa estos datos'),
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => toast.success('Guardado — el bot ya usa estos datos'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
   if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
@@ -71,7 +71,6 @@ export function BusinessForm() {
           {mSave.isPending ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>
-      {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       <p className="text-[11px] text-muted-foreground/80 mt-3">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
     </Card>
   )
@@ -81,13 +80,12 @@ export function BusinessForm() {
 export function BotForm() {
   const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
   const [draft, setDraft] = useState<Policies | null>(null)
-  const [msg, setMsg] = useState('')
   const f = draft ?? data
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify(f) }),
-    onSuccess: () => setMsg('✓ Guardado — el bot ya responde con esto'),
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => toast.success('Guardado — el bot ya responde con esto'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
   if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
@@ -112,7 +110,6 @@ export function BotForm() {
           {mSave.isPending ? 'Guardando…' : 'Guardar bot'}
         </Button>
       </div>
-      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </Card>
   )
 }
@@ -138,14 +135,13 @@ export function Team() {
   const PERMS = permsForBiz(isBookingBiz(bizInfo?.type))
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
-  const [msg, setMsg] = useState('')
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['team'] })
 
   const mCreate = useMutation({
     mutationFn: () => api('/api/client/users', { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); setMsg('✓ Empleado creado'); refresh() },
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => { setForm({ email: '', password: '', name: '', permissions: [] }); toast.success('Empleado creado'); refresh() },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
   const mDelete = useMutation({ mutationFn: (id: string) => api(`/api/client/users/${id}`, { method: 'DELETE' }), onSettled: refresh })
   const mPerms = useMutation({
@@ -211,7 +207,6 @@ export function Team() {
           <Button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending} className="w-full">
             {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
           </Button>
-          {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
         </div>
       </Card>
     </div>
