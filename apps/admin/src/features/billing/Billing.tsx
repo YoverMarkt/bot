@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
@@ -27,10 +29,10 @@ const isFuture = (b: BillingRow) => {
 }
 
 function StatusPill({ b }: { b: BillingRow }) {
-  if (isFuture(b)) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-muted-foreground">Próximo</span>
-  if (b.status === 'paid') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Pagado</span>
-  if (b.status === 'overdue') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Vencido</span>
-  return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400">Pendiente</span>
+  if (isFuture(b)) return <Badge variant="secondary">Próximo</Badge>
+  if (b.status === 'paid') return <Badge variant="secondary" className="bg-green-500/10 text-primary">Pagado</Badge>
+  if (b.status === 'overdue') return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Vencido</Badge>
+  return <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400">Pendiente</Badge>
 }
 
 export default function Billing() {
@@ -100,37 +102,37 @@ export default function Billing() {
 
       {isLoading ? <p className="text-muted-foreground">Cargando facturación…</p> : (
         <Card className="py-0 gap-0 overflow-x-auto flex-1">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Mes</th>
-                <th className="px-4 py-3">Monto</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Mes</TableHead>
+                <TableHead>Monto</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acción</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {!pageData.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Sin registros para los filtros aplicados</td></tr>
+                <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Sin registros para los filtros aplicados</TableCell></TableRow>
               )}
               {pageData.map(b => (
-                <tr key={b.id} className={`border-b border-border/60 hover:bg-muted/40 ${isFuture(b) ? 'opacity-45' : ''}`}>
-                  <td className="px-4 py-3 font-medium text-foreground">{b.businesses?.name || '—'}</td>
-                  <td className="px-4 py-3 text-foreground/80 capitalize text-xs">{mesLabel(b.period_start)}</td>
-                  <td className="px-4 py-3 font-mono text-foreground/90">{money(b.amount)}</td>
-                  <td className="px-4 py-3"><StatusPill b={b} /></td>
-                  <td className="px-4 py-3 text-right">
+                <TableRow key={b.id} className={isFuture(b) ? 'opacity-45' : ''}>
+                  <TableCell className="font-medium text-foreground">{b.businesses?.name || '—'}</TableCell>
+                  <TableCell className="text-foreground/80 capitalize text-xs">{mesLabel(b.period_start)}</TableCell>
+                  <TableCell className="font-mono text-foreground/90 tabular-nums">{money(b.amount)}</TableCell>
+                  <TableCell><StatusPill b={b} /></TableCell>
+                  <TableCell className="text-right">
                     {b.status !== 'paid' && (
                       <Button size="sm" onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending} className="text-xs">
                         Marcar pagado
                       </Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </Card>
       )}
 

@@ -7,6 +7,8 @@ import { ViewModal, PromptModal } from './ClientTools'
 import { Check, Trash2, Bot as BotIcon, Plus, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -38,22 +40,22 @@ export default function Clients() {
   }
 
   function statusPill(c: BusinessRow) {
-    if (c.suspended) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Suspendido</span>
-    if (c.active) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Activo</span>
-    return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-muted-foreground">Inactivo</span>
+    if (c.suspended) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Suspendido</Badge>
+    if (c.active) return <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>
+    return <Badge variant="secondary">Inactivo</Badge>
   }
   function botPill(c: BusinessRow) {
-    if (c.suspended) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Pausado</span>
-    if (c.bot_active) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Activo</span>
-    return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-muted-foreground">Pausado</span>
+    if (c.suspended) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Pausado</Badge>
+    if (c.bot_active) return <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>
+    return <Badge variant="secondary">Pausado</Badge>
   }
   // Vencimiento con pills de días (igual que el viejo; T12:00:00 evita desfase de zona)
   function expLabel(c: BusinessRow) {
     if (!c.plan_expires_at) return <span className="text-muted-foreground/70 text-xs">—</span>
     const exp = new Date(c.plan_expires_at.split('T')[0] + 'T12:00:00')
     const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000)
-    if (daysLeft < 0) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Vencido</span>
-    if (daysLeft <= 10) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400" title={exp.toLocaleDateString('es')}>{daysLeft}d</span>
+    if (daysLeft < 0) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Vencido</Badge>
+    if (daysLeft <= 10) return <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 tabular-nums" title={exp.toLocaleDateString('es')}>{daysLeft}d</Badge>
     return <span className="text-xs text-muted-foreground">{exp.toLocaleDateString('es')}</span>
   }
 
@@ -69,32 +71,32 @@ export default function Clients() {
 
       {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : (
         <Card className="py-0 gap-0 overflow-x-auto flex-1">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                <th className="px-3 py-3">Negocio</th>
-                <th className="px-3 py-3">WhatsApp</th>
-                <th className="px-3 py-3">Plan</th>
-                <th className="px-3 py-3">Vencimiento</th>
-                <th className="px-3 py-3">Estado</th>
-                <th className="px-3 py-3">Bot</th>
-                <th className="px-3 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!filtered.length && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No hay clientes aún</td></tr>}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Negocio</TableHead>
+                <TableHead>WhatsApp</TableHead>
+                <TableHead>Plan</TableHead>
+                <TableHead>Vencimiento</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Bot</TableHead>
+                <TableHead>Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!filtered.length && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">No hay clientes aún</TableCell></TableRow>}
               {filtered.map(c => (
-                <tr key={c.id} className="border-b border-border/60 hover:bg-muted/40">
-                  <td className="px-3 py-3">
+                <TableRow key={c.id}>
+                  <TableCell>
                     <div className="font-medium text-foreground">{c.name}</div>
                     <div className="text-xs text-muted-foreground">{c.type || '—'}</div>
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-foreground/80">{c.whatsapp_number || '—'}</td>
-                  <td className="px-3 py-3"><span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-foreground/80 capitalize">{c.plan || 'basic'}</span></td>
-                  <td className="px-3 py-3">{expLabel(c)}</td>
-                  <td className="px-3 py-3">{statusPill(c)}</td>
-                  <td className="px-3 py-3">{botPill(c)}</td>
-                  <td className="px-3 py-3">
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-foreground/80">{c.whatsapp_number || '—'}</TableCell>
+                  <TableCell><Badge variant="secondary" className="capitalize">{c.plan || 'basic'}</Badge></TableCell>
+                  <TableCell>{expLabel(c)}</TableCell>
+                  <TableCell>{statusPill(c)}</TableCell>
+                  <TableCell>{botPill(c)}</TableCell>
+                  <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => quickVerify(c)} title="Verificar conexión del proveedor" className="text-xs"><Check className="w-3.5 h-3.5" /></Button>
                       <Button variant="outline" size="sm" onClick={() => setViewing(c)} className="text-xs"><span className="inline-flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Ver</span></Button>
@@ -106,11 +108,11 @@ export default function Clients() {
                       <Button variant="outline" size="sm" onClick={() => del(c)} title="Eliminar cliente" className="text-xs"><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                     {vfy[c.id] && <div className="text-[11px] text-muted-foreground mt-1 max-w-72">{vfy[c.id]}</div>}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </Card>
       )}
       {editing && (

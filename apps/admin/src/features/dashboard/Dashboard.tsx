@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getStats, getClients } from '../clients/api'
 import { Users, CircleCheck, CirclePause, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 
 export default function Dashboard() {
   const { data, isLoading, error } = useQuery({ queryKey: ['adm-stats'], queryFn: getStats, refetchInterval: 30_000 })
@@ -50,10 +51,10 @@ export default function Dashboard() {
                 <div className="text-xs text-muted-foreground">{c.type || ''} · {c.whatsapp_number || 'sin número'}</div>
               </div>
               {c.suspended
-                ? <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Suspendido</span>
+                ? <Badge variant="secondary" className="bg-destructive/10 text-destructive">Suspendido</Badge>
                 : !c.bot_active
-                  ? <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400">Pausado</span>
-                  : <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Activo</span>}
+                  ? <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400">Pausado</Badge>
+                  : <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>}
             </div>
           ))}
         </CardContent>
