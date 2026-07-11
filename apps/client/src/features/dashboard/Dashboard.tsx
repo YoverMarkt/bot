@@ -168,7 +168,7 @@ export default function Dashboard() {
         </Card>
         <Card title="Productos más vendidos" icon={Trophy}>
           {data.top.length === 0 ? <p className="text-sm text-muted-foreground">Sin ventas en el período.</p> :
-            <Bars color={INK} rows={data.top.map(t => ({ label: t.name, value: t.qty, text: `${t.qty} uds` }))} />}
+            <Bars color={C1} rows={data.top.map(t => ({ label: t.name, value: t.qty, text: `${t.qty} uds` }))} />}
         </Card>
         <Card title="Clientes por estado" icon={Users}>
           <Donut center="clientes" segs={[
@@ -266,27 +266,34 @@ function Card({ title, icon: Icon, children, full }: { title: string; icon?: Rea
   )
 }
 
-// ── Gráfico de línea (SVG puro — skill graficos-dashboard) ──
+// ── Gráfico de línea (SVG puro — skill graficos-dashboard, estilo shadcn) ──
 function LineChart({ rows }: { rows: { label: string; total: number }[] }) {
   if (!rows.length) return <p className="text-sm text-muted-foreground">Sin datos aún.</p>
-  const W = 700, H = 160, PAD = 8
+  // Márgenes: arriba para la etiqueta de valor, a los lados para que las fechas de los bordes no se corten
+  const W = 700, H = 170, PX = 28, PT = 26, PB = 10
   const max = Math.max(...rows.map(r => r.total), 0.01)
-  const x = (i: number) => PAD + (i * (W - 2 * PAD)) / Math.max(rows.length - 1, 1)
-  const y = (v: number) => H - PAD - (v / max) * (H - 2 * PAD)
+  const x = (i: number) => PX + (i * (W - 2 * PX)) / Math.max(rows.length - 1, 1)
+  const y = (v: number) => H - PB - (v / max) * (H - PT - PB)
   const path = rows.map((r, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(r.total).toFixed(1)}`).join(' ')
   return (
     <div className="overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H + 22}`} className="w-full min-w-[480px]">
-        <path d={path} fill="none" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
+        {/* Rejilla horizontal sutil (recesiva, como las cards de shadcn/ui) */}
+        {[0.25, 0.5, 0.75, 1].map(f => (
+          <line key={f} x1={PX} x2={W - PX} y1={y(max * f)} y2={y(max * f)} stroke="var(--border)" strokeWidth="1" strokeDasharray="3 3" />
+        ))}
+        <line x1={PX} x2={W - PX} y1={y(0)} y2={y(0)} stroke="var(--border)" strokeWidth="1" />
+        <path d={path} fill="none" stroke={C1} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         {rows.map((r, i) => (
           <g key={i}>
-            <circle cx={x(i)} cy={y(r.total)} r="3.5" fill={INK}>
+            {/* Punto con anillo del fondo (spec de marcas: separar marcas superpuestas) */}
+            <circle cx={x(i)} cy={y(r.total)} r="4" fill={C1} stroke="var(--card)" strokeWidth="2">
               <title>{r.label}: {money(r.total)}</title>
             </circle>
             {r.total > 0 && (
-              <text x={x(i)} y={y(r.total) - 8} textAnchor="middle" fontSize="10" fill="var(--muted-foreground)">{money(r.total)}</text>
+              <text x={x(i)} y={y(r.total) - 9} textAnchor="middle" fontSize="10" fontWeight="600" fill="var(--muted-foreground)">{money(r.total)}</text>
             )}
-            <text x={x(i)} y={H + 14} textAnchor="middle" fontSize="10" fill="var(--muted-foreground)">{r.label}</text>
+            <text x={x(i)} y={H + 14} textAnchor={i === 0 ? 'start' : i === rows.length - 1 ? 'end' : 'middle'} fontSize="10" fill="var(--muted-foreground)">{r.label}</text>
           </g>
         ))}
       </svg>

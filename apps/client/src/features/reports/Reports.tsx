@@ -6,9 +6,8 @@ import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snai
 import { Button } from '@/components/ui/button'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
-// serie única = tinta INK; c1 azul para comparación/vendedores; c2 aqua SIEMPRE
+// serie única = c1 azul de la paleta (concepto shadcn); c2 aqua SIEMPRE
 // con valor directo (regla de relieve). Estados reservados para stock/alertas.
-const INK = 'var(--foreground)'
 const C1 = 'var(--chart-1)'
 const C2 = 'var(--chart-2)'
 
@@ -137,7 +136,7 @@ export default function Reports() {
             {show('productos') && (<>
             <Card title="Productos más vendidos" icon={Trophy}>
               {data.top.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
-                <Bars color={INK} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
+                <Bars color={C1} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
             </Card>
             </>)}
             {/* Más consultados (c2 → regla de relieve: valor directo SIEMPRE) */}
@@ -215,7 +214,7 @@ export default function Reports() {
             {show('bot') && (<>
             <Card title="Preguntas más frecuentes" icon={Brain}>
               {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
-                <Bars color={INK} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
+                <Bars color={C1} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
             </Card>
 
             <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>
