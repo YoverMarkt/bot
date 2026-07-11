@@ -52,7 +52,7 @@ export default function Clients() {
     const exp = new Date(c.plan_expires_at.split('T')[0] + 'T12:00:00')
     const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000)
     if (daysLeft < 0) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Vencido</span>
-    if (daysLeft <= 10) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-400" title={exp.toLocaleDateString('es')}>{daysLeft}d</span>
+    if (daysLeft <= 10) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400" title={exp.toLocaleDateString('es')}>{daysLeft}d</span>
     return <span className="text-xs text-muted-foreground">{exp.toLocaleDateString('es')}</span>
   }
 

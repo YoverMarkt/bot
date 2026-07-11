@@ -43,7 +43,7 @@ export default function Dashboard() {
             {c.suspended
               ? <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Suspendido</span>
               : !c.bot_active
-                ? <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-400">Pausado</span>
+                ? <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400">Pausado</span>
                 : <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Activo</span>}
           </div>
         ))}

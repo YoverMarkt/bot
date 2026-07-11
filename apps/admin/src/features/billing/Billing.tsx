@@ -29,7 +29,7 @@ function StatusPill({ b }: { b: BillingRow }) {
   if (isFuture(b)) return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-stone-500/10 text-muted-foreground">Próximo</span>
   if (b.status === 'paid') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-green-500/10 text-primary">Pagado</span>
   if (b.status === 'overdue') return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-destructive/10 text-destructive">Vencido</span>
-  return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-400">Pendiente</span>
+  return <span className="text-[11px] font-semibold rounded px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400">Pendiente</span>
 }
 
 export default function Billing() {

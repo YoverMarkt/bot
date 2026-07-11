@@ -22,10 +22,10 @@ type Booking = {
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
-  pending:   { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700' },
+  pending:   { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
   confirmed: { label: 'Confirmada', cls: 'bg-primary/10 text-primary' },
   cancelled: { label: 'Cancelada',  cls: 'bg-muted text-muted-foreground' },
-  no_show:   { label: 'No asistió', cls: 'bg-red-50 text-destructive' },
+  no_show:   { label: 'No asistió', cls: 'bg-red-50 text-destructive dark:bg-red-500/10' },
 }
 
 export default function Bookings() {
@@ -53,7 +53,7 @@ export default function Bookings() {
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
+          <h1 className="text-2xl font-bold text-foreground">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
           <p className="text-sm text-muted-foreground">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
         </div>
         <div className="flex gap-1 bg-card border rounded-lg p-1">
@@ -117,7 +117,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
                   isToday ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-input'}`}>
                 <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
                 {dayBk.length > 0 && (
-                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary' : 'bg-amber-100 text-amber-800'}`}>
+                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary dark:bg-green-500/15' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'}`}>
                     {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
                   </div>
                 )}

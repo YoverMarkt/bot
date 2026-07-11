@@ -12,10 +12,10 @@ const C1 = 'var(--chart-1)'
 const C2 = 'var(--chart-2)'
 
 const ALERT_STYLE: Record<Alert['level'], string> = {
-  critical: 'bg-red-50 border-red-200 text-red-800',
-  warning:  'bg-amber-50 border-amber-200 text-amber-800',
-  good:     'bg-primary/10 border-green-200 text-primary',
-  info:     'bg-blue-50 border-blue-200 text-blue-800',
+  critical: 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300',
+  warning:  'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300',
+  good:     'bg-primary/10 border-green-200 text-primary dark:border-green-500/30',
+  info:     'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-300',
 }
 
 // El server manda las alertas con emoji en `icon`; aquí se traduce a Lucide (línea shadcn)
@@ -67,7 +67,7 @@ export default function Reports() {
 
       {/* Atajo a reactivar (igual que el viejo) */}
       <div className="mb-4">
-        <Link to="/reactivate" className="inline-block rounded-lg border border-border bg-white text-sm text-foreground/90 px-3 py-1.5 hover:bg-muted/50">
+        <Link to="/reactivate" className="inline-block rounded-lg border border-border bg-card text-sm text-foreground/90 px-3 py-1.5 hover:bg-muted/50">
           <span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" /> Clientes sin escribir (reactivar)</span>
         </Link>
       </div>
@@ -90,7 +90,7 @@ export default function Reports() {
       <div className="mb-4 flex flex-wrap gap-2">
         {CATS.map(([v, l]) => (
           <Button variant="ghost" key={v} onClick={() => setCat(v)}
-            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-border text-muted-foreground hover:bg-muted/50'}`}>
+            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-muted-foreground hover:bg-muted/50'}`}>
             {l}
           </Button>
         ))}
