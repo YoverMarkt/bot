@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 
 const { money, cents } = salesApi
 
@@ -80,7 +81,7 @@ function BotOrders() {
               <span className="text-xs text-muted-foreground/80 ml-2">{o.contact_phone}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`text-[11px] font-semibold rounded px-2 py-0.5 uppercase ${ORDER_BADGE[o.status]}`}>{o.status}</span>
+              <Badge variant="secondary" className={`uppercase ${ORDER_BADGE[o.status]}`}>{o.status}</Badge>
               <span className="text-xs text-muted-foreground/80">{fmtDate(o.created_at)}</span>
             </div>
           </div>

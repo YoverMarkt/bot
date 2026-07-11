@@ -4,6 +4,7 @@ import { api } from '../../api/client'
 import { Check, X, Clock, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
@@ -199,7 +200,7 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
           {b.service || 'Servicio no indicado'}{b.duration_minutes ? ` · ${b.duration_minutes} min` : ''} · {b.contact_phone}
         </div>
       </div>
-      <span className={`text-[11px] font-semibold rounded px-2 py-0.5 shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</span>
+      <Badge variant="secondary" className={`shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</Badge>
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
           <Button size="sm" onClick={() => onStatus(b.id, 'confirmed')} className="text-xs"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></Button>

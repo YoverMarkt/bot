@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 
 const money = (n: string | number | null) => {
   const v = Number(n)
@@ -98,7 +99,7 @@ export default function Catalog() {
                     {p.price_sale && Number(p.price_sale) > 0 && Number(p.price) > 0 &&
                       <span className="text-xs text-muted-foreground/80 line-through ml-1.5">{money(p.price)}</span>}
                   </div>
-                  <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</span>
+                  <Badge variant="secondary" className={`text-[10px] px-1.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</Badge>
                 </div>
                 <div className="flex gap-2 mt-3">
                   <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1 text-xs"><span className="inline-flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editar</span></Button>

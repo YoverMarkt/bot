@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const { money } = custApi
 
@@ -54,32 +56,32 @@ function Directory() {
       ) : (
         <>
           <Card className="py-0 gap-0 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground border-b border-border/60">
-                  <th className="px-3 py-2">Cliente</th>
-                  <th className="px-3 py-2">Teléfono</th>
-                  <th className="px-3 py-2">Última compra</th>
-                  <th className="px-3 py-2">Total gastado</th>
-                  <th className="px-3 py-2">Compras</th>
-                  <th className="px-3 py-2">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Última compra</TableHead>
+                  <TableHead>Total gastado</TableHead>
+                  <TableHead>Compras</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map(c => (
-                  <tr key={c.phone} className="border-b border-border/40 hover:bg-muted/50">
-                    <td className="px-3 py-2 font-semibold text-foreground">{c.name}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{c.phone}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{fecha(c.lastPurchase)} <span className="text-muted-foreground/80">({c.daysSince}d)</span></td>
-                    <td className="px-3 py-2 font-mono">{money(c.total)}</td>
-                    <td className="px-3 py-2">{c.orders}</td>
-                    <td className="px-3 py-2">
-                      <span className={`text-[11px] font-semibold rounded px-2 py-0.5 ${STATUS_BADGE[c.status].cls}`}>{STATUS_BADGE[c.status].label}</span>
-                    </td>
-                  </tr>
+                  <TableRow key={c.phone}>
+                    <TableCell className="font-semibold text-foreground">{c.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.phone}</TableCell>
+                    <TableCell className="text-muted-foreground">{fecha(c.lastPurchase)} <span className="text-muted-foreground/80">({c.daysSince}d)</span></TableCell>
+                    <TableCell className="font-mono tabular-nums">{money(c.total)}</TableCell>
+                    <TableCell className="tabular-nums">{c.orders}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={STATUS_BADGE[c.status].cls}>{STATUS_BADGE[c.status].label}</Badge>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </Card>
           <p className="text-xs text-muted-foreground/80 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
         </>
@@ -123,30 +125,32 @@ export function Reactivate() {
           <>
             <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · "Cliente" ya te compró · "Solo consultó" aún no.</p>
             <Card className="py-0 gap-0 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b-2 border-border/60">
-                    <th className="px-3 py-2">Cliente</th>
-                    <th className="px-3 py-2">Teléfono</th>
-                    <th className="px-3 py-2">Sin escribir</th>
-                    <th className="px-3 py-2">Qué preguntó</th>
-                    <th className="px-3 py-2">Estado</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Teléfono</TableHead>
+                    <TableHead>Sin escribir</TableHead>
+                    <TableHead>Qué preguntó</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map(r => (
-                    <tr key={r.phone} className="border-b border-border/40 hover:bg-muted/50">
-                      <td className="px-3 py-2 font-semibold text-foreground">{r.name}</td>
-                      <td className="px-3 py-2 font-mono text-muted-foreground">{r.phone}</td>
-                      <td className="px-3 py-2">{r.daysSince} días</td>
-                      <td className="px-3 py-2 text-muted-foreground max-w-72 truncate">{r.lastMessage || '—'}</td>
-                      <td className="px-3 py-2">{r.hasPurchased ? <span className="inline-flex items-center gap-1"><Repeat2 className="w-3.5 h-3.5" />Cliente</span> : <span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" />Solo consultó</span>}</td>
-                      <td className="px-3 py-2 text-right font-mono">{Number(r.total) > 0 ? money(r.total) : '—'}</td>
-                    </tr>
+                    <TableRow key={r.phone}>
+                      <TableCell className="font-semibold text-foreground">{r.name}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{r.phone}</TableCell>
+                      <TableCell className="tabular-nums">{r.daysSince} días</TableCell>
+                      <TableCell className="text-muted-foreground max-w-72 truncate">{r.lastMessage || '—'}</TableCell>
+                      <TableCell>{r.hasPurchased
+                        ? <Badge variant="outline" className="gap-1"><Repeat2 className="w-3 h-3" /> Cliente</Badge>
+                        : <Badge variant="secondary" className="gap-1"><Sparkles className="w-3 h-3" /> Solo consultó</Badge>}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{Number(r.total) > 0 ? money(r.total) : '—'}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </Card>
           </>
         )}
