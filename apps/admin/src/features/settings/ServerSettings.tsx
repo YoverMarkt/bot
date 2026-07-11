@@ -4,6 +4,7 @@ import * as cfg from './api'
 import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Configuración del servidor — paridad con el panel viejo:
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
@@ -84,13 +85,16 @@ export default function ServerSettings() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className={label}>Proveedor</span>
-            <select className={input} value={activeProvider} onChange={e => setProvider(e.target.value)}>
-              <option value="groq">Groq (Llama) — rápido y barato</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="gemini">Gemini</option>
-              <option value="claude">Claude</option>
-              <option value="openai">OpenAI</option>
-            </select>
+            <Select value={activeProvider} onValueChange={setProvider}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="groq">Groq (Llama) — rápido y barato</SelectItem>
+                <SelectItem value="deepseek">DeepSeek</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="openai">OpenAI</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <span className={label}>{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</span>

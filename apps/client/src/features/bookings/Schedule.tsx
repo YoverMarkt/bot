@@ -5,6 +5,7 @@ import { Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // ── Horario de atención — para TODOS los negocios (igual que el panel
 // viejo): fuera de horario el bot responde la lista UNA vez y calla.
@@ -58,14 +59,16 @@ export default function Schedule() {
         {/* Duración de cada cita (select del viejo) */}
         <div className="mb-4">
           <label className="text-xs font-medium text-muted-foreground block mb-1">Duración de cada cita</label>
-          <select value={dur} onChange={e => { setDuration(parseInt(e.target.value)); if (!draft) setDraft(days) }}
-            className="rounded-lg border border-input px-3 py-2 text-sm max-w-56 focus:outline-none focus:ring-2 focus:ring-ring">
-            <option value={30}>30 minutos</option>
-            <option value={45}>45 minutos</option>
-            <option value={60}>1 hora</option>
-            <option value={90}>1 hora 30 min</option>
-            <option value={120}>2 horas</option>
-          </select>
+          <Select value={String(dur)} onValueChange={v => { setDuration(parseInt(v)); if (!draft) setDraft(days) }}>
+            <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30">30 minutos</SelectItem>
+              <SelectItem value="45">45 minutos</SelectItem>
+              <SelectItem value="60">1 hora</SelectItem>
+              <SelectItem value="90">1 hora 30 min</SelectItem>
+              <SelectItem value="120">2 horas</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         {days.map(d => (
           <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">

@@ -5,6 +5,7 @@ import { Repeat2, Sparkles, Download } from 'lucide-react'
 import type { Customer } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const { money } = custApi
 
@@ -105,10 +106,12 @@ export function Reactivate() {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap justify-end">
-        <select value={days} onChange={e => setDays(parseInt(e.target.value))}
-          className="rounded-lg border border-input px-3 py-2 text-sm max-w-36 focus:outline-none focus:ring-2 focus:ring-ring">
-          {[7, 15, 30, 60].map(d => <option key={d} value={d}>+{d} días</option>)}
-        </select>
+        <Select value={String(days)} onValueChange={v => setDays(parseInt(v))}>
+          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {[7, 15, 30, 60].map(d => <SelectItem key={d} value={String(d)}>+{d} días</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Button onClick={exportExcel} disabled={!rows.length}>
           <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Exportar Excel/CSV</span>
         </Button>

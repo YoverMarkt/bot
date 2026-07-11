@@ -6,12 +6,12 @@ import { getClients } from '../clients/api'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
 
 const PER_PAGE = 12   // BILLING_PER_PAGE del viejo
-const input = 'rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
 const money = (v: number | string) =>
   '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -75,17 +75,24 @@ export default function Billing() {
           <p className="text-sm text-muted-foreground">Historial de pagos y cobros pendientes</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <select className={input} value={fClient} onChange={e => { setFClient(e.target.value); setPage(1) }}>
-            <option value="">Todos los clientes</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select className={input} value={fStatus} onChange={e => { setFStatus(e.target.value); setPage(1) }}>
-            <option value="">Todos</option>
-            <option value="pending">Pendiente</option>
-            <option value="overdue">Vencido</option>
-            <option value="paid">Pagado</option>
-            <option value="future">Próximo</option>
-          </select>
+          {/* Radix no permite value="" en un item → centinela 'all' ↔ '' (Todos) */}
+          <Select value={fClient || 'all'} onValueChange={v => { setFClient(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los clientes</SelectItem>
+              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={fStatus || 'all'} onValueChange={v => { setFStatus(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="pending">Pendiente</SelectItem>
+              <SelectItem value="overdue">Vencido</SelectItem>
+              <SelectItem value="paid">Pagado</SelectItem>
+              <SelectItem value="future">Próximo</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={() => setShowNew(true)}><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></Button>
         </div>
       </div>
@@ -192,20 +199,25 @@ function NewCharge({ clients, onClose, onSaved }: {
         <div className="space-y-3">
           <div>
             <span className={lbl}>Cliente *</span>
-            <select className={inp} value={f.business_id} onChange={e => setF({ ...f, business_id: e.target.value })}>
-              <option value="">Selecciona…</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <Select value={f.business_id} onValueChange={v => setF({ ...f, business_id: v })}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
+              <SelectContent>
+                {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><span className={lbl}>Monto ($) *</span><Input className={inp} type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
             <div>
               <span className={lbl}>Estado</span>
-              <select className={inp} value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
-                <option value="pending">Pendiente</option>
-                <option value="paid">Pagado</option>
-                <option value="overdue">Vencido</option>
-              </select>
+              <Select value={f.status} onValueChange={v => setF({ ...f, status: v })}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pendiente</SelectItem>
+                  <SelectItem value="paid">Pagado</SelectItem>
+                  <SelectItem value="overdue">Vencido</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div><span className={lbl}>Inicio del período</span><Input className={inp} type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
             <div><span className={lbl}>Fin del período</span><Input className={inp} type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>

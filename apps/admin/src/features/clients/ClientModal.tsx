@@ -4,6 +4,7 @@ import type { BusinessPayload } from './api'
 import { RadioTower, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
@@ -57,6 +58,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   }, [id])
 
   const CALENDAR_TYPES = ['barbería', 'peluquería', 'salón', 'spa', 'clínica', 'consultorio', 'odontología', 'psicología', 'gym', 'entrenamiento', 'restaurante', 'masajes', 'estetica', 'estética']
+
+  // Versión para los Select de Radix (entregan el valor directo, no un evento)
+  const setVal = (k: keyof typeof EMPTY) => (value: string) => setF(prev => ({ ...prev, [k]: value }))
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const value = e.target.value
@@ -155,28 +159,38 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div>
                 <span className={label}>Modo de operación</span>
-                <select className={input} value={f.mode} onChange={set('mode')}>
-                  <option value="normal">Normal — venta/atención</option>
-                  <option value="citas">Con citas — agenda</option>
-                </select>
+                <Select value={f.mode} onValueChange={setVal('mode')}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Normal — venta/atención</SelectItem>
+                    <SelectItem value="citas">Con citas — agenda</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <span className={label}>Modo venta</span>
-                <select className={input} value={f.sales} onChange={set('sales')}>
-                  <option value="vende">Vende — cierra pedidos</option>
-                  <option value="informa">Solo informativo</option>
-                </select>
+                <Select value={f.sales} onValueChange={setVal('sales')}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vende">Vende — cierra pedidos</SelectItem>
+                    <SelectItem value="informa">Solo informativo</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <span className={label}>IA de este negocio</span>
-                <select className={input} value={f.ai_provider} onChange={set('ai_provider')}>
-                  <option value="">Global del servidor</option>
-                  <option value="groq">Groq (Llama)</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="claude">Claude</option>
-                  <option value="openai">OpenAI</option>
-                </select>
+                {/* Radix no permite value="" en un item → centinela 'global' ↔ '' */}
+                <Select value={f.ai_provider || 'global'} onValueChange={v => setVal('ai_provider')(v === 'global' ? '' : v)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Global del servidor</SelectItem>
+                    <SelectItem value="groq">Groq (Llama)</SelectItem>
+                    <SelectItem value="deepseek">DeepSeek</SelectItem>
+                    <SelectItem value="gemini">Gemini</SelectItem>
+                    <SelectItem value="claude">Claude</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -184,12 +198,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             <div className="rounded-xl border p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="inline-flex items-center gap-1.5"><RadioTower className="w-4 h-4" /> Canal de WhatsApp</span>
-                <select className={`${input} !w-44`} value={f.whatsapp_provider} onChange={set('whatsapp_provider')}>
-                  <option value="ycloud">YCloud</option>
-                  <option value="meta">Meta (oficial)</option>
-                  <option value="kapso">Kapso</option>
-                  <option value="telegram">Solo Telegram</option>
-                </select>
+                <Select value={f.whatsapp_provider} onValueChange={setVal('whatsapp_provider')}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ycloud">YCloud</SelectItem>
+                    <SelectItem value="meta">Meta (oficial)</SelectItem>
+                    <SelectItem value="kapso">Kapso</SelectItem>
+                    <SelectItem value="telegram">Solo Telegram</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {f.whatsapp_provider === 'ycloud' && (
                 <div><span className={label}>YCloud API Key</span><Input className={input} type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} /></div>
@@ -224,11 +241,14 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div>
                 <span className={label}>Plan</span>
-                <select className={input} value={f.plan} onChange={set('plan')}>
-                  <option value="basic">Básico</option>
-                  <option value="pro">Pro</option>
-                  <option value="premium">Premium</option>
-                </select>
+                <Select value={f.plan} onValueChange={setVal('plan')}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">Básico</SelectItem>
+                    <SelectItem value="pro">Pro</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div><span className={label}>Tarifa mensual ($)</span><Input className={input} type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
               <div><span className={label}>Plan vence</span><Input className={input} type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
