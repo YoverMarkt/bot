@@ -2,14 +2,20 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
-import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info } from 'lucide-react'
+import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card as UICard, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Separator } from '@/components/ui/separator'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts'
 
-// Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
-// Barras horizontales = Progress de la librería (valor directo SIEMPRE,
-// regla de relieve). Estados reservados para stock/alertas.
+// Reportes premium con la librería (misma información REAL del servidor):
+// Tabs para el período, pills con variantes, stat-tiles con icono, charts
+// oficiales (comparación y FAQ), Progress para magnitudes y Badges para
+// conteos/estados. Estados (rojo/ámbar) reservados para stock, como siempre.
 
 const ALERT_STYLE: Record<Alert['level'], string> = {
   critical: 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300',
@@ -55,21 +61,18 @@ export default function Reports() {
           <h1 className="text-2xl font-bold text-foreground">Reportes de ventas</h1>
           <p className="text-sm text-muted-foreground">Tus métricas de negocio. También puedes pedirlas por WhatsApp.</p>
         </div>
-        <div className="flex gap-1 bg-card border rounded-lg p-1">
-          {PERIODS.map(([v, l]) => (
-            <Button variant="ghost" key={v} onClick={() => setPeriod(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${period === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
-              {l}
-            </Button>
-          ))}
-        </div>
+        <Tabs value={period} onValueChange={setPeriod}>
+          <TabsList>
+            {PERIODS.map(([v, l]) => <TabsTrigger key={v} value={v}>{l}</TabsTrigger>)}
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Atajo a reactivar (igual que el viejo) */}
       <div className="mb-4">
-        <Link to="/reactivate" className="inline-block rounded-lg border border-border bg-card text-sm text-foreground/90 px-3 py-1.5 hover:bg-muted/50">
-          <span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" /> Clientes sin escribir (reactivar)</span>
-        </Link>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/reactivate"><span className="inline-flex items-center gap-1.5"><Users className="w-4 h-4" /> Clientes sin escribir (reactivar)</span></Link>
+        </Button>
       </div>
 
       {/* Banner de alertas */}
@@ -87,11 +90,10 @@ export default function Reports() {
       )}
 
       {/* Filtro por categoría (mismas del panel viejo) */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {CATS.map(([v, l]) => (
-          <Button variant="ghost" key={v} onClick={() => setCat(v)}
-            className={`rounded-lg text-xs font-medium px-3 py-1.5 border ${cat === v ? 'bg-primary border-primary text-primary-foreground' : 'bg-card border-border text-muted-foreground hover:bg-muted/50'}`}>
-            {l}
+      <div className="mb-5 flex flex-wrap gap-2">
+        {CATS.map(([v, l, Icon]) => (
+          <Button key={v} size="sm" variant={cat === v ? 'default' : 'outline'} onClick={() => setCat(v)} className="rounded-full">
+            <span className="inline-flex items-center gap-1.5">{Icon && <Icon className="w-3.5 h-3.5" />}{l}</span>
           </Button>
         ))}
       </div>
@@ -101,24 +103,23 @@ export default function Reports() {
       {data && (
         <>
           {/* Resumen del período */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
-            <Stat label="Total vendido" value={money(data.summary.total)} />
-            <Stat label="Pedidos" value={String(data.summary.orders)} />
-            <Stat label="Ítems" value={String(data.summary.items)} />
-            <Stat label="Ticket promedio" value={money(data.summary.avg)} />
-            <Stat label="Nuevos" value={String(data.summary.nuevos)} />
-            <Stat label="Recurrentes" value={String(data.summary.recurrentes)} />
-            <Stat label="Conversión" value={data.summary.conversion === null ? '—' : `${Math.round(data.summary.conversion)}%`} />
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            <Stat icon={DollarSign} label="Total vendido" value={money(data.summary.total)} />
+            <Stat icon={ShoppingCart} label="Pedidos" value={String(data.summary.orders)} />
+            <Stat icon={Package} label="Ítems" value={String(data.summary.items)} />
+            <Stat icon={Receipt} label="Ticket promedio" value={money(data.summary.avg)} />
+            <Stat icon={Sparkles} label="Nuevos" value={String(data.summary.nuevos)} />
+            <Stat icon={Repeat2} label="Recurrentes" value={String(data.summary.recurrentes)} />
+            <Stat icon={TrendingUp} label="Conversión" value={data.summary.conversion === null ? '—' : `${Math.round(data.summary.conversion)}%`} />
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* Comparación */}
+          <Separator className="my-5" />
+
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {/* Comparación — BarChart oficial de la librería */}
             {show('ventas') && (<>
             <Card title="Comparación con período anterior" icon={BarChart3}>
-              <Bars rows={[
-                { label: data.comparison.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
-                { label: 'Anterior', value: Number(data.comparison.prevTotal) || 0, text: money(data.comparison.prevTotal) },
-              ]} />
+              <ComparisonChart label={data.comparison.label} cur={Number(data.comparison.curTotal) || 0} prev={Number(data.comparison.prevTotal) || 0} />
               <p className="text-xs text-muted-foreground mt-2">
                 {data.comparison.curOrders} vs {data.comparison.prevOrders} pedidos · Variación:{' '}
                 {data.comparison.pct === null
@@ -138,9 +139,9 @@ export default function Reports() {
             </>)}
             {/* Pendientes */}
             {show('ventas') && (<>
-            <Card title={`Pedidos sin cerrar${data.pending.count ? ` (${data.pending.count})` : ''}`} icon={ClipboardList}>
+            <Card title="Pedidos sin cerrar" icon={ClipboardList} badge={data.pending.count || undefined}>
               {data.pending.rows.length === 0 ? <Empty msg="No hay cotizaciones sin cerrar." /> :
-                <ul className="text-sm space-y-1">
+                <ul className="text-sm space-y-1.5">
                   {data.pending.rows.map((r, i) => <li key={i} className="truncate text-foreground/90">{r.name}{r.last_message ? <span className="text-muted-foreground/80"> — “{r.last_message.slice(0, 40)}”</span> : null}</li>)}
                 </ul>}
             </Card>
@@ -152,7 +153,7 @@ export default function Reports() {
                 <Bars rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
             </Card>
             </>)}
-            {/* Más consultados (c2 → regla de relieve: valor directo SIEMPRE) */}
+            {/* Más consultados */}
             {show('productos') && (<>
             <Card title="Más consultados" icon={Search}>
               {data.mostConsulted.rows.length === 0 ? <Empty msg="Sin consultas registradas." /> :
@@ -163,8 +164,13 @@ export default function Reports() {
             {show('productos') && (<>
             <Card title="Productos abandonados (consultados sin vender)" icon={ShoppingCart}>
               {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado." /> :
-                <ul className="text-sm space-y-1">
-                  {data.abandoned.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.consultas} consultas</span></li>)}
+                <ul className="text-sm space-y-2">
+                  {data.abandoned.rows.map((r, i) => (
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-foreground/90">{r.name}</span>
+                      <Badge variant="secondary" className="shrink-0 tabular-nums">{r.consultas} consultas</Badge>
+                    </li>
+                  ))}
                 </ul>}
             </Card>
             </>)}
@@ -172,21 +178,28 @@ export default function Reports() {
             {show('productos') && (<>
             <Card title="Bajo movimiento (candidatos a promo)" icon={Snail}>
               {data.lowMovement.rows.length === 0 ? <Empty msg="Todos tus productos tuvieron ventas." /> :
-                <ul className="text-sm space-y-1">
-                  {data.lowMovement.rows.map((r, i) => <li key={i} className="flex justify-between"><span className="truncate text-foreground/90">{r.name}</span><span className="text-muted-foreground ml-2 shrink-0">{r.qty} uds</span></li>)}
+                <ul className="text-sm space-y-2">
+                  {data.lowMovement.rows.map((r, i) => (
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-foreground/90">{r.name}</span>
+                      <Badge variant="secondary" className="shrink-0 tabular-nums">{r.qty} uds</Badge>
+                    </li>
+                  ))}
                 </ul>}
             </Card>
             </>)}
-            {/* Stock bajo (colores de ESTADO reservados) */}
+            {/* Stock bajo (colores de ESTADO reservados; nunca color como única identidad) */}
             {show('productos') && (<>
             <Card title="Stock bajo o agotado" icon={Package}>
               {data.lowStock.rows.length === 0 ? <Empty msg="Nada agotado ni en últimas unidades." /> :
-                <ul className="text-sm space-y-1">
+                <ul className="text-sm space-y-2">
                   {data.lowStock.rows.map((r, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.stock === 'agotado' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                      <span className="truncate text-foreground/90 flex-1">{r.name}</span>
-                      <span className="text-xs text-muted-foreground">{r.stock}</span>
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-foreground/90">{r.name}</span>
+                      <Badge variant="outline" className="shrink-0 gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${r.stock === 'agotado' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                        {r.stock}
+                      </Badge>
                     </li>
                   ))}
                 </ul>}
@@ -196,11 +209,11 @@ export default function Reports() {
             {show('clientes') && (<>
             <Card title="Clientes frecuentes" icon={Handshake}>
               {data.recurring.rows.length === 0 ? <Empty msg="Aún sin clientes recurrentes." /> :
-                <ul className="text-sm space-y-1.5">
+                <ul className="text-sm space-y-2">
                   {data.recurring.rows.map((r, i) => (
-                    <li key={i} className="flex justify-between">
+                    <li key={i} className="flex items-center justify-between gap-2">
                       <span className="text-foreground/90 truncate"><span className={`font-semibold ${i < 3 ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}.</span> {r.name}</span>
-                      <span className="text-muted-foreground shrink-0 ml-2">{r.orders} compra(s) · {money(r.total)}</span>
+                      <span className="text-muted-foreground shrink-0 text-xs font-medium tabular-nums">{r.orders} compra(s) · {money(r.total)}</span>
                     </li>
                   ))}
                 </ul>}
@@ -211,29 +224,38 @@ export default function Reports() {
             <Card title="Clientes perdidos (escribieron sin comprar)" icon={Frown}>
               {data.lostCustomers.rows.length === 0 ? <Empty msg="Nadie se quedó sin comprar." /> :
                 <>
-                  <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1 flex-wrap"><Repeat2 className="w-3.5 h-3.5" /> {data.lostCustomers.returning} ya-cliente · <Sparkles className="w-3.5 h-3.5" /> {data.lostCustomers.nuevos} nuevos · {data.lostCustomers.noRespondio} sin respuesta del negocio</p>
-                  <ul className="text-sm space-y-1">
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <Badge variant="secondary" className="gap-1"><Repeat2 className="w-3 h-3" /> {data.lostCustomers.returning} ya-cliente</Badge>
+                    <Badge variant="secondary" className="gap-1"><Sparkles className="w-3 h-3" /> {data.lostCustomers.nuevos} nuevos</Badge>
+                    <Badge variant="secondary" className="tabular-nums">{data.lostCustomers.noRespondio} sin respuesta del negocio</Badge>
+                  </div>
+                  <ul className="text-sm space-y-1.5">
                     {data.lostCustomers.rows.map((r, i) => (
-                      <li key={i} className="flex justify-between">
+                      <li key={i} className="flex justify-between gap-2">
                         <span className="truncate text-foreground/90 flex items-center gap-1.5">{r.returning ? <Repeat2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <Sparkles className="w-3.5 h-3.5 text-muted-foreground shrink-0" />} {r.name}</span>
-                        {r.reason && <span className="text-xs text-muted-foreground/80 shrink-0 ml-2">{r.reason}</span>}
+                        {r.reason && <span className="text-xs text-muted-foreground/80 shrink-0">{r.reason}</span>}
                       </li>
                     ))}
                   </ul>
                 </>}
             </Card>
             </>)}
-            {/* Reporte de IA: FAQ + sin responder */}
+            {/* Reporte de IA: FAQ (BarChart oficial horizontal) + sin responder */}
             {show('bot') && (<>
             <Card title="Preguntas más frecuentes" icon={Brain}>
-              {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
-                <Bars rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
+              {data.faq.rows.filter(r => r.count > 0).length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
+                <FaqChart rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ topic: r.topic, count: r.count }))} />}
             </Card>
 
             <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>
               {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo." /> :
-                <ul className="text-sm space-y-1">
-                  {data.unanswered.rows.map((r, i) => <li key={i} className="text-foreground/90 truncate">“{r.question ?? '—'}” <span className="text-muted-foreground/80">×{r.count}</span></li>)}
+                <ul className="text-sm space-y-2">
+                  {data.unanswered.rows.map((r, i) => (
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-foreground/90 truncate">“{r.question ?? '—'}”</span>
+                      <Badge variant="secondary" className="shrink-0 tabular-nums">×{r.count}</Badge>
+                    </li>
+                  ))}
                 </ul>}
             </Card>
             </>)}
@@ -244,23 +266,30 @@ export default function Reports() {
   )
 }
 
-function Card({ title, icon: Icon, children }: { title: string; icon?: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
+function Card({ title, icon: Icon, badge, children }: { title: string; icon?: React.ComponentType<{ className?: string }>; badge?: number; children: React.ReactNode }) {
   return (
     <UICard className="gap-3">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">{Icon && <Icon className="w-4 h-4 text-muted-foreground" />}{title}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-base">
+          {Icon && <Icon className="w-4 h-4 text-muted-foreground shrink-0" />}
+          <span className="truncate">{title}</span>
+          {badge !== undefined && <Badge variant="secondary" className="ml-auto shrink-0 tabular-nums">{badge}</Badge>}
+        </CardTitle>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </UICard>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+// Stat-tile de la librería: icono + label y número grande en negrita
+function Stat({ label, value, icon: Icon }: { label: string; value: string; icon?: React.ComponentType<{ className?: string }> }) {
   return (
     <UICard className="py-3 gap-0">
       <CardContent className="px-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">{value}</div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+          {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />} {label}
+        </div>
+        <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums mt-0.5">{value}</div>
       </CardContent>
     </UICard>
   )
@@ -268,6 +297,54 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function Empty({ msg }: { msg: string }) {
   return <p className="text-sm text-muted-foreground">{msg}</p>
+}
+
+// Tooltip de dinero para los charts
+const moneyTooltip = (label: string) => (value: unknown) => (
+  <div className="flex w-full items-center justify-between gap-4">
+    <span className="text-muted-foreground">{label}</span>
+    <span className="font-mono font-medium tabular-nums text-foreground">{money(Number(value))}</span>
+  </div>
+)
+
+// ── Comparación — BarChart vertical oficial (actual azul, anterior gris) ──
+function ComparisonChart({ label, cur, prev }: { label: string; cur: number; prev: number }) {
+  const data = [
+    { name: label, total: cur, fill: 'var(--chart-1)' },
+    { name: 'Anterior', total: prev, fill: 'var(--muted-foreground)' },
+  ]
+  return (
+    <ChartContainer config={{ total: { label: 'Ventas' } }} className="aspect-auto h-48 w-full">
+      <BarChart data={data} margin={{ top: 24 }}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel formatter={moneyTooltip('Ventas')} />} />
+        <Bar dataKey="total" radius={[8, 8, 0, 0]} maxBarSize={72}>
+          <LabelList dataKey="total" position="top" offset={8} className="fill-muted-foreground" fontSize={11}
+            formatter={(v: unknown) => money(Number(v))} />
+          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        </Bar>
+      </BarChart>
+    </ChartContainer>
+  )
+}
+
+// ── FAQ — BarChart horizontal oficial (temas por cantidad de consultas) ──
+function FaqChart({ rows }: { rows: { topic: string; count: number }[] }) {
+  return (
+    <ChartContainer config={{ count: { label: 'Consultas', color: 'var(--chart-1)' } }}
+      className="aspect-auto w-full" style={{ height: Math.max(rows.length * 36 + 16, 88) }}>
+      <BarChart data={rows} layout="vertical" margin={{ left: 4, right: 28 }}>
+        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+        <XAxis type="number" hide />
+        <YAxis dataKey="topic" type="category" tickLine={false} axisLine={false} width={110} tick={{ fontSize: 11 }} />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+        <Bar dataKey="count" fill="var(--color-count)" radius={4} maxBarSize={18}>
+          <LabelList dataKey="count" position="right" className="fill-muted-foreground" fontSize={11} />
+        </Bar>
+      </BarChart>
+    </ChartContainer>
+  )
 }
 
 // Barras horizontales con el Progress de la librería: VALOR DIRECTO en texto
