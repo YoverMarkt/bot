@@ -6,6 +6,7 @@ import { api } from '../../api/client'
 import { Receipt, Lightbulb, Check, X } from 'lucide-react'
 import type { Order, SaleItem } from './api'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -63,16 +64,16 @@ function BotOrders() {
   const { data: orders = [], isLoading } = useQuery({ queryKey: ['orders'], queryFn: salesApi.getOrders, refetchInterval: 15_000 })
   if (isLoading) return <p className="text-muted-foreground">Cargando pedidos…</p>
   if (!orders.length) return (
-    <div className="bg-card rounded-xl border p-8 text-center">
+    <Card className="p-8 text-center gap-1">
       <Receipt className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
       <p className="text-foreground/90 font-medium">Aún no hay pedidos del bot.</p>
       <p className="text-sm text-muted-foreground mt-1">Cuando un cliente confirme una compra por WhatsApp, el pedido aparece aquí con su total oficial calculado por el sistema.</p>
-    </div>
+    </Card>
   )
   return (
     <div className="space-y-3">
       {orders.map(o => (
-        <div key={o.id} className="bg-card rounded-xl border p-4">
+        <Card key={o.id} className="p-4 gap-0">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <span className="font-semibold text-foreground">{o.contact_name || o.contact_phone}</span>
@@ -95,7 +96,7 @@ function BotOrders() {
             {Number(o.discount) > 0 && <span className="text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
             <span className="ml-auto font-bold text-foreground">Total: {money(o.total)}</span>
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   )
@@ -150,7 +151,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
   const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   return (
-    <div className="bg-card rounded-xl border p-5 max-w-2xl">
+    <Card className="p-5 max-w-2xl gap-0">
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div>
           <label className="text-xs font-medium text-muted-foreground">Teléfono del cliente</label>
@@ -193,7 +194,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
         </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
-    </div>
+    </Card>
   )
 }
 
@@ -224,7 +225,7 @@ function SalesByContact() {
       {searched && !isFetching && sales.length === 0 && <p className="text-muted-foreground text-sm">Sin ventas registradas para ese número.</p>}
       <div className="space-y-3">
         {sales.map(s => (
-          <div key={s.id} className={`bg-card rounded-xl border p-4 ${s.status === 'anulada' ? 'border-border opacity-60' : 'border-border'}`}>
+          <Card key={s.id} className={`p-4 gap-0 ${s.status === 'anulada' ? 'opacity-60' : ''}`}>
             <div className="flex items-center justify-between">
               <span className="font-semibold text-foreground">{money(s.total)} {s.status === 'anulada' && <span className="text-xs font-normal text-red-500 ml-2">ANULADA</span>}</span>
               <span className="text-xs text-muted-foreground/80">{fmtDate(s.sold_at)}</span>
@@ -235,7 +236,7 @@ function SalesByContact() {
             {s.status === 'completada' && (
               <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }} className="mt-2 text-xs">Anular venta</Button>
             )}
-          </div>
+          </Card>
         ))}
       </div>
     </div>

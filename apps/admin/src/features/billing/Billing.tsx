@@ -5,6 +5,7 @@ import type { BillingRow } from './api'
 import { getClients } from '../clients/api'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -98,7 +99,7 @@ export default function Billing() {
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando facturación…</p> : (
-        <div className="bg-card rounded-xl border overflow-x-auto flex-1">
+        <Card className="py-0 gap-0 overflow-x-auto flex-1">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
@@ -130,7 +131,7 @@ export default function Billing() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
       {totalPages > 1 && (

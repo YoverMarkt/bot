@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Check, X, Clock, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
@@ -98,7 +99,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
         <Button variant="outline" size="sm" onClick={next}>→</Button>
       </div>
 
-      <div className="bg-card rounded-xl border p-3 overflow-x-auto">
+      <Card className="p-3 gap-0 overflow-x-auto">
         <div className="grid grid-cols-7 gap-1 min-w-[560px]">
           {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => (
             <div key={d} className="text-center text-[11px] uppercase tracking-wide text-muted-foreground/80 py-1">{d}</div>
@@ -130,18 +131,18 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
             )
           })}
         </div>
-      </div>
+      </Card>
 
       {/* Detalle del día seleccionado */}
       {selected && dayBookings.length > 0 && (
-        <div className="bg-card rounded-xl border p-4 mt-4">
+        <Card className="p-4 mt-4 gap-0">
           <h3 className="font-semibold text-foreground mb-3">
             {selected.split('-').reverse().join('/')} — {dayBookings.length} cita(s)
           </h3>
           <div className="space-y-2">
             {dayBookings.map(b => <BookingCard key={b.id} b={b} onStatus={onStatus} />)}
           </div>
-        </div>
+        </Card>
       )}
       {selected && dayBookings.length === 0 && (
         <p className="text-sm text-muted-foreground mt-3">Sin citas el {selected.split('-').reverse().join('/')}.</p>
@@ -171,11 +172,11 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
         <Input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
       </div>
       {filtered.length === 0 ? (
-        <div className="bg-card rounded-xl border p-8 text-center">
+        <Card className="p-8 text-center gap-1">
           <CalendarDays className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
           <p className="text-foreground/90 font-medium">Sin citas en este rango.</p>
           <p className="text-sm text-muted-foreground mt-1">Cuando el bot agende una, aparece aquí para que la confirmes.</p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-3">
           {filtered.map(b => <BookingCard key={b.id} b={b} onStatus={onStatus} withDate />)}
@@ -187,7 +188,7 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
 
 function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: string, s: Booking['status']) => void; withDate?: boolean }) {
   return (
-    <div className="bg-card rounded-xl border p-4 flex items-center gap-4 flex-wrap">
+    <Card className="p-4 flex-row items-center gap-4 flex-wrap">
       <div className="text-center shrink-0 bg-muted/50 rounded-lg px-3 py-2">
         {withDate && <div className="text-xs text-muted-foreground">{b.booking_date}</div>}
         <div className="font-bold text-foreground"><Clock className="w-3.5 h-3.5 inline mr-1" />{(b.booking_time || '').slice(0, 5)}</div>
@@ -211,6 +212,6 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
           <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }} className="text-xs"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
         </div>
       )}
-    </div>
+    </Card>
   )
 }

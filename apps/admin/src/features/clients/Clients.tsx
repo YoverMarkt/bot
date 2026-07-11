@@ -6,6 +6,7 @@ import ClientModal from './ClientModal'
 import { ViewModal, PromptModal } from './ClientTools'
 import { Check, Trash2, Bot as BotIcon, Plus, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -67,7 +68,7 @@ export default function Clients() {
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : (
-        <div className="bg-card rounded-xl border overflow-x-auto flex-1">
+        <Card className="py-0 gap-0 overflow-x-auto flex-1">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
@@ -110,7 +111,7 @@ export default function Clients() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
       {editing && (
         <ClientModal

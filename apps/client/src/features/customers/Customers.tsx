@@ -4,6 +4,7 @@ import * as custApi from './api'
 import { Repeat2, Sparkles, Download } from 'lucide-react'
 import type { Customer } from './api'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -52,7 +53,7 @@ function Directory() {
         <p className="text-sm text-muted-foreground">Ningún cliente coincide con la búsqueda.</p>
       ) : (
         <>
-          <div className="bg-card rounded-xl border overflow-x-auto">
+          <Card className="py-0 gap-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground border-b border-border/60">
@@ -79,7 +80,7 @@ function Directory() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
           <p className="text-xs text-muted-foreground/80 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
         </>
       )}
@@ -121,7 +122,7 @@ export function Reactivate() {
         rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">Nadie sin escribir en ese rango. ¡Todos al día!</p> : (
           <>
             <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · "Cliente" ya te compró · "Solo consultó" aún no.</p>
-            <div className="bg-card rounded-xl border overflow-x-auto">
+            <Card className="py-0 gap-0 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b-2 border-border/60">
@@ -146,7 +147,7 @@ export function Reactivate() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </Card>
           </>
         )}
     </div>

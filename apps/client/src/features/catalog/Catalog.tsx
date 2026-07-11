@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -81,7 +82,7 @@ export default function Catalog() {
       {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(p => (
-            <div key={p.id} className="bg-card rounded-xl border overflow-hidden flex flex-col">
+            <Card key={p.id} className="py-0 gap-0 overflow-hidden">
               <div className="h-36 bg-muted flex items-center justify-center overflow-hidden relative">
                 {p.image_url
                   ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
@@ -104,7 +105,7 @@ export default function Catalog() {
                   <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }} className="text-xs"><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
           {filtered.length === 0 && <p className="text-sm text-muted-foreground col-span-full">No hay productos{search ? ' que coincidan con la búsqueda' : ' aún — agrega el primero'}.</p>}
         </div>
