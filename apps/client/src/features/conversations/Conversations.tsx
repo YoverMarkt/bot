@@ -88,7 +88,7 @@ export default function Conversations() {
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-primary/100 animate-pulse" title="Actualizando en tiempo real" />
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Actualizando en tiempo real" />
             <Button variant="ghost" size="sm" onClick={refresh} className="text-xs" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
           </span>
         </div>

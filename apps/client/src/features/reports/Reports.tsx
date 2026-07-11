@@ -17,11 +17,13 @@ import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, LabelList } from 'rec
 // oficiales (comparación y FAQ), Progress para magnitudes y Badges para
 // conteos/estados. Estados (rojo/ámbar) reservados para stock, como siempre.
 
+// Paleta de la librería: crítico/negativo = destructive, positivo = verde
+// (estados semáforo), informativo = acento de marca (primary)
 const ALERT_STYLE: Record<Alert['level'], string> = {
-  critical: 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300',
-  warning:  'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300',
-  good:     'bg-primary/10 border-green-200 text-primary dark:border-green-500/30',
-  info:     'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-300',
+  critical: 'bg-destructive/10 border-destructive/30 text-destructive',
+  warning:  'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300',
+  good:     'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-300',
+  info:     'bg-primary/10 border-primary/30 text-primary',
 }
 
 // El server manda las alertas con emoji en `icon`; aquí se traduce a Lucide (línea shadcn)
@@ -80,8 +82,9 @@ export default function Reports() {
         <div className="mb-5 flex flex-wrap gap-2">
           {alertsData.alerts.map((a, i) => {
             const Icon = ALERT_ICON[a.icon] ?? ALERT_ICON_FALLBACK[a.level] ?? Info
+            const style = a.icon === '📉' ? ALERT_STYLE.critical : ALERT_STYLE[a.level]
             return (
-              <span key={i} className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 inline-flex items-center gap-1.5 ${ALERT_STYLE[a.level]}`}>
+              <span key={i} className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 inline-flex items-center gap-1.5 ${style}`}>
                 <Icon className="w-3.5 h-3.5 shrink-0" /> {a.text}
               </span>
             )
@@ -126,7 +129,7 @@ export default function Reports() {
                 {data.comparison.curOrders} vs {data.comparison.prevOrders} pedidos · Variación:{' '}
                 {data.comparison.pct === null
                   ? (data.comparison.curTotal > 0 ? 'sin base anterior' : 'sin datos')
-                  : <span className={data.comparison.pct >= 0 ? 'text-primary font-semibold' : 'text-destructive font-semibold'}>
+                  : <span className={data.comparison.pct >= 0 ? 'text-green-600 dark:text-green-400 font-semibold' : 'text-destructive font-semibold'}>
                       {data.comparison.pct >= 0 ? '▲ +' : '▼ '}{data.comparison.pct.toFixed(1)}%
                     </span>}
               </p>

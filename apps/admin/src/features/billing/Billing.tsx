@@ -30,7 +30,7 @@ const isFuture = (b: BillingRow) => {
 
 function StatusPill({ b }: { b: BillingRow }) {
   if (isFuture(b)) return <Badge variant="secondary">Próximo</Badge>
-  if (b.status === 'paid') return <Badge variant="secondary" className="bg-green-500/10 text-primary">Pagado</Badge>
+  if (b.status === 'paid') return <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400">Pagado</Badge>
   if (b.status === 'overdue') return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Vencido</Badge>
   return <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400">Pendiente</Badge>
 }
