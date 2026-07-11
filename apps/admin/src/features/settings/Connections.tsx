@@ -34,7 +34,7 @@ export default function Connections() {
   const base = tunnel?.active && tunnel.url ? tunnel.url.replace(/\/$/, '') : null
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <h1 className="text-2xl font-bold text-foreground mb-1">Conexiones</h1>
       <p className="text-sm text-muted-foreground mb-6">Túnel público y URLs de webhooks para cada proveedor.</p>
 

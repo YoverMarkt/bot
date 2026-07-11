@@ -74,7 +74,7 @@ export default function ServerSettings() {
 
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <h1 className="text-2xl font-bold text-foreground mb-1">Configuración del servidor</h1>
       <p className="text-sm text-muted-foreground mb-6">Keys globales de IA, Cloudinary y conexiones. Las keys guardadas se muestran enmascaradas.</p>
 
