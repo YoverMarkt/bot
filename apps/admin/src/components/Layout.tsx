@@ -66,8 +66,8 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Notificaciones de la librería (Sonner) */}
-      <Toaster position="bottom-right" />
+      {/* Notificaciones de la librería (Sonner) — expand: apiladas sin taparse */}
+      <Toaster position="bottom-right" expand />
     </div>
   )
 }

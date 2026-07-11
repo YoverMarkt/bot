@@ -338,24 +338,28 @@ function ComparisonChart({ label, cur, prev }: { label: string; cur: number; pre
   )
 }
 
-// ── Dona — PieChart oficial de la librería, con total al centro y leyenda al lado ──
+// ── Dona — patrón oficial "Donut with Text" de la librería:
+// centrada, texto al centro, segmentos separados y leyenda de la librería
+// debajo (con el valor real al lado — nunca color como única identidad).
 function Donut({ segs, center }: { segs: { label: string; value: number; color: string }[]; center: string }) {
   const total = segs.reduce((s, x) => s + x.value, 0)
   if (!total) return <p className="text-sm text-muted-foreground">Sin datos aún.</p>
   const live = segs.filter(s => s.value > 0)
+  const config = Object.fromEntries(segs.map(s => [s.label, { label: s.label, color: s.color }]))
   return (
-    <div className="flex items-center gap-6 flex-wrap">
-      <ChartContainer config={{}} className="aspect-square h-44 shrink-0">
+    <div>
+      <ChartContainer config={config} className="mx-auto aspect-square h-52">
         <PieChart>
           <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-          <Pie data={live} dataKey="value" nameKey="label" innerRadius={48} outerRadius={70} strokeWidth={2} stroke="var(--card)">
+          <Pie data={live} dataKey="value" nameKey="label" innerRadius={58} outerRadius={82}
+            strokeWidth={4} stroke="var(--card)" paddingAngle={live.length > 1 ? 2 : 0}>
             {live.map((s, i) => <Cell key={i} fill={s.color} />)}
             <Label content={({ viewBox }) => {
               if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
                 return (
                   <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-bold">{total}</tspan>
-                    <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 18} className="fill-muted-foreground text-xs">{center}</tspan>
+                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-3xl font-bold">{total}</tspan>
+                    <tspan x={viewBox.cx} y={(viewBox.cy || 0) + 22} className="fill-muted-foreground text-xs">{center}</tspan>
                   </text>
                 )
               }
@@ -363,16 +367,16 @@ function Donut({ segs, center }: { segs: { label: string; value: number; color: 
           </Pie>
         </PieChart>
       </ChartContainer>
-      {/* Leyenda: nunca color como única identidad */}
-      <ul className="text-sm space-y-1.5">
-        {segs.map((s, i) => (
-          <li key={i} className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-            <span className="text-foreground/90">{s.label}</span>
-            <span className="text-muted-foreground font-semibold ml-1 tabular-nums">{s.value}</span>
-          </li>
+      {/* Leyenda con el formato de ChartLegendContent (swatch cuadrado) + valor real */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-xs">
+        {segs.map(s => (
+          <div key={s.label} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: s.color }} />
+            <span className="text-muted-foreground">{s.label}</span>
+            <span className="font-medium text-foreground tabular-nums">{s.value}</span>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   )
 }
