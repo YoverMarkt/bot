@@ -5,6 +5,7 @@ import * as salesApi from './api'
 import { api } from '../../api/client'
 import { Receipt, Lightbulb, Check, X } from 'lucide-react'
 import type { Order, SaleItem } from './api'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -143,10 +144,10 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       if (prefillPhone) await api(`/api/client/sessions/${encodeURIComponent(prefillPhone)}/close`, { method: 'PUT' }).catch(() => {})
     },
     onSuccess: () => {
-      setItems([]); setPhone(''); setName(''); setMsg('✓ Venta registrada — ya cuenta en tus reportes')
+      setItems([]); setPhone(''); setName(''); setMsg(''); toast.success('Venta registrada — ya cuenta en tus reportes')
       qc.invalidateQueries({ queryKey: ['orders'] })
     },
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error al registrar'}`),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al registrar'),
   })
 
   const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'

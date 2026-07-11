@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as adm from './api'
 import type { BusinessRow } from './api'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Smartphone, Bot as BotIcon, TriangleAlert } from 'lucide-react'
@@ -66,7 +67,6 @@ const BPM_TEMPLATES: Record<string, string> = {
 
 export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => void }) {
   const [prompt, setPrompt] = useState('')
-  const [msg, setMsg] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -74,12 +74,12 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
   }, [c.id])
 
   async function save() {
-    setSaving(true); setMsg('')
+    setSaving(true)
     try {
       await adm.saveClientPolicies(c.id, { bot_prompt: prompt })
-      setMsg('✓ Prompt guardado')
+      toast.success('Prompt guardado')
       setTimeout(onClose, 800)
-    } catch (e) { setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Error') }
     setSaving(false)
   }
 
@@ -99,7 +99,6 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
           placeholder="Eres el asistente virtual de…" />
         <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
         <div className="flex items-center justify-end gap-3 mt-3">
-          {msg && <span className="text-sm text-foreground/80">{msg}</span>}
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? 'Guardando…' : 'Guardar prompt'}

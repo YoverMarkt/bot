@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { Locked } from './Settings'
 import { Lightbulb, ClipboardList, Smile, Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -21,13 +22,12 @@ export default function BotPrompt() {
   const isOwner = session.user?.role === 'owner'
   const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
   const [draft, setDraft] = useState<string | null>(null)
-  const [msg, setMsg] = useState('')
   const value = draft ?? data?.bot_prompt ?? ''
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify({ bot_prompt: value }) }),
-    onSuccess: () => setMsg('✓ Prompt guardado — el bot ya responde con esto'),
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => toast.success('Prompt guardado — el bot ya responde con esto'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
   if (!isOwner) return <Locked />
@@ -63,7 +63,6 @@ export default function BotPrompt() {
             {mSave.isPending ? 'Guardando…' : 'Guardar prompt'}
           </Button>
         </div>
-        {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       </Card>
 
       {/* Políticas del bot (unidas aquí por decisión del usuario 2026-07-10) */}
@@ -75,7 +74,6 @@ export default function BotPrompt() {
 function PoliciesCard() {
   const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
   const [draft, setDraft] = useState<Policies | null>(null)
-  const [msg, setMsg] = useState('')
   const f = draft ?? data
   const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
@@ -84,8 +82,8 @@ function PoliciesCard() {
       shipping: f?.shipping ?? null, returns: f?.returns ?? null,
       discounts: f?.discounts ?? null, bot_instructions: f?.bot_instructions ?? null,
     }) }),
-    onSuccess: () => setMsg('✓ Políticas guardadas — el bot ya responde con esto'),
-    onError: (e) => setMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`),
+    onSuccess: () => toast.success('Políticas guardadas — el bot ya responde con esto'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
   if (isLoading || !f) return null
@@ -106,7 +104,6 @@ function PoliciesCard() {
           {mSave.isPending ? 'Guardando…' : 'Guardar políticas'}
         </Button>
       </div>
-      {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
     </Card>
   )
 }

@@ -4,6 +4,7 @@ import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-reac
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -31,7 +32,6 @@ export default function Catalog() {
   useEffect(() => {
     if (params.get('new') === '1') { setEditing('new'); setParams({}, { replace: true }) }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-  const [toast, setToast] = useState('')
 
   const { data: products = [], isLoading } = useQuery({ queryKey: ['products'], queryFn: catApi.getProducts })
 
@@ -45,17 +45,16 @@ export default function Catalog() {
   }, [products, search])
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['products'] })
-  const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const mDelete = useMutation({
     mutationFn: catApi.deleteProduct,
-    onSuccess: () => { refresh(); flash('Producto eliminado') },
+    onSuccess: () => { refresh(); toast.success('Producto eliminado') },
   })
 
   async function handleReindex() {
-    flash('Indexando catálogo…')
-    try { const r = await catApi.reindex(); flash(r.message || '✓ Indexación iniciada') }
-    catch { flash('✗ Error al reindexar') }
+    toast.info('Indexando catálogo…')
+    try { const r = await catApi.reindex(); toast.success(r.message || 'Indexación iniciada') }
+    catch { toast.error('Error al reindexar') }
   }
 
   return (
@@ -77,8 +76,6 @@ export default function Catalog() {
           </Button>
         </div>
       </div>
-
-      {toast && <div className="mb-4 rounded-lg bg-foreground text-background text-sm px-4 py-2 inline-block">{toast}</div>}
 
       {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -116,7 +113,7 @@ export default function Catalog() {
         <ProductModal
           product={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); refresh(); flash('✓ Producto guardado') }}
+          onSaved={() => { setEditing(null); refresh(); toast.success('Producto guardado') }}
         />
       )}
     </div>
