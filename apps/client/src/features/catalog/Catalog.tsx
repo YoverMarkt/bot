@@ -7,6 +7,7 @@ import type { Product, ProductPayload } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const money = (n: string | number | null) => {
   const v = Number(n)
@@ -223,11 +224,14 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
           </div>
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Stock</label>
-            <select className={input} value={f.stock} onChange={set('stock')}>
-              <option value="disponible">Disponible</option>
-              <option value="últimas unidades">Últimas unidades</option>
-              <option value="agotado">Agotado</option>
-            </select>
+            <Select value={f.stock} onValueChange={v => setF(prev => ({ ...prev, stock: v as Product['stock'] }))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disponible">Disponible</SelectItem>
+                <SelectItem value="últimas unidades">Últimas unidades</SelectItem>
+                <SelectItem value="agotado">Agotado</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="col-span-2">
             <label className="text-xs font-medium text-muted-foreground">Descripción</label>

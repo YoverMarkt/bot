@@ -5,6 +5,7 @@ import { getClients } from '../clients/api'
 import { Trash2, MessageSquare, Bot as BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
@@ -63,11 +64,12 @@ export default function Simulator() {
           <p className="text-sm text-muted-foreground">Prueba el bot de cualquier negocio sin WhatsApp real</p>
         </div>
         <div className="flex gap-2">
-          <select value={bizId} onChange={e => selectBiz(e.target.value)}
-            className="rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm min-w-56 focus:outline-none focus:ring-2 focus:ring-ring">
-            <option value="">— Elige un negocio —</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <Select value={bizId} onValueChange={selectBiz}>
+            <SelectTrigger className="min-w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
+            <SelectContent>
+              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
           {bizId && (
             <Button variant="outline" onClick={clear}><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></Button>
           )}

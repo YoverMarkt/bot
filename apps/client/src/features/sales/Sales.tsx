@@ -7,6 +7,7 @@ import { Receipt, Lightbulb, Check, X } from 'lucide-react'
 import type { Order, SaleItem } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const { money, cents } = salesApi
 
@@ -165,10 +166,12 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       </div>
 
       <label className="text-xs font-medium text-muted-foreground">Agregar producto</label>
-      <select className={`${input} w-full mb-3`} value="" onChange={e => addItem(e.target.value)}>
-        <option value="" disabled>Elige un producto del catálogo…</option>
-        {products.map(p => <option key={p.id} value={p.id}>{p.name} — {money(Number(p.price_sale) > 0 ? p.price_sale! : p.price)}</option>)}
-      </select>
+      <Select value="" onValueChange={addItem}>
+        <SelectTrigger className="w-full mb-3"><SelectValue placeholder="Elige un producto del catálogo…" /></SelectTrigger>
+        <SelectContent>
+          {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {money(Number(p.price_sale) > 0 ? p.price_sale! : p.price)}</SelectItem>)}
+        </SelectContent>
+      </Select>
 
       {items.map((it, idx) => (
         <div key={idx} className="flex items-center gap-2 mb-2 text-sm">
