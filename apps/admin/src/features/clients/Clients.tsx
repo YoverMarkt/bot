@@ -41,12 +41,12 @@ export default function Clients() {
 
   function statusPill(c: BusinessRow) {
     if (c.suspended) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Suspendido</Badge>
-    if (c.active) return <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>
+    if (c.active) return <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400">Activo</Badge>
     return <Badge variant="secondary">Inactivo</Badge>
   }
   function botPill(c: BusinessRow) {
     if (c.suspended) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Pausado</Badge>
-    if (c.bot_active) return <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>
+    if (c.bot_active) return <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400">Activo</Badge>
     return <Badge variant="secondary">Pausado</Badge>
   }
   // Vencimiento con pills de días (igual que el viejo; T12:00:00 evita desfase de zona)

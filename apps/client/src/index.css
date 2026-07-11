@@ -14,7 +14,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.627 0.194 149.214);
+  --primary: oklch(0.511 0.262 276.966);  /* indigo-600 — azul de marca (ajustar con el código exacto del logo) */
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -25,7 +25,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.627 0.194 149.214);
+  --ring: oklch(0.511 0.262 276.966);
   --chart-1: #2a78d6;   /* c1 azul */
   --chart-2: #1baf7a;   /* c2 aqua */
   --chart-3: #eda100;   /* c3 ámbar */
@@ -92,8 +92,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.723 0.219 149.579);
-  --primary-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.585 0.233 277.117);  /* indigo-500 en oscuro */
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -103,7 +103,7 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.723 0.219 149.579);
+  --ring: oklch(0.585 0.233 277.117);
   /* Misma paleta CVD-safe del proyecto, aclarada para fondo oscuro */
   --chart-1: #5b9ee8;   /* c1 azul */
   --chart-2: #27cf94;   /* c2 aqua */

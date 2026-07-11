@@ -5,6 +5,7 @@ import { Check, X, Clock, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
@@ -25,7 +26,7 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
   pending:   { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
-  confirmed: { label: 'Confirmada', cls: 'bg-primary/10 text-primary' },
+  confirmed: { label: 'Confirmada', cls: 'bg-green-500/10 text-green-700 dark:text-green-300' },
   cancelled: { label: 'Cancelada',  cls: 'bg-muted text-muted-foreground' },
   no_show:   { label: 'No asistió', cls: 'bg-red-50 text-destructive dark:bg-red-500/10' },
 }
@@ -58,14 +59,13 @@ export default function Bookings() {
           <h1 className="text-2xl font-bold text-foreground">Reservas {pending > 0 && <span className="text-sm font-semibold bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 rounded-full px-2 py-0.5 align-middle">{pending} por confirmar</span>}</h1>
           <p className="text-sm text-muted-foreground">Citas que agenda el bot. Confirmar o cancelar avisa al cliente por su canal.</p>
         </div>
-        <div className="flex gap-1 bg-card border rounded-lg p-1">
-          {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, l]) => (
-            <Button variant="ghost" key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
-              {l}
-            </Button>
-          ))}
-        </div>
+        <Tabs value={tab} onValueChange={v => setTab(v as typeof tab)}>
+          <TabsList>
+            {([['calendario', 'Calendario'], ['lista', 'Lista']] as const).map(([v, l]) => (
+              <TabsTrigger key={v} value={v}>{l}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       {isLoading ? <p className="text-muted-foreground">Cargando reservas…</p> :
         tab === 'calendario'
@@ -119,7 +119,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
                   isToday ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-input'}`}>
                 <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
                 {dayBk.length > 0 && (
-                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-primary dark:bg-green-500/15' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'}`}>
+                  <div className={`mt-1 text-[10px] font-semibold rounded px-1 py-0.5 truncate ${allConfirmed ? 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'}`}>
                     {dayBk.length} cita{dayBk.length > 1 ? 's' : ''}
                   </div>
                 )}

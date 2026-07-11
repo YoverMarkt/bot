@@ -11,13 +11,14 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const { money, cents } = salesApi
 
 const ORDER_BADGE: Record<Order['status'], string> = {
   pendiente:  'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
   confirmado: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
-  pagado:     'bg-primary/10 text-primary',
+  pagado:     'bg-green-500/10 text-green-700 dark:text-green-300',
   cancelado:  'bg-muted text-muted-foreground',
   expirado:   'bg-muted text-muted-foreground',
 }
@@ -37,14 +38,13 @@ export default function Sales() {
           <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
           <p className="text-sm text-muted-foreground">Pedidos del bot con total oficial + registro manual</p>
         </div>
-        <div className="flex gap-1 bg-card border rounded-lg p-1">
-          {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
-            <Button variant="ghost" key={v} onClick={() => setTab(v)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50'}`}>
-              {l}
-            </Button>
-          ))}
-        </div>
+        <Tabs value={tab} onValueChange={v => setTab(v as typeof tab)}>
+          <TabsList>
+            {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
+              <TabsTrigger key={v} value={v}>{l}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       {tab === 'orders' && <BotOrders />}
       {tab === 'register' && (

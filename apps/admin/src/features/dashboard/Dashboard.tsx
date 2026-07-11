@@ -54,7 +54,7 @@ export default function Dashboard() {
                 ? <Badge variant="secondary" className="bg-destructive/10 text-destructive">Suspendido</Badge>
                 : !c.bot_active
                   ? <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400">Pausado</Badge>
-                  : <Badge variant="secondary" className="bg-green-500/10 text-primary">Activo</Badge>}
+                  : <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400">Activo</Badge>}
             </div>
           ))}
         </CardContent>
