@@ -50,17 +50,15 @@ export default function BotPrompt() {
       </div>
       <div className="bg-card rounded-xl border p-5 max-w-2xl">
         <label className="text-xs font-medium text-muted-foreground">Instrucciones de personalidad y saludo</label>
-        <Textarea rows={12} value={value} onChange={e => setDraft(e.target.value)}
-          className="w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        <Textarea rows={12} value={value} onChange={e => setDraft(e.target.value)} className="w-full"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
         <div className="flex gap-2 flex-wrap mt-2">
-          <Button variant="ghost" onClick={() => setDraft(TEMPLATES.formal)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></Button>
-          <Button variant="ghost" onClick={() => setDraft(TEMPLATES.casual)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Smile className="w-3.5 h-3.5" /> Plantilla casual</span></Button>
-          <Button variant="ghost" onClick={() => setDraft(TEMPLATES.luxury)} className="text-[11px] rounded-lg border border-border px-2.5 py-1 hover:bg-muted/50"><span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Plantilla lujo</span></Button>
+          <Button variant="outline" size="sm" onClick={() => setDraft(TEMPLATES.formal)}><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></Button>
+          <Button variant="outline" size="sm" onClick={() => setDraft(TEMPLATES.casual)}><span className="inline-flex items-center gap-1"><Smile className="w-3.5 h-3.5" /> Plantilla casual</span></Button>
+          <Button variant="outline" size="sm" onClick={() => setDraft(TEMPLATES.luxury)}><span className="inline-flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Plantilla lujo</span></Button>
         </div>
         <div className="flex justify-end mt-3">
-          <Button variant="ghost" onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}
-            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button onClick={() => mSave.mutate()} disabled={draft === null || mSave.isPending}>
             {mSave.isPending ? 'Guardando…' : 'Guardar prompt'}
           </Button>
         </div>
@@ -103,8 +101,7 @@ function PoliciesCard() {
         <div><label className="text-xs font-medium text-muted-foreground">Instrucciones especiales para el bot</label><Textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end mt-3">
-        <Button variant="ghost" onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
           {mSave.isPending ? 'Guardando…' : 'Guardar políticas'}
         </Button>
       </div>

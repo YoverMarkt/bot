@@ -55,7 +55,7 @@ export default function Login() {
                 placeholder="••••••••" autoComplete="current-password" />
             </div>
             {error && <p className="text-sm text-destructive">✗ {error}</p>}
-            <Button type="submit" disabled={loading} className="w-full">
+            <Button variant="ghost" type="submit" disabled={loading} className="w-full">
               {loading ? 'Entrando…' : 'Entrar'}
             </Button>
           </form>

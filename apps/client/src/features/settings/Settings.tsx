@@ -66,8 +66,7 @@ export function BusinessForm() {
         <div><label className="text-xs font-medium text-muted-foreground">Descripción corta</label><Textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
       </div>
       <div className="flex justify-end mt-4">
-        <Button variant="ghost" onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
           {mSave.isPending ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>
@@ -108,8 +107,7 @@ export function BotForm() {
         <div><label className="text-xs font-medium text-muted-foreground">📌 Instrucciones extra</label><Textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end">
-        <Button variant="ghost" onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
           {mSave.isPending ? 'Guardando…' : 'Guardar bot'}
         </Button>
       </div>
@@ -172,8 +170,7 @@ export function Team() {
                   <div className="text-xs text-muted-foreground/80">{u.email}</div>
                 </div>
                 {u.role !== 'owner' && (
-                  <Button variant="ghost" onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }}
-                    className="text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Eliminar</Button>
+                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }} className="text-xs">Eliminar</Button>
                 )}
               </div>
               {u.role !== 'owner' && (
@@ -210,8 +207,7 @@ export function Team() {
               ))}
             </div>
           </div>
-          <Button variant="ghost" onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending}
-            className="w-full rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold py-2 text-sm">
+          <Button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending} className="w-full">
             {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
           </Button>
           {msg && <p className="text-sm text-muted-foreground">{msg}</p>}

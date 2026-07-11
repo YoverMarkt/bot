@@ -87,7 +87,7 @@ export default function Conversations() {
           <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-primary/100 animate-pulse" title="Actualizando en tiempo real" />
-            <Button variant="ghost" onClick={refresh} className="text-xs text-muted-foreground hover:text-foreground" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
+            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -134,10 +134,9 @@ export default function Conversations() {
               <div className="min-w-0">
                 {renaming ? (
                   <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
-                    <Input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-                      className="rounded border border-input px-2 py-1 text-sm w-44" placeholder="Nombre del contacto" />
-                    <Button variant="ghost" className="text-sm text-primary font-semibold px-1">✓</Button>
-                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)} className="text-sm text-muted-foreground/80 px-1">✕</Button>
+                    <Input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="w-44" placeholder="Nombre del contacto" />
+                    <Button variant="ghost">✓</Button>
+                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)}>✕</Button>
                   </form>
                 ) : (
                   <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
@@ -153,15 +152,14 @@ export default function Conversations() {
               <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
                 {/* Venta realizada (abre el modal de venta, como el viejo) */}
                 {canVentas && (
-                  <Button variant="ghost" onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-green-300 text-primary hover:bg-primary/10">
+                  <Button size="sm" onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}>
                     <span className="inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Venta realizada</span>
                   </Button>
                 )}
 
                 {/* Etiquetas */}
                 <div className="relative">
-                  <Button variant="ghost" onClick={() => setTagsOpen(v => !v)} className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></Button>
+                  <Button variant="outline" size="sm" onClick={() => setTagsOpen(v => !v)}><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></Button>
                   {tagsOpen && (
                     <TagPicker
                       tags={tags} selected={sess.tags ?? []}
@@ -179,18 +177,15 @@ export default function Conversations() {
                 </div>
 
                 {/* Nombre */}
-                <Button variant="ghost" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}
-                  className="text-sm rounded-lg border border-border px-3 py-1.5 hover:bg-muted/50"><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
+                <Button variant="outline" size="sm" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
-                  <Button variant="ghost" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-border hover:bg-muted/50">
+                  <Button variant="outline" size="sm" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}>
                     <span className="inline-flex items-center gap-1.5"><BotIcon className="w-4 h-4" /> Activar bot</span>
                   </Button>
                 ) : (
-                  <Button variant="ghost" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}
-                    className="text-sm rounded-lg px-3 py-1.5 font-medium border border-destructive/30 text-destructive hover:bg-destructive/10">
+                  <Button variant="outline" size="sm" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}>
                     <span className="inline-flex items-center gap-1.5"><Hand className="w-4 h-4" /> Tomar control</span>
                   </Button>
                 )}
@@ -222,11 +217,9 @@ export default function Conversations() {
             <form onSubmit={e => { e.preventDefault(); send() }} className="p-3 border-t border-border/60 flex gap-2">
               <Input
                 value={draft} onChange={e => setDraft(e.target.value)}
-                placeholder="Escribe como dueño del negocio..." 
-                className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Escribe como dueño del negocio..." className="flex-1"
               />
-              <Button variant="ghost" disabled={!draft.trim() || mSend.isPending}
-                className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-4 text-sm">
+              <Button disabled={!draft.trim() || mSend.isPending}>
                 Enviar
               </Button>
             </form>
@@ -259,15 +252,14 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
     <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-card rounded-xl border shadow-lg p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-semibold text-foreground">Etiquetas del chat</span>
-        <Button variant="ghost" onClick={onClose} className="text-muted-foreground/80 text-sm">✕</Button>
+        <Button variant="ghost" onClick={onClose}>✕</Button>
       </div>
       <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
         {tags.length === 0 && <p className="text-xs text-muted-foreground">Aún no tienes etiquetas — crea la primera abajo.</p>}
         {tags.map(t => editing?.id === t.id ? (
           <form key={t.id} className="rounded border border-border p-2"
             onSubmit={async e => { e.preventDefault(); await onUpdate(t.id, editName.trim() || t.name, editColor); setEditing(null) }}>
-            <Input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
-              className="w-full rounded border border-input px-2 py-1 text-sm mb-1.5" />
+            <Input autoFocus value={editName} onChange={e => setEditName(e.target.value)} className="w-full mb-1.5" />
             <div className="flex gap-1 mb-1.5 flex-wrap">
               {TAG_COLORS.map(c => (
                 <button key={c} type="button" onClick={() => setEditColor(c)}
@@ -276,8 +268,8 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
               ))}
             </div>
             <div className="flex gap-1">
-              <Button variant="ghost" className="flex-1 rounded bg-stone-800 text-white text-xs py-1">Guardar</Button>
-              <Button variant="ghost" type="button" onClick={() => setEditing(null)} className="rounded border border-border text-xs px-2">✕</Button>
+              <Button variant="ghost" size="sm" className="flex-1 text-xs">Guardar</Button>
+              <Button variant="outline" size="sm" type="button" onClick={() => setEditing(null)} className="text-xs">✕</Button>
             </div>
           </form>
         ) : (
@@ -301,8 +293,7 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
         }}
         className="border-t border-border/60 pt-2"
       >
-        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Nueva etiqueta…"
-          className="w-full rounded border border-input px-2 py-1 text-sm mb-2" />
+        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Nueva etiqueta…" className="w-full mb-2" />
         <div className="flex gap-1 mb-2 flex-wrap">
           {TAG_COLORS.map(c => (
             <button key={c} type="button" onClick={() => setColor(c)}
@@ -310,7 +301,7 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
               style={{ backgroundColor: c }} />
           ))}
         </div>
-        <Button variant="ghost" disabled={!name.trim() || saving} className="w-full rounded bg-stone-800 text-white text-sm py-1.5 disabled:opacity-50">
+        <Button variant="ghost" size="sm" disabled={!name.trim() || saving} className="w-full">
           {saving ? 'Creando…' : '+ Crear etiqueta'}
         </Button>
       </form>

@@ -64,13 +64,12 @@ export default function Catalog() {
         </div>
         <div className="flex gap-2">
           <Input
-            value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…"
-            className="rounded-lg border border-input px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-ring"
+            value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…" className="w-64"
           />
-          <Button variant="ghost" onClick={handleReindex} className="rounded-lg border border-border bg-white px-3 py-2 text-sm hover:bg-muted/50" title="Regenera la búsqueda inteligente del bot">
+          <Button variant="outline" onClick={handleReindex} title="Regenera la búsqueda inteligente del bot">
             <span className="inline-flex items-center gap-1.5"><Search className="w-4 h-4" /> Reindexar</span>
           </Button>
-          <Button variant="ghost" onClick={() => setEditing('new')} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 py-2 text-sm">
+          <Button onClick={() => setEditing('new')}>
             <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
           </Button>
         </div>
@@ -100,9 +99,8 @@ export default function Catalog() {
                   <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</span>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <Button variant="ghost" onClick={() => setEditing(p)} className="flex-1 rounded-lg border border-border py-1.5 text-xs font-medium hover:bg-muted/50">✏️ Editar</Button>
-                  <Button variant="ghost" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }}
-                    className="rounded-lg border border-destructive/30 text-destructive px-3 py-1.5 text-xs font-medium hover:bg-destructive/10">🗑️</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1 text-xs">✏️ Editar</Button>
+                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }} className="text-xs">🗑️</Button>
                 </div>
               </div>
             </div>
@@ -260,8 +258,8 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         {error && <p className="text-sm text-destructive mb-3">✗ {error}</p>}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-muted/50">Cancelar</Button>
-          <Button variant="ghost" disabled={saving || uploading} className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+          <Button disabled={saving || uploading}>
             {saving ? 'Guardando…' : uploading ? 'Espera la subida…' : 'Guardar producto'}
           </Button>
         </div>

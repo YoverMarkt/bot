@@ -43,8 +43,7 @@ function Directory() {
 
   return (
     <div>
-      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono..."
-        className="rounded-lg border border-input px-3 py-2 text-sm w-full max-w-sm mb-4 focus:outline-none focus:ring-2 focus:ring-ring" />
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono..." className="w-full max-w-sm mb-4" />
 
       {!customers.length ? (
         <p className="text-sm text-muted-foreground">Aún no hay clientes con compras registradas.</p>
@@ -110,8 +109,7 @@ export function Reactivate() {
           className="rounded-lg border border-input px-3 py-2 text-sm max-w-36 focus:outline-none focus:ring-2 focus:ring-ring">
           {[7, 15, 30, 60].map(d => <option key={d} value={d}>+{d} días</option>)}
         </select>
-        <Button variant="ghost" onClick={exportExcel} disabled={!rows.length}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-4 py-2 text-sm">
+        <Button onClick={exportExcel} disabled={!rows.length}>
           <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Exportar Excel/CSV</span>
         </Button>
       </div>
