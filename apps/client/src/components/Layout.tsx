@@ -117,8 +117,8 @@ export default function Layout() {
       {/* Alarma global (chats manuales sin atender + reservas pendientes) */}
       <AlarmBanner manual={att.manual} pending={att.pending} bookings={att.bookings} />
 
-      {/* Notificaciones de la librería (Sonner) */}
-      <Toaster position="bottom-right" />
+      {/* Notificaciones de la librería (Sonner) — expand: apiladas sin taparse */}
+      <Toaster position="bottom-right" expand />
     </div>
   )
 }
