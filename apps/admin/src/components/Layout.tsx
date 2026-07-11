@@ -52,7 +52,7 @@ export default function Layout() {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 min-w-0 p-6">
+      <main className="flex-1 min-w-0 p-6 flex flex-col">
         <Outlet />
       </main>
     </div>

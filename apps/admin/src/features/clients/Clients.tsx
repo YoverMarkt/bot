@@ -57,7 +57,7 @@ export default function Clients() {
   }
 
   return (
-    <div>
+    <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
@@ -67,7 +67,7 @@ export default function Clients() {
       </div>
 
       {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : (
-        <div className="bg-card rounded-xl border overflow-x-auto">
+        <div className="bg-card rounded-xl border overflow-x-auto flex-1">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
