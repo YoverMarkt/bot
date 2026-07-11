@@ -89,14 +89,16 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Filtro por categoría (mismas del panel viejo) */}
-      <div className="mb-5 flex flex-wrap gap-2">
-        {CATS.map(([v, l, Icon]) => (
-          <Button key={v} size="sm" variant={cat === v ? 'default' : 'outline'} onClick={() => setCat(v)} className="rounded-full">
-            <span className="inline-flex items-center gap-1.5">{Icon && <Icon className="w-3.5 h-3.5" />}{l}</span>
-          </Button>
-        ))}
-      </div>
+      {/* Categorías como pestañas de la librería (mismas del panel viejo) */}
+      <Tabs value={cat} onValueChange={v => setCat(v as Cat)} className="mb-5">
+        <TabsList>
+          {CATS.map(([v, l, Icon]) => (
+            <TabsTrigger key={v} value={v}>
+              <span className="inline-flex items-center gap-1.5">{Icon && <Icon className="w-3.5 h-3.5" />}{l}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {isLoading && <p className="text-muted-foreground">Calculando reportes…</p>}
       {error && <p className="text-destructive">✗ {(error as Error).message}</p>}
@@ -118,7 +120,7 @@ export default function Reports() {
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
             {/* Comparación — BarChart oficial de la librería */}
             {show('ventas') && (<>
-            <Card title="Comparación con período anterior" icon={BarChart3}>
+            <Card title="Comparación con período anterior" icon={BarChart3} full={cat === 'ventas'}>
               <ComparisonChart label={data.comparison.label} cur={Number(data.comparison.curTotal) || 0} prev={Number(data.comparison.prevTotal) || 0} />
               <p className="text-xs text-muted-foreground mt-2">
                 {data.comparison.curOrders} vs {data.comparison.prevOrders} pedidos · Variación:{' '}
@@ -242,7 +244,7 @@ export default function Reports() {
             </>)}
             {/* Reporte de IA: FAQ (BarChart oficial horizontal) + sin responder */}
             {show('bot') && (<>
-            <Card title="Preguntas más frecuentes" icon={Brain}>
+            <Card title="Preguntas más frecuentes" icon={Brain} full={cat === 'bot'}>
               {data.faq.rows.filter(r => r.count > 0).length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
                 <FaqChart rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ topic: r.topic, count: r.count }))} />}
             </Card>
@@ -266,9 +268,9 @@ export default function Reports() {
   )
 }
 
-function Card({ title, icon: Icon, badge, children }: { title: string; icon?: React.ComponentType<{ className?: string }>; badge?: number; children: React.ReactNode }) {
+function Card({ title, icon: Icon, badge, full, children }: { title: string; icon?: React.ComponentType<{ className?: string }>; badge?: number; full?: boolean; children: React.ReactNode }) {
   return (
-    <UICard className="gap-3">
+    <UICard className={`gap-3 ${full ? 'md:col-span-2' : ''}`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           {Icon && <Icon className="w-4 h-4 text-muted-foreground shrink-0" />}
