@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 const label = 'text-xs font-medium text-muted-foreground'
-const card = 'bg-card rounded-xl border p-5 mb-5'
+const card = 'p-5 mb-5 gap-0'
 
 const AI_FIELDS: Record<string, { key: string; label: string; ph: string }> = {
   groq:     { key: 'groq_api_key',      label: 'Groq API Key',      ph: 'gsk_…' },
@@ -80,7 +81,7 @@ export default function ServerSettings() {
       <p className="text-sm text-muted-foreground mb-6">Keys globales de IA, Cloudinary y conexiones. Las keys guardadas se muestran enmascaradas.</p>
 
       {/* IA global */}
-      <section className={card}>
+      <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><BotIcon className="w-4 h-4" /> Proveedor de IA activo (global)</h2>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -105,10 +106,10 @@ export default function ServerSettings() {
           <Button variant="outline" size="sm" onClick={verifyAI} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
         </div>
-      </section>
+      </Card>
 
       {/* Cloudinary */}
-      <section className={card}>
+      <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Cloud className="w-4 h-4" /> Cloudinary — Imágenes y videos</h2>
         <div className="grid grid-cols-3 gap-3">
           <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
@@ -122,10 +123,10 @@ export default function ServerSettings() {
           <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
         </div>
-      </section>
+      </Card>
 
       {/* Otras conexiones */}
-      <section className={card}>
+      <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
         <div className="grid grid-cols-2 gap-3">
           <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</span>
@@ -133,7 +134,7 @@ export default function ServerSettings() {
           <div><span className={label}>Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</span>
             <Input className={input} type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
         </div>
-      </section>
+      </Card>
 
       <div className="flex items-center gap-3 mb-8">
         <Button onClick={save} disabled={busy}

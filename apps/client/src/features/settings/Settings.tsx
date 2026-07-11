@@ -4,6 +4,7 @@ import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,10 +35,10 @@ export default function Settings() {
 
 export function Locked() {
   return (
-    <div className="bg-card rounded-xl border p-8 text-center">
+    <Card className="p-8 text-center gap-1">
       <Lock className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
       <p className="text-foreground/90 font-medium">Solo el dueño puede ver esta sección.</p>
-    </div>
+    </Card>
   )
 }
 
@@ -59,7 +60,7 @@ export function BusinessForm() {
     setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <div className="bg-card rounded-xl border p-5 max-w-xl">
+    <Card className="p-5 max-w-xl gap-0">
       <div className="space-y-3">
         <div><label className="text-xs font-medium text-muted-foreground">Nombre del negocio</label><Input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
         <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><Input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
@@ -72,7 +73,7 @@ export function BusinessForm() {
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
       <p className="text-[11px] text-muted-foreground/80 mt-3">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
-    </div>
+    </Card>
   )
 }
 
@@ -93,7 +94,7 @@ export function BotForm() {
   const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <div className="bg-card rounded-xl border p-5 max-w-2xl space-y-4">
+    <Card className="p-5 max-w-2xl gap-0 space-y-4">
       <div>
         <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><BotIcon className="w-3.5 h-3.5" /> Prompt del bot (su personalidad y forma de atender)</label>
         <Textarea className={`${input} font-mono text-xs`} rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
@@ -112,7 +113,7 @@ export function BotForm() {
         </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
-    </div>
+    </Card>
   )
 }
 
@@ -158,7 +159,7 @@ export function Team() {
 
   return (
     <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
-      <div className="bg-card rounded-xl border p-5">
+      <Card className="p-5 gap-0">
         <h2 className="font-semibold text-foreground mb-3">Tu equipo ({users.length})</h2>
         {users.length === 0 && <p className="text-sm text-muted-foreground">Solo tú por ahora. Crea cuentas para tus empleados con permisos limitados.</p>}
         <div className="space-y-3">
@@ -187,9 +188,9 @@ export function Team() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-card rounded-xl border p-5">
+      <Card className="p-5 gap-0">
         <h2 className="font-semibold text-foreground mb-3">+ Nuevo empleado</h2>
         <div className="space-y-3">
           <div><label className="text-xs font-medium text-muted-foreground">Nombre</label><Input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -212,7 +213,7 @@ export function Team() {
           </Button>
           {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
         </div>
-      </div>
+      </Card>
     </div>
   )
 }

@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Globe, Square, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 
 // ── Conexiones (sección propia, igual que el admin viejo):
 // túnel público + URLs de webhooks por proveedor listas para copiar.
-const card = 'bg-card rounded-xl border p-5 mb-5'
+const card = 'p-5 mb-5 gap-0'
 
 const WH_PROVIDERS = [
   { name: 'YCloud',        path: '/webhook/ycloud',         desc: 'YCloud → Webhooks → Add Endpoint', secret: true },
@@ -38,7 +39,7 @@ export default function Connections() {
       <h1 className="text-2xl font-bold text-foreground mb-1">Conexiones</h1>
       <p className="text-sm text-muted-foreground mb-6">Túnel público y URLs de webhooks para cada proveedor.</p>
 
-      <section className={card}>
+      <Card className={card}>
         <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
           <div>
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-2"><Globe className="w-4 h-4" /> Túnel público / URL del servidor</h2>
@@ -70,7 +71,7 @@ export default function Connections() {
           </div>
         )}
         <p className="text-[11px] text-muted-foreground/70 mt-3">En producción con BASE_URL configurada, la URL es fija y el túnel no se usa.</p>
-      </section>
+      </Card>
     </div>
   )
 }

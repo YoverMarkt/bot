@@ -4,6 +4,7 @@ import { api, session } from '../../api/client'
 import { Locked } from './Settings'
 import { Lightbulb, ClipboardList, Smile, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
@@ -48,7 +49,7 @@ export default function BotPrompt() {
           <span className="opacity-80">Ejemplo: <em>"Eres Sofía, asistente de Perfumes Elite. Habla con elegancia y discreción. Siempre saluda con '¡Bienvenido a Perfumes Elite!' y trata al cliente de 'usted'."</em></span>
         </div>
       </div>
-      <div className="bg-card rounded-xl border p-5 max-w-2xl">
+      <Card className="p-5 max-w-2xl gap-0">
         <label className="text-xs font-medium text-muted-foreground">Instrucciones de personalidad y saludo</label>
         <Textarea rows={12} value={value} onChange={e => setDraft(e.target.value)} className="w-full"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
@@ -63,7 +64,7 @@ export default function BotPrompt() {
           </Button>
         </div>
         {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
-      </div>
+      </Card>
 
       {/* Políticas del bot (unidas aquí por decisión del usuario 2026-07-10) */}
       <PoliciesCard />
@@ -91,7 +92,7 @@ function PoliciesCard() {
   const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <div className="bg-card rounded-xl border p-5 max-w-2xl mt-5">
+    <Card className="p-5 max-w-2xl mt-5 gap-0">
       <h2 className="font-semibold text-foreground mb-1">Políticas del bot</h2>
       <p className="text-xs text-muted-foreground mb-3">El bot responde usando esta información</p>
       <div className="space-y-3">
@@ -106,6 +107,6 @@ function PoliciesCard() {
         </Button>
       </div>
       {msg && <p className="text-sm text-muted-foreground mt-2">{msg}</p>}
-    </div>
+    </Card>
   )
 }

@@ -4,6 +4,7 @@ import { api } from '../../api/client'
 import { getClients } from '../clients/api'
 import { Trash2, MessageSquare, Bot as BotIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -76,7 +77,7 @@ export default function Simulator() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col bg-card rounded-xl border overflow-hidden">
+      <Card className="flex-1 min-h-0 py-0 gap-0 overflow-hidden">
         {/* Barra del chat */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
           <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
@@ -132,7 +133,7 @@ export default function Simulator() {
             Enviar
           </Button>
         </div>
-      </div>
+      </Card>
     </div>
   )
 }

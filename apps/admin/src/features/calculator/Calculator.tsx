@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ClipboardList, DollarSign, Target, TrendingUp, Bot as BotIcon, Camera, Mic, MessageSquare, Server } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
 // Calculadora de precios — Modelo B (TODO INCLUIDO): tú absorbes el costo
@@ -20,7 +21,7 @@ const money0 = (v: number) => '$' + v.toLocaleString('en-US', { maximumFractionD
 
 const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 const label = 'text-xs font-medium text-muted-foreground'
-const card = 'bg-card rounded-xl border p-5'
+const card = 'p-5 gap-0'
 
 export default function Calculator() {
   const [f, setF] = useState({ clients: '1000', msgs: '8', photo: '20', audio: '15', wa: '0.01', buffer: '20', fixed: '11', mult: '3', price: '' })
@@ -66,7 +67,7 @@ export default function Calculator() {
 
       <div className="grid lg:grid-cols-2 gap-5">
         {/* Entradas */}
-        <section className={card}>
+        <Card className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Datos del cliente</h2>
           <div className="grid grid-cols-2 gap-3">
             <div><span className={label}>Clientes que escriben al mes</span><Input className={input} type="number" value={f.clients} onChange={set('clients')} /></div>
@@ -99,10 +100,10 @@ export default function Calculator() {
             El colchón te cubre si el cliente conversa más de lo estimado. Gracias a la regla de eficiencia
             (una sola respuesta completa por turno) no se paga de más.
           </p>
-        </section>
+        </Card>
 
         {/* Resultado */}
-        <section className={card}>
+        <Card className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><DollarSign className="w-4 h-4" /> Tu costo real</h2>
           <div className="space-y-1.5 text-sm">
             {rows.map(r => (
@@ -125,10 +126,10 @@ export default function Calculator() {
               <div className="text-lg font-bold text-primary">{money(profit)}</div>
             </div>
           </div>
-        </section>
+        </Card>
 
         {/* Precio manual */}
-        <section className={card}>
+        <Card className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> ¿Cuánto piensas cobrar?</h2>
           <Input className={input} type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
           {myPrice > 0 ? (
@@ -145,10 +146,10 @@ export default function Calculator() {
           ) : (
             <p className="text-xs text-muted-foreground/70 mt-3">Escribe tu precio para ver el margen exacto.</p>
           )}
-        </section>
+        </Card>
 
         {/* Proyección anual */}
-        <section className={card}>
+        <Card className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Proyección anual (precio sugerido)</h2>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Costo anual</span><span className="text-foreground/90 font-mono">{money0(cTotal * 12)}</span></div>
@@ -157,7 +158,7 @@ export default function Calculator() {
             <hr className="border-border my-2" />
             <div className="flex justify-between text-xs"><span className="text-muted-foreground">Si tuvieras 10 empresas así</span><strong className="text-foreground font-mono">{money0(profit * 12 * 10)}/año</strong></div>
           </div>
-        </section>
+        </Card>
       </div>
     </div>
   )

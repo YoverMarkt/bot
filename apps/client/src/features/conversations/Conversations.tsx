@@ -6,6 +6,7 @@ import { session } from '../../api/client'
 import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, Check, X, Trash2 } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -82,7 +83,7 @@ export default function Conversations() {
   return (
     <div className="h-[calc(100vh-3rem)] flex gap-4">
       {/* Lista de conversaciones */}
-      <div className="w-80 shrink-0 bg-card rounded-xl border flex flex-col overflow-hidden">
+      <Card className="w-80 shrink-0 py-0 gap-0 overflow-hidden">
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
@@ -121,10 +122,10 @@ export default function Conversations() {
             </button>
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* Chat */}
-      <div className="flex-1 min-w-0 bg-card rounded-xl border flex flex-col overflow-hidden">
+      <Card className="flex-1 min-w-0 py-0 gap-0 overflow-hidden">
         {!sess ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground/80 text-sm">Elige una conversación para verla aquí</div>
         ) : (
@@ -227,7 +228,7 @@ export default function Conversations() {
 
           </>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

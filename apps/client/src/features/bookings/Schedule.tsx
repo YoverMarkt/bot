@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -55,7 +56,7 @@ export default function Schedule() {
         <h1 className="text-2xl font-bold text-foreground">Horarios de atención</h1>
         <p className="text-sm text-muted-foreground">Tu horario. El bot avisará a quien escriba fuera de este horario. (En modo "Con citas", además se ofrecen turnos en estas horas.)</p>
       </div>
-      <div className="bg-card rounded-xl border p-5 max-w-xl">
+      <Card className="p-5 max-w-xl gap-0">
         {/* Duración de cada cita (select del viejo) */}
         <div className="mb-4">
           <label className="text-xs font-medium text-muted-foreground block mb-1">Duración de cada cita</label>
@@ -93,7 +94,7 @@ export default function Schedule() {
           </Button>
         </div>
         {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
-      </div>
+      </Card>
     </div>
   )
 }
