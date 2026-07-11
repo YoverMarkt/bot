@@ -143,16 +143,15 @@ export function AlarmBanner({ manual, pending, bookings }: {
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>
           </div>
-          <Button variant="ghost" onClick={attend} className="rounded-lg bg-white text-red-700 font-bold text-xs px-3 py-2 inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Atender</Button>
-          <Button variant="ghost" onClick={silence} className="rounded-lg border border-white/50 text-white text-xs px-3 py-2 inline-flex items-center gap-1"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</Button>
+          <Button variant="ghost" size="sm" onClick={attend} className="text-xs"><Check className="w-3.5 h-3.5" /> Atender</Button>
+          <Button variant="outline" size="sm" onClick={silence} className="text-xs"><BellOff className="w-3.5 h-3.5" /> Silenciar 2 min</Button>
         </div>
       )}
       {toast && (
         <div className="fixed bottom-4 right-4 z-50 bg-stone-900 text-white text-sm rounded-xl px-4 py-2.5 shadow-xl">{toast}</div>
       )}
       {/* Botón discreto para probar el sonido (desbloquea el audio del navegador) */}
-      <Button variant="ghost" onClick={test} title="Probar sonido de alarma"
-        className="fixed bottom-4 right-4 z-40 rounded-full bg-card border shadow w-9 h-9 text-sm hover:bg-muted/50"
+      <Button variant="outline" onClick={test} title="Probar sonido de alarma" className="w-9 h-9"
         style={{ display: toast ? 'none' : undefined }}><Bell className="w-4 h-4 mx-auto" /></Button>
     </>
   )

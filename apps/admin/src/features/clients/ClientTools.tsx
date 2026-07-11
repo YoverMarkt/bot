@@ -49,7 +49,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
           ))}
         </div>
         <div className="flex justify-end mt-4">
-          <Button variant="ghost" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cerrar</Button>
+          <Button variant="outline" onClick={onClose}>Cerrar</Button>
         </div>
       </div>
     </div>
@@ -89,21 +89,18 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
         <p className="text-sm text-muted-foreground mb-3">{c.name}</p>
         <div className="flex gap-2 mb-2">
           {Object.keys(BPM_TEMPLATES).map(t => (
-            <Button variant="ghost" key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}
-              className="rounded-lg border border-input text-foreground/80 text-xs px-2.5 py-1 capitalize hover:bg-muted">
+            <Button variant="outline" size="sm" key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])} className="text-xs">
               Plantilla {t}
             </Button>
           ))}
         </div>
-        <Textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={14}
-          className="w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+        <Textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={14} className="w-full text-xs font-mono"
           placeholder="Eres el asistente virtual de…" />
         <p className="text-[11px] text-muted-foreground mt-1">⚠️ El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
         <div className="flex items-center justify-end gap-3 mt-3">
           {msg && <span className="text-sm text-foreground/80">{msg}</span>}
-          <Button variant="ghost" onClick={onClose} className="rounded-lg border border-input text-foreground/80 px-4 py-2 text-sm hover:bg-muted">Cancelar</Button>
-          <Button variant="ghost" onClick={save} disabled={saving}
-            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={save} disabled={saving}>
             {saving ? 'Guardando…' : 'Guardar prompt'}
           </Button>
         </div>

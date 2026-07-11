@@ -93,9 +93,9 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <Button variant="ghost" onClick={prev} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">←</Button>
+        <Button variant="outline" size="sm" onClick={prev}>←</Button>
         <span className="font-semibold text-foreground min-w-40 text-center">{MONTHS[month]} {year}</span>
-        <Button variant="ghost" onClick={next} className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm hover:bg-muted/50">→</Button>
+        <Button variant="outline" size="sm" onClick={next}>→</Button>
       </div>
 
       <div className="bg-card rounded-xl border p-3 overflow-x-auto">
@@ -201,18 +201,14 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
       <span className={`text-[11px] font-semibold rounded px-2 py-0.5 shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</span>
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
-          <Button variant="ghost" onClick={() => onStatus(b.id, 'confirmed')}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></Button>
-          <Button variant="ghost" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs font-semibold px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
+          <Button size="sm" onClick={() => onStatus(b.id, 'confirmed')} className="text-xs"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></Button>
+          <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }} className="text-xs"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
         </div>
       )}
       {b.status === 'confirmed' && (
         <div className="flex gap-2 shrink-0">
-          <Button variant="ghost" onClick={() => onStatus(b.id, 'no_show')}
-            className="rounded-lg border border-border text-muted-foreground text-xs px-3 py-1.5 hover:bg-muted/50">Marcar no asistió</Button>
-          <Button variant="ghost" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }}
-            className="rounded-lg border border-destructive/30 text-destructive text-xs px-3 py-1.5 hover:bg-destructive/10"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
+          <Button variant="outline" size="sm" onClick={() => onStatus(b.id, 'no_show')} className="text-xs">Marcar no asistió</Button>
+          <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }} className="text-xs"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
         </div>
       )}
     </div>

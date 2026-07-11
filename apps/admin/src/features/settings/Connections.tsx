@@ -48,8 +48,8 @@ export default function Connections() {
             {tunnel?.active && <div className="text-xs text-muted-foreground mt-0.5">Activo — {tunnel.provider}</div>}
           </div>
           {tunnel?.active
-            ? <Button variant="ghost" onClick={stop} className="rounded-lg border border-input text-foreground/80 text-xs px-3 py-1.5 hover:bg-muted"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></Button>
-            : <Button variant="ghost" onClick={start} className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold px-3 py-1.5"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></Button>}
+            ? <Button variant="outline" size="sm" onClick={stop} className="text-xs"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></Button>
+            : <Button size="sm" onClick={start} className="text-xs"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></Button>}
         </div>
         {msg && <p className="text-xs text-muted-foreground mb-2">{msg}</p>}
 
@@ -62,7 +62,7 @@ export default function Connections() {
                 <div key={p.name} className="flex items-center gap-2 text-xs">
                   <span className="shrink-0 w-24 text-center rounded bg-muted border border-input text-foreground/80 px-2 py-1">{p.name}</span>
                   <span className="flex-1 min-w-0 truncate font-mono text-muted-foreground" title={url}>{url}</span>
-                  <Button variant="ghost" onClick={() => copy(url)} className="shrink-0 rounded border border-input text-foreground/80 px-2 py-1 hover:bg-muted">Copiar</Button>
+                  <Button variant="outline" size="sm" onClick={() => copy(url)} className="shrink-0">Copiar</Button>
                   <span className="shrink-0 hidden lg:inline text-muted-foreground/70">{p.desc}</span>
                 </div>
               )

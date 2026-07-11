@@ -117,8 +117,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-          <Button variant="ghost" onClick={() => navigate('/catalog?new=1')}
-            className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2">
+          <Button onClick={() => navigate('/catalog?new=1')}>
             <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar producto</span>
           </Button>
         </div>
@@ -240,8 +239,7 @@ function OnboardingCard({ d }: { d: Onboarding }) {
             {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
           </span>
           {!s.done && s.page && (
-            <Button variant="ghost" onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}
-              className="rounded-lg border border-border text-xs px-2.5 py-1 hover:bg-muted/50">Configurar →</Button>
+            <Button variant="outline" size="sm" onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')} className="text-xs">Configurar →</Button>
           )}
         </div>
       ))}

@@ -69,7 +69,7 @@ export default function Simulator() {
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {bizId && (
-            <Button variant="ghost" onClick={clear} className="rounded-lg border border-destructive/40 text-destructive text-sm px-3 py-2 hover:bg-destructive/10"><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></Button>
+            <Button variant="outline" onClick={clear}><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></Button>
           )}
         </div>
       </div>
@@ -125,10 +125,8 @@ export default function Simulator() {
           <Input value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             disabled={!bizId}
-            placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'}
-            className="flex-1 rounded-lg bg-muted border border-input text-foreground px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50" />
-          <Button variant="ghost" onClick={send} disabled={!bizId || typing || !text.trim()}
-            className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 text-foreground font-semibold px-5 py-2.5 text-sm">
+            placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'} className="flex-1" />
+          <Button onClick={send} disabled={!bizId || typing || !text.trim()}>
             Enviar
           </Button>
         </div>

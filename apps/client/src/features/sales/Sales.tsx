@@ -155,7 +155,7 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
           <label className="text-xs font-medium text-muted-foreground">Teléfono del cliente</label>
           <div className="flex gap-2">
             <Input className={`${input} flex-1`} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
-            <Button variant="ghost" onClick={loadQuote} type="button" className="rounded-lg border border-border px-3 text-sm hover:bg-muted/50" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></Button>
+            <Button variant="outline" onClick={loadQuote} type="button" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></Button>
           </div>
         </div>
         <div>
@@ -178,15 +178,14 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
             className={`${input} w-16 text-center`} />
           <span className="text-muted-foreground">× {money(it.unit_price)}</span>
           <span className="w-20 text-right font-medium">{money(cents(it.quantity * it.unit_price))}</span>
-          <Button variant="ghost" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 px-1">✕</Button>
+          <Button variant="ghost" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}>✕</Button>
         </div>
       ))}
 
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/60">
         <span className="font-bold text-lg text-foreground">Total: {money(total)}</span>
-        <Button variant="ghost"
-          onClick={() => mSave.mutate()} disabled={!items.length || mSave.isPending}
-          className="rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2 text-sm">
+        <Button
+          onClick={() => mSave.mutate()} disabled={!items.length || mSave.isPending}>
           {mSave.isPending ? 'Registrando…' : '✓ Registrar venta'}
         </Button>
       </div>
@@ -215,9 +214,8 @@ function SalesByContact() {
   return (
     <div className="max-w-2xl">
       <form onSubmit={e => { e.preventDefault(); setSearched(phone.trim()) }} className="flex gap-2 mb-4">
-        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)"
-          className="flex-1 rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-        <Button variant="ghost" className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-4 text-sm">Buscar</Button>
+        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)" className="flex-1" />
+        <Button>Buscar</Button>
       </form>
       {isFetching && <p className="text-muted-foreground text-sm">Buscando…</p>}
       {searched && !isFetching && sales.length === 0 && <p className="text-muted-foreground text-sm">Sin ventas registradas para ese número.</p>}
@@ -232,8 +230,7 @@ function SalesByContact() {
               {(s.sale_items ?? s.items ?? []).map((i, idx) => <div key={idx}>{i.quantity} × {i.product_name} — {money(i.line_total)}</div>)}
             </div>
             {s.status === 'completada' && (
-              <Button variant="ghost" onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }}
-                className="mt-2 text-xs text-destructive border border-red-200 rounded px-2 py-1 hover:bg-destructive/10">Anular venta</Button>
+              <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }} className="mt-2 text-xs">Anular venta</Button>
             )}
           </div>
         ))}
