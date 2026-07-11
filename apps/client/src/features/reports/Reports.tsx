@@ -4,12 +4,12 @@ import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
 import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Card as UICard, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
-// serie única = c1 azul de la paleta (concepto shadcn); c2 aqua SIEMPRE
-// con valor directo (regla de relieve). Estados reservados para stock/alertas.
-const C1 = 'var(--chart-1)'
-const C2 = 'var(--chart-2)'
+// Barras horizontales = Progress de la librería (valor directo SIEMPRE,
+// regla de relieve). Estados reservados para stock/alertas.
 
 const ALERT_STYLE: Record<Alert['level'], string> = {
   critical: 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300',
@@ -115,7 +115,7 @@ export default function Reports() {
             {/* Comparación */}
             {show('ventas') && (<>
             <Card title="Comparación con período anterior" icon={BarChart3}>
-              <Bars color={C1} rows={[
+              <Bars rows={[
                 { label: data.comparison.label, value: Number(data.comparison.curTotal) || 0, text: money(data.comparison.curTotal) },
                 { label: 'Anterior', value: Number(data.comparison.prevTotal) || 0, text: money(data.comparison.prevTotal) },
               ]} />
@@ -133,7 +133,7 @@ export default function Reports() {
             {show('ventas') && (<>
             <Card title="Ventas por vendedor" icon={UserRound}>
               {data.bySeller.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
-                <Bars color={C1} rows={data.bySeller.rows.map(r => ({ label: r.name, value: Number(r.total) || 0, text: money(r.total) }))} />}
+                <Bars rows={data.bySeller.rows.map(r => ({ label: r.name, value: Number(r.total) || 0, text: money(r.total) }))} />}
             </Card>
             </>)}
             {/* Pendientes */}
@@ -149,14 +149,14 @@ export default function Reports() {
             {show('productos') && (<>
             <Card title="Productos más vendidos" icon={Trophy}>
               {data.top.rows.length === 0 ? <Empty msg="Sin ventas en el período." /> :
-                <Bars color={C1} rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
+                <Bars rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} />}
             </Card>
             </>)}
             {/* Más consultados (c2 → regla de relieve: valor directo SIEMPRE) */}
             {show('productos') && (<>
             <Card title="Más consultados" icon={Search}>
               {data.mostConsulted.rows.length === 0 ? <Empty msg="Sin consultas registradas." /> :
-                <Bars color={C2} rows={data.mostConsulted.rows.map(r => ({ label: r.name, value: r.count, text: `${r.count} consultas` }))} />}
+                <Bars rows={data.mostConsulted.rows.map(r => ({ label: r.name, value: r.count, text: `${r.count} consultas` }))} />}
             </Card>
             </>)}
             {/* Abandonados */}
@@ -227,7 +227,7 @@ export default function Reports() {
             {show('bot') && (<>
             <Card title="Preguntas más frecuentes" icon={Brain}>
               {data.faq.rows.length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
-                <Bars color={C1} rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
+                <Bars rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ label: r.topic, value: r.count, text: String(r.count) }))} />}
             </Card>
 
             <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>
@@ -246,19 +246,23 @@ export default function Reports() {
 
 function Card({ title, icon: Icon, children }: { title: string; icon?: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-xl border p-5">
-      <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2">{Icon && <Icon className="w-4 h-4 text-muted-foreground" />}{title}</h2>
-      {children}
-    </div>
+    <UICard className="gap-3">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">{Icon && <Icon className="w-4 h-4 text-muted-foreground" />}{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </UICard>
   )
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-card rounded-xl border px-3 py-2.5">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-lg font-bold text-foreground">{value}</div>
-    </div>
+    <UICard className="py-3 gap-0">
+      <CardContent className="px-4">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-2xl font-bold tracking-tight text-foreground tabular-nums">{value}</div>
+      </CardContent>
+    </UICard>
   )
 }
 
@@ -266,22 +270,19 @@ function Empty({ msg }: { msg: string }) {
   return <p className="text-sm text-muted-foreground">{msg}</p>
 }
 
-// Barras horizontales (skill graficos-dashboard): CSS puro, marca fina con
-// extremo redondeado anclada al inicio, VALOR DIRECTO en texto (nunca color
-// como única identidad), texto en tinta neutra, title = tooltip nativo.
-function Bars({ rows, color }: { rows: { label: string; value: number; text: string }[]; color: string }) {
+// Barras horizontales con el Progress de la librería: VALOR DIRECTO en texto
+// (nunca color como única identidad), title = tooltip nativo.
+function Bars({ rows }: { rows: { label: string; value: number; text: string }[] }) {
   const max = Math.max(...rows.map(r => r.value), 0.0001)
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {rows.map((r, i) => (
         <div key={i} title={`${r.label}: ${r.text}`}>
-          <div className="flex justify-between text-xs mb-0.5">
+          <div className="flex justify-between text-sm mb-1.5">
             <span className="text-foreground/90 truncate">{r.label}</span>
-            <span className="text-muted-foreground shrink-0 ml-2">{r.text}</span>
+            <span className="text-muted-foreground shrink-0 ml-2 font-medium tabular-nums">{r.text}</span>
           </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${Math.max((r.value / max) * 100, 2)}%`, backgroundColor: color }} />
-          </div>
+          <Progress value={Math.max((r.value / max) * 100, 2)} className="h-1.5" />
         </div>
       ))}
     </div>
