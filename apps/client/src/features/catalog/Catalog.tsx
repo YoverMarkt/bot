@@ -15,8 +15,8 @@ const money = (n: string | number | null) => {
 
 const STOCK_STYLE: Record<Product['stock'], string> = {
   'disponible': 'bg-primary/10 text-primary',
-  'últimas unidades': 'bg-amber-50 text-amber-700',
-  'agotado': 'bg-red-50 text-red-700',
+  'últimas unidades': 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  'agotado': 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
 }
 
 export default function Catalog() {
@@ -75,7 +75,7 @@ export default function Catalog() {
         </div>
       </div>
 
-      {toast && <div className="mb-4 rounded-lg bg-stone-900 text-white text-sm px-4 py-2 inline-block">{toast}</div>}
+      {toast && <div className="mb-4 rounded-lg bg-foreground text-background text-sm px-4 py-2 inline-block">{toast}</div>}
 
       {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

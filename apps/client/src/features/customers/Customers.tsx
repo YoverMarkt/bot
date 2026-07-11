@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/input'
 const { money } = custApi
 
 const STATUS_BADGE: Record<Customer['status'], { label: string; cls: string }> = {
-  nuevo:     { label: 'Nuevo',      cls: 'bg-blue-50 text-blue-700' },
+  nuevo:     { label: 'Nuevo',      cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' },
   frecuente: { label: 'Frecuente',  cls: 'bg-primary/10 text-primary' },
   activo:    { label: 'Activo',     cls: 'bg-muted text-muted-foreground' },
-  inactivo:  { label: 'Inactivo',   cls: 'bg-amber-50 text-amber-700' },
+  inactivo:  { label: 'Inactivo',   cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
 }
 
 export default function Customers() {

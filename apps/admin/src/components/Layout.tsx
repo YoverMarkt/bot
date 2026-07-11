@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
-import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut, Crown } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, Archive, LogOut, Crown, Sun, Moon } from 'lucide-react'
+import { useState } from 'react'
+import { getTheme, toggleTheme } from '../lib/theme'
 import { Button } from '@/components/ui/button'
 
 const SECTIONS = [
@@ -15,6 +17,7 @@ const SECTIONS = [
 
 export default function Layout() {
   const navigate = useNavigate()
+  const [theme, setTheme] = useState(getTheme())
 
   function logout() {
     session.clear()
@@ -47,6 +50,12 @@ export default function Layout() {
           </div>
         </nav>
         <div className="p-3 border-t border-border">
+          <Button variant="ghost" onClick={() => setTheme(toggleTheme())} className="w-full justify-start">
+            <span className="inline-flex items-center gap-2">
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+            </span>
+          </Button>
           <Button variant="ghost" onClick={logout} className="w-full justify-start">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
           </Button>

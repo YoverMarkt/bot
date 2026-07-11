@@ -106,7 +106,7 @@ export default function Conversations() {
               </div>
               <div className="flex items-center gap-1 mt-0.5">
                 {s.manual_mode
-                  ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 shrink-0"><Hand className="w-3 h-3 inline mr-0.5" />MANUAL</span>
+                  ? <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-300 rounded px-1.5 py-0.5 shrink-0"><Hand className="w-3 h-3 inline mr-0.5" />MANUAL</span>
                   : <span className="text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0"><BotIcon className="w-3 h-3 inline mr-0.5" />BOT</span>}
                 <span className="text-xs text-muted-foreground truncate">{s.last_message || ''}</span>
               </div>

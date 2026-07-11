@@ -49,10 +49,10 @@ const PAGE_ROUTE: Record<string, string> = {
 const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`   // centavos EXACTOS, siempre
 
 const ALERT_STYLE: Record<string, string> = {
-  critical: 'bg-red-50 border-red-200 text-red-800',
-  warning:  'bg-amber-50 border-amber-200 text-amber-800',
-  good:     'bg-primary/10 border-green-200 text-primary',
-  info:     'bg-blue-50 border-blue-200 text-blue-800',
+  critical: 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-300',
+  warning:  'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-300',
+  good:     'bg-primary/10 border-green-200 text-primary dark:border-green-500/30',
+  info:     'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-300',
 }
 
 // El server manda las alertas con emoji en `icon`; aquí se traduce a Lucide (línea shadcn)
@@ -237,7 +237,7 @@ export default function Dashboard() {
 function OnboardingCard({ d }: { d: Onboarding }) {
   const navigate = useNavigate()
   return (
-    <div className="bg-white rounded-xl border-2 border-green-300 p-5 mb-5">
+    <div className="bg-card rounded-xl border-2 border-green-300 dark:border-green-500/40 p-5 mb-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-foreground flex items-center gap-2"><Rocket className="w-4 h-4 text-primary" /> Configura tu bot para vender</h2>
         <strong className="text-foreground">{d.done}/{d.total}</strong>

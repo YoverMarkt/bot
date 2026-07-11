@@ -103,11 +103,12 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.723 0.219 149.579);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Misma paleta CVD-safe del proyecto, aclarada para fondo oscuro */
+  --chart-1: #5b9ee8;   /* c1 azul */
+  --chart-2: #27cf94;   /* c2 aqua */
+  --chart-3: #ffb224;   /* c3 ámbar */
+  --chart-4: #33b333;   /* c4 verde */
+  --chart-5: #e5e5e5;   /* tinta serie única (invertida) */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

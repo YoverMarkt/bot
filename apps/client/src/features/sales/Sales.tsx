@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input'
 const { money, cents } = salesApi
 
 const ORDER_BADGE: Record<Order['status'], string> = {
-  pendiente:  'bg-amber-50 text-amber-700',
-  confirmado: 'bg-blue-50 text-blue-700',
+  pendiente:  'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  confirmado: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
   pagado:     'bg-primary/10 text-primary',
   cancelado:  'bg-muted text-muted-foreground',
   expirado:   'bg-muted text-muted-foreground',
@@ -221,7 +221,7 @@ function SalesByContact() {
       {searched && !isFetching && sales.length === 0 && <p className="text-muted-foreground text-sm">Sin ventas registradas para ese número.</p>}
       <div className="space-y-3">
         {sales.map(s => (
-          <div key={s.id} className={`bg-white rounded-xl border p-4 ${s.status === 'anulada' ? 'border-border opacity-60' : 'border-border'}`}>
+          <div key={s.id} className={`bg-card rounded-xl border p-4 ${s.status === 'anulada' ? 'border-border opacity-60' : 'border-border'}`}>
             <div className="flex items-center justify-between">
               <span className="font-semibold text-foreground">{money(s.total)} {s.status === 'anulada' && <span className="text-xs font-normal text-red-500 ml-2">ANULADA</span>}</span>
               <span className="text-xs text-muted-foreground/80">{fmtDate(s.sold_at)}</span>

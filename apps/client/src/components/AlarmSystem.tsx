@@ -148,7 +148,7 @@ export function AlarmBanner({ manual, pending, bookings }: {
         </div>
       )}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-stone-900 text-white text-sm rounded-xl px-4 py-2.5 shadow-xl">{toast}</div>
+        <div className="fixed bottom-4 right-4 z-50 bg-foreground text-background text-sm rounded-xl px-4 py-2.5 shadow-xl">{toast}</div>
       )}
       {/* Botón discreto para probar el sonido (desbloquea el audio del navegador) */}
       <Button variant="outline" onClick={test} title="Probar sonido de alarma" className="w-9 h-9"

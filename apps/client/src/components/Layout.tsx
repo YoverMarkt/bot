@@ -2,7 +2,9 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { useBusinessInfo, isBookingBiz, isServiceBiz } from '../lib/biz'
-import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, Archive, LogOut } from 'lucide-react'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, Archive, LogOut, Sun, Moon } from 'lucide-react'
+import { useState } from 'react'
+import { getTheme, toggleTheme } from '../lib/theme'
 import { useAttention, AlarmBanner } from './AlarmSystem'
 import { Button } from '@/components/ui/button'
 
@@ -14,6 +16,7 @@ import { Button } from '@/components/ui/button'
 
 export default function Layout() {
   const navigate = useNavigate()
+  const [theme, setTheme] = useState(getTheme())
   const user = session.user
   const biz = session.business
   const { data: bizInfo } = useBusinessInfo()
@@ -80,7 +83,7 @@ export default function Layout() {
               <span className="flex-1">{s.label}</span>
               {s.badge !== undefined && (
                 <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-5 text-center ${
-                  s.badgeTone === 'count' ? 'bg-muted text-muted-foreground' : 'bg-amber-100 text-amber-800'
+                  s.badgeTone === 'count' ? 'bg-muted text-muted-foreground' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
                 }`}>
                   {s.badge}
                 </span>
@@ -92,6 +95,12 @@ export default function Layout() {
           <a href="/client-legacy" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground/80 hover:bg-muted/50">
             <Archive className="w-4 h-4" /> Panel clásico
           </a>
+          <Button variant="ghost" onClick={() => setTheme(toggleTheme())} className="w-full justify-start">
+            <span className="inline-flex items-center gap-2">
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+            </span>
+          </Button>
           <div className="px-3 pb-2 text-xs text-muted-foreground truncate">{user?.name || 'Sesión activa'}</div>
           <Button variant="ghost" onClick={logout} className="w-full justify-start">
             <span className="inline-flex items-center gap-2"><LogOut className="w-4 h-4" /> Cerrar sesión</span>
