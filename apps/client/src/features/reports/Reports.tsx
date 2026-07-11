@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
-import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles } from 'lucide-react'
+import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // Paleta del sistema (skill graficos-dashboard — validada CVD-safe, orden fijo):
@@ -16,6 +16,16 @@ const ALERT_STYLE: Record<Alert['level'], string> = {
   warning:  'bg-amber-50 border-amber-200 text-amber-800',
   good:     'bg-primary/10 border-green-200 text-primary',
   info:     'bg-blue-50 border-blue-200 text-blue-800',
+}
+
+// El server manda las alertas con emoji en `icon`; aquí se traduce a Lucide (línea shadcn)
+const ALERT_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  '🔴': PackageX, '🟡': PackageMinus, '📋': ClipboardList, '📉': TrendingDown,
+  '📈': TrendingUp, '😴': UserMinus, '🛒': ShoppingCart, '🧠': Brain,
+  '🌙': Moon, '💳': CreditCard,
+}
+const ALERT_ICON_FALLBACK: Record<string, React.ComponentType<{ className?: string }>> = {
+  critical: CircleAlert, warning: TriangleAlert, good: CircleCheck, info: Info,
 }
 
 const PERIODS = [['hoy', 'Hoy'], ['semana', 'Semana'], ['mes', 'Mes']] as const
@@ -65,11 +75,14 @@ export default function Reports() {
       {/* Banner de alertas */}
       {alertsData && alertsData.alerts.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2">
-          {alertsData.alerts.map((a, i) => (
-            <span key={i} className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 ${ALERT_STYLE[a.level]}`}>
-              {a.icon} {a.text}
-            </span>
-          ))}
+          {alertsData.alerts.map((a, i) => {
+            const Icon = ALERT_ICON[a.icon] ?? ALERT_ICON_FALLBACK[a.level] ?? Info
+            return (
+              <span key={i} className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 inline-flex items-center gap-1.5 ${ALERT_STYLE[a.level]}`}>
+                <Icon className="w-3.5 h-3.5 shrink-0" /> {a.text}
+              </span>
+            )
+          })}
         </div>
       )}
 
