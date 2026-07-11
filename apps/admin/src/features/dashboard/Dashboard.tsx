@@ -31,7 +31,7 @@ export default function Dashboard() {
       </div>
 
       {/* Últimos negocios (renderDashRecent del panel viejo) */}
-      <div className="bg-card rounded-xl border p-5 mt-6 max-w-2xl">
+      <div className="bg-card rounded-xl border p-5 mt-6">
         <h2 className="text-sm font-semibold text-foreground mb-2">Clientes recientes</h2>
         {clients.length === 0 && <p className="text-sm text-muted-foreground">Sin clientes aún.</p>}
         {clients.slice(0, 6).map(c => (

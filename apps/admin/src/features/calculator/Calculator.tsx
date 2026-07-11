@@ -57,7 +57,7 @@ export default function Calculator() {
   ]
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <h1 className="text-2xl font-bold text-foreground mb-1">Calculadora de precios</h1>
       <p className="text-sm text-muted-foreground mb-6">
         Modelo <strong className="text-foreground/80">todo incluido</strong>: un solo pago mensual, tú absorbes el costo de Meta
