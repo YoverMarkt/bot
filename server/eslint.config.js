@@ -1,13 +1,11 @@
-// ── ESLint (barandilla de la migración) ──────────────────────────────
-// Caza errores reales (variables inexistentes, redeclaraciones) sin pelear
-// con el estilo del código existente. Los archivos legacy grandes se van
-// limpiando al migrarlos a services/ (ver ARQUITECTURA.md).
+// ESLint cubre la configuración CommonJS y las pruebas JavaScript.
+// El backend TypeScript se valida con Oxlint y tsc estricto.
 const globals = require('globals')
 
 module.exports = [
   {
     files: ['**/*.js'],
-    ignores: ['node_modules/**'],
+    ignores: ['node_modules/**', 'dist/**'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'commonjs',

@@ -4,3 +4,7 @@ server/.env
 .env
 *.log
 .DS_Store
+playwright-report/
+test-results/
+blob-report/
+server/dist/

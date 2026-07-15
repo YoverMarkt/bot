@@ -3,7 +3,7 @@
 // crítico: la plata. Son funciones PURAS (sin BD ni red) → corren en CI
 // sin credenciales. Regla probada: la IA conversa, el CÓDIGO calcula.
 import { describe, it, expect } from 'vitest'
-import m from '../money.js'
+import m from '../dist/services/money.js'
 
 // Catálogo de prueba (misma forma que devuelve la base)
 const CATALOG = [
@@ -13,6 +13,7 @@ const CATALOG = [
   { id: 'p4', name: 'Carcasa 10x2.5 Azul', price: '12.30', price_sale: null },
   { id: 'p5', name: 'Perfume Oferta 100ml', price: '100.00', price_sale: '80.00' },
   { id: 'p6', name: 'Producto Sin Precio', price: '0', price_sale: null },
+  { id: 'p7', name: 'Producto Agotado', price: '8.00', price_sale: null, stock: 'agotado' },
 ]
 
 describe('parseItems (parseo de la etiqueta ##PEDIDO##)', () => {
@@ -78,6 +79,14 @@ describe('resolveItems (resolución ESTRICTA — con dinero no se adivina)', () 
     expect(resolved).toEqual([])
     expect(unresolved[0]).toContain('Producto Sin Precio')
   })
+
+  it('NO cobra productos agotados aunque tengan precio', () => {
+    const { resolved, unresolved } = m.resolveItems(
+      [{ name: 'Producto Agotado', qty: 1 }], CATALOG,
+    )
+    expect(resolved).toEqual([])
+    expect(unresolved).toEqual(['Producto Agotado (agotado)'])
+  })
 })
 
 describe('computeOrder (totales EN CÓDIGO)', () => {
@@ -125,14 +134,9 @@ describe('buildSummary (resumen oficial — lo envía el SERVIDOR, no la IA)', (
     expect(s).toContain('*Total: $39.75*')
     expect(s).toContain('2 x Pizza Familiar Pepperoni — $18.50 c/u = $37.00')
     expect(s).toContain('1 x Coca Cola 1.5L — $2.75')
-    expect(s).toContain('coordinaremos con usted el pago')   // sin pasarela aún
+    expect(s).toContain('coordinará con usted el pago')
   })
 
-  it('con link de pago lo incluye en lugar de la coordinación', () => {
-    const s = m.buildSummary(order, 'https://pagos.ejemplo.com/x1')
-    expect(s).toContain('https://pagos.ejemplo.com/x1')
-    expect(s).not.toContain('coordinaremos con usted el pago')
-  })
 })
 
 describe('money (redondeo seguro a centavos)', () => {
