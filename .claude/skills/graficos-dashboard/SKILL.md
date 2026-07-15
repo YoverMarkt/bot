@@ -1,6 +1,6 @@
 ---
 name: graficos-dashboard
-description: Úsala SIEMPRE (aunque no lo pidan) al crear o modificar gráficos, dashboards, KPIs o visualizaciones de datos en el panel de BotPanel. Garantiza que todos los gráficos se vean como un sistema premium y coherente, con la paleta validada (CVD-safe), sin dependencias externas, y respetando el stack (HTML/CSS/JS puro) y los permisos multi-tenant.
+description: Úsala SIEMPRE (aunque no lo pidan) al crear o modificar gráficos, dashboards, KPIs o visualizaciones de datos en BotPanel. Garantiza una presentación coherente y accesible sobre React, TypeScript, shadcn/ui y Recharts, respetando los permisos multi-tenant.
 ---
 
 # graficos-dashboard
@@ -9,36 +9,25 @@ Todos los gráficos del panel deben verse **premium y como un mismo sistema**: c
 
 ## Reglas del proyecto (no negociables)
 
-1. **Sin dependencias externas.** Nada de Chart.js, D3 ni CDNs. Los gráficos se dibujan con **HTML/CSS (barras) y SVG inline (dona/línea)**. Motivo: stack puro (CLAUDE.md §2), velocidad, y privacidad (nada sale del servidor — se vende a empresas).
-2. **Paleta validada, definida en `:root`** de `client/index.html` (no hardcodear hex en cada gráfico):
-   - Categórica (identidad, hasta 4): `--c1 #2a78d6` · `--c2 #1baf7a` · `--c3 #eda100` · `--c4 #008300`. **Orden fijo, nunca ciclado** (es el mecanismo CVD-safe: ΔE 24.2).
-   - Estado (stock, salud): `--c-good #0ca30c` · `--c-warn #f5a623` · `--c-crit #d03b3b`. Reservados — nunca como "serie 5".
-   - Serie única (barras de un solo tipo): tinta `--c-bar #1e1e1e` (alto contraste, on-brand).
-   - Chrome: `--grid`, `--axis`, texto en `--ink`/`--muted` (el texto NUNCA lleva el color de la serie).
-3. **Regla de relieve:** `--c2` (aqua) y `--c3` (amarillo) quedan bajo 3:1 en fondo blanco → **siempre** con etiqueta/valor directo visible (leyenda con número), nunca identidad solo por color.
+1. **Sistema compartido.** Usar `ChartContainer`, `ChartTooltip` y `ChartTooltipContent` desde `@botpanel/ui/components/chart`, con primitivas de `recharts`. No agregar Chart.js, D3, CDNs ni un segundo wrapper.
+2. **Paleta por tokens.** Usar `var(--chart-1)`…`var(--chart-5)`, `foreground`, `muted-foreground`, `border` y tokens de estado del tema. No hardcodear una paleta distinta por gráfico y comprobar claro/oscuro.
+3. **Color nunca como único significado:** acompañar series y estados con etiqueta, valor, tooltip o leyenda; mantener contraste suficiente.
 4. **Elegir la forma según el trabajo del dato** (método dataviz): magnitud→barras; composición→dona; tendencia en el tiempo→línea; un solo número→KPI tile. Ante duda, consultar la skill **dataviz** (`references/choosing-a-form.md`).
 5. **Nunca doble eje** (dos escalas Y). Dos medidas de distinta escala → dos gráficos.
-6. **Marcas finas + etiqueta directa:** barras con extremo redondeado ancladas al inicio; dona con gap de ~1.4 a la superficie; valor directo en cada barra/segmento (no un número por punto en líneas).
-7. **Accesibilidad:** `<title>` en cada segmento/barra (tooltip nativo = capa hover mínima); leyenda presente para ≥2 series; `role`/`aria-label` en el SVG.
+6. **Marcas finas + etiqueta directa:** barras con extremo redondeado; valor directo cuando mejore lectura; evitar saturar líneas con un número por punto.
+7. **Accesibilidad:** activar la capa accesible de Recharts, usar nombres legibles en `ChartConfig`, tooltip y leyenda para ≥2 series; no depender solo de hover.
 8. **Multi-tenant y permisos:** los datos salen del backend por `business_id` (endpoints `/api/client/dashboard`, `/api/client/reports`). En el frontend, todo bloque con datos de ventas se muestra **solo si `can('reportes')`** (los empleados sin permiso no lo ven ni disparan el fetch).
 
 ## Helpers ya construidos (reutilizar, no reinventar)
 
-En `client/index.html`:
-- `hBars(rows, {fmt, color})` — barras horizontales. `rows = [{label, value}]`.
-- `donut(segs, {center, centerLabel})` — dona. `segs = [{label, value, color}]`.
-- `lineChart(rows, {fmt})` — línea de tendencia (SVG). `rows = [{label, total}]`, días rellenos con 0 para línea continua. Datos vía `computeSalesTrend` en `reports.js`.
-- KPI tiles: clases `.kpi-row`, `.kpi`, `.kpi-l/v/d` (delta en verde `--c-good` / rojo `--red`).
-- Tarjeta contenedora: `.chart-card` + `.chart-grid` (grid responsive).
-
-Para un gráfico nuevo, primero mira si `hBars`/`donut` sirven. Si necesitas línea/tendencia, créala como SVG inline siguiendo estas reglas y agrega el helper (`lineChart`) para reutilizar.
+La base compartida está en `packages/ui/src/components/chart.tsx`. Los ejemplos oficiales del proyecto viven en `apps/client/src/features/dashboard/Dashboard.tsx` y `apps/client/src/features/reports/Reports.tsx`. Reutiliza sus patrones de `LineChart`, `BarChart` y `PieChart`; mantén transformación y cálculo de datos fuera del JSX visual.
 
 ## Backend
 
-Los datos de gráficos se agregan en `server/reports.js` reutilizando los `compute*` existentes (ej. `getDashboard`). No dupliques cálculo: si ya existe `computeTop`, `computeComparison`, `computeCustomerSummary`, úsalos.
+Los datos se agregan en `server/src/services/reports.ts` y repositorios de `server/src/db/`. No dupliques cálculos: reutiliza `computeTop`, `computeComparison`, `computeCustomerSummary`, `computeSalesTrend` o el agregador existente correspondiente.
 
 ## Verificación (con tester-saas)
 
-- `new Function()` sobre los `<script>` del panel (sintaxis).
-- Smoke test del endpoint contra Supabase real.
-- **Abrir/mirar el resultado**: los gráficos se revisan a ojo (colisiones de etiquetas, geometría, overflow) además de validar la paleta con el script de dataviz cuando se agregan colores nuevos.
+- `npm run check`, `npm run build` y pruebas del endpoint afectado.
+- **Abrir/mirar el resultado** en claro/oscuro y móvil/escritorio: revisar colisiones, geometría, overflow, tooltip, empty/loading/error y contraste.
+- Confirmar que un empleado sin permiso `reportes` no ve ni consulta los datos protegidos.

@@ -8,7 +8,7 @@ description: Úsala SIEMPRE (aunque no lo pidan) al crear o modificar el system 
 El prompt es la personalidad del bot de cada negocio. Lo escribe el dueño en su panel (`bot_policies.bot_prompt`). El servidor lo combina con los datos reales del negocio. Tu trabajo: que el prompt respete los patrones del sistema sin romper la mecánica.
 
 ## Cómo funciona el prompt en este sistema (clave)
-- El `bot_prompt` del cliente es la **base**. `buildPrompt()` en `bot.js` le **inyecta debajo** los datos reales del negocio: DATOS, CATÁLOGO (o los productos relevantes vía RAG), HORARIOS, POLÍTICAS, e INSTRUCCIONES TÉCNICAS mínimas.
+- El `bot_prompt` del cliente es la **base**. `buildPrompt()` en `server/src/services/prompt.ts` le **inyecta debajo** los datos reales del negocio: DATOS, CATÁLOGO (o los productos relevantes vía RAG), HORARIOS, POLÍTICAS, e INSTRUCCIONES TÉCNICAS mínimas.
 - **El bot NO tiene function-calling real.** "Las herramientas" son **etiquetas** que el bot escribe y el servidor detecta. Los datos (catálogo, horarios) ya van **inline** en el prompt — el bot NO llama a `listar_servicios()`; los ve directamente.
 - Por eso: en el prompt del cliente, describir "tools" tipo `agendar_cita()` es **decorativo** y puede confundir. Lo que realmente dispara acciones son las etiquetas del sistema.
 
@@ -24,7 +24,7 @@ Formato recomendado `{{...}}` (insensible a mayúsculas/espacios) — se reempla
 - `{{direccion}}` → dirección · `{{telefono}}` → teléfono · `{{horario}}` → horario · `{{slogan}}` → slogan
 - `{{nombre_bot}}` → "Asistente" (genérico; lo normal es que el dueño escriba el nombre real del bot directo en el prompt, ya que no es un campo de BD)
 Formato anterior `[...]` se mantiene por compatibilidad: `[Negocio]`, `[Nombre del negocio]` → nombre; `[Nombre]` → "Asistente".
-> Si una `{{variable}}` no está en la lista, se deja tal cual (no se borra). Para mapear una nueva, agrégala al objeto `vars` en `buildPrompt`.
+> Si una `{{variable}}` no está en la lista, se deja tal cual (no se borra). Para mapear una nueva, agrégala al objeto `variables` en `server/src/services/prompt.ts`.
 
 ## Estructura estándar del prompt (copy-paste, sin markdown innecesario)
 

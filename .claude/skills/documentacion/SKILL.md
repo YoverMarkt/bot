@@ -34,7 +34,7 @@ NUEVA_VARIABLE=   # para qué sirve, de dónde se saca
 
 ### 4. Etiquetas/tools del bot
 - Documenta: nombre exacto (`##NOMBRE##` o `##NOMBRE:datos##`), cuándo la emite el bot, qué hace el servidor al detectarla, y que opera sobre el `business_id` de la conversación.
-- Etiquetas actuales a mantener documentadas: `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##BOOKING##`, `##HANDOFF##`, `##VENTA##`/`##PEDIDO##`, `##IMG##`, `##CATALOG##`.
+- Etiquetas actuales a mantener documentadas: `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##HANDOFF##`, `##PEDIDO:producto x cantidad##`, `##VENTA##` legacy, `##IMG##`, `##CATALOG##`. `##BOOKING##` está retirada y no debe reintroducirse.
 
 ### 5. Decisiones de arquitectura importantes
 - Si tomas una decisión que cambia cómo funciona el sistema (ej: "el RAG usa embeddings de OpenAI por compatibilidad de dimensión", "el frontend usa polling porque RLS bloquea el realtime con anon key"), déjala registrada en el README o en un comentario claro en el código.

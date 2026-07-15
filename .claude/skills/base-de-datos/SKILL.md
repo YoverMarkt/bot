@@ -33,10 +33,10 @@ alter table <tabla> enable row level security;   -- SIEMPRE
 - [ ] `business_id` con FK y `on delete cascade`.
 - [ ] Índice por `business_id`.
 - [ ] **RLS habilitada.**
-- [ ] Acceso vía funciones nuevas en `db.js`, filtrando por `business_id`.
+- [ ] Acceso vía funciones nuevas en `server/src/db/repositories/`, filtrando por `business_id` y exportadas desde `src/db/index.ts`.
 
 ## Políticas RLS (cliente y superadmin por separado)
-El modelo actual: **RLS habilitada + backend con service key** (la service key bypassa RLS; el aislamiento real lo refuerza el filtrado por `business_id` en `db.js`). La anon key del frontend queda **bloqueada** por RLS (no lee nada directo).
+El modelo actual: **RLS habilitada + backend con service key** (la service key bypassa RLS; el aislamiento real lo refuerza el filtrado por `business_id` en `server/src/db/`). La anon key del frontend queda **bloqueada** por RLS (no lee nada directo).
 - Si se agregan políticas finas, sepáralas: una para el rol del cliente (solo SU `business_id`) y otra/explícita para superadmin/servicio. **Nunca** `using (true)`.
 - No habilites acceso de la anon key a tablas con datos de negocio.
 
@@ -54,6 +54,6 @@ El modelo actual: **RLS habilitada + backend con service key** (la service key b
 - [ ] El SQL es idempotente y reversible en lo posible.
 - [ ] No borra ni vacía datos existentes.
 - [ ] Se probó primero en el proyecto de desarrollo si existe.
-- [ ] Las funciones de `db.js` que lo usan están listas (no dejar la BD adelantada al código ni viceversa de forma que rompa).
+- [ ] Los repositorios TypeScript que lo usan están listos (no dejar la BD adelantada al código ni viceversa de forma que rompa).
 
 > Una migración mal hecha puede borrar datos de TODOS los negocios a la vez. Trátala con ese nivel de cuidado.
