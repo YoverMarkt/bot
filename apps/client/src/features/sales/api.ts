@@ -28,10 +28,11 @@ export type Order = {
   id: string
   contact_phone: string
   contact_name: string | null
-  status: 'pendiente' | 'confirmado' | 'pagado' | 'cancelado' | 'expirado'
+  status: 'pendiente' | 'confirmado' | 'completado' | 'cancelado' | 'expirado'
   subtotal: number | string
   discount: number | string
   total: number | string
+  currency?: string
   created_at: string
   order_items: SaleItem[]
 }

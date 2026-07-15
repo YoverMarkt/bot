@@ -4,12 +4,14 @@ import * as bill from './api'
 import type { BillingRow } from './api'
 import { getClients } from '../clients/api'
 import { Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
+import { Label } from '@botpanel/ui/components/label'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
@@ -80,14 +82,14 @@ export default function Billing() {
         <div className="flex gap-2 flex-wrap">
           {/* Radix no permite value="" en un item → centinela 'all' ↔ '' (Todos) */}
           <Select value={fClient || 'all'} onValueChange={v => { setFClient(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="billing-client-filter" aria-label="Filtrar por cliente" className="w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los clientes</SelectItem>
               {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={fStatus || 'all'} onValueChange={v => { setFStatus(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="billing-status-filter" aria-label="Filtrar por estado" className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="pending">Pendiente</SelectItem>
@@ -124,7 +126,7 @@ export default function Billing() {
                   <TableCell><StatusPill b={b} /></TableCell>
                   <TableCell className="text-right">
                     {b.status !== 'paid' && (
-                      <Button size="sm" onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending} className="text-xs">
+                      <Button size="sm" onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}>
                         Marcar pagado
                       </Button>
                     )}
@@ -142,19 +144,19 @@ export default function Billing() {
             Mostrando {(curPage - 1) * PER_PAGE + 1}–{Math.min(curPage * PER_PAGE, filtered.length)} de {filtered.length}
           </span>
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1} className="text-xs">←</Button>
+            <Button variant="outline" size="icon-sm" aria-label="Página anterior" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={curPage <= 1}>←</Button>
             {Array.from({ length: totalPages }, (_, i) => i + 1)
               .filter(p => p === 1 || p === totalPages || Math.abs(p - curPage) <= 2)
               .map((p, i, arr) => (
                 <span key={p} className="flex">
                   {i > 0 && arr[i - 1] !== p - 1 && <span className="px-1 text-muted-foreground/70">…</span>}
                   <Button variant="ghost" onClick={() => setPage(p)}
-                    className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
+                    className={`rounded-lg text-xs px-2.5 py-1.5 ${p === curPage ? 'bg-primary text-primary-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {p}
                   </Button>
                 </span>
               ))}
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages} className="text-xs">→</Button>
+            <Button variant="outline" size="icon-sm" aria-label="Página siguiente" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={curPage >= totalPages}>→</Button>
           </div>
         </div>
       )}
@@ -172,9 +174,6 @@ function NewCharge({ clients, onClose, onSaved }: {
   const [f, setF] = useState({ business_id: '', amount: '', status: 'pending', period_start: '', period_end: '', notes: '' })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const lbl = 'text-xs font-medium text-muted-foreground'
-  const inp = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!f.business_id || !f.amount) { setError('Cliente y monto son obligatorios'); return }
@@ -196,25 +195,29 @@ function NewCharge({ clients, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-30 bg-black/60 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-md bg-card border rounded-2xl p-6 my-12">
-        <h2 className="text-lg font-bold text-foreground mb-4">Nuevo registro</h2>
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+      <form onSubmit={save}>
+        <DialogHeader className="mb-4">
+          <DialogTitle>Nuevo registro</DialogTitle>
+          <DialogDescription>Registra una cuota o cobro para el negocio seleccionado.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-3">
           <div>
-            <span className={lbl}>Cliente *</span>
+            <Label htmlFor="new-charge-client">Cliente *</Label>
             <Select value={f.business_id} onValueChange={v => setF({ ...f, business_id: v })}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
+              <SelectTrigger id="new-charge-client" className="w-full"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
               <SelectContent>
                 {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><span className={lbl}>Monto ($) *</span><Input className={inp} type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div><Label htmlFor="new-charge-amount">Monto ($) *</Label><Input id="new-charge-amount" type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
             <div>
-              <span className={lbl}>Estado</span>
+              <Label htmlFor="new-charge-status">Estado</Label>
               <Select value={f.status} onValueChange={v => setF({ ...f, status: v })}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="new-charge-status" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pending">Pendiente</SelectItem>
                   <SelectItem value="paid">Pagado</SelectItem>
@@ -222,19 +225,20 @@ function NewCharge({ clients, onClose, onSaved }: {
                 </SelectContent>
               </Select>
             </div>
-            <div><span className={lbl}>Inicio del período</span><Input className={inp} type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
-            <div><span className={lbl}>Fin del período</span><Input className={inp} type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>
+            <div><Label htmlFor="new-charge-period-start">Inicio del período</Label><Input id="new-charge-period-start" type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
+            <div><Label htmlFor="new-charge-period-end">Fin del período</Label><Input id="new-charge-period-end" type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>
           </div>
-          <div><span className={lbl}>Notas</span><Input className={inp} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
+          <div><Label htmlFor="new-charge-notes">Notas</Label><Input id="new-charge-notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
         </div>
         {error && <p className="text-sm text-destructive mt-3">✗ {error}</p>}
-        <div className="flex justify-end gap-2 mt-5">
+        <DialogFooter className="mx-0 mb-0 mt-5 px-0 pb-0">
           <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
           <Button disabled={saving}>
             {saving ? 'Guardando…' : 'Guardar'}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

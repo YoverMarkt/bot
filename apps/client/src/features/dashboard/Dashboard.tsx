@@ -6,11 +6,11 @@ import { getAlerts } from '../reports/api'
 import { getProducts } from '../catalog/api'
 import { useBusinessInfo } from '../../lib/biz'
 import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus, CircleCheck, Circle, PackageX, PackageMinus, ClipboardList, TrendingDown, UserMinus, ShoppingCart, Brain, Moon, CreditCard, CircleAlert, TriangleAlert, Info, Receipt, MessageSquare } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card as UICard, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { Button } from '@botpanel/ui/components/button'
+import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
+import { Progress } from '@botpanel/ui/components/progress'
+import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@botpanel/ui/components/chart'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, CartesianGrid, LabelList, Label } from 'recharts'
 
 // ── INICIO (port fiel del dashboard BI del panel viejo):
@@ -91,7 +91,12 @@ export default function Dashboard() {
     queryFn: () => api<DashboardData>(`/api/client/dashboard?period=${period}`),
     enabled: canReports,
   })
-  const { data: alertsData } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts, staleTime: 60_000 })
+  const { data: alertsData } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: getAlerts,
+    staleTime: 60_000,
+    enabled: canReports,
+  })
   const { data: onboarding } = useQuery({
     queryKey: ['onboarding'],
     queryFn: () => api<Onboarding>('/api/client/onboarding'),
@@ -144,7 +149,7 @@ export default function Dashboard() {
       {onboarding?.steps && onboarding.pct < 100 && <OnboardingCard d={onboarding} />}
 
       {/* Banner de alertas */}
-      {alertsData && alertsData.alerts.length > 0 && (
+      {canReports && alertsData && alertsData.alerts.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2">
           {alertsData.alerts.map((a, i) => {
             const Icon = ALERT_ICON[a.icon] ?? ALERT_ICON_FALLBACK[a.level] ?? Info
@@ -235,7 +240,7 @@ export default function Dashboard() {
 function OnboardingCard({ d }: { d: Onboarding }) {
   const navigate = useNavigate()
   return (
-    <UICard className="border-2 border-green-300 dark:border-green-500/40 mb-5 gap-3">
+    <UICard className="mb-5 gap-3 border-2 border-primary/25">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base"><Rocket className="w-4 h-4 text-primary" /> Configura tu bot para vender</CardTitle>
@@ -251,7 +256,7 @@ function OnboardingCard({ d }: { d: Onboarding }) {
               {s.label}{s.hint && <span className="text-muted-foreground/80 text-xs"> · {s.hint}</span>}
             </span>
             {!s.done && s.page && (
-              <Button variant="outline" size="sm" onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')} className="text-xs">Configurar →</Button>
+              <Button variant="outline" size="sm" onClick={() => navigate(PAGE_ROUTE[s.page!] ?? '/')}>Configurar →</Button>
             )}
           </div>
         ))}

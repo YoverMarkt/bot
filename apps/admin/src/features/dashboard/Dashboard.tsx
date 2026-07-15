@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { getStats, getClients } from '../clients/api'
 import { Users, CircleCheck, CirclePause, MessageSquare } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
+import { Badge } from '@botpanel/ui/components/badge'
 
 export default function Dashboard() {
   const { data, isLoading, error } = useQuery({ queryKey: ['adm-stats'], queryFn: getStats, refetchInterval: 30_000 })

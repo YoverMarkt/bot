@@ -1,5 +1,5 @@
 // ── API de Conversaciones (tipada) ───────────────────────────────────
-// Mismos endpoints que el panel viejo (routes/sessions.routes.js).
+// Contrato estable servido por src/routes/sessions.routes.ts.
 import { api } from '../../api/client'
 
 export type Session = {

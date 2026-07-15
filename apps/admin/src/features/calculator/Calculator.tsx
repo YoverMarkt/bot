@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { ClipboardList, DollarSign, Target, TrendingUp, Bot as BotIcon, Camera, Mic, MessageSquare, Server } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Label } from '@botpanel/ui/components/label'
 
 // Calculadora de precios — Modelo B (TODO INCLUIDO): tú absorbes el costo
 // de Meta y cobras un solo pago mensual. Misma fórmula que el panel viejo:
@@ -19,8 +20,6 @@ const CALC = {
 const money = (v: number) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const money0 = (v: number) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 })
 
-const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-const label = 'text-xs font-medium text-muted-foreground'
 const card = 'p-5 gap-0'
 
 export default function Calculator() {
@@ -69,30 +68,30 @@ export default function Calculator() {
         {/* Entradas */}
         <Card className={card}>
           <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><ClipboardList className="w-4 h-4" /> Datos del cliente</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div><span className={label}>Clientes que escriben al mes</span><Input className={input} type="number" value={f.clients} onChange={set('clients')} /></div>
-            <div><span className={label}>Mensajes por conversación</span><Input className={input} type="number" value={f.msgs} onChange={set('msgs')} /></div>
-            <div><span className={label}>% que envía FOTOS</span><Input className={input} type="number" value={f.photo} onChange={set('photo')} /></div>
-            <div><span className={label}>% que envía AUDIOS</span><Input className={input} type="number" value={f.audio} onChange={set('audio')} /></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div><Label htmlFor="calculator-clients">Clientes que escriben al mes</Label><Input id="calculator-clients" type="number" value={f.clients} onChange={set('clients')} /></div>
+            <div><Label htmlFor="calculator-messages">Mensajes por conversación</Label><Input id="calculator-messages" type="number" value={f.msgs} onChange={set('msgs')} /></div>
+            <div><Label htmlFor="calculator-photo-percent">% que envía FOTOS</Label><Input id="calculator-photo-percent" type="number" value={f.photo} onChange={set('photo')} /></div>
+            <div><Label htmlFor="calculator-audio-percent">% que envía AUDIOS</Label><Input id="calculator-audio-percent" type="number" value={f.audio} onChange={set('audio')} /></div>
             <div>
-              <span className={label}>Costo Meta por mensaje SALIENTE ($)</span>
-              <Input className={input} type="number" step="0.001" value={f.wa} onChange={set('wa')} />
+              <Label htmlFor="calculator-meta-cost">Costo Meta por mensaje SALIENTE ($)</Label>
+              <Input id="calculator-meta-cost" type="number" step="0.001" value={f.wa} onChange={set('wa')} />
             </div>
             <div>
-              <span className={label}>Colchón de seguridad Meta (%)</span>
-              <Input className={input} type="number" step="5" value={f.buffer} onChange={set('buffer')} />
+              <Label htmlFor="calculator-meta-buffer">Colchón de seguridad Meta (%)</Label>
+              <Input id="calculator-meta-buffer" type="number" step="5" value={f.buffer} onChange={set('buffer')} />
             </div>
-            <div><span className={label}>Costos fijos mensuales ($)</span><Input className={input} type="number" value={f.fixed} onChange={set('fixed')} /></div>
+            <div><Label htmlFor="calculator-fixed-costs">Costos fijos mensuales ($)</Label><Input id="calculator-fixed-costs" type="number" value={f.fixed} onChange={set('fixed')} /></div>
             <div>
-              <span className={label}>Multiplicador de precio</span>
+              <Label htmlFor="calculator-multiplier">Multiplicador de precio</Label>
               <div className="flex gap-1.5 items-center">
                 {[3, 5, 8, 10].map(v => (
                   <Button variant="ghost" key={v} onClick={() => setF(p => ({ ...p, mult: String(v) }))}
-                    className={`rounded-lg text-xs px-2.5 py-2 ${Number(f.mult) === v ? 'bg-primary text-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
+                    className={`rounded-lg text-xs px-2.5 py-2 ${Number(f.mult) === v ? 'bg-primary text-primary-foreground font-semibold' : 'border border-input text-foreground/80'}`}>
                     {v}x
                   </Button>
                 ))}
-                <Input className={`${input} !w-16 text-center font-bold`} type="number" step="0.5" value={f.mult} onChange={set('mult')} />
+                <Input id="calculator-multiplier" className="!w-16 text-center font-bold" type="number" step="0.5" value={f.mult} onChange={set('mult')} />
               </div>
             </div>
           </div>
@@ -130,8 +129,8 @@ export default function Calculator() {
 
         {/* Precio manual */}
         <Card className={card}>
-          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> ¿Cuánto piensas cobrar?</h2>
-          <Input className={input} type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
+          <h2 id="calculator-price-label" className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Target className="w-4 h-4" /> ¿Cuánto piensas cobrar?</h2>
+          <Input id="calculator-price" aria-labelledby="calculator-price-label" type="number" value={f.price} onChange={set('price')} placeholder="Ej: 99" />
           {myPrice > 0 ? (
             <div className="mt-3 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Tu precio</span><strong className="text-foreground font-mono">{money(myPrice)}</strong></div>

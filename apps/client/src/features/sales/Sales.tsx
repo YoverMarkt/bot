@@ -6,19 +6,21 @@ import { api } from '../../api/client'
 import { Receipt, Lightbulb, Check, X } from 'lucide-react'
 import type { Order, SaleItem } from './api'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { Label } from '@botpanel/ui/components/label'
 
 const { money, cents } = salesApi
 
 const ORDER_BADGE: Record<Order['status'], string> = {
   pendiente:  'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
   confirmado: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
-  pagado:     'bg-green-500/10 text-green-700 dark:text-green-300',
+  completado: 'bg-green-500/10 text-green-700 dark:text-green-300',
   cancelado:  'bg-muted text-muted-foreground',
   expirado:   'bg-muted text-muted-foreground',
 }
@@ -38,13 +40,15 @@ export default function Sales() {
           <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
           <p className="text-sm text-muted-foreground">Pedidos del bot con total oficial + registro manual</p>
         </div>
-        <Tabs value={tab} onValueChange={v => setTab(v as typeof tab)}>
-          <TabsList>
-            {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
-              <TabsTrigger key={v} value={v}>{l}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="max-w-full overflow-x-auto pb-1">
+          <Tabs value={tab} onValueChange={v => setTab(v as typeof tab)}>
+            <TabsList>
+              {([['orders', 'Pedidos del bot'], ['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
+                <TabsTrigger key={v} value={v}>{l}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
       {tab === 'orders' && <BotOrders />}
       {tab === 'register' && (
@@ -63,7 +67,24 @@ export default function Sales() {
 
 // ── Pedidos del bot (núcleo de dinero: totales oficiales del server) ──
 function BotOrders() {
+  const queryClient = useQueryClient()
   const { data: orders = [], isLoading } = useQuery({ queryKey: ['orders'], queryFn: salesApi.getOrders, refetchInterval: 15_000 })
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'confirmado' | 'completado' | 'cancelado' }) => api(`/api/client/orders/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+    onSuccess: (_data, variables) => {
+      const messages = {
+        confirmado: 'Pedido confirmado. Coordina la entrega directamente con el cliente.',
+        completado: 'Pedido marcado como completado.',
+        cancelado: 'Pedido cancelado.',
+      }
+      toast.success(messages[variables.status])
+      void queryClient.invalidateQueries({ queryKey: ['orders'] })
+    },
+    onError: error => toast.error(error instanceof Error ? error.message : 'No se pudo actualizar el pedido'),
+  })
   if (isLoading) return <p className="text-muted-foreground">Cargando pedidos…</p>
   if (!orders.length) return (
     <Card className="p-8 text-center gap-1">
@@ -94,9 +115,33 @@ function BotOrders() {
               </div>
             ))}
           </div>
-          <div className="mt-2 pt-2 border-t border-border/60 flex justify-between items-center">
-            {Number(o.discount) > 0 && <span className="text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
-            <span className="ml-auto font-bold text-foreground">Total: {money(o.total)}</span>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-2">
+            <div>
+              {Number(o.discount) > 0 && <span className="mr-3 text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
+              <span className="font-bold text-foreground">Total: {money(o.total)}</span>
+            </div>
+            {(o.status === 'pendiente' || o.status === 'confirmado') && (
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                <span className="max-w-xs text-right text-xs text-muted-foreground">
+                  {o.status === 'pendiente' ? 'Confirma el pedido antes de prepararlo para la entrega.' : 'Ciérralo cuando la entrega haya terminado.'}
+                </span>
+                <ConfirmAction
+                  trigger={<Button size="sm" disabled={updateStatus.isPending}><Check /> {o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}</Button>}
+                  title={o.status === 'pendiente' ? 'Confirmar pedido' : 'Completar pedido'}
+                  description={o.status === 'pendiente' ? 'El pedido quedará confirmado para que el negocio coordine la entrega con el cliente.' : 'El pedido quedará cerrado como completado y contará en su estado final.'}
+                  confirmLabel={o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}
+                  onConfirm={() => updateStatus.mutate({ id: o.id, status: o.status === 'pendiente' ? 'confirmado' : 'completado' })}
+                />
+                <ConfirmAction
+                  trigger={<Button variant="outline" size="sm" disabled={updateStatus.isPending}><X /> Cancelar</Button>}
+                  title="Cancelar pedido"
+                  description="El pedido quedará cerrado como cancelado. Esta acción no se puede revertir."
+                  confirmLabel="Cancelar pedido"
+                  destructive
+                  onConfirm={() => updateStatus.mutate({ id: o.id, status: 'cancelado' })}
+                />
+              </div>
+            )}
           </div>
         </Card>
       ))}
@@ -150,27 +195,26 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al registrar'),
   })
 
-  const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   return (
     <Card className="p-5 max-w-2xl gap-0">
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Teléfono del cliente</label>
+          <Label htmlFor="sale-contact-phone">Teléfono del cliente</Label>
           <div className="flex gap-2">
-            <Input className={`${input} flex-1`} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
-            <Button variant="outline" onClick={loadQuote} type="button" title="Traer lo cotizado en la conversación"><Lightbulb className="w-4 h-4" /></Button>
+            <Input id="sale-contact-phone" className="flex-1" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
+            <Button variant="outline" size="icon" onClick={loadQuote} type="button" title="Traer lo cotizado en la conversación" aria-label="Traer cotización"><Lightbulb /></Button>
           </div>
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Nombre</label>
-          <Input className={`${input} w-full`} value={name} onChange={e => setName(e.target.value)} placeholder="opcional" />
+          <Label htmlFor="sale-contact-name">Nombre</Label>
+          <Input id="sale-contact-name" value={name} onChange={e => setName(e.target.value)} placeholder="opcional" />
         </div>
       </div>
 
-      <label className="text-xs font-medium text-muted-foreground">Agregar producto</label>
+      <Label htmlFor="sale-product">Agregar producto</Label>
       <Select value="" onValueChange={addItem}>
-        <SelectTrigger className="w-full mb-3"><SelectValue placeholder="Elige un producto del catálogo…" /></SelectTrigger>
+        <SelectTrigger id="sale-product" className="w-full mb-3"><SelectValue placeholder="Elige un producto del catálogo…" /></SelectTrigger>
         <SelectContent>
           {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {money(Number(p.price_sale) > 0 ? p.price_sale! : p.price)}</SelectItem>)}
         </SelectContent>
@@ -179,12 +223,12 @@ function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
       {items.map((it, idx) => (
         <div key={idx} className="flex items-center gap-2 mb-2 text-sm">
           <span className="flex-1 truncate text-foreground">{it.product_name}</span>
-          <Input type="number" min={1} max={99} value={it.quantity}
+          <Input id={`sale-item-${idx}-quantity`} aria-label={`Cantidad de ${it.product_name}`} type="number" min={1} max={99} value={it.quantity}
             onChange={e => setItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))}
-            className={`${input} w-16 text-center`} />
+            className="w-16 text-center" />
           <span className="text-muted-foreground">× {money(it.unit_price)}</span>
           <span className="w-20 text-right font-medium">{money(cents(it.quantity * it.unit_price))}</span>
-          <Button variant="ghost" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}><X className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} aria-label={`Quitar ${it.product_name}`}><X /></Button>
         </div>
       ))}
 
@@ -220,7 +264,7 @@ function SalesByContact() {
   return (
     <div className="max-w-2xl">
       <form onSubmit={e => { e.preventDefault(); setSearched(phone.trim()) }} className="flex gap-2 mb-4">
-        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)" className="flex-1" />
+        <Input id="sales-search-phone" aria-label="Teléfono del cliente" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono del cliente (+593…)" className="flex-1" />
         <Button>Buscar</Button>
       </form>
       {isFetching && <p className="text-muted-foreground text-sm">Buscando…</p>}
@@ -236,7 +280,14 @@ function SalesByContact() {
               {(s.sale_items ?? s.items ?? []).map((i, idx) => <div key={idx}>{i.quantity} × {i.product_name} — {money(i.line_total)}</div>)}
             </div>
             {s.status === 'completada' && (
-              <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Anular esta venta? Se revierte de los reportes.')) mVoid.mutate(s.id) }} className="mt-2 text-xs">Anular venta</Button>
+              <ConfirmAction
+                trigger={<Button variant="outline" size="sm" className="mt-2">Anular venta</Button>}
+                title="Anular venta"
+                description="La venta se marcará como anulada y dejará de contar en los reportes."
+                confirmLabel="Anular venta"
+                destructive
+                onConfirm={() => mVoid.mutate(s.id)}
+              />
             )}
           </Card>
         ))}

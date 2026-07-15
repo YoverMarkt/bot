@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Globe, Square, Play } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
 
 // ── Conexiones (sección propia, igual que el admin viejo):
 // túnel público + URLs de webhooks por proveedor listas para copiar.
@@ -48,8 +48,8 @@ export default function Connections() {
             {tunnel?.active && <div className="text-xs text-muted-foreground mt-0.5">Activo — {tunnel.provider}</div>}
           </div>
           {tunnel?.active
-            ? <Button variant="outline" size="sm" onClick={stop} className="text-xs"><span className="inline-flex items-center gap-1"><Square className="w-3 h-3" /> Detener túnel</span></Button>
-            : <Button size="sm" onClick={start} className="text-xs"><span className="inline-flex items-center gap-1"><Play className="w-3 h-3" /> Iniciar túnel</span></Button>}
+            ? <Button variant="outline" size="sm" onClick={stop}><Square /> Detener túnel</Button>
+            : <Button size="sm" onClick={start}><Play /> Iniciar túnel</Button>}
         </div>
 
         {base && (

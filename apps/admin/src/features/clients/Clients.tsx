@@ -4,11 +4,14 @@ import * as adm from './api'
 import type { BusinessRow } from './api'
 import ClientModal from './ClientModal'
 import { ViewModal, PromptModal } from './ClientTools'
-import { Check, Trash2, Bot as BotIcon, Plus, Eye } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal } from 'lucide-react'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@botpanel/ui/components/dropdown-menu'
+import { QueryError } from '@botpanel/ui/components/query-error'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -16,7 +19,7 @@ export default function Clients() {
   const [viewing, setViewing] = useState<BusinessRow | null>(null)
   const [prompting, setPrompting] = useState<BusinessRow | null>(null)
   const [vfy, setVfy] = useState<Record<string, string>>({})
-  const { data: clients = [], isLoading } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
+  const { data: clients = [], isLoading, isError, refetch } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
 
   const filtered = clients
 
@@ -32,11 +35,6 @@ export default function Clients() {
       const r = await adm.verifyClient(c.id)
       setVfy(v => ({ ...v, [c.id]: `${r.ok ? '✓' : '✗'} ${r.info}` }))
     } catch (e) { setVfy(v => ({ ...v, [c.id]: `✗ ${e instanceof Error ? e.message : 'Error'}` })) }
-  }
-
-  function del(c: BusinessRow) {
-    if (!confirm(`¿Eliminar permanentemente a "${c.name}"?\n\nSe eliminarán también sus productos, conversaciones y registros de pago. Esta acción no se puede deshacer.`)) return
-    mDelete.mutate(c.id)
   }
 
   function statusPill(c: BusinessRow) {
@@ -60,7 +58,7 @@ export default function Clients() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
@@ -69,9 +67,11 @@ export default function Clients() {
         <Button onClick={() => setEditing('new')}><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo cliente</span></Button>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : (
-        <Card className="py-0 gap-0 overflow-x-auto flex-1">
-          <Table>
+      {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : isError ? (
+        <QueryError onRetry={() => { void refetch() }} />
+      ) : (
+        <Card className="flex-1 w-full gap-0 overflow-hidden py-0">
+          <Table className="min-w-[1040px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Negocio</TableHead>
@@ -80,7 +80,7 @@ export default function Clients() {
                 <TableHead>Vencimiento</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Bot</TableHead>
-                <TableHead>Acciones</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -96,18 +96,41 @@ export default function Clients() {
                   <TableCell>{expLabel(c)}</TableCell>
                   <TableCell>{statusPill(c)}</TableCell>
                   <TableCell>{botPill(c)}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1 flex-wrap">
-                      <Button variant="outline" size="sm" onClick={() => quickVerify(c)} title="Verificar conexión del proveedor" className="text-xs"><Check className="w-3.5 h-3.5" /></Button>
-                      <Button variant="outline" size="sm" onClick={() => setViewing(c)} className="text-xs"><span className="inline-flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Ver</span></Button>
-                      <Button variant="outline" size="sm" onClick={() => setEditing(c.id)} className="text-xs">Editar</Button>
-                      <Button variant="outline" size="sm" onClick={() => setPrompting(c)} className="text-xs"><span className="inline-flex items-center gap-1"><BotIcon className="w-3.5 h-3.5" /> Bot</span></Button>
+                  <TableCell className="w-[1%]">
+                    <div className="flex flex-nowrap justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setViewing(c)}><Eye /> Ver</Button>
+                      <Button variant="outline" size="sm" onClick={() => setEditing(c.id)}><Pencil /> Editar</Button>
                       {c.suspended
-                        ? <Button size="sm" onClick={() => mReactivate.mutate(c.id)} className="text-xs">Reactivar</Button>
-                        : <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Suspender a ${c.name}? Su bot dejará de atender.`)) mSuspend.mutate(c.id) }} className="text-xs">Suspender</Button>}
-                      <Button variant="outline" size="sm" onClick={() => del(c)} title="Eliminar cliente" className="text-xs"><Trash2 className="w-3.5 h-3.5" /></Button>
+                        ? <Button size="sm" onClick={() => mReactivate.mutate(c.id)}>Reactivar</Button>
+                        : <ConfirmAction
+                            trigger={<Button variant="outline" size="sm">Suspender</Button>}
+                            title={`Suspender a ${c.name}`}
+                            description="El bot dejará de atender hasta que el negocio sea reactivado."
+                            confirmLabel="Suspender"
+                            destructive
+                            onConfirm={() => mSuspend.mutate(c.id)}
+                          />}
+                      <ConfirmAction
+                        trigger={<Button variant="outline" size="icon-sm" aria-label={`Eliminar ${c.name}`} title="Eliminar cliente"><Trash2 className="w-3.5 h-3.5" /></Button>}
+                        title={`Eliminar permanentemente a ${c.name}`}
+                        description="Se eliminarán sus productos, conversaciones y registros de pago. Esta acción no se puede deshacer."
+                        confirmLabel="Eliminar negocio"
+                        destructive
+                        onConfirm={() => mDelete.mutate(c.id)}
+                      />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="icon-sm" aria-label={`Más acciones para ${c.name}`}><MoreHorizontal /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuItem onSelect={() => quickVerify(c)}><Check /> Verificar conexión</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setPrompting(c)}><BotIcon /> Configurar bot</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => setViewing(c)}><Eye /> Ver información</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    {vfy[c.id] && <div className="text-[11px] text-muted-foreground mt-1 max-w-72">{vfy[c.id]}</div>}
+                    {vfy[c.id] && <div className="ml-auto mt-2 max-w-80 text-right text-xs text-muted-foreground">{vfy[c.id]}</div>}
                   </TableCell>
                 </TableRow>
               ))}

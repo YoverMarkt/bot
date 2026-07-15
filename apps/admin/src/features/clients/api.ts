@@ -1,4 +1,4 @@
-// ── API del admin (tipada sobre routes/admin.routes.js) ─────────────
+// ── API del admin (servida por el dominio y compositor TypeScript del superadmin) ──
 import { api } from '../../api/client'
 
 export type AdminStats = {
@@ -40,24 +40,26 @@ export const setBotActive = (id: string, bot_active: boolean) =>
 export type BusinessDetail = BusinessRow & {
   owner_phone: string | null
   whatsapp_provider: 'ycloud' | 'meta' | 'kapso' | 'telegram' | null
-  ycloud_api_key: string | null
   ycloud_number: string | null
-  meta_token: string | null
   meta_phone_id: string | null
-  meta_verify_token: string | null
-  kapso_api_key: string | null
   kapso_number_id: string | null
-  kapso_verify_token: string | null
-  telegram_bot_token: string | null
   retell_agent_id: string | null
   ai_provider: string | null
   takes_bookings: boolean | null
   takes_orders: boolean | null
+  lodging_enabled: boolean | null
   monthly_rate: number | null
   client_email: string
+  credential_status: Record<'ycloud_api_key' | 'meta_token' | 'meta_verify_token' | 'kapso_api_key' | 'kapso_verify_token' | 'telegram_bot_token', boolean>
 }
 
-export type BusinessPayload = Partial<BusinessDetail> & {
+export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'> & {
+  ycloud_api_key?: string
+  meta_token?: string
+  meta_verify_token?: string
+  kapso_api_key?: string
+  kapso_verify_token?: string
+  telegram_bot_token?: string
   client_password?: string
   plan_expires_at?: string | null
 }

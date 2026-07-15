@@ -1,20 +1,27 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as convApi from './api'
 import { session } from '../../api/client'
 import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, Check, X, Trash2 } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Input } from '@botpanel/ui/components/input'
+import { Checkbox } from '@botpanel/ui/components/checkbox'
+import { Label } from '@botpanel/ui/components/label'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { Popover, PopoverContent, PopoverTrigger } from '@botpanel/ui/components/popover'
+import { QueryError } from '@botpanel/ui/components/query-error'
 
 // Polling con la optimización de egress documentada en CLAUDE.md §11:
 // cada 10s (no 3s) y TanStack Query lo PAUSA solo cuando la pestaña
 // no está visible (refetchIntervalInBackground: false por defecto).
 const POLL_MS = 10_000
+const EMPTY_SESSIONS: Session[] = []
+const EMPTY_MESSAGES: Msg[] = []
+const EMPTY_TAGS: Tag[] = []
 
 // Colores predefinidos de etiquetas (mismos del panel viejo)
 const TAG_COLORS = ['#ef5350','#ff9800','#ffd54f','#66bb6a','#26a69a','#42a5f5','#5c6bc0','#ab47bc','#ec407a','#78909c']
@@ -35,12 +42,18 @@ export default function Conversations() {
   const [nameDraft, setNameDraft] = useState('')
   const [tagsOpen, setTagsOpen] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const openedFromUrl = useRef(false)
   const user = session.user
   const canVentas = user?.role === 'owner' || (user?.permissions ?? []).includes('ventas')
 
-  const { data: sessions = [] } = useQuery({ queryKey: ['sessions'], queryFn: convApi.getSessions, refetchInterval: POLL_MS })
-  const { data: msgs = [] }     = useQuery({ queryKey: ['conversations'], queryFn: convApi.getConversations, refetchInterval: POLL_MS })
-  const { data: tags = [] }     = useQuery({ queryKey: ['tags'], queryFn: convApi.getTags })
+  const sessionsQuery = useQuery({ queryKey: ['sessions'], queryFn: convApi.getSessions, refetchInterval: POLL_MS })
+  const messagesQuery = useQuery({ queryKey: ['conversations'], queryFn: convApi.getConversations, refetchInterval: POLL_MS })
+  const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: convApi.getTags })
+  const sessions = sessionsQuery.data ?? EMPTY_SESSIONS
+  const msgs = messagesQuery.data ?? EMPTY_MESSAGES
+  const tags = tagsQuery.data ?? EMPTY_TAGS
+  const loadError = sessionsQuery.isError || messagesQuery.isError || tagsQuery.isError
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ['sessions'] }); qc.invalidateQueries({ queryKey: ['conversations'] }) }
 
@@ -49,6 +62,17 @@ export default function Conversations() {
   const mRename = useMutation({ mutationFn: (v: { phone: string; name: string }) => convApi.renameContact(v.phone, v.name), onSettled: refresh })
   const mTags   = useMutation({ mutationFn: (v: { phone: string; tags: string[] }) => convApi.setSessionTags(v.phone, v.tags), onSettled: refresh })
   const mSend   = useMutation({ mutationFn: (v: { phone: string; message: string }) => convApi.sendMessage(v.phone, v.message), onSettled: refresh })
+
+  useEffect(() => {
+    if (openedFromUrl.current) return
+    const requestedPhone = searchParams.get('phone')
+    if (!requestedPhone || sessions.length === 0) return
+    const requestedSession = sessions.find(item => item.contact_phone === requestedPhone)
+    if (!requestedSession) return
+    openedFromUrl.current = true
+    setSelected(requestedPhone)
+    if (requestedSession.unread_owner) mRead.mutate(requestedPhone)
+  }, [mRead, searchParams, sessions])
 
   // Mensajes agrupados por contacto (el endpoint trae los últimos 100 mezclados)
   const byPhone = useMemo(() => {
@@ -81,27 +105,38 @@ export default function Conversations() {
     mSend.mutate({ phone: selected, message: text })
   }
 
+  if (loadError) {
+    return <QueryError onRetry={() => {
+      void Promise.all([
+        sessionsQuery.refetch(),
+        messagesQuery.refetch(),
+        tagsQuery.refetch(),
+      ])
+    }} />
+  }
+
   return (
-    <div className="h-[calc(100vh-3rem)] flex gap-4">
+    <div className="flex h-auto flex-col gap-4 lg:h-[calc(100vh-3rem)] lg:flex-row">
       {/* Lista de conversaciones */}
-      <Card className="w-80 shrink-0 py-0 gap-0 overflow-hidden">
+      <Card className="h-72 w-full shrink-0 gap-0 overflow-hidden py-0 lg:h-auto lg:w-80">
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="font-semibold text-foreground inline-flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Conversaciones</span>
           <span className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Actualizando en tiempo real" />
-            <Button variant="ghost" size="sm" onClick={refresh} className="text-xs" title="Actualizar"><RotateCw className="w-3.5 h-3.5" /></Button>
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse motion-reduce:animate-none" title="Actualizando en tiempo real" />
+            <Button variant="ghost" size="icon-sm" onClick={refresh} aria-label="Actualizar conversaciones" title="Actualizar"><RotateCw /></Button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto">
           {sessions.length === 0 && <p className="p-4 text-sm text-muted-foreground">Aún no hay conversaciones.</p>}
           {sessions.map(s => (
-            <button
+            <Button
+              variant="ghost"
               key={s.contact_phone} onClick={() => openChat(s)}
-              className={`w-full text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${selected === s.contact_phone ? 'bg-primary/10' : ''}`}
+              className={`w-full h-auto justify-start whitespace-normal rounded-none text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${selected === s.contact_phone ? 'bg-primary/10' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm text-foreground truncate">
-                  {s.unread_owner && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 animate-pulse" />}
+                  {s.unread_owner && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 animate-pulse motion-reduce:animate-none" />}
                   {s.contact_name || s.contact_phone}
                 </span>
                 <span className="text-[11px] text-muted-foreground/80 shrink-0">{fmtTime(s.last_message_at)}</span>
@@ -120,13 +155,13 @@ export default function Conversations() {
                   })}
                 </div>
               )}
-            </button>
+            </Button>
           ))}
         </div>
       </Card>
 
       {/* Chat */}
-      <Card className="flex-1 min-w-0 py-0 gap-0 overflow-hidden">
+      <Card className="min-h-[28rem] min-w-0 flex-1 gap-0 overflow-hidden py-0 lg:min-h-0">
         {!sess ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground/80 text-sm">Elige una conversación para verla aquí</div>
         ) : (
@@ -136,15 +171,15 @@ export default function Conversations() {
               <div className="min-w-0">
                 {renaming ? (
                   <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
-                    <Input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="w-44" placeholder="Nombre del contacto" />
-                    <Button variant="ghost"><Check className="w-4 h-4" /></Button>
-                    <Button variant="ghost" type="button" onClick={() => setRenaming(false)}><X className="w-4 h-4" /></Button>
+                    <Input id="conversation-contact-name" aria-label="Nombre del contacto" autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="w-44" placeholder="Nombre del contacto" />
+                    <Button variant="ghost" size="icon" aria-label="Guardar nombre"><Check /></Button>
+                    <Button variant="ghost" size="icon" type="button" onClick={() => setRenaming(false)} aria-label="Cancelar cambio de nombre"><X /></Button>
                   </form>
                 ) : (
-                  <button onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
-                    className="font-semibold text-foreground truncate hover:underline">
+                  <Button variant="link" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
+                    className="h-auto p-0 font-semibold text-foreground truncate">
                     {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
-                  </button>
+                  </Button>
                 )}
                 <div className="text-xs text-muted-foreground/80">
                   {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? 'Modo manual — respondiendo tú' : 'Bot activo'}
@@ -160,9 +195,11 @@ export default function Conversations() {
                 )}
 
                 {/* Etiquetas */}
-                <div className="relative">
-                  <Button variant="outline" size="sm" onClick={() => setTagsOpen(v => !v)}><span className="inline-flex items-center gap-1.5"><TagIcon className="w-4 h-4" /> Etiquetas</span></Button>
-                  {tagsOpen && (
+                <Popover open={tagsOpen} onOpenChange={setTagsOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm"><TagIcon className="w-4 h-4" /> Etiquetas</Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-0">
                     <TagPicker
                       tags={tags} selected={sess.tags ?? []}
                       onToggle={(id) => {
@@ -175,8 +212,8 @@ export default function Conversations() {
                       onDelete={async (id) => { await convApi.deleteTag(id); qc.invalidateQueries({ queryKey: ['tags'] }); refresh() }}
                       onClose={() => setTagsOpen(false)}
                     />
-                  )}
-                </div>
+                  </PopoverContent>
+                </Popover>
 
                 {/* Nombre */}
                 <Button variant="outline" size="sm" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
@@ -218,6 +255,8 @@ export default function Conversations() {
             {sess.manual_mode && (
             <form onSubmit={e => { e.preventDefault(); send() }} className="p-3 border-t border-border/60 flex gap-2">
               <Input
+                id="conversation-manual-message"
+                aria-label="Mensaje manual"
                 value={draft} onChange={e => setDraft(e.target.value)}
                 placeholder="Escribe como dueño del negocio..." className="flex-1"
               />
@@ -251,38 +290,44 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
   const [editColor, setEditColor] = useState(TAG_COLORS[0])
 
   return (
-    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-card rounded-xl border shadow-lg p-3">
+    <div className="p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-semibold text-foreground">Etiquetas del chat</span>
-        <Button variant="ghost" onClick={onClose}>✕</Button>
+        <Button variant="ghost" onClick={onClose} aria-label="Cerrar selector de etiquetas">✕</Button>
       </div>
       <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
         {tags.length === 0 && <p className="text-xs text-muted-foreground">Aún no tienes etiquetas — crea la primera abajo.</p>}
         {tags.map(t => editing?.id === t.id ? (
           <form key={t.id} className="rounded border border-border p-2"
             onSubmit={async e => { e.preventDefault(); await onUpdate(t.id, editName.trim() || t.name, editColor); setEditing(null) }}>
-            <Input autoFocus value={editName} onChange={e => setEditName(e.target.value)} className="w-full mb-1.5" />
+            <Input id={`tag-${t.id}-name`} aria-label={`Nombre de la etiqueta ${t.name}`} autoFocus value={editName} onChange={e => setEditName(e.target.value)} className="w-full mb-1.5" />
             <div className="flex gap-1 mb-1.5 flex-wrap">
               {TAG_COLORS.map(c => (
-                <button key={c} type="button" onClick={() => setEditColor(c)}
-                  className={`w-4 h-4 rounded-full border-2 ${editColor === c ? 'border-stone-800' : 'border-transparent'}`}
+                <Button key={c} type="button" variant="ghost" size="icon-xs" aria-label={`Color ${c}`} aria-pressed={editColor === c} onClick={() => setEditColor(c)}
+                  className={`size-4 rounded-full p-0 border-2 ${editColor === c ? 'border-foreground' : 'border-transparent'}`}
                   style={{ backgroundColor: c }} />
               ))}
             </div>
             <div className="flex gap-1">
-              <Button variant="ghost" size="sm" className="flex-1 text-xs">Guardar</Button>
-              <Button variant="outline" size="sm" type="button" onClick={() => setEditing(null)} className="text-xs"><X className="w-3.5 h-3.5" /></Button>
+              <Button variant="ghost" size="sm" className="flex-1">Guardar</Button>
+              <Button variant="outline" size="icon-sm" type="button" onClick={() => setEditing(null)} aria-label="Cancelar edición"><X /></Button>
             </div>
           </form>
         ) : (
           <div key={t.id} className="flex items-center gap-2 text-sm rounded px-1 py-0.5 hover:bg-muted/50 group">
-            <Checkbox checked={selected.includes(t.id)} onCheckedChange={() => onToggle(t.id)} className="cursor-pointer" />
+            <Checkbox id={`tag-${t.id}-selected`} checked={selected.includes(t.id)} onCheckedChange={() => onToggle(t.id)} className="cursor-pointer" />
             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-            <span className="text-foreground/90 truncate flex-1">{t.name}</span>
-            <button type="button" title="Editar etiqueta" className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
-              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}><Pencil className="w-3.5 h-3.5" /></button>
-            <button type="button" title="Eliminar etiqueta (se quita de todos los chats)" className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-              onClick={() => { if (confirm(`¿Eliminar la etiqueta "${t.name}"? Se quita de todos los chats.`)) onDelete(t.id) }}><Trash2 className="w-3.5 h-3.5" /></button>
+            <Label htmlFor={`tag-${t.id}-selected`} className="mb-0 flex-1 truncate text-foreground/90 font-normal leading-5 cursor-pointer">{t.name}</Label>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label="Editar etiqueta" title="Editar etiqueta" className="opacity-100 text-muted-foreground hover:text-foreground md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+              onClick={() => { setEditing(t); setEditName(t.name); setEditColor(t.color) }}><Pencil className="w-3.5 h-3.5" /></Button>
+            <ConfirmAction
+              trigger={<Button type="button" variant="ghost" size="icon-xs" aria-label="Eliminar etiqueta" title="Eliminar etiqueta" className="opacity-100 text-muted-foreground hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"><Trash2 className="w-3.5 h-3.5" /></Button>}
+              title={`Eliminar etiqueta “${t.name}”`}
+              description="La etiqueta se quitará de todos los chats. Esta acción no se puede deshacer."
+              confirmLabel="Eliminar"
+              destructive
+              onConfirm={() => onDelete(t.id)}
+            />
           </div>
         ))}
       </div>
@@ -295,11 +340,11 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
         }}
         className="border-t border-border/60 pt-2"
       >
-        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Nueva etiqueta…" className="w-full mb-2" />
+        <Input id="new-tag-name" aria-label="Nueva etiqueta" value={name} onChange={e => setName(e.target.value)} placeholder="Nueva etiqueta…" className="w-full mb-2" />
         <div className="flex gap-1 mb-2 flex-wrap">
           {TAG_COLORS.map(c => (
-            <button key={c} type="button" onClick={() => setColor(c)}
-              className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-stone-800' : 'border-transparent'}`}
+            <Button key={c} type="button" variant="ghost" size="icon-xs" aria-label={`Color ${c}`} aria-pressed={color === c} onClick={() => setColor(c)}
+              className={`size-5 rounded-full p-0 border-2 ${color === c ? 'border-foreground' : 'border-transparent'}`}
               style={{ backgroundColor: c }} />
           ))}
         </div>

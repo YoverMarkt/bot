@@ -1,8 +1,8 @@
-// Tema claro/oscuro del admin (por defecto: oscuro — línea gráfica del superadmin).
-// La preferencia se guarda por navegador; clave propia para no chocar con el panel del cliente.
+// Tema claro/oscuro del admin (mismo valor inicial que el panel cliente).
+// La preferencia se guarda por navegador; cada panel conserva su elección.
 
 const KEY = 'bp-theme-admin'
-const DEFAULT: Theme = 'dark'
+const DEFAULT: Theme = 'light'
 
 export type Theme = 'light' | 'dark'
 

@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import * as custApi from './api'
 import { Repeat2, Sparkles, Download } from 'lucide-react'
 import type { Customer } from './api'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
+import { QueryError } from '@botpanel/ui/components/query-error'
 
 const { money } = custApi
 
@@ -33,7 +34,7 @@ export default function Customers() {
 
 // ── Directorio: quiénes te han comprado, cuánto y hace cuánto ──
 function Directory() {
-  const { data: customers = [], isLoading } = useQuery({ queryKey: ['customers'], queryFn: custApi.getCustomers })
+  const { data: customers = [], isLoading, isError, refetch } = useQuery({ queryKey: ['customers'], queryFn: custApi.getCustomers })
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(() => {
@@ -42,12 +43,13 @@ function Directory() {
   }, [customers, search])
 
   if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
+  if (isError) return <QueryError onRetry={() => { void refetch() }} />
 
   const fecha = (iso: string) => new Date(iso).toLocaleDateString('es')
 
   return (
     <div>
-      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono..." className="w-full max-w-sm mb-4" />
+      <Input id="customers-search" aria-label="Buscar clientes" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre o teléfono..." className="w-full max-w-sm mb-4" />
 
       {!customers.length ? (
         <p className="text-sm text-muted-foreground">Aún no hay clientes con compras registradas.</p>
@@ -110,7 +112,7 @@ export function Reactivate() {
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap justify-end">
         <Select value={String(days)} onValueChange={v => setDays(parseInt(v))}>
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger id="reactivate-days" aria-label="Días sin escribir" className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {[7, 15, 30, 60].map(d => <SelectItem key={d} value={String(d)}>+{d} días</SelectItem>)}
           </SelectContent>
@@ -157,4 +159,3 @@ export function Reactivate() {
     </div>
   )
 }
-
