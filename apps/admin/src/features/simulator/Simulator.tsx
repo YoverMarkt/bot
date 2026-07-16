@@ -12,7 +12,7 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
 
-type Msg = { role: 'user' | 'bot'; text: string; image?: string | null; at: string }
+type Msg = { role: 'user' | 'bot'; text: string; image?: string | null; video?: string | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
@@ -40,11 +40,14 @@ export default function Simulator() {
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; mediaNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t }),
       })
-      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, at: now() }])
+      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, at: now() }])
+      // La nota de media ("no tengo foto de ese producto…") llega como
+      // mensaje aparte, igual que en WhatsApp/Telegram.
+      if (d.mediaNote) setMsgs(m => [...m, { role: 'bot', text: d.mediaNote!, at: now() }])
     } catch (e) {
       setMsgs(m => [...m, { role: 'bot', text: `Atención: Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
     }
@@ -115,6 +118,9 @@ export default function Simulator() {
               {m.image && (
                 <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-input"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              )}
+              {m.video && (
+                <video src={m.video} controls className="mt-2 max-w-56 rounded-xl border border-input" />
               )}
               <span className="text-[10px] text-muted-foreground/70 mt-1">{m.at}</span>
             </div>

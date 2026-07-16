@@ -42,6 +42,24 @@ const bot = require('../services/bot-entry') as {
 const auth = require('../middleware/auth') as {
   authAdmin: RequestHandler
 }
+const tags = require('../services/bot-tags') as {
+  detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
+}
+const media = require('../services/bot-media') as {
+  sendRequestedProductMedia(input: {
+    business: { id: string; name: string }
+    text: string
+    reply: string
+    history: { content?: string | null }[]
+    products: unknown[]
+    preFiltered: boolean
+    wantsImage: boolean
+    wantsVideo: boolean
+    send(message: string): Promise<unknown>
+    sendImage?: (url: string, caption?: string) => Promise<unknown>
+    sendVideo?: (url: string, caption?: string) => Promise<unknown>
+  }): Promise<boolean>
+}
 
 const router = createRouter()
 const SIMULATOR_CONTACT = 'sim_admin'
@@ -96,8 +114,37 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       await db.saveMessage(business.id, SIMULATOR_CONTACT, 'assistant', reply),
       'guardar respuesta de prueba',
     )
+    // El flujo real envía la media DESPUÉS de responder (bot-conversation →
+    // bot-media). Aquí se replica con enviadores que capturan la media en vez
+    // de mandarla por un canal, para que el simulador muestre exactamente lo
+    // que el cliente recibiría en WhatsApp/Telegram.
+    const { wantsImage, wantsVideo } = tags.detectMediaRequest(message)
+    let mediaImage: string | null = null
+    let mediaVideo: string | null = null
+    const mediaNotes: string[] = []
+    if (!hasHandoff && (wantsImage || wantsVideo)) {
+      await media.sendRequestedProductMedia({
+        business: { id: business.id, name: business.name || business.id },
+        text: message,
+        reply: rawReply,
+        history: history as { content?: string | null }[],
+        products,
+        preFiltered: false,
+        wantsImage,
+        wantsVideo,
+        send: async (note: string) => { mediaNotes.push(note) },
+        sendImage: async (url: string) => { mediaImage = url },
+        sendVideo: async (url: string) => { mediaVideo = url },
+      })
+    }
+
     console.log(`🧪 [Sim] ${business.name || business.id}: respondido`)
-    res.json({ reply, image: imageMatch?.[1] || null })
+    res.json({
+      reply,
+      image: mediaImage || imageMatch?.[1] || null,
+      video: mediaVideo,
+      mediaNote: mediaNotes.length ? mediaNotes.join('\n') : null,
+    })
   } catch (error) {
     console.error(
       '❌ Simulate:',

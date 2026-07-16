@@ -127,7 +127,50 @@ describe('simulador del superadmin', () => {
     expect(response.body).toEqual({
       reply: 'Respuesta final',
       image: 'https://img.example.com/producto.jpg',
+      video: null,
+      mediaNote: null,
     })
+  })
+
+  it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'getProducts').mockResolvedValue([
+      { id: 'product-a', name: 'Filtro Azul Premium', image_url: 'https://cdn.example.com/filtro.jpg' },
+    ])
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue('Con gusto, permítame y se lo muestro 😊')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: '¿Tienes fotos del Filtro Azul Premium?' },
+    })
+
+    expect(response.body).toEqual({
+      reply: 'Con gusto, permítame y se lo muestro 😊',
+      image: 'https://cdn.example.com/filtro.jpg',
+      video: null,
+      mediaNote: null,
+    })
+  })
+
+  it('avisa como mensaje aparte cuando el producto pedido no tiene media', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'getProducts').mockResolvedValue([
+      { id: 'product-a', name: 'Filtro Azul Premium', image_url: null, video_url: null },
+    ])
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue('Con gusto, permítame y se lo muestro 😊')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'muéstrame una foto del Filtro Azul Premium' },
+    })
+
+    expect(response.body.image).toBeNull()
+    expect(response.body.video).toBeNull()
+    expect(response.body.mediaNote).toContain('todavía no tengo foto ni video')
   })
 
   it('convierte HANDOFF en respuesta segura y retira etiquetas internas', async () => {
