@@ -18,7 +18,7 @@
     "test:e2e:install": "playwright install chromium"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1"

@@ -28,7 +28,7 @@ Guía obligatoria para trabajar en este proyecto sin romper la arquitectura ni e
 
 ## 2. STACK OFICIAL (no se cambia sin pedido explícito)
 
-- **Node.js** ≥ 20.19 + **Express** ^4.19
+- **Node.js** ≥ 22 + **Express** ^4.19
 - **Supabase (PostgreSQL)** vía `@supabase/supabase-js` ^2.43, con **pgvector** (RAG)
 - **Auth:** `jsonwebtoken` ^9 (JWT) + `bcryptjs` ^2.4
 - **IA (multi-proveedor):** `openai` ^6.45 (OpenAI + compatible Groq), `@anthropic-ai/sdk` ^0.24 (Claude), Gemini (API nativo vía `axios`), Groq (vía SDK OpenAI con baseURL)

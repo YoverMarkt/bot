@@ -129,7 +129,7 @@ npm run test:e2e          # Playwright: login, permisos, navegación y móvil
 
 En producción **NO se usa el túnel** — se usa un dominio fijo.
 
-1. Usa Node.js 20.19+ y crea una cuenta en **Railway**
+1. Usa Node.js 22+ y crea una cuenta en **Railway**
 2. Conecta este repositorio
 3. Configura las **variables de entorno** de `server/.env.example`, incluido `NODE_ENV=production`
 4. **Importante:** define `BASE_URL=https://tu-dominio.up.railway.app`

@@ -2,7 +2,7 @@
 
 ## Requisitos
 
-- Node.js 20.19 o superior.
+- Node.js 22 o superior (supabase-js lo exige desde la v2.110).
 - `cloudflared` para recibir webhooks durante el desarrollo local.
 - Un proyecto de Supabase.
 - Credenciales del superadmin.
