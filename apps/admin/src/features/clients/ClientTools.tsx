@@ -86,7 +86,7 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Prompt del Bot</DialogTitle>
           <DialogDescription>Revisa y ajusta las instrucciones principales del asistente.</DialogDescription>

@@ -373,7 +373,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             {error && <p role="alert" className="text-sm text-destructive mb-3">✗ {error}</p>}
 
             <DialogFooter className="mx-0 mb-0 px-0 pb-0">
-              <Button variant="outline" size="sm" type="button" onClick={onClose} >Cancelar</Button>
+              <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
               <Button disabled={saving}>
                 {saving ? 'Guardando…' : id ? 'Guardar cambios' : 'Crear negocio'}
               </Button>
