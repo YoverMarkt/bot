@@ -48,3 +48,14 @@ Mantener una sola experiencia visual para cliente y admin sin alterar contratos 
 - No agregar una dependencia visual si shadcn/Radix/Lucide ya cubren el caso.
 - No rediseñar la identidad ni cambiar comportamiento de negocio durante una migración visual.
 - No declarar paridad por compilación solamente: revisar la pantalla y sus estados.
+
+## Rendimiento (esencial, adaptado de ECC react-performance a los paneles Vite)
+
+En orden de impacto — revisa esto antes de optimizar nada más:
+
+1. **Awaits en cascada:** dos `await` independientes se lanzan juntos con `Promise.all` (los paneles ya lo hacen en cargas de pantalla; no lo rompas al editar).
+2. **Imports directos, no barriles:** importa `@botpanel/ui/components/button`, no un índice que arrastre toda la librería al bundle.
+3. **Pantallas pesadas con `lazy()`:** las rutas ya se cargan con dynamic import (se ve en los chunks del build); una pantalla nueva pesada sigue ese patrón.
+4. **Re-renders:** estado lo más local posible; no subas un `useState` al layout si solo lo usa una card. TanStack Query ya deduplica y cachea las llamadas — no agregues estados espejo de sus datos.
+5. **Listas largas:** el patrón actual es paginar/filtrar server-side (los repos ya lo soportan); no renderices cientos de filas de golpe ni agregues virtualización sin medir antes.
+6. **Polling:** cualquier `refetchInterval` nuevo se justifica; el egress de Supabase ya fue un problema real (CLAUDE.md §11).

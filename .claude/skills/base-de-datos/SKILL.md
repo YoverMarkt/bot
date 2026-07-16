@@ -56,4 +56,22 @@ El modelo actual: **RLS habilitada + backend con service key** (la service key b
 - [ ] Se probó primero en el proyecto de desarrollo si existe.
 - [ ] Los repositorios TypeScript que lo usan están listos (no dejar la BD adelantada al código ni viceversa de forma que rompa).
 
+## Chuleta de índices (adaptada de ECC postgres-patterns a este multi-tenant)
+
+En este proyecto casi toda consulta filtra primero por `business_id`, así que el índice compuesto empieza por ahí:
+
+| Patrón de consulta | Índice |
+|---|---|
+| `where business_id = X` | `(business_id)` — el mínimo de toda tabla |
+| `where business_id = X and col = Y` | compuesto `(business_id, col)` |
+| `where business_id = X order by created_at desc` | `(business_id, created_at desc)` |
+| `where business_id = X and fecha between ...` | `(business_id, fecha)` |
+| columna `jsonb` con `@>` | `using gin (col)` |
+| rangos de fechas que no deben solaparse | `using gist (...)` + `btree_gist` (ver hospedaje) |
+| único por negocio (ej. nombre) | `unique (business_id, lower(nombre))` |
+
+- Un índice sin `business_id` delante rara vez sirve aquí: Postgres no lo usará para las consultas reales del SaaS.
+- Índices parciales (`where released_at is null`, `where status = 'pending'`) cuando la consulta caliente solo mira un subconjunto — ya se usan en hospedaje.
+- No indexar "por si acaso": cada índice encarece cada insert/update. Justifícalo con una consulta real.
+
 > Una migración mal hecha puede borrar datos de TODOS los negocios a la vez. Trátala con ese nivel de cuidado.
