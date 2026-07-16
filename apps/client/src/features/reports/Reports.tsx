@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, money, type Alert } from './api'
 import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info, Receipt } from 'lucide-react'
@@ -51,7 +51,13 @@ type Cat = typeof CATS[number][0]
 export default function Reports() {
   const [period, setPeriod] = useState<string>('mes')
   const [cat, setCat] = useState<Cat>('todos')
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['reports', period], queryFn: () => getReports(period) })
+  // keepPreviousData: al cambiar el período se sigue mostrando el reporte
+  // anterior mientras llega el nuevo, en vez de vaciar la pantalla.
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+    queryKey: ['reports', period],
+    queryFn: () => getReports(period),
+    placeholderData: keepPreviousData,
+  })
   const { data: alertsData } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts, staleTime: 60_000 })
 
   const show = (g: Cat) => cat === 'todos' || cat === g
@@ -61,7 +67,10 @@ export default function Reports() {
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Reportes del negocio</h1>
-          <p className="text-sm text-muted-foreground">Ventas y métricas operativas. También puedes pedir reportes por WhatsApp.</p>
+          <p className="text-sm text-muted-foreground">
+            Ventas y métricas operativas. También puedes pedir reportes por WhatsApp.
+            {isFetching && !isLoading && <span className="ml-2 text-primary">Actualizando…</span>}
+          </p>
         </div>
         <Tabs value={period} onValueChange={setPeriod}>
           <TabsList>
