@@ -146,8 +146,14 @@ function buildPrompt(
     ? `- Cuando el cliente CONFIRME la compra (acepta el/los producto(s) y ya toca coordinar pago o entrega), escribe tu mensaje normal SIN mencionar totales y agrega al FINAL, en su propia línea, la etiqueta ##PEDIDO:nombre del producto x cantidad## usando los nombres EXACTOS del catálogo de arriba; si son varios productos sepáralos con ";". Ejemplo: ##PEDIDO:Pizza Familiar Pepperoni x2; Coca Cola 1.5L x1##. El sistema calcula el TOTAL oficial con los precios reales de la base y le envía el resumen al cliente (el cliente NO ve la etiqueta). NO la pongas si el cliente todavía pregunta, compara o duda.`
     : `- Este negocio usa el bot en modo INFORMATIVO: SÍ puedes responder automáticamente preguntas sobre precios unitarios, descripciones, stock, catálogo, políticas, fotos y videos usando solamente los datos mostrados arriba. Preguntar "¿cuánto cuesta?", pedir una cotización informativa, consultar disponibilidad de un producto o solicitar una foto/video NO es una compra y NO se deriva. Deriva con ##HANDOFF## solo cuando exista intención transaccional explícita de comprar, encargar, separar, pagar o confirmar un producto/servicio, o cuando el cliente pida una persona. NUNCA cierres ni confirmes un pedido, registres una venta, pidas datos de pago o emitas ##PEDIDO##.${lodgingEnabled ? ' Para alojamiento, incluso si el cliente dice que quiere reservar, sigue primero el flujo especializado de HOSPEDAJE de abajo; no lo derives por esa sola frase.' : ''}`
 
+  // Sin la fecha actual el modelo resuelve "del 17 al 19 de julio" con un año
+  // pasado y la RPC rechaza la cotización por fecha en el pasado.
+  const todayEcuador = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Guayaquil',
+  })
   const lodgingRule = !voiceMode && lodgingEnabled
     ? `\nHOSPEDAJE (flujo especializado; el sistema consulta y calcula, tú solo recopilas):
+- HOY es ${todayEcuador}. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado).
 - Para consultar alojamiento reúne fecha de entrada, fecha de salida, cantidad de habitaciones, número de adultos y número de niños. Si falta cualquier dato, pregunta TODOS los que falten juntos y no escribas ninguna etiqueta todavía.
 - Cuando los cinco datos estén explícitos, escribe al FINAL exactamente ##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##. Ejemplo: ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##.
 - NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales. NUNCA inventes esos datos ni uses el precio del catálogo para calcular una estancia: el servidor enviará la cotización oficial.

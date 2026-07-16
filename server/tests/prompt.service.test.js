@@ -118,6 +118,11 @@ describe('constructor tipado del prompt', () => {
     expect(lodgingPrompt).toContain(
       '##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##',
     )
+    const hoyEcuador = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Guayaquil',
+    })
+    expect(lodgingPrompt).toContain(`HOY es ${hoyEcuador}`)
+    expect(lodgingPrompt).toContain('fechas FUTURAS a partir de hoy')
     expect(lodgingPrompt).toContain(
       '##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO##',
     )
