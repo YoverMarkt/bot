@@ -14,6 +14,7 @@ import { Label } from '@botpanel/ui/components/label'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Popover, PopoverContent, PopoverTrigger } from '@botpanel/ui/components/popover'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import { toast } from 'sonner'
 
 // Polling con la optimización de egress documentada en CLAUDE.md §11:
 // cada 10s (no 3s) y TanStack Query lo PAUSA solo cuando la pestaña
@@ -57,7 +58,24 @@ export default function Conversations() {
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ['sessions'] }); qc.invalidateQueries({ queryKey: ['conversations'] }) }
 
-  const mMode   = useMutation({ mutationFn: (v: { phone: string; manual: boolean }) => convApi.setMode(v.phone, v.manual), onSettled: refresh })
+  const mMode   = useMutation({
+    mutationFn: (v: { phone: string; manual: boolean }) => convApi.setMode(v.phone, v.manual),
+    onSuccess: (_data, v) => {
+      // Los reportes valen lo que valga el registro: al reactivar el bot tras
+      // atender a mano, recordar registrar la venta si la hubo.
+      if (!v.manual) {
+        toast('¿Cerraste una venta con este cliente?', {
+          description: 'Regístrala para que tus reportes queden al día.',
+          action: {
+            label: 'Registrar venta',
+            onClick: () => navigate(`/sales?phone=${encodeURIComponent(v.phone)}`),
+          },
+          duration: 10_000,
+        })
+      }
+    },
+    onSettled: refresh,
+  })
   const mRead   = useMutation({ mutationFn: (phone: string) => convApi.markRead(phone), onSettled: refresh })
   const mRename = useMutation({ mutationFn: (v: { phone: string; name: string }) => convApi.renameContact(v.phone, v.name), onSettled: refresh })
   const mTags   = useMutation({ mutationFn: (v: { phone: string; tags: string[] }) => convApi.setSessionTags(v.phone, v.tags), onSettled: refresh })
