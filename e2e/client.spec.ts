@@ -332,3 +332,38 @@ test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({
     return pane !== null && pane.scrollWidth <= pane.clientWidth + 1
   })).toBe(true)
 })
+
+test('el nombre del contacto y las etiquetas se editan en modales', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+  let namePayload: unknown = null
+  await page.route('**/api/client/sessions/**/name', async (route) => {
+    if (route.request().method() === 'PUT') {
+      namePayload = route.request().postDataJSON()
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    }
+    return route.fallback()
+  })
+  await page.goto(`${clientUrl}#/conversations`)
+  await page.getByText('Cliente móvil').first().click()
+
+  // Modal de nombre: accesible, guarda y se cierra
+  await page.getByRole('button', { name: 'Nombre', exact: true }).click()
+  const nameDialog = page.getByRole('dialog', { name: 'Editar nombre del contacto' })
+  await expect(nameDialog).toBeVisible()
+  await expectConnectedLabels(nameDialog)
+  await nameDialog.getByLabel('Nombre del contacto').fill('Doña Rosa')
+  await nameDialog.getByRole('button', { name: 'Guardar' }).click()
+  await expect.poll(() => namePayload).toEqual({ name: 'Doña Rosa' })
+  await expect(nameDialog).toBeHidden()
+
+  // Modal de etiquetas: accesible y con el formulario de creación
+  await page.getByRole('button', { name: 'Etiquetas' }).click()
+  const tagsDialog = page.getByRole('dialog', { name: 'Etiquetas del chat' })
+  await expect(tagsDialog).toBeVisible()
+  await expectConnectedLabels(tagsDialog)
+  await expect(tagsDialog.getByText('Aún no tienes etiquetas — crea la primera abajo.')).toBeVisible()
+  await expect(tagsDialog.getByRole('button', { name: '+ Crear etiqueta' })).toBeDisabled()
+  await tagsDialog.getByRole('button', { name: 'Cerrar' }).click()
+  await expect(tagsDialog).toBeHidden()
+})
