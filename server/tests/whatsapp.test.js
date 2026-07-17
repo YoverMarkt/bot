@@ -105,6 +105,23 @@ describe('integración multi-proveedor de WhatsApp', () => {
     expect(showTyping).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
   })
 
+  it('un negocio solo-Telegram falla claro sin llamar a YCloud con credenciales ajenas', async () => {
+    process.env.YCLOUD_API_KEY = 'ycloud-global-key'
+    const sendText = vi.spyOn(ycloud, 'sendText').mockResolvedValue(undefined)
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({ data: {} })
+    const business = { whatsapp_provider: 'telegram', whatsapp_number: '+593987000111' }
+
+    await expect(whatsapp.sendText(business, '+593987000111', 'Aviso al dueño'))
+      .rejects.toThrow('solo por Telegram')
+    await expect(whatsapp.sendImage(business, '+593987000111', 'https://cdn.example.com/a.jpg'))
+      .rejects.toThrow('solo por Telegram')
+    await expect(whatsapp.sendVideo(business, '+593987000111', 'https://cdn.example.com/a.mp4'))
+      .rejects.toThrow('solo por Telegram')
+
+    expect(sendText).not.toHaveBeenCalled()
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it('no usa typing para Meta y los fallos no filtran respuestas del proveedor', async () => {
     const showTyping = vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
     const providerError = Object.assign(new Error('Meta no disponible'), {
