@@ -95,7 +95,7 @@ export async function mockClientApi(page: Page) {
         contact_name: 'Cliente móvil',
         manual_mode: false,
         unread_owner: false,
-        last_message: 'Hola desde E2E',
+        last_message: 'Hola desde E2E con un preview larguísimo que debe truncarse con elipsis y jamás crear una barra de desplazamiento horizontal en la lista de conversaciones del panel',
         last_message_at: '2026-07-12T18:00:00.000Z',
         tags: [],
       }])
