@@ -9,7 +9,10 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: https:",
-  "media-src 'self' data: https:",
+  // blob: solo en media: el panel genera el WAV de la alarma en memoria
+  // (apps/client/src/lib/alarm.ts); sin blob: el navegador lo bloquea con
+  // NotSupportedError y la alarma de pendientes queda muda.
+  "media-src 'self' data: https: blob:",
   "connect-src 'self'",
 ].join('; ')
 
