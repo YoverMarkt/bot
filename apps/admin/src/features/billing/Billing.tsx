@@ -12,6 +12,7 @@ import { Badge } from '@botpanel/ui/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
 import { Label } from '@botpanel/ui/components/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
 // (incluye "Próximo" = período futuro), paginación y marcar pagado.
@@ -102,7 +103,13 @@ export default function Billing() {
         </div>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando facturación…</p> : (
+      {isLoading ? (
+        <Card className="flex-1 p-4 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-5 w-full" />
+          ))}
+        </Card>
+      ) : (
         <Card className="py-0 gap-0 overflow-x-auto flex-1">
           <Table>
             <TableHeader>

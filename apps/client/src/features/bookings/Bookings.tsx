@@ -10,6 +10,7 @@ import { Input } from '@botpanel/ui/components/input'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
 // calendario MENSUAL con chips por día + detalle del día + vista lista.
@@ -70,7 +71,16 @@ export default function Bookings() {
           </TabsList>
         </Tabs>
       </div>
-      {isLoading ? <p className="text-muted-foreground">Cargando reservas…</p> : isError
+      {isLoading ? (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <Skeleton className="h-8 w-16" />
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-8 w-16" />
+          </div>
+          <Skeleton className="h-80 w-full rounded-xl" />
+        </div>
+      ) : isError
         ? <QueryError onRetry={() => { void refetch() }} /> :
         tab === 'calendario'
           ? <Calendar bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />

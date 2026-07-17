@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@botpanel/ui/components/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@botpanel/ui/components/alert'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 import {
   BUSINESS_TYPE_OPTIONS,
   CUSTOM_BUSINESS_TYPE,
@@ -210,7 +211,16 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
           <DialogDescription>Configura identidad, canales, plan y acceso del negocio.</DialogDescription>
         </DialogHeader>
 
-        {loading ? <p className="text-muted-foreground">Cargando datos…</p> : (
+        {loading ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-9 w-full" />
+              </div>
+            ))}
+          </div>
+        ) : (
           <>
             {/* Identidad */}
             <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">

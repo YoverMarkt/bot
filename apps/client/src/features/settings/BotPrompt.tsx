@@ -8,6 +8,7 @@ import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Textarea } from '@botpanel/ui/components/textarea'
 import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
@@ -32,7 +33,19 @@ export default function BotPrompt() {
   })
 
   if (!isOwner) return <Locked />
-  if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading) return (
+    <div>
+      <div className="mb-5 space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      <Card className="p-5 max-w-2xl gap-3">
+        <Skeleton className="h-4 w-56" />
+        <Skeleton className="h-56 w-full" />
+        <Skeleton className="h-9 w-36 self-end" />
+      </Card>
+    </div>
+  )
 
   return (
     <div>

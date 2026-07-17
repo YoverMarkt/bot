@@ -10,6 +10,7 @@ import { Button } from '@botpanel/ui/components/button'
 import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Progress } from '@botpanel/ui/components/progress'
 import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@botpanel/ui/components/chart'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, CartesianGrid, LabelList, Label } from 'recharts'
 
@@ -109,7 +110,23 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
-  if (canReports && isLoading) return <p className="text-muted-foreground">Cargando tu negocio…</p>
+  if (canReports && isLoading) return (
+    <div>
+      <div className="mb-5 space-y-2">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    </div>
+  )
   if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
 
   const k = data?.kpis

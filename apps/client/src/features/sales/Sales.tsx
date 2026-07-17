@@ -14,6 +14,7 @@ import { Badge } from '@botpanel/ui/components/badge'
 import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const { money, cents } = salesApi
 
@@ -85,7 +86,20 @@ function BotOrders() {
     },
     onError: error => toast.error(error instanceof Error ? error.message : 'No se pudo actualizar el pedido'),
   })
-  if (isLoading) return <p className="text-muted-foreground">Cargando pedidos…</p>
+  if (isLoading) return (
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Card key={i} className="p-4 gap-2">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-5 w-24" />
+          </div>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </Card>
+      ))}
+    </div>
+  )
   if (!orders.length) return (
     <Card className="p-8 text-center gap-1">
       <Receipt className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />

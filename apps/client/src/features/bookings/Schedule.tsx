@@ -9,6 +9,7 @@ import { Input } from '@botpanel/ui/components/input'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 import { isBookingBiz, useBusinessInfo } from '../../lib/biz'
 
 // ── Horario de atención — para TODOS los negocios (igual que el panel
@@ -50,7 +51,19 @@ export default function Schedule() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   })
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando horario…</p>
+  if (isLoading) return (
+    <div>
+      <div className="mb-5 space-y-2">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-80 max-w-full" />
+      </div>
+      <Card className="p-5 max-w-xl gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-full" />
+        ))}
+      </Card>
+    </div>
+  )
 
   const time = 'w-24'
 

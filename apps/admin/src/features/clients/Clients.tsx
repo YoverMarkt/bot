@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@botpanel/ui/components/dropdown-menu'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -67,7 +68,13 @@ export default function Clients() {
         <Button onClick={() => setEditing('new')}><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo cliente</span></Button>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando negocios…</p> : isError ? (
+      {isLoading ? (
+        <Card className="p-4 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-5 w-full" />
+          ))}
+        </Card>
+      ) : isError ? (
         <QueryError onRetry={() => { void refetch() }} />
       ) : (
         <Card className="flex-1 w-full gap-0 overflow-hidden py-0">

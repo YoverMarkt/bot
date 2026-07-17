@@ -15,6 +15,7 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const money = (n: string | number | null) => {
   const v = Number(n)
@@ -83,7 +84,13 @@ export default function Catalog() {
         </div>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : isError ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-64 rounded-xl" />
+          ))}
+        </div>
+      ) : isError ? (
         <QueryError onRetry={() => { void refetch() }} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

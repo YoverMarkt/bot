@@ -11,6 +11,7 @@ import { Textarea } from '@botpanel/ui/components/textarea'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
@@ -32,6 +33,25 @@ export default function Settings() {
       </div>
       <BusinessForm />
     </div>
+  )
+}
+
+// Esqueleto compartido por los formularios de esta sección (identidad y bot)
+function FormSkeleton({ fields = 4 }: { fields?: number }) {
+  return (
+    <Card className="p-5 max-w-2xl gap-0">
+      <div className="space-y-3">
+        {Array.from({ length: fields }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end mt-4">
+        <Skeleton className="h-9 w-36" />
+      </div>
+    </Card>
   )
 }
 
@@ -69,7 +89,7 @@ export function BusinessForm() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
-  if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading || !f) return <FormSkeleton />
   const set = (k: keyof BusinessData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setDraft({ ...f, [k]: e.target.value })
 
@@ -103,7 +123,7 @@ export function BotForm() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
-  if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading || !f) return <FormSkeleton fields={3} />
   const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
 
   return (
@@ -164,7 +184,20 @@ export function Team() {
 
   const togglePerm = (list: string[], p: string) => list.includes(p) ? list.filter(x => x !== p) : [...list, p]
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando equipo…</p>
+  if (isLoading) return (
+    <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
+      <Card className="p-5 gap-3">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </Card>
+      <Card className="p-5 gap-3">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </Card>
+    </div>
+  )
 
   return (
     <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">

@@ -10,8 +10,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@botpanel/ui/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const { money } = custApi
+
+// Esqueleto compartido por las dos tablas de esta pantalla (directorio y reactivar)
+function TableSkeleton() {
+  return (
+    <Card className="p-4 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-5 w-full" />
+      ))}
+    </Card>
+  )
+}
 
 const STATUS_BADGE: Record<Customer['status'], { label: string; cls: string }> = {
   nuevo:     { label: 'Nuevo',      cls: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' },
@@ -42,7 +54,12 @@ function Directory() {
     return q ? customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q)) : customers
   }, [customers, search])
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading) return (
+    <div>
+      <Skeleton className="h-9 w-full max-w-sm mb-4" />
+      <TableSkeleton />
+    </div>
+  )
   if (isError) return <QueryError onRetry={() => { void refetch() }} />
 
   const fecha = (iso: string) => new Date(iso).toLocaleDateString('es')
@@ -122,7 +139,7 @@ export function Reactivate() {
         </Button>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando…</p> :
+      {isLoading ? <TableSkeleton /> :
         rows.length === 0 ? <p className="text-sm text-muted-foreground py-5">Nadie sin escribir en ese rango. ¡Todos al día!</p> : (
           <>
             <p className="text-xs text-muted-foreground/80 mb-2.5">{rows.length} cliente(s) sin escribir · "Cliente" ya te compró · "Solo consultó" aún no.</p>

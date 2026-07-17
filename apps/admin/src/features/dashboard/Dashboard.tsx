@@ -3,12 +3,26 @@ import { getStats, getClients } from '../clients/api'
 import { Users, CircleCheck, CirclePause, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 export default function Dashboard() {
   const { data, isLoading, error } = useQuery({ queryKey: ['adm-stats'], queryFn: getStats, refetchInterval: 30_000 })
   const { data: clients = [] } = useQuery({ queryKey: ['adm-clients'], queryFn: getClients })
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading) return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="mb-6 space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="mt-6 h-56 w-full rounded-xl" />
+    </div>
+  )
   if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
   if (!data) return null
 

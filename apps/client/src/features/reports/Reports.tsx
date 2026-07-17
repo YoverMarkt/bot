@@ -8,6 +8,7 @@ import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui
 import { Badge } from '@botpanel/ui/components/badge'
 import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
 import { Separator } from '@botpanel/ui/components/separator'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@botpanel/ui/components/chart'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts'
@@ -114,7 +115,19 @@ export default function Reports() {
         </Tabs>
       </div>
 
-      {isLoading && <p className="text-muted-foreground">Calculando reportes…</p>}
+      {isLoading && (
+        <div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 rounded-xl" />
+            ))}
+          </div>
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-5">
+            <Skeleton className="h-64 rounded-xl" />
+            <Skeleton className="h-64 rounded-xl" />
+          </div>
+        </div>
+      )}
       {isError && <QueryError onRetry={() => { void refetch() }} message="No se pudieron cargar los reportes." />}
       {data && (
         <>
