@@ -5,9 +5,57 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin — BotPanel</title>
+    <script>
+      // Aplica el tema guardado ANTES del primer pintado: el esqueleto de
+      // arranque nace del color correcto y se elimina el flash de tema.
+      try {
+        if (localStorage.getItem('bp-theme-admin') === 'dark') {
+          document.documentElement.classList.add('dark')
+        }
+      } catch { /* almacenamiento bloqueado: tema claro por defecto */ }
+    </script>
+    <style>
+      /* Esqueleto de arranque (existe solo hasta que React monta y lo
+         reemplaza). Colores espejo del tema shadcn en claro y oscuro. */
+      :root { --bp-bg:#fafafa; --bp-card:#ffffff; --bp-line:#e4e4e7; --bp-bone:#e4e4e7; }
+      .dark { --bp-bg:#09090b; --bp-card:#18181b; --bp-line:#27272a; --bp-bone:#27272a; }
+      html, body { margin:0; background:var(--bp-bg); }
+      .bp-boot { display:flex; height:100vh; }
+      .bp-boot-aside { display:none; width:240px; box-sizing:border-box; height:100%;
+        background:var(--bp-card); border-right:1px solid var(--bp-line); padding:20px 16px; }
+      @media (min-width:768px) { .bp-boot-aside { display:block; } }
+      .bp-boot-main { flex:1; padding:28px; }
+      .bp-bone { background:var(--bp-bone); border-radius:8px; animation:bp-pulse 1.6s ease-in-out infinite; }
+      .bp-boot-aside .bp-bone { height:36px; margin-bottom:12px; }
+      .bp-boot-aside .bp-bone:first-child { height:44px; margin-bottom:28px; }
+      .bp-boot-title { height:32px; width:220px; max-width:60%; margin-bottom:24px; }
+      .bp-boot-tiles { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:20px; }
+      @media (min-width:1024px) { .bp-boot-tiles { grid-template-columns:repeat(4,1fr); } }
+      .bp-boot-tiles .bp-bone { height:84px; border-radius:12px; }
+      .bp-boot-blocks { display:grid; grid-template-columns:1fr; gap:16px; }
+      @media (min-width:1024px) { .bp-boot-blocks { grid-template-columns:1fr 1fr; } }
+      .bp-boot-blocks .bp-bone { height:260px; border-radius:12px; }
+      @keyframes bp-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="bp-boot">
+      <div class="bp-boot-aside">
+        <div class="bp-bone"></div>
+        <div class="bp-bone"></div><div class="bp-bone"></div><div class="bp-bone"></div>
+        <div class="bp-bone"></div><div class="bp-bone"></div><div class="bp-bone"></div>
+      </div>
+      <div class="bp-boot-main">
+        <div class="bp-bone bp-boot-title"></div>
+        <div class="bp-boot-tiles">
+          <div class="bp-bone"></div><div class="bp-bone"></div>
+          <div class="bp-bone"></div><div class="bp-bone"></div>
+        </div>
+        <div class="bp-boot-blocks">
+          <div class="bp-bone"></div><div class="bp-bone"></div>
+        </div>
+      </div>
+    </div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
