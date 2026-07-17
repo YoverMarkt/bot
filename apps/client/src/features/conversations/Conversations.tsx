@@ -150,20 +150,20 @@ export default function Conversations() {
             <Button
               variant="ghost"
               key={s.contact_phone} onClick={() => openChat(s)}
-              className={`w-full h-auto justify-start whitespace-normal rounded-none text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${s.manual_mode ? 'border-l-2 border-l-amber-500' : ''} ${selected === s.contact_phone ? 'bg-primary/10' : s.manual_mode ? 'bg-amber-500/10 hover:bg-amber-500/15' : ''}`}
+              className={`w-full h-auto flex-col items-stretch gap-0 whitespace-normal rounded-none text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${s.manual_mode ? 'border-l-2 border-l-amber-500' : ''} ${selected === s.contact_phone ? 'bg-primary/10' : s.manual_mode ? 'bg-amber-500/10 hover:bg-amber-500/15' : ''}`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-sm text-foreground truncate">
+              <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 font-medium text-sm text-foreground truncate">
                   {s.unread_owner && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 animate-pulse motion-reduce:animate-none" />}
                   {s.contact_name || s.contact_phone}
                 </span>
                 <span className="text-[11px] text-muted-foreground/80 shrink-0">{fmtTime(s.last_message_at)}</span>
               </div>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className="flex w-full min-w-0 items-center gap-1 mt-0.5">
                 {s.manual_mode
                   ? <Badge variant="secondary" className="text-[10px] px-1.5 gap-0.5 shrink-0 text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-300"><Hand className="w-3 h-3" />MANUAL</Badge>
                   : <Badge variant="secondary" className="text-[10px] px-1.5 gap-0.5 shrink-0 text-primary bg-primary/10"><BotIcon className="w-3 h-3" />BOT</Badge>}
-                <span className="text-xs text-muted-foreground truncate">{s.last_message || ''}</span>
+                <span className="min-w-0 flex-1 text-xs text-muted-foreground truncate">{s.last_message || ''}</span>
               </div>
               {(s.tags ?? []).length > 0 && (
                 <div className="flex gap-1 mt-1 flex-wrap">
