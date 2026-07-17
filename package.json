@@ -5,16 +5,22 @@
   "workspaces": [
     "server",
     "apps/client",
-    "apps/admin"
+    "apps/admin",
+    "packages/ui"
   ],
   "scripts": {
-    "start": "node server/index.js",
+    "start": "npm start -w @botpanel/server",
     "dev": "npm run dev -w @botpanel/server",
-    "build": "npm run build -w @botpanel/client && npm run build -w @botpanel/admin",
-    "check": "npm run check -w @botpanel/server",
-    "test": "npm test -w @botpanel/server"
+    "build": "npm run build -w @botpanel/server && npm run build -w @botpanel/client && npm run build -w @botpanel/admin",
+    "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin",
+    "test": "npm test -w @botpanel/server",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
   }
 }

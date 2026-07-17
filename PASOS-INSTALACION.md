@@ -1,130 +1,74 @@
-# BOTPANEL SAAS — Pasos de instalación
+# BotPanel SaaS — instalación
 
-## Estructura del proyecto
+## Requisitos
+
+- Node.js 22 o superior (supabase-js lo exige desde la v2.110).
+- `cloudflared` para recibir webhooks durante el desarrollo local.
+- Un proyecto de Supabase.
+- Credenciales del superadmin.
+- Al menos un proveedor de IA configurado desde el panel o el entorno.
+
+## 1. Base de datos
+
+Para una base nueva, ejecuta `server/schema.sql` en Supabase → SQL Editor.
+
+Para una base existente, revisa y ejecuta solamente las migraciones pendientes. En particular, `server/migration-seguridad-rls-etiquetas.sql` activa RLS para `conversation_tags`, `server/migration-atomicidad-ventas.sql` instala la RPC transaccional de ventas, `server/migration-atomicidad-onboarding.sql` crea negocio, políticas, usuario dueño y facturación en una única transacción, `server/migration-atomicidad-pedidos.sql` crea pedidos atómicos y `server/migration-deduplicacion-webhooks.sql` instala deduplicación persistente. Hospedaje usa `server/migration-hospedaje.sql`. Ejecuta al final `server/migration-preparacion-produccion.sql` para retirar el antiguo modelo de cobros automáticos, completar el ciclo manual de pedidos y garantizar horarios iniciales. No vuelvas a ejecutar `migration-integraciones.sql`: se conserva únicamente como historial.
+
+## 2. Variables de entorno
+
+```bash
+cp server/.env.example server/.env
 ```
-botpanel/
-├── server/
-│   ├── index.js       ← servidor principal
-│   ├── bot.js         ← agente Claude + Kapso
-│   ├── db.js          ← base de datos Supabase
-│   ├── schema.sql     ← ejecutar en Supabase (una vez)
-│   ├── .env           ← TUS CREDENCIALES (llenar antes de correr)
-│   └── package.json
-├── admin/
-│   └── index.html     ← tu panel → localhost:3000/admin
-└── client/
-    └── index.html     ← panel del cliente → localhost:3000/client
-```
 
----
+Completa como mínimo:
 
-## PASO 1 — Supabase (base de datos)
-
-1. Ve a supabase.com → crea cuenta → crea proyecto
-2. Espera ~2 minutos que inicie
-3. Ve a Settings → API → copia:
-   - Project URL  → va en SUPABASE_URL del .env
-   - anon public  → va en SUPABASE_KEY del .env
-4. Ve a SQL Editor → New query → pega TODO el contenido
-   de schema.sql → clic en RUN
-5. Debe decir "Success"
-
----
-
-## PASO 2 — Anthropic (Claude API)
-
-1. Ve a console.anthropic.com → crea cuenta
-2. API Keys → Create Key → copia la key
-3. Va en ANTHROPIC_API_KEY del .env
-
----
-
-## PASO 3 — Kapso (WhatsApp)
-
-1. Ve a kapso.ai → crea cuenta
-2. Crea un proyecto
-3. Conecta tu número (o usa el sandbox para pruebas)
-4. Ve a API Keys → copia tu API Key
-   → va en KAPSO_API_KEY del .env
-5. El Number ID de tu número (ej: 597907523413541)
-   → va en kapso_number_id cuando crees un cliente
-
----
-
-## PASO 4 — Llenar el .env
-
-Abre server/.env y llena TODOS los campos:
-
-```
-SUPABASE_URL=https://xxxxxxxx.supabase.co
-SUPABASE_KEY=eyJhbGci...
-JWT_SECRET=escribe_cualquier_frase_larga_minimo_32_caracteres
-ADMIN_EMAIL=tu@email.com
-ADMIN_PASSWORD=tuPasswordSeguro
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxx
-KAPSO_API_KEY=kap_live_xxxxxxxxx
+```dotenv
+SUPABASE_URL=
+SUPABASE_KEY=
+SUPABASE_SERVICE_KEY=
+JWT_SECRET=
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 PORT=3000
 ```
 
----
+En producción también son obligatorias `NODE_ENV=production`, `BASE_URL` y un `WEBHOOK_SECRET` de 32+ caracteres. Si usas Meta, configura `META_VERIFY_TOKEN` y `META_APP_SECRET`; para Retell, `RETELL_API_KEY` y `RETELL_LLM_SECRET`; para Telegram, `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET`. Las credenciales de WhatsApp de cada negocio se guardan desde sus paneles, nunca en el frontend ni en el repositorio. Los cobros al cliente se coordinan manualmente fuera de la plataforma.
 
-## PASO 5 — Instalar y correr
+## 3. Instalar, verificar y arrancar
+
+Todo se administra desde la raíz del monorepo:
 
 ```bash
-cd server
 npm install
-npm run dev
+npm run check
+npm run build
+npm start
 ```
 
-Debes ver:
-```
-🚀 BotPanel corriendo en http://localhost:3000
-👑 Admin:   http://localhost:3000/admin
-👤 Cliente: http://localhost:3000/client
-📡 Webhook: http://localhost:3000/webhook
-```
+Direcciones locales:
 
----
+- Superadmin: `http://localhost:3000/app-admin`
+- Negocios: `http://localhost:3000/app`
+- Salud: `http://localhost:3000/api/health`
 
-## PASO 6 — Ngrok (para pruebas locales con Kapso)
+`/admin` y `/client` se conservan como alias que redirigen a las aplicaciones React. Ya no existen paneles legacy.
 
-En una segunda terminal:
+Para desarrollar un panel con recarga inmediata, deja el servidor corriendo y usa otra terminal:
+
 ```bash
-ngrok http 3000
+npm run dev -w @botpanel/client
+# o
+npm run dev -w @botpanel/admin
 ```
-Copia la URL: https://xxxx.ngrok-free.app
 
-En Kapso → tu número → Webhook URL:
-https://xxxx.ngrok-free.app/webhook
+## 4. Primer negocio
 
----
+1. Entra al panel superadmin con `ADMIN_EMAIL` y `ADMIN_PASSWORD`.
+2. Crea el negocio y su usuario de acceso.
+3. Configura y verifica el proveedor de WhatsApp.
+4. Completa catálogo, horarios, prompt y modo de operación.
+5. Prueba login, aislamiento de datos y un mensaje real antes de habilitarlo.
 
-## PASO 7 — Entrar al panel admin
+## 5. Webhooks locales
 
-Abre: http://localhost:3000/admin
-
-Email:    el que pusiste en ADMIN_EMAIL
-Password: el que pusiste en ADMIN_PASSWORD
-
----
-
-## PASO 8 — Crear tu primer cliente
-
-En el panel admin → Nuevo cliente:
-- Nombre del negocio
-- Número WhatsApp del negocio
-- Kapso Number ID (el ID del número en Kapso)
-- Email y password para el cliente
-
-El cliente entra en: http://localhost:3000/client
-
----
-
-## Cuando un cliente no paga
-
-Admin → Clientes → Suspender → escribe el motivo
-
-El bot automáticamente responde a sus clientes:
-"Este servicio tiene un pago pendiente..."
-
-Para reactivar: Admin → Clientes → Reactivar
+Sin `BASE_URL`, el servidor intenta levantar el túnel de desarrollo automáticamente y muestra su URL en consola. Configura esa URL en el proveedor correspondiente. En producción usa siempre el dominio fijo y las firmas o secretos descritos en `DEPLOY.md`.

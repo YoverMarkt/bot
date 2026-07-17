@@ -5,12 +5,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import type { Product, ProductPayload } from './api'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Textarea } from '@botpanel/ui/components/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { Badge } from '@botpanel/ui/components/badge'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { Label } from '@botpanel/ui/components/label'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
+import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const money = (n: string | number | null) => {
   const v = Number(n)
@@ -33,7 +38,7 @@ export default function Catalog() {
     if (params.get('new') === '1') { setEditing('new'); setParams({}, { replace: true }) }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { data: products = [], isLoading } = useQuery({ queryKey: ['products'], queryFn: catApi.getProducts })
+  const { data: products = [], isLoading, isError, refetch } = useQuery({ queryKey: ['products'], queryFn: catApi.getProducts })
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -64,9 +69,11 @@ export default function Catalog() {
           <h1 className="text-2xl font-bold text-foreground">Catálogo</h1>
           <p className="text-sm text-muted-foreground">{products.length} producto(s) — lo que el bot ofrece a tus clientes</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <Input
-            value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…" className="w-64"
+            id="catalog-search"
+            aria-label="Buscar productos"
+            value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, marca o SKU…" className="w-full sm:w-64"
           />
           <Button variant="outline" onClick={handleReindex} title="Regenera la búsqueda inteligente del bot">
             <span className="inline-flex items-center gap-1.5"><Search className="w-4 h-4" /> Reindexar</span>
@@ -77,7 +84,15 @@ export default function Catalog() {
         </div>
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Cargando catálogo…</p> : (
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-64 rounded-xl" />
+          ))}
+        </div>
+      ) : isError ? (
+        <QueryError onRetry={() => { void refetch() }} />
+      ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(p => (
             <Card key={p.id} className="py-0 gap-0 overflow-hidden">
@@ -99,8 +114,15 @@ export default function Catalog() {
                   <Badge variant="secondary" className={`text-[10px] px-1.5 ${STOCK_STYLE[p.stock] ?? ''}`}>{p.stock}</Badge>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1 text-xs"><span className="inline-flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editar</span></Button>
-                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar "${p.name}"?`)) mDelete.mutate(p.id) }} className="text-xs"><Trash2 className="w-3.5 h-3.5" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(p)} className="flex-1"><Pencil /> Editar</Button>
+                  <ConfirmAction
+                    trigger={<Button variant="outline" size="icon-sm" aria-label={`Eliminar ${p.name}`}><Trash2 className="w-3.5 h-3.5" /></Button>}
+                    title={`Eliminar “${p.name}”`}
+                    description="El producto dejará de aparecer en el catálogo y en las respuestas del bot."
+                    confirmLabel="Eliminar"
+                    destructive
+                    onConfirm={() => mDelete.mutate(p.id)}
+                  />
                 </div>
               </div>
             </Card>
@@ -193,38 +215,41 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     } finally { setSaving(false) }
   }
 
-  const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   return (
-    <div className="fixed inset-0 z-30 bg-black/40 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
-      <form onSubmit={save} onClick={e => e.stopPropagation()} className="w-full max-w-lg bg-card rounded-2xl border p-6 my-8">
-        <h2 className="text-lg font-bold text-foreground mb-4">{product ? 'Editar producto' : 'Nuevo producto'}</h2>
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <form onSubmit={save}>
+        <DialogHeader className="mb-4">
+          <DialogTitle>{product ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
+          <DialogDescription>Completa la información que el bot usará para ofrecer este producto.</DialogDescription>
+        </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="col-span-2">
-            <label className="text-xs font-medium text-muted-foreground">Nombre *</label>
-            <Input className={input} value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
+        <div className="grid grid-cols-1 gap-3 mb-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-name">Nombre *</Label>
+            <Input id="product-name" value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Marca</label>
-            <Input className={input} value={f.brand} onChange={set('brand')} />
+            <Label htmlFor="product-brand">Marca</Label>
+            <Input id="product-brand" value={f.brand} onChange={set('brand')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">SKU</label>
-            <Input className={input} value={f.external_sku} onChange={set('external_sku')} />
+            <Label htmlFor="product-sku">SKU</Label>
+            <Input id="product-sku" value={f.external_sku} onChange={set('external_sku')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Precio * ($)</label>
-            <Input className={input} type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
+            <Label htmlFor="product-price">Precio * ($)</Label>
+            <Input id="product-price" type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Precio oferta ($)</label>
-            <Input className={input} type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
+            <Label htmlFor="product-sale-price">Precio oferta ($)</Label>
+            <Input id="product-sale-price" type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
           </div>
-          <div className="col-span-2">
-            <label className="text-xs font-medium text-muted-foreground">Stock</label>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-stock">Stock</Label>
             <Select value={f.stock} onValueChange={v => setF(prev => ({ ...prev, stock: v as Product['stock'] }))}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="product-stock" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="disponible">Disponible</SelectItem>
                 <SelectItem value="últimas unidades">Últimas unidades</SelectItem>
@@ -232,41 +257,42 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
               </SelectContent>
             </Select>
           </div>
-          <div className="col-span-2">
-            <label className="text-xs font-medium text-muted-foreground">Descripción</label>
-            <Textarea className={input} rows={3} value={f.description} onChange={set('description')} />
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-description">Descripción</Label>
+            <Textarea id="product-description" rows={3} value={f.description} onChange={set('description')} />
           </div>
-          <div className="col-span-2">
-            <label className="text-xs font-medium text-muted-foreground">Etiquetas (separadas por coma)</label>
-            <Input className={input} value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-tags">Etiquetas (separadas por coma)</Label>
+            <Input id="product-tags" value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
           </div>
         </div>
 
         {/* Media: imagen + video → Cloudinary */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
           <div className="rounded-lg border border-dashed border-input p-3">
-            <div className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></div>
+            <Label htmlFor="product-image" className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></Label>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
-            <Input type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
+            <Input id="product-image" type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
           <div className="rounded-lg border border-dashed border-input p-3">
-            <div className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Film className="w-3.5 h-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></div>
+            <Label htmlFor="product-video" className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Film className="w-3.5 h-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
             {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
-            <Input type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
+            <Input id="product-video" type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
             {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}
           </div>
         </div>
 
-        {error && <p className="text-sm text-destructive mb-3">✗ {error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive mb-3">✗ {error}</p>}
 
-        <div className="flex justify-end gap-2">
+        <DialogFooter className="mx-0 mb-0 px-0 pb-0">
           <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
           <Button disabled={saving || uploading}>
             {saving ? 'Guardando…' : uploading ? 'Espera la subida…' : 'Guardar producto'}
           </Button>
-        </div>
-      </form>
-    </div>
+        </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

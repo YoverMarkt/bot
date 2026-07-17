@@ -3,17 +3,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { Label } from '@botpanel/ui/components/label'
 
 // Configuración del servidor — paridad con el panel viejo:
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
 // Telegram/Retell, y túnel público con URLs de webhooks listas para copiar.
 
-const input = 'w-full rounded-lg bg-muted border border-input text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-const label = 'text-xs font-medium text-muted-foreground'
 const card = 'p-5 mb-5 gap-0'
 
 const AI_FIELDS: Record<string, { key: string; label: string; ph: string }> = {
@@ -83,11 +82,11 @@ export default function ServerSettings() {
       {/* IA global */}
       <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><BotIcon className="w-4 h-4" /> Proveedor de IA activo (global)</h2>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <span className={label}>Proveedor</span>
+            <Label htmlFor="server-ai-provider">Proveedor</Label>
             <Select value={activeProvider} onValueChange={setProvider}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="server-ai-provider" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="groq">Groq (Llama) — rápido y barato</SelectItem>
                 <SelectItem value="deepseek">DeepSeek</SelectItem>
@@ -98,8 +97,8 @@ export default function ServerSettings() {
             </Select>
           </div>
           <div>
-            <span className={label}>{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</span>
-            <Input className={input} type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
+            <Label htmlFor="server-ai-api-key">{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</Label>
+            <Input id="server-ai-api-key" type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
@@ -111,13 +110,13 @@ export default function ServerSettings() {
       {/* Cloudinary */}
       <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Cloud className="w-4 h-4" /> Cloudinary — Imágenes y videos</h2>
-        <div className="grid grid-cols-3 gap-3">
-          <div><span className={label}>Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</span>
-            <Input className={input} value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
-          <div><span className={label}>API Key</span>
-            <Input className={input} value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
-          <div><span className={label}>API Secret</span>
-            <Input className={input} type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div><Label htmlFor="server-cloudinary-cloud-name">Cloud name {saved.cloudinary_cloud_name && <em className="text-muted-foreground not-italic">— {saved.cloudinary_cloud_name}</em>}</Label>
+            <Input id="server-cloudinary-cloud-name" value={val('cloudinary_cloud_name')} onChange={set('cloudinary_cloud_name')} placeholder={saved.cloudinary_cloud_name || 'tu-cloud-name'} /></div>
+          <div><Label htmlFor="server-cloudinary-api-key">API Key</Label>
+            <Input id="server-cloudinary-api-key" value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
+          <div><Label htmlFor="server-cloudinary-api-secret">API Secret</Label>
+            <Input id="server-cloudinary-api-secret" type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
         </div>
         <div className="flex items-center gap-3 mt-3">
           <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
@@ -128,11 +127,11 @@ export default function ServerSettings() {
       {/* Otras conexiones */}
       <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <div><span className={label}>Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</span>
-            <Input className={input} type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
-          <div><span className={label}>Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</span>
-            <Input className={input} type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div><Label htmlFor="server-telegram-token">Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
+            <Input id="server-telegram-token" type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
+          <div><Label htmlFor="server-retell-api-key">Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</Label>
+            <Input id="server-retell-api-key" type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
         </div>
       </Card>
 

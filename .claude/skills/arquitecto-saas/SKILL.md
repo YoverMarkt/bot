@@ -20,8 +20,8 @@ Guardián de la arquitectura multi-tenant de BotPanel. Tu trabajo es impedir que
 2. **RLS siempre activa** en tablas con datos de negocio. Tabla nueva = `business_id` + RLS. No se hace `disable row level security` ni se crean políticas permisivas (`using (true)`).
 3. **Service role solo en servidor.** `SUPABASE_SERVICE_KEY` jamás llega al frontend. El frontend no habla directo con Supabase (los endpoints `/api/.../supabase-config` devuelven `{}` a propósito).
 4. **Etiquetas/tools del bot con contexto de negocio.** El bot resuelve el negocio por canal (slug Telegram / número WhatsApp en `db.getBusinessByPhone` / `getBusinessBySlug`) y opera SOLO con datos de ese `business.id`.
-5. **Checkout por WhatsApp.** No se agregan pasarelas de pago. La venta se cierra por chat y se deriva al dueño (`##VENTA##` → modo manual).
-6. **Todo acceso a datos pasa por `db.js`.** No agregues `sb.from(...)` en `index.js` o `bot.js`; crea/usa una función en `db.js`.
+5. **Checkout por WhatsApp.** El bot emite `##PEDIDO:...##`; `server/src/services/money.ts` resuelve el catálogo y calcula el total oficial. Cualquier pasarela futura vive solo en `server/src/services/payments.ts`.
+6. **Todo acceso a datos pasa por `server/src/db/`.** No agregues `sb.from(...)` en rutas, servicios o `src/index.ts`; crea/usa una función en el repositorio correspondiente y expórtala desde `src/db/index.ts`.
 
 ## Cómo verificar el impacto antes de cambiar
 1. ¿La consulta nueva filtra por `business_id`? ¿De dónde sale ese id? (Debe venir del JWT en rutas de cliente.)
@@ -34,15 +34,15 @@ Guardián de la arquitectura multi-tenant de BotPanel. Tu trabajo es impedir que
 - [ ] Tiene `business_id uuid references businesses(id) on delete cascade`.
 - [ ] Índice por `business_id` (y por `(business_id, <campo de búsqueda>)` si aplica).
 - [ ] `alter table <tabla> enable row level security;`
-- [ ] Las funciones de acceso van en `db.js` y filtran por `business_id`.
+- [ ] Las funciones de acceso van en `server/src/db/repositories/` y filtran por `business_id`.
 - [ ] Es una migración NUEVA (archivo aparte), no se edita una ya aplicada → ver **base-de-datos**.
 
 ## Checklist — ETIQUETA/TOOL DEL BOT
 - [ ] Se detecta y se **quita** del texto antes de enviarlo al cliente (`finalText.replace(/##.../, '')`).
 - [ ] La acción que dispara usa el `biz`/`business_id` de la conversación actual.
-- [ ] Si crea/lee datos, lo hace vía `db.js` filtrando por `business_id`.
+- [ ] Si crea/lee datos, lo hace vía `server/src/db/` filtrando por `business_id`.
 - [ ] Se documenta en CLAUDE.md (sección 7) y vía **documentacion**.
-- [ ] No rompe las etiquetas existentes (`##BOOK## ##BOOKING## ##HANDOFF## ##VENTA## ##IMG## ##CATALOG##`).
+- [ ] No rompe las etiquetas existentes (`##BOOK## ##HANDOFF## ##PEDIDO## ##VENTA## ##IMG## ##CATALOG##`).
 
 ## Ante un conflicto (el pedido choca con una invariante)
 1. **Señala la regla** exacta que se violaría.

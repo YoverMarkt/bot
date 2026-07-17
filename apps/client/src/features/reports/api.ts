@@ -4,6 +4,7 @@ import { api } from '../../api/client'
 export type ReportsData = {
   period: string
   summary: { label: string; total: number; orders: number; items: number; avg: number; nuevos: number; recurrentes: number; conversion: number | null }
+  trend: { days: number; rows: { date: string; label: string; total: number; orders: number }[]; total: number }
   top: { label: string; rows: { name: string; qty: number; rev: number }[] }
   lowMovement: { label: string; threshold?: number; rows: { name: string; qty: number }[] }
   comparison: { label: string; curTotal: number; curOrders: number; prevTotal: number; prevOrders: number; pct: number | null }

@@ -10,16 +10,18 @@ En un proyecto grande y vivo, el mayor riesgo no es no hacer el cambio: es rompe
 ## Cuándo se activa
 - Cualquier pedido de modificar, ajustar, "mejorar" o "arreglar" código existente.
 - Pedidos amplios o ambiguos ("haz que esto funcione mejor", "límpialo", "optimízalo").
-- Cuando el archivo a tocar es grande (`bot.js`, `index.js`, los `index.html`).
+- Cuando el módulo TypeScript a tocar concentra lógica crítica del bot, datos o una pantalla React agrupa varias funciones.
 
 ## Flujo ANTES de tocar código
 1. **Reformula el alcance** en una frase: "Voy a cambiar X. NO voy a tocar Y ni Z." Si no puedes nombrar qué NO tocas, todavía no entendiste el pedido → pregunta.
 2. **Punto limpio en Git** — confirma con `git status` que no hay cambios sin guardar mezclados; si los hay, sepáralos o coméntalo.
 3. **Localiza los archivos mínimos.** En este proyecto, casi siempre:
-   - Datos → `server/db.js`
-   - Lógica del bot / IA / etiquetas → `server/bot.js`
-   - Rutas / endpoints / webhooks → `server/index.js`
-   - UI admin → `admin/index.html` · UI cliente → `client/index.html`
+   - Datos → `server/src/db/`
+   - Lógica del bot / IA / etiquetas → `server/src/services/`
+   - Rutas / endpoints / webhooks → `server/src/routes/`
+   - Arranque / montaje → `server/src/index.ts`
+   - UI admin → `apps/admin/src/` · UI cliente → `apps/client/src/`
+   - Componentes compartidos → `packages/ui/` cuando exista; no duplicarlos entre apps
 4. **Edición quirúrgica** — cambia solo las líneas necesarias. No reordenes, no "embellezcas", no renombres de paso.
 
 ## Señales de que estás por romper algo (DETENTE)

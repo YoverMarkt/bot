@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
-import { Crown, Lock, Package, MessageSquare, ShoppingCart, BarChart3, Clock, Calendar, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
+import { Crown, Lock, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Textarea } from '@botpanel/ui/components/textarea'
+import { Checkbox } from '@botpanel/ui/components/checkbox'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
@@ -18,7 +21,6 @@ type BusinessData = {
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
-const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
 export default function Settings() {
   const isOwner = session.user?.role === 'owner'
@@ -34,6 +36,25 @@ export default function Settings() {
   )
 }
 
+// Esqueleto compartido por los formularios de esta sección (identidad y bot)
+function FormSkeleton({ fields = 4 }: { fields?: number }) {
+  return (
+    <Card className="p-5 max-w-2xl gap-0">
+      <div className="space-y-3">
+        {Array.from({ length: fields }).map((_, i) => (
+          <div key={i} className="space-y-1.5">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end mt-4">
+        <Skeleton className="h-9 w-36" />
+      </div>
+    </Card>
+  )
+}
+
 export function Locked() {
   return (
     <Card className="p-8 text-center gap-1">
@@ -45,26 +66,40 @@ export function Locked() {
 
 // ── Identidad del negocio (Ajustes del viejo: SOLO nombre, slogan y descripción) ──
 export function BusinessForm() {
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
   const [draft, setDraft] = useState<Partial<BusinessData> | null>(null)
   const f = draft ?? data
 
   const mSave = useMutation({
-    mutationFn: () => api('/api/client/business', { method: 'PUT', body: JSON.stringify({ name: f?.name, slogan: f?.slogan, description: f?.description }) }),
-    onSuccess: () => toast.success('Guardado — el bot ya usa estos datos'),
+    mutationFn: () => api('/api/client/business', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: f?.name,
+        slogan: f?.slogan,
+        description: f?.description,
+        payment_methods: f?.payment_methods,
+      }),
+    }),
+    onSuccess: () => {
+      toast.success('Guardado — el bot ya usa estos datos')
+      setDraft(null)
+      void qc.invalidateQueries({ queryKey: ['business'] })
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
-  if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading || !f) return <FormSkeleton />
   const set = (k: keyof BusinessData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setDraft({ ...f, [k]: e.target.value })
 
   return (
-    <Card className="p-5 max-w-xl gap-0">
+    <Card className="p-5 max-w-2xl gap-0">
       <div className="space-y-3">
-        <div><label className="text-xs font-medium text-muted-foreground">Nombre del negocio</label><Input className={input} value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Slogan / Lema</label><Input className={input} value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Descripción corta</label><Textarea className={input} rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
+        <div><Label htmlFor="business-name">Nombre del negocio</Label><Input id="business-name" value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
+        <div><Label htmlFor="business-slogan">Slogan / Lema</Label><Input id="business-slogan" value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
+        <div><Label htmlFor="business-description">Descripción corta</Label><Textarea id="business-description" rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
+        <div><Label htmlFor="business-payment-methods">Métodos de pago</Label><Input id="business-payment-methods" value={f.payment_methods ?? ''} onChange={set('payment_methods')} placeholder="Ej: transferencia, efectivo, tarjeta" /></div>
       </div>
       <div className="flex justify-end mt-4">
         <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
@@ -88,22 +123,22 @@ export function BotForm() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   })
 
-  if (isLoading || !f) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading || !f) return <FormSkeleton fields={3} />
   const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
 
   return (
     <Card className="p-5 max-w-2xl gap-0 space-y-4">
       <div>
-        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><BotIcon className="w-3.5 h-3.5" /> Prompt del bot (su personalidad y forma de atender)</label>
-        <Textarea className={`${input} font-mono text-xs`} rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
+        <Label htmlFor="bot-settings-prompt"><BotIcon className="w-3.5 h-3.5" /> Prompt del bot (su personalidad y forma de atender)</Label>
+        <Textarea id="bot-settings-prompt" className="font-mono text-xs" rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
           placeholder="Eres el asistente virtual de…" />
         <p className="text-[11px] text-muted-foreground/80 mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; los precios, totales y descuentos SIEMPRE los calcula el sistema (regla de dinero).</p>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Truck className="w-3.5 h-3.5" /> Envíos</label><Textarea className={input} rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Undo2 className="w-3.5 h-3.5" /> Devoluciones</label><Textarea className={input} rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Tag className="w-3.5 h-3.5" /> Descuentos (informativo)</label><Textarea className={input} rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><Pin className="w-3.5 h-3.5" /> Instrucciones extra</label><Textarea className={input} rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div><Label htmlFor="bot-settings-shipping"><Truck className="w-3.5 h-3.5" /> Envíos</Label><Textarea id="bot-settings-shipping" rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><Label htmlFor="bot-settings-returns"><Undo2 className="w-3.5 h-3.5" /> Devoluciones</Label><Textarea id="bot-settings-returns" rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><Label htmlFor="bot-settings-discounts"><Tag className="w-3.5 h-3.5" /> Descuentos (informativo)</Label><Textarea id="bot-settings-discounts" rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><Label htmlFor="bot-settings-instructions"><Pin className="w-3.5 h-3.5" /> Instrucciones extra</Label><Textarea id="bot-settings-instructions" rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end">
         <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
@@ -118,21 +153,19 @@ export function BotForm() {
 // permisos editables en línea + formulario de nuevo empleado al lado.
 // El permiso "citas" también controla la sección Horarios (todos los
 // negocios la tienen); su nombre se adapta al tipo de negocio.
-const permsForBiz = (bookingBiz: boolean) => [
+const permsForBiz = (bookingBiz: boolean, lodgingBiz: boolean) => [
   ['catalogo', 'Catálogo'], ['conversaciones', 'Conversaciones'],
   ['ventas', 'Ventas'], ['reportes', 'Reportes'],
   ['citas', bookingBiz ? 'Citas y horarios' : 'Horarios'],
+  ...(lodgingBiz ? [['hospedaje', 'Hospedaje']] as const : []),
 ] as const
-// iconos de cada permiso (misma línea Lucide)
-export const PERM_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  catalogo: Package, conversaciones: MessageSquare, ventas: ShoppingCart, reportes: BarChart3, citas: Clock,
-}
-void Calendar
-
 export function Team() {
   const qc = useQueryClient()
   const { data: bizInfo } = useBusinessInfo()
-  const PERMS = permsForBiz(isBookingBiz(bizInfo?.type))
+  const PERMS = permsForBiz(
+    isBookingBiz(bizInfo?.type, bizInfo?.takes_bookings),
+    bizInfo?.lodging_enabled === true,
+  )
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
 
@@ -151,7 +184,20 @@ export function Team() {
 
   const togglePerm = (list: string[], p: string) => list.includes(p) ? list.filter(x => x !== p) : [...list, p]
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando equipo…</p>
+  if (isLoading) return (
+    <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
+      <Card className="p-5 gap-3">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </Card>
+      <Card className="p-5 gap-3">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </Card>
+    </div>
+  )
 
   return (
     <div className="grid lg:grid-cols-2 gap-4 max-w-4xl">
@@ -167,17 +213,24 @@ export function Team() {
                   <div className="text-xs text-muted-foreground/80">{u.email}</div>
                 </div>
                 {u.role !== 'owner' && (
-                  <Button variant="outline" size="sm" onClick={() => { if (confirm(`¿Eliminar a ${u.email}?`)) mDelete.mutate(u.id) }} className="text-xs">Eliminar</Button>
+                  <ConfirmAction
+                    trigger={<Button variant="outline" size="sm">Eliminar</Button>}
+                    title={`Eliminar a ${u.email}`}
+                    description="El empleado perderá el acceso al panel. Esta acción no afecta al dueño del negocio."
+                    confirmLabel="Eliminar acceso"
+                    destructive
+                    onConfirm={() => mDelete.mutate(u.id)}
+                  />
                 )}
               </div>
               {u.role !== 'owner' && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {PERMS.map(([p, label]) => (
-                    <label key={p} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                      <Checkbox checked={(u.permissions ?? []).includes(p)}
+                    <Label key={p} htmlFor={`team-${u.id}-permission-${p}`} className="mb-0 flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                      <Checkbox id={`team-${u.id}-permission-${p}`} checked={(u.permissions ?? []).includes(p)}
                         onCheckedChange={() => mPerms.mutate({ id: u.id, permissions: togglePerm(u.permissions ?? [], p) })} />
                       {label}
-                    </label>
+                    </Label>
                   ))}
                 </div>
               )}
@@ -189,22 +242,22 @@ export function Team() {
       <Card className="p-5 gap-0">
         <h2 className="font-semibold text-foreground mb-3">+ Nuevo empleado</h2>
         <div className="space-y-3">
-          <div><label className="text-xs font-medium text-muted-foreground">Nombre</label><Input className={input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-muted-foreground">Correo *</label><Input className={input} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-          <div><label className="text-xs font-medium text-muted-foreground">Contraseña *</label><Input className={input} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Permisos (qué secciones puede ver)</label>
+          <div><Label htmlFor="team-new-name">Nombre</Label><Input id="team-new-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div><Label htmlFor="team-new-email">Correo *</Label><Input id="team-new-email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          <div><Label htmlFor="team-new-password">Contraseña * (mínimo 12 caracteres)</Label><Input id="team-new-password" type="password" minLength={12} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+          <div role="group" aria-labelledby="team-new-permissions-label">
+            <p id="team-new-permissions-label" className="mb-2 flex items-center gap-2 text-sm leading-none font-medium text-foreground select-none">Permisos (qué secciones puede ver)</p>
             <div className="flex flex-wrap gap-2 mt-1">
               {PERMS.map(([p, label]) => (
-                <label key={p} className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                  <Checkbox checked={form.permissions.includes(p)}
+                <Label key={p} htmlFor={`team-new-permission-${p}`} className="mb-0 flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                  <Checkbox id={`team-new-permission-${p}`} checked={form.permissions.includes(p)}
                     onCheckedChange={() => setForm({ ...form, permissions: togglePerm(form.permissions, p) })} />
                   {label}
-                </label>
+                </Label>
               ))}
             </div>
           </div>
-          <Button onClick={() => mCreate.mutate()} disabled={!form.email || !form.password || mCreate.isPending} className="w-full">
+          <Button onClick={() => mCreate.mutate()} disabled={!form.email || form.password.length < 12 || mCreate.isPending} className="w-full">
             {mCreate.isPending ? 'Creando…' : 'Crear empleado'}
           </Button>
         </div>

@@ -2,11 +2,15 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { Check, X, Clock, CalendarDays } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Input } from '@/components/ui/input'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Badge } from '@botpanel/ui/components/badge'
+import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
+import { Input } from '@botpanel/ui/components/input'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
+import { Label } from '@botpanel/ui/components/label'
+import { QueryError } from '@botpanel/ui/components/query-error'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
 // calendario MENSUAL con chips por día + detalle del día + vista lista.
@@ -35,7 +39,7 @@ export default function Bookings() {
   const [tab, setTab] = useState<'calendario' | 'lista'>('calendario')
   const qc = useQueryClient()
 
-  const { data: bookings = [], isLoading } = useQuery({
+  const { data: bookings = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['bookings-all'],
     queryFn: () => api<Booking[]>('/api/client/bookings'),
     refetchInterval: 15_000,
@@ -67,7 +71,17 @@ export default function Bookings() {
           </TabsList>
         </Tabs>
       </div>
-      {isLoading ? <p className="text-muted-foreground">Cargando reservas…</p> :
+      {isLoading ? (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <Skeleton className="h-8 w-16" />
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-8 w-16" />
+          </div>
+          <Skeleton className="h-80 w-full rounded-xl" />
+        </div>
+      ) : isError
+        ? <QueryError onRetry={() => { void refetch() }} /> :
         tab === 'calendario'
           ? <Calendar bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />
           : <Lista bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />}
@@ -113,8 +127,8 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
             const allConfirmed = dayBk.length > 0 && dayBk.every(b => b.status === 'confirmed')
             const firstB = dayBk.slice().sort((a, b) => (a.booking_time || '').localeCompare(b.booking_time || ''))[0]
             return (
-              <button key={d} onClick={() => setSelected(dateStr)}
-                className={`text-left rounded-lg border p-1.5 min-h-16 align-top transition-colors ${
+              <Button key={d} variant="outline" onClick={() => setSelected(dateStr)}
+                className={`h-auto min-h-16 whitespace-normal items-start justify-start text-left rounded-lg p-1.5 align-top transition-colors ${
                   selected === dateStr ? 'border-green-500 ring-1 ring-green-500' :
                   isToday ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-input'}`}>
                 <div className={`text-xs font-semibold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{d}</div>
@@ -128,7 +142,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
                     {(firstB.booking_time || '').slice(0, 5)} {(firstB.contact_name || '').split(' ')[0]}
                   </div>
                 )}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -158,7 +172,6 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
   const today = new Date()
   const [from, setFrom] = useState(iso(today))
   const [to, setTo] = useState(iso(new Date(today.getTime() + 30 * 86400000)))
-  const input = 'rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   const filtered = bookings
     .filter(b => b.booking_date >= from && b.booking_date <= to)
@@ -167,10 +180,10 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <label className="text-sm text-muted-foreground">Del</label>
-        <Input type="date" className={input} value={from} onChange={e => setFrom(e.target.value)} />
-        <label className="text-sm text-muted-foreground">al</label>
-        <Input type="date" className={input} value={to} onChange={e => setTo(e.target.value)} />
+        <Label htmlFor="bookings-from" className="mb-0 text-sm text-muted-foreground">Del</Label>
+        <Input id="bookings-from" type="date" value={from} onChange={e => setFrom(e.target.value)} />
+        <Label htmlFor="bookings-to" className="mb-0 text-sm text-muted-foreground">al</Label>
+        <Input id="bookings-to" type="date" value={to} onChange={e => setTo(e.target.value)} />
       </div>
       {filtered.length === 0 ? (
         <Card className="p-8 text-center gap-1">
@@ -203,14 +216,28 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
       <Badge variant="secondary" className={`shrink-0 ${STATUS_BADGE[b.status].cls}`}>{STATUS_BADGE[b.status].label}</Badge>
       {b.status === 'pending' && (
         <div className="flex gap-2 shrink-0">
-          <Button size="sm" onClick={() => onStatus(b.id, 'confirmed')} className="text-xs"><span className="inline-flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Confirmar</span></Button>
-          <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }} className="text-xs"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
+          <Button size="sm" onClick={() => onStatus(b.id, 'confirmed')}><Check /> Confirmar</Button>
+          <ConfirmAction
+            trigger={<Button variant="outline" size="sm"><X /> Cancelar</Button>}
+            title="Cancelar cita"
+            description="La cita se cancelará y se avisará al cliente por su canal de contacto."
+            confirmLabel="Cancelar cita"
+            destructive
+            onConfirm={() => onStatus(b.id, 'cancelled')}
+          />
         </div>
       )}
       {b.status === 'confirmed' && (
-        <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => onStatus(b.id, 'no_show')} className="text-xs">Marcar no asistió</Button>
-          <Button variant="outline" size="sm" onClick={() => { if (confirm('¿Cancelar la cita? Se le avisará al cliente.')) onStatus(b.id, 'cancelled') }} className="text-xs"><span className="inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> Cancelar</span></Button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => onStatus(b.id, 'no_show')}>Marcar no asistió</Button>
+          <ConfirmAction
+            trigger={<Button variant="outline" size="sm"><X /> Cancelar</Button>}
+            title="Cancelar cita"
+            description="La cita se cancelará y se avisará al cliente por su canal de contacto."
+            confirmLabel="Cancelar cita"
+            destructive
+            onConfirm={() => onStatus(b.id, 'cancelled')}
+          />
         </div>
       )}
     </Card>

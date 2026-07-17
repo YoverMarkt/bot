@@ -4,9 +4,11 @@ import { api, session } from '../../api/client'
 import { Locked } from './Settings'
 import { Lightbulb, ClipboardList, Smile, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Textarea } from '@botpanel/ui/components/textarea'
+import { Label } from '@botpanel/ui/components/label'
+import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── Prompt del Bot (sección propia, igual que el panel viejo) ──
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
@@ -31,7 +33,19 @@ export default function BotPrompt() {
   })
 
   if (!isOwner) return <Locked />
-  if (isLoading) return <p className="text-muted-foreground">Cargando…</p>
+  if (isLoading) return (
+    <div>
+      <div className="mb-5 space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      <Card className="p-5 max-w-2xl gap-3">
+        <Skeleton className="h-4 w-56" />
+        <Skeleton className="h-56 w-full" />
+        <Skeleton className="h-9 w-36 self-end" />
+      </Card>
+    </div>
+  )
 
   return (
     <div>
@@ -41,17 +55,17 @@ export default function BotPrompt() {
       </div>
 
       {/* Card de ayuda del viejo */}
-      <div className="rounded-xl border border-lime-300 bg-gradient-to-br from-lime-50 to-lime-100 p-4 mb-4 max-w-2xl flex gap-3">
-        <Lightbulb className="w-5 h-5 shrink-0 text-lime-700" />
-        <div className="text-xs leading-relaxed text-lime-900">
-          <div className="font-bold uppercase tracking-wide text-lime-800 mb-1">¿Qué escribir aquí?</div>
+      <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 mb-4 max-w-2xl flex gap-3 text-foreground">
+        <Lightbulb className="w-5 h-5 shrink-0 text-primary" />
+        <div className="text-xs leading-relaxed">
+          <div className="font-bold uppercase tracking-wide text-primary mb-1">¿Qué escribir aquí?</div>
           Define <strong>cómo quieres que suene tu bot</strong>: su nombre, cómo saluda, el tono (formal, amigable, elegante), qué puede y no puede decir.<br />
           <span className="opacity-80">Ejemplo: <em>"Eres Sofía, asistente de Perfumes Elite. Habla con elegancia y discreción. Siempre saluda con '¡Bienvenido a Perfumes Elite!' y trata al cliente de 'usted'."</em></span>
         </div>
       </div>
       <Card className="p-5 max-w-2xl gap-0">
-        <label className="text-xs font-medium text-muted-foreground">Instrucciones de personalidad y saludo</label>
-        <Textarea rows={12} value={value} onChange={e => setDraft(e.target.value)} className="w-full"
+        <Label htmlFor="bot-prompt-personality">Instrucciones de personalidad y saludo</Label>
+        <Textarea id="bot-prompt-personality" rows={12} value={value} onChange={e => setDraft(e.target.value)} className="w-full"
           placeholder={'Eres [nombre del asistente], el asistente virtual de [tu negocio]. Tu tono es [amigable / formal / elegante].\n\nSiempre saluda con: "[tu saludo personalizado]"\n\nCuando el cliente se despide, responde con: "[tu despedida]"\n\nNunca hables de [lo que quieres evitar].\nSiempre ofrece [algo que quieras destacar].'} />
         <div className="flex gap-2 flex-wrap mt-2">
           <Button variant="outline" size="sm" onClick={() => setDraft(TEMPLATES.formal)}><span className="inline-flex items-center gap-1"><ClipboardList className="w-3.5 h-3.5" /> Plantilla formal</span></Button>
@@ -75,7 +89,6 @@ function PoliciesCard() {
   const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
   const [draft, setDraft] = useState<Policies | null>(null)
   const f = draft ?? data
-  const input = 'w-full rounded-lg border border-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify({
@@ -94,10 +107,10 @@ function PoliciesCard() {
       <h2 className="font-semibold text-foreground mb-1">Políticas del bot</h2>
       <p className="text-xs text-muted-foreground mb-3">El bot responde usando esta información</p>
       <div className="space-y-3">
-        <div><label className="text-xs font-medium text-muted-foreground">Envíos</label><Textarea className={input} rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Devoluciones</label><Textarea className={input} rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Descuentos</label><Textarea className={input} rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><label className="text-xs font-medium text-muted-foreground">Instrucciones especiales para el bot</label><Textarea className={input} rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
+        <div><Label htmlFor="bot-prompt-shipping">Envíos</Label><Textarea id="bot-prompt-shipping" rows={3} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
+        <div><Label htmlFor="bot-prompt-returns">Devoluciones</Label><Textarea id="bot-prompt-returns" rows={3} value={f.returns ?? ''} onChange={set('returns')} /></div>
+        <div><Label htmlFor="bot-prompt-discounts">Descuentos</Label><Textarea id="bot-prompt-discounts" rows={3} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
+        <div><Label htmlFor="bot-prompt-instructions">Instrucciones especiales para el bot</Label><Textarea id="bot-prompt-instructions" rows={4} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
       </div>
       <div className="flex justify-end mt-3">
         <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>

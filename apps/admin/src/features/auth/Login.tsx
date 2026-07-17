@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { session } from '../../api/client'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@botpanel/ui/components/button'
+import { Input } from '@botpanel/ui/components/input'
+import { Label } from '@botpanel/ui/components/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Crown } from 'lucide-react'
 
 export default function Login() {
@@ -40,7 +40,7 @@ export default function Login() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <Crown className="w-8 h-8 mx-auto mb-1 text-primary" />
-          <CardTitle className="text-xl">BotPanel — Superadmin</CardTitle>
+          <CardTitle className="text-xl"><h1>BotPanel — Superadmin</h1></CardTitle>
           <CardDescription>Acceso del dueño de la plataforma</CardDescription>
         </CardHeader>
         <CardContent>
@@ -55,7 +55,7 @@ export default function Login() {
               <Input id="password" type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••" autoComplete="current-password" />
             </div>
-            {error && <p className="text-sm text-destructive">✗ {error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">✗ {error}</p>}
             <Button variant="ghost" type="submit" disabled={loading} className="w-full">
               {loading ? 'Entrando…' : 'Entrar'}
             </Button>

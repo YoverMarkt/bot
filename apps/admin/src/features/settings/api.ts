@@ -1,4 +1,4 @@
-// ── API de configuración del servidor (routes/admin.routes.js) ──────
+// ── API de configuración del servidor (admin-settings.routes.ts) ────
 // El GET devuelve las keys ENMASCARADAS (el server nunca expone el valor
 // completo); el POST solo envía campos con valor (no pisa keys con '').
 import { api } from '../../api/client'

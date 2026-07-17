@@ -1,0 +1,4 @@
+interface:
+  display_name: "shadcn/ui BotPanel"
+  short_description: "Unifica ambos paneles con shadcn/ui"
+  default_prompt: "Usa $shadcn-ui para migrar esta pantalla de BotPanel al sistema UI compartido."

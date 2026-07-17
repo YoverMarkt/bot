@@ -1,56 +1,56 @@
 ---
 name: tester-saas
-description: Úsala SIEMPRE después de cualquier cambio de código en BotPanel para verificar que nada se rompió, aunque el usuario no lo pida. Este proyecto NO tiene framework de tests, typecheck ni lint, así que la verificación es manual y obligatoria. Un cambio no está terminado hasta verificarlo.
+description: Verifica BotPanel después de cualquier cambio de código, esquema, rutas o UI. Usar siempre antes de declarar terminado un bloque para ejecutar lint, tipos, Vitest, builds React y smoke tests proporcionales al riesgo, con prioridad en dinero y aislamiento multi-tenant.
 ---
 
 # tester-saas
 
-BotPanel no tiene tests automatizados, ni TypeScript, ni linter, ni CI. Eso hace que verificar a mano sea **obligatorio**: es la única red de seguridad.
+Aplicar la pirámide de verificación desde lo rápido hasta lo integrado. No debilitar una prueba para hacerla pasar.
 
-## Comandos reales de verificación (los que SÍ existen)
+## Verificación base obligatoria
+
+Desde la raíz del monorepo:
 
 ```bash
-# 1. ¿Los módulos cargan sin error de sintaxis/require?
-cd server
-node -e "require('./bot'); require('./db'); require('./index')" 2>&1 | head
-
-# 2. Sintaxis del JS de los paneles (no hay bundler)
-node -e "const fs=require('fs');const h=fs.readFileSync('../admin/index.html','utf8');[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].forEach((m,i)=>{try{new Function(m[1])}catch(e){console.log('admin bloque '+i+': '+e.message)}})"
-
-# 3. Arrancar el servidor y ver que no truena
-node index.js   # debe imprimir "🚀 BotPanel corriendo..."
-
-# 4. Smoke test de endpoints
-curl -s http://localhost:3000/api/health        # {"ok":true,...}
+npm run check   # ESLint/Oxlint + TypeScript estricto + Vitest del servidor
+npm run build   # TypeScript + build Vite de client y admin
+git diff --check
 ```
 
-> NO existen `npm test`, `npm run lint`, `npm run build` ni `tsc`. No los inventes ni los "corras". Si el usuario quiere CI/tests reales, es una tarea aparte.
+El estado esperado es cero errores. Registrar warnings existentes y no introducir warnings nuevos.
 
-## Zonas críticas — verifícalas por prioridad
+## Seleccionar pruebas adicionales
 
-1. **Aislamiento multi-tenant** (lo más importante): tras tocar `db.js` o rutas, confirma que las consultas siguen filtrando por `business_id` y que el id viene del JWT. Prueba con dos negocios distintos que uno no vea datos del otro.
-2. **Etiquetas/tools del bot:** si tocaste `bot.js`, prueba el flujo real con `bot.handleMessage(...)` simulando un mensaje y revisa que `##BOOK## / ##HANDOFF## / ##VENTA##` se detecten y se quiten del texto.
-3. **Flujo de venta/checkout:** que `##VENTA##` (o frases de cierre) pasen el chat a manual y disparen la alarma.
-4. **Auth / RLS:** que las rutas privilegiadas exijan token; que la anon key no lea datos directo (RLS).
+- **Dinero, pedidos o catálogo:** ejecutar `npm test`; probar producto exacto, ambiguo, oferta, cantidad y redondeo.
+- **Auth, permisos o rutas cliente:** probar sin token, token de dueño y empleado sin permiso. Confirmar que `businessId` sale del JWT.
+- **BD/RLS/multi-tenancy:** usar dos negocios de prueba; A nunca lee ni modifica B. Verificar RLS e índices en el SQL nuevo.
+- **Webhooks/secretos:** probar firma válida, inválida, ausente y replay. Confirmar que producción falla cerrado.
+- **Bot/etiquetas:** simular el flujo afectado y confirmar que la etiqueta se procesa, se retira del texto y conserva `business_id`.
+- **React/shadcn:** compilar ambos paneles, revisar la ruta afectada en claro/oscuro y móvil/escritorio, además de teclado, foco, loading, empty y error.
+- **Login, navegación, permisos o responsive:** ejecutar `npm run test:e2e`. La primera vez, instalar Chromium con `npm run test:e2e:install`.
+- **Eliminación legacy:** buscar referencias con `rg -n "admin-legacy|client-legacy|admin/index|client/index" .` y confirmar que no quedan consumidores.
 
-## Patrón de smoke test del bot (sin WhatsApp real)
-```js
-// node -e "..."  contra un negocio de prueba por Telegram
-const bot = require('./bot')
-const cap = []
-const ctx = { reply: t => { cap.push(t); return Promise.resolve() }, sendChatAction: () => Promise.resolve() }
-await bot.handleMessage('tg_test', 'hola', null, { channel:'telegram', ctx, slug:'<slug-negocio>' })
-// revisar cap[] y el estado en conversation_sessions / bookings
+## Smoke test del servidor
+
+Arrancar solo cuando las variables locales necesarias estén configuradas:
+
+```bash
+npm start
+curl -fsS http://localhost:3000/api/health
 ```
 
-## Si aún no hay tests y el cambio es delicado
-- Crea pruebas **empezando por el aislamiento entre negocios** (que el negocio A nunca vea datos del B).
-- Luego: detección de etiquetas del bot, y cierre de venta → manual.
-- Guárdalas de forma que se puedan re-correr (script en `server/`).
+No importar `server/dist/index.js` como chequeo de módulo: abre puerto, timers, túnel y Telegram. La compilación TypeScript valida la sintaxis; para el entrypoint usa el smoke test con integraciones externas desactivadas.
 
-## Reglas
-- **No debilites ni borres una verificación/test para que "pase".** Si algo falla, el problema es el código, no la prueba.
-- **No marques como terminado sin verificar.** Si no pudiste verificar, dilo explícitamente y explica por qué.
-- Si la verificación revela un fallo → ve a **debugging**.
+## Pruebas E2E de los paneles
 
-> "Compila" aquí significa: los módulos cargan, el server arranca, y el flujo afectado funciona en un smoke test. Sin eso, no está hecho.
+Playwright levanta ambos Vite servers y simula las APIs; no necesita Supabase ni secretos:
+
+```bash
+npm run test:e2e
+```
+
+Las pruebas viven en `e2e/` y deben usar roles/labels accesibles. Cubrir al menos redirección sin sesión, login, persistencia de token, navegación móvil y visibilidad por permisos. No sustituye la prueba de staging contra una base y canales reales.
+
+## Regla de cierre
+
+Reportar qué se ejecutó, qué pasó, qué no pudo probarse sin credenciales/BD y el riesgo residual. Un build verde no sustituye un smoke test funcional de la zona modificada.

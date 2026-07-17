@@ -4,8 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // Panel del cliente (Fase 2 de ARQUITECTURA.md).
-// - base '/app/': el build se sirve desde Express en /app (el panel viejo
-//   sigue en /client hasta que cada sección migre — patrón estrangulador).
+// - base '/app/': el build se sirve desde Express en /app; /client es alias.
 // - proxy: en desarrollo, las llamadas /api van al server Express local.
 export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },

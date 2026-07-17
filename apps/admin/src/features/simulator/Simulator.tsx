@@ -3,15 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { getClients } from '../clients/api'
 import { Trash2, MessageSquare, Bot as BotIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@botpanel/ui/components/button'
+import { Card } from '@botpanel/ui/components/card'
+import { Input } from '@botpanel/ui/components/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
 
-type Msg = { role: 'user' | 'bot'; text: string; image?: string | null; at: string }
+type Msg = { role: 'user' | 'bot'; text: string; image?: string | null; video?: string | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
@@ -39,11 +40,14 @@ export default function Simulator() {
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; mediaNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t }),
       })
-      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, at: now() }])
+      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, at: now() }])
+      // La nota de media ("no tengo foto de ese producto…") llega como
+      // mensaje aparte, igual que en WhatsApp/Telegram.
+      if (d.mediaNote) setMsgs(m => [...m, { role: 'bot', text: d.mediaNote!, at: now() }])
     } catch (e) {
       setMsgs(m => [...m, { role: 'bot', text: `Atención: Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
     }
@@ -52,7 +56,7 @@ export default function Simulator() {
   }
 
   async function clear() {
-    if (!bizId || !confirm('¿Limpiar la conversación de prueba?')) return
+    if (!bizId) return
     await api(`/api/admin/simulate/${bizId}/history`, { method: 'DELETE' })
     setMsgs([])
   }
@@ -66,13 +70,20 @@ export default function Simulator() {
         </div>
         <div className="flex gap-2">
           <Select value={bizId} onValueChange={selectBiz}>
-            <SelectTrigger className="min-w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
+            <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="min-w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
             <SelectContent>
               {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           {bizId && (
-            <Button variant="outline" onClick={clear}><span className="inline-flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Limpiar chat</span></Button>
+            <ConfirmAction
+              trigger={<Button variant="outline"><Trash2 className="w-4 h-4" /> Limpiar chat</Button>}
+              title="Limpiar conversación de prueba"
+              description="Se eliminará el historial del simulador para este negocio."
+              confirmLabel="Limpiar chat"
+              destructive
+              onConfirm={clear}
+            />
           )}
         </div>
       </div>
@@ -100,13 +111,16 @@ export default function Simulator() {
           {msgs.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                m.role === 'user' ? 'bg-primary text-foreground rounded-br-sm' : 'bg-muted text-stone-100 rounded-bl-sm'
+                m.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
               }`}>
                 {m.text}
               </div>
               {m.image && (
                 <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-input"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              )}
+              {m.video && (
+                <video src={m.video} controls className="mt-2 max-w-56 rounded-xl border border-input" />
               )}
               <span className="text-[10px] text-muted-foreground/70 mt-1">{m.at}</span>
             </div>
@@ -115,7 +129,7 @@ export default function Simulator() {
             <div className="flex items-start">
               <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5">
                 {[0, 1, 2].map(i => (
-                  <span key={i} className="w-2 h-2 rounded-full bg-stone-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                  <span key={i} className="w-2 h-2 rounded-full bg-stone-500 animate-bounce motion-reduce:animate-none" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
             </div>
@@ -125,7 +139,7 @@ export default function Simulator() {
 
         {/* Input */}
         <div className="flex gap-2 p-3 border-t border-border">
-          <Input value={text} onChange={e => setText(e.target.value)}
+          <Input id="simulator-message" aria-label="Mensaje para el bot" value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             disabled={!bizId}
             placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'} className="flex-1" />

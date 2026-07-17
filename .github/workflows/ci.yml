@@ -1,6 +1,6 @@
 # ── CI de BotPanel ────────────────────────────────────────────────────
-# Corre en cada push/PR: sintaxis + lint + tipos (@ts-check) + tests de
-# dinero. NO necesita secretos (los tests son funciones puras, sin BD).
+# Corre en cada push/PR: sintaxis + lint + tipos + Vitest + builds + E2E.
+# NO necesita secretos: Playwright intercepta las APIs y no usa la BD.
 # Si esto está en rojo, NO se mergea (barandilla de la migración).
 # Monorepo con npm workspaces: UN solo lockfile en la raíz, npm ci instala todo.
 name: CI
@@ -19,23 +19,20 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Instalar dependencias (workspaces)
         run: npm ci
 
-      - name: Sintaxis de todos los módulos
-        run: for f in server/*.js; do node --check "$f"; done
-
-      - name: ESLint (errores reales bloquean)
+      - name: Lint del servidor TypeScript y pruebas
         run: npm run lint -w @botpanel/server
 
-      - name: Tipos (@ts-check en módulos de dinero)
+      - name: Tipos del servidor TypeScript
         run: npm run typecheck -w @botpanel/server
 
-      - name: Tests del núcleo de dinero
+      - name: Tests del servidor
         run: npm test -w @botpanel/server
 
   panel-react:
@@ -46,12 +43,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Instalar dependencias (workspaces)
         run: npm ci
+
+      - name: Lint del panel cliente y UI compartida
+        run: npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client
 
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/client
@@ -64,12 +64,37 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Instalar dependencias (workspaces)
         run: npm ci
 
+      - name: Lint del panel admin y UI compartida
+        run: npm run lint -w @botpanel/admin
+
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/admin
+
+  e2e:
+    name: Flujos E2E (Chromium)
+    runs-on: ubuntu-latest
+    needs: [panel-react, panel-admin]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Probar login, navegación y responsive
+        run: npm run test:e2e
