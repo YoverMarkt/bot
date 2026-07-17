@@ -367,3 +367,34 @@ test('el nombre del contacto y las etiquetas se editan en modales', async ({ pag
   await tagsDialog.getByRole('button', { name: 'Cerrar' }).click()
   await expect(tagsDialog).toBeHidden()
 })
+
+test('el recordatorio de venta solo aparece en conversaciones con actividad reciente', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+  const recentAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const dormantAt = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
+  await page.route('**/api/client/sessions', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([
+      { contact_phone: '+593999999999', contact_name: 'Cliente reciente', manual_mode: true, unread_owner: false, last_message: 'Quiero el adaptador', last_message_at: recentAt, tags: [] },
+      { contact_phone: '+593888888888', contact_name: 'Cliente dormido', manual_mode: true, unread_owner: false, last_message: 'Hola', last_message_at: dormantAt, tags: [] },
+    ]),
+  }))
+  await page.goto(`${clientUrl}#/conversations`)
+
+  // Chat dormido hace semanas: devolver al bot NO recuerda registrar la venta
+  await page.getByText('Cliente dormido').first().click()
+  const dormantMode = page.waitForResponse(r => r.request().method() === 'PUT' && r.url().includes('/mode'))
+  const dormantRefetch = page.waitForResponse(r => r.request().method() === 'GET' && r.url().endsWith('/api/client/sessions'))
+  await page.getByRole('button', { name: 'Devolver al bot' }).click()
+  await dormantMode
+  await dormantRefetch
+  await page.waitForTimeout(500)
+  await expect(page.getByText('¿Cerraste una venta con este cliente?')).toHaveCount(0)
+
+  // Chat con actividad en las últimas 24 h: sí aparece el recordatorio
+  await page.getByText('Cliente reciente').first().click()
+  await page.getByRole('button', { name: 'Devolver al bot' }).click()
+  await expect(page.getByText('¿Cerraste una venta con este cliente?')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Registrar venta' })).toBeVisible()
+})

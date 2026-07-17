@@ -62,8 +62,12 @@ export default function Conversations() {
     mutationFn: (v: { phone: string; manual: boolean }) => convApi.setMode(v.phone, v.manual),
     onSuccess: (_data, v) => {
       // Los reportes valen lo que valga el registro: al reactivar el bot tras
-      // atender a mano, recordar registrar la venta si la hubo.
-      if (!v.manual) {
+      // atender a mano, recordar registrar la venta si la hubo. Solo aplica a
+      // conversaciones vivas (último mensaje < 24 h): un chat dormido hace
+      // semanas no tiene una venta recién cerrada que registrar.
+      const lastAt = sessions.find(s => s.contact_phone === v.phone)?.last_message_at
+      const isRecent = Boolean(lastAt) && Date.now() - new Date(lastAt!).getTime() < 24 * 60 * 60 * 1000
+      if (!v.manual && isRecent) {
         toast('¿Cerraste una venta con este cliente?', {
           description: 'Regístrala para que tus reportes queden al día.',
           action: {
