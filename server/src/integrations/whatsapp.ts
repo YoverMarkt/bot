@@ -33,6 +33,14 @@ interface YCloudClient {
 const ycloud = require('./ycloud') as YCloudClient
 
 const providerFor = (business: WhatsAppBusiness) => business.whatsapp_provider || 'ycloud'
+
+// Un negocio solo-Telegram no tiene canal WhatsApp: fallar con un mensaje
+// claro en vez de llamar a YCloud con credenciales ajenas (daba un 401 confuso).
+const assertWhatsAppChannel = (provider: string): void => {
+  if (provider === 'telegram') {
+    throw new Error('El negocio opera solo por Telegram: no hay canal WhatsApp para este envío')
+  }
+}
 const ycloudKeyFor = (business: WhatsAppBusiness) => (
   business.ycloud_api_key || process.env.YCLOUD_API_KEY
 ) as string
@@ -65,6 +73,7 @@ async function sendText(
   text: string,
 ): Promise<void> {
   const provider = providerFor(business)
+  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
@@ -121,6 +130,7 @@ async function sendImage(
   caption = '',
 ): Promise<void> {
   const provider = providerFor(business)
+  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
@@ -178,6 +188,7 @@ async function sendVideo(
   caption = '',
 ): Promise<void> {
   const provider = providerFor(business)
+  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
