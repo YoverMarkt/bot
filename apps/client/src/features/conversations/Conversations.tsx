@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as convApi from './api'
 import { session } from '../../api/client'
-import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, Check, X, Trash2 } from 'lucide-react'
+import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, X, Trash2 } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -12,7 +12,7 @@ import { Input } from '@botpanel/ui/components/input'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { Label } from '@botpanel/ui/components/label'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
-import { Popover, PopoverContent, PopoverTrigger } from '@botpanel/ui/components/popover'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { toast } from 'sonner'
 
@@ -187,18 +187,10 @@ export default function Conversations() {
             {/* Encabezado del chat */}
             <div className="px-4 py-3 border-b border-border/60 flex items-center gap-3 flex-wrap">
               <div className="min-w-0">
-                {renaming ? (
-                  <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="flex gap-1">
-                    <Input id="conversation-contact-name" aria-label="Nombre del contacto" autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} className="w-44" placeholder="Nombre del contacto" />
-                    <Button variant="ghost" size="icon" aria-label="Guardar nombre"><Check /></Button>
-                    <Button variant="ghost" size="icon" type="button" onClick={() => setRenaming(false)} aria-label="Cancelar cambio de nombre"><X /></Button>
-                  </form>
-                ) : (
-                  <Button variant="link" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
-                    className="h-auto p-0 font-semibold text-foreground truncate">
-                    {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
-                  </Button>
-                )}
+                <Button variant="link" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }} title="Editar nombre"
+                  className="h-auto p-0 font-semibold text-foreground truncate">
+                  {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
+                </Button>
                 <div className="text-xs text-muted-foreground/80">
                   {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode
                     ? <span className="font-medium text-amber-700 dark:text-amber-300">Modo manual — respondiendo tú</span>
@@ -214,26 +206,8 @@ export default function Conversations() {
                   </Button>
                 )}
 
-                {/* Etiquetas */}
-                <Popover open={tagsOpen} onOpenChange={setTagsOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm"><TagIcon className="w-4 h-4" /> Etiquetas</Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-0">
-                    <TagPicker
-                      tags={tags} selected={sess.tags ?? []}
-                      onToggle={(id) => {
-                        const cur = new Set(sess.tags ?? [])
-                        if (cur.has(id)) cur.delete(id); else cur.add(id)
-                        mTags.mutate({ phone: sess.contact_phone, tags: [...cur] })
-                      }}
-                      onCreate={async (name, color) => { await convApi.createTag(name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
-                      onUpdate={async (id, name, color) => { await convApi.updateTag(id, name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
-                      onDelete={async (id) => { await convApi.deleteTag(id); qc.invalidateQueries({ queryKey: ['tags'] }); refresh() }}
-                      onClose={() => setTagsOpen(false)}
-                    />
-                  </PopoverContent>
-                </Popover>
+                {/* Etiquetas (abre modal) */}
+                <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}><TagIcon className="w-4 h-4" /> Etiquetas</Button>
 
                 {/* Nombre */}
                 <Button variant="outline" size="sm" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
@@ -286,6 +260,47 @@ export default function Conversations() {
             </form>
             )}
 
+            {/* Modal: editar nombre del contacto */}
+            <Dialog open={renaming} onOpenChange={open => { if (!open) setRenaming(false) }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Editar nombre del contacto</DialogTitle>
+                  <DialogDescription>El nombre es solo para tu panel; tu cliente no lo ve.</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={e => { e.preventDefault(); mRename.mutate({ phone: sess.contact_phone, name: nameDraft }); setRenaming(false) }} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="conversation-contact-name">Nombre del contacto</Label>
+                    <Input id="conversation-contact-name" autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)} placeholder={sess.contact_phone} />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setRenaming(false)}>Cancelar</Button>
+                    <Button type="submit" disabled={mRename.isPending}>Guardar</Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            {/* Modal: etiquetas del chat */}
+            <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Etiquetas del chat</DialogTitle>
+                  <DialogDescription>Marca las de esta conversación; crea, edita o elimina las de tu negocio.</DialogDescription>
+                </DialogHeader>
+                <TagPicker
+                  tags={tags} selected={sess.tags ?? []}
+                  onToggle={(id) => {
+                    const cur = new Set(sess.tags ?? [])
+                    if (cur.has(id)) cur.delete(id); else cur.add(id)
+                    mTags.mutate({ phone: sess.contact_phone, tags: [...cur] })
+                  }}
+                  onCreate={async (name, color) => { await convApi.createTag(name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
+                  onUpdate={async (id, name, color) => { await convApi.updateTag(id, name, color); qc.invalidateQueries({ queryKey: ['tags'] }) }}
+                  onDelete={async (id) => { await convApi.deleteTag(id); qc.invalidateQueries({ queryKey: ['tags'] }); refresh() }}
+                />
+              </DialogContent>
+            </Dialog>
+
           </>
         )}
       </Card>
@@ -293,14 +308,13 @@ export default function Conversations() {
   )
 }
 
-// Popover de etiquetas: asignar existentes + crear nueva con color
-function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onClose }: {
+// Contenido del modal de etiquetas: asignar existentes + crear nueva con color
+function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete }: {
   tags: Tag[]; selected: string[]
   onToggle: (id: string) => void
   onCreate: (name: string, color: string) => Promise<void>
   onUpdate: (id: string, name: string, color: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
-  onClose: () => void
 }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(TAG_COLORS[0])
@@ -310,12 +324,8 @@ function TagPicker({ tags, selected, onToggle, onCreate, onUpdate, onDelete, onC
   const [editColor, setEditColor] = useState(TAG_COLORS[0])
 
   return (
-    <div className="p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold text-foreground">Etiquetas del chat</span>
-        <Button variant="ghost" onClick={onClose} aria-label="Cerrar selector de etiquetas">✕</Button>
-      </div>
-      <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
+    <div>
+      <div className="space-y-1 max-h-64 overflow-y-auto mb-3">
         {tags.length === 0 && <p className="text-xs text-muted-foreground">Aún no tienes etiquetas — crea la primera abajo.</p>}
         {tags.map(t => editing?.id === t.id ? (
           <form key={t.id} className="rounded border border-border p-2"
