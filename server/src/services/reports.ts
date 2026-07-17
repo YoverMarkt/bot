@@ -126,10 +126,10 @@ function detectReportIntent(text: unknown): ReportIntent | null {
 // CÁLCULO — devuelven datos estructurados (fuente única)
 // ══════════════════════════════════════════════════════════
 
-async function computeSummary(bizId: string, period?: ReportPeriod | null) {
+async function computeSummary(bizId: string, period?: ReportPeriod | null, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
   const [sales, allCustomers, writers] = await Promise.all([
-    db.getSalesWithItems(bizId, start),
+    preloadedSales ?? db.getSalesWithItems(bizId, start),
     db.getSaleCustomers(bizId),
     db.getWritersInRange(bizId, start)
   ])
@@ -165,9 +165,9 @@ async function computeSummary(bizId: string, period?: ReportPeriod | null) {
   }
 }
 
-async function computeBySeller(bizId: string, period?: ReportPeriod | null) {
+async function computeBySeller(bizId: string, period?: ReportPeriod | null, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
-  const [sales, users] = await Promise.all([db.getSalesWithItems(bizId, start), db.getClientUsers(bizId)])
+  const [sales, users] = await Promise.all([preloadedSales ?? db.getSalesWithItems(bizId, start), db.getClientUsers(bizId)])
   const nameById: Record<string, string> = {}
   users.forEach(u => { nameById[u.id] = u.name || u.email || 'Usuario' })
   const map: Record<string, { name: string; orders: number; total: number }> = {}
@@ -181,9 +181,9 @@ async function computeBySeller(bizId: string, period?: ReportPeriod | null) {
   return { label, rows: Object.values(map).sort((a, b) => b.total - a.total) }
 }
 
-async function computeTop(bizId: string, period?: ReportPeriod | null, limit = 5) {
+async function computeTop(bizId: string, period?: ReportPeriod | null, limit = 5, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
-  const sales = await db.getSalesWithItems(bizId, start)
+  const sales = preloadedSales ?? await db.getSalesWithItems(bizId, start)
   const map: Record<string, { name: string; qty: number; rev: number }> = {}
   for (const v of sales) for (const i of (v.sale_items || [])) {
     const k = i.product_name || 'Producto'
@@ -194,9 +194,9 @@ async function computeTop(bizId: string, period?: ReportPeriod | null, limit = 5
   return { label, rows: Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, limit) }
 }
 
-async function computeLowMovement(bizId: string, period?: ReportPeriod | null, threshold = 0) {
+async function computeLowMovement(bizId: string, period?: ReportPeriod | null, threshold = 0, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
-  const [sales, products] = await Promise.all([db.getSalesWithItems(bizId, start), db.getProducts(bizId)])
+  const [sales, products] = await Promise.all([preloadedSales ?? db.getSalesWithItems(bizId, start), db.getProducts(bizId)])
   const soldById: Record<string, number> = {}
   const soldByName: Record<string, number> = {}
   for (const v of sales) for (const i of (v.sale_items || [])) {
@@ -216,10 +216,10 @@ async function computeLowMovement(bizId: string, period?: ReportPeriod | null, t
   return { label, threshold, rows }
 }
 
-async function computeComparison(bizId: string, period?: ReportPeriod | null) {
+async function computeComparison(bizId: string, period?: ReportPeriod | null, preloadedSales?: SaleRow[]) {
   const cur = rangeFor(period), prev = previousRange(period)
   const [curSales, prevSales] = await Promise.all([
-    db.getSalesWithItems(bizId, cur.start),
+    preloadedSales ?? db.getSalesWithItems(bizId, cur.start),
     db.getSalesWithItems(bizId, prev.start, prev.end)
   ])
   const sum = (arr: SaleRow[]) => arr.reduce((s, v) => s + Number(v.total || 0), 0)
@@ -228,9 +228,9 @@ async function computeComparison(bizId: string, period?: ReportPeriod | null) {
   return { label: cur.label, curTotal, curOrders: curSales.length, prevTotal, prevOrders: prevSales.length, pct }
 }
 
-async function computeRecurring(bizId: string, period?: ReportPeriod | null, topN = 5) {
+async function computeRecurring(bizId: string, period?: ReportPeriod | null, topN = 5, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
-  const [sales, sessions] = await Promise.all([db.getSalesWithItems(bizId, start), db.getSessions(bizId)])
+  const [sales, sessions] = await Promise.all([preloadedSales ?? db.getSalesWithItems(bizId, start), db.getSessions(bizId)])
   const sessName: Record<string, string> = {}
   for (const s of sessions) if (s.contact_phone && s.contact_name) sessName[key9(s.contact_phone)] = s.contact_name
   const map: Record<string, { name: string; orders: number; total: number }> = {}
@@ -265,11 +265,11 @@ async function computeMostConsulted(bizId: string, period?: ReportPeriod | null,
   return { label, rows: Object.values(map).sort((a, b) => b.count - a.count).slice(0, limit) }
 }
 
-async function computeAbandoned(bizId: string, period?: ReportPeriod | null, limit = 10) {
+async function computeAbandoned(bizId: string, period?: ReportPeriod | null, limit = 10, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
   const [consult, sales] = await Promise.all([
     db.getConsultationsInRange(bizId, start),
-    db.getSalesWithItems(bizId, start)
+    preloadedSales ?? db.getSalesWithItems(bizId, start)
   ])
   const soldIds = new Set()
   for (const v of sales) for (const i of (v.sale_items || [])) if (i.product_id) soldIds.add(i.product_id)
@@ -285,11 +285,11 @@ async function computeAbandoned(bizId: string, period?: ReportPeriod | null, lim
 // Clientes perdidos: escribieron en el período pero NO compraron en él.
 // Razón automática "No respondió" cuando el negocio (assistant/owner) habló al final.
 // Badge: 🔁 ya fue cliente (compró alguna vez) vs 🆕 nuevo (nunca compró).
-async function computeLostCustomers(bizId: string, period?: ReportPeriod | null, limit = 50) {
+async function computeLostCustomers(bizId: string, period?: ReportPeriod | null, limit = 50, preloadedSales?: SaleRow[]) {
   const { start, label } = rangeFor(period)
   const [history, periodSales, allBuyers, sessions] = await Promise.all([
     db.getHistoryInRange(bizId, start),
-    db.getSalesWithItems(bizId, start),
+    preloadedSales ?? db.getSalesWithItems(bizId, start),
     db.getSaleCustomers(bizId),
     db.getSessions(bizId)
   ])
@@ -566,11 +566,14 @@ async function computeAlerts(bizId: string) {
 
 // Todos los reportes juntos (para el panel web)
 async function getAllReports(bizId: string, period: ReportPeriod) {
+  // Egress: las ventas del período se descargan UNA vez y se comparten entre
+  // los cálculos (antes eran 8 lecturas idénticas de Supabase por carga).
+  const sales = await db.getSalesWithItems(bizId, rangeFor(period).start)
   const [summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered] = await Promise.all([
-    computeSummary(bizId, period), computeSalesTrend(bizId, period), computeTop(bizId, period), computeLowMovement(bizId, period),
-    computeComparison(bizId, period), computeRecurring(bizId, period), computeLowStock(bizId), computePending(bizId),
-    computeBySeller(bizId, period), computeMostConsulted(bizId, period), computeAbandoned(bizId, period),
-    computeLostCustomers(bizId, period), computeFaq(bizId, period), computeUnanswered(bizId, period)
+    computeSummary(bizId, period, sales), computeSalesTrend(bizId, period), computeTop(bizId, period, 5, sales), computeLowMovement(bizId, period, 0, sales),
+    computeComparison(bizId, period, sales), computeRecurring(bizId, period, 5, sales), computeLowStock(bizId), computePending(bizId),
+    computeBySeller(bizId, period, sales), computeMostConsulted(bizId, period), computeAbandoned(bizId, period, 10, sales),
+    computeLostCustomers(bizId, period, 50, sales), computeFaq(bizId, period), computeUnanswered(bizId, period)
   ])
   return { period, summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered }
 }

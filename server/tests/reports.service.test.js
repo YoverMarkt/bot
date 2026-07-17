@@ -83,6 +83,32 @@ describe('servicio de reportes del dueño', () => {
     })
   })
 
+  it('getAllReports descarga las ventas UNA sola vez y las comparte (egress)', async () => {
+    const getSales = vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([])
+    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([])
+    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(0)
+    vi.spyOn(db, 'getClientUsers').mockResolvedValue([])
+    vi.spyOn(db, 'getProducts').mockResolvedValue([])
+    vi.spyOn(db, 'getSessions').mockResolvedValue([])
+    vi.spyOn(db, 'getConsultationsInRange').mockResolvedValue([])
+    vi.spyOn(db, 'getHistoryInRange').mockResolvedValue([])
+    vi.spyOn(db, 'getLowStockProducts').mockResolvedValue([])
+    vi.spyOn(db, 'getPendingOrders').mockResolvedValue([])
+    vi.spyOn(db, 'getAiGaps').mockResolvedValue([])
+    vi.spyOn(db, 'getUserMessagesInRange').mockResolvedValue([])
+
+    const result = await reports.getAllReports('business-a', 'mes')
+
+    // Ventana actual compartida (1) + ventana anterior de la comparación (1)
+    // + ventana propia del trend (1). Antes eran 9-10 descargas por carga.
+    expect(getSales.mock.calls.length).toBeLessThanOrEqual(3)
+    const currentWindowCalls = getSales.mock.calls.filter(call => call[2] === undefined)
+    expect(result.period).toBe('mes')
+    expect(result.summary).toBeDefined()
+    expect(result.comparison).toBeDefined()
+    expect(currentWindowCalls.length).toBeLessThanOrEqual(2)
+  })
+
   it('mantiene una implementación TypeScript verificable', () => {
     const service = fs.readFileSync(new URL('../src/services/reports.ts', import.meta.url), 'utf8')
 
