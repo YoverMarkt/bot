@@ -24,7 +24,18 @@ function RequireAuth() {
   return session.token ? <Outlet /> : <Navigate to="/login" replace />
 }
 
-const PageLoader = () => <div className="space-y-4"><Skeleton className="h-8 w-56" /><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>
+const PageLoader = () => (
+  <div>
+    <Skeleton className="h-8 w-56 mb-6" />
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+    </div>
+    <div className="grid lg:grid-cols-2 gap-4">
+      <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-64 rounded-xl" />
+    </div>
+  </div>
+)
 
 export default function App() {
   return (
