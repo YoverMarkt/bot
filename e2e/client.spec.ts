@@ -325,4 +325,10 @@ test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({
   await expect.poll(() => page.evaluate(() => (
     document.documentElement.scrollWidth <= window.innerWidth
   ))).toBe(true)
+  // El panel de mensajes tampoco desborda aunque un mensaje traiga una URL
+  // imposible de partir (regresión: barra horizontal en el chat)
+  await expect.poll(() => page.evaluate(() => {
+    const pane = document.querySelector('div.overflow-y-auto.p-4')
+    return pane !== null && pane.scrollWidth <= pane.clientWidth + 1
+  })).toBe(true)
 })
