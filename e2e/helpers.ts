@@ -106,6 +106,12 @@ export async function mockClientApi(page: Page) {
         role: 'user',
         content: 'Hola desde E2E',
         created_at: '2026-07-12T18:00:00.000Z',
+      }, {
+        contact_phone: '+593999999999',
+        role: 'assistant',
+        // URL imposible de partir: regresión del desbordamiento horizontal del chat
+        content: 'Aquí está la foto: https://res.cloudinary.com/botpanel/image/upload/v1783287641/botpanel/5f53982a-839d-47ea-8086-4d03e3756b3b/uipguoqgwpetw0upvdk5.jpg',
+        created_at: '2026-07-12T18:01:00.000Z',
       }])
     }
     if (path === '/api/client/tags' || path === '/api/client/bookings' || path === '/api/client/schedule') return json(route, [])

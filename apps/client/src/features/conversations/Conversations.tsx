@@ -150,7 +150,7 @@ export default function Conversations() {
             <Button
               variant="ghost"
               key={s.contact_phone} onClick={() => openChat(s)}
-              className={`w-full h-auto justify-start whitespace-normal rounded-none text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${selected === s.contact_phone ? 'bg-primary/10' : ''}`}
+              className={`w-full h-auto justify-start whitespace-normal rounded-none text-left px-4 py-3 border-b border-border/40 hover:bg-muted/50 transition-colors ${s.manual_mode ? 'border-l-2 border-l-amber-500' : ''} ${selected === s.contact_phone ? 'bg-primary/10' : s.manual_mode ? 'bg-amber-500/10 hover:bg-amber-500/15' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm text-foreground truncate">
@@ -200,7 +200,9 @@ export default function Conversations() {
                   </Button>
                 )}
                 <div className="text-xs text-muted-foreground/80">
-                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode ? 'Modo manual — respondiendo tú' : 'Bot activo'}
+                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode
+                    ? <span className="font-medium text-amber-700 dark:text-amber-300">Modo manual — respondiendo tú</span>
+                    : 'Bot activo'}
                 </div>
               </div>
 
@@ -238,8 +240,8 @@ export default function Conversations() {
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
-                  <Button variant="outline" size="sm" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}>
-                    <span className="inline-flex items-center gap-1.5"><BotIcon className="w-4 h-4" /> Activar bot</span>
+                  <Button variant="outline" size="sm" className="border-amber-500/60 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: false })}>
+                    <span className="inline-flex items-center gap-1.5"><Hand className="w-4 h-4" /> Devolver al bot</span>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" onClick={() => mMode.mutate({ phone: sess.contact_phone, manual: true })}>
@@ -254,7 +256,7 @@ export default function Conversations() {
               {chat.length === 0 && <p className="text-sm text-muted-foreground/80 text-center mt-8">Sin mensajes recientes (se muestran los últimos 100 del negocio).</p>}
               {chat.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
+                  <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap wrap-anywhere ${
                     m.role === 'user' ? 'bg-card border text-foreground'
                     : m.role === 'owner' ? 'bg-blue-600 text-white'
                     : 'bg-primary text-primary-foreground'
