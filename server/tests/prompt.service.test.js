@@ -157,10 +157,32 @@ describe('constructor tipado del prompt', () => {
     )
 
     expect(voicePrompt).toContain('Es una llamada de voz: sin markdown ni emojis')
-    expect(voicePrompt).not.toContain('este producto tiene una foto disponible')
+    expect(voicePrompt).not.toContain('[FOTO]')
     expect(closedPrompt).toContain('FUERA del horario de atención')
     expect(closedPrompt).toContain('ACABA DE COMPLETAR una compra')
     expect(closedPrompt).not.toContain(product.image_url)
+  })
+
+  it('marca la media real por producto y exige voz humana sin mencionar al sistema', () => {
+    const withMedia = promptService.buildPrompt(
+      business,
+      [{ ...product, video_url: 'https://media.example.com/a.mp4' }],
+      {}, false, 'producto a',
+    )
+    const withoutMedia = promptService.buildPrompt(
+      business, [{ ...product, image_url: null }], {}, false, 'producto a',
+    )
+
+    expect(withMedia).toContain('$12.50 — disponible [FOTO] [VIDEO]')
+    expect(withMedia).toContain('VOZ HUMANA')
+    expect(withMedia).toContain('JUNTO con tu mensaje')
+    // El vocabulario interno que el modelo repetía como loro ya no se le enseña
+    expect(withMedia).not.toContain('el sistema se la envía')
+    expect(withMedia).not.toContain('el sistema se encarga')
+    // Sin media real no hay marcadores en la línea del producto (la leyenda sí existe)
+    expect(withoutMedia).toContain('$12.50 — disponible | especial')
+    expect(withoutMedia).not.toContain('disponible [FOTO]')
+    expect(withoutMedia).not.toContain('disponible [VIDEO]')
   })
 
   it('mantiene etiquetas y servicio sin comprobaciones anuladas', () => {
