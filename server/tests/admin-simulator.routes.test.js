@@ -186,6 +186,26 @@ describe('simulador del superadmin', () => {
     expect(response.body.actionNote).toContain('Respuesta oficial calculada por el servidor')
   })
 
+  it('descarta cotizaciones inventadas por la IA con formato oficial y falla cerrado', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue(
+      '🏨 *Opciones de hospedaje*\n*1. Habitación Doble*\nAlojamiento: $120.00\n💰 *Total oficial por habitación: $120.00*',
+    )
+    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'del lunes al miércoles, 2 habitaciones, 2 adultos y 3 niños' },
+    })
+
+    expect(compute).not.toHaveBeenCalled()
+    expect(response.body.reply).not.toContain('Total oficial')
+    expect(response.body.reply).toContain('un asesor de nuestro equipo')
+    expect(response.body.actionNote).toContain('cifras inventadas')
+  })
+
   it('limpia ##STAY_REQUEST## y explica la acción sin crear retenciones reales', async () => {
     mockBusinessContext()
     vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })

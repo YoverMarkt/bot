@@ -58,6 +58,7 @@ function setup(overrides = {}) {
   const tags = {
     detectMediaRequest: vi.fn().mockReturnValue({ wantsImage: false, wantsVideo: false }),
     isInsultMessage: vi.fn().mockReturnValue(false),
+    impersonatesOfficialSummary: vi.fn().mockReturnValue(false),
     parseBotOutput: vi.fn().mockReturnValue({
       finalText: 'Respuesta final',
       booking: null,
@@ -168,6 +169,29 @@ describe('orquestación de conversaciones del bot', () => {
       'business-b', expect.anything(), expect.anything(),
     )
     expect(current.ai.callAI).not.toHaveBeenCalled()
+  })
+
+  it('descarta y deriva cuando la IA imita un resumen oficial con cifras propias', async () => {
+    const current = setup({
+      tags: {
+        impersonatesOfficialSummary: vi.fn().mockReturnValue(true),
+        parseBotOutput: vi.fn().mockReturnValue({
+          finalText: '🏨 *Opciones de hospedaje* inventadas 💰 *Total oficial: $120.00*',
+          booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+          hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
+        }),
+      },
+    })
+
+    await current.conversation.processMessage(input(current))
+
+    // El texto inventado JAMÁS llega al cliente; se falla cerrado derivando
+    expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('Total oficial'))
+    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ isUncertain: true, hasSale: false }),
+    )
+    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
+    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 
   it('deriva insultos sin invocar IA ni consultar el catálogo', async () => {
