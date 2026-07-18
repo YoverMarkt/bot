@@ -105,6 +105,7 @@ interface ConversationTags {
   detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
   isInsultMessage(text: string): boolean
   parseBotOutput(reply: string): ParsedBotOutput
+  impersonatesOfficialSummary(text: string): boolean
 }
 
 interface ConversationActions {
@@ -401,6 +402,24 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         originalText: text,
         hasSale: false,
         hasHandoffTag: parsedOutput.hasHandoffTag,
+        isUncertain: true,
+        wasManual: session?.manual_mode,
+        send,
+      })
+      return
+    }
+
+    // La IA jamás escribe montos: si imita el formato de los resúmenes
+    // oficiales (cotizaciones/pedidos del servidor) está inventando cifras.
+    // Falla cerrado: el cliente no ve ese texto y continúa una persona.
+    if (tags.impersonatesOfficialSummary(parsedOutput.finalText)) {
+      logger.error(`❌ [${business.name}] la IA imitó un resumen oficial con datos propios; se deriva fallando cerrado`)
+      await actions.handleConversationOutcome({
+        business,
+        phone,
+        originalText: text,
+        hasSale: false,
+        hasHandoffTag: false,
         isUncertain: true,
         wasManual: session?.manual_mode,
         send,

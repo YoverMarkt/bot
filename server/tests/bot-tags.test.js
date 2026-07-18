@@ -66,6 +66,15 @@ describe('análisis de etiquetas del bot', () => {
     expect(parsed.hasActionConflict).toBe(false)
   })
 
+  it('detecta cuando la IA imita el vocabulario exclusivo de los resúmenes oficiales', () => {
+    expect(tags.impersonatesOfficialSummary('🏨 *Opciones de hospedaje*\n1. Doble $120')).toBe(true)
+    expect(tags.impersonatesOfficialSummary('💰 *Total oficial: $200.00*')).toBe(true)
+    expect(tags.impersonatesOfficialSummary('🧾 *Resumen de su pedido*\nPizza x1')).toBe(true)
+    expect(tags.impersonatesOfficialSummary('El Perfume Floral cuesta $12.50 y hay stock 😊')).toBe(false)
+    expect(tags.impersonatesOfficialSummary('Con gusto le cotizo, ¿para qué fechas sería?')).toBe(false)
+    expect(tags.impersonatesOfficialSummary('')).toBe(false)
+  })
+
   it('extrae una cotización de hospedaje estricta sin calcular nada', () => {
     const parsed = tags.parseBotOutput(
       'Voy a consultar ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##',

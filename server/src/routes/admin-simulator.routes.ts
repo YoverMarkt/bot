@@ -44,6 +44,7 @@ const auth = require('../middleware/auth') as {
 }
 const tags = require('../services/bot-tags') as {
   detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
+  impersonatesOfficialSummary(text: string): boolean
   parseBotOutput(reply: string): {
     finalText: string
     booking: unknown
@@ -135,6 +136,10 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       // Igual que el canal real: acciones incompatibles fallan cerrado
       reply = HANDOFF_REPLY
       actionNote = '⚠️ La IA emitió varias acciones incompatibles en una sola respuesta; en el canal real esto falla cerrado y la conversación pasa a un asesor.'
+    } else if (tags.impersonatesOfficialSummary(parsed.finalText)) {
+      // La IA intentó escribir montos/cotización con formato oficial: cifras inventadas
+      reply = HANDOFF_REPLY
+      actionNote = '⚠️ La IA intentó escribir una cotización o total con formato oficial SIN pasar por el cálculo del servidor (cifras inventadas). Falla cerrado: igual que en WhatsApp/Telegram, el cliente nunca ve montos inventados y la conversación pasa a un asesor.'
     } else if (parsed.hasHandoffTag) {
       reply = HANDOFF_REPLY
     } else if (parsed.lodgingQuote) {

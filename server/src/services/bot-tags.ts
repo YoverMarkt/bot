@@ -112,6 +112,22 @@ function isInsultMessage(text: unknown): boolean {
   ))
 }
 
+// Vocabulario EXCLUSIVO de los resúmenes que construye el servidor (pedidos y
+// hospedaje). Si aparece en texto escrito por la IA, está imitando al sistema
+// con montos o disponibilidad que NADIE calculó: el que llama debe fallar
+// cerrado y jamás enviar ese texto al cliente.
+const OFFICIAL_SUMMARY_MARKERS = [
+  'total oficial',
+  'opciones de hospedaje',
+  'resumen de su pedido',
+  '💰 *total',
+] as const
+
+function impersonatesOfficialSummary(text: unknown): boolean {
+  const normalized = String(text || '').toLowerCase()
+  return OFFICIAL_SUMMARY_MARKERS.some(marker => normalized.includes(marker))
+}
+
 function detectMediaRequest(text: unknown): { wantsImage: boolean; wantsVideo: boolean } {
   const value = String(text || '')
   return {
@@ -225,4 +241,4 @@ function parseBotOutput(reply: unknown): ParsedBotOutput {
   }
 }
 
-export { detectMediaRequest, isInsultMessage, normalizeWords, parseBotOutput }
+export { detectMediaRequest, impersonatesOfficialSummary, isInsultMessage, normalizeWords, parseBotOutput }
