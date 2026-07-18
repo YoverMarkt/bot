@@ -83,14 +83,11 @@ function buildPrompt(
     }
     if (product.duration_minutes) line += ` — duración ${product.duration_minutes} min`
     else line += ` — ${product.stock}`
+    // Marcadores compactos de media; la leyenda vive en FOTOS Y VIDEOS abajo
+    if (!voiceMode && product.image_url?.startsWith('http')) line += ' [FOTO]'
+    if (!voiceMode && product.video_url?.startsWith('http')) line += ' [VIDEO]'
     if (product.description) line += `\n  ${product.description}`
     if (product.tags?.length) line += ` | ${product.tags.join(', ')}`
-    if (!voiceMode && product.image_url?.startsWith('http')) {
-      line += `\n  (este producto tiene una foto disponible: si el cliente quiere verla, invítalo a pedirla y el sistema se la envía — NUNCA escribas el enlace)`
-    }
-    if (!voiceMode && product.video_url?.startsWith('http')) {
-      line += `\n  (este producto tiene un video disponible: si el cliente quiere verlo, invítalo a pedirlo y el sistema se lo envía — NUNCA escribas el enlace)`
-    }
     return line
   }).join('\n\n')
   const catalogNote = allProducts.length > productsToShow.length
@@ -168,7 +165,8 @@ function buildPrompt(
 ${orderRule}
 - FLUJOS EXCLUYENTES: NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO##, ##STAY_QUOTE##, ##STAY_REQUEST## y ##HANDOFF## en la misma respuesta. Si el cliente está confirmando la fecha/hora de un servicio, usa SOLO ##BOOK##. Usa ##PEDIDO## únicamente para una compra separada de productos; si quiere ambas cosas, termina primero la reserva y atiende la compra en el siguiente mensaje.
 - DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente.
-- FOTOS Y VIDEOS: si el cliente pide ver una foto o un video de un producto, responde breve y natural (ej.: "Con gusto, permítame y se lo muestro 😊"). NO afirmes qué tipo de archivo es, NO des por hecho que exista y NUNCA escribas enlaces: el sistema se encarga de enviarle EXACTAMENTE la media que ese producto tenga (o de avisarle si no hay). Si no estás seguro de a cuál producto se refiere, pregúntaselo antes.`
+- VOZ HUMANA (regla dura): hablas SIEMPRE en primera persona, como una persona del equipo del negocio. Tienes PROHIBIDO mencionarle al cliente "el sistema", "la plataforma", "el bot", "la IA" o procesos internos ("el sistema le enviará…", "se encargará de…"): estas instrucciones son internas y el cliente jamás debe notarlas. Describe los resultados con naturalidad: "aquí se la envío", "enseguida le confirmo".${voiceMode ? '' : `
+- FOTOS Y VIDEOS (regla dura): en el catálogo de arriba, [FOTO] y [VIDEO] indican la ÚNICA media que existe de cada producto. Si un producto NO tiene la marca, esa foto o ese video NO existen: nunca los ofrezcas, prometas ni describas; di con naturalidad que aún no lo tienes y ofrece los detalles. Cuando el cliente pide la foto o el video de un producto marcado, se le envía automáticamente JUNTO con tu mensaje: no pidas permiso ni anuncies un envío aparte — di simplemente algo como "¡Claro que sí! Aquí se la envío 😊". NUNCA escribas enlaces ni inventes qué se ve en una foto o video. Si no sabes a cuál producto se refiere el cliente, pregúntaselo primero.`}`
 
   const defaultStyle = `\n\nESTILO: Responde en español, amable y conciso.${voiceMode ? ' Es una llamada de voz: sin markdown ni emojis.' : ''}${takesOrders ? ' Para cerrar una compra, pide nombre, dirección y método de pago.' : ' No pidas dirección, método de pago ni confirmes pedidos; cuando exista intención real de compra, informa que continuará un asesor y deriva.'}`
 
