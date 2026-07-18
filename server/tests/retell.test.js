@@ -251,6 +251,13 @@ describe('integración Retell', () => {
     expect(buildVoicePrompt(business, products, { bot_instructions: 'Sé amable.' }))
       .toContain('Perfume Floral (Aura): $12.50')
     expect(cleanVoiceContent('**Hola** _mundo_ ##BOOKING##')).toBe('Hola mundo')
+    // Ninguna etiqueta interna puede leerse en voz alta al cliente
+    expect(cleanVoiceContent('Con gusto ##HANDOFF## le ayudo')).toBe('Con gusto le ayudo')
+    expect(cleanVoiceContent('Listo ##PEDIDO:Perfume Floral x1## gracias')).toBe('Listo gracias')
+    expect(cleanVoiceContent('##STAY_QUOTE:2026-07-20|2026-07-21|1|2|0## Un momento'))
+      .toBe('Un momento')
+    expect(cleanVoiceContent('##BOOK:Ana|2026-07-20|10:00|Corte## Agendado'))
+      .toBe('Agendado')
   })
 
   it('enlaza Retell directamente con servicios tipados', () => {
