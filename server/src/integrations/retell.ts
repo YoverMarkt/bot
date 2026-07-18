@@ -152,7 +152,10 @@ function cleanVoiceContent(value: unknown): string {
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/_([^_]+)_/g, '$1')
-    .replace(/##BOOKING##/g, '')
+    // Defensa total: NINGUNA etiqueta interna (##HANDOFF##, ##PEDIDO:…##,
+    // ##BOOK:…##, ##STAY_*##…) puede leerse en voz alta al cliente.
+    .replace(/##[^#\n]*##/g, '')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
