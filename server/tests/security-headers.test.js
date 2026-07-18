@@ -25,6 +25,13 @@ describe('cabeceras HTTP de seguridad', () => {
     expect(result.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'")
   })
 
+  it('permite blob: solo en media (el WAV de la alarma) sin abrirlo en el resto', () => {
+    const csp = run().headers.get('Content-Security-Policy')
+    expect(csp).toContain("media-src 'self' data: https: blob:")
+    // El resto de directivas siguen cerradas a blob:
+    expect(csp.replace("media-src 'self' data: https: blob:", '')).not.toContain('blob:')
+  })
+
   it('activa HSTS únicamente en producción', () => {
     process.env.NODE_ENV = 'production'
     expect(run().headers.get('Strict-Transport-Security')).toContain('max-age=31536000')
