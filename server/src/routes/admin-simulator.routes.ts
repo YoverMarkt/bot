@@ -44,6 +44,27 @@ const auth = require('../middleware/auth') as {
 }
 const tags = require('../services/bot-tags') as {
   detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
+  parseBotOutput(reply: string): {
+    finalText: string
+    booking: unknown
+    orderPayload: string | null
+    lodgingQuote: Record<string, unknown> | null
+    lodgingRequest: unknown
+    hasSale: boolean
+    hasHandoffTag: boolean
+    hasActionConflict: boolean
+  }
+}
+const actions = require('../services/bot-actions') as {
+  computeLodgingQuoteReply(
+    business: BusinessRecord,
+    contactPhone: string,
+    quote: Record<string, unknown>,
+  ): Promise<{
+    outcome: 'quoted' | 'retry' | 'handoff' | 'error'
+    message: string
+    mediaOptions?: { mediaUrls?: string[] }[]
+  }>
 }
 const media = require('../services/bot-media') as {
   sendRequestedProductMedia(input: {
@@ -101,28 +122,57 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       business.ai_provider,
     )
 
+    // Mismo parser de etiquetas que WhatsApp/Telegram: nada de limpiar a mano
     const imageMatch = rawReply.match(/##IMG##(https?:\/\/[^\s#]+)##/)
-    const hasHandoff = /##\s*handoff\s*##/i.test(rawReply)
-    let reply = rawReply
-      .replace(/##IMG##[^\s#]+##/g, '')
-      .replace(/##\s*handoff\s*##/gi, '')
-      .replace('##BOOKING##', '')
-      .trim()
-    if (hasHandoff) reply = HANDOFF_REPLY
+    const parsed = tags.parseBotOutput(rawReply)
+    let reply = parsed.finalText
+    let actionNote: string | null = null
+    let mediaImage: string | null = null
+    let mediaVideo: string | null = null
+    const mediaNotes: string[] = []
 
-    databaseError(
-      await db.saveMessage(business.id, SIMULATOR_CONTACT, 'assistant', reply),
-      'guardar respuesta de prueba',
-    )
+    if (parsed.hasActionConflict) {
+      // Igual que el canal real: acciones incompatibles fallan cerrado
+      reply = HANDOFF_REPLY
+      actionNote = '⚠️ La IA emitió varias acciones incompatibles en una sola respuesta; en el canal real esto falla cerrado y la conversación pasa a un asesor.'
+    } else if (parsed.hasHandoffTag) {
+      reply = HANDOFF_REPLY
+    } else if (parsed.lodgingQuote) {
+      // El huésped real recibe SOLO la cotización oficial del servidor
+      const computed = await actions.computeLodgingQuoteReply(
+        business, SIMULATOR_CONTACT, parsed.lodgingQuote,
+      )
+      reply = computed.message
+      for (const url of (computed.mediaOptions || []).flatMap(option => option.mediaUrls || [])) {
+        if (!/^https:\/\//i.test(url)) continue
+        if (/\.(?:mp4|mov|webm)(?:$|[?#])/i.test(url)) mediaVideo = mediaVideo || url
+        else mediaImage = mediaImage || url
+      }
+      actionNote = computed.outcome === 'handoff' || computed.outcome === 'error'
+        ? '🏨 En el canal real esta conversación pasa a un asesor del equipo (la cotización no pudo resolverse automáticamente).'
+        : '🏨 Respuesta oficial calculada por el servidor con cupos y tarifas reales, igual que en WhatsApp/Telegram.'
+    } else if (parsed.lodgingRequest) {
+      actionNote = '🛎️ Solicitud de hospedaje detectada: en el canal real el sistema retiene el cupo y la deja en Hospedaje → Solicitudes para que el equipo la confirme. El simulador no crea retenciones reales.'
+    } else if (parsed.booking) {
+      actionNote = '📅 Reserva detectada: en el canal real se crearía la cita pendiente de confirmación del equipo. El simulador no crea citas reales.'
+    } else if (parsed.orderPayload || parsed.hasSale) {
+      actionNote = '🛒 Cierre de venta detectado: en el canal real el sistema calcula el total oficial y avisa al equipo. El simulador no registra pedidos reales.'
+    }
+
+    if (reply) {
+      databaseError(
+        await db.saveMessage(business.id, SIMULATOR_CONTACT, 'assistant', reply),
+        'guardar respuesta de prueba',
+      )
+    }
     // El flujo real envía la media DESPUÉS de responder (bot-conversation →
     // bot-media). Aquí se replica con enviadores que capturan la media en vez
     // de mandarla por un canal, para que el simulador muestre exactamente lo
     // que el cliente recibiría en WhatsApp/Telegram.
     const { wantsImage, wantsVideo } = tags.detectMediaRequest(message)
-    let mediaImage: string | null = null
-    let mediaVideo: string | null = null
-    const mediaNotes: string[] = []
-    if (!hasHandoff && (wantsImage || wantsVideo)) {
+    const skipProductMedia = parsed.hasHandoffTag || parsed.hasActionConflict
+      || Boolean(parsed.lodgingQuote) || Boolean(parsed.lodgingRequest)
+    if (!skipProductMedia && (wantsImage || wantsVideo)) {
       await media.sendRequestedProductMedia({
         business: { id: business.id, name: business.name || business.id },
         text: message,
@@ -144,6 +194,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       image: mediaImage || imageMatch?.[1] || null,
       video: mediaVideo,
       mediaNote: mediaNotes.length ? mediaNotes.join('\n') : null,
+      actionNote,
     })
   } catch (error) {
     console.error(

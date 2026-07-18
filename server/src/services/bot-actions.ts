@@ -234,6 +234,14 @@ export type LodgingActionOutcome =
   | 'handoff'
   | 'error'
 
+// Resultado puro de una cotización de hospedaje, sin efectos secundarios
+export interface ComputedLodgingQuote {
+  outcome: 'quoted' | 'retry' | 'handoff' | 'error'
+  message: string
+  mediaOptions?: LodgingQuoteOption[]
+  logLine?: string
+}
+
 function cleanLine(value: unknown, fallback = ''): string {
   return String(value ?? fallback).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
 }
@@ -373,32 +381,28 @@ function createBotActions(dependencies: BotActionDependencies) {
     }
   }
 
-  async function processLodgingQuote(
-    input: ProcessLodgingQuoteInput,
-  ): Promise<LodgingActionOutcome> {
-    const { business, phone, originalText, quote, send } = input
-    if (!quote) return 'none'
-
+  // Cálculo PURO de la respuesta a un ##STAY_QUOTE## (sin tocar sesión ni
+  // notificar a nadie): lo comparten el canal real y el simulador del admin.
+  async function computeLodgingQuoteReply(
+    business: ProcessLodgingQuoteInput['business'],
+    contactPhone: string,
+    quote: NonNullable<ProcessLodgingQuoteInput['quote']>,
+  ): Promise<ComputedLodgingQuote> {
     if (business.lodging_enabled !== true || !lodging) {
-      const message = 'No puedo consultar hospedaje automáticamente en este momento. Un asesor continuará contigo para ayudarte 🙏'
-      await handoffLodging(business, phone, originalText, message, send)
-      return 'handoff'
+      return { outcome: 'handoff', message: 'No puedo consultar hospedaje automáticamente en este momento. Un asesor continuará contigo para ayudarte 🙏' }
     }
 
     if (
       !quote.checkIn || !quote.checkOut
       || quote.roomsCount == null || quote.adults == null || quote.children == null
     ) {
-      const message = 'Necesito fechas válidas de entrada y salida (AAAA-MM-DD), al menos una habitación, un adulto y el número de niños para consultar el hospedaje.'
-      await keepAutomated(business, phone, originalText)
-      await sendAndSave(business, phone, message, send)
-      return 'retry'
+      return { outcome: 'retry', message: 'Necesito fechas válidas de entrada y salida (AAAA-MM-DD), al menos una habitación, un adulto y el número de niños para consultar el hospedaje.' }
     }
 
     try {
       const result = await lodging.quoteLodging({
         businessId: business.id,
-        contactPhone: phone,
+        contactPhone,
         checkIn: quote.checkIn,
         checkOut: quote.checkOut,
         roomsCount: quote.roomsCount,
@@ -412,52 +416,67 @@ function createBotActions(dependencies: BotActionDependencies) {
         && option.availableUnits >= option.unitsRequired
       ))
       if (!viableOptions.length) {
-        const message = 'No encontré habitaciones disponibles para todo ese periodo. Puedes indicarme otras fechas y lo consulto nuevamente.'
-        await keepAutomated(business, phone, originalText)
-        await sendAndSave(business, phone, message, send)
-        return 'retry'
+        return { outcome: 'retry', message: 'No encontré habitaciones disponibles para todo ese periodo. Puedes indicarme otras fechas y lo consulto nuevamente.' }
       }
 
       const hasAutomaticPrice = viableOptions.some(option => validTotal(option.total))
       if (!hasAutomaticPrice) {
-        const message = `Encontré opciones de hospedaje para ${result.checkIn} al ${result.checkOut}, pero sus tarifas requieren revisión manual. Para no inventar ningún total, un asesor continuará contigo 🙏`
-        await handoffLodging(business, phone, originalText, message, send)
-        await sendLodgingMedia(viableOptions, input)
-        return 'handoff'
+        return {
+          outcome: 'handoff',
+          message: `Encontré opciones de hospedaje para ${result.checkIn} al ${result.checkOut}, pero sus tarifas requieren revisión manual. Para no inventar ningún total, un asesor continuará contigo 🙏`,
+          mediaOptions: viableOptions,
+        }
       }
 
       const officialQuote = { ...result, options: viableOptions }
-      const summary = buildLodgingQuoteSummary(officialQuote)
-      await keepAutomated(business, phone, originalText)
-      await sendAndSave(business, phone, summary, send)
-      await sendLodgingMedia(viableOptions, input)
-      logger.log(`🏨 [${business.name}] cotización ${result.quoteId} — ${result.nights} noche(s) — ${phone}`)
-      return 'quoted'
+      return {
+        outcome: 'quoted',
+        message: buildLodgingQuoteSummary(officialQuote),
+        mediaOptions: viableOptions,
+        logLine: `🏨 [${business.name}] cotización ${result.quoteId} — ${result.nights} noche(s) — ${contactPhone}`,
+      }
     } catch (error) {
       const code = lodgingErrorCode(error)
       if (code === 'invalid_input') {
-        const message = 'No pude validar esas fechas o la cantidad de personas. Revísalas y envíamelas nuevamente, por favor.'
-        await keepAutomated(business, phone, originalText)
-        await sendAndSave(business, phone, message, send)
-        return 'retry'
+        return { outcome: 'retry', message: 'No pude validar esas fechas o la cantidad de personas. Revísalas y envíamelas nuevamente, por favor.' }
       }
       if (code === 'unavailable') {
-        const message = 'No hay habitaciones disponibles para todo ese periodo. Si me indicas otras fechas, puedo consultar nuevamente.'
-        await keepAutomated(business, phone, originalText)
-        await sendAndSave(business, phone, message, send)
-        return 'retry'
+        return { outcome: 'retry', message: 'No hay habitaciones disponibles para todo ese periodo. Si me indicas otras fechas, puedo consultar nuevamente.' }
       }
 
       logger.error(
         '❌ cotizando hospedaje:',
         error instanceof Error ? error.message : error,
       )
-      const message = code === 'manual_quote'
-        ? 'La tarifa para esas fechas debe revisarla una persona. Un asesor continuará contigo sin confirmar ningún total ni reserva 🙏'
-        : 'No pude consultar disponibilidad y precios de forma segura. Un asesor continuará contigo para revisarlo 🙏'
-      await handoffLodging(business, phone, originalText, message, send)
-      return code === 'manual_quote' ? 'handoff' : 'error'
+      return code === 'manual_quote'
+        ? { outcome: 'handoff', message: 'La tarifa para esas fechas debe revisarla una persona. Un asesor continuará contigo sin confirmar ningún total ni reserva 🙏' }
+        : { outcome: 'error', message: 'No pude consultar disponibilidad y precios de forma segura. Un asesor continuará contigo para revisarlo 🙏' }
     }
+  }
+
+  async function processLodgingQuote(
+    input: ProcessLodgingQuoteInput,
+  ): Promise<LodgingActionOutcome> {
+    const { business, phone, originalText, quote, send } = input
+    if (!quote) return 'none'
+
+    const computed = await computeLodgingQuoteReply(business, phone, quote)
+    if (computed.outcome === 'retry') {
+      await keepAutomated(business, phone, originalText)
+      await sendAndSave(business, phone, computed.message, send)
+      return 'retry'
+    }
+    if (computed.outcome === 'handoff' || computed.outcome === 'error') {
+      await handoffLodging(business, phone, originalText, computed.message, send)
+      if (computed.mediaOptions) await sendLodgingMedia(computed.mediaOptions, input)
+      return computed.outcome
+    }
+
+    await keepAutomated(business, phone, originalText)
+    await sendAndSave(business, phone, computed.message, send)
+    if (computed.mediaOptions) await sendLodgingMedia(computed.mediaOptions, input)
+    if (computed.logLine) logger.log(computed.logLine)
+    return 'quoted'
   }
 
   async function processLodgingRequest(
@@ -682,6 +701,7 @@ function createBotActions(dependencies: BotActionDependencies) {
     createBookingFromTag,
     handleConversationOutcome,
     processOrderPayload,
+    computeLodgingQuoteReply,
     processLodgingQuote,
     processLodgingRequest,
   }
@@ -696,6 +716,7 @@ const actions = createBotActions({
 export const createBookingFromTag = actions.createBookingFromTag
 export const handleConversationOutcome = actions.handleConversationOutcome
 export const processOrderPayload = actions.processOrderPayload
+export const computeLodgingQuoteReply = actions.computeLodgingQuoteReply
 export const processLodgingQuote = actions.processLodgingQuote
 export const processLodgingRequest = actions.processLodgingRequest
 export { createBotActions }

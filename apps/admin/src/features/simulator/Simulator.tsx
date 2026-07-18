@@ -12,7 +12,7 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
 
-type Msg = { role: 'user' | 'bot'; text: string; image?: string | null; video?: string | null; at: string }
+type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
@@ -40,7 +40,7 @@ export default function Simulator() {
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null; video?: string | null; mediaNote?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t }),
       })
@@ -48,6 +48,8 @@ export default function Simulator() {
       // La nota de media ("no tengo foto de ese producto…") llega como
       // mensaje aparte, igual que en WhatsApp/Telegram.
       if (d.mediaNote) setMsgs(m => [...m, { role: 'bot', text: d.mediaNote!, at: now() }])
+      // Nota del simulador: explica la acción interna detectada (el cliente real no la ve)
+      if (d.actionNote) setMsgs(m => [...m, { role: 'note', text: d.actionNote!, at: now() }])
     } catch (e) {
       setMsgs(m => [...m, { role: 'bot', text: `Atención: Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
     }
@@ -108,7 +110,13 @@ export default function Simulator() {
               <p>{biz ? 'Escribe un mensaje como si fueras un cliente.' : 'Selecciona un negocio para probar su bot.'}</p>
             </div>
           )}
-          {msgs.map((m, i) => (
+          {msgs.map((m, i) => m.role === 'note' ? (
+            <div key={i} className="flex justify-center">
+              <div className="max-w-[85%] rounded-lg border border-dashed border-border bg-muted/50 px-3 py-1.5 text-center text-xs text-muted-foreground whitespace-pre-wrap">
+                {m.text}
+              </div>
+            </div>
+          ) : (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
                 m.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
