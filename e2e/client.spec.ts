@@ -398,3 +398,18 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
   await expect(page.getByText('¿Cerraste una venta con este cliente?')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Registrar venta' })).toBeVisible()
 })
+
+test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('bp-theme-client', 'dark'))
+  await seedClientSession(page)
+  await mockClientApi(page)
+  await page.goto(`${clientUrl}#/`)
+
+  // El HTML servido referencia theme-boot.js y el archivo existe con la key correcta
+  const html = await (await page.request.get(clientUrl)).text()
+  expect(html).toContain('theme-boot.js')
+  const boot = await page.request.get(`${clientUrl}theme-boot.js`)
+  expect(boot.ok()).toBe(true)
+  expect(await boot.text()).toContain('bp-theme-client')
+  await expect(page.locator('html')).toHaveClass(/dark/)
+})

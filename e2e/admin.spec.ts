@@ -10,6 +10,21 @@ test('protege el dashboard del superadmin', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'BotPanel — Superadmin' })).toBeVisible()
 })
 
+test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('bp-theme-admin', 'dark'))
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/`)
+
+  // El HTML servido referencia theme-boot.js y el archivo existe con la key correcta
+  const html = await (await page.request.get(adminUrl)).text()
+  expect(html).toContain('theme-boot.js')
+  const boot = await page.request.get(`${adminUrl}theme-boot.js`)
+  expect(boot.ok()).toBe(true)
+  expect(await boot.text()).toContain('bp-theme-admin')
+  await expect(page.locator('html')).toHaveClass(/dark/)
+})
+
 test('inicia sesión y carga datos administrativos simulados', async ({ page }) => {
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/login`)
