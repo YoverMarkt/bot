@@ -6,6 +6,7 @@ import simulatorRouter from '../dist/routes/admin-simulator.routes.js'
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
 const bot = require('../dist/services/bot-entry')
+const actions = require('../dist/services/bot-actions')
 const JWT_SECRET = 'admin-simulator-test-secret'
 let originalJwtSecret
 
@@ -129,6 +130,7 @@ describe('simulador del superadmin', () => {
       image: 'https://img.example.com/producto.jpg',
       video: null,
       mediaNote: null,
+      actionNote: null,
     })
   })
 
@@ -151,7 +153,57 @@ describe('simulador del superadmin', () => {
       image: 'https://cdn.example.com/filtro.jpg',
       video: null,
       mediaNote: null,
+      actionNote: null,
     })
+  })
+
+  it('ejecuta ##STAY_QUOTE## con el cálculo oficial y nunca filtra la etiqueta', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue(
+      'Perfecto, consulto 🏔️ ##STAY_QUOTE:2026-07-20|2026-07-21|1|2|0##',
+    )
+    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply').mockResolvedValue({
+      outcome: 'quoted',
+      message: '🏨 *Opciones de hospedaje* — total oficial $45.00',
+      mediaOptions: [{ mediaUrls: ['https://cdn.example.com/habitacion.jpg'] }],
+    })
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'quiero una habitación para mañana' },
+    })
+
+    expect(compute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'business-a' }),
+      'sim_admin',
+      expect.objectContaining({ checkIn: '2026-07-20', checkOut: '2026-07-21' }),
+    )
+    expect(response.body.reply).toBe('🏨 *Opciones de hospedaje* — total oficial $45.00')
+    expect(response.body.reply).not.toContain('##')
+    expect(response.body.image).toBe('https://cdn.example.com/habitacion.jpg')
+    expect(response.body.actionNote).toContain('Respuesta oficial calculada por el servidor')
+  })
+
+  it('limpia ##STAY_REQUEST## y explica la acción sin crear retenciones reales', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue(
+      'Registro su solicitud 🙌 ##STAY_REQUEST:Matrimonial|Yover##',
+    )
+    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'quiero la matrimonial' },
+    })
+
+    expect(compute).not.toHaveBeenCalled()
+    expect(response.body.reply).toBe('Registro su solicitud 🙌')
+    expect(response.body.reply).not.toContain('##')
+    expect(response.body.actionNote).toContain('Solicitudes')
   })
 
   it('avisa como mensaje aparte cuando el producto pedido no tiene media', async () => {
