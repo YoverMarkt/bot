@@ -5,15 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin — BotPanel</title>
-    <script>
-      // Aplica el tema guardado ANTES del primer pintado: el esqueleto de
-      // arranque nace del color correcto y se elimina el flash de tema.
-      try {
-        if (localStorage.getItem('bp-theme-admin') === 'dark') {
-          document.documentElement.classList.add('dark')
-        }
-      } catch { /* almacenamiento bloqueado: tema claro por defecto */ }
-    </script>
+    <!-- Tema pre-pintado: externo porque el CSP bloquea scripts inline -->
+    <script src="/theme-boot.js"></script>
     <style>
       /* Esqueleto de arranque (existe solo hasta que React monta y lo
          reemplaza). Colores espejo del tema shadcn en claro y oscuro. */
