@@ -115,6 +115,8 @@ export async function mockClientApi(page: Page) {
       }])
     }
     if (path === '/api/client/tags' || path === '/api/client/bookings' || path === '/api/client/schedule') return json(route, [])
+    // Los listados de hospedaje siempre son arrays (useAttention los filtra)
+    if (path.startsWith('/api/client/lodging')) return json(route, [])
 
     return json(route, {})
   })

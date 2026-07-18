@@ -1,7 +1,8 @@
 import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
 import { session } from './api/client'
+import { queryClient } from './lib/queryClient'
 import Login from './features/auth/Login'
 import Layout from './components/Layout'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
@@ -20,12 +21,6 @@ const Settings = lazy(() => import('./features/settings/Settings'))
 const BotPrompt = lazy(() => import('./features/settings/BotPrompt'))
 const Users = lazy(() => import('./features/settings/Users'))
 const Lodging = lazy(() => import('./features/lodging/Lodging'))
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 },
-  },
-})
 
 // Solo entra quien tiene sesión; si no, al login.
 function RequireAuth() {
