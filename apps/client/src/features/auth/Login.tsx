@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { session, type Business, type PanelUser } from '../../api/client'
+import { queryClient } from '../../lib/queryClient'
 import { Button } from '@botpanel/ui/components/button'
 import { Input } from '@botpanel/ui/components/input'
 import { Label } from '@botpanel/ui/components/label'
@@ -29,6 +30,8 @@ export default function Login() {
       const d = (await res.json()) as LoginResponse
       if (!res.ok) throw new Error(d.error || 'No se pudo iniciar sesión')
       session.save(d.token, d.business, d.user ?? { name: '', role: 'owner', permissions: [] })
+      // Sin esto, el negocio nuevo hereda el caché (módulos y datos) del anterior
+      queryClient.clear()
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error de conexión')

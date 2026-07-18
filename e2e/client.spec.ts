@@ -399,6 +399,49 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
   await expect(page.getByRole('button', { name: 'Registrar venta' })).toBeVisible()
 })
 
+test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {
+  await mockClientApi(page)
+  const bizFor = (hostal: boolean) => ({
+    id: hostal ? 'biz-hostal' : 'biz-tienda',
+    name: hostal ? 'Hostal E2E' : 'Tienda E2E',
+    type: hostal ? 'hostal' : 'tienda',
+    takes_bookings: false,
+    takes_orders: false,
+    lodging_enabled: hostal,
+  })
+  await page.route('**/api/client/login', route => {
+    const { email } = route.request().postDataJSON() as { email: string }
+    const hostal = email.startsWith('hostal')
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        token: hostal ? 'token-hostal' : 'token-tienda',
+        business: bizFor(hostal),
+        user: { name: 'Dueño E2E', role: 'owner', permissions: [] },
+      }),
+    })
+  })
+  await page.route('**/api/client/business', route => {
+    const hostal = (route.request().headers().authorization || '').includes('token-hostal')
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(bizFor(hostal)) })
+  })
+
+  await page.goto(`${clientUrl}#/login`)
+  await page.getByLabel('Correo').fill('hostal@e2e.test')
+  await page.getByLabel('Contraseña').fill('segura-e2e')
+  await page.getByRole('button', { name: 'Entrar' }).click()
+  await expect(page.getByRole('link', { name: 'Hospedaje' })).toBeVisible()
+
+  // Cambio de negocio SIN recargar: el panel debe entrar limpio
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click()
+  await page.getByLabel('Correo').fill('tienda@e2e.test')
+  await page.getByLabel('Contraseña').fill('segura-e2e')
+  await page.getByRole('button', { name: 'Entrar' }).click()
+
+  await expect(page.getByText('Tienda E2E').first()).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Hospedaje' })).toHaveCount(0)
+})
+
 test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('bp-theme-client', 'dark'))
   await seedClientSession(page)

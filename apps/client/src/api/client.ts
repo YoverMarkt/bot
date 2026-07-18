@@ -1,4 +1,6 @@
 // ── Cliente HTTP del panel ───────────────────────────────────────────
+import { queryClient } from '../lib/queryClient'
+
 // Usa las MISMAS claves de localStorage que el panel viejo (client_token,
 // client_biz, client_user): la sesión se comparte entre ambos paneles
 // durante la migración (patrón estrangulador).
@@ -59,6 +61,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   })
   if (res.status === 401) {
     session.clear()
+    // Igual que en logout: el caché no puede sobrevivir a la sesión
+    queryClient.clear()
     window.location.hash = '#/login'
     throw new ApiError(401, 'Sesión vencida. Inicia sesión de nuevo.')
   }

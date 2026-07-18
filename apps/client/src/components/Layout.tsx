@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
+import { queryClient } from '../lib/queryClient'
 import { useBusinessInfo, isBookingBiz, isLodgingBiz, isServiceBiz } from '../lib/biz'
 import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, BedDouble } from 'lucide-react'
 import { useState } from 'react'
@@ -71,6 +72,8 @@ export default function Layout() {
 
   function logout() {
     session.clear()
+    // El caché no puede sobrevivir a la sesión: otro negocio heredaría sus datos
+    queryClient.clear()
     navigate('/login')
   }
 
