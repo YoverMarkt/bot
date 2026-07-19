@@ -391,7 +391,11 @@ describe('orquestación de conversaciones del bot', () => {
     }))
 
     expect(current.actions.processLodgingRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ request: lodgingRequest }),
+      expect.objectContaining({
+        request: lodgingRequest,
+        // El nombre solo puede validarse contra lo que escribió el huésped
+        guestMessages: expect.arrayContaining(['¿Tienen Perfume Floral Intenso?']),
+      }),
     )
     expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()

@@ -223,6 +223,9 @@ export interface ProcessLodgingRequestInput {
   phone: string
   originalText: string
   request: LodgingRequestTag | null
+  // Mensajes escritos por el huésped (historial + mensaje actual): el nombre
+  // de la solicitud debe provenir de aquí; si falta, se falla cerrado.
+  guestMessages?: string[]
   send(message: string): Promise<unknown>
 }
 
@@ -244,6 +247,20 @@ export interface ComputedLodgingQuote {
 
 function cleanLine(value: unknown, fallback = ''): string {
   return String(value ?? fallback).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+}
+
+// El nombre de una solicitud de hospedaje debe haberlo ESCRITO el huésped en
+// sus propios mensajes: si la IA lo puso por su cuenta (un "sí, por favor" no
+// es un nombre), el que llama debe fallar cerrado y pedirlo.
+function guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean {
+  const normalize = (value: unknown) => String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+  const tokens = normalize(contactName).split(/[^a-z0-9]+/).filter(word => word.length >= 3)
+  if (!tokens.length) return false
+  const written = guestMessages.map(normalize).join(' ')
+  return tokens.every(token => written.includes(token))
 }
 
 function formatAmount(value: number, currency = 'USD'): string {
@@ -500,6 +517,14 @@ function createBotActions(dependencies: BotActionDependencies) {
       return 'retry'
     }
 
+    // La IA no puede inventar el nombre: debe estar escrito por el huésped
+    if (!guestWroteName(contactName, input.guestMessages ?? [])) {
+      const message = 'Para registrar la solicitud solo me falta el nombre de la persona que se hospedará. ¿Me lo escribes, por favor?'
+      await keepAutomated(business, phone, originalText)
+      await sendAndSave(business, phone, message, send)
+      return 'retry'
+    }
+
     const isRoomTypeId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       .test(roomType)
     try {
@@ -719,4 +744,4 @@ export const processOrderPayload = actions.processOrderPayload
 export const computeLodgingQuoteReply = actions.computeLodgingQuoteReply
 export const processLodgingQuote = actions.processLodgingQuote
 export const processLodgingRequest = actions.processLodgingRequest
-export { createBotActions }
+export { createBotActions, guestWroteName }

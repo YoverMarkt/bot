@@ -50,13 +50,14 @@ const tags = require('../services/bot-tags') as {
     booking: unknown
     orderPayload: string | null
     lodgingQuote: Record<string, unknown> | null
-    lodgingRequest: unknown
+    lodgingRequest: { roomTypeIdOrName: string; contactName: string } | null
     hasSale: boolean
     hasHandoffTag: boolean
     hasActionConflict: boolean
   }
 }
 const actions = require('../services/bot-actions') as {
+  guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean
   computeLodgingQuoteReply(
     business: BusinessRecord,
     contactPhone: string,
@@ -157,7 +158,19 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         ? '🏨 En el canal real esta conversación pasa a un asesor del equipo (la cotización no pudo resolverse automáticamente).'
         : '🏨 Respuesta oficial calculada por el servidor con cupos y tarifas reales, igual que en WhatsApp/Telegram.'
     } else if (parsed.lodgingRequest) {
-      actionNote = '🛎️ Solicitud de hospedaje detectada: en el canal real el sistema retiene el cupo y la deja en Hospedaje → Solicitudes para que el equipo la confirme. El simulador no crea retenciones reales.'
+      const guestTexts = [
+        ...(history as { role?: string; content?: string }[])
+          .filter(item => item.role === 'user')
+          .map(item => String(item.content ?? '')),
+        message,
+      ]
+      if (!actions.guestWroteName(parsed.lodgingRequest.contactName, guestTexts)) {
+        // Igual que el canal real: nombre no escrito por el cliente → se pide
+        reply = 'Para registrar la solicitud solo me falta el nombre de la persona que se hospedará. ¿Me lo escribes, por favor?'
+        actionNote = '🛎️ La IA intentó registrar la solicitud con un nombre que el cliente nunca escribió. Igual que en WhatsApp/Telegram, se descarta y se pide el nombre antes de crear nada.'
+      } else {
+        actionNote = '🛎️ Solicitud de hospedaje detectada: en el canal real el sistema retiene el cupo y la deja en Hospedaje → Solicitudes para que el equipo la confirme. El simulador no crea retenciones reales.'
+      }
     } else if (parsed.booking) {
       actionNote = '📅 Reserva detectada: en el canal real se crearía la cita pendiente de confirmación del equipo. El simulador no crea citas reales.'
     } else if (parsed.orderPayload || parsed.hasSale) {

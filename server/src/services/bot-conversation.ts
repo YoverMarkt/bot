@@ -148,6 +148,7 @@ interface ConversationActions {
     phone: string
     originalText: string
     request: ParsedBotOutput['lodgingRequest']
+    guestMessages?: string[]
     send(message: string): Promise<unknown>
   }): Promise<unknown>
 }
@@ -446,6 +447,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         phone,
         originalText: text,
         request: parsedOutput.lodgingRequest,
+        // El nombre de la solicitud debe existir en lo que ESCRIBIÓ el huésped
+        guestMessages: [
+          ...history
+            .filter(message => message.role === 'user')
+            .map(message => String(message.content ?? '')),
+          text,
+        ],
         send,
       })
       return

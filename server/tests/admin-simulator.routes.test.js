@@ -217,13 +217,29 @@ describe('simulador del superadmin', () => {
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: 'quiero la matrimonial' },
+      body: { business_id: 'business-a', message: 'quiero la matrimonial, soy Yover' },
     })
 
     expect(compute).not.toHaveBeenCalled()
     expect(response.body.reply).toBe('Registro su solicitud 🙌')
     expect(response.body.reply).not.toContain('##')
     expect(response.body.actionNote).toContain('Solicitudes')
+  })
+
+  it('pide el nombre cuando la IA lo inventa en la solicitud de hospedaje', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
+    vi.spyOn(bot, 'callAI').mockResolvedValue('##STAY_REQUEST:Suite Familiar|Familia García##')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'si por favor' },
+    })
+
+    expect(response.body.reply).toContain('solo me falta el nombre')
+    expect(response.body.reply).not.toContain('##')
+    expect(response.body.actionNote).toContain('nunca escribió')
   })
 
   it('avisa como mensaje aparte cuando el producto pedido no tiene media', async () => {
