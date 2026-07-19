@@ -263,6 +263,58 @@ function guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean
   return tokens.every(token => written.includes(token))
 }
 
+// ── Fechas relativas resueltas por CÓDIGO, no por el modelo ──────────
+// "El lunes" es una fecha calculable, no una opinión: si el huésped mencionó
+// días de la semana sin fecha explícita, el calendario real corrige la
+// interpretación del modelo (que puede equivocarse de día).
+const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const
+
+const normalizeGuestText = (value: unknown): string => String(value ?? '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+
+const todayInEcuador = (): string => new Date().toLocaleDateString('en-CA', {
+  timeZone: 'America/Guayaquil',
+})
+
+const weekdayOf = (isoDate: string): number => new Date(`${isoDate}T12:00:00Z`).getUTCDay()
+
+const addDays = (isoDate: string, days: number): string => {
+  const date = new Date(`${isoDate}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+const nextWeekday = (fromIso: string, weekday: number, strictlyAfter: boolean): string => {
+  let delta = (weekday - weekdayOf(fromIso) + 7) % 7
+  if (delta === 0 && strictlyAfter) delta = 7
+  return addDays(fromIso, delta)
+}
+
+function resolveRelativeStayDates(
+  guestText: unknown,
+  checkIn: string,
+  checkOut: string,
+  today = todayInEcuador(),
+): { checkIn: string; checkOut: string } {
+  const text = normalizeGuestText(guestText)
+  // Con fecha explícita ("20 de julio", "20/07", "2026-07-20") se respeta al modelo
+  if (/\d{1,2}\s*(de\s+[a-z]|\/|-)\s*\w+/.test(text)) return { checkIn, checkOut }
+  const mentioned = [...text.matchAll(/\b(domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b/g)]
+    .map(match => WEEKDAY_NAMES.indexOf(match[1] as typeof WEEKDAY_NAMES[number]))
+  if (!mentioned.length) return { checkIn, checkOut }
+
+  const nights = Math.max(1, Math.round(
+    (new Date(`${checkOut}T12:00:00Z`).getTime() - new Date(`${checkIn}T12:00:00Z`).getTime()) / 86_400_000,
+  ))
+  const resolvedIn = nextWeekday(today, mentioned[0], false)
+  const resolvedOut = mentioned.length > 1
+    ? nextWeekday(resolvedIn, mentioned[1], true)
+    : addDays(resolvedIn, nights)
+  return { checkIn: resolvedIn, checkOut: resolvedOut }
+}
+
 function formatAmount(value: number, currency = 'USD'): string {
   const amount = Number(value)
   const normalizedCurrency = cleanLine(currency, 'USD').toUpperCase()
@@ -404,6 +456,7 @@ function createBotActions(dependencies: BotActionDependencies) {
     business: ProcessLodgingQuoteInput['business'],
     contactPhone: string,
     quote: NonNullable<ProcessLodgingQuoteInput['quote']>,
+    guestText = '',
   ): Promise<ComputedLodgingQuote> {
     if (business.lodging_enabled !== true || !lodging) {
       return { outcome: 'handoff', message: 'No puedo consultar hospedaje automáticamente en este momento. Un asesor continuará contigo para ayudarte 🙏' }
@@ -416,12 +469,15 @@ function createBotActions(dependencies: BotActionDependencies) {
       return { outcome: 'retry', message: 'Necesito fechas válidas de entrada y salida (AAAA-MM-DD), al menos una habitación, un adulto y el número de niños para consultar el hospedaje.' }
     }
 
+    // "El lunes" lo resuelve el calendario, no el modelo
+    const stayDates = resolveRelativeStayDates(guestText, quote.checkIn, quote.checkOut)
+
     try {
       const result = await lodging.quoteLodging({
         businessId: business.id,
         contactPhone,
-        checkIn: quote.checkIn,
-        checkOut: quote.checkOut,
+        checkIn: stayDates.checkIn,
+        checkOut: stayDates.checkOut,
         roomsCount: quote.roomsCount,
         adults: quote.adults,
         children: quote.children,
@@ -477,7 +533,7 @@ function createBotActions(dependencies: BotActionDependencies) {
     const { business, phone, originalText, quote, send } = input
     if (!quote) return 'none'
 
-    const computed = await computeLodgingQuoteReply(business, phone, quote)
+    const computed = await computeLodgingQuoteReply(business, phone, quote, originalText)
     if (computed.outcome === 'retry') {
       await keepAutomated(business, phone, originalText)
       await sendAndSave(business, phone, computed.message, send)
@@ -744,4 +800,4 @@ export const processOrderPayload = actions.processOrderPayload
 export const computeLodgingQuoteReply = actions.computeLodgingQuoteReply
 export const processLodgingQuote = actions.processLodgingQuote
 export const processLodgingRequest = actions.processLodgingRequest
-export { createBotActions, guestWroteName }
+export { createBotActions, guestWroteName, resolveRelativeStayDates }

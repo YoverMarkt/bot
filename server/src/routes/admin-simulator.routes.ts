@@ -62,6 +62,7 @@ const actions = require('../services/bot-actions') as {
     business: BusinessRecord,
     contactPhone: string,
     quote: Record<string, unknown>,
+    guestText?: string,
   ): Promise<{
     outcome: 'quoted' | 'retry' | 'handoff' | 'error'
     message: string
@@ -146,7 +147,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     } else if (parsed.lodgingQuote) {
       // El huésped real recibe SOLO la cotización oficial del servidor
       const computed = await actions.computeLodgingQuoteReply(
-        business, SIMULATOR_CONTACT, parsed.lodgingQuote,
+        business, SIMULATOR_CONTACT, parsed.lodgingQuote, message,
       )
       reply = computed.message
       for (const url of (computed.mediaOptions || []).flatMap(option => option.mediaUrls || [])) {

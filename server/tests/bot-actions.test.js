@@ -4,7 +4,7 @@ import fs from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const money = require('../dist/services/money')
-const { createBotActions, guestWroteName } = require('../dist/services/bot-actions')
+const { createBotActions, guestWroteName, resolveRelativeStayDates } = require('../dist/services/bot-actions')
 
 function setup(overrides = {}) {
   const database = {
@@ -569,6 +569,29 @@ describe('acciones de etiquetas del bot', () => {
     expect(current.database.upsertSession).toHaveBeenCalledWith(
       'business-a', '0990000001', expect.objectContaining({ manual_mode: false }),
     )
+  })
+
+  it('resuelve fechas relativas con el calendario, no con la opinión del modelo', () => {
+    // Hoy sábado 2026-07-18: "del lunes al miércoles" = 20 → 22 aunque el modelo diga otra cosa
+    expect(resolveRelativeStayDates(
+      'desde el lunes hasta el miercoles 2 adultos y 3 niños', '2026-07-21', '2026-07-23', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-20', checkOut: '2026-07-22' })
+    // El modelo acertó → sin cambios
+    expect(resolveRelativeStayDates(
+      'del lunes al miércoles', '2026-07-20', '2026-07-22', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-20', checkOut: '2026-07-22' })
+    // Fecha explícita del cliente → se respeta al modelo
+    expect(resolveRelativeStayDates(
+      'del 21 de julio al 23 de julio', '2026-07-21', '2026-07-23', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-21', checkOut: '2026-07-23' })
+    // Un solo día mencionado conserva la cantidad de noches
+    expect(resolveRelativeStayDates(
+      'llegando el viernes por dos noches', '2026-07-23', '2026-07-25', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-24', checkOut: '2026-07-26' })
+    // Sin días de semana no se toca nada
+    expect(resolveRelativeStayDates(
+      'para esas fechas que te dije', '2026-08-01', '2026-08-03', '2026-07-18',
+    )).toEqual({ checkIn: '2026-08-01', checkOut: '2026-08-03' })
   })
 
   it('valida el origen del nombre con acentos y palabras sueltas', () => {
