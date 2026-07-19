@@ -179,6 +179,7 @@ describe('simulador del superadmin', () => {
       expect.objectContaining({ id: 'business-a' }),
       'sim_admin',
       expect.objectContaining({ checkIn: '2026-07-20', checkOut: '2026-07-21' }),
+      'quiero una habitación para mañana',
     )
     expect(response.body.reply).toBe('🏨 *Opciones de hospedaje* — total oficial $45.00')
     expect(response.body.reply).not.toContain('##')

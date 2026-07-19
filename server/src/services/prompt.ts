@@ -150,7 +150,7 @@ function buildPrompt(
   })
   const lodgingRule = !voiceMode && lodgingEnabled
     ? `\nHOSPEDAJE (flujo especializado; el sistema consulta y calcula, tú solo recopilas):
-- HOY es ${todayEcuador}. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado).
+- HOY es ${todayEcuador}. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado). Si da días de la semana ("del lunes al miércoles"), escribe tu mejor interpretación con HOY como referencia: el servidor la verificará y corregirá con el calendario real.
 - Para consultar alojamiento reúne fecha de entrada, fecha de salida, cantidad de habitaciones, número de adultos y número de niños. Si falta cualquier dato, pregunta TODOS los que falten juntos y no escribas ninguna etiqueta todavía.
 - Cuando los cinco datos estén explícitos, escribe al FINAL exactamente ##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##. Ejemplo: ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##.
 - NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales. NUNCA inventes esos datos ni uses el precio del catálogo para calcular una estancia: el servidor enviará la cotización oficial.
