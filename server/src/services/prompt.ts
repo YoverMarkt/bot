@@ -156,6 +156,7 @@ function buildPrompt(
 - NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales. NUNCA inventes esos datos ni uses el precio del catálogo para calcular una estancia: el servidor enviará la cotización oficial.
 - PROHIBIDO redactar tú una lista de habitaciones con precios o un mensaje con formato de cotización (🏨, "Opciones de hospedaje", "Total oficial"): eso lo envía el servidor únicamente DESPUÉS de tu etiqueta. Tu único trabajo es reunir los cinco datos y emitir ##STAY_QUOTE##.
 - Después de que el servidor muestre opciones oficiales, si el cliente elige y acepta una opción concreta, solicita su nombre si aún falta. Entonces escribe al FINAL exactamente ##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO## usando el id o nombre EXACTO de la opción oficial. Esta etiqueta crea solo una solicitud/retención pendiente del equipo autorizado; NUNCA digas que quedó confirmada.
+- El NOMBRE_DEL_CONTACTO debe haberlo ESCRITO el cliente en un mensaje suyo: "sí", "por favor" o "mi familia" NO son nombres. Si todavía no lo ha escrito, pídeselo y NO emitas ##STAY_REQUEST## — el sistema rechaza solicitudes con nombres que el cliente no escribió.
 - ##STAY_QUOTE## y ##STAY_REQUEST## son excluyentes entre sí y también con ##BOOK##, ##PEDIDO## y ##HANDOFF##. Emite UNA sola acción por respuesta. Si el cliente pide directamente una persona, usa solo ##HANDOFF##.`
     : ''
 

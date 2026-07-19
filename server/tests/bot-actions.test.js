@@ -4,7 +4,7 @@ import fs from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const money = require('../dist/services/money')
-const { createBotActions } = require('../dist/services/bot-actions')
+const { createBotActions, guestWroteName } = require('../dist/services/bot-actions')
 
 function setup(overrides = {}) {
   const database = {
@@ -528,6 +528,7 @@ describe('acciones de etiquetas del bot', () => {
         roomTypeIdOrName: 'Habitación Doble',
         contactName: 'Ana Pérez',
       },
+      guestMessages: ['Elijo la doble, soy Ana Pérez'],
       send,
     })).resolves.toBe('requested')
 
@@ -549,6 +550,35 @@ describe('acciones de etiquetas del bot', () => {
     expect(database.createOrder).not.toHaveBeenCalled()
   })
 
+  it('rechaza solicitudes con nombres que el huésped nunca escribió', async () => {
+    const current = setup()
+    const send = vi.fn().mockResolvedValue(undefined)
+
+    await expect(current.actions.processLodgingRequest({
+      business: { ...business, lodging_enabled: true },
+      phone: '0990000001',
+      originalText: 'si por favor',
+      request: { roomTypeIdOrName: 'Suite Familiar', contactName: 'Familia García' },
+      guestMessages: ['necesito habitaciones para mi familia', 'si por favor'],
+      send,
+    })).resolves.toBe('retry')
+
+    // Nada se crea con un nombre inventado por la IA: se pide al huésped
+    expect(current.lodging.requestLodging).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledWith(expect.stringContaining('solo me falta el nombre'))
+    expect(current.database.upsertSession).toHaveBeenCalledWith(
+      'business-a', '0990000001', expect.objectContaining({ manual_mode: false }),
+    )
+  })
+
+  it('valida el origen del nombre con acentos y palabras sueltas', () => {
+    expect(guestWroteName('Ana Pérez', ['elijo la doble, soy ana perez'])).toBe(true)
+    expect(guestWroteName('Yover', ['me llamo Yover, gracias'])).toBe(true)
+    expect(guestWroteName('Familia García', ['habitaciones para mi familia', 'si por favor'])).toBe(false)
+    expect(guestWroteName('Carlos', ['si por favor'])).toBe(false)
+    expect(guestWroteName('', ['soy Ana'])).toBe(false)
+  })
+
   it('deriva una solicitud de precio manual sin inventar un total', async () => {
     const current = setup({
       lodging: {
@@ -565,6 +595,7 @@ describe('acciones de etiquetas del bot', () => {
       phone: '0990000001',
       originalText: 'Elijo la suite',
       request: { roomTypeIdOrName: 'Suite', contactName: 'Ana' },
+      guestMessages: ['Elijo la suite, soy Ana'],
       send,
     })).resolves.toBe('handoff')
 
