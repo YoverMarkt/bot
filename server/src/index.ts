@@ -167,6 +167,11 @@ app.use('/app', express.static(clientDist, { setHeaders: noCacheHtml }))
 app.get('/app/*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')))
 app.use('/app-admin', express.static(adminDist, { setHeaders: noCacheHtml }))
 app.get('/app-admin/*', (_req, res) => res.sendFile(path.join(adminDist, 'index.html')))
+// Páginas legales públicas de Vezzper (sin login): las necesita Meta y las ven
+// los clientes. Se sirven como HTML estático desde server/public.
+const legalRoot = path.join(serverRoot, 'public')
+app.get(['/privacidad', '/privacy'], (_req, res) => res.sendFile(path.join(legalRoot, 'privacidad.html')))
+app.get(['/terminos', '/terms'], (_req, res) => res.sendFile(path.join(legalRoot, 'terminos.html')))
 app.get(['/admin', '/admin/*'], (_req, res) => res.redirect('/app-admin'))
 app.get(['/client', '/client/*'], (_req, res) => res.redirect('/app'))
 app.get('/', (_req, res) => res.redirect('/app-admin'))
