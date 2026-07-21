@@ -110,7 +110,6 @@ describe('simulador del superadmin', () => {
       business,
       [{ id: 'product-a' }],
       { bot_prompt: 'Vende bien' },
-      false,
       'Quiero comprar',
     )
     expect(callAI).toHaveBeenCalledWith(
@@ -127,11 +126,84 @@ describe('simulador del superadmin', () => {
     )
     expect(response.body).toEqual({
       reply: 'Respuesta final',
+      options: null,
       image: 'https://img.example.com/producto.jpg',
       video: null,
       mediaNote: null,
       actionNote: null,
     })
+  })
+
+  it('responde el menú de bienvenida con las capacidades reales y sin llamar a la IA', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', name: 'Pizzería Demo', ai_provider: 'groq',
+      takes_orders: true, takes_bookings: false, lodging_enabled: false,
+    })
+    vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
+    const history = vi.spyOn(db, 'getContactHistory')
+    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'Hola, buenas tardes' },
+    })
+
+    expect(callAI).not.toHaveBeenCalled()
+    expect(history).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(response.body.reply).toContain('Pizzería Demo')
+    expect(response.body.options).toEqual([
+      '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
+    ])
+    expect(response.body.actionNote).toContain('sin llamada a la IA')
+    expect(saveMessage).toHaveBeenNthCalledWith(
+      1, 'business-a', 'sim_admin', 'user', 'Hola, buenas tardes',
+    )
+    expect(saveMessage).toHaveBeenNthCalledWith(
+      2, 'business-a', 'sim_admin', 'assistant', expect.stringContaining('🛒 Hacer un pedido'),
+    )
+  })
+
+  it('en modo menú el código conduce todo: bienvenida con opciones y cero llamadas a la IA', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-menu', name: 'Pizzería Menú', ai_provider: 'groq',
+      takes_orders: true, takes_bookings: false, lodging_enabled: false,
+    })
+    vi.spyOn(db, 'getProducts').mockResolvedValue([
+      { id: 'p1', name: 'Pizza Hawaiana', price: 8.5, stock: 'disponible', active: true },
+    ])
+    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    const history = vi.spyOn(db, 'getContactHistory')
+    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-menu', message: 'quiero cualquier cosa', mode: 'menu' },
+    })
+
+    expect(callAI).not.toHaveBeenCalled()
+    expect(history).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(response.body.reply).toContain('Pizzería Menú')
+    expect(response.body.options).toContain('🛒 Hacer un pedido')
+    expect(response.body.options).toContain('💬 Hablar con el equipo')
+    expect(saveMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('ofrece cotizar hospedaje en el menú cuando el negocio es de alojamiento', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', name: 'Hostal Demo', ai_provider: 'groq',
+      takes_orders: false, takes_bookings: false, lodging_enabled: true,
+    })
+    vi.spyOn(db, 'getProducts').mockResolvedValue([])
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { business_id: 'business-a', message: 'menú' },
+    })
+
+    expect(response.body.options).toEqual(['🛏️ Cotizar hospedaje', '💬 Otra consulta'])
   })
 
   it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
@@ -150,6 +222,7 @@ describe('simulador del superadmin', () => {
 
     expect(response.body).toEqual({
       reply: 'Con gusto, permítame y se lo muestro 😊',
+      options: null,
       image: 'https://cdn.example.com/filtro.jpg',
       video: null,
       mediaNote: null,
@@ -175,11 +248,13 @@ describe('simulador del superadmin', () => {
       body: { business_id: 'business-a', message: 'quiero una habitación para mañana' },
     })
 
+    // El historial del huésped viaja completo: las fechas relativas se
+    // resuelven con el mensaje más reciente que hable de fechas
     expect(compute).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'business-a' }),
       'sim_admin',
       expect.objectContaining({ checkIn: '2026-07-20', checkOut: '2026-07-21' }),
-      'quiero una habitación para mañana',
+      ['Antes', 'quiero una habitación para mañana'],
     )
     expect(response.body.reply).toBe('🏨 *Opciones de hospedaje* — total oficial $45.00')
     expect(response.body.reply).not.toContain('##')
@@ -288,7 +363,7 @@ describe('simulador del superadmin', () => {
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: 'Hola' },
+      body: { business_id: 'business-a', message: 'Quiero comprar' },
     })
 
     expect(response).toEqual({
@@ -309,7 +384,7 @@ describe('simulador del superadmin', () => {
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: 'Hola' },
+      body: { business_id: 'business-a', message: 'Quiero comprar' },
     })
 
     expect(response.status).toBe(500)

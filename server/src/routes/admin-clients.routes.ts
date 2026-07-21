@@ -1,6 +1,7 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
+import { normalizeChannelIdentifier } from '../types/channels'
 
 interface DatabaseError {
   message?: string
@@ -58,34 +59,68 @@ const bcrypt = require('bcryptjs') as {
 
 const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12
+const ALLOWED_MESSAGING_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
+type MessagingProvider = (typeof ALLOWED_MESSAGING_PROVIDERS)[number]
 
 function configuredText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function configuredWhatsAppProvider(
+  body: Record<string, unknown>,
+): MessagingProvider | null {
+  if (!Object.prototype.hasOwnProperty.call(body, 'whatsapp_provider')) return 'ycloud'
+  if (!configuredText(body.whatsapp_provider)) return null
+  const provider = String(body.whatsapp_provider).trim()
+  return ALLOWED_MESSAGING_PROVIDERS.find(candidate => candidate === provider) || null
+}
+
+function channelIdentifierFormatError(body: Record<string, unknown>): string | null {
+  for (const [field, label] of [
+    ['whatsapp_number', 'El número de WhatsApp'],
+    ['ycloud_number', 'El número YCloud'],
+  ] as const) {
+    if (configuredText(body[field])
+      && !normalizeChannelIdentifier('phone', String(body[field]))) {
+      return `${label} debe usar formato internacional E.164 con 8 a 15 dígitos`
+    }
+  }
+  for (const [field, label] of [
+    ['meta_phone_id', 'El Phone ID de Meta'],
+    ['ycloud_webhook_endpoint_id', 'El Endpoint ID de YCloud'],
+  ] as const) {
+    if (configuredText(body[field])
+      && !normalizeChannelIdentifier('account_id', String(body[field]))) {
+      return `${label} es inválido`
+    }
+  }
+  return null
+}
+
 function channelConfigurationError(body: Record<string, unknown>): string | null {
-  const provider = configuredText(body.whatsapp_provider)
-    ? String(body.whatsapp_provider)
-    : 'ycloud'
+  const formatError = channelIdentifierFormatError(body)
+  if (formatError) return formatError
+  const provider = configuredWhatsAppProvider(body)
+  if (!provider) return 'Proveedor de mensajería no válido'
   if (provider === 'ycloud' && !configuredText(body.ycloud_api_key)
     && !configuredText(process.env.YCLOUD_API_KEY)) {
-    return 'Configura una API Key de YCloud antes de crear el negocio'
+    return 'Configura una API Key de YCloud antes de guardar el negocio'
+  }
+  if (provider === 'ycloud' && !configuredText(body.ycloud_webhook_secret)
+    && !configuredText(process.env.YCLOUD_WEBHOOK_SECRET)) {
+    return 'YCloud requiere el Signing Secret del webhook antes de guardar el negocio'
+  }
+  if (provider === 'ycloud' && !configuredText(body.ycloud_webhook_endpoint_id)
+    && !configuredText(process.env.YCLOUD_WEBHOOK_ENDPOINT_ID)) {
+    return 'YCloud requiere el Endpoint ID del webhook antes de guardar el negocio'
   }
   if (provider === 'meta'
     && (!configuredText(body.meta_token) || !configuredText(body.meta_phone_id))) {
-    return 'Meta requiere Token y Phone ID antes de crear el negocio'
-  }
-  if (provider === 'kapso'
-    && ((!configuredText(body.kapso_api_key) && !configuredText(process.env.KAPSO_API_KEY))
-      || !configuredText(body.kapso_number_id))) {
-    return 'Kapso requiere API Key y Number ID antes de crear el negocio'
+    return 'Meta requiere Token y Phone ID antes de guardar el negocio'
   }
   if (provider === 'telegram' && !configuredText(body.telegram_bot_token)
     && !configuredText(process.env.TELEGRAM_BOT_TOKEN)) {
-    return 'Telegram requiere un Bot Token antes de crear el negocio'
-  }
-  if (!['ycloud', 'meta', 'kapso', 'telegram'].includes(provider)) {
-    return 'Proveedor de WhatsApp no válido'
+    return 'Telegram requiere un Bot Token antes de guardar el negocio'
   }
   return null
 }
@@ -95,8 +130,8 @@ const ALLOWED_BUSINESS_FIELDS = [
   'payment_methods', 'whatsapp_number', 'whatsapp_provider', 'plan',
   'plan_expires_at', 'active', 'bot_active', 'suspended', 'notes', 'slogan',
   'monthly_rate', 'owner_phone', 'ycloud_api_key', 'ycloud_number',
-  'kapso_api_key', 'kapso_number_id', 'kapso_verify_token', 'meta_token',
-  'meta_phone_id', 'meta_verify_token', 'telegram_bot_token', 'retell_agent_id',
+  'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
+  'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
 ] as const
 
@@ -167,6 +202,10 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   }
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
+  const whatsappProvider = configuredWhatsAppProvider(body)
+  if (!whatsappProvider) {
+    return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
+  }
   const parsedMonthlyRate = Number.parseFloat(String(body.monthly_rate || ''))
   if (!(parsedMonthlyRate > 0)) {
     return res.status(400).json({ error: 'La tarifa mensual debe ser mayor que cero' })
@@ -182,17 +221,14 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       name,
       type: body.type || 'negocio',
       whatsapp_number: whatsappNumber,
-      whatsapp_provider: body.whatsapp_provider || 'ycloud',
-      kapso_api_key: body.kapso_api_key,
-      kapso_number_id: body.kapso_number_id,
-      kapso_verify_token: body.kapso_verify_token,
+      whatsapp_provider: whatsappProvider,
       ycloud_api_key: body.ycloud_api_key,
       ycloud_number: body.ycloud_number,
+      ycloud_webhook_endpoint_id: body.ycloud_webhook_endpoint_id,
+      ycloud_webhook_secret: body.ycloud_webhook_secret,
       meta_token: body.meta_token,
       meta_phone_id: body.meta_phone_id,
-      meta_verify_token: body.meta_verify_token,
       telegram_bot_token: body.telegram_bot_token || null,
-      retell_agent_id: body.retell_agent_id || null,
       takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
       lodging_enabled: body.lodging_enabled === true,
@@ -227,6 +263,11 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
 
 router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   const body = req.body as Record<string, unknown>
+  const identifierError = channelIdentifierFormatError(body)
+  if (identifierError) return res.status(400).json({ error: identifierError })
+  if ('whatsapp_provider' in body && !configuredWhatsAppProvider(body)) {
+    return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
+  }
   if (typeof body.client_password === 'string' && body.client_password
     && body.client_password.length < MIN_PASSWORD_LENGTH) {
     return res.status(400).json({
@@ -237,11 +278,31 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   for (const field of ALLOWED_BUSINESS_FIELDS) {
     if (field in body) businessData[field] = body[field]
   }
+  if ('whatsapp_provider' in businessData) {
+    businessData.whatsapp_provider = configuredWhatsAppProvider(body)
+  }
   if ('monthly_rate' in businessData) {
     businessData.monthly_rate = Number.parseFloat(String(businessData.monthly_rate)) || null
   }
 
   try {
+    const existingBusiness = await db.getBusinessById(req.params.id)
+    if (!existingBusiness) return res.status(404).json({ error: 'No encontrado' })
+
+    // Una edición puede conservar secretos que el navegador nunca recibe.
+    // Validamos el estado que realmente quedará guardado, no solo el fragmento
+    // enviado por el formulario.
+    const effectiveBusiness: Record<string, unknown> = {
+      ...existingBusiness,
+      ...businessData,
+    }
+    if (!('whatsapp_provider' in businessData)
+      && !configuredText(existingBusiness.whatsapp_provider)) {
+      effectiveBusiness.whatsapp_provider = 'ycloud'
+    }
+    const channelError = channelConfigurationError(effectiveBusiness)
+    if (channelError) return res.status(400).json({ error: channelError })
+
     if (Object.keys(businessData).length) {
       const result = await db.updateBusiness(req.params.id, businessData)
       assertDatabaseResult(result, 'actualizar negocio')

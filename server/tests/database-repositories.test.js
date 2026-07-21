@@ -12,6 +12,10 @@ const businessesSource = readFileSync(
   `${serverDir}/src/db/repositories/businesses.ts`,
   'utf8',
 )
+const channelsSource = readFileSync(
+  `${serverDir}/src/types/channels.ts`,
+  'utf8',
+)
 const usersSource = readFileSync(
   `${serverDir}/src/db/repositories/client-users.ts`,
   'utf8',
@@ -73,6 +77,7 @@ describe('migración de la capa de datos', () => {
     for (const method of [
       'getBusinessById',
       'getBusinessBySlug',
+      'getBusinessByChannel',
       'getBusinessByPhone',
       'getAllBusinesses',
       'createBusiness',
@@ -99,6 +104,27 @@ describe('migración de la capa de datos', () => {
     expect(businessesSource).toContain(".eq('id', id)")
     expect(businessesSource).toContain("db.from('businesses').delete().eq('id', id)")
     expect(businessesSource).not.toContain("p_business ->> 'business_id'")
+  })
+
+  it('resuelve canales por proveedor e identificador completo sin sufijos', () => {
+    const compatibilityResolver = businessesSource.slice(
+      businessesSource.indexOf('const getBusinessByPhone'),
+      businessesSource.indexOf('const businessListFields'),
+    )
+    expect(businessesSource).toContain("from('business_channel_identifiers')")
+    expect(businessesSource).toContain(".select('business_id,businesses(*)')")
+    expect(businessesSource).toContain(".eq('provider', address.provider)")
+    expect(businessesSource).toContain(
+      ".eq('identifier_type', address.identifierType)",
+    )
+    expect(businessesSource).toContain(
+      ".eq('canonical_identifier', canonical)",
+    )
+    expect(compatibilityResolver).not.toContain("from('businesses')")
+    expect(businessesSource).not.toContain('No se pudo cargar el negocio del canal')
+    expect(businessesSource).not.toMatch(/slice\(\s*-9\s*\)/)
+    expect(channelsSource).toContain('/^[1-9][0-9]{7,14}$/')
+    expect(channelsSource).toContain('nunca infiere país ni compara sufijos')
   })
 
   it('mantiene usuarios, políticas y facturación en repositorios tipados', () => {
@@ -301,12 +327,24 @@ describe('migración de la capa de datos', () => {
   })
 
   it('cierra estadísticas y webhooks en repositorios TypeScript', () => {
-    for (const method of ['getAdminStats', 'getClientStats', 'claimWebhookEvent']) {
+    for (const method of [
+      'getAdminStats',
+      'getClientStats',
+      'claimWebhookEvent',
+      'enqueueWebhookEvent',
+      'leaseWebhookEvents',
+      'renewWebhookEventLease',
+      'completeWebhookEvent',
+      'failWebhookEvent',
+      'cleanupWebhookEvents',
+    ]) {
       expect(db[method]).toBeTypeOf('function')
     }
     expect(statsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
       .toBeGreaterThanOrEqual(4)
     expect(webhookEventsSource).toContain("createHash('sha256')")
-    expect(webhookEventsSource).toContain("db.rpc('claim_webhook_event'")
+    expect(webhookEventsSource).toContain("'claim_webhook_event'")
+    expect(webhookEventsSource).toContain("'enqueue_webhook_event'")
+    expect(webhookEventsSource).toContain("'lease_webhook_events'")
   })
 })

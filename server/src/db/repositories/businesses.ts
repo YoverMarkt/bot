@@ -1,11 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  normalizeChannelIdentifier,
+  type ChannelAddress,
+} from '../../types/channels'
 
 type BusinessData = Record<string, unknown>
 
 interface BusinessRecord extends BusinessData {
   id?: string
-  whatsapp_number?: string | null
-  ycloud_number?: string | null
+}
+
+interface ChannelRouteRecord {
+  business_id?: string | null
+  businesses?: BusinessRecord | BusinessRecord[] | null
 }
 
 const db = require('../client') as SupabaseClient
@@ -20,36 +27,48 @@ const getBusinessBySlug = async (slug: string) => {
   return data as BusinessRecord | null
 }
 
+function routedBusiness(route?: ChannelRouteRecord | null): BusinessRecord | null {
+  const related = route?.businesses
+  if (Array.isArray(related)) return related[0] || null
+  return related || null
+}
+
+const getBusinessByChannel = async (address: ChannelAddress) => {
+  const canonical = normalizeChannelIdentifier(
+    address.identifierType,
+    address.identifier,
+  )
+  if (!canonical) return null
+
+  const route = await db
+    .from('business_channel_identifiers')
+    .select('business_id,businesses(*)')
+    .eq('provider', address.provider)
+    .eq('identifier_type', address.identifierType)
+    .eq('canonical_identifier', canonical)
+    .maybeSingle()
+  if (route.error) {
+    throw new Error(`No se pudo resolver el canal: ${route.error.message}`)
+  }
+  return routedBusiness(route.data as ChannelRouteRecord | null)
+}
+
+// Compatibilidad interna temporal. Nunca elige un tenant si el mismo teléfono
+// aparece en más de un namespace; los flujos productivos usan proveedor + tipo.
 const getBusinessByPhone = async (phone?: string | null) => {
-  if (!phone) return null
+  const canonical = normalizeChannelIdentifier('phone', phone)
+  if (!canonical) return null
 
-  const clean = phone.replace(/^\+/, '')
-  const { data: exact } = await db
-    .from('businesses')
-    .select('*')
-    .eq('whatsapp_number', phone)
-    .single()
-  if (exact) return exact as BusinessRecord
-
-  const { data: normalized } = await db
-    .from('businesses')
-    .select('*')
-    .eq('whatsapp_number', `+${clean}`)
-    .single()
-  if (normalized) return normalized as BusinessRecord
-
-  const incomingDigits = phone.replace(/\D/g, '')
-  const tail = incomingDigits.slice(-9)
-  if (tail.length < 8) return null
-
-  const { data } = await db.from('businesses').select('*')
-  const businesses = (data || []) as BusinessRecord[]
-  return businesses.find((business) => {
-    const whatsappDigits = String(business.whatsapp_number || '').replace(/\D/g, '')
-    const ycloudDigits = String(business.ycloud_number || '').replace(/\D/g, '')
-    return (whatsappDigits && whatsappDigits.slice(-9) === tail)
-      || (ycloudDigits && ycloudDigits.slice(-9) === tail)
-  }) || null
+  const route = await db
+    .from('business_channel_identifiers')
+    .select('business_id,businesses(*)')
+    .eq('identifier_type', 'phone')
+    .eq('canonical_identifier', canonical)
+    .maybeSingle()
+  if (route.error) {
+    throw new Error(`No se pudo resolver el teléfono: ${route.error.message}`)
+  }
+  return routedBusiness(route.data as ChannelRouteRecord | null)
 }
 
 const businessListFields = 'id,slug,name,type,whatsapp_number,active,bot_active,suspended,plan,plan_expires_at,created_at,notes'
@@ -132,6 +151,7 @@ const deleteBusiness = async (id: string) => (
 export = {
   getBusinessById,
   getBusinessBySlug,
+  getBusinessByChannel,
   getBusinessByPhone,
   getAllBusinesses,
   createBusiness,

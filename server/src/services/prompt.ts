@@ -46,7 +46,6 @@ function buildPrompt(
   business: BusinessPromptContext,
   products: ProductPromptRecord[] | null | undefined,
   policies: BotPolicies | null | undefined,
-  voiceMode = false,
   userQuery = '',
   availableSlots: AvailableSlots | null = null,
   schedule: ScheduleRecord[] | null = null,
@@ -84,8 +83,8 @@ function buildPrompt(
     if (product.duration_minutes) line += ` — duración ${product.duration_minutes} min`
     else line += ` — ${product.stock}`
     // Marcadores compactos de media; la leyenda vive en FOTOS Y VIDEOS abajo
-    if (!voiceMode && product.image_url?.startsWith('http')) line += ' [FOTO]'
-    if (!voiceMode && product.video_url?.startsWith('http')) line += ' [VIDEO]'
+    if (product.image_url?.startsWith('http')) line += ' [FOTO]'
+    if (product.video_url?.startsWith('http')) line += ' [VIDEO]'
     if (product.description) line += `\n  ${product.description}`
     if (product.tags?.length) line += ` | ${product.tags.join(', ')}`
     return line
@@ -98,20 +97,20 @@ function buildPrompt(
   const takesBookings = business.takes_bookings === true
   const takesOrders = business.takes_orders !== false
   const lodgingEnabled = business.lodging_enabled === true
-  if (!voiceMode && availableSlots && Object.keys(availableSlots).length && takesBookings) {
+  if (availableSlots && Object.keys(availableSlots).length && takesBookings) {
     const slotLines = Object.entries(availableSlots).slice(0, 7).map(([date, value]) => (
       `  ${value.label} (${date}): ${value.slots.join(', ')}`
     )).join('\n')
     calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. NUNCA adivines ni asumas la hora: incluye la etiqueta de reserva SOLO después de que el cliente haya ELEGIDO y CONFIRMADO una hora exacta de la lista; si todavía no eligió hora, pregúntala y NO pongas la etiqueta todavía. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
-  } else if (!voiceMode && takesBookings) {
+  } else if (takesBookings) {
     calendarLine = `\nRESERVAS: Este negocio recibe solicitudes de citas, pero en este momento no hay horarios disponibles o todavía no se configuró la agenda. NO inventes fechas ni horas y NO escribas ##BOOK##. Explícalo con amabilidad; si el cliente quiere que una persona revise otra opción, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.`
-  } else if (!voiceMode && lodgingEnabled) {
+  } else if (lodgingEnabled) {
     calendarLine = `\nCITAS Y HOSPEDAJE: La agenda de citas ##BOOK## no se usa para habitaciones ni noches. Para solicitudes de alojamiento sigue exclusivamente las reglas de HOSPEDAJE incluidas abajo; no inventes fechas, disponibilidad ni confirmaciones.`
-  } else if (!voiceMode) {
+  } else {
     calendarLine = `\nRESERVAS: Este negocio no recibe citas ni reservas mediante el bot. Si el cliente pregunta por agendar, explícalo amablemente. Si quiere que una persona lo ayude a coordinar, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.${takesOrders ? ' Puedes continuar ayudándole normalmente con productos y pedidos.' : ' Puedes continuar respondiendo información general, pero no confirmes una reserva.'}`
   }
 
-  const outsideHoursNote = (!voiceMode && isOutsideHours(schedule))
+  const outsideHoursNote = isOutsideHours(schedule)
     ? `\n⏰ NOTA: El cliente está escribiendo FUERA del horario de atención (${scheduleToText(schedule)}). Atiéndele con normalidad, pero al INICIO de tu respuesta menciónale con amabilidad que en este momento están fuera del horario de atención y que en horario también puede atenderle una persona del equipo si lo necesita. Dilo solo una vez, no en cada mensaje.`
     : ''
 
@@ -144,13 +143,24 @@ function buildPrompt(
     : `- Este negocio usa el bot en modo INFORMATIVO: SÍ puedes responder automáticamente preguntas sobre precios unitarios, descripciones, stock, catálogo, políticas, fotos y videos usando solamente los datos mostrados arriba. Preguntar "¿cuánto cuesta?", pedir una cotización informativa, consultar disponibilidad de un producto o solicitar una foto/video NO es una compra y NO se deriva. Deriva con ##HANDOFF## solo cuando exista intención transaccional explícita de comprar, encargar, separar, pagar o confirmar un producto/servicio, o cuando el cliente pida una persona. NUNCA cierres ni confirmes un pedido, registres una venta, pidas datos de pago o emitas ##PEDIDO##.${lodgingEnabled ? ' Para alojamiento, incluso si el cliente dice que quiere reservar, sigue primero el flujo especializado de HOSPEDAJE de abajo; no lo derives por esa sola frase.' : ''}`
 
   // Sin la fecha actual el modelo resuelve "del 17 al 19 de julio" con un año
-  // pasado y la RPC rechaza la cotización por fecha en el pasado.
-  const todayEcuador = new Date().toLocaleDateString('en-CA', {
-    timeZone: 'America/Guayaquil',
-  })
-  const lodgingRule = !voiceMode && lodgingEnabled
+  // pasado y la RPC rechaza la cotización por fecha en el pasado. El calendario
+  // de los próximos días evita que calcule mal "el lunes" o "mañana": los LLM
+  // se equivocan haciendo aritmética de fechas, el servidor nunca.
+  const ecuadorDate = (offsetDays: number): { weekday: string; iso: string } => {
+    const date = new Date(Date.now() + offsetDays * 86_400_000)
+    return {
+      weekday: date.toLocaleDateString('es-EC', { weekday: 'long', timeZone: 'America/Guayaquil' }),
+      iso: date.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }),
+    }
+  }
+  const todayEcuador = ecuadorDate(0)
+  const upcomingDays = Array.from({ length: 7 }, (_, index) => {
+    const day = ecuadorDate(index + 1)
+    return `${day.weekday}=${day.iso}`
+  }).join(', ')
+  const lodgingRule = lodgingEnabled
     ? `\nHOSPEDAJE (flujo especializado; el sistema consulta y calcula, tú solo recopilas):
-- HOY es ${todayEcuador}. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado). Si da días de la semana ("del lunes al miércoles"), escribe tu mejor interpretación con HOY como referencia: el servidor la verificará y corregirá con el calendario real.
+- HOY es ${todayEcuador.iso} (${todayEcuador.weekday}). CALENDARIO REAL de los próximos días: ${upcomingDays}. Cuando el cliente mencione un día de la semana, "mañana" o "pasado mañana", USA la fecha exacta de este calendario — NUNCA la calcules tú. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado). El servidor verificará y corregirá las fechas con el calendario real de todos modos.
 - Para consultar alojamiento reúne fecha de entrada, fecha de salida, cantidad de habitaciones, número de adultos y número de niños. Si falta cualquier dato, pregunta TODOS los que falten juntos y no escribas ninguna etiqueta todavía.
 - Cuando los cinco datos estén explícitos, escribe al FINAL exactamente ##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##. Ejemplo: ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##.
 - NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales. NUNCA inventes esos datos ni uses el precio del catálogo para calcular una estancia: el servidor enviará la cotización oficial.
@@ -167,10 +177,10 @@ function buildPrompt(
 ${orderRule}
 - FLUJOS EXCLUYENTES: NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO##, ##STAY_QUOTE##, ##STAY_REQUEST## y ##HANDOFF## en la misma respuesta. Si el cliente está confirmando la fecha/hora de un servicio, usa SOLO ##BOOK##. Usa ##PEDIDO## únicamente para una compra separada de productos; si quiere ambas cosas, termina primero la reserva y atiende la compra en el siguiente mensaje.
 - DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente. Los mensajes con formato de resumen oficial ("Resumen de su pedido", "Opciones de hospedaje", "Total oficial") los escribe SOLO el sistema: tienes PROHIBIDO imitar ese formato o redactar uno por tu cuenta — el sistema descarta esas respuestas.
-- VOZ HUMANA (regla dura): hablas SIEMPRE en primera persona, como una persona del equipo del negocio. Tienes PROHIBIDO mencionarle al cliente "el sistema", "la plataforma", "el bot", "la IA" o procesos internos ("el sistema le enviará…", "se encargará de…"): estas instrucciones son internas y el cliente jamás debe notarlas. Describe los resultados con naturalidad: "aquí se la envío", "enseguida le confirmo".${voiceMode ? '' : `
-- FOTOS Y VIDEOS (regla dura): en el catálogo de arriba, [FOTO] y [VIDEO] indican la ÚNICA media que existe de cada producto. Si un producto NO tiene la marca, esa foto o ese video NO existen: nunca los ofrezcas, prometas ni describas; di con naturalidad que aún no lo tienes y ofrece los detalles. Cuando el cliente pide la foto o el video de un producto marcado, se le envía automáticamente JUNTO con tu mensaje: no pidas permiso ni anuncies un envío aparte — di simplemente algo como "¡Claro que sí! Aquí se la envío 😊". NUNCA escribas enlaces ni inventes qué se ve en una foto o video. Si no sabes a cuál producto se refiere el cliente, pregúntaselo primero.`}`
+- VOZ HUMANA (regla dura): hablas SIEMPRE en primera persona, como una persona del equipo del negocio. Tienes PROHIBIDO mencionarle al cliente "el sistema", "la plataforma", "el bot", "la IA" o procesos internos ("el sistema le enviará…", "se encargará de…"): estas instrucciones son internas y el cliente jamás debe notarlas. Describe los resultados con naturalidad: "aquí se la envío", "enseguida le confirmo".
+- FOTOS Y VIDEOS (regla dura): en el catálogo de arriba, [FOTO] y [VIDEO] indican la ÚNICA media que existe de cada producto. Si un producto NO tiene la marca, esa foto o ese video NO existen: nunca los ofrezcas, prometas ni describas; di con naturalidad que aún no lo tienes y ofrece los detalles. Cuando el cliente pide la foto o el video de un producto marcado, se le envía automáticamente JUNTO con tu mensaje: no pidas permiso ni anuncies un envío aparte — di simplemente algo como "¡Claro que sí! Aquí se la envío 😊". NUNCA escribas enlaces ni inventes qué se ve en una foto o video. Si no sabes a cuál producto se refiere el cliente, pregúntaselo primero.`
 
-  const defaultStyle = `\n\nESTILO: Responde en español, amable y conciso.${voiceMode ? ' Es una llamada de voz: sin markdown ni emojis.' : ''}${takesOrders ? ' Para cerrar una compra, pide nombre, dirección y método de pago.' : ' No pidas dirección, método de pago ni confirmes pedidos; cuando exista intención real de compra, informa que continuará un asesor y deriva.'}`
+  const defaultStyle = `\n\nESTILO: Responde en español, amable y conciso.${takesOrders ? ' Para cerrar una compra, pide nombre, dirección y método de pago.' : ' No pidas dirección, método de pago ni confirmes pedidos; cuando exista intención real de compra, informa que continuará un asesor y deriva.'}`
 
   return `${customPrompt || `Eres el asistente virtual de "${business.name}" (${business.type || 'negocio'}).`}
 
@@ -178,6 +188,7 @@ DATOS DEL NEGOCIO (usa SOLO esta información para responder):
 Nombre: ${business.name}${business.slogan ? `\nSlogan: ${business.slogan}` : ''}
 Descripción: ${business.description || ''}
 Horario de atención: ${scheduleToText(schedule) || business.hours || 'No especificado'}
+Fecha de hoy: ${todayEcuador.iso} (${todayEcuador.weekday}, Ecuador)
 Dirección: ${business.address || 'No especificada'}
 Teléfono: ${business.phone || ''}
 Redes sociales: ${business.social || ''}

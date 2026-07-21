@@ -40,10 +40,9 @@ Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** 
 | Variable | Valor |
 |---|---|
 | `BASE_URL` | tu dominio final, sin `/` al final (ej. `https://tubot.com`). **Desactiva el túnel local.** |
-| `WEBHOOK_SECRET` | secreto aleatorio de 32+ caracteres para proteger webhooks (ver §6) |
 | `PORT` | **NO la pongas** — Railway la inyecta sola |
 
-**Si usas Meta:** configura también `META_VERIFY_TOKEN` (handshake) y `META_APP_SECRET` (firma HMAC). **Si usas Retell:** configura `RETELL_API_KEY` y `RETELL_LLM_SECRET`. **Si usas Telegram:** configura `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET` (aleatorio, 32+ caracteres). Las keys de IA normalmente se cargan desde el panel admin.
+**Si usas YCloud:** guarda el Endpoint ID y el signing secret oficial en cada negocio. `YCLOUD_WEBHOOK_ENDPOINT_ID` + `YCLOUD_WEBHOOK_SECRET` quedan disponibles juntos solo como fallback global opcional para una cuenta compartida. **Si usas Meta:** configura también `META_VERIFY_TOKEN` (handshake) y `META_APP_SECRET` (firma HMAC); el backend usa Graph API `v25.0` y admite `META_GRAPH_API_VERSION` para una actualización futura controlada. **Si usas Telegram:** configura `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET` (aleatorio, 32+ caracteres). Las keys de IA normalmente se cargan desde el panel admin.
 
 **Generar un `JWT_SECRET` seguro:**
 ```bash
@@ -62,6 +61,7 @@ El servidor valida estas variables antes de abrir el puerto. Una variable faltan
    - `/` → redirige a `/app-admin` (login superadmin).
    - `/app` → login de negocios.
 3. En los logs debe aparecer `🚀 BotPanel corriendo…` y NO debe intentar túnel (porque `BASE_URL` está puesta).
+4. Abre `/api/health`: debe responder `200`, con `webhook_inbox.ready: true` y una fecha en `last_database_success_at`. Un `503` indica que el worker todavía no pudo acceder a las RPC del inbox (por ejemplo, si falta la última migración).
 
 ---
 
@@ -79,29 +79,32 @@ El servidor valida estas variables antes de abrir el puerto. Una variable faltan
 
 La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉).
 
-- **YCloud / Kapso:** configura la URL como
-  `https://tubot.com/webhook/ycloud?secret=<WEBHOOK_SECRET>`
-  (`WEBHOOK_SECRET` es obligatorio en producción).
+- **YCloud:** crea el endpoint `https://tubot.com/webhook/ycloud`. Copia su Endpoint ID y signing secret al negocio correspondiente en el panel. YCloud envía `X-Webhook-Endpoint-ID` y `YCloud-Signature`; el servidor valida ambos y rechaza firmas alteradas o antiguas. No agregues secretos a la URL.
 - **Meta:** `https://tubot.com/webhook`; usa `META_VERIFY_TOKEN` para el handshake y `META_APP_SECRET` para verificar cada firma.
 - **Telegram:** con `BASE_URL`, `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET`, el bot registra un webhook que valida la cabecera secreta oficial de Telegram.
-- **Retell:** configura el Custom LLM como `/api/retell/llm?secret=<RETELL_LLM_SECRET>`. Los eventos van a `/api/retell/call-events` y verifican la firma oficial `X-Retell-Signature` con `RETELL_API_KEY`.
 - **Cobros al cliente:** se coordinan manualmente fuera de la plataforma.
 
-> El panel del superadmin (Integraciones) muestra la URL del webhook ya con el `?secret=` incluido.
+> El panel del superadmin (Conexiones) muestra la URL limpia del webhook. Los secretos se guardan en los campos protegidos de cada negocio, no en la URL.
 
 ---
 
 ## 7. Checklist final antes de vender
 
 - [ ] Deploy verde en Railway, logs con `✅ Variables… OK`.
+- [ ] `/api/health` responde `200` y confirma `webhook_inbox.ready: true`.
 - [ ] `/app-admin` y `/app` cargan por el dominio propio (HTTPS).
 - [ ] Login superadmin y login de un negocio funcionan.
 - [ ] Webhook de WhatsApp apuntando al dominio (probar un mensaje real).
-- [ ] Peticiones sin secreto/firma reciben `401` en webhooks y Retell.
+- [ ] Peticiones sin secreto/firma reciben `401` en webhooks.
 - [ ] El webhook Telegram rechaza peticiones sin `X-Telegram-Bot-Api-Secret-Token` válido.
 - [ ] Un negocio de prueba con productos + prompt + horario (usa el **checklist de onboarding** del panel).
 - [ ] Números/keys de WhatsApp de cada negocio cargados desde el panel admin.
+- [ ] Cada negocio YCloud tiene su Endpoint ID y signing secret guardados, y una prueba real recibe `YCloud-Signature` válida.
 - [ ] `migration-hospedaje.sql` aplicada sin errores.
+- [ ] `migration-eliminar-kapso-retell.sql` aplicada antes de `migration-identificadores-canales.sql`.
+- [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
+- [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.
+- [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
 
 ---

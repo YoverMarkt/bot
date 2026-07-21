@@ -6,11 +6,17 @@ const require = createRequire(import.meta.url)
 const { createBotEntry, imageQuery } = require('../dist/services/bot-entry')
 
 const businessA = { id: 'business-a', name: 'Negocio A', bot_active: true }
+const metaAddress = {
+  provider: 'meta', identifierType: 'account_id', identifier: 'meta-phone-a',
+}
+const ycloudAddress = {
+  provider: 'ycloud', identifierType: 'phone', identifier: '+593999999999',
+}
 
 function setup(overrides = {}) {
   const database = {
     getBusinessBySlug: vi.fn().mockResolvedValue(businessA),
-    getBusinessByPhone: vi.fn().mockResolvedValue(businessA),
+    getBusinessByChannel: vi.fn().mockResolvedValue(businessA),
     ...overrides.database,
   }
   const conversation = {
@@ -74,10 +80,12 @@ describe('entrada de canales del bot', () => {
     const current = setup()
 
     await current.entry.runMessage(
-      '0990000001', 'Hola', '+593999999999', { inboundId: 'inbound-a' },
+      '0990000001', 'Hola', 'meta-phone-a', {
+        inboundId: 'inbound-a', channelAddress: metaAddress,
+      },
     )
 
-    expect(current.database.getBusinessByPhone).toHaveBeenCalledWith('+593999999999')
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(metaAddress)
     expect(current.database.getBusinessBySlug).not.toHaveBeenCalled()
     const input = current.conversation.processMessage.mock.calls[0][0]
     expect(input.business).toBe(businessA)
@@ -107,7 +115,7 @@ describe('entrada de canales del bot', () => {
     })
 
     expect(current.database.getBusinessBySlug).toHaveBeenCalledWith('negocio-a')
-    expect(current.database.getBusinessByPhone).not.toHaveBeenCalled()
+    expect(current.database.getBusinessByChannel).not.toHaveBeenCalled()
     const input = current.conversation.processMessage.mock.calls[0][0]
     expect(input.business).toBe(businessA)
     await input.send('Respuesta TG')
@@ -130,38 +138,83 @@ describe('entrada de canales del bot', () => {
   it('agrupa mensajes consecutivos por canal y contacto antes de procesarlos', async () => {
     const current = setup()
 
-    await current.entry.handleMessage(
-      '0990000001', 'Primero', '+593999999999', { inboundId: 'old' },
+    const first = current.entry.handleMessage(
+      '0990000001', 'Primero', '+593999999999', {
+        inboundId: 'old', channelAddress: ycloudAddress,
+      },
     )
-    await current.entry.handleMessage(
-      '0990000001', 'Segundo', '+593999999999', { inboundId: 'latest' },
+    const second = current.entry.handleMessage(
+      '0990000001', 'Segundo', '+593999999999', {
+        inboundId: 'latest', channelAddress: ycloudAddress,
+      },
     )
 
     expect(current.setTimer).toHaveBeenCalledTimes(2)
     expect(current.clearTimer).toHaveBeenCalledTimes(1)
     current.callbacks[1]()
-    await vi.waitFor(() => {
-      expect(current.conversation.processMessage).toHaveBeenCalledTimes(1)
-    })
+    await Promise.all([first, second])
+    expect(current.conversation.processMessage).toHaveBeenCalledTimes(1)
     const input = current.conversation.processMessage.mock.calls[0][0]
     expect(input.text).toBe('Primero\nSegundo')
     await input.sendTyping()
     expect(current.whatsapp.sendTyping).toHaveBeenCalledWith(businessA, 'latest')
   })
 
-  it('mantiene buffers separados para el mismo contacto en negocios distintos', async () => {
+  it('mantiene buffers separados para el mismo contacto entre proveedores', async () => {
     const current = setup()
+    const samePhoneMeta = {
+      provider: 'meta', identifierType: 'phone', identifier: '+593999999999',
+    }
 
-    await current.entry.handleMessage('0990000001', 'Negocio A', '+593A')
-    await current.entry.handleMessage('0990000001', 'Negocio B', '+593B')
+    const meta = current.entry.handleMessage(
+      '0990000001', 'Meta', '+593999999999', { channelAddress: samePhoneMeta },
+    )
+    const ycloud = current.entry.handleMessage(
+      '0990000001', 'YCloud', '+593999999999', { channelAddress: ycloudAddress },
+    )
     current.callbacks[0]()
     current.callbacks[1]()
 
-    await vi.waitFor(() => {
-      expect(current.conversation.processMessage).toHaveBeenCalledTimes(2)
+    await Promise.all([meta, ycloud])
+    expect(current.conversation.processMessage).toHaveBeenCalledTimes(2)
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(samePhoneMeta)
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(ycloudAddress)
+  })
+
+  it('conserva el tenant ya resuelto por el webhook durante el debounce', async () => {
+    const current = setup()
+
+    const completion = current.entry.handleMessage(
+      '0990000001', 'Hola', '+593999999999', {
+        businessId: 'business-a', channelAddress: ycloudAddress,
+      },
+    )
+    current.callbacks[0]()
+
+    await completion
+    expect(current.conversation.processMessage).toHaveBeenCalledOnce()
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(ycloudAddress)
+  })
+
+  it('falla cerrado si el identificador cambió de tenant durante el debounce', async () => {
+    const current = setup({
+      database: {
+        getBusinessByChannel: vi.fn().mockResolvedValue({
+          id: 'business-b', name: 'Negocio B', bot_active: true,
+        }),
+      },
     })
-    expect(current.database.getBusinessByPhone).toHaveBeenCalledWith('+593A')
-    expect(current.database.getBusinessByPhone).toHaveBeenCalledWith('+593B')
+
+    const completion = current.entry.handleMessage(
+      '0990000001', 'Mensaje Meta', 'meta-phone-a', {
+        businessId: 'business-a', channelAddress: metaAddress,
+      },
+    )
+    current.callbacks[0]()
+
+    await expect(completion).rejects.toThrow(/ya no pertenece/)
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(metaAddress)
+    expect(current.conversation.processMessage).not.toHaveBeenCalled()
   })
 
   it('convierte una imagen identificada en consulta dentro del negocio del canal', async () => {
@@ -169,13 +222,15 @@ describe('entrada de canales del bot', () => {
     const buffer = Buffer.from('foto-cliente')
 
     await current.entry.handleImage(
-      '0990000001', buffer, 'image/png', '+593999999999', { inboundId: 'img-a' },
+      '0990000001', buffer, 'image/png', '+593999999999', {
+        inboundId: 'img-a', channelAddress: ycloudAddress,
+      },
     )
 
     expect(current.ai.identifyImage).toHaveBeenCalledWith(
       `data:image/png;base64,${buffer.toString('base64')}`,
     )
-    expect(current.database.getBusinessByPhone).toHaveBeenCalledWith('+593999999999')
+    expect(current.database.getBusinessByChannel).toHaveBeenCalledWith(ycloudAddress)
     expect(current.conversation.processMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         business: businessA,
@@ -185,13 +240,32 @@ describe('entrada de canales del bot', () => {
     )
   })
 
+  it('no confirma una imagen si el canal cambió de tenant durante el proceso', async () => {
+    const current = setup({
+      database: {
+        getBusinessByChannel: vi.fn().mockResolvedValue({
+          id: 'business-b', name: 'Negocio B', bot_active: true,
+        }),
+      },
+    })
+
+    await expect(current.entry.handleImage(
+      '0990000001', Buffer.from('foto'), 'image/jpeg', 'meta-phone-a', {
+        businessId: 'business-a', channelAddress: metaAddress,
+      },
+    )).rejects.toThrow(/ya no pertenece/)
+    expect(current.conversation.processMessage).not.toHaveBeenCalled()
+  })
+
   it('falla de forma segura cuando visión no identifica el producto', async () => {
     const current = setup({
       ai: { identifyImage: vi.fn().mockRejectedValue(new Error('visión caída')) },
     })
 
     await current.entry.handleImage(
-      '0990000001', Buffer.from('foto'), null, '+593999999999',
+      '0990000001', Buffer.from('foto'), null, '+593999999999', {
+        channelAddress: ycloudAddress,
+      },
     )
 
     expect(current.conversation.processMessage).toHaveBeenCalledWith(
@@ -206,19 +280,32 @@ describe('entrada de canales del bot', () => {
   it('no procesa mensajes cuando el canal no resuelve un negocio', async () => {
     const current = setup({
       database: {
-        getBusinessByPhone: vi.fn().mockResolvedValue(null),
+        getBusinessByChannel: vi.fn().mockResolvedValue(null),
         getBusinessBySlug: vi.fn().mockResolvedValue(null),
       },
     })
     const ctx = telegramContext()
 
-    await current.entry.runMessage('0990000001', 'Hola', '+593NO')
+    await current.entry.runMessage(
+      '0990000001', 'Hola', '+593999999999', {
+        channelAddress: ycloudAddress,
+      },
+    )
     await current.entry.runMessage('tg_42', 'Hola', null, {
       channel: 'telegram', slug: 'no-existe', ctx,
     })
 
     expect(current.conversation.processMessage).not.toHaveBeenCalled()
     expect(ctx.reply).toHaveBeenCalledWith('❌ Negocio no encontrado')
+  })
+
+  it('falla cerrado si WhatsApp no entrega proveedor y tipo de identificador', async () => {
+    const current = setup()
+
+    await current.entry.runMessage('0990000001', 'Hola', '+593999999999')
+
+    expect(current.database.getBusinessByChannel).not.toHaveBeenCalled()
+    expect(current.conversation.processMessage).not.toHaveBeenCalled()
   })
 
   it('conserva los textos exactos de consulta visual', () => {
@@ -233,10 +320,10 @@ describe('entrada de canales del bot', () => {
     const exported = require('../dist/services/bot-entry')
 
     expect(service).toContain('database.getBusinessBySlug(options.slug)')
-    expect(service).toContain('database.getBusinessByPhone(businessPhone)')
+    expect(service).toContain('database.getBusinessByChannel(options.channelAddress)')
     expect(service).not.toContain('@ts-nocheck')
     for (const name of [
-      'handleMessage', 'handleImage', 'processMessage', 'buildPrompt', 'callAI',
+      'handleMessage', 'handleImage', 'drainPendingMessages', 'processMessage', 'buildPrompt', 'callAI',
       'sendWhatsAppMessage', 'transcribeAudio', 'embedText', 'indexProduct',
       'isOutsideHours', 'buildScheduleMessage',
     ]) {

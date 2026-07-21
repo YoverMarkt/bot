@@ -30,7 +30,7 @@ describe('cliente de YCloud', () => {
       to: TO,
       type: 'text',
       text: { body: 'Hola' },
-    }, { headers: REQUEST_HEADERS })
+    }, { headers: REQUEST_HEADERS, timeout: 15000 })
   })
 
   it('envía imágenes y conserva el caption vacío por defecto', async () => {
@@ -43,7 +43,7 @@ describe('cliente de YCloud', () => {
       to: TO,
       type: 'image',
       image: { link: 'https://cdn.example/image.jpg', caption: '' },
-    }, { headers: REQUEST_HEADERS })
+    }, { headers: REQUEST_HEADERS, timeout: 15000 })
   })
 
   it('envía videos con su caption', async () => {
@@ -56,7 +56,7 @@ describe('cliente de YCloud', () => {
       to: TO,
       type: 'video',
       video: { link: 'https://cdn.example/video.mp4', caption: 'Demostración' },
-    }, { headers: REQUEST_HEADERS })
+    }, { headers: REQUEST_HEADERS, timeout: 15000 })
   })
 
   it('activa el indicador de escritura con timeout acotado', async () => {

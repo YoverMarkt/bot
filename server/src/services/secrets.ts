@@ -1,10 +1,8 @@
 // Campos que nunca deben salir completos de la API hacia el navegador.
 export const BUSINESS_SECRET_FIELDS = [
   'ycloud_api_key',
+  'ycloud_webhook_secret',
   'meta_token',
-  'meta_verify_token',
-  'kapso_api_key',
-  'kapso_verify_token',
   'telegram_bot_token',
 ] as const
 

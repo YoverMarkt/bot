@@ -9,7 +9,6 @@ const JWT_SECRET = 'admin-tunnel-test-secret'
 const originalEnvironment = {
   JWT_SECRET: process.env.JWT_SECRET,
   BASE_URL: process.env.BASE_URL,
-  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
   PORT: process.env.PORT,
@@ -69,9 +68,8 @@ describe('túnel y configuración segura del superadmin', () => {
     })).status).toBe(403)
   })
 
-  it('reporta el dominio de producción y solo el secreto necesario del webhook', async () => {
+  it('reporta el dominio de producción sin exponer secretos', async () => {
     process.env.BASE_URL = 'https://bot.example.com'
-    process.env.WEBHOOK_SECRET = 'webhook-admin-secret'
     process.env.SUPABASE_URL = 'https://secret.supabase.co'
     process.env.SUPABASE_SERVICE_KEY = 'service-role-secret'
 
@@ -84,7 +82,6 @@ describe('túnel y configuración segura del superadmin', () => {
       active: true,
       provider: 'dominio propio',
       startedAt: null,
-      webhookSecret: 'webhook-admin-secret',
     })
     expect(JSON.stringify(response.body)).not.toContain('supabase.co')
     expect(JSON.stringify(response.body)).not.toContain('service-role-secret')
@@ -92,7 +89,6 @@ describe('túnel y configuración segura del superadmin', () => {
 
   it('conserva el estado local e inicia y detiene cloudflared', async () => {
     delete process.env.BASE_URL
-    process.env.WEBHOOK_SECRET = 'webhook-local-secret'
     process.env.PORT = '3100'
     vi.spyOn(tunnel, 'getState').mockReturnValue({
       url: null, active: false, provider: null, startedAt: null,
@@ -110,7 +106,9 @@ describe('túnel y configuración segura del superadmin', () => {
     const started = await dispatch('post', '/api/admin/tunnel/start', { auth })
     const stopped = await dispatch('post', '/api/admin/tunnel/stop', { auth })
 
-    expect(state.body.webhookSecret).toBe('webhook-local-secret')
+    expect(state.body).toEqual({
+      url: null, active: false, provider: null, startedAt: null,
+    })
     expect(start).toHaveBeenCalledWith('3100')
     expect(started.body.active).toBe(true)
     expect(stop).toHaveBeenCalledOnce()

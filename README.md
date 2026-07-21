@@ -32,9 +32,8 @@ Plataforma **multi-empresa (SaaS)** para crear y gestionar bots de atención al 
 - **Anthropic Claude** — chat y visión
 
 ### Mensajería
-- **WhatsApp** — YCloud, Meta (Graph API), Kapso
+- **WhatsApp** — YCloud y Meta (Graph API)
 - **Telegram** — telegraf (polling en local, webhook en producción)
-- **Retell** — voz telefónica (preparado, opcional)
 
 ### Frontend
 - **React + Vite + TypeScript + Tailwind + shadcn/ui** — paneles Admin y Cliente
@@ -74,7 +73,7 @@ bot/
 │   ├── src/index.ts        # Composición y arranque
 │   ├── src/routes/         # Endpoints y webhooks tipados
 │   ├── src/services/       # Bot, IA, reportes y lógica de negocio
-│   ├── src/integrations/   # WhatsApp, Telegram, Retell y Cloudinary
+│   ├── src/integrations/   # WhatsApp, Telegram y Cloudinary
 │   ├── src/db/             # Cliente y repositorios Supabase
 │   ├── dist/               # Runtime compilado (generado por npm run build)
 │   └── .env                # Credenciales (NO subir a git)
@@ -105,9 +104,13 @@ Para esta versión, ejecuta una vez en Supabase SQL Editor:
 server/migration-atomicidad-reservas.sql
 server/migration-hospedaje.sql
 server/migration-preparacion-produccion.sql
+server/migration-eliminar-kapso-retell.sql
+server/migration-identificadores-canales.sql
+server/migration-firmas-webhooks.sql
+server/migration-inbox-webhooks.sql
 ```
 
-La primera serializa las citas e impide intervalos activos solapados. La segunda agrega hospedaje: inventario, tarifas, bloqueos, cotizaciones y retenciones pendientes. La última retira la infraestructura antigua de cobros automáticos, completa el ciclo manual de pedidos y garantiza horarios iniciales.
+Ejecuta las migraciones pendientes en ese orden. `migration-eliminar-kapso-retell.sql` es destructiva: después de respaldar cualquier dato que quieras conservar fuera del sistema, elimina columnas, secretos y metadatos de integraciones retiradas; aborta sin convertir datos si algún negocio todavía las usa. Debe ejecutarse **antes** de `migration-identificadores-canales.sql`. La siguiente crea la resolución exacta y única de WhatsApp para Meta/YCloud. `migration-firmas-webhooks.sql` agrega por negocio el Endpoint ID y signing secret oficial de YCloud y retira la configuración Meta por negocio que no se consumía. Finalmente, `migration-inbox-webhooks.sql` instala la cola durable, leases y reintentos; debe ejecutarse **después** de firmas y antes del runtime que habilita el worker. Telegram conserva su flujo independiente.
 
 - Admin:   `http://localhost:3000/app-admin`
 - Cliente: `http://localhost:3000/app`
@@ -131,10 +134,11 @@ En producción **NO se usa el túnel** — se usa un dominio fijo.
 
 1. Usa Node.js 22+ y crea una cuenta en **Railway**
 2. Conecta este repositorio
-3. Configura las **variables de entorno** de `server/.env.example`, incluido `NODE_ENV=production`
-4. **Importante:** define `BASE_URL=https://tu-dominio.up.railway.app`
+3. Antes de desplegar el código, ejecuta las migraciones de la lista anterior en el mismo orden; la última es `server/migration-inbox-webhooks.sql`
+4. Configura las **variables de entorno** de `server/.env.example`, incluido `NODE_ENV=production`
+5. **Importante:** define `BASE_URL=https://tu-dominio.up.railway.app`
    - Esto **desactiva el túnel** y hace que Telegram use webhook
-5. En YCloud, apunta el webhook a `https://tu-dominio/webhook/ycloud?secret=<WEBHOOK_SECRET>` usando un secreto aleatorio de 32+ caracteres
+6. En YCloud, crea el endpoint `https://tu-dominio/webhook/ycloud` y guarda su **Endpoint ID** y **signing secret** en el negocio correspondiente del panel
 
 > El código detecta `BASE_URL`: si existe → modo producción (dominio fijo, sin túnel). Si no → modo local (túnel automático).
 
@@ -165,10 +169,14 @@ ANTHROPIC_API_KEY=""
 TELEGRAM_BOT_TOKEN=""
 TELEGRAM_WEBHOOK_SECRET=""
 
+# Fallback global opcional para la firma oficial de YCloud.
+# Es preferible guardar el Endpoint ID y signing secret por negocio.
+YCLOUD_WEBHOOK_ENDPOINT_ID=""
+YCLOUD_WEBHOOK_SECRET=""
+
 # Producción (deja vacío en local)
 BASE_URL=""
 NODE_ENV=""
-WEBHOOK_SECRET=""
 PORT=3000
 ```
 
@@ -181,7 +189,8 @@ PORT=3000
 - **RLS (Row Level Security)** activo en todas las tablas — el backend usa la *service key*
 - Contraseñas con **bcrypt**
 - **Rate limiting** en login y webhooks
-- Firma HMAC obligatoria para Meta, secreto para YCloud/Kapso y cabecera secreta oficial de Telegram en producción
+- Resolución exacta por proveedor + ID/teléfono completo; un teléfono canónico solo puede pertenecer a un negocio, incluso entre proveedores
+- Firma HMAC obligatoria para Meta y YCloud, y cabecera secreta oficial de Telegram; YCloud valida `YCloud-Signature` con el signing secret del endpoint asociado a cada negocio
 - El servidor falla antes de abrir el puerto si la configuración crítica es insegura o incompleta
 - Componentes React sin inyección de HTML y secretos enmascarados en las APIs administrativas
 - Ventas manuales y pedidos toman precios del catálogo del negocio; el navegador y la IA no deciden montos
@@ -200,7 +209,6 @@ Cobras una **mensualidad por empresa** según su volumen. Con IA gratis (Groq) y
 - ✅ WhatsApp + Telegram con texto, voz e imágenes
 - ✅ Reservas, facturación, multi-IA (Groq/Gemini/OpenAI/Claude)
 - 🔜 Integración financiera futura, solo cuando el producto base esté estable
-- 🔜 Voz telefónica (Retell / Vapi / Twilio)
 - 🔜 RAG con embeddings gratis (Gemini/Groq)
 
 ---

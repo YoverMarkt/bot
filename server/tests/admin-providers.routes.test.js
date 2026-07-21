@@ -10,9 +10,7 @@ const JWT_SECRET = 'admin-providers-test-secret'
 const originalEnvironment = {
   JWT_SECRET: process.env.JWT_SECRET,
   YCLOUD_API_KEY: process.env.YCLOUD_API_KEY,
-  KAPSO_API_KEY: process.env.KAPSO_API_KEY,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
-  RETELL_API_KEY: process.env.RETELL_API_KEY,
 }
 
 beforeEach(() => {
@@ -95,7 +93,7 @@ describe('verificación de proveedores del superadmin', () => {
       body: {
         provider: 'ycloud',
         ycloud_api_key: 'ycloud-test-secret',
-        ycloud_number: '0999000001',
+        ycloud_number: '593 999 000 001',
       },
     })
 
@@ -110,6 +108,24 @@ describe('verificación de proveedores del superadmin', () => {
         timeout: 10000,
       }),
     )
+  })
+
+  it('no valida un número local solo porque comparte los últimos nueve dígitos', async () => {
+    vi.spyOn(axios, 'get').mockResolvedValue({
+      data: { items: [{ phoneNumber: '+593999000001' }] },
+    })
+
+    const response = await dispatch('/api/admin/verify-provider', {
+      auth: authorization(),
+      body: {
+        provider: 'ycloud',
+        ycloud_api_key: 'ycloud-test-secret',
+        ycloud_number: '0999000001',
+      },
+    })
+
+    expect(response.body.ok).toBe(false)
+    expect(response.body.info).toContain('formato internacional E.164')
   })
 
   it('verifica credenciales guardadas únicamente desde el negocio solicitado', async () => {
@@ -139,8 +155,77 @@ describe('verificación de proveedores del superadmin', () => {
     expect(JSON.stringify(response.body)).not.toContain('meta-test-secret')
   })
 
+  it('verifica el proveedor prospectivo de una edición y no el proveedor guardado', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      whatsapp_provider: 'meta',
+      meta_token: 'meta-stored-secret',
+      meta_phone_id: 'phone-meta',
+      ycloud_api_key: 'ycloud-stored-secret',
+      ycloud_number: '+593999000001',
+    })
+    const get = vi.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        items: [{ phoneNumber: '+593999000002', displayName: 'Nueva línea' }],
+      },
+    })
+
+    const response = await dispatch('/api/admin/clients/:id/verify', {
+      auth: authorization(),
+      params: { id: 'business-a' },
+      body: {
+        provider: 'ycloud',
+        ycloud_number: '+593999000002',
+      },
+    })
+
+    expect(response.body).toEqual({
+      ok: true,
+      info: '✅ Conectado: +593999000002 — Nueva línea',
+    })
+    expect(get).toHaveBeenCalledWith(
+      'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'ycloud-stored-secret' }),
+      }),
+    )
+    expect(get.mock.calls.some(([url]) => String(url).includes('graph.facebook.com'))).toBe(false)
+    expect(JSON.stringify(response.body)).not.toContain('ycloud-stored-secret')
+    expect(JSON.stringify(response.body)).not.toContain('meta-stored-secret')
+  })
+
+  it('combina un identificador prospectivo con el token Meta guardado', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'ycloud-stored-secret',
+      meta_token: 'meta-stored-secret',
+      meta_phone_id: 'phone-old',
+    })
+    const get = vi.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        verified_name: 'Empresa Nueva',
+        display_phone_number: '+593200000002',
+        code_verification_status: 'VERIFIED',
+      },
+    })
+
+    const response = await dispatch('/api/admin/clients/:id/verify', {
+      auth: authorization(),
+      params: { id: 'business-a' },
+      body: { provider: 'meta', meta_phone_id: 'phone-new' },
+    })
+
+    expect(response.body.ok).toBe(true)
+    expect(get).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v25.0/phone-new',
+      expect.objectContaining({
+        params: expect.objectContaining({ access_token: 'meta-stored-secret' }),
+      }),
+    )
+    expect(JSON.stringify(response.body)).not.toContain('meta-stored-secret')
+  })
+
   it('elimina secretos de los errores devueltos por proveedores', async () => {
-    const secret = 'kapso-super-secret'
+    const secret = 'meta-super-secret'
     const error = new Error('Request failed')
     error.isAxiosError = true
     error.response = {
@@ -151,12 +236,45 @@ describe('verificación de proveedores del superadmin', () => {
 
     const response = await dispatch('/api/admin/verify-provider', {
       auth: authorization(),
-      body: { provider: 'kapso', kapso_api_key: secret },
+      body: { provider: 'meta', meta_token: secret, meta_phone_id: 'phone-a' },
     })
 
     expect(response.body.ok).toBe(false)
     expect(response.body.info).toContain('[HTTP 401]')
     expect(response.body.info).toContain('API Key inválida o sin permisos')
     expect(response.body.info).not.toContain(secret)
+  })
+
+  it('elimina también secretos globales de los errores del proveedor', async () => {
+    const secret = 'ycloud-environment-super-secret'
+    process.env.YCLOUD_API_KEY = secret
+    const error = new Error('Request failed')
+    error.isAxiosError = true
+    error.response = {
+      status: 401,
+      data: { message: `Credencial ${secret} inválida` },
+    }
+    vi.spyOn(axios, 'get').mockRejectedValue(error)
+
+    const response = await dispatch('/api/admin/verify-provider', {
+      auth: authorization(),
+      body: { provider: 'ycloud', ycloud_number: '+593999000001' },
+    })
+
+    expect(response.body.ok).toBe(false)
+    expect(response.body.info).not.toContain(secret)
+    expect(response.body.info).toContain('••••••')
+  })
+
+  it('no refleja valores arbitrarios enviados como proveedor', async () => {
+    const unknownProvider = 'credential-looking-provider-value'
+
+    const response = await dispatch('/api/admin/verify-provider', {
+      auth: authorization(),
+      body: { provider: unknownProvider },
+    })
+
+    expect(response.body).toEqual({ ok: false, info: 'Proveedor no reconocido' })
+    expect(JSON.stringify(response.body)).not.toContain(unknownProvider)
   })
 })

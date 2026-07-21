@@ -7,18 +7,14 @@ const axios = require('axios')
 const ycloud = require('../dist/integrations/ycloud')
 const whatsapp = require('../dist/integrations/whatsapp')
 
-let originalKapsoKey
 let originalYCloudKey
 
 beforeEach(() => {
-  originalKapsoKey = process.env.KAPSO_API_KEY
   originalYCloudKey = process.env.YCLOUD_API_KEY
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  if (originalKapsoKey === undefined) delete process.env.KAPSO_API_KEY
-  else process.env.KAPSO_API_KEY = originalKapsoKey
   if (originalYCloudKey === undefined) delete process.env.YCLOUD_API_KEY
   else process.env.YCLOUD_API_KEY = originalYCloudKey
 })
@@ -33,7 +29,7 @@ describe('integración multi-proveedor de WhatsApp', () => {
     }, '593990000001', 'Hola')
 
     expect(post).toHaveBeenCalledWith(
-      'https://graph.facebook.com/v19.0/phone-a/messages',
+      'https://graph.facebook.com/v25.0/phone-a/messages',
       {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -46,44 +42,9 @@ describe('integración multi-proveedor de WhatsApp', () => {
           Authorization: 'Bearer meta-business-token',
           'Content-Type': 'application/json',
         },
+        timeout: 15000,
       },
     )
-  })
-
-  it('envía imagen y video por Kapso usando primero la clave del negocio', async () => {
-    process.env.KAPSO_API_KEY = 'kapso-global-key'
-    const post = vi.spyOn(axios, 'post').mockResolvedValue({})
-    const business = {
-      whatsapp_provider: 'kapso',
-      kapso_api_key: 'kapso-business-key',
-      kapso_number_id: 'number-a',
-    }
-
-    await whatsapp.sendImage(business, '593990000001', 'https://cdn/image.jpg', 'Foto')
-    await whatsapp.sendVideo(business, '593990000001', 'https://cdn/video.mp4', 'Video')
-
-    expect(post).toHaveBeenNthCalledWith(
-      1,
-      'https://api.kapso.ai/v1/messages',
-      {
-        number_id: 'number-a',
-        to: '593990000001',
-        type: 'image',
-        image: { url: 'https://cdn/image.jpg', caption: 'Foto' },
-      },
-      {
-        headers: {
-          Authorization: 'Bearer kapso-business-key',
-          'Content-Type': 'application/json',
-        },
-      },
-    )
-    expect(post.mock.calls[1][1]).toEqual({
-      number_id: 'number-a',
-      to: '593990000001',
-      type: 'video',
-      video: { url: 'https://cdn/video.mp4', caption: 'Video' },
-    })
   })
 
   it('delega YCloud con número y clave pertenecientes al mismo negocio', async () => {
@@ -91,6 +52,7 @@ describe('integración multi-proveedor de WhatsApp', () => {
     const sendText = vi.spyOn(ycloud, 'sendText').mockResolvedValue(undefined)
     const showTyping = vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
     const business = {
+      whatsapp_provider: '   ',
       ycloud_api_key: 'ycloud-business-key',
       ycloud_number: '+593990000010',
       whatsapp_number: '+593990000099',

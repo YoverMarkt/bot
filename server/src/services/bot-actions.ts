@@ -215,6 +215,9 @@ export interface ProcessLodgingQuoteInput extends LodgingMediaInput {
   phone: string
   originalText: string
   quote: LodgingQuoteTag | null
+  // Mensajes escritos por el huésped (historial + mensaje actual): las fechas
+  // relativas ("el lunes", "mañana") se resuelven con el más reciente de aquí.
+  guestMessages?: string[]
   send(message: string): Promise<unknown>
 }
 
@@ -264,9 +267,11 @@ function guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean
 }
 
 // ── Fechas relativas resueltas por CÓDIGO, no por el modelo ──────────
-// "El lunes" es una fecha calculable, no una opinión: si el huésped mencionó
-// días de la semana sin fecha explícita, el calendario real corrige la
-// interpretación del modelo (que puede equivocarse de día).
+// "El lunes", "mañana" o "pasado mañana" son fechas calculables, no opiniones:
+// si el huésped las mencionó sin fecha explícita, el calendario real corrige la
+// interpretación del modelo (que puede equivocarse de día). La mención puede
+// venir de cualquier mensaje del huésped: gana el MÁS RECIENTE que hable de
+// fechas, así la corrección funciona aunque la etiqueta salga turnos después.
 const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const
 
 const normalizeGuestText = (value: unknown): string => String(value ?? '')
@@ -292,27 +297,52 @@ const nextWeekday = (fromIso: string, weekday: number, strictlyAfter: boolean): 
   return addDays(fromIso, delta)
 }
 
+type StayDateMention =
+  | { kind: 'absolute'; date: string }
+  | { kind: 'weekday'; weekday: number }
+
+const RELATIVE_DATE_PATTERN = /\b(pasado\s+manana|manana|hoy|domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b/g
+
+const stayDateMentions = (text: string, today: string): StayDateMention[] =>
+  [...text.matchAll(RELATIVE_DATE_PATTERN)].map(match => {
+    const term = match[1].replace(/\s+/g, ' ')
+    if (term === 'hoy') return { kind: 'absolute', date: today }
+    if (term === 'manana') return { kind: 'absolute', date: addDays(today, 1) }
+    if (term === 'pasado manana') return { kind: 'absolute', date: addDays(today, 2) }
+    return { kind: 'weekday', weekday: WEEKDAY_NAMES.indexOf(term as typeof WEEKDAY_NAMES[number]) }
+  })
+
 function resolveRelativeStayDates(
   guestText: unknown,
   checkIn: string,
   checkOut: string,
   today = todayInEcuador(),
 ): { checkIn: string; checkOut: string } {
-  const text = normalizeGuestText(guestText)
-  // Con fecha explícita ("20 de julio", "20/07", "2026-07-20") se respeta al modelo
-  if (/\d{1,2}\s*(de\s+[a-z]|\/|-)\s*\w+/.test(text)) return { checkIn, checkOut }
-  const mentioned = [...text.matchAll(/\b(domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b/g)]
-    .map(match => WEEKDAY_NAMES.indexOf(match[1] as typeof WEEKDAY_NAMES[number]))
-  if (!mentioned.length) return { checkIn, checkOut }
+  // Acepta un mensaje o la lista completa del huésped (del más viejo al más
+  // nuevo) y decide con el MÁS RECIENTE que hable de fechas; los mensajes sin
+  // fechas ("2 habitaciones") se saltan.
+  const messages = (Array.isArray(guestText) ? guestText : [guestText]).map(normalizeGuestText)
+  for (const text of messages.reverse()) {
+    // Con fecha explícita ("20 de julio", "20/07", "2026-07-20") se respeta al modelo
+    if (/\d{1,2}\s*(de\s+[a-z]|\/|-)\s*\w+/.test(text)) return { checkIn, checkOut }
+    const mentions = stayDateMentions(text, today)
+    if (!mentions.length) continue
 
-  const nights = Math.max(1, Math.round(
-    (new Date(`${checkOut}T12:00:00Z`).getTime() - new Date(`${checkIn}T12:00:00Z`).getTime()) / 86_400_000,
-  ))
-  const resolvedIn = nextWeekday(today, mentioned[0], false)
-  const resolvedOut = mentioned.length > 1
-    ? nextWeekday(resolvedIn, mentioned[1], true)
-    : addDays(resolvedIn, nights)
-  return { checkIn: resolvedIn, checkOut: resolvedOut }
+    const nights = Math.max(1, Math.round(
+      (new Date(`${checkOut}T12:00:00Z`).getTime() - new Date(`${checkIn}T12:00:00Z`).getTime()) / 86_400_000,
+    ))
+    const first = mentions[0]
+    const resolvedIn = first.kind === 'absolute' ? first.date : nextWeekday(today, first.weekday, false)
+    const second = mentions[1]
+    let resolvedOut = !second
+      ? addDays(resolvedIn, nights)
+      : second.kind === 'absolute' ? second.date : nextWeekday(resolvedIn, second.weekday, true)
+    // Una salida que no queda después de la entrada no es interpretable: se
+    // conserva la cantidad de noches en vez de producir una estadía imposible
+    if (resolvedOut <= resolvedIn) resolvedOut = addDays(resolvedIn, nights)
+    return { checkIn: resolvedIn, checkOut: resolvedOut }
+  }
+  return { checkIn, checkOut }
 }
 
 function formatAmount(value: number, currency = 'USD'): string {
@@ -456,7 +486,10 @@ function createBotActions(dependencies: BotActionDependencies) {
     business: ProcessLodgingQuoteInput['business'],
     contactPhone: string,
     quote: NonNullable<ProcessLodgingQuoteInput['quote']>,
-    guestText = '',
+    guestText: string | string[] = '',
+    // Habitación ya elegida por el huésped (modo menú): la cotización se
+    // centra en ella y solo muestra alternativas si no tiene cupo
+    focusRoomTypeId: string | null = null,
   ): Promise<ComputedLodgingQuote> {
     if (business.lodging_enabled !== true || !lodging) {
       return { outcome: 'handoff', message: 'No puedo consultar hospedaje automáticamente en este momento. Un asesor continuará contigo para ayudarte 🙏' }
@@ -492,20 +525,31 @@ function createBotActions(dependencies: BotActionDependencies) {
         return { outcome: 'retry', message: 'No encontré habitaciones disponibles para todo ese periodo. Puedes indicarme otras fechas y lo consulto nuevamente.' }
       }
 
-      const hasAutomaticPrice = viableOptions.some(option => validTotal(option.total))
+      // Con habitación elegida, el total que ve el huésped es SOLO el de esa
+      // habitación; las demás aparecen únicamente si la suya no tiene cupo
+      const focused = focusRoomTypeId
+        ? viableOptions.filter(option => option.roomTypeId === focusRoomTypeId)
+        : viableOptions
+      const chosenUnavailable = Boolean(focusRoomTypeId) && !focused.length
+      const options = focused.length ? focused : viableOptions
+
+      const hasAutomaticPrice = options.some(option => validTotal(option.total))
       if (!hasAutomaticPrice) {
         return {
           outcome: 'handoff',
           message: `Encontré opciones de hospedaje para ${result.checkIn} al ${result.checkOut}, pero sus tarifas requieren revisión manual. Para no inventar ningún total, un asesor continuará contigo 🙏`,
-          mediaOptions: viableOptions,
+          mediaOptions: options,
         }
       }
 
-      const officialQuote = { ...result, options: viableOptions }
+      const officialQuote = { ...result, options }
+      const unavailableNote = chosenUnavailable
+        ? 'La habitación que elegiste no tiene cupo para esas fechas 😔 Estas son las opciones disponibles:\n\n'
+        : ''
       return {
         outcome: 'quoted',
-        message: buildLodgingQuoteSummary(officialQuote),
-        mediaOptions: viableOptions,
+        message: `${unavailableNote}${buildLodgingQuoteSummary(officialQuote)}`,
+        mediaOptions: options,
         logLine: `🏨 [${business.name}] cotización ${result.quoteId} — ${result.nights} noche(s) — ${contactPhone}`,
       }
     } catch (error) {
@@ -533,7 +577,10 @@ function createBotActions(dependencies: BotActionDependencies) {
     const { business, phone, originalText, quote, send } = input
     if (!quote) return 'none'
 
-    const computed = await computeLodgingQuoteReply(business, phone, quote, originalText)
+    const computed = await computeLodgingQuoteReply(
+      business, phone, quote,
+      input.guestMessages?.length ? input.guestMessages : originalText,
+    )
     if (computed.outcome === 'retry') {
       await keepAutomated(business, phone, originalText)
       await sendAndSave(business, phone, computed.message, send)

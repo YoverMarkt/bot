@@ -550,6 +550,43 @@ describe('acciones de etiquetas del bot', () => {
     expect(database.createOrder).not.toHaveBeenCalled()
   })
 
+  it('centra la cotización en la habitación elegida y solo muestra alternativas sin cupo', async () => {
+    const dosOpciones = {
+      quoteId: 'quote-focus', checkIn: '2026-08-10', checkOut: '2026-08-12',
+      checkInTime: '14:00', checkOutTime: '12:00',
+      adults: 2, children: 0, nights: 2,
+      options: [
+        {
+          roomTypeId: 'room-matrimonial', name: 'Matrimonial', maxGuests: 2,
+          availableUnits: 3, unitsRequired: 1, currency: 'USD',
+          pricesIncludeTax: true, subtotal: 70, tax: 0, fees: 0, total: 70,
+        },
+        {
+          roomTypeId: 'room-familiar', name: 'Suite Familiar', maxGuests: 5,
+          availableUnits: 2, unitsRequired: 1, currency: 'USD',
+          pricesIncludeTax: true, subtotal: 110, tax: 0, fees: 0, total: 110,
+        },
+      ],
+    }
+    const current = setup({ lodging: { quoteLodging: vi.fn().mockResolvedValue(dosOpciones) } })
+    const quote = { checkIn: '2026-08-10', checkOut: '2026-08-12', roomsCount: 1, adults: 2, children: 0 }
+
+    const enfocada = await current.actions.computeLodgingQuoteReply(
+      { ...business, lodging_enabled: true }, '0990000001', quote, '', 'room-matrimonial',
+    )
+    expect(enfocada.outcome).toBe('quoted')
+    expect(enfocada.message).toContain('Matrimonial')
+    expect(enfocada.message).not.toContain('Suite Familiar')
+
+    // La habitación elegida sin cupo: se avisa y recién ahí van las alternativas
+    const sinCupo = await current.actions.computeLodgingQuoteReply(
+      { ...business, lodging_enabled: true }, '0990000001', quote, '', 'room-inexistente',
+    )
+    expect(sinCupo.outcome).toBe('quoted')
+    expect(sinCupo.message).toContain('no tiene cupo')
+    expect(sinCupo.message).toContain('Suite Familiar')
+  })
+
   it('rechaza solicitudes con nombres que el huésped nunca escribió', async () => {
     const current = setup()
     const send = vi.fn().mockResolvedValue(undefined)
@@ -592,6 +629,34 @@ describe('acciones de etiquetas del bot', () => {
     expect(resolveRelativeStayDates(
       'para esas fechas que te dije', '2026-08-01', '2026-08-03', '2026-07-18',
     )).toEqual({ checkIn: '2026-08-01', checkOut: '2026-08-03' })
+  })
+
+  it('resuelve fechas relativas mencionadas en cualquier mensaje del huésped, ganando el más reciente', () => {
+    // Hoy domingo 2026-07-19: los días vinieron en el PRIMER mensaje y la
+    // etiqueta salió turnos después ("2 habitaciones" no habla de fechas)
+    expect(resolveRelativeStayDates(
+      ['queremos reservar desde el lunes hasta el miercoles, somos 2 adultos y 2 niños', '2 habitaciones'],
+      '2026-07-21', '2026-07-23', '2026-07-19',
+    )).toEqual({ checkIn: '2026-07-20', checkOut: '2026-07-22' })
+    // Si el huésped cambió de fechas a mitad de conversación, gana lo último que dijo
+    expect(resolveRelativeStayDates(
+      ['del lunes al miercoles por favor', 'mejor del jueves al viernes', 'ok 1 habitacion'],
+      '2026-07-20', '2026-07-22', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-23', checkOut: '2026-07-24' })
+    // Fecha explícita en el mensaje más reciente que habla de fechas → se respeta al modelo
+    expect(resolveRelativeStayDates(
+      ['del lunes al miercoles', 'mejor del 25 de julio al 27 de julio'],
+      '2026-07-25', '2026-07-27', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-25', checkOut: '2026-07-27' })
+  })
+
+  it('resuelve "hoy", "mañana" y "pasado mañana" con el calendario real', () => {
+    expect(resolveRelativeStayDates(
+      'llegamos mañana y salimos pasado mañana', '2026-07-25', '2026-07-26', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-19', checkOut: '2026-07-20' })
+    expect(resolveRelativeStayDates(
+      ['una habitación desde hoy por tres noches'], '2026-07-20', '2026-07-23', '2026-07-18',
+    )).toEqual({ checkIn: '2026-07-18', checkOut: '2026-07-21' })
   })
 
   it('valida el origen del nombre con acentos y palabras sueltas', () => {

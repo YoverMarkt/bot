@@ -11,7 +11,7 @@ import { Label } from '@botpanel/ui/components/label'
 
 // Configuración del servidor — paridad con el panel viejo:
 // proveedor de IA global + keys (verificables), Cloudinary (verificable),
-// Telegram/Retell, y túnel público con URLs de webhooks listas para copiar.
+// Telegram y túnel público con URLs de webhooks listas para copiar.
 
 const card = 'p-5 mb-5 gap-0'
 
@@ -127,11 +127,9 @@ export default function ServerSettings() {
       {/* Otras conexiones */}
       <Card className={card}>
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
           <div><Label htmlFor="server-telegram-token">Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
             <Input id="server-telegram-token" type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
-          <div><Label htmlFor="server-retell-api-key">Retell API Key (voz) {saved.retell_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</Label>
-            <Input id="server-retell-api-key" type="password" value={val('retell_api_key')} onChange={set('retell_api_key')} placeholder={saved.retell_api_key || 'key_…'} /></div>
         </div>
       </Card>
 

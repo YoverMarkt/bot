@@ -2,6 +2,7 @@
 // Este archivo solo compone Express, monta routers y levanta procesos.
 // Las rutas, autenticación y lógica de negocio viven en sus módulos tipados.
 import path from 'node:path'
+import crypto from 'node:crypto'
 import type { Server } from 'node:http'
 import express, {
   type ErrorRequestHandler,
@@ -16,9 +17,10 @@ import { asyncHandler } from './middleware/async'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
 import * as bot from './services/bot-entry'
-import * as retell from './integrations/retell'
+import { processInboundWebhook } from './services/inbound-webhook'
 import * as tunnel from './services/tunnel'
-import { setupTelegram } from './integrations/telegram'
+import { createWebhookInboxWorker } from './services/webhook-inbox-worker'
+import { getBotInstance, setupTelegram } from './integrations/telegram'
 import authRouter = require('./routes/auth.routes')
 import adminRouter = require('./routes/admin.routes')
 import businessRouter = require('./routes/business.routes')
@@ -35,6 +37,10 @@ interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
   getExpiredBusinesses(): Promise<Array<{ id: string; name: string }>>
   suspendBusiness(businessId: string, reason: string): Promise<unknown>
+  cleanupWebhookEvents(): Promise<{
+    data: number | null
+    error: { message?: string } | null
+  }>
 }
 
 interface OperationalError extends Error {
@@ -49,6 +55,19 @@ type Cors = (options: {
 
 const cors = require('cors') as Cors
 const db = require('./db') as StartupDatabase
+const webhookInboxWorker = createWebhookInboxWorker({
+  workerId: `botpanel-${crypto.randomUUID()}`,
+  processEvent: event => processInboundWebhook(event.payload, {
+    businessId: event.business_id,
+    provider: event.provider,
+  }),
+  onError: (error, context) => {
+    console.error(
+      `❌ Inbox webhook [${context.phase}:${context.provider || 'n/a'}:${context.eventId || 'n/a'}]:`,
+      error.message,
+    )
+  },
+})
 
 // Al compilar, __dirname es server/dist. Estas raíces conservan exactamente
 // las ubicaciones usadas antes desde server/index.js.
@@ -76,13 +95,31 @@ function shutdown(signal: string, error?: unknown): void {
   shuttingDown = true
   const exitCode = error ? 1 : 0
   console.error(`${error ? '🛑' : '⏹️'} ${signal}:`, errorMessage(error))
-  const forceExit = setTimeout(() => process.exit(exitCode), 10_000)
+  const forceExit = setTimeout(() => process.exit(exitCode), 15_000)
   forceExit.unref()
-  if (!httpServer) {
+
+  const closeHttp = new Promise<void>((resolve) => {
+    if (!httpServer) return resolve()
+    httpServer.close(() => resolve())
+  })
+  void (async () => {
+    await Promise.allSettled([
+      closeHttp,
+      webhookInboxWorker.stop(),
+    ])
+    try {
+      await bot.drainPendingMessages()
+    } catch (drainError) {
+      console.error('❌ Error drenando mensajes durante el apagado:', errorMessage(drainError))
+    }
+    try {
+      getBotInstance()?.stop(signal)
+    } catch (telegramError) {
+      console.error('❌ Error deteniendo Telegram:', errorMessage(telegramError))
+    }
+    clearTimeout(forceExit)
     process.exit(exitCode)
-    return
-  }
-  httpServer.close(() => process.exit(exitCode))
+  })()
 }
 
 process.on('uncaughtException', error => shutdown('uncaughtException', error))
@@ -95,7 +132,7 @@ function logEnvironment(): void {
     console.warn(
       '⚠️  Faltan variables recomendadas:',
       environment.recommendedMissing.join(', '),
-      '\n   Meta necesita META_VERIFY_TOKEN + META_APP_SECRET; en local BASE_URL/WEBHOOK_SECRET son opcionales.',
+      '\n   Meta necesita META_VERIFY_TOKEN + META_APP_SECRET; YCloud usa el signing secret de cada endpoint.',
     )
   }
   console.log('✅ Variables de entorno críticas: OK')
@@ -149,13 +186,6 @@ app.use(ordersRouter)
 app.use(webhooksRouter)
 app.use(lodgingRouter)
 
-const retellLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'rate limit' },
-})
 const telegramLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -164,16 +194,23 @@ const telegramLimiter = rateLimit({
   message: { error: 'rate limit' },
 })
 app.use('/webhook/telegram', telegramLimiter)
-app.post('/api/retell/llm', retellLimiter, retell.verifyRetellLLMRequest, retell.handleRetellLLM)
-app.post(
-  '/api/retell/call-events',
-  retellLimiter,
-  retell.verifyRetellRequest,
-  retell.handleRetellCallEvent,
-)
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() })
+  const lastDatabaseSuccess = webhookInboxWorker
+    .lastSuccessfulDatabaseOperationAt()
+  const ok = !shuttingDown && webhookInboxWorker.isReady()
+  res.status(ok ? 200 : 503).json({
+    ok,
+    time: new Date().toISOString(),
+    webhook_inbox: {
+      running: webhookInboxWorker.isRunning(),
+      ready: webhookInboxWorker.isReady(),
+      in_flight: webhookInboxWorker.inFlightCount(),
+      last_database_success_at: lastDatabaseSuccess === null
+        ? null
+        : new Date(lastDatabaseSuccess).toISOString(),
+    },
+  })
 })
 
 app.get('/api/images/:productId', asyncHandler(async (req: Request, res: Response) => {
@@ -217,6 +254,16 @@ async function checkExpiredClients(): Promise<void> {
   }
 }
 
+async function cleanupWebhookInbox(): Promise<void> {
+  try {
+    const result = await db.cleanupWebhookEvents()
+    if (result.error) throw new Error(result.error.message || 'RPC sin detalle')
+    if (result.data) console.log(`🧹 Inbox webhook: ${result.data} evento(s) purgado(s)`)
+  } catch (error) {
+    console.error('❌ Limpieza del inbox webhook:', errorMessage(error))
+  }
+}
+
 const port = process.env.PORT || 3000
 httpServer = app.listen(port, () => {
   logEnvironment()
@@ -225,8 +272,11 @@ httpServer = app.listen(port, () => {
   console.log(`👤 Cliente: http://localhost:${port}/app`)
   console.log(`📡 Webhook: http://localhost:${port}/webhook\n`)
 
+  webhookInboxWorker.start()
   setTimeout(checkExpiredClients, 3000)
   setInterval(checkExpiredClients, 60 * 60 * 1000)
+  setTimeout(cleanupWebhookInbox, 5000)
+  setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)

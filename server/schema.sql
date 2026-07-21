@@ -29,24 +29,32 @@ create table if not exists businesses (
   -- WhatsApp personal del dueño: solo este número puede pedir reportes por WhatsApp
   owner_phone         text,
   whatsapp_number     text unique,
-  -- Proveedor WhatsApp activo: 'ycloud' | 'meta' | 'kapso'
-  whatsapp_provider   text default 'ycloud',
+  -- Proveedor de mensajería activo: 'ycloud' | 'meta' | 'telegram'
+  whatsapp_provider   text default 'ycloud'
+                      constraint businesses_whatsapp_provider_check check (
+                        nullif(btrim(coalesce(whatsapp_provider, '')), '') is null
+                        or btrim(whatsapp_provider) in ('ycloud', 'meta', 'telegram')
+                      ),
   -- YCloud
   ycloud_api_key      text,
   ycloud_number       text,
-  -- Kapso
-  kapso_api_key       text,
-  kapso_number_id     text,
-  kapso_verify_token  text,
+  ycloud_webhook_endpoint_id text
+                      constraint businesses_ycloud_webhook_endpoint_id_check check (
+                        ycloud_webhook_endpoint_id is null
+                        or (
+                          ycloud_webhook_endpoint_id = btrim(ycloud_webhook_endpoint_id)
+                          and char_length(ycloud_webhook_endpoint_id) between 1 and 255
+                          and ycloud_webhook_endpoint_id !~ '[[:cntrl:]]'
+                        )
+                      ),
+  ycloud_webhook_secret text,
   -- Meta
   meta_token          text,
   meta_phone_id       text,
-  meta_verify_token   text,
   -- Telegram (token propio del negocio, opcional)
   telegram_bot_token  text,
   -- Integraciones
   calcom_link         text,          -- OBSOLETO (Cal.com retirado); columna huérfana, no se usa
-  retell_agent_id     text,
   ai_provider         text,          -- override de IA por negocio (opcional)
   -- Modo de operación: false = solo venta/atención · true = agenda citas (calendario)
   takes_bookings      boolean not null default false,
@@ -66,6 +74,319 @@ create table if not exists businesses (
   notes               text,
   created_at          timestamptz default now()
 );
+
+-- ── Identificadores exactos de canales externos ───────────
+-- Tabla derivada de businesses. La clave no incluye business_id a propósito:
+-- un endpoint exacto dentro del mismo proveedor solo puede tener un dueño.
+begin;
+
+set local lock_timeout = '5s';
+set local statement_timeout = '2min';
+
+create table if not exists public.business_channel_identifiers (
+  id                   uuid primary key default gen_random_uuid(),
+  business_id          uuid not null
+                       references public.businesses(id) on delete cascade,
+  provider             text not null
+                       check (provider in ('meta', 'ycloud')),
+  identifier_type      text not null
+                       check (identifier_type in ('phone', 'account_id')),
+  canonical_identifier text not null,
+  created_at           timestamptz not null default now(),
+  constraint business_channel_identifiers_canonical_check check (
+    (
+      identifier_type = 'phone'
+      and canonical_identifier ~ '^[1-9][0-9]{7,14}$'
+    )
+    or (
+      identifier_type = 'account_id'
+      and canonical_identifier = btrim(canonical_identifier)
+      and char_length(canonical_identifier) between 1 and 255
+      and canonical_identifier !~ '[[:cntrl:]]'
+    )
+  )
+);
+
+create unique index if not exists uq_business_channel_identifier
+  on public.business_channel_identifiers(
+    provider,
+    identifier_type,
+    canonical_identifier
+  );
+create unique index if not exists uq_business_channel_phone
+  on public.business_channel_identifiers(canonical_identifier)
+  where identifier_type = 'phone';
+create index if not exists idx_business_channel_identifiers_business
+  on public.business_channel_identifiers(business_id);
+
+alter table public.business_channel_identifiers enable row level security;
+revoke all on table public.business_channel_identifiers
+  from public, anon, authenticated, service_role;
+grant select on table public.business_channel_identifiers to service_role;
+
+create or replace function public.normalize_business_channel_identifier(
+  p_identifier_type text,
+  p_value text
+)
+returns text
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v_value text := btrim(p_value);
+  v_canonical text;
+begin
+  if v_value = '' then return null; end if;
+
+  if p_identifier_type = 'phone' then
+    if v_value !~ '^\+?[0-9 ().-]+$' then
+      raise exception using
+        errcode = '22023',
+        message = 'El teléfono del canal contiene caracteres inválidos';
+    end if;
+    v_canonical := regexp_replace(v_value, '[+ ().-]', '', 'g');
+    if v_canonical !~ '^[1-9][0-9]{7,14}$' then
+      raise exception using
+        errcode = '22023',
+        message = 'El teléfono del canal debe usar formato E.164 con 8 a 15 dígitos';
+    end if;
+    return v_canonical;
+  end if;
+
+  if p_identifier_type = 'account_id' then
+    if char_length(v_value) > 255 or v_value ~ '[[:cntrl:]]' then
+      raise exception using
+        errcode = '22023',
+        message = 'El identificador de cuenta del canal es inválido';
+    end if;
+    return v_value;
+  end if;
+
+  raise exception using
+    errcode = '22023',
+    message = 'El tipo de identificador del canal es inválido';
+end;
+$$;
+
+create or replace function public.refresh_business_channel_identifiers(
+  p_business_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_business public.businesses%rowtype;
+  v_candidate record;
+  v_existing_business_id uuid;
+  v_phone_owner_business_id uuid;
+  v_whatsapp_provider text;
+  v_whatsapp_phone text;
+  v_ycloud_phone text;
+  v_meta_account_id text;
+begin
+  select * into v_business
+  from public.businesses
+  where id = p_business_id;
+
+  if not found then
+    delete from public.business_channel_identifiers
+    where business_id = p_business_id;
+    return;
+  end if;
+
+  v_whatsapp_provider := coalesce(
+    nullif(btrim(coalesce(v_business.whatsapp_provider, '')), ''),
+    'ycloud'
+  );
+  if v_whatsapp_provider not in ('meta', 'ycloud', 'telegram') then
+    raise exception using
+      errcode = '22023',
+      message = 'El proveedor WhatsApp configurado es inválido',
+      detail = format(
+        'business_id=%s provider=%s', p_business_id, v_whatsapp_provider
+      );
+  end if;
+
+  if v_whatsapp_provider in ('meta', 'ycloud') then
+    v_whatsapp_phone := public.normalize_business_channel_identifier(
+      'phone', v_business.whatsapp_number
+    );
+  end if;
+  if v_whatsapp_provider = 'ycloud' then
+    v_ycloud_phone := public.normalize_business_channel_identifier(
+      'phone', v_business.ycloud_number
+    );
+  end if;
+  if v_whatsapp_provider = 'meta' then
+    v_meta_account_id := public.normalize_business_channel_identifier(
+      'account_id', v_business.meta_phone_id
+    );
+  end if;
+  if v_whatsapp_provider = 'ycloud'
+    and coalesce(v_ycloud_phone, v_whatsapp_phone) is null then
+    raise exception using
+      errcode = '22023',
+      message = 'YCloud requiere un teléfono de canal válido',
+      detail = format('business_id=%s provider=ycloud', p_business_id);
+  elsif v_whatsapp_provider = 'meta'
+    and v_meta_account_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'Meta requiere un Phone ID válido',
+      detail = format('business_id=%s provider=meta', p_business_id);
+  end if;
+
+  delete from public.business_channel_identifiers
+  where business_id = p_business_id;
+
+  for v_candidate in
+    select distinct
+      candidates.provider,
+      candidates.identifier_type,
+      candidates.canonical_identifier
+    from (
+      select
+        v_whatsapp_provider as provider,
+        'phone'::text as identifier_type,
+        v_whatsapp_phone as canonical_identifier
+      where v_whatsapp_provider in ('meta', 'ycloud')
+
+      union all
+
+      select
+        'ycloud',
+        'phone',
+        v_ycloud_phone
+      where v_whatsapp_provider = 'ycloud'
+
+      union all
+
+      select
+        'meta',
+        'account_id',
+        v_meta_account_id
+      where v_whatsapp_provider = 'meta'
+    ) as candidates
+    where candidates.canonical_identifier is not null
+    order by
+      candidates.identifier_type,
+      candidates.canonical_identifier,
+      candidates.provider
+  loop
+    if v_candidate.identifier_type = 'phone' then
+      perform pg_advisory_xact_lock(hashtextextended(
+        'business-channel-phone:' || v_candidate.canonical_identifier,
+        0
+      ));
+      v_phone_owner_business_id := null;
+      select business_id into v_phone_owner_business_id
+      from public.business_channel_identifiers
+      where identifier_type = 'phone'
+        and canonical_identifier = v_candidate.canonical_identifier
+        and business_id <> p_business_id
+      limit 1;
+
+      if v_phone_owner_business_id is not null then
+        raise exception using
+          errcode = '23505',
+          message = 'Un teléfono de canal ya pertenece a otro negocio',
+          detail = format(
+            'identifier=%s existing_business_id=%s requested_business_id=%s',
+            v_candidate.canonical_identifier,
+            v_phone_owner_business_id,
+            p_business_id
+          );
+      end if;
+    end if;
+
+    v_existing_business_id := null;
+    select business_id into v_existing_business_id
+    from public.business_channel_identifiers
+    where provider = v_candidate.provider
+      and identifier_type = v_candidate.identifier_type
+      and canonical_identifier = v_candidate.canonical_identifier;
+
+    if v_existing_business_id is not null
+      and v_existing_business_id <> p_business_id then
+      raise exception using
+        errcode = '23505',
+        message = 'Un identificador de canal ya pertenece a otro negocio',
+        detail = format(
+          'provider=%s type=%s identifier=%s existing_business_id=%s requested_business_id=%s',
+          v_candidate.provider,
+          v_candidate.identifier_type,
+          v_candidate.canonical_identifier,
+          v_existing_business_id,
+          p_business_id
+        );
+    end if;
+
+    if v_existing_business_id is null then
+      insert into public.business_channel_identifiers (
+        business_id,
+        provider,
+        identifier_type,
+        canonical_identifier
+      ) values (
+        p_business_id,
+        v_candidate.provider,
+        v_candidate.identifier_type,
+        v_candidate.canonical_identifier
+      );
+    end if;
+  end loop;
+end;
+$$;
+
+create or replace function public.sync_business_channel_identifiers()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform public.refresh_business_channel_identifiers(new.id);
+  return new;
+end;
+$$;
+
+revoke all on function public.normalize_business_channel_identifier(text, text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.refresh_business_channel_identifiers(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.sync_business_channel_identifiers()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists trg_sync_business_channel_identifiers
+  on public.businesses;
+create trigger trg_sync_business_channel_identifiers
+after insert or update of
+  whatsapp_number,
+  whatsapp_provider,
+  ycloud_number,
+  meta_phone_id
+on public.businesses
+for each row
+execute function public.sync_business_channel_identifiers();
+
+lock table public.businesses in share row exclusive mode;
+
+do $$
+declare
+  v_business_id uuid;
+begin
+  for v_business_id in
+    select id from public.businesses order by id
+  loop
+    perform public.refresh_business_channel_identifiers(v_business_id);
+  end loop;
+end;
+$$;
+
+commit;
 
 -- ── TABLA 2: Usuarios del panel del cliente (dueño + empleados) ─
 create table if not exists client_users (
@@ -310,14 +631,60 @@ create table if not exists order_items (
   created_at   timestamptz default now()
 );
 
--- ── TABLA 17: Reclamos de webhooks (deduplicación persistente) ──
--- Solo conserva SHA-256 del identificador; nunca payload, teléfono ni mensaje.
+-- ── TABLA 17: Inbox durable de webhooks ───────────────────
+-- Conserva el payload normalizado solo mientras esta pendiente, en proceso o
+-- dead. Al completar se elimina inmediatamente y queda unicamente el hash para
+-- deduplicar redeliveries durante 24 horas.
 create table if not exists webhook_inbound_events (
   id              uuid primary key default gen_random_uuid(),
   business_id     uuid not null references businesses(id) on delete cascade,
-  provider        text not null check (provider in ('meta', 'ycloud', 'kapso')),
+  provider        text not null check (provider in ('meta', 'ycloud')),
   message_id_hash text not null check (message_id_hash ~ '^[0-9a-f]{64}$'),
-  received_at     timestamptz not null default now()
+  payload_version smallint not null default 1,
+  payload          jsonb,
+  stream_key_hash  text,
+  status            text not null default 'completed'
+                    check (status in ('pending','processing','completed','dead')),
+  attempts          integer not null default 0,
+  max_attempts      integer not null default 8,
+  available_at      timestamptz not null default now(),
+  lease_token       uuid,
+  lease_owner       text,
+  leased_until      timestamptz,
+  last_error        text,
+  completed_at      timestamptz,
+  dead_at           timestamptz,
+  received_at       timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint webhook_inbound_events_attempts_check check (
+    attempts between 0 and max_attempts and max_attempts between 1 and 100
+  ),
+  constraint webhook_inbound_events_payload_check check (
+    (status = 'completed' and payload is null)
+    or (
+      status in ('pending','processing','dead')
+      and payload is not null
+      and jsonb_typeof(payload) = 'object'
+      and pg_column_size(payload) <= 262144
+      and stream_key_hash is not null
+      and stream_key_hash ~ '^[0-9a-f]{64}$'
+    )
+  ),
+  constraint webhook_inbound_events_lease_check check (
+    (
+      status = 'processing'
+      and lease_token is not null
+      and leased_until is not null
+      and nullif(btrim(lease_owner), '') is not null
+      and char_length(lease_owner) <= 128
+    )
+    or (
+      status <> 'processing'
+      and lease_token is null
+      and leased_until is null
+      and lease_owner is null
+    )
+  )
 );
 
 -- ── ÍNDICES ────────────────────────────────────────────────
@@ -349,6 +716,20 @@ create index if not exists idx_webhook_events_business_received
   on webhook_inbound_events(business_id, received_at);
 create index if not exists idx_webhook_events_received
   on webhook_inbound_events(received_at);
+create index if not exists idx_webhook_inbox_ready
+  on webhook_inbound_events(available_at, received_at, id)
+  where status = 'pending';
+create index if not exists idx_webhook_inbox_expired_leases
+  on webhook_inbound_events(leased_until)
+  where status = 'processing';
+create index if not exists idx_webhook_inbox_stream_order
+  on webhook_inbound_events(
+    business_id, provider, stream_key_hash, received_at, id
+  )
+  where status in ('pending', 'processing');
+create unique index if not exists uq_webhook_inbox_processing_stream
+  on webhook_inbound_events(business_id, provider, stream_key_hash)
+  where status = 'processing';
 
 -- Normalización compatible con instalaciones creadas antes de que la duración
 -- y el tenant de las reservas fueran obligatorios.
@@ -799,9 +1180,9 @@ begin
 
   insert into businesses (
     slug, name, type, whatsapp_number, whatsapp_provider,
-    kapso_api_key, kapso_number_id, kapso_verify_token,
-    ycloud_api_key, ycloud_number, meta_token, meta_phone_id,
-    meta_verify_token, telegram_bot_token, retell_agent_id,
+    ycloud_api_key, ycloud_number,
+    ycloud_webhook_endpoint_id, ycloud_webhook_secret,
+    meta_token, meta_phone_id, telegram_bot_token,
     takes_bookings, takes_orders, ai_provider, owner_phone, plan,
     plan_expires_at, active, bot_active, suspended, notes, monthly_rate
   ) values (
@@ -810,16 +1191,13 @@ begin
     coalesce(nullif(p_business ->> 'type', ''), 'negocio'),
     v_whatsapp_number,
     coalesce(nullif(p_business ->> 'whatsapp_provider', ''), 'ycloud'),
-    nullif(p_business ->> 'kapso_api_key', ''),
-    nullif(p_business ->> 'kapso_number_id', ''),
-    nullif(p_business ->> 'kapso_verify_token', ''),
     nullif(p_business ->> 'ycloud_api_key', ''),
     nullif(p_business ->> 'ycloud_number', ''),
+    nullif(btrim(p_business ->> 'ycloud_webhook_endpoint_id'), ''),
+    nullif(p_business ->> 'ycloud_webhook_secret', ''),
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
-    nullif(p_business ->> 'meta_verify_token', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    nullif(p_business ->> 'retell_agent_id', ''),
     coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     nullif(p_business ->> 'ai_provider', ''),
@@ -974,7 +1352,320 @@ revoke all on function public.create_sale_with_items(uuid, text, text, uuid, jso
 revoke all on function public.create_sale_with_items(uuid, text, text, uuid, jsonb) from authenticated;
 grant execute on function public.create_sale_with_items(uuid, text, text, uuid, jsonb) to service_role;
 
--- ── FUNCIÓN ATÓMICA: reclamar evento de webhook ───────────
+-- ── INBOX DURABLE DE WEBHOOKS ──────────────────────────────
+create or replace function public.enqueue_webhook_event(
+  p_business_id uuid,
+  p_provider text,
+  p_message_id_hash text,
+  p_stream_key_hash text,
+  p_payload jsonb
+)
+returns boolean
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_inserted integer;
+begin
+  if p_business_id is null then
+    raise exception using errcode = '22023', message = 'El negocio es obligatorio';
+  end if;
+  if p_provider not in ('meta', 'ycloud') then
+    raise exception using errcode = '22023', message = 'Proveedor de webhook invalido';
+  end if;
+  if p_message_id_hash is null
+     or p_message_id_hash !~ '^[0-9a-f]{64}$' then
+    raise exception using errcode = '22023', message = 'Hash de mensaje invalido';
+  end if;
+  if p_stream_key_hash is null
+     or p_stream_key_hash !~ '^[0-9a-f]{64}$' then
+    raise exception using errcode = '22023', message = 'Hash de conversacion invalido';
+  end if;
+  if jsonb_typeof(p_payload) is distinct from 'object'
+     or pg_column_size(p_payload) > 262144 then
+    raise exception using errcode = '22023', message = 'Payload de webhook invalido';
+  end if;
+
+  insert into public.webhook_inbound_events (
+    business_id, provider, message_id_hash, stream_key_hash,
+    payload_version, payload, status, attempts, max_attempts,
+    available_at, completed_at, dead_at, updated_at
+  ) values (
+    p_business_id, p_provider, p_message_id_hash, p_stream_key_hash,
+    1, p_payload, 'pending', 0, 8,
+    now(), null, null, now()
+  )
+  on conflict (business_id, provider, message_id_hash) do nothing;
+
+  get diagnostics v_inserted = row_count;
+  return v_inserted = 1;
+end;
+$$;
+
+create or replace function public.lease_webhook_events(
+  p_worker_id text,
+  p_limit integer,
+  p_lease_seconds integer
+)
+returns table (
+  id uuid,
+  business_id uuid,
+  provider text,
+  payload jsonb,
+  lease_token uuid,
+  attempts integer
+)
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_limit integer := greatest(1, least(coalesce(p_limit, 10), 50));
+  v_lease_seconds integer := greatest(
+    30, least(coalesce(p_lease_seconds, 180), 900)
+  );
+begin
+  if nullif(btrim(p_worker_id), '') is null
+     or char_length(p_worker_id) > 128 then
+    raise exception using errcode = '22023', message = 'Worker ID invalido';
+  end if;
+
+  update public.webhook_inbound_events as event
+  set status = 'dead',
+      lease_token = null,
+      lease_owner = null,
+      leased_until = null,
+      dead_at = now(),
+      last_error = coalesce(
+        event.last_error,
+        'Lease vencido despues del ultimo intento'
+      ),
+      updated_at = now()
+  where event.status = 'processing'
+    and event.leased_until <= now()
+    and event.attempts >= event.max_attempts;
+
+  update public.webhook_inbound_events as event
+  set status = 'pending',
+      available_at = least(event.available_at, now()),
+      lease_token = null,
+      lease_owner = null,
+      leased_until = null,
+      updated_at = now()
+  where event.status = 'processing'
+    and event.leased_until <= now()
+    and event.attempts < event.max_attempts;
+
+  return query
+  with candidates as (
+    select event.id
+    from public.webhook_inbound_events as event
+    where event.status = 'pending'
+      and event.available_at <= now()
+      and event.attempts < event.max_attempts
+      and not exists (
+        select 1
+        from public.webhook_inbound_events as earlier
+        where earlier.business_id = event.business_id
+          and earlier.provider = event.provider
+          and earlier.stream_key_hash = event.stream_key_hash
+          and earlier.status in ('pending', 'processing')
+          and (earlier.received_at, earlier.id) < (event.received_at, event.id)
+      )
+    order by event.received_at, event.id
+    for update of event skip locked
+    limit v_limit
+  ), leased_rows as (
+    update public.webhook_inbound_events as event
+    set status = 'processing',
+        attempts = event.attempts + 1,
+        lease_token = gen_random_uuid(),
+        lease_owner = btrim(p_worker_id),
+        leased_until = now() + make_interval(secs => v_lease_seconds),
+        updated_at = now()
+    from candidates
+    where event.id = candidates.id
+    returning
+      event.id as leased_id,
+      event.business_id as leased_business_id,
+      event.provider as leased_provider,
+      event.payload as leased_payload,
+      event.lease_token as leased_token,
+      event.attempts as leased_attempts
+  )
+  select
+    leased_rows.leased_id,
+    leased_rows.leased_business_id,
+    leased_rows.leased_provider,
+    leased_rows.leased_payload,
+    leased_rows.leased_token,
+    leased_rows.leased_attempts
+  from leased_rows;
+end;
+$$;
+
+create or replace function public.renew_webhook_event_lease(
+  p_event_id uuid,
+  p_lease_token uuid,
+  p_lease_seconds integer
+)
+returns boolean
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_renewed integer;
+  v_lease_seconds integer := greatest(
+    30, least(coalesce(p_lease_seconds, 180), 900)
+  );
+begin
+  if p_event_id is null or p_lease_token is null then return false; end if;
+
+  update public.webhook_inbound_events as event
+  set leased_until = now() + make_interval(secs => v_lease_seconds),
+      updated_at = now()
+  where event.id = p_event_id
+    and event.status = 'processing'
+    and event.lease_token = p_lease_token
+    and event.leased_until > now();
+
+  get diagnostics v_renewed = row_count;
+  return v_renewed = 1;
+end;
+$$;
+
+create or replace function public.complete_webhook_event(
+  p_event_id uuid,
+  p_lease_token uuid
+)
+returns boolean
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_completed integer;
+begin
+  if p_event_id is null or p_lease_token is null then return false; end if;
+
+  update public.webhook_inbound_events as event
+  set status = 'completed',
+      payload = null,
+      lease_token = null,
+      lease_owner = null,
+      leased_until = null,
+      last_error = null,
+      completed_at = now(),
+      dead_at = null,
+      updated_at = now()
+  where event.id = p_event_id
+    and event.status = 'processing'
+    and event.lease_token = p_lease_token;
+
+  get diagnostics v_completed = row_count;
+  return v_completed = 1;
+end;
+$$;
+
+create or replace function public.fail_webhook_event(
+  p_event_id uuid,
+  p_lease_token uuid,
+  p_error text,
+  p_base_delay_seconds integer
+)
+returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_attempts integer;
+  v_max_attempts integer;
+  v_base_delay integer := greatest(
+    1, least(coalesce(p_base_delay_seconds, 5), 300)
+  );
+  v_delay_seconds integer;
+  v_error text := left(
+    coalesce(nullif(btrim(p_error), ''), 'Error de procesamiento'),
+    2000
+  );
+begin
+  if p_event_id is null or p_lease_token is null then return 'stale'; end if;
+
+  select event.attempts, event.max_attempts
+  into v_attempts, v_max_attempts
+  from public.webhook_inbound_events as event
+  where event.id = p_event_id
+    and event.status = 'processing'
+    and event.lease_token = p_lease_token
+  for update;
+
+  if not found then return 'stale'; end if;
+
+  if v_attempts >= v_max_attempts then
+    update public.webhook_inbound_events as event
+    set status = 'dead',
+        lease_token = null,
+        lease_owner = null,
+        leased_until = null,
+        last_error = v_error,
+        dead_at = now(),
+        updated_at = now()
+    where event.id = p_event_id
+      and event.status = 'processing'
+      and event.lease_token = p_lease_token;
+    return 'dead';
+  end if;
+
+  v_delay_seconds := least(
+    900,
+    v_base_delay
+      * power(2::numeric, least(greatest(v_attempts - 1, 0), 10))::integer
+      + floor(random() * least(v_base_delay, 30))::integer
+  );
+
+  update public.webhook_inbound_events as event
+  set status = 'pending',
+      available_at = now() + make_interval(secs => v_delay_seconds),
+      lease_token = null,
+      lease_owner = null,
+      leased_until = null,
+      last_error = v_error,
+      dead_at = null,
+      updated_at = now()
+  where event.id = p_event_id
+    and event.status = 'processing'
+    and event.lease_token = p_lease_token;
+
+  return 'pending';
+end;
+$$;
+
+create or replace function public.cleanup_webhook_events()
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_deleted integer;
+begin
+  with deleted as (
+    delete from public.webhook_inbound_events as event
+    where (
+      event.status = 'completed'
+      and coalesce(event.completed_at, event.received_at)
+        < now() - interval '24 hours'
+    ) or (
+      event.status = 'dead'
+      and coalesce(event.dead_at, event.updated_at, event.received_at)
+        < now() - interval '7 days'
+    )
+    returning 1
+  )
+  select count(*)::integer into v_deleted from deleted;
+
+  return v_deleted;
+end;
+$$;
+
+-- Compatibilidad temporal con el runtime anterior.
 create or replace function public.claim_webhook_event(
   p_business_id uuid,
   p_provider text,
@@ -990,7 +1681,7 @@ begin
   if p_business_id is null then
     raise exception using errcode = '22023', message = 'El negocio es obligatorio';
   end if;
-  if p_provider not in ('meta', 'ycloud', 'kapso') then
+  if p_provider not in ('meta', 'ycloud') then
     raise exception using errcode = '22023', message = 'Proveedor de webhook inválido';
   end if;
   if p_message_id_hash is null or p_message_id_hash !~ '^[0-9a-f]{64}$' then
@@ -999,12 +1690,13 @@ begin
 
   delete from public.webhook_inbound_events
   where business_id = p_business_id
-    and received_at < now() - interval '24 hours';
+    and status = 'completed'
+    and coalesce(completed_at, received_at) < now() - interval '24 hours';
 
   insert into public.webhook_inbound_events (
-    business_id, provider, message_id_hash
+    business_id, provider, message_id_hash, status, completed_at, updated_at
   ) values (
-    p_business_id, p_provider, p_message_id_hash
+    p_business_id, p_provider, p_message_id_hash, 'completed', now(), now()
   )
   on conflict (business_id, provider, message_id_hash) do nothing;
 
@@ -1018,12 +1710,39 @@ revoke all on function public.claim_webhook_event(uuid, text, text) from anon;
 revoke all on function public.claim_webhook_event(uuid, text, text) from authenticated;
 grant execute on function public.claim_webhook_event(uuid, text, text) to service_role;
 
+revoke all on function public.enqueue_webhook_event(uuid, text, text, text, jsonb)
+  from public, anon, authenticated;
+revoke all on function public.lease_webhook_events(text, integer, integer)
+  from public, anon, authenticated;
+revoke all on function public.renew_webhook_event_lease(uuid, uuid, integer)
+  from public, anon, authenticated;
+revoke all on function public.complete_webhook_event(uuid, uuid)
+  from public, anon, authenticated;
+revoke all on function public.fail_webhook_event(uuid, uuid, text, integer)
+  from public, anon, authenticated;
+revoke all on function public.cleanup_webhook_events()
+  from public, anon, authenticated;
+
+grant execute on function public.enqueue_webhook_event(uuid, text, text, text, jsonb)
+  to service_role;
+grant execute on function public.lease_webhook_events(text, integer, integer)
+  to service_role;
+grant execute on function public.renew_webhook_event_lease(uuid, uuid, integer)
+  to service_role;
+grant execute on function public.complete_webhook_event(uuid, uuid)
+  to service_role;
+grant execute on function public.fail_webhook_event(uuid, uuid, text, integer)
+  to service_role;
+grant execute on function public.cleanup_webhook_events()
+  to service_role;
+
 -- ── ROW LEVEL SECURITY (RLS) ───────────────────────────────
 -- RLS ACTIVADO en todas las tablas. El backend usa la SERVICE KEY
 -- (la bypassa); el aislamiento real lo refuerza el filtrado por
 -- business_id en db.js. La anon key del frontend queda BLOQUEADA
 -- (no lee datos directo) → por eso el frontend usa polling vía API.
 alter table businesses            enable row level security;
+alter table business_channel_identifiers enable row level security;
 alter table client_users          enable row level security;
 alter table products              enable row level security;
 alter table bot_policies          enable row level security;
@@ -1041,6 +1760,10 @@ alter table ai_gaps               enable row level security;
 alter table orders                enable row level security;
 alter table order_items           enable row level security;
 alter table webhook_inbound_events enable row level security;
+
+revoke all on table webhook_inbound_events from public, anon, authenticated;
+grant select, insert, update, delete on table webhook_inbound_events
+  to service_role;
 
 -- ============================================================
 -- NOTA: el archivo migration-integraciones.sql quedó OBSOLETO.
@@ -2625,9 +3348,9 @@ begin
 
   insert into public.businesses (
     slug, name, type, whatsapp_number, whatsapp_provider,
-    kapso_api_key, kapso_number_id, kapso_verify_token,
-    ycloud_api_key, ycloud_number, meta_token, meta_phone_id,
-    meta_verify_token, telegram_bot_token, retell_agent_id,
+    ycloud_api_key, ycloud_number,
+    ycloud_webhook_endpoint_id, ycloud_webhook_secret,
+    meta_token, meta_phone_id, telegram_bot_token,
     takes_bookings, takes_orders, lodging_enabled, ai_provider,
     owner_phone, plan, plan_expires_at,
     active, bot_active, suspended, notes, monthly_rate
@@ -2637,16 +3360,13 @@ begin
     coalesce(nullif(p_business ->> 'type', ''), 'negocio'),
     v_whatsapp_number,
     coalesce(nullif(p_business ->> 'whatsapp_provider', ''), 'ycloud'),
-    nullif(p_business ->> 'kapso_api_key', ''),
-    nullif(p_business ->> 'kapso_number_id', ''),
-    nullif(p_business ->> 'kapso_verify_token', ''),
     nullif(p_business ->> 'ycloud_api_key', ''),
     nullif(p_business ->> 'ycloud_number', ''),
+    nullif(btrim(p_business ->> 'ycloud_webhook_endpoint_id'), ''),
+    nullif(p_business ->> 'ycloud_webhook_secret', ''),
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
-    nullif(p_business ->> 'meta_verify_token', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    nullif(p_business ->> 'retell_agent_id', ''),
     coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     v_lodging_enabled,

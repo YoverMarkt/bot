@@ -1,11 +1,17 @@
 import type { ProcessMessageInput } from './bot-conversation'
+import {
+  normalizeChannelIdentifier,
+  type WhatsAppChannelAddress,
+} from '../types/channels'
 
 type EntryBusiness = ProcessMessageInput['business'] & Record<string, unknown>
 type TimerHandle = ReturnType<typeof setTimeout>
 
 interface EntryDatabase {
   getBusinessBySlug(slug?: string | null): Promise<EntryBusiness | null>
-  getBusinessByPhone(phone?: string | null): Promise<EntryBusiness | null>
+  getBusinessByChannel(
+    address: WhatsAppChannelAddress,
+  ): Promise<EntryBusiness | null>
 }
 
 interface EntryConversation {
@@ -72,14 +78,21 @@ export interface BotEntryOptions {
   channel?: string
   slug?: string | null
   inboundId?: string | null
+  businessId?: string | null
+  channelAddress?: WhatsAppChannelAddress
   ctx?: TelegramContext
 }
 
 interface BufferedMessage {
   texts: string[]
+  from: string
   timer?: TimerHandle
   businessPhone?: string | null
   options?: BotEntryOptions
+  waiters: Array<{
+    resolve(): void
+    reject(error: unknown): void
+  }>
 }
 
 export interface BotEntryDependencies {
@@ -110,6 +123,34 @@ function createBotEntry(dependencies: BotEntryDependencies) {
   ))
   const clearTimer = dependencies.clearTimer || (timer => clearTimeout(timer))
   const messageBuffers = new Map<string, BufferedMessage>()
+  const activeRuns = new Set<Promise<void>>()
+
+  async function resolveWhatsAppBusiness(
+    options: BotEntryOptions,
+  ): Promise<EntryBusiness | null> {
+    if (options.businessId) {
+      if (!options.channelAddress) return null
+      const business = await database.getBusinessByChannel(options.channelAddress)
+      return business?.id === options.businessId ? business : null
+    }
+    if (!options.channelAddress) return null
+    return database.getBusinessByChannel(options.channelAddress)
+  }
+
+  function bufferChannelKey(
+    businessPhone: string | null | undefined,
+    options: BotEntryOptions,
+  ): string {
+    if (options.channel === 'telegram') return `telegram:${options.slug || ''}`
+    if (options.businessId) return `business:${options.businessId}`
+    const address = options.channelAddress
+    if (!address) return `whatsapp:unresolved:${businessPhone || ''}`
+    const canonical = normalizeChannelIdentifier(
+      address.identifierType,
+      address.identifier,
+    )
+    return `whatsapp:${address.provider}:${address.identifierType}:${canonical || ''}`
+  }
 
   async function processMessage(
     business: EntryBusiness,
@@ -140,7 +181,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     if (options.channel === 'telegram') {
       const business = await database.getBusinessBySlug(options.slug)
       if (!business) return options.ctx?.reply('❌ Negocio no encontrado')
-      logger.log(`\n📩 [TG:${options.slug}] de ${from}: "${text}"`)
+      logger.log(`\n📩 [TG:${options.slug}] mensaje recibido (${text.length} caracteres)`)
       const context = options.ctx
       if (!context) return undefined
       return processMessage(
@@ -175,10 +216,16 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       )
     }
 
-    logger.log(`\n📩 [WA:${businessPhone}] de ${from}: "${text}"`)
-    const business = await database.getBusinessByPhone(businessPhone)
+    const route = options.channelAddress
+    logger.log(
+      `\n📩 [WA:${route?.provider || 'sin proveedor'}] mensaje recibido (${text.length} caracteres)`,
+    )
+    const business = await resolveWhatsAppBusiness(options)
     if (!business) {
-      logger.log('⚠️  Negocio no encontrado:', businessPhone)
+      logger.log('⚠️  Negocio o contexto de canal no encontrado')
+      if (options.businessId) {
+        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
+      }
       return undefined
     }
     return processMessage(
@@ -192,28 +239,62 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     )
   }
 
-  async function handleMessage(
+  function executeBufferedMessage(
+    key: string,
+    buffer: BufferedMessage,
+  ): Promise<void> {
+    if (messageBuffers.get(key) === buffer) messageBuffers.delete(key)
+    buffer.timer = undefined
+    const combined = buffer.texts.join('\n').trim()
+    const execution = runMessage(
+      buffer.from,
+      combined,
+      buffer.businessPhone,
+      buffer.options,
+    ).then(() => {
+      for (const waiter of buffer.waiters) waiter.resolve()
+    }).catch((error: unknown) => {
+      logger.error('❌ handleMessage:', error instanceof Error ? error.message : error)
+      for (const waiter of buffer.waiters) waiter.reject(error)
+    })
+    activeRuns.add(execution)
+    void execution.finally(() => activeRuns.delete(execution))
+    return execution
+  }
+
+  function handleMessage(
     from: string,
     text: string,
     businessPhone?: string | null,
     options: BotEntryOptions = {},
   ): Promise<void> {
-    const key = `${options.slug || businessPhone || ''}::${from}`
-    const buffer = messageBuffers.get(key) || { texts: [] }
+    const key = `${bufferChannelKey(businessPhone, options)}::${from}`
+    const buffer = messageBuffers.get(key) || { texts: [], from, waiters: [] }
+    const completion = new Promise<void>((resolve, reject) => {
+      buffer.waiters.push({ resolve, reject })
+    })
     buffer.texts.push(text)
+    buffer.from = from
     buffer.businessPhone = businessPhone
     buffer.options = options
     if (buffer.timer) clearTimer(buffer.timer)
     buffer.timer = setTimer(() => {
-      messageBuffers.delete(key)
-      const combined = buffer.texts.join('\n').trim()
-      void runMessage(
-        from, combined, buffer.businessPhone, buffer.options,
-      ).catch(error => logger.error(
-        '❌ handleMessage:', error instanceof Error ? error.message : error,
-      ))
+      void executeBufferedMessage(key, buffer)
     }, debounceMs)
     messageBuffers.set(key, buffer)
+    return completion
+  }
+
+  async function drainPendingMessages(): Promise<void> {
+    while (messageBuffers.size) {
+      const pending = [...messageBuffers.entries()]
+      for (const [key, buffer] of pending) {
+        if (buffer.timer) clearTimer(buffer.timer)
+        void executeBufferedMessage(key, buffer)
+      }
+      await Promise.all(activeRuns)
+    }
+    await Promise.all(activeRuns)
   }
 
   async function handleImage(
@@ -231,7 +312,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       logger.error('❌ visión:', error instanceof Error ? error.message : error)
     }
     const wasIdentified = !/NO_IDENTIFICADO/i.test(identified)
-    logger.log(`🖼️  imagen de ${from}: ${wasIdentified ? identified : 'no identificado'}`)
+    logger.log(`🖼️  imagen procesada: ${wasIdentified ? 'identificada' : 'no identificada'}`)
     const query = imageQuery(identified)
 
     if (options.channel === 'telegram') {
@@ -265,9 +346,12 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       )
     }
 
-    const business = await database.getBusinessByPhone(businessPhone)
+    const business = await resolveWhatsAppBusiness(options)
     if (!business) {
-      logger.log('⚠️  Negocio no encontrado:', businessPhone)
+      logger.log('⚠️  Negocio o contexto de canal no encontrado')
+      if (options.businessId) {
+        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
+      }
       return undefined
     }
     return processMessage(
@@ -288,6 +372,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
   ) => whatsapp.sendText(business, to, text)
 
   return {
+    drainPendingMessages,
     handleImage,
     handleMessage,
     processMessage,
@@ -308,6 +393,7 @@ const entry = createBotEntry({ database, conversation, ai, whatsapp, media })
 
 export const handleImage = entry.handleImage
 export const handleMessage = entry.handleMessage
+export const drainPendingMessages = entry.drainPendingMessages
 export const processMessage = entry.processMessage
 export const sendWhatsAppMessage = entry.sendWhatsAppMessage
 export const buildPrompt = prompt.buildPrompt

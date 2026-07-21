@@ -6,17 +6,15 @@
 -- (start_time/end_time) que YA fue reemplazado por
 -- booking_date/booking_time/duration_minutes. No lo ejecutes.
 -- ============================================================
--- (Histórico) MIGRACIÓN: Integraciones YCloud, Telegram, Retell, Cal.com
+-- (Histórico) MIGRACIÓN: Integraciones YCloud, Telegram y Cal.com
 
 -- Nuevas columnas en businesses
 alter table businesses add column if not exists ycloud_api_key    text;
 alter table businesses add column if not exists ycloud_number     text;
-alter table businesses add column if not exists kapso_api_key     text;
 alter table businesses add column if not exists telegram_bot_token text;
 alter table businesses add column if not exists calcom_link       text;
-alter table businesses add column if not exists retell_agent_id   text;
 
--- Cambiar proveedor por defecto de 'kapso' a 'ycloud'
+-- Establecer YCloud como proveedor predeterminado
 alter table businesses alter column whatsapp_provider set default 'ycloud';
 
 -- Tabla de reservas (Cal.com + manual)

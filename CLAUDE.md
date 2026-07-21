@@ -32,7 +32,7 @@ Guía obligatoria para trabajar en este proyecto sin romper la arquitectura ni e
 - **Supabase (PostgreSQL)** vía `@supabase/supabase-js` ^2.43, con **pgvector** (RAG)
 - **Auth:** `jsonwebtoken` ^9 (JWT) + `bcryptjs` ^2.4
 - **IA (multi-proveedor):** `openai` ^6.45 (OpenAI + compatible Groq), `@anthropic-ai/sdk` ^0.24 (Claude), Gemini (API nativo vía `axios`), Groq (vía SDK OpenAI con baseURL)
-- **WhatsApp:** YCloud (principal), Meta Graph API, Kapso — vía `axios`
+- **WhatsApp:** YCloud (principal) y Meta Graph API — vía `axios`
 - **Telegram:** `telegraf` ^4.16
 - **HTTP:** `axios` ^1.7 · **Rate limit:** `express-rate-limit` ^8.5 · **CORS:** `cors`
 - **Túnel local:** `cloudflared` (solo desarrollo; no forma parte del deploy)
@@ -75,18 +75,20 @@ bot/
 │   ├── src/services/ai.ts      # Chat multi-proveedor, visión, audio y embeddings tipados
 │   ├── src/services/prompt.ts  # Catálogo, políticas, variables y reglas técnicas del prompt
 │   ├── src/services/media.ts   # Data URLs y descarga binaria con timeout
+│   ├── src/services/channel-resolution.ts # Resolución coherente de aliases exactos por proveedor
 │   ├── src/services/bot-tags.ts # Parser puro de reservas, pedidos, handoff y media
 │   ├── src/services/bot-actions.ts # Acciones tipadas y multi-tenant de reservas, sesiones y pedidos
 │   ├── src/services/bot-media.ts # Selección estricta y envío tipado de media por negocio
+│   ├── src/services/bot-menu.ts # Menú guiado de bienvenida por capacidades (hoy solo simulador)
+│   ├── src/services/bot-menu-flow.ts # Modo menú estilo banco: máquina de estados sin IA (hoy solo simulador)
 │   ├── src/services/bot-conversation.ts # Flujo central tipado, desde sesión hasta respuesta
 │   ├── src/services/bot-entry.ts # Debounce, resolución de negocio y adaptadores WA/TG tipados
 │   ├── src/services/money.ts   # Resolución estricta, centavos, totales y resumen oficial
 │   ├── src/services/lodging.ts # Contratos y normalización del núcleo de hospedaje
 │   ├── src/services/tunnel.ts # Estado, arranque y cierre tipados del túnel local
 │   ├── src/integrations/ycloud.ts # Envío WhatsApp + typing indicator tipados
-│   ├── src/integrations/whatsapp.ts # Selección segura Meta/Kapso/YCloud por negocio
+│   ├── src/integrations/whatsapp.ts # Selección segura Meta/YCloud por negocio
 │   ├── src/integrations/telegram.ts # Comandos, voz, fotos, webhook/polling y sesión por slug
-│   ├── src/integrations/retell.ts # Custom LLM, firmas HMAC y eventos de llamadas tipados
 │   ├── src/integrations/cloudinary.ts # Media aislada por negocio
 │   ├── src/middleware/async.ts  # Propagación tipada de errores async de Express
 │   ├── src/middleware/auth.ts   # JWT, roles y permisos tipados
@@ -95,7 +97,7 @@ bot/
 │   ├── src/routes/reports.routes.ts # Reportes y dashboard aislados por JWT
 │   ├── src/routes/sales.routes.ts # Ventas manuales y cotizaciones tipadas
 │   ├── src/routes/sessions.routes.ts # Conversaciones, modo manual y etiquetas aislados
-│   ├── src/routes/webhooks.routes.ts # Entradas Meta/YCloud/Kapso firmadas, limitadas y deduplicadas
+│   ├── src/routes/webhooks.routes.ts # Entradas Meta/YCloud firmadas, limitadas y deduplicadas
 │   ├── src/routes/admin-billing.routes.ts # Facturación del SaaS protegida para superadmin
 │   ├── src/routes/admin-clients.routes.ts # Clientes y onboarding del superadmin, con errores verificados
 │   ├── src/routes/admin-providers.routes.ts # Verificación segura de canales externos
@@ -112,6 +114,7 @@ bot/
 │   ├── src/routes/products.routes.ts # Composición TypeScript del catálogo
 │   ├── src/routes/lodging.routes.ts # Hospedaje aislado por JWT, capacidad y permiso
 │   ├── src/types/express.d.ts   # Claims compartidos de autenticación Express
+│   ├── src/types/channels.ts    # Provider, tipo y normalización exacta de identificadores
 │   ├── schema.sql             # Esquema consolidado y ACTUALIZADO (referencia única — ver sección 4)
 │   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
 │   ├── migration-atomicidad-onboarding.sql # Negocio, dueño, políticas y cuotas transaccionales
@@ -120,6 +123,10 @@ bot/
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
+│   ├── migration-eliminar-kapso-retell.sql # Limpieza destructiva previa a identificadores
+│   ├── migration-identificadores-canales.sql # IDs/teléfonos exactos, únicos y sincronizados
+│   ├── migration-firmas-webhooks.sql # Endpoint ID + signing secret oficial de YCloud
+│   ├── migration-inbox-webhooks.sql # Cola durable, leases, reintentos y dead-letter de webhooks
 │   ├── migration-integraciones.sql    # Migración inicial (OBSOLETA — solo historial, no ejecutar)
 │   └── .env                   # Credenciales (NUNCA a git)
 ├── apps/
@@ -188,14 +195,15 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Las keys de IA se leen siempre mediante `server/src/services/ai.ts` y `settings.get('...')`** (panel > .env).
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
-- **Etiquetas del bot** en formato `##NOMBRE##` o `##NOMBRE:datos##`; `server/src/services/bot-entry.ts` agrupa mensajes y resuelve el negocio por número WhatsApp o slug Telegram, `server/src/services/bot-conversation.ts` coordina el flujo, `server/src/services/bot-tags.ts` detecta y limpia sin acceder a la base, `server/src/services/bot-actions.ts` ejecuta acciones y `server/src/services/bot-media.ts` envía media del catálogo. Todos reciben exclusivamente el `business.id` resuelto por el adaptador de canal. Las vigentes incluyen `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##PEDIDO:producto x cantidad; ...##`, `##STAY_QUOTE:ENTRADA|SALIDA|HABITACIONES|ADULTOS|NIÑOS##`, `##STAY_REQUEST:TIPO_HABITACION|NOMBRE##` y `##HANDOFF##`. Las acciones BOOK, PEDIDO, STAY_QUOTE, STAY_REQUEST y HANDOFF son mutuamente excluyentes; una respuesta conflictiva falla cerrado. `##VENTA##`/`##PEDIDO##` simples se conservan solo como respaldo legacy y `##BOOKING##` se limpia por compatibilidad.
+- **Etiquetas del bot** en formato `##NOMBRE##` o `##NOMBRE:datos##`; `server/src/services/bot-entry.ts` agrupa mensajes y resuelve WhatsApp mediante `(provider, identifier_type, canonical_identifier)` o Telegram por slug. Nunca compara sufijos de teléfono. `server/src/services/bot-conversation.ts` coordina el flujo, `server/src/services/bot-tags.ts` detecta y limpia sin acceder a la base, `server/src/services/bot-actions.ts` ejecuta acciones y `server/src/services/bot-media.ts` envía media del catálogo. Todos reciben exclusivamente el `business.id` resuelto por el adaptador de canal. Las vigentes incluyen `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##PEDIDO:producto x cantidad; ...##`, `##STAY_QUOTE:ENTRADA|SALIDA|HABITACIONES|ADULTOS|NIÑOS##`, `##STAY_REQUEST:TIPO_HABITACION|NOMBRE##` y `##HANDOFF##`. Las acciones BOOK, PEDIDO, STAY_QUOTE, STAY_REQUEST y HANDOFF son mutuamente excluyentes; una respuesta conflictiva falla cerrado. `##VENTA##`/`##PEDIDO##` simples se conservan solo como respaldo legacy y `##BOOKING##` se limpia por compatibilidad.
+- **Modo MENÚ estilo banco (`server/src/services/bot-menu-flow.ts`) — decisión 2026-07-19:** el CÓDIGO conduce TODA la conversación con opciones generadas de los datos reales (categorías = tags del catálogo, habitaciones = inventario de hospedaje, citas = agenda real); la IA NO participa en ningún mensaje. Navegación con máquina de estados por conversación (memoria 30 min): bienvenida → menú principal por capacidades → pedido con carrito y total en centavos del catálogo → cotización de estadía (fechas escritas por el huésped en un mensaje CON MES obligatorio — "del 24 al 26 de julio" — parseadas por código con calendario Ecuador y confirmadas con día de semana real; habitaciones/personas por botones; la cotiza la RPC oficial) → cita con día/hora de la agenda → "💬 Hablar con el equipo" deriva. Lo que no coincide con el menú repite las opciones (fallo cerrado, jamás inventa); el cliente también puede responder el NÚMERO de la opción. Conectado al simulador (`mode:'menu'`, por defecto en la UI con toggle "Modo menú / Modo IA"); WhatsApp/Telegram siguen con IA hasta decidir llevarlo al canal real (botones interactivos post-Meta; Telegram ya tiene `inlineKeyboard`).
+- **Menú guiado híbrido (`server/src/services/bot-menu.ts`):** en modo IA del simulador, los saludos ("hola", "menú") se responden con un menú de bienvenida generado por código según capacidades, y el resto sigue con IA. Quedó como respaldo del modo menú puro.
 - **Reportes del dueño (`server/src/services/reports.ts`):** NO son etiquetas ni function-calling. Son una **capa de intención server-side** que corre en `bot-conversation.ts` ANTES del flujo de atención: si quien escribe es el `owner_phone` del negocio y el texto pide un reporte, se responde el reporte (texto plano WhatsApp) y se corta; si no es el dueño o no es un reporte, devuelve `handled:false` y sigue el flujo normal. Sus cálculos, dashboard y alertas están tipados y todos reciben el `business_id` ya resuelto. Las ventas se registran a mano desde el panel del cliente (tablas `sales` + `sale_items`).
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
-- **Retell (`server/src/integrations/retell.ts`):** `/api/retell/call-events` exige HMAC SHA-256 con ventana anti-replay de cinco minutos cuando existe `retell_api_key`; `/api/retell/llm` exige `RETELL_LLM_SECRET` en producción. Ambos conservan el rate limit de `src/index.ts`. El negocio se resuelve exclusivamente desde `call.to_number`; catálogo, políticas y mensajes usan ese `business.id`. La integración consume directamente `ai.ts` y nunca registra keys ni el payload completo.
 - **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
 - **Capacidades por negocio:** `businesses.takes_bookings`, `businesses.takes_orders` y `businesses.lodging_enabled` son fuentes de verdad independientes; el tipo solo recomienda valores al crear y nunca sobrescribe decisiones manuales ni negocios existentes. Pizzería/retail recomienda pedidos; servicios de cita recomiendan agenda e informativo; hotel/hostal/alojamiento recomienda hospedaje sin reutilizar citas ni pedidos. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
-- **Capacidad de citas y hospedaje:** la agenda simple usa `create_booking_if_available` para conservar capacidad única; el cobro se coordina fuera de la plataforma. Hospedaje es un dominio separado con inventario agregado por tipo y noche: `quote_lodging_options` calcula opciones y `create_lodging_request_if_available` crea el hold bajo lock por negocio; un trigger impide superar `total_units` incluso ante escrituras concurrentes. Los holds vencidos dejan de ocupar cupo y las reservas externas/mantenimiento se registran como bloqueos independientes.
-- **Arranque seguro:** `server/src/config/environment.ts` valida antes de abrir el puerto las credenciales críticas, fortaleza mínima de secretos, `BASE_URL` y el secreto Telegram cuando aplica. Producción falla cerrado en vez de publicar un healthcheck verde con configuración incompleta.
+- **Capacidad de citas y hospedaje:** la agenda simple usa `create_booking_if_available` para conservar capacidad única; el cobro se coordina fuera de la plataforma. Hospedaje es un dominio separado con inventario agregado por tipo y noche: `quote_lodging_options` calcula opciones y `create_lodging_request_if_available` crea el hold bajo lock por negocio; un trigger impide superar `total_units` incluso ante escrituras concurrentes. Los holds vencidos dejan de ocupar cupo y las reservas externas/mantenimiento se registran como bloqueos independientes. Las fechas relativas del huésped («el lunes», «mañana», «pasado mañana») las resuelve SIEMPRE el servidor con el calendario de Ecuador leyendo TODOS los mensajes del huésped (gana el más reciente que hable de fechas, y una fecha explícita respeta al modelo); además el prompt inyecta la fecha de hoy (todos los negocios) y el calendario real de los próximos 7 días (hospedaje) para que el modelo nunca haga aritmética de fechas.
+- **Arranque seguro:** `server/src/config/environment.ts` valida antes de abrir el puerto las credenciales críticas, `BASE_URL`, el fallback opcional `YCLOUD_WEBHOOK_SECRET` si existe y el secreto Telegram cuando aplica. El signing secret de YCloud se guarda preferentemente por negocio y valida la cabecera `YCloud-Signature`. Producción falla cerrado en vez de publicar un healthcheck verde con configuración incompleta.
 - **Contraseñas nuevas:** superadmin, dueños y empleados usan un mínimo de 12 caracteres; siempre se almacenan con bcrypt y nunca se devuelven en APIs.
 - **Sesiones cliente vigentes:** `activeClientGuard` revalida cada 15 segundos como máximo que usuario y negocio sigan activos, y reemplaza rol/permisos del JWT por los valores actuales de la base. Eliminar un usuario, suspender un negocio o revocar permisos falla cerrado sin esperar siete días.
 - **Túnel local (`server/src/services/tunnel.ts`):** solo se usa en desarrollo; inicia y detiene `cloudflared` mediante dependencias inyectables, expone únicamente estado serializable (`url`, `active`, `provider`, `startedAt`) y nunca filtra el proceso hijo en respuestas administrativas. En producción la URL pública sale de `BASE_URL`.

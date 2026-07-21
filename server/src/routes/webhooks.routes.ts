@@ -1,19 +1,31 @@
-import axios from 'axios'
 import crypto from 'node:crypto'
 import type { Request } from 'express'
 import rateLimit from 'express-rate-limit'
 import { createRouter } from '../middleware/async'
+import { resolveBusinessChannel } from '../services/channel-resolution'
+import {
+  inboundConversationKey,
+  type InboundWebhookPayload,
+} from '../services/inbound-webhook'
+import { verifyYCloudSignature } from '../services/webhook-signatures'
+import type {
+  ChannelAddress,
+  ChannelIdentifierType,
+  WhatsAppChannelAddress,
+  WhatsAppProvider,
+} from '../types/channels'
 
 interface BusinessRecord {
-  id?: string
-  meta_token?: string | null
-  kapso_api_key?: string | null
+  id: string
+  ycloud_webhook_endpoint_id?: string | null
+  ycloud_webhook_secret?: string | null
 }
 
 interface MediaReference {
   id?: string
   link?: string
   url?: string
+  mime_type?: string
 }
 
 interface InboundMessage {
@@ -24,8 +36,8 @@ interface InboundMessage {
   type?: string
   timestamp?: string | number
   sendTime?: string | number
-  body?: string
   text?: { body?: string }
+  button?: { text?: string; payload?: string }
   interactive?: {
     button_reply?: { title?: string }
     list_reply?: { title?: string }
@@ -33,7 +45,6 @@ interface InboundMessage {
   audio?: MediaReference
   voice?: MediaReference
   image?: MediaReference
-  media?: MediaReference
   whatsappApiAccountPhoneNumber?: string
 }
 
@@ -43,59 +54,35 @@ interface MetaWebhookBody {
     changes?: Array<{
       value?: {
         messages?: InboundMessage[]
-        metadata?: { display_phone_number?: string }
+        metadata?: {
+          display_phone_number?: string
+          phone_number_id?: string
+        }
       }
     }>
   }>
 }
 
-interface KapsoWebhookBody {
-  id?: string
-  from?: string
-  to?: string
-  number_id?: string
-  text?: string
-  message?: InboundMessage
-  messages?: InboundMessage[]
-  audio?: MediaReference
-}
-
 interface YCloudWebhookBody {
+  id?: string
   type?: string
+  createTime?: string
   whatsappInboundMessage?: InboundMessage
 }
 
-interface MessageOptions {
-  inboundId?: string
-}
-
 const db = require('../db') as {
-  getBusinessByPhone(phone: string | undefined): Promise<BusinessRecord | null>
-  claimWebhookEvent(
+  getBusinessByChannel(address: ChannelAddress): Promise<BusinessRecord | null>
+  enqueueWebhookEvent(
     businessId: string,
     provider: WebhookProvider,
     messageId: string,
+    conversationKey: string,
+    payload: InboundWebhookPayload,
   ): Promise<{ data?: boolean | null; error?: { message?: string } | null }>
-}
-const bot = require('../services/bot-entry') as {
-  handleMessage(
-    from: string | undefined,
-    message: string | undefined,
-    businessPhone: string | undefined,
-    options?: MessageOptions,
-  ): Promise<unknown>
-  transcribeAudio(data: Buffer, filename: string): Promise<string | null | undefined>
-  handleImage(
-    from: string,
-    data: Buffer,
-    mimeType: string,
-    businessPhone: string,
-    options: MessageOptions,
-  ): Promise<unknown>
 }
 
 const router = createRouter()
-type WebhookProvider = 'meta' | 'ycloud' | 'kapso'
+type WebhookProvider = WhatsAppProvider
 
 const isProduction = () => process.env.NODE_ENV === 'production' || Boolean(process.env.BASE_URL)
 
@@ -115,20 +102,6 @@ function verifyMetaSignature(req: Request): boolean {
   }
 }
 
-function verifyWebhookSecret(req: Request): boolean {
-  const secret = process.env.WEBHOOK_SECRET
-  if (!secret) return !isProduction()
-  const received = req.query.secret || req.headers['x-webhook-secret']
-  try {
-    return Boolean(received) && crypto.timingSafeEqual(
-      Buffer.from(String(received)),
-      Buffer.from(secret),
-    )
-  } catch {
-    return false
-  }
-}
-
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -137,52 +110,142 @@ const webhookLimiter = rateLimit({
   message: { error: 'rate limit' },
 })
 
-const seenInbound = new Map<string, number>()
-const SEEN_TTL = 15 * 60 * 1000
-
-function isDuplicateInMemory(cacheKey: string): boolean {
-  const now = Date.now()
-  if (seenInbound.size > 5000) {
-    for (const [key, timestamp] of seenInbound) {
-      if (now - timestamp > SEEN_TTL) seenInbound.delete(key)
-    }
-  }
-  return seenInbound.has(cacheKey)
-}
-
-function rememberInbound(cacheKey: string): void {
-  seenInbound.set(cacheKey, Date.now())
-}
-
-async function claimInbound(
+function channelAddresses(
   provider: WebhookProvider,
-  messageId: string | undefined,
-  businessPhone: string | undefined,
-): Promise<boolean> {
-  if (!messageId || !businessPhone) return true
-  const business = await db.getBusinessByPhone(businessPhone)
-  if (!business?.id) return true
-  const cacheKey = `${business.id}:${provider}:${messageId}`
-  if (isDuplicateInMemory(cacheKey)) return false
-
-  const { data, error } = await db.claimWebhookEvent(business.id, provider, messageId)
-  if (error) throw new Error(error.message || 'No se pudo reclamar el webhook')
-  rememberInbound(cacheKey)
-  if (!data) return false
-  return true
+  identifiers: Array<{
+    identifierType: ChannelIdentifierType
+    value?: string | null
+  }>,
+): WhatsAppChannelAddress[] {
+  return identifiers.flatMap(({ identifierType, value }) => {
+    if (typeof value !== 'string' || !value.trim()) return []
+    return [{ provider, identifierType, identifier: value }]
+  })
 }
 
-function isStaleInbound(timestamp?: string | number): boolean {
-  if (!timestamp) return false
-  const parsed = typeof timestamp === 'number'
-    ? (timestamp > 1e12 ? timestamp : timestamp * 1000)
-    : Date.parse(timestamp)
-  if (Number.isNaN(parsed)) return false
-  return Date.now() - parsed > 10 * 60 * 1000
+function firstIdentifier(
+  ...values: Array<string | null | undefined>
+): string | undefined {
+  const value = values.find(
+    candidate => typeof candidate === 'string' && Boolean(candidate.trim()),
+  )
+  return typeof value === 'string' ? value : undefined
+}
+
+interface ResolvedInbound {
+  business: BusinessRecord
+  address: WhatsAppChannelAddress
+}
+
+async function enqueueResolvedInbound(
+  provider: WebhookProvider,
+  messageId: string,
+  resolved: ResolvedInbound,
+  payload: InboundWebhookPayload,
+): Promise<'accepted' | 'duplicate'> {
+  const { data, error } = await db.enqueueWebhookEvent(
+    resolved.business.id,
+    provider,
+    messageId,
+    inboundConversationKey(payload),
+    payload,
+  )
+  if (error) throw new Error(error.message || 'No se pudo persistir el webhook')
+  return data ? 'accepted' : 'duplicate'
 }
 
 function loggedError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function metaMessages(body: MetaWebhookBody): Array<{
+  message: InboundMessage
+  addresses: WhatsAppChannelAddress[]
+}> {
+  return (body.entry || []).flatMap(entry => (
+    (entry.changes || []).flatMap((change) => {
+      const value = change.value
+      if (!value) return []
+      const metaPhoneId = firstIdentifier(value.metadata?.phone_number_id)
+      const addresses = channelAddresses('meta', metaPhoneId
+        ? [{ identifierType: 'account_id', value: metaPhoneId }]
+        : [{
+            identifierType: 'phone',
+            value: value.metadata?.display_phone_number,
+          }])
+      return (value.messages || []).map(message => ({ message, addresses }))
+    })
+  ))
+}
+
+function metaContent(message: InboundMessage): InboundWebhookPayload['content'] | null {
+  const text = message.type === 'text'
+    ? message.text?.body
+    : message.type === 'button'
+      ? message.button?.text
+      : message.type === 'interactive'
+        ? message.interactive?.button_reply?.title
+          || message.interactive?.list_reply?.title
+        : undefined
+  if (text?.trim()) return { kind: 'text', text }
+  if ((message.type === 'audio' || message.type === 'voice') && message.audio?.id) {
+    return {
+      kind: 'audio',
+      media: { id: message.audio.id, mimeType: message.audio.mime_type },
+    }
+  }
+  if (message.type === 'image' && message.image?.id) {
+    return {
+      kind: 'image',
+      media: { id: message.image.id, mimeType: message.image.mime_type },
+    }
+  }
+  return null
+}
+
+function headerText(value: string | string[] | undefined): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function ycloudContent(message: InboundMessage): InboundWebhookPayload['content'] | null {
+  let text: string | undefined
+  if (message.type === 'text') text = message.text?.body
+  if (message.type === 'button') text = message.button?.text
+  if (message.type === 'interactive') {
+    text = message.interactive?.button_reply?.title
+      || message.interactive?.list_reply?.title
+  }
+  if (text?.trim()) return { kind: 'text', text }
+  const kind = message.type === 'image'
+    ? 'image'
+    : message.type === 'audio' || message.type === 'voice'
+      ? 'audio'
+      : null
+  const reference = kind === 'image' ? message.image : message.audio || message.voice
+  const url = reference?.link || reference?.url
+  if (!kind || !url) return null
+  return {
+    kind,
+    media: { url, mimeType: reference?.mime_type },
+  }
+}
+
+function durablePayload(
+  provider: WebhookProvider,
+  message: InboundMessage,
+  inboundId: string,
+  resolved: ResolvedInbound,
+  content: InboundWebhookPayload['content'],
+): InboundWebhookPayload {
+  return {
+    version: 1,
+    provider,
+    businessId: resolved.business.id,
+    from: message.from || '',
+    inboundId,
+    channelAddress: resolved.address,
+    content,
+  }
 }
 
 router.get('/webhook', (req, res) => {
@@ -206,183 +269,130 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
   }
   const body = req.body as MetaWebhookBody
   if (body.object !== 'whatsapp_business_account') return res.sendStatus(200)
-  const value = body.entry?.[0]?.changes?.[0]?.value
-  if (!value?.messages?.length) return res.sendStatus(200)
-  const message = value.messages[0]
-  const from = message.from
-  const businessPhone = value.metadata?.display_phone_number
-  if (isStaleInbound(message.timestamp)) {
-    console.log(`🔁 [Meta] mensaje viejo ignorado (${message.id || 'sin id'})`)
-    return res.sendStatus(200)
-  }
-  try {
-    if (!await claimInbound('meta', message.id, businessPhone)) {
-      console.log(`🔁 [Meta] mensaje duplicado ignorado (${message.id || 'sin id'})`)
-      return res.sendStatus(200)
-    }
-  } catch (error) {
-    console.error('❌ Webhook Meta deduplicación:', loggedError(error))
-    return res.sendStatus(503)
-  }
+  const deliveries = metaMessages(body).filter(({ message, addresses }) => (
+    Boolean(message.id && message.from && addresses.length && metaContent(message))
+  ))
+  if (!deliveries.length) return res.sendStatus(200)
 
-  res.sendStatus(200)
   try {
-    if (message.type === 'text') {
-      await bot.handleMessage(from, message.text?.body, businessPhone)
-    }
-    if (message.type === 'interactive') {
-      const reply = message.interactive?.button_reply?.title
-        || message.interactive?.list_reply?.title
-        || ''
-      if (reply) await bot.handleMessage(from, reply, businessPhone)
-    }
-    if ((message.type === 'audio' || message.type === 'voice') && message.audio?.id) {
-      const business = await db.getBusinessByPhone(businessPhone)
-      if (business?.meta_token) {
-        const media = await axios.get<{ url: string }>(
-          `https://graph.facebook.com/v19.0/${message.audio.id}`,
-          {
-            headers: { Authorization: `Bearer ${business.meta_token}` },
-            timeout: 15000,
-          },
-        )
-        const audioResponse = await axios.get<ArrayBuffer>(media.data.url, {
-          headers: { Authorization: `Bearer ${business.meta_token}` },
-          responseType: 'arraybuffer',
-          timeout: 20000,
-        })
-        const text = await bot.transcribeAudio(Buffer.from(audioResponse.data), 'audio.ogg')
-        if (text) {
-          console.log(`🎙️  [Meta] audio transcrito: "${text}"`)
-          await bot.handleMessage(from, text, businessPhone)
-        }
+    for (const { message, addresses } of deliveries) {
+      const resolved = await resolveBusinessChannel(db, addresses)
+      if (!resolved) {
+        console.warn('⚠️  [Meta] canal sin negocio exacto — mensaje ignorado')
+        continue
+      }
+      const messageId = message.id
+      const content = metaContent(message)
+      if (!messageId || !content) continue
+      const payload = durablePayload('meta', message, messageId, resolved, content)
+      const status = await enqueueResolvedInbound('meta', messageId, resolved, payload)
+      if (status === 'duplicate') {
+        console.log(`🔁 [Meta] mensaje duplicado ignorado (${messageId})`)
       }
     }
   } catch (error) {
-    console.error('❌ Webhook Meta:', loggedError(error))
-  }
-})
-
-router.post('/webhook/kapso', webhookLimiter, async (req, res) => {
-  if (!verifyWebhookSecret(req)) return res.sendStatus(401)
-  const body = req.body as KapsoWebhookBody
-  const message = body.message || body.messages?.[0]
-  const messageId = message?.id || body.id
-  const from = message?.from || body.from
-  const text = message?.text?.body || message?.body || body.text
-  const businessPhone = body.to || body.number_id
-  try {
-    if (!await claimInbound('kapso', messageId, businessPhone)) {
-      console.log(`🔁 [Kapso] mensaje duplicado ignorado (${messageId})`)
-      return res.sendStatus(200)
-    }
-  } catch (error) {
-    console.error('❌ Webhook Kapso deduplicación:', loggedError(error))
+    console.error('❌ Webhook Meta persistencia:', loggedError(error))
     return res.sendStatus(503)
   }
 
-  res.sendStatus(200)
-  try {
-    if (from && text && businessPhone) {
-      console.log(`📡 Kapso: de ${from} → ${businessPhone}: "${text}"`)
-      await bot.handleMessage(from, text, businessPhone)
-    } else if (from && businessPhone) {
-      const audioUrl = message?.audio?.url
-        || message?.audio?.link
-        || message?.media?.url
-        || body.audio?.url
-      if (audioUrl) {
-        const business = await db.getBusinessByPhone(businessPhone)
-        const apiKey = business?.kapso_api_key || process.env.KAPSO_API_KEY
-        const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
-        const audioResponse = await axios.get<ArrayBuffer>(audioUrl, {
-          headers,
-          responseType: 'arraybuffer',
-          timeout: 20000,
-        })
-        const transcript = await bot.transcribeAudio(
-          Buffer.from(audioResponse.data),
-          'audio.ogg',
-        )
-        if (transcript) {
-          console.log(`🎙️  [Kapso] audio transcrito: "${transcript}"`)
-          await bot.handleMessage(from, transcript, businessPhone)
-        }
-      }
-    }
-  } catch (error) {
-    console.error('❌ Webhook Kapso:', loggedError(error))
-  }
+  return res.sendStatus(200)
 })
 
 router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
-  if (!verifyWebhookSecret(req)) return res.sendStatus(401)
   const body = req.body as YCloudWebhookBody
   console.log(`📨 [YCloud webhook] recibido — type: ${body.type || '(sin type)'}`)
   if (body.type !== 'whatsapp.inbound_message.received') return res.sendStatus(200)
   const message = body.whatsappInboundMessage
   if (!message) return res.sendStatus(200)
   const from = message.from
-  const businessPhone = message.whatsappApiAccountPhoneNumber || message.to
+  const addresses = channelAddresses('ycloud', [{
+    identifierType: 'phone',
+    value: firstIdentifier(
+      message.to,
+      message.whatsappApiAccountPhoneNumber,
+    ),
+  }])
   const inboundId = message.id || message.wamid
-  if (!from || !businessPhone) return res.sendStatus(200)
-  if (isStaleInbound(message.sendTime)) {
-    console.log(`🔁 [YCloud] mensaje viejo ignorado (${inboundId || 'sin id'})`)
+  const eventId = body.id || inboundId
+  if (!from || !inboundId || !eventId || !addresses.length) {
+    console.warn('⚠️  [YCloud] payload inbound incompleto — mensaje ignorado')
     return res.sendStatus(200)
   }
+
+  let resolved: {
+    business: BusinessRecord
+    address: WhatsAppChannelAddress
+  } | null
   try {
-    if (!await claimInbound('ycloud', inboundId, businessPhone)) {
-      console.log(`🔁 [YCloud] mensaje duplicado ignorado (${inboundId || 'sin id'})`)
-      return res.sendStatus(200)
-    }
+    resolved = await resolveBusinessChannel(db, addresses)
   } catch (error) {
-    console.error('❌ Webhook YCloud deduplicación:', loggedError(error))
+    console.error('❌ Webhook YCloud resolución:', loggedError(error))
     return res.sendStatus(503)
   }
+  if (!resolved) {
+    console.warn('⚠️  [YCloud] canal sin negocio exacto — mensaje ignorado')
+    return res.sendStatus(200)
+  }
 
-  res.sendStatus(200)
+  const endpointId = headerText(req.headers['x-webhook-endpoint-id'])
+  const configuredEndpointId = resolved.business.ycloud_webhook_endpoint_id?.trim()
+    || process.env.YCLOUD_WEBHOOK_ENDPOINT_ID?.trim()
+  if (!configuredEndpointId && isProduction()) {
+    console.error('❌ Webhook YCloud: falta configurar el Endpoint ID')
+    return res.sendStatus(503)
+  }
+  if (configuredEndpointId && endpointId !== configuredEndpointId) {
+    console.warn('⚠️  [YCloud] Endpoint ID inválido — rechazado')
+    return res.sendStatus(401)
+  }
+  const signingSecret = resolved.business.ycloud_webhook_secret?.trim()
+    || process.env.YCLOUD_WEBHOOK_SECRET?.trim()
+  if (!signingSecret) {
+    if (isProduction()) {
+      console.error('❌ Webhook YCloud: falta el signing secret oficial')
+      return res.sendStatus(503)
+    }
+  } else if (!verifyYCloudSignature(
+    req.rawBody,
+    req.headers['ycloud-signature'],
+    signingSecret,
+  )) {
+    console.warn('⚠️  [YCloud] firma inválida o fuera de tiempo — rechazado')
+    return res.sendStatus(401)
+  }
+
+  const content = ycloudContent(message)
+  if (!content) {
+    console.log(`ℹ️  [YCloud] tipo inbound no soportado ignorado (${message.type || 'sin tipo'})`)
+    return res.sendStatus(200)
+  }
+
   try {
-    if (message.type === 'text' && message.text?.body) {
-      console.log(`📡 YCloud: de ${from} → ${businessPhone}: "${message.text.body}"`)
-      await bot.handleMessage(from, message.text.body, businessPhone, { inboundId })
-    } else if (message.type === 'audio' || message.type === 'voice') {
-      const audioUrl = message.audio?.link || message.audio?.url || message.voice?.link
-      if (audioUrl) {
-        const audioResponse = await axios.get<ArrayBuffer>(audioUrl, {
-          responseType: 'arraybuffer',
-          timeout: 20000,
-        })
-        const transcript = await bot.transcribeAudio(
-          Buffer.from(audioResponse.data),
-          'audio.ogg',
-        )
-        if (transcript) {
-          console.log(`🎙️  [YCloud] audio transcrito: "${transcript}"`)
-          await bot.handleMessage(from, transcript, businessPhone, { inboundId })
-        }
-      }
-    } else if (message.type === 'image') {
-      const imageUrl = message.image?.link || message.image?.url
-      if (imageUrl) {
-        const imageResponse = await axios.get<ArrayBuffer>(imageUrl, {
-          responseType: 'arraybuffer',
-          timeout: 20000,
-        })
-        const contentType = imageResponse.headers['content-type']
-        const mime = typeof contentType === 'string' ? contentType : 'image/jpeg'
-        console.log(`🖼️  [YCloud] imagen recibida de ${from}`)
-        await bot.handleImage(
-          from,
-          Buffer.from(imageResponse.data),
-          mime,
-          businessPhone,
-          { inboundId },
-        )
-      }
+    const durableResolved = {
+      business: resolved.business,
+      address: resolved.address,
+    }
+    const payload = durablePayload(
+      'ycloud',
+      message,
+      inboundId,
+      durableResolved,
+      content,
+    )
+    const status = await enqueueResolvedInbound(
+      'ycloud',
+      eventId,
+      durableResolved,
+      payload,
+    )
+    if (status === 'duplicate') {
+      console.log(`🔁 [YCloud] evento duplicado ignorado (${eventId})`)
     }
   } catch (error) {
-    console.error('❌ Webhook YCloud:', loggedError(error))
+    console.error('❌ Webhook YCloud persistencia:', loggedError(error))
+    return res.sendStatus(503)
   }
+  return res.sendStatus(200)
 })
 
 export = router

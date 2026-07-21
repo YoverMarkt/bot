@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 const BASE_URL = 'https://api.ycloud.com/v2'
+const OUTBOUND_TIMEOUT_MS = 15_000
 
 function headers(apiKey: string) {
   return { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
@@ -17,7 +18,7 @@ export async function sendText(
     to,
     type: 'text',
     text: { body: text },
-  }, { headers: headers(apiKey) })
+  }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
 }
 
 export async function sendImage(
@@ -32,7 +33,7 @@ export async function sendImage(
     to,
     type: 'image',
     image: { link: imageUrl, caption },
-  }, { headers: headers(apiKey) })
+  }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
 }
 
 export async function sendVideo(
@@ -47,7 +48,7 @@ export async function sendVideo(
     to,
     type: 'video',
     video: { link: videoUrl, caption },
-  }, { headers: headers(apiKey) })
+  }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
 }
 
 // Marca el mensaje entrante como leído (✓✓ azul) y muestra "escribiendo…".

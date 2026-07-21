@@ -1,3 +1,5 @@
+import { validMetaGraphApiVersion } from './meta-graph'
+
 export interface EnvironmentStatus {
   production: boolean
   missing: string[]
@@ -13,7 +15,7 @@ const ALWAYS_REQUIRED = [
   'ADMIN_PASSWORD',
 ] as const
 
-const PRODUCTION_REQUIRED = ['BASE_URL', 'WEBHOOK_SECRET'] as const
+const PRODUCTION_REQUIRED = ['BASE_URL'] as const
 
 const hasValue = (env: NodeJS.ProcessEnv, key: string): boolean => (
   typeof env[key] === 'string' && Boolean(env[key]?.trim())
@@ -58,9 +60,17 @@ export function inspectEnvironment(env: NodeJS.ProcessEnv): EnvironmentStatus {
   if (production && hasValue(env, 'BASE_URL') && !validBaseUrl(env.BASE_URL)) {
     invalid.push('BASE_URL (HTTPS obligatorio salvo localhost)')
   }
-  if (production && hasValue(env, 'WEBHOOK_SECRET')
-    && (env.WEBHOOK_SECRET?.length || 0) < 32) {
-    invalid.push('WEBHOOK_SECRET (mínimo 32 caracteres)')
+  if (hasValue(env, 'META_GRAPH_API_VERSION')
+    && !validMetaGraphApiVersion(env.META_GRAPH_API_VERSION)) {
+    invalid.push('META_GRAPH_API_VERSION (formato vN.0)')
+  }
+  if (production && hasValue(env, 'YCLOUD_WEBHOOK_SECRET')
+    && (env.YCLOUD_WEBHOOK_SECRET?.length || 0) < 32) {
+    invalid.push('YCLOUD_WEBHOOK_SECRET (mínimo 32 caracteres)')
+  }
+  if (production && hasValue(env, 'YCLOUD_WEBHOOK_ENDPOINT_ID')
+    !== hasValue(env, 'YCLOUD_WEBHOOK_SECRET')) {
+    invalid.push('YCLOUD_WEBHOOK_ENDPOINT_ID y YCLOUD_WEBHOOK_SECRET deben configurarse juntos')
   }
   if (production && hasValue(env, 'TELEGRAM_WEBHOOK_SECRET')
     && (env.TELEGRAM_WEBHOOK_SECRET?.length || 0) < 32) {
@@ -69,7 +79,7 @@ export function inspectEnvironment(env: NodeJS.ProcessEnv): EnvironmentStatus {
 
   const recommended = production
     ? ['META_VERIFY_TOKEN', 'META_APP_SECRET']
-    : ['BASE_URL', 'WEBHOOK_SECRET']
+    : ['BASE_URL']
 
   return {
     production,

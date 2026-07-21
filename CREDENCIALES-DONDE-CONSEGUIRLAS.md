@@ -37,26 +37,26 @@ YCloud es partner oficial de Meta — más fácil que Meta directo.
 5. Configura el Webhook URL en YCloud → Webhook → Add Endpoint:
    - URL: `https://TU_DOMINIO/webhook/ycloud`
    - Eventos: `whatsapp.inbound_message.received`
+   - Copia el **Endpoint ID** y el **signing secret** del endpoint
+   - YCloud incluirá `X-Webhook-Endpoint-ID` y `YCloud-Signature` en cada solicitud
 
 **Por negocio en el admin (campos YCloud):**
 - `YCloud API Key`: la misma key o una por workspace
 - `YCloud Phone Number`: el número de WhatsApp del negocio (ej: `+593991234567`)
+- `YCloud Webhook Endpoint ID`: el ID exacto del endpoint creado para ese negocio
+- `YCloud Webhook Signing Secret`: el secreto oficial del endpoint; se guarda protegido y no forma parte de la URL
+
+`YCLOUD_WEBHOOK_ENDPOINT_ID` y `YCLOUD_WEBHOOK_SECRET` pueden configurarse juntos en el servidor como fallback global opcional, pero los valores propios por negocio tienen prioridad y evitan compartir una credencial entre clientes.
 
 ---
 
-## KAPSO_API_KEY (si el cliente usa Kapso)
-1. kapso.ai → tu proyecto → API Keys
-2. Copia la key (empieza con `kap_live_...`)
-3. En el admin, selecciona proveedor **Kapso** y llena el **Number ID** del negocio
-4. Webhook URL para Kapso: `/webhook/kapso`
-
----
-
-## META_TOKEN, META_PHONE_ID, META_VERIFY_TOKEN (opcional)
+## META_TOKEN y META_PHONE_ID (por negocio)
 Solo si algún cliente tiene Meta Business directo.
 
 1. developers.facebook.com → tu App → WhatsApp → API Setup
 2. Webhook URL: `https://TU_DOMINIO/webhook`
+
+`META_VERIFY_TOKEN` y `META_APP_SECRET` son globales para la aplicación Meta y se configuran en el entorno del servidor, no dentro de cada negocio. El backend usa Graph API `v25.0`; `META_GRAPH_API_VERSION` permite cambiarla de forma explícita cuando Meta publique y se valide una migración posterior.
 
 ---
 
@@ -73,20 +73,6 @@ Solo si algún cliente tiene Meta Business directo.
 - Envía `/start` para ver la lista de negocios
 - Envía `/start [slug-del-negocio]` para conectarte a uno específico
 - El bot responde con la misma IA que WhatsApp
-
----
-
-## RETELL_API_KEY (voz con IA)
-Retell permite que tu bot responda **llamadas telefónicas** con voz.
-
-1. Crea cuenta en **retell.ai**
-2. Dashboard → API Keys → copia la key
-3. Crea un agente:
-   - Nombre: BotPanel
-   - LLM: **Custom LLM**
-   - LLM URL: `https://TU_DOMINIO/api/retell/llm`
-4. Compra un número de teléfono en Retell y asígnalo al agente
-5. El sistema ya procesa las llamadas con Claude usando los datos de tu negocio
 
 ---
 
@@ -113,7 +99,6 @@ Barbería, peluquería, spa, clínica, consultorio, odontología, psicología, g
 | YCloud    | `/webhook/ycloud` |
 | Meta      | `/webhook` |
 | Telegram  | Automático (polling) |
-| Retell AI | `/api/retell/llm` |
 
 ---
 
@@ -127,11 +112,11 @@ ADMIN_EMAIL=genesis@mibotpanel.com
 ADMIN_PASSWORD=MiPassword2024Seguro
 ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxx
 YCLOUD_API_KEY=yc_live_xxxxxxxxxxxxxxxxx
-YCLOUD_VERIFY_TOKEN=botpanel_ycloud_2024
+YCLOUD_WEBHOOK_ENDPOINT_ID=
+YCLOUD_WEBHOOK_SECRET=                 # fallback global opcional
 META_TOKEN=
 META_PHONE_ID=
 META_VERIFY_TOKEN=
 TELEGRAM_BOT_TOKEN=1234567890:ABCxxxxxxxxxxxxxxxxx
-RETELL_API_KEY=
 PORT=3000
 ```

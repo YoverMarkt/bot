@@ -26,9 +26,9 @@ import {
 const EMPTY = {
   name: '', type: 'negocio', whatsapp_number: '', owner_phone: '',
   whatsapp_provider: 'ycloud', ycloud_api_key: '',
-  meta_token: '', meta_phone_id: '', meta_verify_token: '',
-  kapso_api_key: '', kapso_number_id: '', kapso_verify_token: '',
-  telegram_bot_token: '', retell_agent_id: '',
+  ycloud_webhook_endpoint_id: '', ycloud_webhook_secret: '',
+  meta_token: '', meta_phone_id: '',
+  telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
   lodging: 'no',
   plan: 'basic', monthly_rate: '', plan_expires_at: '',
@@ -56,10 +56,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         whatsapp_number: c.whatsapp_number ?? '', owner_phone: c.owner_phone ?? '',
         whatsapp_provider: c.whatsapp_provider ?? 'ycloud',
         ycloud_api_key: '',
-        meta_token: '', meta_phone_id: c.meta_phone_id ?? '', meta_verify_token: '',
-        kapso_api_key: '', kapso_number_id: c.kapso_number_id ?? '', kapso_verify_token: '',
+        ycloud_webhook_endpoint_id: c.ycloud_webhook_endpoint_id ?? '',
+        ycloud_webhook_secret: '',
+        meta_token: '', meta_phone_id: c.meta_phone_id ?? '',
         telegram_bot_token: '',
-        retell_agent_id: c.retell_agent_id ?? '',
         ai_provider: c.ai_provider ?? '',
         mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
@@ -111,21 +111,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   }
 
   const requestVerification = () => {
-    const typedSecret = f.whatsapp_provider === 'ycloud' ? f.ycloud_api_key
-      : f.whatsapp_provider === 'meta' ? f.meta_token
-      : f.whatsapp_provider === 'kapso' ? f.kapso_api_key
-      : f.telegram_bot_token
-    if (id && !typedSecret) return adm.verifyClient(id)
-    return adm.verifyProvider({
-      provider: f.whatsapp_provider,
+    const payload: adm.ProviderVerificationPayload = {
+      provider: f.whatsapp_provider as adm.ProviderVerificationPayload['provider'],
       ycloud_api_key: f.ycloud_api_key || undefined,
-      ycloud_number: f.whatsapp_number || undefined,
+      ycloud_number: f.whatsapp_number.trim(),
       meta_token: f.meta_token || undefined,
-      meta_phone_id: f.meta_phone_id || undefined,
-      kapso_api_key: f.kapso_api_key || undefined,
-      kapso_number_id: f.kapso_number_id || undefined,
+      meta_phone_id: f.meta_phone_id.trim(),
       telegram_bot_token: f.telegram_bot_token || undefined,
-    })
+    }
+    return id ? adm.verifyClient(id, payload) : adm.verifyProvider(payload)
   }
 
   async function verify() {
@@ -148,9 +142,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       owner_phone: f.owner_phone.trim() || null,
       whatsapp_provider: f.whatsapp_provider as BusinessPayload['whatsapp_provider'],
       ycloud_number: f.whatsapp_number.trim() || null,
+      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || null,
       meta_phone_id: f.meta_phone_id || null,
-      kapso_number_id: f.kapso_number_id || null,
-      retell_agent_id: f.retell_agent_id || null,
       ai_provider: f.ai_provider || null,
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
@@ -161,10 +154,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       notes: f.notes || null,
     }
     if (f.ycloud_api_key.trim()) payload.ycloud_api_key = f.ycloud_api_key.trim()
+    if (f.ycloud_webhook_secret.trim()) {
+      payload.ycloud_webhook_secret = f.ycloud_webhook_secret.trim()
+    }
     if (f.meta_token.trim()) payload.meta_token = f.meta_token.trim()
-    if (f.meta_verify_token.trim()) payload.meta_verify_token = f.meta_verify_token.trim()
-    if (f.kapso_api_key.trim()) payload.kapso_api_key = f.kapso_api_key.trim()
-    if (f.kapso_verify_token.trim()) payload.kapso_verify_token = f.kapso_verify_token.trim()
     if (f.telegram_bot_token.trim()) payload.telegram_bot_token = f.telegram_bot_token.trim()
     if (f.client_email) payload.client_email = f.client_email.trim()
     if (f.client_password) payload.client_password = f.client_password
@@ -324,31 +317,25 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <SelectContent>
                     <SelectItem value="ycloud">YCloud</SelectItem>
                     <SelectItem value="meta">Meta (oficial)</SelectItem>
-                    <SelectItem value="kapso">Kapso</SelectItem>
                     <SelectItem value="telegram">Solo Telegram</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {f.whatsapp_provider === 'ycloud' && (
-                <div><Label htmlFor="client-ycloud-api-key">YCloud API Key {savedCredentials.ycloud_api_key && '— guardada'}</Label><Input id="client-ycloud-api-key" type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} placeholder={savedCredentials.ycloud_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div><Label htmlFor="client-ycloud-api-key">YCloud API Key {savedCredentials.ycloud_api_key && '— guardada'}</Label><Input id="client-ycloud-api-key" type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} placeholder={savedCredentials.ycloud_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
+                  <div><Label htmlFor="client-ycloud-endpoint-id">Webhook Endpoint ID</Label><Input id="client-ycloud-endpoint-id" value={f.ycloud_webhook_endpoint_id} onChange={set('ycloud_webhook_endpoint_id')} placeholder="Cópialo desde Developers → Webhooks" /></div>
+                  <div><Label htmlFor="client-ycloud-signing-secret">Webhook Signing Secret {savedCredentials.ycloud_webhook_secret && '— guardado'}</Label><Input id="client-ycloud-signing-secret" type="password" value={f.ycloud_webhook_secret} onChange={set('ycloud_webhook_secret')} placeholder={savedCredentials.ycloud_webhook_secret ? 'Escribe solo para reemplazarlo' : 'whsec_…'} /></div>
+                </div>
               )}
               {f.whatsapp_provider === 'meta' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div><Label htmlFor="client-meta-token">Meta Token {savedCredentials.meta_token && '— guardado'}</Label><Input id="client-meta-token" type="password" value={f.meta_token} onChange={set('meta_token')} placeholder={savedCredentials.meta_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
                   <div><Label htmlFor="client-meta-phone-id">Phone ID</Label><Input id="client-meta-phone-id" value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
-                  <div><Label htmlFor="client-meta-verify-token">Verify Token {savedCredentials.meta_verify_token && '— guardado'}</Label><Input id="client-meta-verify-token" type="password" value={f.meta_verify_token} onChange={set('meta_verify_token')} placeholder={savedCredentials.meta_verify_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
                 </div>
               )}
-              {f.whatsapp_provider === 'kapso' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div><Label htmlFor="client-kapso-api-key">Kapso API Key {savedCredentials.kapso_api_key && '— guardada'}</Label><Input id="client-kapso-api-key" type="password" value={f.kapso_api_key} onChange={set('kapso_api_key')} placeholder={savedCredentials.kapso_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
-                  <div><Label htmlFor="client-kapso-number-id">Number ID</Label><Input id="client-kapso-number-id" value={f.kapso_number_id} onChange={set('kapso_number_id')} /></div>
-                  <div><Label htmlFor="client-kapso-verify-token">Verify Token {savedCredentials.kapso_verify_token && '— guardado'}</Label><Input id="client-kapso-verify-token" type="password" value={f.kapso_verify_token} onChange={set('kapso_verify_token')} placeholder={savedCredentials.kapso_verify_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-3 mt-3 sm:grid-cols-2">
+              <div className="mt-3">
                 <div><Label htmlFor="client-telegram-token">Telegram Bot Token {savedCredentials.telegram_bot_token ? '— guardado' : '(opcional)'}</Label><Input id="client-telegram-token" type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} placeholder={savedCredentials.telegram_bot_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                <div><Label htmlFor="client-retell-agent-id">Retell Agent ID (voz telefónica, opcional)</Label><Input id="client-retell-agent-id" value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <Button variant="outline" size="sm" type="button" onClick={verify} >

@@ -1,22 +1,28 @@
 import axios from 'axios'
 import type { RequestHandler } from 'express'
+import { metaGraphUrl } from '../config/meta-graph'
 import { createRouter } from '../middleware/async'
+import { normalizeChannelIdentifier } from '../types/channels'
 
-type Provider = 'ycloud' | 'meta' | 'kapso' | 'telegram' | 'retell' | string
+const ALLOWED_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
+type Provider = (typeof ALLOWED_PROVIDERS)[number]
 
 interface VerifyProviderPayload {
-  provider?: Provider
+  provider: Provider
   ycloud_api_key?: string
   ycloud_number?: string
   meta_token?: string
   meta_phone_id?: string
-  kapso_api_key?: string
   telegram_bot_token?: string
-  retell_api_key?: string
 }
 
-interface BusinessRecord extends VerifyProviderPayload {
-  whatsapp_provider?: Provider
+interface BusinessRecord {
+  whatsapp_provider?: unknown
+  ycloud_api_key?: unknown
+  ycloud_number?: unknown
+  meta_token?: unknown
+  meta_phone_id?: unknown
+  telegram_bot_token?: unknown
 }
 
 interface YCloudNumber {
@@ -39,19 +45,93 @@ const auth = require('../middleware/auth') as {
 
 const router = createRouter()
 
+function providerFrom(value: unknown): Provider | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return ALLOWED_PROVIDERS.find(provider => provider === normalized) || null
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function directVerificationPayload(body: Record<string, unknown>): VerifyProviderPayload | null {
+  const provider = providerFrom(body.provider)
+  if (!provider) return null
+  return {
+    provider,
+    ycloud_api_key: optionalText(body.ycloud_api_key),
+    ycloud_number: optionalText(body.ycloud_number),
+    meta_token: optionalText(body.meta_token),
+    meta_phone_id: optionalText(body.meta_phone_id),
+    telegram_bot_token: optionalText(body.telegram_bot_token),
+  }
+}
+
+function mergedSecret(
+  body: Record<string, unknown>,
+  business: BusinessRecord,
+  field: 'ycloud_api_key' | 'meta_token' | 'telegram_bot_token',
+): string | undefined {
+  const submitted = optionalText(body[field])
+  // Los inputs secretos vacíos significan “conservar el guardado”. El panel
+  // nunca necesita recibir el valor existente para verificar un cambio.
+  return submitted?.trim() ? submitted : optionalText(business[field])
+}
+
+function mergedText(
+  body: Record<string, unknown>,
+  business: BusinessRecord,
+  field: 'ycloud_number' | 'meta_phone_id',
+): string | undefined {
+  return Object.prototype.hasOwnProperty.call(body, field)
+    ? optionalText(body[field])
+    : optionalText(business[field])
+}
+
+function prospectiveVerificationPayload(
+  body: Record<string, unknown>,
+  business: BusinessRecord,
+): VerifyProviderPayload | null {
+  const provider = providerFrom(
+    Object.prototype.hasOwnProperty.call(body, 'provider')
+      ? body.provider
+      : business.whatsapp_provider || 'ycloud',
+  )
+  if (!provider) return null
+  return {
+    provider,
+    ycloud_api_key: mergedSecret(body, business, 'ycloud_api_key'),
+    ycloud_number: mergedText(body, business, 'ycloud_number'),
+    meta_token: mergedSecret(body, business, 'meta_token'),
+    meta_phone_id: mergedText(body, business, 'meta_phone_id'),
+    telegram_bot_token: mergedSecret(body, business, 'telegram_bot_token'),
+  }
+}
+
 function redactSecrets(text: string, payload: VerifyProviderPayload): string {
   let safe = text
   const secrets = [
     payload.ycloud_api_key,
     payload.meta_token,
-    payload.kapso_api_key,
     payload.telegram_bot_token,
-    payload.retell_api_key,
   ]
   for (const secret of secrets) {
-    if (secret && secret.length >= 4) safe = safe.split(secret).join('••••••')
+    if (typeof secret === 'string' && secret.length > 0) {
+      for (const representation of new Set([secret, encodeURIComponent(secret)])) {
+        safe = safe.split(representation).join('••••••')
+      }
+    }
   }
   return safe.slice(0, 300)
+}
+
+function verificationResult(
+  ok: boolean,
+  info: string,
+  payload: VerifyProviderPayload,
+): VerificationResult {
+  return { ok, info: redactSecrets(info, payload) }
 }
 
 function providerError(error: unknown, payload: VerifyProviderPayload): VerificationResult {
@@ -76,7 +156,8 @@ function providerError(error: unknown, payload: VerifyProviderPayload): Verifica
       ? ' (endpoint no encontrado)'
       : ''
   const prefix = status ? `[HTTP ${status}] ` : ''
-  return { ok: false, info: redactSecrets(`${prefix}${message}${hint}`, payload) }
+  const safeMessage = typeof message === 'string' ? message : 'Error de conexión'
+  return { ok: false, info: redactSecrets(`${prefix}${safeMessage}${hint}`, payload) }
 }
 
 async function verifyProvider(payload: VerifyProviderPayload): Promise<VerificationResult> {
@@ -87,12 +168,13 @@ async function verifyProvider(payload: VerifyProviderPayload): Promise<Verificat
     meta_token: metaToken,
     meta_phone_id: metaPhoneId,
     telegram_bot_token: telegramBotToken,
-    retell_api_key: retellApiKey,
   } = payload
+  const effectiveSecrets = { ...payload }
   try {
     if (provider === 'ycloud') {
       const key = (ycloudApiKey || process.env.YCLOUD_API_KEY || '').trim()
-      if (!key) return { ok: false, info: 'Falta YCloud API Key' }
+      if (!key) return verificationResult(false, 'Falta YCloud API Key', effectiveSecrets)
+      effectiveSecrets.ycloud_api_key = key
       const response = await axios.get<{ items?: YCloudNumber[]; data?: YCloudNumber[] }>(
         'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
         {
@@ -102,113 +184,105 @@ async function verifyProvider(payload: VerifyProviderPayload): Promise<Verificat
         },
       )
       const numbers = response.data.items || response.data.data || []
-      const digits = (ycloudNumber || '').replace(/\D/g, '')
-      const tail = digits.slice(-9)
-      const found = tail.length >= 8
+      const canonical = normalizeChannelIdentifier('phone', ycloudNumber)
+      const found = canonical
         ? numbers.find(number => (
-            (number.phoneNumber || '').replace(/\D/g, '').slice(-9) === tail
+            normalizeChannelIdentifier('phone', number.phoneNumber) === canonical
           ))
         : undefined
       if (!numbers.length) {
-        return {
-          ok: false,
-          info: 'API Key válida pero NO hay números de WhatsApp en tu cuenta YCloud. Vincula tu número primero.',
-        }
+        return verificationResult(
+          false,
+          'API Key válida pero NO hay números de WhatsApp en tu cuenta YCloud. Vincula tu número primero.',
+          effectiveSecrets,
+        )
       }
-      if (digits && !found) {
+      if (ycloudNumber && !canonical) {
+        return verificationResult(
+          false,
+          'El número YCloud debe usar formato internacional E.164 con 8 a 15 dígitos.',
+          effectiveSecrets,
+        )
+      }
+      if (canonical && !found) {
         const available = numbers.map(number => number.phoneNumber).join(', ')
-        return {
-          ok: false,
-          info: `⚠️ La API Key sirve, pero el número ${ycloudNumber} NO coincide con los de tu cuenta. Números disponibles: ${available}`,
-        }
+        return verificationResult(
+          false,
+          `⚠️ La API Key sirve, pero el número ${ycloudNumber} NO coincide con los de tu cuenta. Números disponibles: ${available}`,
+          effectiveSecrets,
+        )
       }
-      return {
-        ok: true,
-        info: found
+      return verificationResult(
+        true,
+        found
           ? `✅ Conectado: ${found.phoneNumber} — ${found.displayName || found.verifiedName || 'activo'}`
           : `✅ API Key válida — ${numbers.length} número(s) en tu cuenta. Ingresa el número para confirmar cuál usar.`,
-      }
+        effectiveSecrets,
+      )
     }
 
     if (provider === 'meta') {
       if (!metaPhoneId || !metaToken) {
-        return { ok: false, info: 'Faltan Meta Token y Phone ID' }
+        return verificationResult(false, 'Faltan Meta Token y Phone ID', effectiveSecrets)
       }
       const response = await axios.get<{
         verified_name?: string
         display_phone_number?: string
         code_verification_status?: string
-      }>(`https://graph.facebook.com/v19.0/${metaPhoneId}`, {
+      }>(metaGraphUrl(metaPhoneId), {
         params: {
           access_token: metaToken,
           fields: 'display_phone_number,verified_name,code_verification_status',
         },
         timeout: 8000,
       })
-      return {
-        ok: true,
-        info: `${response.data.verified_name} — ${response.data.display_phone_number} (${response.data.code_verification_status || 'verificado'})`,
-      }
-    }
-
-    if (provider === 'kapso') {
-      const key = payload.kapso_api_key || process.env.KAPSO_API_KEY
-      if (!key) return { ok: false, info: 'Falta la Kapso API Key' }
-      const response = await axios.get<{ name?: string }>('https://api.kapso.ai/v1/account', {
-        headers: { Authorization: `Bearer ${key}` },
-        timeout: 8000,
-      })
-      return { ok: true, info: `Kapso conectado — ${response.data.name || 'cuenta activa'}` }
+      return verificationResult(
+        true,
+        `${response.data.verified_name} — ${response.data.display_phone_number} (${response.data.code_verification_status || 'verificado'})`,
+        effectiveSecrets,
+      )
     }
 
     if (provider === 'telegram') {
       const token = telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
-      if (!token) return { ok: false, info: 'Falta el Bot Token de Telegram' }
+      if (!token) {
+        return verificationResult(false, 'Falta el Bot Token de Telegram', effectiveSecrets)
+      }
+      effectiveSecrets.telegram_bot_token = token
       const response = await axios.get<{
         ok?: boolean
         result?: { username?: string; first_name?: string }
       }>(`https://api.telegram.org/bot${token}/getMe`, { timeout: 8000 })
       if (!response.data.ok) throw new Error('Token inválido')
       const telegramBot = response.data.result || {}
-      return {
-        ok: true,
-        info: `@${telegramBot.username} (${telegramBot.first_name}) — bot activo`,
-      }
+      return verificationResult(
+        true,
+        `@${telegramBot.username} (${telegramBot.first_name}) — bot activo`,
+        effectiveSecrets,
+      )
     }
 
-    if (provider === 'retell') {
-      const key = retellApiKey || process.env.RETELL_API_KEY
-      if (!key) return { ok: false, info: 'Falta RETELL_API_KEY en el .env del servidor' }
-      const response = await axios.get<unknown>('https://api.retell.ai/list-agents', {
-        headers: { Authorization: `Bearer ${key}` },
-        timeout: 8000,
-      })
-      const agents = Array.isArray(response.data) ? response.data : []
-      return { ok: true, info: `${agents.length} agente(s) configurado(s) en Retell` }
-    }
-
-    return { ok: false, info: `Proveedor "${provider}" no reconocido` }
+    return verificationResult(false, 'Proveedor no reconocido', effectiveSecrets)
   } catch (error) {
-    return providerError(error, payload)
+    return providerError(error, effectiveSecrets)
   }
 }
 
 router.post('/api/admin/verify-provider', auth.authAdmin, async (req, res) => {
-  res.json(await verifyProvider(req.body as VerifyProviderPayload))
+  const payload = directVerificationPayload(req.body as Record<string, unknown>)
+  if (!payload) return res.json({ ok: false, info: 'Proveedor no reconocido' })
+  res.json(await verifyProvider(payload))
 })
 
 router.post('/api/admin/clients/:id/verify', auth.authAdmin, async (req, res) => {
   const business = await db.getBusinessById(req.params.id)
   if (!business) return res.status(404).json({ error: 'No encontrado' })
-  res.json(await verifyProvider({
-    provider: business.whatsapp_provider || 'ycloud',
-    ycloud_api_key: business.ycloud_api_key,
-    ycloud_number: business.ycloud_number,
-    meta_token: business.meta_token,
-    meta_phone_id: business.meta_phone_id,
-    kapso_api_key: business.kapso_api_key,
-    telegram_bot_token: business.telegram_bot_token,
-  }))
+  const payload = prospectiveVerificationPayload(
+    req.body as Record<string, unknown>,
+    business,
+  )
+  if (!payload) return res.json({ ok: false, info: 'Proveedor no reconocido' })
+  res.json(await verifyProvider(payload))
 })
 
 export = router

@@ -92,7 +92,6 @@ interface ConversationPrompt {
     business: ConversationBusiness,
     products: ConversationProduct[],
     policies: unknown,
-    voiceMode: boolean,
     userQuery: string,
     availableSlots: unknown,
     schedule: unknown[],
@@ -139,6 +138,7 @@ interface ConversationActions {
     phone: string
     originalText: string
     quote: ParsedBotOutput['lodgingQuote']
+    guestMessages?: string[]
     send(message: string): Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
@@ -381,7 +381,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     try {
       reply = await ai.callAI(
         prompt.buildPrompt(
-          business, products, policies, false, text, availableSlots,
+          business, products, policies, text, availableSlots,
           outsideHours && business.lodging_enabled === true ? [] : businessSchedule,
           preFiltered, postSale,
         ),
@@ -428,12 +428,22 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
+    // Lo que ESCRIBIÓ el huésped (historial + mensaje actual): de aquí salen
+    // las fechas relativas de las cotizaciones y el nombre de las solicitudes
+    const guestMessages = [
+      ...history
+        .filter(message => message.role === 'user')
+        .map(message => String(message.content ?? '')),
+      text,
+    ]
+
     if (parsedOutput.lodgingQuote) {
       await actions.processLodgingQuote({
         business,
         phone,
         originalText: text,
         quote: parsedOutput.lodgingQuote,
+        guestMessages,
         send,
         sendImage,
         sendVideo,
@@ -447,13 +457,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         phone,
         originalText: text,
         request: parsedOutput.lodgingRequest,
-        // El nombre de la solicitud debe existir en lo que ESCRIBIÓ el huésped
-        guestMessages: [
-          ...history
-            .filter(message => message.role === 'user')
-            .map(message => String(message.content ?? '')),
-          text,
-        ],
+        guestMessages,
         send,
       })
       return
