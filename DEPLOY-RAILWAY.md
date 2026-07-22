@@ -52,7 +52,15 @@ En Railway → pestaña **Variables**. Copiar los valores desde tu `server/.env`
 
 ### WhatsApp por YCloud (recomendado para tu caso)
 - [ ] `YCLOUD_WEBHOOK_ENDPOINT_ID` y `YCLOUD_WEBHOOK_SECRET` — van **juntos** (o ambos o ninguno). El secreto mínimo 32 caracteres. Validan la firma del webhook de YCloud.
-      > Nota: el signing secret de YCloud se guarda preferentemente **por negocio** desde el panel admin; estas variables son el fallback global.
+- [ ] `YCLOUD_API_KEY` — **opcional**. Es solo el *fallback global* para enviar mensajes.
+
+> 🔑 **Importante — las credenciales por negocio NO son variables de entorno.**
+> La API key de YCloud se resuelve así: `negocio.ycloud_api_key` (base de datos)
+> y, si está vacía, `YCLOUD_API_KEY` (variable global). Lo mismo con el signing
+> secret del webhook. Como cada negocio guarda su key **en Supabase** desde el
+> panel admin, esas credenciales **viajan solas con la base de datos**: al
+> desplegar en Railway no hay que volver a cargarlas. Solo define
+> `YCLOUD_API_KEY` si quieres una key global para negocios que no tengan la suya.
 
 ### WhatsApp por Meta directo (a futuro, no ahora)
 - [ ] `META_VERIFY_TOKEN` — token que tú inventas para validar el webhook con Meta.
@@ -60,7 +68,11 @@ En Railway → pestaña **Variables**. Copiar los valores desde tu `server/.env`
 - [ ] `META_GRAPH_API_VERSION` — opcional, formato `vNN.0` (ej. `v21.0`).
 
 ### Keys de IA (OpenAI, Anthropic, Groq, Gemini)
-- No son variables de arranque. Se configuran **desde el panel admin → Configuración** después del deploy (se guardan en `server_settings`), o como fallback en `.env`. Recomendado: configurarlas en el panel una vez desplegado.
+- No son variables de arranque. Se leen primero de `server_settings` (base de
+  datos, se configuran **desde el panel admin → Configuración**) y, como
+  fallback, de las variables `OPENAI_API_KEY` y `ANTHROPIC_API_KEY`.
+- Como ya están guardadas en Supabase, **también viajan con la base de datos**;
+  no hace falta recargarlas en Railway.
 
 > ⚠️ El servidor **falla cerrado**: si falta una variable obligatoria o una es
 > inválida (JWT corto, BASE_URL sin HTTPS, etc.), no abre el puerto y lo dice en
