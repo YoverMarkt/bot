@@ -412,6 +412,32 @@ describe('webhooks WhatsApp', () => {
     )
   })
 
+  it('prefiere el id numérico del botón sobre el título, que WhatsApp trunca', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    const body = ycloudPayload('ycloud-event-listid-1', 'ycloud-message-listid-1')
+    body.whatsappInboundMessage.type = 'interactive'
+    delete body.whatsappInboundMessage.text
+    // Enviamos el número de la opción como id; el título llega recortado
+    body.whatsappInboundMessage.interactive = {
+      list_reply: { id: '3', title: 'Habitación Matrimoni…' },
+    }
+
+    const response = await dispatch('post', '/webhook/ycloud', {
+      body,
+      ...signedYCloudRequest(body),
+    })
+
+    expect(response.status).toBe(200)
+    // El menú entiende números, así que el id hace que la selección funcione
+    // aunque el título venga cortado
+    expect(db.enqueueWebhookEvent).toHaveBeenCalledWith(
+      'business-a', 'ycloud', 'ycloud-event-listid-1',
+      'ycloud:business-a:+593999000001',
+      expect.objectContaining({ content: { kind: 'text', text: '3' } }),
+    )
+  })
+
   it('persiste la referencia YCloud y deja la descarga fuera de la petición', async () => {
     process.env.NODE_ENV = 'production'
     delete process.env.BASE_URL

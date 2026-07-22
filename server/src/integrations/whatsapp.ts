@@ -14,6 +14,14 @@ export interface WhatsAppBusiness {
 interface YCloudClient {
   showTyping(apiKey: string, inboundId: string): Promise<void>
   sendText(apiKey: string, from: string, to: string, text: string): Promise<void>
+  sendInteractive(
+    apiKey: string,
+    from: string,
+    to: string,
+    body: string,
+    options: { id: string; title: string; description?: string }[],
+    listButtonText?: string,
+  ): Promise<boolean>
   sendImage(
     apiKey: string,
     from: string,
@@ -188,4 +196,31 @@ async function sendVideo(
   }
 }
 
-export { sendTyping, sendText, sendImage, sendVideo }
+// Menú con botones/listas nativas. Solo YCloud lo soporta hoy; con cualquier
+// otro proveedor devuelve false y quien llama envía el menú como texto
+// numerado, que el motor entiende igual.
+async function sendInteractive(
+  business: WhatsAppBusiness,
+  to: string,
+  body: string,
+  options: { id: string; title: string; description?: string }[],
+  listButtonText?: string,
+): Promise<boolean> {
+  if (providerFor(business) !== 'ycloud') return false
+  try {
+    return await ycloud.sendInteractive(
+      ycloudKeyFor(business),
+      ycloudNumberFor(business),
+      to,
+      body,
+      options,
+      listButtonText,
+    )
+  } catch (error) {
+    // Nunca dejar al cliente sin respuesta: el llamador cae a texto
+    console.error('❌ [ycloud] sendInteractive:', errorDetail(error))
+    return false
+  }
+}
+
+export { sendTyping, sendText, sendImage, sendVideo, sendInteractive }

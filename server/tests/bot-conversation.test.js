@@ -166,6 +166,43 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
+  it('el modo menú manda botones nativos y cae a texto numerado si el canal no puede', async () => {
+    const flujo = {
+      advanceMenuFlow: vi.fn().mockReturnValue({
+        reply: 'Estas son nuestras habitaciones 👇',
+        options: [{ title: 'Matrimonial', description: '$35.00/noche' }, '⬅️ Volver'],
+      }),
+    }
+
+    // Canal con soporte nativo: no se envía el texto numerado
+    const nativo = setup({ menuFlow: flujo })
+    const sendOptions = vi.fn().mockResolvedValue(true)
+    await nativo.conversation.processMessage(input(nativo, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+      sendOptions,
+    }))
+    expect(sendOptions).toHaveBeenCalledWith(
+      'Estas son nuestras habitaciones 👇',
+      [
+        { id: '1', title: 'Matrimonial', description: '$35.00/noche' },
+        { id: '2', title: '⬅️ Volver', description: undefined },
+      ],
+    )
+    expect(nativo.send).not.toHaveBeenCalled()
+
+    // Canal sin soporte (o falla el envío): las opciones van numeradas
+    const texto = setup({ menuFlow: flujo })
+    await texto.conversation.processMessage(input(texto, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+      sendOptions: vi.fn().mockResolvedValue(false),
+    }))
+    expect(texto.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. Matrimonial — $35.00/noche'),
+    )
+  })
+
   it('el modo menú deriva a una persona con la misma ruta que el resto del bot', async () => {
     const current = setup({
       menuFlow: {

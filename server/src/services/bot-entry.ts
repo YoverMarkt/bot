@@ -41,6 +41,12 @@ interface EntryWhatsApp {
     url: string,
     caption?: string,
   ): Promise<void>
+  sendInteractive(
+    business: EntryBusiness,
+    to: string,
+    body: string,
+    options: { id: string; title: string; description?: string }[],
+  ): Promise<boolean>
 }
 
 interface EntryMedia {
@@ -160,6 +166,10 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     sendImage?: (url: string, caption?: string) => Promise<unknown>,
     sendTyping?: () => Promise<unknown>,
     sendVideo?: (url: string, caption?: string) => Promise<unknown>,
+    sendOptions?: (
+      body: string,
+      options: { id: string; title: string; description?: string }[],
+    ) => Promise<boolean>,
   ): Promise<void> {
     return conversation.processMessage({
       business,
@@ -169,6 +179,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       sendImage,
       sendTyping,
       sendVideo,
+      sendOptions,
     })
   }
 
@@ -236,6 +247,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption) => whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
+      (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
     )
   }
 
@@ -362,6 +374,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption) => whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
+      (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
     )
   }
 

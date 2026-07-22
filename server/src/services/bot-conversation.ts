@@ -198,8 +198,15 @@ export interface ProcessMessageInput {
   sendImage?: (url: string, caption?: string) => Promise<unknown>
   sendTyping?: () => Promise<unknown>
   sendVideo?: (url: string, caption?: string) => Promise<unknown>
+  // Menú con botones/listas nativas. Devuelve false si el canal no lo soporta
+  // y entonces las opciones se mandan numeradas como texto.
+  sendOptions?: (
+    body: string,
+    options: { id: string; title: string; description?: string }[],
+  ) => Promise<boolean>
 }
 
+const PROMPT_PICK_OPTION = 'Elige una opción 👇'
 const OFF_HOURS_RENOTIFY = 6 * 60 * 60 * 1000
 const defaultSleep = (milliseconds: number) => new Promise<void>(resolve => {
   setTimeout(resolve, milliseconds)
@@ -276,6 +283,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     send: (message: string) => Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
+    sendOptions?: ProcessMessageInput['sendOptions']
   }): Promise<void> {
     const { business, phone, text, session, send, sendImage } = input
     const [products, roomTypes, availableSlots, lastOrder] = await Promise.all([
@@ -369,8 +377,27 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
     // El texto propio del menú (bienvenida, listas, confirmaciones) va después
     // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
+    // Primero se intentan botones/listas nativas; si el canal no los soporta
+    // (Telegram, Meta) se cae a texto numerado, que el motor entiende igual.
     const message = renderMenuOptions(flow.reply, flow.options)
-    if (message.trim()) {
+    let sentNatively = false
+    if (flow.options.length && input.sendOptions) {
+      const nativeOptions = flow.options.map((option, index) => ({
+        id: String(index + 1),
+        title: typeof option === 'string' ? option : option.title,
+        description: typeof option === 'string' ? undefined : option.description,
+      }))
+      try {
+        sentNatively = await input.sendOptions(
+          flow.reply.trim() || PROMPT_PICK_OPTION,
+          nativeOptions,
+        )
+      } catch { /* el fallback de texto cubre cualquier fallo */ }
+      if (sentNatively) {
+        await database.saveMessage(business.id, phone, 'assistant', message)
+      }
+    }
+    if (!sentNatively && message.trim()) {
       await send(message)
       await database.saveMessage(business.id, phone, 'assistant', message)
     }
@@ -438,7 +465,10 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
     // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
     if (business.chat_mode === 'menu') {
-      await runMenuMode({ business, phone, text, session, send, sendImage, sendVideo })
+      await runMenuMode({
+        business, phone, text, session, send, sendImage, sendVideo,
+        sendOptions: input.sendOptions,
+      })
       return
     }
 

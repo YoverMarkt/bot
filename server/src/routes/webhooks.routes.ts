@@ -39,8 +39,8 @@ interface InboundMessage {
   text?: { body?: string }
   button?: { text?: string; payload?: string }
   interactive?: {
-    button_reply?: { title?: string }
-    list_reply?: { title?: string }
+    button_reply?: { id?: string; title?: string }
+    list_reply?: { id?: string; title?: string }
   }
   audio?: MediaReference
   voice?: MediaReference
@@ -212,8 +212,12 @@ function ycloudContent(message: InboundMessage): InboundWebhookPayload['content'
   if (message.type === 'text') text = message.text?.body
   if (message.type === 'button') text = message.button?.text
   if (message.type === 'interactive') {
-    text = message.interactive?.button_reply?.title
-      || message.interactive?.list_reply?.title
+    const reply = message.interactive?.button_reply || message.interactive?.list_reply
+    // El id que enviamos es el NÚMERO de la opción; el menú ya entiende
+    // números, y así el emparejamiento no depende del título, que WhatsApp
+    // trunca a 20-24 caracteres.
+    const id = String(reply?.id || '').trim()
+    text = /^\d{1,2}$/.test(id) ? id : reply?.title
   }
   if (text?.trim()) return { kind: 'text', text }
   const kind = message.type === 'image'
