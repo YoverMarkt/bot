@@ -161,7 +161,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
       lodging_enabled: f.lodging === 'yes',
-      chat_mode: f.chat_mode,
+      chat_mode: f.chat_mode === 'menu' ? 'menu' : 'ai',
       plan: f.plan,
       monthly_rate: parseFloat(f.monthly_rate) || null,
       plan_expires_at: f.plan_expires_at || null,
