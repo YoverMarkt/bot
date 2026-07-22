@@ -94,6 +94,8 @@ describe('verificación de proveedores del superadmin', () => {
         provider: 'ycloud',
         ycloud_api_key: 'ycloud-test-secret',
         ycloud_number: '593 999 000 001',
+        ycloud_webhook_secret: 'whsec_de_prueba',
+        ycloud_webhook_endpoint_id: '6a41a4f44de0392666e757f4',
       },
     })
 
@@ -108,6 +110,29 @@ describe('verificación de proveedores del superadmin', () => {
         timeout: 10000,
       }),
     )
+  })
+
+  it('avisa que faltan las credenciales del webhook aunque la API Key funcione', async () => {
+    vi.spyOn(axios, 'get').mockResolvedValue({
+      data: { items: [{ phoneNumber: '+593999000001', displayName: 'Negocio Demo' }] },
+    })
+
+    const response = await dispatch('/api/admin/verify-provider', {
+      auth: authorization(),
+      body: {
+        provider: 'ycloud',
+        ycloud_api_key: 'ycloud-test-secret',
+        ycloud_number: '593 999 000 001',
+      },
+    })
+
+    // Sin Signing Secret el webhook se rechaza en producción (503): la
+    // verificación no puede dar "todo bien" solo porque la API Key sirve
+    expect(response.body.ok).toBe(false)
+    expect(response.body.info).toContain('Conectado: +593999000001')
+    expect(response.body.info).toContain('Signing Secret')
+    expect(response.body.info).toContain('Endpoint ID')
+    expect(response.body.info).toContain('no recibirá mensajes')
   })
 
   it('no valida un número local solo porque comparte los últimos nueve dígitos', async () => {
@@ -162,6 +187,8 @@ describe('verificación de proveedores del superadmin', () => {
       meta_phone_id: 'phone-meta',
       ycloud_api_key: 'ycloud-stored-secret',
       ycloud_number: '+593999000001',
+      ycloud_webhook_secret: 'whsec_guardado',
+      ycloud_webhook_endpoint_id: '6a41a4f44de0392666e757f4',
     })
     const get = vi.spyOn(axios, 'get').mockResolvedValue({
       data: {

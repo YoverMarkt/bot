@@ -65,6 +65,8 @@ export type ProviderVerificationPayload = {
   provider: NonNullable<BusinessDetail['whatsapp_provider']>
   ycloud_api_key?: string
   ycloud_number?: string
+  ycloud_webhook_secret?: string
+  ycloud_webhook_endpoint_id?: string
   meta_token?: string
   meta_phone_id?: string
   telegram_bot_token?: string

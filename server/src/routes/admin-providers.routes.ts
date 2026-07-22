@@ -11,6 +11,8 @@ interface VerifyProviderPayload {
   provider: Provider
   ycloud_api_key?: string
   ycloud_number?: string
+  ycloud_webhook_secret?: string
+  ycloud_webhook_endpoint_id?: string
   meta_token?: string
   meta_phone_id?: string
   telegram_bot_token?: string
@@ -20,6 +22,8 @@ interface BusinessRecord {
   whatsapp_provider?: unknown
   ycloud_api_key?: unknown
   ycloud_number?: unknown
+  ycloud_webhook_secret?: unknown
+  ycloud_webhook_endpoint_id?: unknown
   meta_token?: unknown
   meta_phone_id?: unknown
   telegram_bot_token?: unknown
@@ -62,6 +66,8 @@ function directVerificationPayload(body: Record<string, unknown>): VerifyProvide
     provider,
     ycloud_api_key: optionalText(body.ycloud_api_key),
     ycloud_number: optionalText(body.ycloud_number),
+    ycloud_webhook_secret: optionalText(body.ycloud_webhook_secret),
+    ycloud_webhook_endpoint_id: optionalText(body.ycloud_webhook_endpoint_id),
     meta_token: optionalText(body.meta_token),
     meta_phone_id: optionalText(body.meta_phone_id),
     telegram_bot_token: optionalText(body.telegram_bot_token),
@@ -71,7 +77,7 @@ function directVerificationPayload(body: Record<string, unknown>): VerifyProvide
 function mergedSecret(
   body: Record<string, unknown>,
   business: BusinessRecord,
-  field: 'ycloud_api_key' | 'meta_token' | 'telegram_bot_token',
+  field: 'ycloud_api_key' | 'meta_token' | 'telegram_bot_token' | 'ycloud_webhook_secret',
 ): string | undefined {
   const submitted = optionalText(body[field])
   // Los inputs secretos vacíos significan “conservar el guardado”. El panel
@@ -82,7 +88,7 @@ function mergedSecret(
 function mergedText(
   body: Record<string, unknown>,
   business: BusinessRecord,
-  field: 'ycloud_number' | 'meta_phone_id',
+  field: 'ycloud_number' | 'meta_phone_id' | 'ycloud_webhook_endpoint_id',
 ): string | undefined {
   return Object.prototype.hasOwnProperty.call(body, field)
     ? optionalText(body[field])
@@ -103,6 +109,8 @@ function prospectiveVerificationPayload(
     provider,
     ycloud_api_key: mergedSecret(body, business, 'ycloud_api_key'),
     ycloud_number: mergedText(body, business, 'ycloud_number'),
+    ycloud_webhook_secret: mergedSecret(body, business, 'ycloud_webhook_secret'),
+    ycloud_webhook_endpoint_id: mergedText(body, business, 'ycloud_webhook_endpoint_id'),
     meta_token: mergedSecret(body, business, 'meta_token'),
     meta_phone_id: mergedText(body, business, 'meta_phone_id'),
     telegram_bot_token: mergedSecret(body, business, 'telegram_bot_token'),
@@ -132,6 +140,24 @@ function verificationResult(
   payload: VerifyProviderPayload,
 ): VerificationResult {
   return { ok, info: redactSecrets(info, payload) }
+}
+
+// El webhook pesa tanto como la API Key: sin Signing Secret el servidor rechaza
+// las entregas de YCloud en producción (503) y el bot deja de recibir mensajes.
+// Avisarlo aquí evita descubrirlo recién al intentar guardar (o peor, ya en vivo).
+function ycloudWebhookGap(payload: VerifyProviderPayload): string {
+  const configured = (value: unknown, fallback?: string) => (
+    Boolean((typeof value === 'string' && value.trim()) || fallback?.trim())
+  )
+  const missing: string[] = []
+  if (!configured(payload.ycloud_webhook_secret, process.env.YCLOUD_WEBHOOK_SECRET)) {
+    missing.push('Signing Secret')
+  }
+  if (!configured(payload.ycloud_webhook_endpoint_id, process.env.YCLOUD_WEBHOOK_ENDPOINT_ID)) {
+    missing.push('Endpoint ID')
+  }
+  if (!missing.length) return ''
+  return `\n⚠️ Falta ${missing.join(' y ')} del webhook (cópialos en YCloud → Developers → Webhooks). Sin eso no puedes guardar el negocio y en producción el bot no recibirá mensajes.`
 }
 
 function providerError(error: unknown, payload: VerifyProviderPayload): VerificationResult {
@@ -204,19 +230,21 @@ async function verifyProvider(payload: VerifyProviderPayload): Promise<Verificat
           effectiveSecrets,
         )
       }
+      const webhookGap = ycloudWebhookGap(effectiveSecrets)
       if (canonical && !found) {
         const available = numbers.map(number => number.phoneNumber).join(', ')
         return verificationResult(
           false,
-          `⚠️ La API Key sirve, pero el número ${ycloudNumber} NO coincide con los de tu cuenta. Números disponibles: ${available}`,
+          `⚠️ La API Key sirve, pero el número ${ycloudNumber} NO coincide con los de tu cuenta. Números disponibles: ${available}${webhookGap}`,
           effectiveSecrets,
         )
       }
       return verificationResult(
-        true,
-        found
+        !webhookGap,
+        (found
           ? `✅ Conectado: ${found.phoneNumber} — ${found.displayName || found.verifiedName || 'activo'}`
-          : `✅ API Key válida — ${numbers.length} número(s) en tu cuenta. Ingresa el número para confirmar cuál usar.`,
+          : `✅ API Key válida — ${numbers.length} número(s) en tu cuenta. Ingresa el número para confirmar cuál usar.`
+        ) + webhookGap,
         effectiveSecrets,
       )
     }

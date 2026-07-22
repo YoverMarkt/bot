@@ -115,6 +115,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       provider: f.whatsapp_provider as adm.ProviderVerificationPayload['provider'],
       ycloud_api_key: f.ycloud_api_key || undefined,
       ycloud_number: f.whatsapp_number.trim(),
+      // Se envían para que la verificación avise si falta lo del webhook; en
+      // blanco el servidor usa lo ya guardado del negocio.
+      ycloud_webhook_secret: f.ycloud_webhook_secret || undefined,
+      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || undefined,
       meta_token: f.meta_token || undefined,
       meta_phone_id: f.meta_phone_id.trim(),
       telegram_bot_token: f.telegram_bot_token || undefined,
