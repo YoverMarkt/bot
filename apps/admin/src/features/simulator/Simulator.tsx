@@ -28,17 +28,24 @@ export default function Simulator() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
-  // 'menu': el código conduce todo con opciones (estilo banco, sin IA)
-  // 'ai': conversación con IA (comportamiento del canal actual)
-  const [mode, setMode] = useState<'menu' | 'ai'>('menu')
+  // Arranca en el modo REAL del negocio para que probar sea igual a lo que
+  // recibe el cliente. El interruptor queda para comparar a propósito.
+  const [mode, setMode] = useState<'menu' | 'ai'>('ai')
   const endRef = useRef<HTMLDivElement>(null)
 
   const biz = clients.find(c => c.id === bizId)
   const scroll = () => setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
 
+  // Modo configurado del negocio (lo que de verdad usa en WhatsApp)
+  const realMode: 'menu' | 'ai' = biz?.chat_mode === 'menu' ? 'menu' : 'ai'
+  const testingOtherMode = Boolean(biz) && mode !== realMode
+
   function selectBiz(id: string) {
     setBizId(id)
     setMsgs([])
+    // Al elegir negocio se adopta SU modo real: lo que pruebas es lo que recibe
+    const chosen = clients.find(c => c.id === id)
+    setMode(chosen?.chat_mode === 'menu' ? 'menu' : 'ai')
   }
 
   // fromOption: texto de un botón del menú guiado; tocar uno equivale a escribirlo
@@ -82,15 +89,17 @@ export default function Simulator() {
         </div>
         <div className="flex gap-2">
           {/* Modo de conversación: menú guiado (sin IA) o IA conversacional */}
+          {/* El modo configurado del negocio lleva un punto: si pruebas el otro,
+              se avisa para no confundir la prueba con lo que recibe el cliente */}
           <div className="flex overflow-hidden rounded-lg border border-border">
-            <button type="button" onClick={() => setMode('menu')}
-              className={`px-3 py-1.5 text-sm font-medium transition-colors ${mode === 'menu' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}>
-              Modo menú
-            </button>
-            <button type="button" onClick={() => setMode('ai')}
-              className={`px-3 py-1.5 text-sm font-medium transition-colors ${mode === 'ai' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}>
-              Modo IA
-            </button>
+            {(['menu', 'ai'] as const).map(option => (
+              <button key={option} type="button" onClick={() => setMode(option)}
+                title={realMode === option ? 'Modo configurado de este negocio' : 'Solo para comparar: no es el modo real'}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors ${mode === option ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}>
+                {option === 'menu' ? 'Modo menú' : 'Modo IA'}
+                {biz && realMode === option && <span className="ml-1.5">•</span>}
+              </button>
+            ))}
           </div>
           <Select value={bizId} onValueChange={selectBiz}>
             <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="min-w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
@@ -121,6 +130,11 @@ export default function Simulator() {
             <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>
             <div className="text-xs text-muted-foreground">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
           </div>
+          {testingOtherMode && (
+            <div className="ml-auto rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-600 dark:text-amber-400">
+              ⚠️ Estás probando <strong>{mode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>, pero en WhatsApp este negocio usa <strong>{realMode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>
+            </div>
+          )}
         </div>
 
         {/* Mensajes */}

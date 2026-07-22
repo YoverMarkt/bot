@@ -76,13 +76,13 @@ const businessListFields = 'id,slug,name,type,whatsapp_number,active,bot_active,
 const getAllBusinesses = async () => {
   const current = await db
     .from('businesses')
-    .select(`${businessListFields},lodging_enabled`)
+    .select(`${businessListFields},lodging_enabled,chat_mode`)
     .order('created_at', { ascending: false })
   if (!current.error) return current.data || []
 
-  // Permite desplegar el servidor antes de ejecutar migration-hospedaje.sql.
-  // Una base antigua no puede habilitar el módulo y conserva el listado normal.
-  if (current.error.message?.includes('lodging_enabled')) {
+  // Permite desplegar el servidor antes de ejecutar migration-hospedaje.sql o
+  // migration-modo-menu.sql. Una base antigua conserva el listado normal.
+  if (/lodging_enabled|chat_mode/.test(current.error.message || '')) {
     const legacy = await db
       .from('businesses')
       .select(businessListFields)

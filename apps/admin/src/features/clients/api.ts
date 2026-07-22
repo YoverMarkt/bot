@@ -22,6 +22,8 @@ export type BusinessRow = {
   plan_expires_at: string | null
   created_at: string
   notes: string | null
+  // Modo real configurado del negocio: el simulador arranca con este
+  chat_mode?: 'menu' | 'ai' | null
 }
 
 export const getStats = () => api<AdminStats>('/api/admin/stats')
