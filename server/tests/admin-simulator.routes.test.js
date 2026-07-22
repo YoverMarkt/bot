@@ -175,6 +175,7 @@ describe('simulador del superadmin', () => {
     ])
     const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
     const history = vi.spyOn(db, 'getContactHistory')
+    vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
     const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
 
     const response = await dispatch('post', '/api/admin/simulate', {

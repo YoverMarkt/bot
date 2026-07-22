@@ -32,6 +32,10 @@ const db = require('../db') as {
   getAvailableSlots(
     businessId: string,
   ): Promise<Record<string, { label?: string; slots?: string[] }> | null>
+  getLastOrderForContact(
+    businessId: string,
+    contactPhone: string,
+  ): Promise<{ order_items?: Record<string, unknown>[] } | null>
 }
 const bot = require('../services/bot-entry') as {
   buildPrompt(
@@ -120,10 +124,14 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // MODO MENÚ (estilo banco): el CÓDIGO conduce toda la conversación con
     // opciones de los datos reales; la IA no participa en ningún mensaje.
     if (mode === 'menu') {
-      const [products, roomTypes, availableSlots] = await Promise.all([
+      const [products, roomTypes, availableSlots, lastOrder] = await Promise.all([
         db.getProducts(business.id),
         business.lodging_enabled === true ? db.getLodgingRoomTypes(business.id) : Promise.resolve([]),
         business.takes_bookings === true ? db.getAvailableSlots(business.id) : Promise.resolve(null),
+        // Paridad con el canal real: el simulador también ofrece repetir pedido
+        business.takes_orders !== false
+          ? db.getLastOrderForContact(business.id, SIMULATOR_CONTACT).catch(() => null)
+          : Promise.resolve(null),
       ])
       const flow = advanceMenuFlow({
         business,
@@ -132,6 +140,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         products: products as MenuFlowInput['products'],
         roomTypes: roomTypes as MenuFlowInput['roomTypes'],
         availableSlots: availableSlots || {},
+        lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
       })
 
       let reply = flow.reply
