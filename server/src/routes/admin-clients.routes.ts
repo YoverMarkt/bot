@@ -155,6 +155,22 @@ function isActiveLodgingConstraint(error: unknown): boolean {
     && error.message.includes('No se puede deshabilitar hospedaje')
 }
 
+// Dos negocios NUNCA pueden compartir el mismo identificador de canal: el bot
+// resuelve a qué negocio pertenece cada mensaje por el número de WhatsApp o el
+// slug de Telegram. La base lo bloquea; aquí se traduce a un mensaje entendible
+// en vez del genérico "no se pudo actualizar".
+function duplicateChannelMessage(error: unknown): string | null {
+  if (!(error instanceof Error)) return null
+  if (!/duplicate key|llave duplicada/i.test(error.message)) return null
+  if (/whatsapp_number|business_channel_phone|business_channel_identifier/i.test(error.message)) {
+    return 'Ese número de WhatsApp ya está asignado a otro negocio. Cada negocio necesita su propio número: quítalo del otro negocio antes de asignarlo aquí.'
+  }
+  if (/businesses_slug_key|\bslug\b/i.test(error.message)) {
+    return 'Ese identificador (slug) ya lo usa otro negocio. Elige uno distinto.'
+  }
+  return 'Ese dato ya está registrado en otro negocio y debe ser único.'
+}
+
 router.get('/api/admin/stats', auth.authAdmin, async (_req, res) => {
   res.json(await db.getAdminStats())
 })
@@ -257,6 +273,11 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     }
     res.status(201).json(sanitizeBusinessForAdmin(business))
   } catch (error) {
+    const duplicated = duplicateChannelMessage(error)
+    if (duplicated) {
+      console.error('❌ crear el cliente:', errorMessage(error))
+      return res.status(409).json({ error: duplicated })
+    }
     safeFailure(res, 'crear el cliente', error)
   }
 })
@@ -339,6 +360,11 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
       return res.status(409).json({
         error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
       })
+    }
+    const duplicated = duplicateChannelMessage(error)
+    if (duplicated) {
+      console.error('❌ actualizar el cliente:', errorMessage(error))
+      return res.status(409).json({ error: duplicated })
     }
     safeFailure(res, 'actualizar el cliente', error)
   }

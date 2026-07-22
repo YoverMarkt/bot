@@ -164,6 +164,35 @@ describe('clientes y onboarding del superadmin', () => {
     expect(updateBusiness).not.toHaveBeenCalled()
   })
 
+  it('explica que el número de WhatsApp ya es de otro negocio en vez de fallar en genérico', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Negocio ya configurado: la ruta valida el estado final, no solo el formulario
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      name: 'Hostal',
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'clave-ycloud',
+      ycloud_webhook_secret: 'secreto-webhook',
+      ycloud_webhook_endpoint_id: '6a41a4f44de0392666e757f4',
+    })
+    vi.spyOn(db, 'updateBusiness').mockResolvedValue({
+      error: {
+        message: 'duplicate key value violates unique constraint "businesses_whatsapp_number_key"',
+      },
+    })
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_number: '+593991716574' },
+    })
+
+    // El número identifica al negocio dentro del bot: la base lo bloquea y el
+    // panel debe decir POR QUÉ, no un "no se pudo actualizar" a ciegas
+    expect(response.status).toBe(409)
+    expect(response.body.error).toContain('ya está asignado a otro negocio')
+    expect(response.body.error).not.toContain('duplicate key')
+  })
+
   it('no ejecuta escrituras compensatorias si la RPC atómica rechaza el onboarding', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
