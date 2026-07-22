@@ -84,11 +84,15 @@ function setup(overrides = {}) {
     sendRequestedProductMedia: vi.fn().mockResolvedValue(false),
     ...overrides.media,
   }
+  const menuFlow = {
+    advanceMenuFlow: vi.fn().mockReturnValue({ reply: 'Menú', options: [] }),
+    ...overrides.menuFlow,
+  }
   const logger = { log: vi.fn(), error: vi.fn() }
   const sleep = vi.fn().mockResolvedValue(undefined)
   const now = vi.fn().mockReturnValue(30_000_000)
   const conversation = createBotConversation({
-    database, reports, schedule, ai, prompt, tags, actions, media,
+    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
     logger, sleep, now,
   })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -97,7 +101,7 @@ function setup(overrides = {}) {
   const sendVideo = vi.fn().mockResolvedValue(undefined)
   return {
     conversation, database, reports, schedule, ai, prompt, tags, actions,
-    media, logger, sleep, now, send, sendImage, sendTyping, sendVideo,
+    media, menuFlow, logger, sleep, now, send, sendImage, sendTyping, sendVideo,
   }
 }
 
@@ -130,6 +134,57 @@ describe('orquestación de conversaciones del bot', () => {
     }))
     expect(inactive.send).not.toHaveBeenCalled()
     expect(inactive.reports.handleOwnerMessage).not.toHaveBeenCalled()
+  })
+
+  it('en modo menú conduce el código: sin IA y el dinero por el núcleo de siempre', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '🧾 Resumen de tu pedido',
+          options: ['✅ Confirmar pedido', '🏠 Menú principal'],
+          action: { type: 'order', summary: 'resumen', totalCents: 1950, payload: 'Pizza Hawaiana x2' },
+        }),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '1',
+    }))
+
+    // La IA NO participa en ningún mensaje del modo menú
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+    expect(current.prompt.buildPrompt).not.toHaveBeenCalled()
+    // El total lo sigue calculando money.ts vía processOrderPayload: el menú
+    // solo aporta QUÉ pidió el cliente, nunca un monto
+    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: 'Pizza Hawaiana x2' }),
+    )
+    // Las opciones salen numeradas para que el cliente pueda responder "1"
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. ✅ Confirmar pedido'),
+    )
+  })
+
+  it('el modo menú deriva a una persona con la misma ruta que el resto del bot', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '', options: [], action: { type: 'handoff' },
+        }),
+      },
+      actions: { handleConversationOutcome: vi.fn().mockResolvedValue({ handled: true }) },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'asesor',
+    }))
+
+    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ hasHandoffTag: true }),
+    )
+    expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {

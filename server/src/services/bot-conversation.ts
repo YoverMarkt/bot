@@ -5,6 +5,7 @@ import type {
   BookingCreationOutcome,
 } from './bot-actions'
 import type { BookingTag, ParsedBotOutput } from './bot-tags'
+import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 import type {
   BotMediaBusiness,
   BotMediaHistoryMessage,
@@ -16,6 +17,8 @@ interface ConversationBusiness extends ActionBusiness, BotMediaBusiness {
   suspended?: boolean | null
   bot_active?: boolean | null
   ai_provider?: string | null
+  // 'menu' → la conversación la conduce bot-menu-flow (sin IA)
+  chat_mode?: string | null
 }
 
 interface ConversationProduct extends ActionProduct, BotMediaProduct {
@@ -61,6 +64,12 @@ interface ConversationDatabase {
     limit: number,
   ): Promise<ConversationProduct[]>
   getProducts(businessId: string): Promise<ConversationProduct[]>
+  // Solo los usa el modo menú
+  getLodgingRoomTypes?(businessId: string): Promise<Record<string, unknown>[]>
+  getLastOrderForContact?(
+    businessId: string,
+    contactPhone: string,
+  ): Promise<{ order_items?: Record<string, unknown>[] } | null>
   recordConsultations(businessId: string, productIds: string[]): Promise<unknown>
 }
 
@@ -162,6 +171,10 @@ interface ConversationLogger {
   error(...values: unknown[]): void
 }
 
+interface ConversationMenuFlow {
+  advanceMenuFlow(input: MenuFlowInput): MenuFlowResult
+}
+
 export interface BotConversationDependencies {
   database: ConversationDatabase
   reports: ConversationReports
@@ -171,6 +184,7 @@ export interface BotConversationDependencies {
   tags: ConversationTags
   actions: ConversationActions
   media: ConversationMedia
+  menuFlow: ConversationMenuFlow
   logger?: ConversationLogger
   sleep?: (milliseconds: number) => Promise<void>
   now?: () => number
@@ -209,7 +223,7 @@ function mentionedProductIds(products: ConversationProduct[], text: string): str
 
 function createBotConversation(dependencies: BotConversationDependencies) {
   const {
-    database, reports, schedule, ai, prompt, tags, actions, media,
+    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
   } = dependencies
   const logger = dependencies.logger || console
   const sleep = dependencies.sleep || defaultSleep
@@ -238,6 +252,132 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       await sleep(Math.min(4500, 900 + part.length * 28))
       await send(part)
     }
+  }
+
+  // ── MODO MENÚ (sin IA) ──────────────────────────────────────────────
+  // Las opciones se envían numeradas: hoy WhatsApp solo recibe texto desde
+  // esta integración. El motor acepta tanto el texto exacto como el número,
+  // así que al agregar botones nativos el flujo no cambia.
+  function renderMenuOptions(reply: string, options: string[]): string {
+    if (!options.length) return reply
+    const list = options.map((option, index) => `${index + 1}. ${option}`).join('\n')
+    return reply ? `${reply}\n\n${list}` : list
+  }
+
+  async function runMenuMode(input: {
+    business: ConversationBusiness
+    phone: string
+    text: string
+    session?: ConversationSession | null
+    send: (message: string) => Promise<unknown>
+    sendImage?: (url: string, caption?: string) => Promise<unknown>
+    sendVideo?: (url: string, caption?: string) => Promise<unknown>
+  }): Promise<void> {
+    const { business, phone, text, session, send, sendImage } = input
+    const [products, roomTypes, availableSlots, lastOrder] = await Promise.all([
+      database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
+      business.lodging_enabled === true && database.getLodgingRoomTypes
+        ? database.getLodgingRoomTypes(business.id).catch(() => [])
+        : Promise.resolve([]),
+      business.takes_bookings === true
+        ? database.getAvailableSlots(business.id).catch(() => null)
+        : Promise.resolve(null),
+      business.takes_orders !== false && database.getLastOrderForContact
+        ? database.getLastOrderForContact(business.id, phone).catch(() => null)
+        : Promise.resolve(null),
+    ])
+
+    const flow = menuFlow.advanceMenuFlow({
+      business: business as MenuFlowInput['business'],
+      contact: phone,
+      message: text,
+      products: products as MenuFlowInput['products'],
+      roomTypes: roomTypes as MenuFlowInput['roomTypes'],
+      availableSlots: (availableSlots || {}) as MenuFlowInput['availableSlots'],
+      lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
+    })
+
+    await database.saveMessage(business.id, phone, 'user', text)
+    const action = flow.action
+
+    // Derivar a una persona: misma ruta que el resto del bot
+    if (action?.type === 'handoff') {
+      const outcome = await actions.handleConversationOutcome({
+        business,
+        phone,
+        originalText: text,
+        hasSale: false,
+        hasHandoffTag: true,
+        isUncertain: false,
+        wasManual: session?.manual_mode,
+        send,
+      })
+      if (outcome.handled) return
+    }
+
+    // El total oficial lo calcula SIEMPRE money.ts con las RPC atómicas: el
+    // menú solo aporta qué pidió el cliente, nunca un monto.
+    if (action?.type === 'order') {
+      await actions.processOrderPayload({
+        business,
+        phone,
+        session,
+        payload: action.payload,
+        products,
+        preFiltered: false,
+        send,
+      })
+    } else if (action?.type === 'stay_quote') {
+      await actions.processLodgingQuote({
+        business,
+        phone,
+        originalText: text,
+        quote: action.quote as ParsedBotOutput['lodgingQuote'],
+        guestMessages: [text],
+        send,
+        sendImage,
+        sendVideo: input.sendVideo,
+      })
+    } else if (action?.type === 'stay_request') {
+      await actions.processLodgingRequest({
+        business,
+        phone,
+        originalText: text,
+        request: {
+          roomTypeIdOrName: action.roomTypeId,
+          contactName: action.contactName,
+        } as ParsedBotOutput['lodgingRequest'],
+        guestMessages: [text, action.contactName],
+        send,
+      })
+    } else if (action?.type === 'booking') {
+      // El día y la hora vienen de la agenda real, ya resueltos por el menú:
+      // los campos "raw" y los normalizados coinciden a propósito.
+      await actions.createBookingFromTag(business, phone, {
+        contactName: action.name,
+        bookingDateRaw: action.date,
+        bookingTimeRaw: action.time,
+        bookingDate: action.date,
+        bookingTime: action.time,
+        service: 'Cita',
+      }, products)
+    }
+
+    // El texto propio del menú (bienvenida, listas, confirmaciones) va después
+    // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
+    const message = renderMenuOptions(flow.reply, flow.options)
+    if (message.trim()) {
+      await send(message)
+      await database.saveMessage(business.id, phone, 'assistant', message)
+    }
+    if (flow.image && sendImage) {
+      try { await sendImage(flow.image) } catch { /* best-effort */ }
+    }
+    await database.upsertSession(business.id, phone, {
+      last_message: text,
+      last_message_at: new Date(now()).toISOString(),
+    })
+    logger.log(`📋 [${business.name}] modo menú — ${phone}`)
   }
 
   async function processMessage(input: ProcessMessageInput): Promise<void> {
@@ -287,6 +427,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       await database.saveMessage(business.id, phone, 'assistant', handoff)
       await send(handoff)
       logger.log(`🤚 [${business.name}] handoff por insulto/falta de respeto — ${phone}`)
+      return
+    }
+
+    // MODO MENÚ: el CÓDIGO conduce toda la conversación con opciones armadas
+    // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
+    // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
+    if (business.chat_mode === 'menu') {
+      await runMenuMode({ business, phone, text, session, send, sendImage, sendVideo })
       return
     }
 
@@ -664,6 +812,7 @@ const conversation = createBotConversation({
   tags: require('./bot-tags') as ConversationTags,
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
+  menuFlow: require('./bot-menu-flow') as ConversationMenuFlow,
 })
 
 export const processMessage = conversation.processMessage

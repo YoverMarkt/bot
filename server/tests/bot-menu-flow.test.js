@@ -81,6 +81,42 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(confirmado.reply).toContain('Pedido recibido')
   })
 
+  it('repite el último pedido con los precios de HOY y descarta lo agotado', () => {
+    resetMenuFlow(pizzeria.id, 'rep1')
+    // La Hawaiana subió de $8.50 a $9.99 desde el pedido anterior y la Coca se agotó
+    const catalogoHoy = [
+      { id: 'p1', name: 'Pizza Hawaiana', price: 9.99, tags: ['pizzas'], stock: 'disponible', active: true },
+      { id: 'p3', name: 'Coca Cola 1.5L', price: 2.5, tags: ['bebidas'], stock: 'agotado', active: true },
+    ]
+    const args = {
+      products: catalogoHoy,
+      lastOrderItems: [
+        { product_id: 'p1', product_name: 'Pizza Hawaiana', quantity: 2 },
+        { product_id: 'p3', product_name: 'Coca Cola 1.5L', quantity: 1 },
+      ],
+    }
+
+    const bienvenida = enviar(pizzeria, 'rep1', 'hola', args)
+    expect(bienvenida.options).toContain('🔄 Repetir mi último pedido')
+
+    const repetido = enviar(pizzeria, 'rep1', '🔄 Repetir mi último pedido', args)
+    // Precio de HOY (9.99 x2 = 19.98), jamás el histórico de 8.50
+    expect(repetido.reply).toContain('2x Pizza Hawaiana — $19.98')
+    expect(repetido.reply).toContain('Total: $19.98')
+    // Lo agotado se descarta y se avisa: no se vende lo que no hay
+    expect(repetido.reply).toContain('Coca Cola 1.5L')
+    expect(repetido.reply).toContain('Ya no tenemos')
+
+    const confirmado = enviar(pizzeria, 'rep1', '✅ Confirmar pedido', args)
+    expect(confirmado.action).toEqual(expect.objectContaining({ type: 'order', totalCents: 1998 }))
+  })
+
+  it('no ofrece repetir pedido si el cliente no tiene uno anterior', () => {
+    resetMenuFlow(pizzeria.id, 'rep2')
+    const bienvenida = enviar(pizzeria, 'rep2', 'hola', { products: productos })
+    expect(bienvenida.options).not.toContain('🔄 Repetir mi último pedido')
+  })
+
   it('acepta el número de la lista como en el banco y repite el menú si no entiende', () => {
     resetMenuFlow(pizzeria.id, 'c3')
     const args = { products: productos }

@@ -71,10 +71,21 @@ interface FlowState {
 
 type FlowAction =
   | { type: 'handoff' }
-  | { type: 'order'; summary: string; totalCents: number }
+  // `payload` va en el MISMO formato que ##PEDIDO:producto x cantidad; ...##
+  // para que el canal real lo procese con money.ts y las RPC atómicas de
+  // siempre: el menú no crea un camino de dinero paralelo.
+  | { type: 'order'; summary: string; totalCents: number; payload: string }
   | { type: 'stay_quote'; quote: { checkIn: string; checkOut: string; roomsCount: number; adults: number; children: number; roomTypeId?: string } }
   | { type: 'stay_request'; roomTypeId: string; contactName: string }
   | { type: 'booking'; date: string; time: string; name: string }
+
+// Ítems del último pedido del contacto. Solo se reutilizan producto y cantidad:
+// el precio SIEMPRE se recalcula con el catálogo vigente, nunca el histórico.
+export interface LastOrderItem {
+  product_id?: string | null
+  product_name?: string | null
+  quantity?: number | null
+}
 
 export interface MenuFlowInput {
   business: FlowBusiness
@@ -83,6 +94,7 @@ export interface MenuFlowInput {
   products: FlowProduct[]
   roomTypes?: FlowRoomType[]
   availableSlots?: FlowSlots
+  lastOrderItems?: LastOrderItem[]
 }
 
 export interface MenuFlowResult {
@@ -94,6 +106,7 @@ export interface MenuFlowResult {
 
 // ── Etiquetas fijas del menú (el cliente ve exactamente estos textos) ──
 const OPT_ORDER = '🛒 Hacer un pedido'
+const OPT_REPEAT = '🔄 Repetir mi último pedido'
 const OPT_BROWSE = '📋 Ver productos y precios'
 const OPT_ROOMS = '🛏️ Ver habitaciones'
 const OPT_STAY = '📅 Cotizar estadía'
@@ -369,6 +382,38 @@ const productsInCategory = (products: FlowProduct[], tag: string | null): FlowPr
   return list.filter(item => String(item.tags?.[0] || '').trim().toLowerCase() === tag)
 }
 
+// Rearma el carrito del último pedido con el catálogo VIGENTE. Si un producto
+// dejó de existir, se desactivó o se agotó, se omite y se avisa: jamás se
+// reutiliza el precio viejo ni se vende algo que ya no está.
+const rebuildCartFromLastOrder = (
+  input: MenuFlowInput,
+): { cart: CartItem[]; skipped: string[] } => {
+  const cart: CartItem[] = []
+  const skipped: string[] = []
+  const available = activeProducts(input.products)
+  for (const item of input.lastOrderItems || []) {
+    const quantity = Number(item.quantity)
+    if (!Number.isInteger(quantity) || quantity <= 0) continue
+    const wantedName = normalizeText(String(item.product_name || ''))
+    const product = available.find(candidate => (
+      (item.product_id && candidate.id === item.product_id)
+      || (wantedName && normalizeText(String(candidate.name || '')) === wantedName)
+    ))
+    const cents = product ? priceCentsOf(product) : null
+    if (!product || cents === null || product.stock === 'agotado') {
+      skipped.push(String(item.product_name || '').trim() || 'un producto')
+      continue
+    }
+    cart.push({
+      productId: product.id,
+      name: String(product.name).trim(),
+      quantity,
+      priceCents: cents,
+    })
+  }
+  return { cart, skipped }
+}
+
 const productLabel = (product: FlowProduct): string => {
   const cents = priceCentsOf(product)
   const soldOut = product.stock === 'agotado' ? ' (agotado)' : ''
@@ -402,7 +447,11 @@ const mainOptions = (input: MenuFlowInput): string[] => {
     if (hasProducts) options.push(OPT_BROWSE)
     return options
   }
-  if (input.business.takes_orders && hasProducts) options.push(OPT_ORDER)
+  if (input.business.takes_orders && hasProducts) {
+    options.push(OPT_ORDER)
+    // Clientes recurrentes: repetir vale más que navegar todo el catálogo
+    if (input.lastOrderItems?.length) options.push(OPT_REPEAT)
+  }
   if (hasProducts) options.push(OPT_BROWSE)
   if (input.business.takes_bookings && Object.keys(input.availableSlots || {}).length > 0) {
     options.push(OPT_BOOK)
@@ -606,6 +655,24 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           ? { kind: 'categories', intent: 'browse' }
           : { kind: 'products', intent: 'browse', tag: null, page: 0 }, input)
       }
+      if (choice === OPT_REPEAT) {
+        const { cart, skipped } = rebuildCartFromLastOrder(input)
+        if (!cart.length) {
+          return {
+            reply: 'No pude rearmar tu pedido anterior porque esos productos ya no están disponibles 🙏 Arma uno nuevo:',
+            options: mainOptions(input),
+          }
+        }
+        state.cart = cart
+        const summary = goTo(state, { kind: 'order-confirm' }, input)
+        const note = skipped.length
+          ? `\n⚠️ Ya no tenemos: ${skipped.join(', ')}. Lo quité del pedido.`
+          : ''
+        return {
+          ...summary,
+          reply: `Este es tu último pedido con los precios de hoy 👇${note}\n\n${summary.reply}`,
+        }
+      }
       if (choice === OPT_ROOMS) return goTo(state, { kind: 'rooms' }, input)
       if (choice === OPT_STAY || normalizeText(OPT_STAY_AGAIN) === text) {
         return goTo(state, { kind: 'stay', step: 'dates' }, input)
@@ -691,7 +758,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       if (choice === OPT_CONFIRM) {
         const summaryView = renderView({ kind: 'order-confirm' }, state, input)
         const total = state.cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
-        const action: FlowAction = { type: 'order', summary: summaryView.reply, totalCents: total }
+        const action: FlowAction = {
+          type: 'order',
+          summary: summaryView.reply,
+          totalCents: total,
+          payload: state.cart.map(item => `${item.name} x${item.quantity}`).join('; '),
+        }
         state.cart = []
         const home = goTo(state, { kind: 'main' }, input)
         return {
