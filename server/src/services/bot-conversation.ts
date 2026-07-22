@@ -258,9 +258,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
   // Las opciones se envían numeradas: hoy WhatsApp solo recibe texto desde
   // esta integración. El motor acepta tanto el texto exacto como el número,
   // así que al agregar botones nativos el flujo no cambia.
-  function renderMenuOptions(reply: string, options: string[]): string {
+  function renderMenuOptions(reply: string, options: MenuFlowResult['options']): string {
     if (!options.length) return reply
-    const list = options.map((option, index) => `${index + 1}. ${option}`).join('\n')
+    const list = options.map((option, index) => {
+      const title = typeof option === 'string' ? option : option.title
+      const detail = typeof option === 'string' ? '' : option.description
+      return detail ? `${index + 1}. ${title} — ${detail}` : `${index + 1}. ${title}`
+    }).join('\n')
     return reply ? `${reply}\n\n${list}` : list
   }
 

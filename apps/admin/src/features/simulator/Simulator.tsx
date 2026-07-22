@@ -12,7 +12,13 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 // Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
 // Usa el mismo motor que el bot real (POST /api/admin/simulate).
 
-type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; options?: string[] | null; at: string }
+// El servidor manda las opciones como texto simple o como {título, descripción},
+// igual que una fila de lista de WhatsApp.
+type MenuOption = string | { title: string; description?: string }
+const optionTitle = (option: MenuOption) => typeof option === 'string' ? option : option.title
+const optionDetail = (option: MenuOption) => typeof option === 'string' ? '' : (option.description || '')
+
+type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; options?: MenuOption[] | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
@@ -44,7 +50,7 @@ export default function Simulator() {
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null; video?: string | null; options?: string[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t, mode }),
       })
@@ -147,12 +153,15 @@ export default function Simulator() {
               )}
               {/* Opciones del menú guiado (estilo respuestas rápidas de WhatsApp) */}
               {!!m.options?.length && (
-                <div className="mt-2 flex max-w-[75%] flex-wrap gap-1.5">
+                <div className="mt-2 flex max-w-[75%] flex-col items-start gap-1.5">
                   {m.options.map(o => (
-                    <Button key={o} variant="outline" size="sm" disabled={typing}
-                      className="h-auto rounded-full border-primary/40 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary"
-                      onClick={() => send(o)}>
-                      {o}
+                    <Button key={optionTitle(o)} variant="outline" size="sm" disabled={typing}
+                      className="h-auto max-w-full flex-col items-start gap-0 rounded-xl border-primary/40 px-3 py-1.5 text-left hover:bg-primary/10"
+                      onClick={() => send(optionTitle(o))}>
+                      <span className="text-xs font-medium text-primary">{optionTitle(o)}</span>
+                      {optionDetail(o) && (
+                        <span className="text-[11px] font-normal text-muted-foreground">{optionDetail(o)}</span>
+                      )}
                     </Button>
                   ))}
                 </div>

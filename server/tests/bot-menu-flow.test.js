@@ -35,6 +35,14 @@ const habitaciones = [
   { id: 'r2', name: 'Familiar', description: 'Dos ambientes', base_rate: 70, pricing_model: 'per_person', max_guests: 4 },
 ]
 
+// Las opciones pueden ser texto simple o {title, description}: para las
+// aserciones importa el título, que es lo que identifica la opción.
+const titulos = options => options.map(o => (typeof o === 'string' ? o : o.title))
+const detalle = (options, title) => {
+  const found = options.find(o => (typeof o === 'string' ? o : o.title) === title)
+  return typeof found === 'string' ? '' : (found?.description || '')
+}
+
 const enviar = (business, contact, message, extra = {}) => advanceMenuFlow({
   business, contact, message, products: [], ...extra,
 })
@@ -44,9 +52,9 @@ describe('modo menú estilo banco (sin IA)', () => {
     resetMenuFlow(pizzeria.id, 'c1')
     const first = enviar(pizzeria, 'c1', 'quiero información de todo', { products: productos })
     expect(first.reply).toContain('Pizzería Don Luigi')
-    expect(first.options).toContain('🛒 Hacer un pedido')
-    expect(first.options).toContain('📋 Ver productos y precios')
-    expect(first.options).toContain('💬 Hablar con el equipo')
+    expect(titulos(first.options)).toContain('🛒 Hacer un pedido')
+    expect(titulos(first.options)).toContain('📋 Ver productos y precios')
+    expect(titulos(first.options)).toContain('💬 Hablar con el equipo')
     expect(first.action).toBeUndefined()
   })
 
@@ -55,21 +63,22 @@ describe('modo menú estilo banco (sin IA)', () => {
     const args = { products: productos }
     enviar(pizzeria, 'c2', 'hola', args)
     const categorias = enviar(pizzeria, 'c2', '🛒 Hacer un pedido', args)
-    expect(categorias.options).toContain('Pizzas')
-    expect(categorias.options).toContain('Bebidas')
+    expect(titulos(categorias.options)).toContain('Pizzas')
+    expect(titulos(categorias.options)).toContain('Bebidas')
 
     const lista = enviar(pizzeria, 'c2', 'Pizzas', args)
-    expect(lista.options).toContain('Pizza Hawaiana — $8.50')
+    expect(titulos(lista.options)).toContain('Pizza Hawaiana')
+    expect(detalle(lista.options, 'Pizza Hawaiana')).toContain('$8.50')
     // El precio oferta manda sobre el precio normal, igual que el núcleo de dinero
-    expect(lista.options).toContain('Pizza Pepperoni — $7.50')
+    expect(detalle(lista.options, 'Pizza Pepperoni')).toContain('$7.50')
 
-    enviar(pizzeria, 'c2', 'Pizza Hawaiana — $8.50', args)
+    enviar(pizzeria, 'c2', 'Pizza Hawaiana', args)
     const agregado = enviar(pizzeria, 'c2', '2', args)
     expect(agregado.reply).toContain('agregué 2x Pizza Hawaiana')
-    expect(agregado.options).toContain('✅ Finalizar pedido')
+    expect(titulos(agregado.options)).toContain('✅ Finalizar pedido')
 
     enviar(pizzeria, 'c2', 'Bebidas', args)
-    enviar(pizzeria, 'c2', 'Coca Cola 1.5L — $2.50', args)
+    enviar(pizzeria, 'c2', 'Coca Cola 1.5L', args)
     enviar(pizzeria, 'c2', '1', args)
     const resumen = enviar(pizzeria, 'c2', '✅ Finalizar pedido', args)
     expect(resumen.reply).toContain('2x Pizza Hawaiana — $17.00')
@@ -97,7 +106,7 @@ describe('modo menú estilo banco (sin IA)', () => {
     }
 
     const bienvenida = enviar(pizzeria, 'rep1', 'hola', args)
-    expect(bienvenida.options).toContain('🔄 Repetir mi último pedido')
+    expect(titulos(bienvenida.options)).toContain('🔄 Repetir mi último pedido')
 
     const repetido = enviar(pizzeria, 'rep1', '🔄 Repetir mi último pedido', args)
     // Precio de HOY (9.99 x2 = 19.98), jamás el histórico de 8.50
@@ -111,10 +120,38 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(confirmado.action).toEqual(expect.objectContaining({ type: 'order', totalCents: 1998 }))
   })
 
+  it('pagina las categorías cuando pasan de 10, respetando el tope de WhatsApp', () => {
+    // 12 categorías: no caben en una lista de WhatsApp (máximo 10 filas)
+    const catalogoGrande = Array.from({ length: 12 }, (_, index) => ({
+      id: `p${index}`,
+      name: `Producto ${index}`,
+      price: 5,
+      tags: [`categoria${index}`],
+      stock: 'disponible',
+      active: true,
+    }))
+    resetMenuFlow(pizzeria.id, 'pag1')
+    const args = { products: catalogoGrande }
+    enviar(pizzeria, 'pag1', 'hola', args)
+    const pagina1 = enviar(pizzeria, 'pag1', '🛒 Hacer un pedido', args)
+
+    // 9 categorías + "Ver más" + "Volver" = 11 títulos; las filas que van a la
+    // lista de WhatsApp son las 9 + Ver más = 10, justo el tope
+    const t1 = titulos(pagina1.options)
+    expect(t1.filter(x => x.startsWith('Categoria')).length).toBe(9)
+    expect(t1).toContain('➡️ Ver más')
+    expect(detalle(pagina1.options, 'Categoria0')).toContain('1 producto')
+
+    const pagina2 = enviar(pizzeria, 'pag1', '➡️ Ver más', args)
+    const t2 = titulos(pagina2.options)
+    expect(t2.filter(x => x.startsWith('Categoria')).length).toBe(3)
+    expect(t2).not.toContain('➡️ Ver más')
+  })
+
   it('no ofrece repetir pedido si el cliente no tiene uno anterior', () => {
     resetMenuFlow(pizzeria.id, 'rep2')
     const bienvenida = enviar(pizzeria, 'rep2', 'hola', { products: productos })
-    expect(bienvenida.options).not.toContain('🔄 Repetir mi último pedido')
+    expect(titulos(bienvenida.options)).not.toContain('🔄 Repetir mi último pedido')
   })
 
   it('acepta el número de la lista como en el banco y repite el menú si no entiende', () => {
@@ -122,7 +159,7 @@ describe('modo menú estilo banco (sin IA)', () => {
     const args = { products: productos }
     const bienvenida = enviar(pizzeria, 'c3', 'hola', args)
     const porNumero = enviar(pizzeria, 'c3', '1', args)
-    expect(porNumero.options).toContain('Pizzas')
+    expect(titulos(porNumero.options)).toContain('Pizzas')
 
     const raro = enviar(pizzeria, 'c3', 'quiero un descuento del 50%', args)
     expect(raro.reply).toContain('No te entendí')
@@ -134,20 +171,21 @@ describe('modo menú estilo banco (sin IA)', () => {
     const args = { products: [], roomTypes: habitaciones }
     const bienvenida = enviar(hostal, 'c4', 'hola', args)
     // Decisión del dueño: primero las habitaciones, sin cotizar ni equipo
-    expect(bienvenida.options).toEqual(['🛏️ Ver habitaciones'])
+    expect(titulos(bienvenida.options)).toEqual(['🛏️ Ver habitaciones'])
 
     const cuartos = enviar(hostal, 'c4', '🛏️ Ver habitaciones', args)
-    expect(cuartos.options).toContain('Matrimonial — $45.00/noche')
+    expect(titulos(cuartos.options)).toContain('Matrimonial')
+    expect(detalle(cuartos.options, 'Matrimonial')).toContain('$45.00/noche')
     // Tarifa por persona: se muestra "desde", el total exacto lo da la cotización
-    expect(cuartos.options).toContain('Familiar — desde $70.00/noche')
+    expect(detalle(cuartos.options, 'Familiar')).toContain('desde $70.00/noche')
 
-    const detalle = enviar(hostal, 'c4', 'Matrimonial — $45.00/noche', args)
-    expect(detalle.reply).toContain('Matrimonial')
-    expect(detalle.reply).toContain('Incluye: wifi, desayuno, baño privado')
-    expect(detalle.reply).toContain('hasta 2 persona(s)')
-    expect(detalle.reply).toContain('Tarifa: $45.00/noche')
+    const detalleHab = enviar(hostal, 'c4', 'Matrimonial', args)
+    expect(detalleHab.reply).toContain('Matrimonial')
+    expect(detalleHab.reply).toContain('Incluye: wifi, desayuno, baño privado')
+    expect(detalleHab.reply).toContain('hasta 2 persona(s)')
+    expect(detalleHab.reply).toContain('Tarifa: $45.00/noche')
     // El botón de cotizar aparece recién al elegir la habitación
-    expect(detalle.options).toContain('📅 Cotizar estadía')
+    expect(titulos(detalleHab.options)).toContain('📅 Cotizar estadía')
 
     // Fechas escritas por el huésped CON MES, confirmadas con el calendario real
     const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -191,7 +229,7 @@ describe('modo menú estilo banco (sin IA)', () => {
         roomTypeId: 'r1',
       },
     })
-    expect(cotizacion.options).toContain('🛎️ Solicitar esta habitación')
+    expect(titulos(cotizacion.options)).toContain('🛎️ Solicitar esta habitación')
 
     // Cierre del flujo: solicitar la habitación con el nombre del huésped
     const nombre = enviar(hostal, 'c4', '🛎️ Solicitar esta habitación', args)
@@ -252,7 +290,7 @@ describe('modo menú estilo banco (sin IA)', () => {
     resetMenuFlow(barberia.id, 'c7')
     const args = { products: [], availableSlots: slots }
     const bienvenida = enviar(barberia, 'c7', 'hola', args)
-    expect(bienvenida.options).toContain('📅 Agendar una cita')
+    expect(titulos(bienvenida.options)).toContain('📅 Agendar una cita')
 
     const dias = enviar(barberia, 'c7', '📅 Agendar una cita', args)
     expect(dias.options).toContain('lunes 4 de enero')

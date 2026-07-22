@@ -1,7 +1,13 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import { buildWelcomeMenu, menuAsHistory, wantsWelcomeMenu } from '../services/bot-menu'
-import { advanceMenuFlow, resetMenuFlow, STAY_REQUEST_OPTION, type MenuFlowInput } from '../services/bot-menu-flow'
+import {
+  advanceMenuFlow,
+  optionTitle,
+  resetMenuFlow,
+  STAY_REQUEST_OPTION,
+  type MenuFlowInput,
+} from '../services/bot-menu-flow'
 
 interface BusinessRecord extends Record<string, unknown> {
   id: string
@@ -160,7 +166,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         )
         // Solo se ofrece solicitar la habitación cuando hubo cotización oficial
         if (computed.outcome !== 'quoted') {
-          flowOptions = flowOptions.filter(option => option !== STAY_REQUEST_OPTION)
+          flowOptions = flowOptions.filter(option => optionTitle(option) !== STAY_REQUEST_OPTION)
         }
         reply = computed.message
         for (const url of (computed.mediaOptions || []).flatMap(option => option.mediaUrls || [])) {

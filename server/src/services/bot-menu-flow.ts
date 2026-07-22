@@ -49,7 +49,7 @@ interface CartItem {
 
 type FlowView =
   | { kind: 'main' }
-  | { kind: 'categories'; intent: 'order' | 'browse' }
+  | { kind: 'categories'; intent: 'order' | 'browse'; page: number }
   | { kind: 'products'; intent: 'order' | 'browse'; tag: string | null; page: number }
   | { kind: 'product'; intent: 'order' | 'browse'; productId: string; tag: string | null; page: number }
   | { kind: 'quantity'; productId: string }
@@ -97,9 +97,14 @@ export interface MenuFlowInput {
   lastOrderItems?: LastOrderItem[]
 }
 
+// Una opción puede ser texto simple (las fijas del menú, ya cortas) o un
+// objeto con descripción, como las filas de lista de WhatsApp: título corto
+// arriba y el detalle debajo (precio, capacidad). Igual que el menú del banco.
+export type MenuOption = string | { title: string; description?: string }
+
 export interface MenuFlowResult {
   reply: string
-  options: string[]
+  options: MenuOption[]
   image?: string | null
   action?: FlowAction
 }
@@ -124,6 +129,8 @@ const OPT_EMPTY = '🗑️ Vaciar carrito'
 const OPT_OTHER = '✍️ Otra cantidad'
 
 const PAGE_SIZE = 6
+// WhatsApp permite 10 filas por lista: 9 opciones + "Ver más" entran justas.
+const CATEGORY_PAGE_SIZE = 9
 const FLOW_TTL_MS = 30 * 60 * 1000
 const PROMPT_CHOOSE = 'Elige una opción del menú 👇'
 const NOT_UNDERSTOOD = `🙏 No te entendí. ${PROMPT_CHOOSE}`
@@ -331,16 +338,23 @@ const parseQuantity = (message: string, max: number): number | null => {
   return Number.isInteger(value) && value >= 0 && value <= max ? value : null
 }
 
-// El cliente puede tocar la opción (llega el texto exacto) o escribir su
+// El título es la identidad de la opción: es lo que se compara y lo que viaja
+// como texto. La descripción es solo presentación.
+const optionTitle = (option: MenuOption): string => (
+  typeof option === 'string' ? option : option.title
+)
+
+// El cliente puede tocar la opción (llega el título exacto) o escribir su
 // número de lista, como en el banco ("1", "2", …)
-const matchOption = (message: string, options: string[]): string | null => {
+const matchOption = (message: string, options: MenuOption[]): string | null => {
   const text = normalizeText(message)
   if (!text) return null
-  const byLabel = options.find(option => normalizeText(option) === text)
+  const titles = options.map(optionTitle)
+  const byLabel = titles.find(title => normalizeText(title) === text)
   if (byLabel) return byLabel
   if (/^\d{1,2}$/.test(text)) {
     const index = Number(text) - 1
-    if (index >= 0 && index < options.length) return options[index]
+    if (index >= 0 && index < titles.length) return titles[index]
   }
   return null
 }
@@ -414,10 +428,17 @@ const rebuildCartFromLastOrder = (
   return { cart, skipped }
 }
 
-const productLabel = (product: FlowProduct): string => {
+// El nombre va de título (corto, es lo que se compara) y el precio/stock de
+// descripción. Así entra en una fila de lista de WhatsApp y se lee mejor.
+const productLabel = (product: FlowProduct): string => String(product.name).trim()
+
+const productOption = (product: FlowProduct): MenuOption => {
   const cents = priceCentsOf(product)
-  const soldOut = product.stock === 'agotado' ? ' (agotado)' : ''
-  return `${String(product.name).trim()}${cents ? ` — ${money(cents)}` : ''}${soldOut}`
+  const detail = [
+    cents ? money(cents) : 'precio a confirmar',
+    product.stock === 'agotado' ? 'agotado' : '',
+  ].filter(Boolean).join(' · ')
+  return { title: productLabel(product), description: detail }
 }
 
 // Toda habitación muestra su precio: exacto si es por unidad, "desde" si la
@@ -429,9 +450,15 @@ const roomRateText = (room: FlowRoomType): string | null => {
   return `${desde}${money(Math.round(rate * 100))}/noche`
 }
 
-const roomLabel = (room: FlowRoomType): string => {
+const roomLabel = (room: FlowRoomType): string => String(room.name || '').trim()
+
+const roomOption = (room: FlowRoomType): MenuOption => {
   const rate = roomRateText(room)
-  return `${String(room.name || '').trim()}${rate ? ` — ${rate}` : ''}`
+  const detail = [
+    rate,
+    room.max_guests ? `hasta ${room.max_guests} persona(s)` : '',
+  ].filter(Boolean).join(' · ')
+  return { title: roomLabel(room), description: detail }
 }
 
 // ── Menú principal por capacidades reales ─────────────────────────────
@@ -473,18 +500,31 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
   switch (view.kind) {
     case 'main':
       return { reply: `¿En qué te ayudamos? ${PROMPT_CHOOSE}`, options: mainOptions(input) }
-    case 'categories':
+    case 'categories': {
+      // Paginadas: un negocio puede tener más de 10 categorías y la lista de
+      // WhatsApp solo admite 10 filas.
+      const all = categoriesOf(input.products)
+      const shown = all.slice(view.page * CATEGORY_PAGE_SIZE, (view.page + 1) * CATEGORY_PAGE_SIZE)
+      const hasMore = all.length > (view.page + 1) * CATEGORY_PAGE_SIZE
       return {
         reply: view.intent === 'order' ? `¿Qué te gustaría pedir? ${PROMPT_CHOOSE}` : `Estas son nuestras categorías 👇`,
-        options: [...categoriesOf(input.products), OPT_BACK],
+        options: [
+          ...shown.map(category => ({
+            title: category,
+            description: `${productsInCategory(input.products, normalizeText(category)).length} producto(s)`,
+          })),
+          ...(hasMore ? [OPT_MORE] : []),
+          OPT_BACK,
+        ],
       }
+    }
     case 'products': {
       const list = productsInCategory(input.products, view.tag)
       const page = list.slice(view.page * PAGE_SIZE, view.page * PAGE_SIZE + PAGE_SIZE)
       const hasMore = list.length > (view.page + 1) * PAGE_SIZE
       return {
         reply: view.intent === 'order' ? `Elige el producto que deseas 👇` : `Estos son nuestros productos 👇`,
-        options: [...page.map(productLabel), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
+        options: [...page.map(productOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
       }
     }
     case 'product': {
@@ -531,7 +571,7 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       if (!rooms.length) {
         return { reply: `Por ahora no tengo habitaciones cargadas para mostrarte 🙏`, options: [OPT_TEAM, OPT_HOME] }
       }
-      return { reply: `Estas son nuestras habitaciones 👇`, options: [...rooms.map(roomLabel), OPT_BACK] }
+      return { reply: `Estas son nuestras habitaciones 👇`, options: [...rooms.map(roomOption), OPT_BACK] }
     }
     case 'room': {
       const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
@@ -647,12 +687,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       const categories = categoriesOf(input.products)
       if (choice === OPT_ORDER) {
         return goTo(state, categories.length
-          ? { kind: 'categories', intent: 'order' }
+          ? { kind: 'categories', intent: 'order', page: 0 }
           : { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
       }
       if (choice === OPT_BROWSE) {
         return goTo(state, categories.length
-          ? { kind: 'categories', intent: 'browse' }
+          ? { kind: 'categories', intent: 'browse', page: 0 }
           : { kind: 'products', intent: 'browse', tag: null, page: 0 }, input)
       }
       if (choice === OPT_REPEAT) {
@@ -686,6 +726,7 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
     }
     case 'categories': {
       if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
+      if (choice === OPT_MORE) return goTo(state, { ...view, page: view.page + 1 }, input)
       if (choice) {
         return goTo(state, { kind: 'products', intent: view.intent, tag: normalizeText(choice), page: 0 }, input)
       }
@@ -694,7 +735,7 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
     case 'products': {
       if (choice === OPT_BACK) {
         return goTo(state, categoriesOf(input.products).length
-          ? { kind: 'categories', intent: view.intent }
+          ? { kind: 'categories', intent: view.intent, page: 0 }
           : { kind: 'main' }, input)
       }
       if (choice === OPT_MORE) {
@@ -893,4 +934,4 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   return { reply: NOT_UNDERSTOOD, options: current.options }
 }
 
-export { advanceMenuFlow, parseStayRange, resetMenuFlow, STAY_REQUEST_OPTION }
+export { advanceMenuFlow, optionTitle, parseStayRange, resetMenuFlow, STAY_REQUEST_OPTION }
