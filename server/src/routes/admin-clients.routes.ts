@@ -133,7 +133,11 @@ const ALLOWED_BUSINESS_FIELDS = [
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
+  'chat_mode',
 ] as const
+
+// Solo estos dos modos existen; cualquier otro valor lo rechaza la base.
+const CHAT_MODES = ['menu', 'ai'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -148,6 +152,14 @@ function errorMessage(error: unknown): string {
 function safeFailure(res: Response, context: string, error: unknown) {
   console.error(`❌ ${context}:`, errorMessage(error))
   return res.status(500).json({ error: `No se pudo ${context}` })
+}
+
+// El modo se valida aquí además de en la base: así el panel recibe un mensaje
+// claro en vez de un error de restricción de Postgres.
+function invalidChatMode(body: Record<string, unknown>): boolean {
+  if (!('chat_mode' in body)) return false
+  const value = body.chat_mode
+  return !CHAT_MODES.some(mode => mode === value)
 }
 
 function isActiveLodgingConstraint(error: unknown): boolean {
@@ -218,6 +230,9 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   }
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
+  if (invalidChatMode(body)) {
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+  }
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
@@ -268,6 +283,17 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     assertDatabaseResult(result, 'crear onboarding')
     const business = result.data
     if (!business) throw new Error('crear onboarding: respuesta vacía')
+    // chat_mode es una columna nueva que la RPC atómica de onboarding todavía
+    // no conoce (lodging_enabled sí lo inserta ella). Se aplica justo después:
+    // es una preferencia, no un invariante de dinero, así que si fallara el
+    // negocio queda creado con el modo por defecto y se corrige desde el panel.
+    if (typeof body.chat_mode === 'string') {
+      assertDatabaseResult(
+        await db.updateBusiness(String(business.id), { chat_mode: body.chat_mode }),
+        'aplicar el modo de conversación',
+      )
+      business.chat_mode = body.chat_mode
+    }
     if (monthlyRate) {
       console.log(`💳 12 meses generados para ${name} — $${monthlyRate}/mes`)
     }
@@ -288,6 +314,9 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   if (identifierError) return res.status(400).json({ error: identifierError })
   if ('whatsapp_provider' in body && !configuredWhatsAppProvider(body)) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
+  }
+  if (invalidChatMode(body)) {
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
   if (typeof body.client_password === 'string' && body.client_password
     && body.client_password.length < MIN_PASSWORD_LENGTH) {

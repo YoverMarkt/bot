@@ -14,6 +14,7 @@ import {
   CUSTOM_BUSINESS_TYPE,
   businessTypeChoice,
   isLodgingBusinessType,
+  recommendedChatModeForBusinessType,
   recommendedLodgingForBusinessType,
   recommendedModeForBusinessType,
   recommendedSalesForBusinessType,
@@ -30,7 +31,7 @@ const EMPTY = {
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
-  lodging: 'no',
+  lodging: 'no', chat_mode: 'ai',
   plan: 'basic', monthly_rate: '', plan_expires_at: '',
   client_email: '', client_password: '', notes: '',
 }
@@ -45,6 +46,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   const [modeTouched, setModeTouched] = useState(false)
   const [salesTouched, setSalesTouched] = useState(false)
   const [lodgingTouched, setLodgingTouched] = useState(false)
+  const [chatModeTouched, setChatModeTouched] = useState(false)
 
   // Editar → cargar el detalle real (el server nunca manda esto a paneles de cliente)
   useEffect(() => {
@@ -64,6 +66,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         lodging: c.lodging_enabled ? 'yes' : 'no',
+        chat_mode: c.chat_mode === 'menu' ? 'menu' : 'ai',
         plan: c.plan ?? 'basic',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         plan_expires_at: c.plan_expires_at ? c.plan_expires_at.slice(0, 10) : '',
@@ -91,6 +94,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       if (k === 'type' && !id && !lodgingTouched) {
         next.lodging = recommendedLodgingForBusinessType(value) ? 'yes' : 'no'
       }
+      if (k === 'type' && !id && !chatModeTouched) {
+        next.chat_mode = recommendedChatModeForBusinessType(value)
+      }
       return next
     })
   }
@@ -106,6 +112,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         lodging: id || lodgingTouched
           ? prev.lodging
           : recommendedLodgingForBusinessType(type) ? 'yes' : 'no',
+        chat_mode: id || chatModeTouched
+          ? prev.chat_mode
+          : recommendedChatModeForBusinessType(type),
       }
     })
   }
@@ -152,6 +161,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
       lodging_enabled: f.lodging === 'yes',
+      chat_mode: f.chat_mode,
       plan: f.plan,
       monthly_rate: parseFloat(f.monthly_rate) || null,
       plan_expires_at: f.plan_expires_at || null,
@@ -270,6 +280,20 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
+              </div>
+              <div>
+                <Label htmlFor="client-chat-mode">Quién conduce la conversación</Label>
+                <Select value={f.chat_mode} onValueChange={value => {
+                  setChatModeTouched(true)
+                  setVal('chat_mode')(value)
+                }}>
+                  <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="menu">Menú de opciones (sin IA)</SelectItem>
+                    <SelectItem value="ai">Conversación con IA</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Menú: el cliente elige entre opciones armadas con los datos reales del negocio; nada se inventa. IA: conversa libre y el servidor sigue calculando los totales.</p>
               </div>
               <div>
                 <Label htmlFor="client-lodging-mode">Hospedaje</Label>

@@ -63,6 +63,10 @@ create table if not exists businesses (
   takes_orders        boolean not null default true,
   -- Capacidad independiente para inventario/cotización de hospedaje.
   lodging_enabled     boolean not null default false,
+  -- Quién conduce la conversación: 'menu' = máquina de estados por código
+  -- (sin IA, opciones de datos reales) · 'ai' = conversación con IA.
+  chat_mode           text not null default 'ai'
+                      check (chat_mode in ('menu','ai')),
   -- Negocio / facturación
   plan                text default 'basic',
   monthly_rate        numeric(10,2),

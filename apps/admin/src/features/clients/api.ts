@@ -47,6 +47,7 @@ export type BusinessDetail = BusinessRow & {
   takes_bookings: boolean | null
   takes_orders: boolean | null
   lodging_enabled: boolean | null
+  chat_mode: 'menu' | 'ai' | null
   monthly_rate: number | null
   client_email: string
   credential_status: Record<'ycloud_api_key' | 'ycloud_webhook_secret' | 'meta_token' | 'telegram_bot_token', boolean>
