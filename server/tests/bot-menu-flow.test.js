@@ -33,6 +33,8 @@ const hostal = {
 const habitaciones = [
   { id: 'r1', name: 'Matrimonial', description: 'Cama queen con vista', amenities: ['wifi', 'desayuno', 'baño privado'], base_rate: 45, pricing_model: 'per_unit', max_guests: 2 },
   { id: 'r2', name: 'Familiar', description: 'Dos ambientes', base_rate: 70, pricing_model: 'per_person', max_guests: 4 },
+  // Capacidad FIJA: ocupación base = tope (una doble para exactamente 2)
+  { id: 'r3', name: 'Doble Estándar', base_rate: 40, pricing_model: 'per_unit', base_occupancy: 2, max_guests: 2 },
 ]
 
 // Las opciones pueden ser texto simple o {title, description}: para las
@@ -176,6 +178,8 @@ describe('modo menú estilo banco (sin IA)', () => {
     const cuartos = enviar(hostal, 'c4', '🛏️ Ver habitaciones', args)
     expect(titulos(cuartos.options)).toContain('Matrimonial')
     expect(detalle(cuartos.options, 'Matrimonial')).toContain('$45.00/noche')
+    // La descripción lidera con la capacidad total de la habitación
+    expect(detalle(cuartos.options, 'Matrimonial')).toContain('Para 2 huésped')
     // Tarifa por persona: se muestra "desde", el total exacto lo da la cotización
     expect(detalle(cuartos.options, 'Familiar')).toContain('desde $70.00/noche')
 
@@ -213,8 +217,9 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(confirmadas.reply).toContain('adultos')
     expect(confirmadas.reply).not.toContain('habitaciones')
 
-    enviar(hostal, 'c4', '2', args)
-    const cotizacion = enviar(hostal, 'c4', '0', args)
+    // Matrimonial (cap. 2): con 2 adultos ya se llena, así que NO pregunta
+    // niños; cotiza directo con 0 (la habitación acota las opciones)
+    const cotizacion = enviar(hostal, 'c4', '2', args)
 
     // La cotización viaja con la habitación elegida para que el servidor
     // muestre SOLO esa habitación (las demás, únicamente si no hay cupo)
@@ -238,6 +243,128 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(solicitud.action).toEqual({ type: 'stay_request', roomTypeId: 'r1', contactName: 'Carlos Pérez' })
     expect(solicitud.reply).toContain('Matrimonial')
     expect(solicitud.reply).toContain('Carlos Pérez')
+  })
+
+  it('registra la solicitud al tocar el botón nativo por NÚMERO tras la cotización', () => {
+    // En WhatsApp el botón envía el NÚMERO de opción, no el título. Tras la
+    // cotización, "1" debe ser "Solicitar esta habitación" (no la opción 1 del
+    // menú principal): antes se perdía y el hold nunca se creaba.
+    resetMenuFlow(hostal.id, 'nativo')
+    const args = { products: [], roomTypes: habitaciones }
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    const entrada = masDias(hoyEcuador(), 45)
+    const salida = masDias(entrada, 1)
+    const dia = iso => Number(iso.slice(8, 10))
+    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
+    const frase = mes(entrada) === mes(salida)
+      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
+      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
+
+    enviar(hostal, 'nativo', 'hola', args)
+    enviar(hostal, 'nativo', '🛏️ Ver habitaciones', args)
+    enviar(hostal, 'nativo', 'Matrimonial', args)
+    enviar(hostal, 'nativo', '📅 Cotizar estadía', args)
+    enviar(hostal, 'nativo', frase, args)
+    const cotizacion = enviar(hostal, 'nativo', '2', args) // 2 adultos (cap. 2) → cotiza
+    // La opción 1 tras la cotización es "Solicitar esta habitación"
+    expect(titulos(cotizacion.options)[0]).toBe('🛎️ Solicitar esta habitación')
+
+    // El cliente TOCA el botón → el canal manda el número "1", no el título
+    const nombre = enviar(hostal, 'nativo', '1', args)
+    expect(nombre.reply).toContain('nombre')
+    const solicitud = enviar(hostal, 'nativo', 'Ana Torres', args)
+    expect(solicitud.action).toEqual({ type: 'stay_request', roomTypeId: 'r1', contactName: 'Ana Torres' })
+  })
+
+  it('acota adultos y niños a la capacidad real de la habitación', () => {
+    resetMenuFlow(hostal.id, 'cap')
+    const args = { products: [], roomTypes: habitaciones }
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    const entrada = masDias(hoyEcuador(), 50)
+    const salida = masDias(entrada, 2)
+    const dia = iso => Number(iso.slice(8, 10))
+    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
+    const frase = mes(entrada) === mes(salida)
+      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
+      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
+
+    enviar(hostal, 'cap', 'hola', args)
+    enviar(hostal, 'cap', '🛏️ Ver habitaciones', args)
+    enviar(hostal, 'cap', 'Familiar', args) // capacidad 4
+    enviar(hostal, 'cap', '📅 Cotizar estadía', args)
+    const adultos = enviar(hostal, 'cap', frase, args)
+    // Familiar (cap. 4): ofrece 1..4 adultos, nunca más que la capacidad
+    expect(titulos(adultos.options)).toEqual(['1', '2', '3', '4'])
+
+    // Con 1 adulto todavía caben 3 → sí pregunta niños, hasta 3
+    const ninos = enviar(hostal, 'cap', '1', args)
+    expect(titulos(ninos.options)).toEqual(['0', '1', '2', '3'])
+    expect(ninos.action).toBeUndefined()
+
+    // 2 niños → cotiza 1 adulto + 2 niños con la habitación elegida
+    const cotizacion = enviar(hostal, 'cap', '2', args)
+    expect(cotizacion.action).toEqual({
+      type: 'stay_quote',
+      quote: { checkIn: entrada, checkOut: salida, roomsCount: 1, adults: 1, children: 2, roomTypeId: 'r2' },
+    })
+  })
+
+  it('pagina la lista de habitaciones cuando pasan de 8, respetando el tope de WhatsApp', () => {
+    // 11 habitaciones: no caben en una lista de WhatsApp (máximo 10 filas)
+    const muchas = Array.from({ length: 11 }, (_, index) => ({
+      id: `h${index}`,
+      name: `Habitación ${index}`,
+      base_rate: 30 + index,
+      pricing_model: 'per_unit',
+      base_occupancy: 1,
+      max_guests: 2,
+    }))
+    resetMenuFlow(hostal.id, 'pagcuartos')
+    const args = { products: [], roomTypes: muchas }
+    enviar(hostal, 'pagcuartos', 'hola', args)
+
+    const pagina1 = enviar(hostal, 'pagcuartos', '🛏️ Ver habitaciones', args)
+    const t1 = titulos(pagina1.options)
+    // 8 habitaciones + Ver más + Volver = 10 filas, justo el tope de WhatsApp
+    expect(t1.filter(x => x.startsWith('Habitación')).length).toBe(8)
+    expect(t1).toContain('➡️ Ver más')
+    expect(t1).toContain('⬅️ Volver')
+    expect(pagina1.options.length).toBe(10)
+
+    const pagina2 = enviar(hostal, 'pagcuartos', '➡️ Ver más', args)
+    const t2 = titulos(pagina2.options)
+    expect(t2.filter(x => x.startsWith('Habitación')).length).toBe(3)
+    expect(t2).not.toContain('➡️ Ver más')
+
+    // Se puede elegir una habitación de la segunda página
+    const detalleHab = enviar(hostal, 'pagcuartos', 'Habitación 10', args)
+    expect(detalleHab.reply).toContain('Habitación 10')
+  })
+
+  it('en una habitación de capacidad fija no pregunta por personas: cotiza directo', () => {
+    resetMenuFlow(hostal.id, 'fija')
+    const args = { products: [], roomTypes: habitaciones }
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    const entrada = masDias(hoyEcuador(), 55)
+    const salida = masDias(entrada, 1)
+    const dia = iso => Number(iso.slice(8, 10))
+    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
+    const frase = mes(entrada) === mes(salida)
+      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
+      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
+
+    enviar(hostal, 'fija', 'hola', args)
+    enviar(hostal, 'fija', '🛏️ Ver habitaciones', args)
+    enviar(hostal, 'fija', 'Doble Estándar', args) // base 2 = tope 2 → fija
+    enviar(hostal, 'fija', '📅 Cotizar estadía', args)
+    // Escritas las fechas, cotiza al toque con la capacidad (2), sin preguntar
+    const cotizacion = enviar(hostal, 'fija', frase, args)
+    expect(cotizacion.action).toEqual({
+      type: 'stay_quote',
+      quote: { checkIn: entrada, checkOut: salida, roomsCount: 1, adults: 2, children: 0, roomTypeId: 'r3' },
+    })
+    // Ya ofrece solicitar la habitación (no preguntó adultos ni niños)
+    expect(titulos(cotizacion.options)).toContain('🛎️ Solicitar esta habitación')
   })
 
   it('entiende los formatos reales de fechas y exige el mes cuando falta', () => {

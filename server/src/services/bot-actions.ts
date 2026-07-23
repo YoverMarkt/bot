@@ -218,6 +218,9 @@ export interface ProcessLodgingQuoteInput extends LodgingMediaInput {
   // Mensajes escritos por el huésped (historial + mensaje actual): las fechas
   // relativas ("el lunes", "mañana") se resuelven con el más reciente de aquí.
   guestMessages?: string[]
+  // Habitación ya elegida por el huésped (modo menú): la cotización se centra
+  // en ella y solo muestra alternativas si esa habitación no tiene cupo.
+  focusRoomTypeId?: string | null
   send(message: string): Promise<unknown>
 }
 
@@ -580,6 +583,7 @@ function createBotActions(dependencies: BotActionDependencies) {
     const computed = await computeLodgingQuoteReply(
       business, phone, quote,
       input.guestMessages?.length ? input.guestMessages : originalText,
+      input.focusRoomTypeId ?? null,
     )
     if (computed.outcome === 'retry') {
       await keepAutomated(business, phone, originalText)

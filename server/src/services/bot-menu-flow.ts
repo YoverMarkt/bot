@@ -32,6 +32,7 @@ interface FlowRoomType {
   amenities?: string[] | null
   base_rate?: number | string | null
   pricing_model?: string | null
+  base_occupancy?: number | null
   max_guests?: number | null
   media_urls?: string[] | null
 }
@@ -55,9 +56,13 @@ type FlowView =
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
-  | { kind: 'rooms' }
+  | { kind: 'rooms'; page?: number }
   | { kind: 'room'; roomTypeId: string }
   | { kind: 'stay'; step: 'dates' | 'adults' | 'children'; roomTypeId?: string; checkIn?: string; checkOut?: string; adults?: number }
+  // Paso posterior a la cotización: sus opciones (solicitar / cotizar otras
+  // fechas / equipo) son una vista propia para que el botón nativo (que envía
+  // el NÚMERO de opción) mapee correcto en el canal real.
+  | { kind: 'stay-result'; roomTypeId?: string }
   | { kind: 'stay-request' }
   | { kind: 'booking'; step: 'date' | 'time' | 'name'; date?: string; time?: string }
 
@@ -131,6 +136,8 @@ const OPT_OTHER = '✍️ Otra cantidad'
 const PAGE_SIZE = 6
 // WhatsApp permite 10 filas por lista: 9 opciones + "Ver más" entran justas.
 const CATEGORY_PAGE_SIZE = 9
+// Habitaciones: 8 + "Ver más" + "Volver" = 10, el tope exacto de la lista.
+const ROOM_PAGE_SIZE = 8
 const FLOW_TTL_MS = 30 * 60 * 1000
 const PROMPT_CHOOSE = 'Elige una opción del menú 👇'
 const NOT_UNDERSTOOD = `🙏 No te entendí. ${PROMPT_CHOOSE}`
@@ -452,13 +459,38 @@ const roomRateText = (room: FlowRoomType): string | null => {
 
 const roomLabel = (room: FlowRoomType): string => String(room.name || '').trim()
 
+// La descripción lidera con la capacidad total (lo que el huésped más mira) y
+// luego el precio. Entra en una fila de lista de WhatsApp (máx. 72 caracteres).
 const roomOption = (room: FlowRoomType): MenuOption => {
   const rate = roomRateText(room)
-  const detail = [
-    rate,
-    room.max_guests ? `hasta ${room.max_guests} persona(s)` : '',
-  ].filter(Boolean).join(' · ')
+  const capacity = room.max_guests
+    ? `Para ${room.max_guests} huésped${room.max_guests === 1 ? '' : 'es'}`
+    : ''
+  const detail = [capacity, rate].filter(Boolean).join(' · ')
   return { title: roomLabel(room), description: detail }
+}
+
+// Capacidad real de la habitación elegida: acota cuántos adultos/niños se
+// ofrecen. Sin habitación o sin capacidad definida, un tope prudente (8).
+const roomMaxGuests = (input: MenuFlowInput, roomTypeId?: string): number => {
+  const room = (input.roomTypes || []).find(item => item.id === roomTypeId)
+  const value = Number(room?.max_guests)
+  return Number.isInteger(value) && value > 0 ? Math.min(value, 10) : 8
+}
+
+// Ocupación base de la habitación (default 1 como el esquema).
+const roomBaseOccupancy = (room?: FlowRoomType | null): number => {
+  const value = Number(room?.base_occupancy)
+  return Number.isInteger(value) && value > 0 ? value : 1
+}
+
+// Habitación de capacidad FIJA (p. ej. Matrimonial para 2): su tope coincide
+// con su ocupación base, así que no tiene sentido preguntar por personas.
+const roomIsFixedCapacity = (room?: FlowRoomType | null): boolean => {
+  if (!room) return false
+  const max = Number(room.max_guests)
+  if (!Number.isInteger(max) || max <= 0) return false
+  return max <= roomBaseOccupancy(room)
 }
 
 // ── Menú principal por capacidades reales ─────────────────────────────
@@ -571,7 +603,15 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       if (!rooms.length) {
         return { reply: `Por ahora no tengo habitaciones cargadas para mostrarte 🙏`, options: [OPT_TEAM, OPT_HOME] }
       }
-      return { reply: `Estas son nuestras habitaciones 👇`, options: [...rooms.map(roomOption), OPT_BACK] }
+      // Paginadas: un hostal puede tener más de las que caben en una lista de
+      // WhatsApp (10 filas). Se muestran de a 8 con "Ver más".
+      const page = view.page || 0
+      const shown = rooms.slice(page * ROOM_PAGE_SIZE, (page + 1) * ROOM_PAGE_SIZE)
+      const hasMore = rooms.length > (page + 1) * ROOM_PAGE_SIZE
+      return {
+        reply: `Estas son nuestras habitaciones 👇`,
+        options: [...shown.map(roomOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
+      }
     }
     case 'room': {
       const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
@@ -604,12 +644,31 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
             options: [OPT_BACK],
           }
         }
-        case 'adults':
-          return { reply: `¿Cuántos adultos se hospedarán? 👇`, options: ['1', '2', '3', '4'] }
-        case 'children':
-          return { reply: `¿Cuántos niños? 👇`, options: ['0', '1', '2'] }
+        case 'adults': {
+          // Solo hasta la capacidad de la habitación elegida (Matrimonial cap. 2
+          // ofrece 1-2, no 1-4). El total lo calcula igual el servidor.
+          const max = roomMaxGuests(input, view.roomTypeId)
+          const options = Array.from({ length: max }, (_, index) => String(index + 1))
+          return { reply: `¿Cuántos adultos se hospedarán? 👇`, options }
+        }
+        case 'children': {
+          // Solo los niños que aún caben tras los adultos. Si no cabe ninguno,
+          // este paso ni se muestra (se salta y cotiza con 0).
+          const remaining = Math.max(0, roomMaxGuests(input, view.roomTypeId) - (view.adults || 0))
+          const options = Array.from({ length: remaining + 1 }, (_, index) => String(index))
+          return { reply: `¿Cuántos niños? 👇`, options }
+        }
       }
       break
+    case 'stay-result': {
+      // Tras la cotización oficial: solicitar la habitación elegida, cotizar
+      // otras fechas o pasar al equipo. Con habitación elegida se ofrece
+      // "Solicitar esta habitación"; sin ella, volver a ver habitaciones.
+      const followUps: MenuOption[] = view.roomTypeId
+        ? [STAY_REQUEST_OPTION, OPT_STAY_AGAIN, OPT_TEAM, OPT_HOME]
+        : [OPT_STAY_AGAIN, OPT_ROOMS, OPT_TEAM, OPT_HOME]
+      return { reply: '', options: followUps }
+    }
     case 'stay-request':
       return { reply: `¿A nombre de quién registro la solicitud? ✍️`, options: [OPT_HOME] }
     case 'booking':
@@ -649,6 +708,23 @@ const GLOBAL_TEAM = new Set(['asesor', 'humano', 'una persona', 'persona', 'habl
 const goTo = (state: FlowState, view: FlowView, input: MenuFlowInput): MenuFlowResult => {
   state.view = view
   return renderView(view, state, input)
+}
+
+// Emite la cotización oficial (el servidor la calcula) y deja la conversación
+// en la vista stay-result, cuyos botones el canal real puede mapear por número.
+const emitStayQuote = (
+  state: FlowState,
+  input: MenuFlowInput,
+  params: { checkIn: string; checkOut: string; adults: number; children: number; roomTypeId?: string },
+): MenuFlowResult => {
+  const action: FlowAction = {
+    type: 'stay_quote',
+    // El servidor calcula solas las habitaciones que necesita el grupo
+    // (greatest(1, ceil(huéspedes/capacidad)) en la RPC)
+    quote: { ...params, roomsCount: 1 },
+  }
+  state.lastStay = { roomTypeId: params.roomTypeId, checkIn: params.checkIn, checkOut: params.checkOut }
+  return { ...goTo(state, { kind: 'stay-result', roomTypeId: params.roomTypeId }, input), action }
 }
 
 const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
@@ -714,13 +790,6 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         }
       }
       if (choice === OPT_ROOMS) return goTo(state, { kind: 'rooms' }, input)
-      if (choice === OPT_STAY || normalizeText(OPT_STAY_AGAIN) === text) {
-        return goTo(state, { kind: 'stay', step: 'dates' }, input)
-      }
-      // Ofrecida tras una cotización con habitación elegida
-      if (normalizeText(STAY_REQUEST_OPTION) === text && state.lastStay?.roomTypeId) {
-        return goTo(state, { kind: 'stay-request' }, input)
-      }
       if (choice === OPT_BOOK) return goTo(state, { kind: 'booking', step: 'date' }, input)
       break
     }
@@ -821,6 +890,7 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
     }
     case 'rooms': {
       if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
+      if (choice === OPT_MORE) return goTo(state, { kind: 'rooms', page: (view.page || 0) + 1 }, input)
       if (choice) {
         const room = (input.roomTypes || []).find(item => roomLabel(item) === choice)
         if (room) return goTo(state, { kind: 'room', roomTypeId: room.id }, input)
@@ -840,6 +910,18 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         if (choice === OPT_BACK) return goTo(state, { kind: 'rooms' }, input)
         const range = parseStayRange(input.message, todayEcuador())
         if (!range.ok) return { reply: STAY_RANGE_ERRORS[range.reason], options: [OPT_BACK] }
+        // Capacidad fija (Matrimonial para 2): no se pregunta por personas, se
+        // cotiza directo con su capacidad. El servidor calcula el total.
+        const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
+        if (roomIsFixedCapacity(room)) {
+          return emitStayQuote(state, input, {
+            checkIn: range.checkIn,
+            checkOut: range.checkOut,
+            adults: roomMaxGuests(input, view.roomTypeId),
+            children: 0,
+            roomTypeId: view.roomTypeId,
+          })
+        }
         // Se confirma la interpretación con el calendario real antes de seguir
         const next = goTo(state, { ...view, step: 'adults', checkIn: range.checkIn, checkOut: range.checkOut }, input)
         return {
@@ -848,35 +930,40 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         }
       }
       if (view.step === 'adults') {
-        const adults = parseQuantity(input.message, 20)
-        if (adults && adults > 0) return goTo(state, { ...view, step: 'children', adults }, input)
-        break
-      }
-      if (view.step === 'children') {
-        const children = parseQuantity(input.message, 10)
-        if (children !== null && view.checkIn && view.checkOut && view.adults) {
-          const action: FlowAction = {
-            type: 'stay_quote',
-            quote: {
-              checkIn: view.checkIn,
-              checkOut: view.checkOut,
-              // El servidor calcula solas las habitaciones que necesita el
-              // grupo (greatest(1, ceil(huéspedes/capacidad)) en la RPC)
-              roomsCount: 1,
-              adults: view.adults,
-              children,
-              roomTypeId: view.roomTypeId,
-            },
+        const max = roomMaxGuests(input, view.roomTypeId)
+        const adults = parseQuantity(input.message, max)
+        if (adults && adults > 0 && view.checkIn && view.checkOut) {
+          // Si la habitación ya se llena con esos adultos, no se pregunta por
+          // niños: se cotiza directo con 0.
+          if (max - adults <= 0) {
+            return emitStayQuote(state, input, {
+              checkIn: view.checkIn, checkOut: view.checkOut, adults, children: 0, roomTypeId: view.roomTypeId,
+            })
           }
-          state.lastStay = { roomTypeId: view.roomTypeId, checkIn: view.checkIn, checkOut: view.checkOut }
-          state.view = { kind: 'main' }
-          const followUps = view.roomTypeId
-            ? [STAY_REQUEST_OPTION, OPT_STAY_AGAIN, OPT_TEAM, OPT_HOME]
-            : [OPT_STAY_AGAIN, OPT_ROOMS, OPT_TEAM, OPT_HOME]
-          return { reply: '', options: followUps, action }
+          return goTo(state, { ...view, step: 'children', adults }, input)
         }
         break
       }
+      if (view.step === 'children') {
+        const remaining = Math.max(0, roomMaxGuests(input, view.roomTypeId) - (view.adults || 0))
+        const children = parseQuantity(input.message, remaining)
+        if (children !== null && view.checkIn && view.checkOut && view.adults) {
+          return emitStayQuote(state, input, {
+            checkIn: view.checkIn, checkOut: view.checkOut, adults: view.adults, children, roomTypeId: view.roomTypeId,
+          })
+        }
+        break
+      }
+      break
+    }
+    case 'stay-result': {
+      if (choice === STAY_REQUEST_OPTION && state.lastStay?.roomTypeId) {
+        return goTo(state, { kind: 'stay-request' }, input)
+      }
+      if (choice === OPT_STAY_AGAIN) {
+        return goTo(state, { kind: 'stay', step: 'dates', roomTypeId: view.roomTypeId }, input)
+      }
+      if (choice === OPT_ROOMS) return goTo(state, { kind: 'rooms' }, input)
       break
     }
     case 'stay-request': {

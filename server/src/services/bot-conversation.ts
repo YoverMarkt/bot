@@ -148,6 +148,7 @@ interface ConversationActions {
     originalText: string
     quote: ParsedBotOutput['lodgingQuote']
     guestMessages?: string[]
+    focusRoomTypeId?: string | null
     send(message: string): Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
@@ -346,6 +347,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         originalText: text,
         quote: action.quote as ParsedBotOutput['lodgingQuote'],
         guestMessages: [text],
+        // La habitación ya elegida centra la cotización: el huésped ve SOLO su
+        // total, no todas las habitaciones (las demás solo si la suya no tiene cupo).
+        focusRoomTypeId: action.quote.roomTypeId ?? null,
         send,
         sendImage,
         sendVideo: input.sendVideo,
@@ -382,11 +386,17 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     const message = renderMenuOptions(flow.reply, flow.options)
     let sentNatively = false
     if (flow.options.length && input.sendOptions) {
-      const nativeOptions = flow.options.map((option, index) => ({
-        id: String(index + 1),
-        title: typeof option === 'string' ? option : option.title,
-        description: typeof option === 'string' ? undefined : option.description,
-      }))
+      const nativeOptions = flow.options.map((option, index) => {
+        const title = typeof option === 'string' ? option : option.title
+        // Si la opción ES un número (cantidades, adultos, niños), el id lleva
+        // ese número para que "0 niños" registre 0 y no la posición del botón.
+        const id = /^\d+$/.test(title.trim()) ? title.trim() : String(index + 1)
+        return {
+          id,
+          title,
+          description: typeof option === 'string' ? undefined : option.description,
+        }
+      })
       try {
         sentNatively = await input.sendOptions(
           flow.reply.trim() || PROMPT_PICK_OPTION,
