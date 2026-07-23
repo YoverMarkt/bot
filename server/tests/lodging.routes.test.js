@@ -148,6 +148,39 @@ describe('rutas cliente de hospedaje', () => {
     }))
   })
 
+  it('reporta ingresos de estadías confirmadas agrupados y aislados por negocio', async () => {
+    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays').mockResolvedValue([
+      { id: 's1', room_type_name: 'Matrimonial', contact_name: 'Ana', contact_phone: '1', check_in: '2026-07-05', check_out: '2026-07-07', adults: 2, children: 0, nights: 2, total: 90, currency: 'USD', confirmed_at: '2026-07-01T00:00:00Z' },
+      { id: 's2', room_type_name: 'Matrimonial', contact_name: 'Luis', contact_phone: '2', check_in: '2026-07-10', check_out: '2026-07-11', adults: 2, children: 0, nights: 1, total: 45, currency: 'USD', confirmed_at: '2026-07-02T00:00:00Z' },
+      { id: 's3', room_type_name: 'Cabaña Familiar', contact_name: 'Eva', contact_phone: '3', check_in: '2026-07-15', check_out: '2026-07-18', adults: 2, children: 1, nights: 3, total: 300, currency: 'USD', confirmed_at: '2026-07-03T00:00:00Z' },
+    ])
+    vi.spyOn(db, 'getLodgingSettings').mockResolvedValue({ currency: 'USD' })
+
+    const response = await dispatch('get', '/api/client/lodging/revenue', {
+      auth: authorization(), query: { from: '2026-07-01', to: '2026-07-31' },
+    })
+
+    // El negocio sale del JWT, nunca de un parámetro manipulable
+    expect(getStays).toHaveBeenCalledWith('business-a', '2026-07-01', '2026-07-31')
+    expect(response.status).toBe(200)
+    expect(response.body).toMatchObject({
+      currency: 'USD', totalRevenue: 435, stays: 3, nights: 6, averagePerStay: 145,
+    })
+    // Desglose por habitación ordenado por ingreso descendente
+    expect(response.body.byRoomType).toEqual([
+      { roomTypeName: 'Cabaña Familiar', stays: 1, nights: 3, revenue: 300 },
+      { roomTypeName: 'Matrimonial', stays: 2, nights: 3, revenue: 135 },
+    ])
+    expect(response.body.items).toHaveLength(3)
+  })
+
+  it('valida el rango de fechas del reporte de ingresos', async () => {
+    const response = await dispatch('get', '/api/client/lodging/revenue', {
+      auth: authorization(), query: { from: '2026-07-31', to: '2026-07-01' },
+    })
+    expect(response.status).toBe(400)
+  })
+
   it('rechaza monedas fuera del contrato soportado', async () => {
     const upsert = vi.spyOn(db, 'upsertLodgingSettings')
 

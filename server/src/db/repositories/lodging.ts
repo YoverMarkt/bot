@@ -205,6 +205,31 @@ const getLodgingRequests = async (
   return (data || []) as DataRecord[]
 }
 
+// Estadías CONFIRMADAS para el reporte de ingresos (separado de ventas). Se
+// filtran por fecha de entrada (check_in) dentro del rango; el monto es el
+// total oficial que ya calculó la RPC al cotizar, nunca un valor de la IA.
+const getConfirmedLodgingStays = async (
+  businessId: string,
+  from?: string | null,
+  to?: string | null,
+) => {
+  let query = db
+    .from('lodging_requests')
+    .select(`
+      id, room_type_id, room_type_name, contact_name, contact_phone,
+      check_in, check_out, adults, children, units_required, nights,
+      currency, subtotal, tax, fees, total, confirmed_at, created_at
+    `)
+    .eq('business_id', businessId)
+    .eq('status', 'confirmed')
+    .order('check_in', { ascending: false })
+  if (from) query = query.gte('check_in', from)
+  if (to) query = query.lte('check_in', to)
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return (data || []) as DataRecord[]
+}
+
 const expireLodgingHolds = async (businessId: string) => db.rpc(
   'expire_lodging_holds',
   { p_business_id: businessId },
@@ -303,6 +328,7 @@ export = {
   createLodgingRequest,
   expireLodgingHolds,
   getLodgingRequests,
+  getConfirmedLodgingStays,
   getLodgingRequestById,
   setLodgingRequestStatus,
   getLodgingBlocks,

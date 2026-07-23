@@ -162,11 +162,13 @@ export default function Lodging() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="requests">Solicitudes</TabsTrigger>
+          <TabsTrigger value="revenue">Ingresos</TabsTrigger>
           <TabsTrigger value="rooms">Habitaciones</TabsTrigger>
           <TabsTrigger value="availability">Disponibilidad</TabsTrigger>
           <TabsTrigger value="settings">Configuración</TabsTrigger>
         </TabsList>
         <TabsContent value="requests" className="mt-4"><RequestsPanel /></TabsContent>
+        <TabsContent value="revenue" className="mt-4"><RevenuePanel /></TabsContent>
         <TabsContent value="rooms" className="mt-4"><RoomsPanel /></TabsContent>
         <TabsContent value="availability" className="mt-4"><AvailabilityPanel /></TabsContent>
         <TabsContent value="settings" className="mt-4"><SettingsPanel /></TabsContent>
@@ -541,6 +543,82 @@ function RequestsPanel() {
       <div><h2 className="font-semibold">Pendientes ({pending.length})</h2><p className="text-sm text-muted-foreground">Confirma antes de que venza la retención. El servidor vuelve a validar el cupo.</p></div>
       {pending.length === 0 ? <EmptyState icon={CalendarRange} title="Sin solicitudes pendientes" description="Cuando un huésped elija una cotización del bot, aparecerá aquí para la decisión del equipo autorizado." /> : <div className="grid gap-4 xl:grid-cols-2">{pending.map(request => <RequestCard key={request.id} request={request} busy={status.isPending} onStatus={next => status.mutate({ id: request.id, next })} />)}</div>}
       {history.length > 0 && <><div><h2 className="font-semibold">Historial</h2><p className="text-sm text-muted-foreground">Solicitudes confirmadas, rechazadas, canceladas o vencidas.</p></div><div className="grid gap-3 xl:grid-cols-2">{history.map(request => <RequestCard key={request.id} request={request} busy={status.isPending} onStatus={next => status.mutate({ id: request.id, next })} />)}</div></>}
+    </div>
+  )
+}
+
+// Rango del mes actual (por defecto del reporte de ingresos)
+function monthRange(): { from: string; to: string } {
+  const now = new Date()
+  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return {
+    from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+    to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  }
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return <Card className="gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="text-2xl font-bold text-foreground">{value}</p></Card>
+}
+
+// Ingresos por estadías CONFIRMADAS (aparte de las ventas de productos). Los
+// montos ya los calculó el servidor; aquí solo se leen y agrupan.
+function RevenuePanel() {
+  const [range, setRange] = useState(monthRange)
+  const query = useQuery({
+    queryKey: ['lodging-revenue', range.from, range.to],
+    queryFn: () => lodging.getLodgingRevenue(range.from, range.to),
+  })
+  const data = query.data
+  const currency = data?.currency || 'USD'
+
+  return (
+    <div className="space-y-5">
+      <Card className="gap-4 p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Desde" htmlFor="revenue-from"><Input id="revenue-from" type="date" value={range.from} onChange={event => setRange(current => ({ ...current, from: event.target.value }))} /></Field>
+          <Field label="Hasta" htmlFor="revenue-to"><Input id="revenue-to" type="date" value={range.to} onChange={event => setRange(current => ({ ...current, to: event.target.value }))} /></Field>
+          <Button variant="outline" onClick={() => setRange(monthRange())}>Mes actual</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Ingresos de las estadías <strong>confirmadas</strong> cuya entrada cae en el rango. Es un reporte aparte de las ventas de productos.</p>
+      </Card>
+
+      {query.isLoading ? <PanelSkeleton />
+        : query.isError ? <QueryError onRetry={() => { void query.refetch() }} />
+          : !data ? null
+            : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <StatCard label="Ingresos confirmados" value={money(data.totalRevenue, currency)} />
+                  <StatCard label="Estadías" value={String(data.stays)} />
+                  <StatCard label="Noches vendidas" value={String(data.nights)} />
+                </div>
+                {data.stays === 0 ? (
+                  <EmptyState icon={CalendarRange} title="Sin ingresos en el rango" description="Cuando confirmes estadías en la pestaña Solicitudes, sus ingresos aparecerán aquí." />
+                ) : (
+                  <>
+                    <Card className="gap-3 p-4">
+                      <CardTitle className="text-base">Por tipo de habitación</CardTitle>
+                      <div className="space-y-2">{data.byRoomType.map(row => (
+                        <div key={row.roomTypeName} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                          <div className="min-w-0"><p className="truncate font-medium">{row.roomTypeName}</p><p className="text-xs text-muted-foreground">{row.stays} estadía(s) · {row.nights} noche(s)</p></div>
+                          <p className="font-semibold">{money(row.revenue, currency)}</p>
+                        </div>
+                      ))}</div>
+                    </Card>
+                    <Card className="gap-3 p-4">
+                      <CardTitle className="text-base">Estadías confirmadas ({data.stays})</CardTitle>
+                      <div className="space-y-2">{data.items.map(item => (
+                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                          <div className="min-w-0"><p className="truncate font-medium">{item.contactName || item.contactPhone || 'Huésped'} · {item.roomTypeName}</p><p className="text-xs text-muted-foreground">{item.checkIn} → {item.checkOut} · {item.nights} noche(s) · {item.adults} adulto(s), {item.children} niño(s)</p></div>
+                          <p className="font-semibold">{money(item.total, currency)}</p>
+                        </div>
+                      ))}</div>
+                    </Card>
+                  </>
+                )}
+              </>
+            )}
     </div>
   )
 }
