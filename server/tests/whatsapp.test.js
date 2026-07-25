@@ -69,6 +69,66 @@ describe('integración multi-proveedor de WhatsApp', () => {
     expect(showTyping).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
   })
 
+  it('propaga el modo directo para mantener media y CTA en secuencia', async () => {
+    const sendImage = vi.spyOn(ycloud, 'sendImage').mockResolvedValue(undefined)
+    const sendVideo = vi.spyOn(ycloud, 'sendVideo').mockResolvedValue(undefined)
+    const sendInteractive = vi.spyOn(ycloud, 'sendInteractive').mockResolvedValue(true)
+    const business = {
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'ycloud-business-key',
+      ycloud_number: '+593990000010',
+    }
+
+    await whatsapp.sendImage(
+      business,
+      '+593990000001',
+      'https://cdn.example.com/a.jpg',
+      '',
+      'direct',
+    )
+    await whatsapp.sendVideo(
+      business,
+      '+593990000001',
+      'https://cdn.example.com/a.mp4',
+      '',
+      'direct',
+    )
+    await whatsapp.sendInteractive(
+      business,
+      '+593990000001',
+      '¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía' }],
+      undefined,
+      'direct',
+    )
+
+    expect(sendImage).toHaveBeenCalledWith(
+      'ycloud-business-key',
+      '+593990000010',
+      '+593990000001',
+      'https://cdn.example.com/a.jpg',
+      '',
+      true,
+    )
+    expect(sendVideo).toHaveBeenCalledWith(
+      'ycloud-business-key',
+      '+593990000010',
+      '+593990000001',
+      'https://cdn.example.com/a.mp4',
+      '',
+      true,
+    )
+    expect(sendInteractive).toHaveBeenCalledWith(
+      'ycloud-business-key',
+      '+593990000010',
+      '+593990000001',
+      '¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía' }],
+      undefined,
+      true,
+    )
+  })
+
   it('un negocio solo-Telegram falla claro sin llamar a YCloud con credenciales ajenas', async () => {
     process.env.YCLOUD_API_KEY = 'ycloud-global-key'
     const sendText = vi.spyOn(ycloud, 'sendText').mockResolvedValue(undefined)

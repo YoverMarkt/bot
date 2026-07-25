@@ -199,14 +199,23 @@ export interface ProcessMessageInput {
   phone: string
   text: string
   send(message: string): Promise<unknown>
-  sendImage?: (url: string, caption?: string) => Promise<unknown>
+  sendImage?: (
+    url: string,
+    caption?: string,
+    deliveryMode?: 'queued' | 'direct',
+  ) => Promise<unknown>
   sendTyping?: () => Promise<unknown>
-  sendVideo?: (url: string, caption?: string) => Promise<unknown>
+  sendVideo?: (
+    url: string,
+    caption?: string,
+    deliveryMode?: 'queued' | 'direct',
+  ) => Promise<unknown>
   // Menú con botones/listas nativas. Devuelve false si el canal no lo soporta
   // y entonces las opciones se mandan numeradas como texto.
   sendOptions?: (
     body: string,
     options: { id: string; title: string; description?: string }[],
+    deliveryMode?: 'queued' | 'direct',
   ) => Promise<boolean>
 }
 
@@ -285,9 +294,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     text: string
     session?: ConversationSession | null
     send: (message: string) => Promise<unknown>
-    sendImage?: (url: string, caption?: string) => Promise<unknown>
+    sendImage?: ProcessMessageInput['sendImage']
     sendTyping?: () => Promise<unknown>
-    sendVideo?: (url: string, caption?: string) => Promise<unknown>
+    sendVideo?: ProcessMessageInput['sendVideo']
     sendOptions?: ProcessMessageInput['sendOptions']
   }): Promise<void> {
     const { business, phone, text, session, send, sendImage } = input
@@ -422,14 +431,21 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       }
     }
 
-    // Media solicitada por el cliente ("Ver fotos y videos"): se envían los
-    // archivos del ítem ANTES del texto con las opciones, para que los vea y
-    // luego decida. Un archivo que falle no corta el flujo (best-effort).
-    if (flow.media?.length) {
-      for (const item of flow.media) {
+    // Media solicitada por el cliente ("Ver fotos y videos"): fotos, video y
+    // recién después el CTA. YCloud usa envío directo para esta secuencia:
+    // su endpoint normal solo encola y puede adelantar el texto a la media.
+    const requestedMedia = [
+      ...(flow.image ? [{ url: flow.image, isVideo: false }] : []),
+      ...(flow.media || []),
+    ]
+    if (requestedMedia.length) {
+      for (const item of requestedMedia) {
         try {
-          if (item.isVideo) { if (input.sendVideo) await input.sendVideo(item.url) }
-          else if (sendImage) await sendImage(item.url)
+          if (item.isVideo) {
+            if (input.sendVideo) await input.sendVideo(item.url, undefined, 'direct')
+          } else if (sendImage) {
+            await sendImage(item.url, undefined, 'direct')
+          }
         } catch { /* best-effort */ }
       }
     }
@@ -453,10 +469,10 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         }
       })
       try {
-        sentNatively = await input.sendOptions(
-          menuReply.trim() || PROMPT_PICK_OPTION,
-          nativeOptions,
-        )
+        const body = menuReply.trim() || PROMPT_PICK_OPTION
+        sentNatively = requestedMedia.length
+          ? await input.sendOptions(body, nativeOptions, 'direct')
+          : await input.sendOptions(body, nativeOptions)
       } catch { /* el fallback de texto cubre cualquier fallo */ }
       if (sentNatively) {
         await database.saveMessage(business.id, phone, 'assistant', message)
@@ -465,9 +481,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     if (!sentNatively && message.trim()) {
       await send(message)
       await database.saveMessage(business.id, phone, 'assistant', message)
-    }
-    if (flow.image && sendImage) {
-      try { await sendImage(flow.image) } catch { /* best-effort */ }
     }
     await database.upsertSession(business.id, phone, {
       last_message: text,

@@ -3,6 +3,9 @@ import axios from 'axios'
 const BASE_URL = 'https://api.ycloud.com/v2'
 const OUTBOUND_TIMEOUT_MS = 15_000
 const INBOUND_ACTION_TIMEOUT_MS = 3_000
+const messageUrl = (direct: boolean): string => (
+  `${BASE_URL}/whatsapp/messages${direct ? '/sendDirectly' : ''}`
+)
 
 function headers(apiKey: string) {
   return { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
@@ -89,10 +92,11 @@ export async function sendInteractive(
   body: string,
   options: InteractiveOption[],
   listButtonText?: string,
+  direct = false,
 ): Promise<boolean> {
   const interactive = buildInteractivePayload(body, options, listButtonText)
   if (!interactive) return false
-  await axios.post(`${BASE_URL}/whatsapp/messages`, {
+  await axios.post(messageUrl(direct), {
     from: fromNumber,
     to,
     type: 'interactive',
@@ -107,8 +111,9 @@ export async function sendImage(
   to: string,
   imageUrl: string,
   caption = '',
+  direct = false,
 ): Promise<void> {
-  await axios.post(`${BASE_URL}/whatsapp/messages`, {
+  await axios.post(messageUrl(direct), {
     from: fromNumber,
     to,
     type: 'image',
@@ -122,8 +127,9 @@ export async function sendVideo(
   to: string,
   videoUrl: string,
   caption = '',
+  direct = false,
 ): Promise<void> {
-  await axios.post(`${BASE_URL}/whatsapp/messages`, {
+  await axios.post(messageUrl(direct), {
     from: fromNumber,
     to,
     type: 'video',

@@ -231,6 +231,97 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
+  it('envía todas las fotos, luego el video y al final el CTA en modo directo', async () => {
+    const media = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        url: `https://cdn.example.com/foto-${index + 1}.jpg`,
+        isVideo: false,
+      })),
+      { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
+    ]
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
+          options: ['📅 Cotizar estadía'],
+          media,
+        }),
+      },
+    })
+    const events = []
+    const sendImage = vi.fn(async url => { events.push(`image:${url}`) })
+    const sendVideo = vi.fn(async url => { events.push(`video:${url}`) })
+    const sendOptions = vi.fn(async () => {
+      events.push('cta')
+      return true
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '📷 Ver fotos y videos',
+      sendImage,
+      sendVideo,
+      sendOptions,
+    }))
+
+    expect(events).toEqual([
+      ...media.slice(0, 5).map(item => `image:${item.url}`),
+      `video:${media[5].url}`,
+      'cta',
+    ])
+    for (const [url] of media.slice(0, 5).map(item => [item.url])) {
+      expect(sendImage).toHaveBeenCalledWith(url, undefined, 'direct')
+    }
+    expect(sendVideo).toHaveBeenCalledWith(
+      'https://cdn.example.com/recorrido.mp4',
+      undefined,
+      'direct',
+    )
+    expect(sendOptions).toHaveBeenCalledWith(
+      '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía', description: undefined }],
+      'direct',
+    )
+    expect(current.send).not.toHaveBeenCalled()
+  })
+
+  it('no adelanta el CTA mientras el último video todavía se está enviando', async () => {
+    let releaseVideo
+    const pendingVideo = new Promise(resolve => { releaseVideo = resolve })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¿Cotizamos tus fechas?',
+          options: ['📅 Cotizar estadía'],
+          media: [
+            { url: 'https://cdn.example.com/foto.jpg', isVideo: false },
+            { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
+          ],
+        }),
+      },
+    })
+    const sendOptions = vi.fn().mockResolvedValue(true)
+    const sendVideo = vi.fn().mockReturnValue(pendingVideo)
+
+    const processing = current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '📷 Ver fotos y videos',
+      sendVideo,
+      sendOptions,
+    }))
+
+    await vi.waitFor(() => expect(sendVideo).toHaveBeenCalledOnce())
+    expect(sendOptions).not.toHaveBeenCalled()
+
+    releaseVideo()
+    await processing
+
+    expect(sendOptions).toHaveBeenCalledOnce()
+    expect(sendVideo.mock.invocationCallOrder[0]).toBeLessThan(
+      sendOptions.mock.invocationCallOrder[0],
+    )
+  })
+
   it('el modo menú deriva a una persona con la misma ruta que el resto del bot', async () => {
     const current = setup({
       menuFlow: {

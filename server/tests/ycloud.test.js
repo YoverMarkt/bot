@@ -9,6 +9,7 @@ const API_KEY = 'test-api-key'
 const FROM = '+593999000001'
 const TO = '+593999000002'
 const MESSAGE_URL = 'https://api.ycloud.com/v2/whatsapp/messages'
+const DIRECT_MESSAGE_URL = `${MESSAGE_URL}/sendDirectly`
 const REQUEST_HEADERS = {
   'X-API-Key': API_KEY,
   'Content-Type': 'application/json',
@@ -57,6 +58,42 @@ describe('cliente de YCloud', () => {
       type: 'video',
       video: { link: 'https://cdn.example/video.mp4', caption: 'Demostración' },
     }, { headers: REQUEST_HEADERS, timeout: 15000 })
+  })
+
+  it('usa el envío síncrono para una secuencia estricta de media y CTA', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({})
+
+    await ycloud.sendImage(
+      API_KEY,
+      FROM,
+      TO,
+      'https://cdn.example/image.jpg',
+      '',
+      true,
+    )
+    await ycloud.sendVideo(
+      API_KEY,
+      FROM,
+      TO,
+      'https://cdn.example/video.mp4',
+      '',
+      true,
+    )
+    await ycloud.sendInteractive(
+      API_KEY,
+      FROM,
+      TO,
+      '¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía' }],
+      undefined,
+      true,
+    )
+
+    expect(post.mock.calls.map(call => call[0])).toEqual([
+      DIRECT_MESSAGE_URL,
+      DIRECT_MESSAGE_URL,
+      DIRECT_MESSAGE_URL,
+    ])
   })
 
   it('activa el indicador de escritura con timeout acotado', async () => {

@@ -36,6 +36,7 @@ function setup(overrides = {}) {
     sendText: vi.fn().mockResolvedValue(undefined),
     sendImage: vi.fn().mockResolvedValue(undefined),
     sendVideo: vi.fn().mockResolvedValue(undefined),
+    sendInteractive: vi.fn().mockResolvedValue(true),
     ...overrides.whatsapp,
   }
   const media = {
@@ -132,6 +133,48 @@ describe('entrada de canales del bot', () => {
     expect(ctx.sendChatAction).toHaveBeenCalledWith('typing')
     expect(ctx.replyWithVideo).toHaveBeenCalledWith(
       { url: 'https://cdn.example/a.mp4' }, { caption: 'Video TG' },
+    )
+  })
+
+  it('conserva el modo directo desde la conversación hasta WhatsApp', async () => {
+    const current = setup()
+
+    await current.entry.runMessage(
+      '0990000001', 'Ver fotos', '+593999999999', {
+        inboundId: 'inbound-media', channelAddress: ycloudAddress,
+      },
+    )
+
+    const input = current.conversation.processMessage.mock.calls[0][0]
+    await input.sendImage('https://cdn.example/a.jpg', undefined, 'direct')
+    await input.sendVideo('https://cdn.example/a.mp4', undefined, 'direct')
+    await input.sendOptions(
+      '¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía' }],
+      'direct',
+    )
+
+    expect(current.whatsapp.sendImage).toHaveBeenCalledWith(
+      businessA,
+      '0990000001',
+      'https://cdn.example/a.jpg',
+      undefined,
+      'direct',
+    )
+    expect(current.whatsapp.sendVideo).toHaveBeenCalledWith(
+      businessA,
+      '0990000001',
+      'https://cdn.example/a.mp4',
+      undefined,
+      'direct',
+    )
+    expect(current.whatsapp.sendInteractive).toHaveBeenCalledWith(
+      businessA,
+      '0990000001',
+      '¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía' }],
+      undefined,
+      'direct',
     )
   })
 

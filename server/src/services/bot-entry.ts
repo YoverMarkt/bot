@@ -34,18 +34,22 @@ interface EntryWhatsApp {
     to: string,
     url: string,
     caption?: string,
+    deliveryMode?: 'queued' | 'direct',
   ): Promise<void>
   sendVideo(
     business: EntryBusiness,
     to: string,
     url: string,
     caption?: string,
+    deliveryMode?: 'queued' | 'direct',
   ): Promise<void>
   sendInteractive(
     business: EntryBusiness,
     to: string,
     body: string,
     options: { id: string; title: string; description?: string }[],
+    listButtonText?: string,
+    deliveryMode?: 'queued' | 'direct',
   ): Promise<boolean>
 }
 
@@ -168,12 +172,21 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     phone: string,
     text: string,
     send: (message: string) => Promise<unknown>,
-    sendImage?: (url: string, caption?: string) => Promise<unknown>,
+    sendImage?: (
+      url: string,
+      caption?: string,
+      deliveryMode?: 'queued' | 'direct',
+    ) => Promise<unknown>,
     sendTyping?: () => Promise<unknown>,
-    sendVideo?: (url: string, caption?: string) => Promise<unknown>,
+    sendVideo?: (
+      url: string,
+      caption?: string,
+      deliveryMode?: 'queued' | 'direct',
+    ) => Promise<unknown>,
     sendOptions?: (
       body: string,
       options: { id: string; title: string; description?: string }[],
+      deliveryMode?: 'queued' | 'direct',
     ) => Promise<boolean>,
   ): Promise<void> {
     return conversation.processMessage({
@@ -249,10 +262,23 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       from,
       text,
       message => whatsapp.sendText(business, from, message),
-      (url, caption) => whatsapp.sendImage(business, from, url, caption),
+      (url, caption, deliveryMode) => deliveryMode
+        ? whatsapp.sendImage(business, from, url, caption, deliveryMode)
+        : whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),
-      (url, caption) => whatsapp.sendVideo(business, from, url, caption),
-      (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
+      (url, caption, deliveryMode) => deliveryMode
+        ? whatsapp.sendVideo(business, from, url, caption, deliveryMode)
+        : whatsapp.sendVideo(business, from, url, caption),
+      (body, menuOptions, deliveryMode) => deliveryMode
+        ? whatsapp.sendInteractive(
+            business,
+            from,
+            body,
+            menuOptions,
+            undefined,
+            deliveryMode,
+          )
+        : whatsapp.sendInteractive(business, from, body, menuOptions),
     )
   }
 

@@ -22,6 +22,7 @@ interface YCloudClient {
     body: string,
     options: { id: string; title: string; description?: string }[],
     listButtonText?: string,
+    direct?: boolean,
   ): Promise<boolean>
   sendImage(
     apiKey: string,
@@ -29,6 +30,7 @@ interface YCloudClient {
     to: string,
     imageUrl: string,
     caption?: string,
+    direct?: boolean,
   ): Promise<void>
   sendVideo(
     apiKey: string,
@@ -36,11 +38,13 @@ interface YCloudClient {
     to: string,
     videoUrl: string,
     caption?: string,
+    direct?: boolean,
   ): Promise<void>
 }
 
 const ycloud = require('./ycloud') as YCloudClient
 const OUTBOUND_TIMEOUT_MS = 15_000
+type DeliveryMode = 'queued' | 'direct'
 
 function providerFor(business: WhatsAppBusiness): WhatsAppProvider {
   const provider = String(business.whatsapp_provider || '').trim() || 'ycloud'
@@ -139,6 +143,7 @@ async function sendImage(
   to: string,
   imageUrl: string,
   caption = '',
+  deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
   const provider = providerFor(business)
   try {
@@ -167,6 +172,7 @@ async function sendImage(
         to,
         imageUrl,
         caption,
+        deliveryMode === 'direct',
       )
     }
   } catch (error) {
@@ -180,6 +186,7 @@ async function sendVideo(
   to: string,
   videoUrl: string,
   caption = '',
+  deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
   const provider = providerFor(business)
   try {
@@ -208,6 +215,7 @@ async function sendVideo(
         to,
         videoUrl,
         caption,
+        deliveryMode === 'direct',
       )
     }
   } catch (error) {
@@ -225,6 +233,7 @@ async function sendInteractive(
   body: string,
   options: { id: string; title: string; description?: string }[],
   listButtonText?: string,
+  deliveryMode: DeliveryMode = 'queued',
 ): Promise<boolean> {
   if (providerFor(business) !== 'ycloud') return false
   try {
@@ -235,6 +244,7 @@ async function sendInteractive(
       body,
       options,
       listButtonText,
+      deliveryMode === 'direct',
     )
   } catch (error) {
     // Nunca dejar al cliente sin respuesta: el llamador cae a texto
