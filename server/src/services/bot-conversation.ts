@@ -286,10 +286,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     session?: ConversationSession | null
     send: (message: string) => Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
+    sendTyping?: () => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
     sendOptions?: ProcessMessageInput['sendOptions']
   }): Promise<void> {
     const { business, phone, text, session, send, sendImage } = input
+    if (input.sendTyping) {
+      try { await input.sendTyping() } catch { /* best-effort */ }
+    }
     const [products, roomTypes, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
       database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
       business.lodging_enabled === true && database.getLodgingRoomTypes
@@ -527,7 +531,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
     if (business.chat_mode === 'menu') {
       await runMenuMode({
-        business, phone, text, session, send, sendImage, sendVideo,
+        business, phone, text, session, send, sendImage, sendTyping, sendVideo,
         sendOptions: input.sendOptions,
       })
       return

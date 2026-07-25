@@ -61,6 +61,7 @@ const webhookInboxWorker = createWebhookInboxWorker({
   processEvent: event => processInboundWebhook(event.payload, {
     businessId: event.business_id,
     provider: event.provider,
+    eventId: event.id,
   }),
   onError: (error, context) => {
     console.error(

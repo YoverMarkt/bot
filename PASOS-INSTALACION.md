@@ -28,13 +28,15 @@ Hospedaje usa `server/migration-hospedaje.sql`. Ejecuta después, en este orden:
 `server/migration-eliminar-kapso-retell.sql`,
 `server/migration-identificadores-canales.sql`,
 `server/migration-firmas-webhooks.sql` y
-`server/migration-inbox-webhooks.sql`. La limpieza de Kapso/Retell aborta si un
-negocio aún usa un proveedor retirado y es destructiva: ejecútala una sola vez,
-con respaldo, y **no la reejecutes sobre una base que ya completó
+`server/migration-inbox-webhooks.sql`, seguida de
+`server/migration-agrupado-webhooks.sql`. La limpieza de Kapso/Retell aborta si
+un negocio aún usa un proveedor retirado y es destructiva: ejecútala una sola
+vez, con respaldo, y **no la reejecutes sobre una base que ya completó
 identificadores, firmas e inbox**. Firmas prepara la autenticación oficial de
-YCloud y el inbox instala la persistencia, leases y reintentos antes de
-habilitar el worker. No vuelvas a ejecutar `migration-integraciones.sql`: se
-conserva únicamente como historial.
+YCloud; el inbox instala la persistencia, leases y reintentos; y agrupado añade
+la ventana durable de 3 segundos para textos rápidos antes de habilitar el
+worker. No vuelvas a ejecutar `migration-integraciones.sql`: se conserva
+únicamente como historial.
 
 ## 2. Variables de entorno
 

@@ -127,6 +127,7 @@ bot/
 │   ├── migration-identificadores-canales.sql # IDs/teléfonos exactos, únicos y sincronizados
 │   ├── migration-firmas-webhooks.sql # Endpoint ID + signing secret oficial de YCloud
 │   ├── migration-inbox-webhooks.sql # Cola durable, leases, reintentos y dead-letter de webhooks
+│   ├── migration-agrupado-webhooks.sql # Ventana durable y lote de textos rápidos por conversación
 │   ├── migration-integraciones.sql    # Migración inicial (OBSOLETA — solo historial, no ejecutar)
 │   └── .env                   # Credenciales (NUNCA a git)
 ├── apps/

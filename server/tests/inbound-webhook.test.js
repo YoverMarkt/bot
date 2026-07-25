@@ -69,6 +69,16 @@ describe('procesador durable de webhooks', () => {
     }))).toThrow(/Proveedor durable/)
   })
 
+  it('mide el texto como PostgreSQL para aceptar lotes Unicode dentro del límite', () => {
+    const unicodeText = '😀'.repeat(9_000)
+    const parsed = parseInboundWebhookPayload(payload({
+      content: { kind: 'text', text: unicodeText },
+    }))
+
+    expect(parsed.content.text).toBe(unicodeText)
+    expect(unicodeText.length).toBeGreaterThan(16_384)
+  })
+
   it('rechaza una fila cuyo envelope SQL no coincide con el payload', async () => {
     const current = setup()
 
@@ -105,6 +115,76 @@ describe('procesador durable de webhooks', () => {
         channelAddress: metaAddress,
       },
     )
+  })
+
+  it('propaga al bot el bypass solo para un lote durable validado y consolidado', async () => {
+    const current = setup()
+    const headId = '11111111-1111-4111-8111-111111111111'
+    const latestId = '22222222-2222-4222-8222-222222222222'
+
+    await current.process(
+      payload({
+        inboundId: 'inbound-latest',
+        content: { kind: 'text', text: 'Uno\nDos\nTres' },
+        _inboxBatch: { version: 1, eventIds: [headId, latestId] },
+      }),
+      { businessId: 'business-a', provider: 'meta', eventId: headId },
+    )
+
+    expect(current.bot.handleMessage).toHaveBeenCalledWith(
+      '+593988000001',
+      'Uno\nDos\nTres',
+      'meta-phone-a',
+      {
+        inboundId: 'inbound-latest',
+        businessId: 'business-a',
+        channelAddress: metaAddress,
+        bypassDebounce: true,
+      },
+    )
+  })
+
+  it('rechaza metadatos de lote falsificados, incongruentes o aplicados a media', async () => {
+    const current = setup()
+    const headId = '11111111-1111-4111-8111-111111111111'
+    const otherId = '22222222-2222-4222-8222-222222222222'
+
+    await expect(current.process(payload({
+      _inboxBatch: { version: 1, eventIds: [headId, headId] },
+    }), {
+      businessId: 'business-a',
+      provider: 'meta',
+      eventId: headId,
+    })).rejects.toThrow(/lote durable inválidos/)
+
+    await expect(current.process(payload({
+      _inboxBatch: { version: 2, eventIds: [headId] },
+    }), {
+      businessId: 'business-a',
+      provider: 'meta',
+      eventId: headId,
+    })).rejects.toThrow(/lote durable inválidos/)
+
+    await expect(current.process(payload({
+      _inboxBatch: { version: 1, eventIds: [otherId] },
+    }), {
+      businessId: 'business-a',
+      provider: 'meta',
+      eventId: headId,
+    })).rejects.toThrow(/no coincide con el evento/)
+
+    await expect(current.process(payload({
+      content: { kind: 'image', media: { id: 'media-a' } },
+      _inboxBatch: { version: 1, eventIds: [headId] },
+    }), {
+      businessId: 'business-a',
+      provider: 'meta',
+      eventId: headId,
+    })).rejects.toThrow(/solo puede contener mensajes de texto/)
+
+    expect(current.database.getBusinessByChannel).not.toHaveBeenCalled()
+    expect(current.bot.handleMessage).not.toHaveBeenCalled()
+    expect(current.bot.handleImage).not.toHaveBeenCalled()
   })
 
   it('descarga una imagen Meta con pertenencia, límites y sin redirecciones', async () => {

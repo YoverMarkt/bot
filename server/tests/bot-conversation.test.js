@@ -165,6 +165,10 @@ describe('orquestación de conversaciones del bot', () => {
         botPrompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
       }),
     )
+    expect(current.sendTyping).toHaveBeenCalledTimes(1)
+    expect(current.sendTyping.mock.invocationCallOrder[0]).toBeLessThan(
+      current.menuFlow.advanceMenuFlow.mock.invocationCallOrder[0],
+    )
     // El total lo sigue calculando money.ts vía processOrderPayload: el menú
     // solo aporta QUÉ pidió el cliente, nunca un monto
     expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
@@ -174,6 +178,20 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.send).toHaveBeenCalledWith(
       expect.stringContaining('1. ✅ Confirmar pedido'),
     )
+  })
+
+  it('continúa el modo menú si marcar el mensaje como leído falla', async () => {
+    const current = setup()
+    current.sendTyping.mockRejectedValueOnce(new Error('YCloud no disponible'))
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+    }))
+
+    expect(current.sendTyping).toHaveBeenCalledTimes(1)
+    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith('Menú')
   })
 
   it('el modo menú manda botones nativos y cae a texto numerado si el canal no puede', async () => {

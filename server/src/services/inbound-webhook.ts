@@ -16,6 +16,11 @@ type InboundContent =
   | { kind: 'text'; text: string }
   | { kind: 'audio' | 'image'; media: InboundMediaReference }
 
+interface InboundBatchMetadata {
+  version: 1
+  eventIds: string[]
+}
+
 export interface InboundWebhookPayload {
   version: 1
   provider: WhatsAppProvider
@@ -24,6 +29,11 @@ export interface InboundWebhookPayload {
   inboundId: string
   channelAddress: WhatsAppChannelAddress
   content: InboundContent
+  /**
+   * Metadato reservado que PostgreSQL agrega al congelar un lote de textos.
+   * Los webhooks externos nunca pueden construirlo directamente.
+   */
+  _inboxBatch?: InboundBatchMetadata
 }
 
 interface InboundBusiness {
@@ -42,6 +52,7 @@ interface MessageOptions {
   inboundId: string
   businessId: string
   channelAddress: WhatsAppChannelAddress
+  bypassDebounce?: boolean
 }
 
 interface InboundBot {
@@ -85,10 +96,12 @@ export interface InboundWebhookDependencies {
 export interface InboundWebhookExpectation {
   businessId: string
   provider: WhatsAppProvider
+  eventId?: string
 }
 
 const MAX_TEXT_LENGTH = 16_384
 const MAX_IDENTIFIER_LENGTH = 512
+const MAX_INBOX_BATCH_EVENTS = 20
 const META_IMAGE_LIMIT = 5 * 1024 * 1024
 const META_AUDIO_LIMIT = 16 * 1024 * 1024
 const YCLOUD_IMAGE_LIMIT = 10 * 1024 * 1024
@@ -106,6 +119,21 @@ function boundedText(value: unknown, maxLength = MAX_IDENTIFIER_LENGTH): string 
   return text && text.length <= maxLength ? text : null
 }
 
+function boundedMessageText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  // PostgreSQL char_length usa puntos de código, mientras String.length usa
+  // unidades UTF-16. Mantener la misma medida evita rechazar lotes con emojis
+  // que la RPC consolidó dentro del límite de 16.384 caracteres.
+  if (!text) return null
+  let length = 0
+  for (const _character of text) {
+    length += 1
+    if (length > MAX_TEXT_LENGTH) return null
+  }
+  return text
+}
+
 function inboundMediaReference(value: unknown): InboundMediaReference | null {
   const record = recordValue(value)
   if (!record) return null
@@ -118,6 +146,28 @@ function inboundMediaReference(value: unknown): InboundMediaReference | null {
     ...(url ? { url } : {}),
     ...(mimeType ? { mimeType } : {}),
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function inboundBatchMetadata(value: unknown): InboundBatchMetadata | null {
+  if (value === undefined) return null
+  const record = recordValue(value)
+  if (!record || record.version !== 1 || !Array.isArray(record.eventIds)
+    || record.eventIds.length < 1
+    || record.eventIds.length > MAX_INBOX_BATCH_EVENTS) {
+    throw new Error('Metadatos del lote durable inválidos')
+  }
+  const eventIds = record.eventIds.map(eventId => (
+    typeof eventId === 'string' && UUID_PATTERN.test(eventId)
+      ? eventId.toLowerCase()
+      : null
+  ))
+  if (eventIds.some(eventId => !eventId)
+    || new Set(eventIds).size !== eventIds.length) {
+    throw new Error('Metadatos del lote durable inválidos')
+  }
+  return { version: 1, eventIds: eventIds as string[] }
 }
 
 export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayload {
@@ -146,7 +196,7 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
   if (!content) throw new Error('Contenido durable de webhook inválido')
   let parsedContent: InboundContent
   if (content.kind === 'text') {
-    const text = boundedText(content.text, MAX_TEXT_LENGTH)
+    const text = boundedMessageText(content.text)
     if (!text) throw new Error('Texto durable de webhook inválido')
     parsedContent = { kind: 'text', text }
   } else if (content.kind === 'audio' || content.kind === 'image') {
@@ -161,6 +211,11 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
     throw new Error('Tipo durable de webhook no soportado')
   }
 
+  const batch = inboundBatchMetadata(payload._inboxBatch)
+  if (batch && parsedContent.kind !== 'text') {
+    throw new Error('Un lote durable solo puede contener mensajes de texto')
+  }
+
   return {
     version: 1,
     provider,
@@ -173,6 +228,7 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
       identifier,
     },
     content: parsedContent,
+    ...(batch ? { _inboxBatch: batch } : {}),
   }
 }
 
@@ -265,6 +321,13 @@ export function createInboundWebhookProcessor(
     )) {
       throw new Error('El payload durable no coincide con el tenant de su evento')
     }
+    if (payload._inboxBatch) {
+      const expectedHeadId = expectation?.eventId?.toLowerCase()
+      if (!expectedHeadId
+        || payload._inboxBatch.eventIds[0] !== expectedHeadId) {
+        throw new Error('El lote durable no coincide con el evento reservado')
+      }
+    }
     const business = await dependencies.database.getBusinessByChannel(
       payload.channelAddress,
     )
@@ -276,6 +339,7 @@ export function createInboundWebhookProcessor(
       inboundId: payload.inboundId,
       businessId: payload.businessId,
       channelAddress: payload.channelAddress,
+      ...(payload._inboxBatch ? { bypassDebounce: true } : {}),
     }
 
     if (payload.content.kind === 'text') {

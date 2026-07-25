@@ -86,6 +86,11 @@ export interface BotEntryOptions {
   inboundId?: string | null
   businessId?: string | null
   channelAddress?: WhatsAppChannelAddress
+  /**
+   * Los lotes ya consolidados por el inbox durable no deben esperar otra vez
+   * en el buffer local. Es una señal interna del worker, nunca del webhook.
+   */
+  bypassDebounce?: boolean
   ctx?: TelegramContext
 }
 
@@ -280,6 +285,10 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     businessPhone?: string | null,
     options: BotEntryOptions = {},
   ): Promise<void> {
+    if (options.bypassDebounce) {
+      return runMessage(from, text, businessPhone, options).then(() => undefined)
+    }
+
     const key = `${bufferChannelKey(businessPhone, options)}::${from}`
     const buffer = messageBuffers.get(key) || { texts: [], from, waiters: [] }
     const completion = new Promise<void>((resolve, reject) => {

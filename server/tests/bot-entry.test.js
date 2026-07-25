@@ -160,6 +160,31 @@ describe('entrada de canales del bot', () => {
     expect(current.whatsapp.sendTyping).toHaveBeenCalledWith(businessA, 'latest')
   })
 
+  it('procesa de inmediato un lote que ya fue agrupado por el inbox durable', async () => {
+    const current = setup()
+
+    await current.entry.handleMessage(
+      '0990000001',
+      'Primero\nSegundo\nTercero',
+      '+593999999999',
+      {
+        inboundId: 'latest',
+        businessId: 'business-a',
+        channelAddress: ycloudAddress,
+        bypassDebounce: true,
+      },
+    )
+
+    expect(current.setTimer).not.toHaveBeenCalled()
+    expect(current.clearTimer).not.toHaveBeenCalled()
+    expect(current.conversation.processMessage).toHaveBeenCalledOnce()
+    expect(current.conversation.processMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Primero\nSegundo\nTercero',
+      }),
+    )
+  })
+
   it('mantiene buffers separados para el mismo contacto entre proveedores', async () => {
     const current = setup()
     const samePhoneMeta = {

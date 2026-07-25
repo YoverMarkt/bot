@@ -108,8 +108,14 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] `migration-eliminar-kapso-retell.sql` aplicada antes de `migration-identificadores-canales.sql`.
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.
+- [ ] `migration-agrupado-webhooks.sql` aplicada después del inbox; en una actualización activa, después de retirar la réplica anterior.
 - [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
+
+Para actualizar una instancia que ya está atendiendo webhooks, despliega primero
+el runtime compatible, espera que Railway retire la réplica anterior y aplica
+después `migration-agrupado-webhooks.sql`. En una instalación nueva, ejecuta
+todas las migraciones antes de habilitar el worker.
 
 ---
 
