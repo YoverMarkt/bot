@@ -173,6 +173,9 @@ describe('simulador del superadmin', () => {
     vi.spyOn(db, 'getProducts').mockResolvedValue([
       { id: 'p1', name: 'Pizza Hawaiana', price: 8.5, stock: 'disponible', active: true },
     ])
+    vi.spyOn(db, 'getPolicies').mockResolvedValue({
+      bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+    })
     vi.spyOn(db, 'getMenuModifiers').mockResolvedValue([])
     const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
     const history = vi.spyOn(db, 'getContactHistory')

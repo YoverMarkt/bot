@@ -131,7 +131,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // MODO MENÚ (estilo banco): el CÓDIGO conduce toda la conversación con
     // opciones de los datos reales; la IA no participa en ningún mensaje.
     if (mode === 'menu') {
-      const [products, roomTypes, modifiers, availableSlots, lastOrder] = await Promise.all([
+      const [products, roomTypes, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
         db.getProducts(business.id),
         business.lodging_enabled === true ? db.getLodgingRoomTypes(business.id) : Promise.resolve([]),
         business.takes_orders !== false ? db.getMenuModifiers(business.id) : Promise.resolve([]),
@@ -140,12 +140,14 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         business.takes_orders !== false
           ? db.getLastOrderForContact(business.id, SIMULATOR_CONTACT).catch(() => null)
           : Promise.resolve(null),
+        db.getPolicies(business.id).catch(() => null),
       ])
       const flow = advanceMenuFlow({
         business,
         contact: SIMULATOR_CONTACT,
         message,
         products: products as MenuFlowInput['products'],
+        botPrompt: typeof policies?.bot_prompt === 'string' ? policies.bot_prompt : null,
         roomTypes: roomTypes as MenuFlowInput['roomTypes'],
         modifiers: modifiers as MenuFlowInput['modifiers'],
         availableSlots: availableSlots || {},

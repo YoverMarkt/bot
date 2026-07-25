@@ -222,6 +222,41 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(bienvenida.options.length).toBeGreaterThan(0)
   })
 
+  it('responde los saludos naturales con una bienvenida cordial y el nombre del negocio', () => {
+    const args = {
+      products: [],
+      roomTypes: habitaciones,
+      botPrompt: 'Eres Andrea, la recepcionista virtual de {{nombre_negocio}}, un hostal acogedor.',
+    }
+    const saludos = [
+      'Hola buenas tardes',
+      '¡Buenos días!',
+      'Buenas noches, quisiera información',
+      'Muy buenas',
+    ]
+
+    saludos.forEach((saludo, index) => {
+      const contact = `saludo-${index}`
+      resetMenuFlow(hostal.id, contact)
+      enviar(hostal, contact, 'hola', args)
+      enviar(hostal, contact, '🛏️ Ver habitaciones', args)
+
+      const respuesta = enviar(hostal, contact, saludo, args)
+      expect(respuesta.reply).toContain('¡Hola! 👋')
+      expect(respuesta.reply).toContain('Soy Andrea')
+      expect(respuesta.reply).toContain('recepcionista virtual de Hostal')
+      expect(respuesta.reply).not.toContain('No te entendí')
+      expect(titulos(respuesta.options)).toEqual(['🛏️ Ver habitaciones'])
+    })
+
+    resetMenuFlow(hostal.id, 'saludo-configurado')
+    const configurado = enviar(hostal, 'saludo-configurado', 'hola', {
+      ...args,
+      botPrompt: 'Saludo inicial: "Bienvenido a {{nombre_negocio}}. Es un placer atenderle."',
+    })
+    expect(configurado.reply).toContain('Bienvenido a Hostal Vista Andina. Es un placer atenderle.')
+  })
+
   it('recibe al huésped SOLO con habitaciones y cotiza desde la habitación elegida', () => {
     resetMenuFlow(hostal.id, 'c4')
     const args = { products: [], roomTypes: habitaciones }

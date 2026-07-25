@@ -117,6 +117,10 @@ export interface MenuFlowInput {
   contact: string
   message: string
   products: FlowProduct[]
+  // El prompt no decide precios, disponibilidad ni transiciones. Solo permite
+  // respetar el nombre, tono o saludo que configuró el dueño al dar la
+  // bienvenida en este flujo determinista.
+  botPrompt?: string | null
   roomTypes?: FlowRoomType[]
   modifiers?: FlowModifier[]
   availableSlots?: FlowSlots
@@ -582,6 +586,47 @@ const mediaCaption = (name: string, media: FlowMediaItem[]): string => {
   return `📷 Aquí tienes ${what} de *${name.trim()}* 👇`
 }
 
+const cleanPromptGreeting = (value: string): string => value
+  .replace(/##[^#\n]{0,200}##/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 280)
+
+const personalizePrompt = (value: string, businessName: string): string => value
+  .replace(/\{\{\s*(?:nombre_negocio|negocio)\s*\}\}/gi, businessName)
+  .replace(/\[(?:tu negocio|nombre del negocio|negocio)\]/gi, businessName)
+  .replace(/\[nombre\]/gi, 'Asistente')
+
+// El modo menú no entrega decisiones comerciales a la IA, pero la bienvenida
+// sí respeta el prompt del dueño. Primero usa un saludo explícito entre comillas
+// y, si no existe, toma la identidad declarada como "Eres Andrea, la...".
+const configuredWelcome = (input: MenuFlowInput): string => {
+  const businessName = String(input.business.name || '').trim()
+  const rawPrompt = String(input.botPrompt || '').trim()
+  const customPrompt = personalizePrompt(rawPrompt, businessName)
+
+  const explicitGreeting = customPrompt.match(
+    /(?:saludo\s+inicial|siempre\s+saluda\s+con)\s*:?\s*["“']([^"”'\n]{1,280})["”']/i,
+  )?.[1]
+  if (explicitGreeting) {
+    const greeting = cleanPromptGreeting(explicitGreeting)
+    if (greeting) return greeting
+  }
+
+  const persona = customPrompt.match(
+    /(?:^|\n)\s*eres\s+([^,\n.]{2,40}),\s+((?:el|la)\s+[^,\n.]{2,140})/im,
+  )
+  if (persona) {
+    const assistantName = cleanPromptGreeting(persona[1] || '')
+    const role = cleanPromptGreeting(persona[2] || '')
+    if (assistantName && role) {
+      return `¡Hola! 👋 Soy ${assistantName}, ${role}. Es un gusto atenderle 😊`
+    }
+  }
+
+  return `¡Hola! 👋 ${businessName ? `Gracias por escribir a ${businessName}` : 'Gracias por escribirnos'} 😊`
+}
+
 // ── Menú principal por capacidades reales ─────────────────────────────
 const mainOptions = (input: MenuFlowInput): string[] => {
   const options: string[] = []
@@ -609,9 +654,8 @@ const mainOptions = (input: MenuFlowInput): string[] => {
 }
 
 const welcomeReply = (input: MenuFlowInput): MenuFlowResult => {
-  const name = String(input.business.name || '').trim()
   return {
-    reply: `¡Hola! 👋 ${name ? `Gracias por escribir a ${name}` : 'Gracias por escribirnos'} 😊\n${PROMPT_CHOOSE}`,
+    reply: `${configuredWelcome(input)}\n${PROMPT_CHOOSE}`,
     options: mainOptions(input),
   }
 }
@@ -810,8 +854,16 @@ const resetMenuFlow = (businessId: string, contact: string): void => {
 }
 
 // ── Transiciones ──────────────────────────────────────────────────────
-const GLOBAL_HOME = new Set(['menu', 'menu principal', 'inicio', 'volver al menu', 'hola', 'buenas', 'empezar'])
+const GLOBAL_HOME = new Set(['menu', 'menu principal', 'inicio', 'volver al menu', 'empezar'])
 const GLOBAL_TEAM = new Set(['asesor', 'humano', 'una persona', 'persona', 'hablar con el equipo', 'ayuda humana'])
+
+// Un saludo puede llegar acompañado de cortesía o de una frase adicional
+// ("Hola buenas tardes", "Buenos días, quisiera información"). En modo menú
+// lo recibimos como un nuevo inicio cordial, con el nombre real del negocio,
+// en vez de responder "No te entendí".
+const isGreeting = (text: string): boolean => (
+  /^(?:hola+|holi|buen dia|buenos dias|buenas|muy buenas)(?:\s|$)/.test(text)
+)
 
 const goTo = (state: FlowState, view: FlowView, input: MenuFlowInput): MenuFlowResult => {
   state.view = view
@@ -851,14 +903,20 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   state.updatedAt = now
 
   const text = normalizeText(input.message)
+  const view = state.view
+  const current = renderView(view, state, input)
+  const choice = matchOption(input.message, current.options)
+
+  // Una opción real siempre gana: así un producto cuyo nombre empiece por
+  // "Hola" no se confunde con un saludo.
+  if (!choice && isGreeting(text)) {
+    state.view = { kind: 'main' }
+    return welcomeReply(input)
+  }
   if (GLOBAL_HOME.has(text)) return goTo(state, { kind: 'main' }, input)
   if (GLOBAL_TEAM.has(text)) {
     return { ...goTo(state, { kind: 'main' }, input), action: { type: 'handoff' }, reply: '', options: [OPT_HOME] }
   }
-
-  const view = state.view
-  const current = renderView(view, state, input)
-  const choice = matchOption(input.message, current.options)
 
   // Opciones globales presentes en varias vistas
   if (choice === OPT_HOME) return goTo(state, { kind: 'main' }, input)

@@ -290,7 +290,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     sendOptions?: ProcessMessageInput['sendOptions']
   }): Promise<void> {
     const { business, phone, text, session, send, sendImage } = input
-    const [products, roomTypes, modifiers, availableSlots, lastOrder] = await Promise.all([
+    const [products, roomTypes, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
       database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
       business.lodging_enabled === true && database.getLodgingRoomTypes
         ? database.getLodgingRoomTypes(business.id).catch(() => [])
@@ -304,13 +304,19 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       business.takes_orders !== false && database.getLastOrderForContact
         ? database.getLastOrderForContact(business.id, phone).catch(() => null)
         : Promise.resolve(null),
+      database.getPolicies(business.id).catch(() => null),
     ])
+    const configuredPrompt = policies && typeof policies === 'object' && 'bot_prompt' in policies
+      ? (policies as { bot_prompt?: unknown }).bot_prompt
+      : null
+    const botPrompt = typeof configuredPrompt === 'string' ? configuredPrompt : null
 
     const flow = menuFlow.advanceMenuFlow({
       business: business as MenuFlowInput['business'],
       contact: phone,
       message: text,
       products: products as MenuFlowInput['products'],
+      botPrompt,
       roomTypes: roomTypes as MenuFlowInput['roomTypes'],
       modifiers: modifiers as MenuFlowInput['modifiers'],
       availableSlots: (availableSlots || {}) as MenuFlowInput['availableSlots'],

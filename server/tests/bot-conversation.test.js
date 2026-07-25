@@ -138,6 +138,11 @@ describe('orquestación de conversaciones del bot', () => {
 
   it('en modo menú conduce el código: sin IA y el dinero por el núcleo de siempre', async () => {
     const current = setup({
+      database: {
+        getPolicies: vi.fn().mockResolvedValue({
+          bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+        }),
+      },
       menuFlow: {
         advanceMenuFlow: vi.fn().mockReturnValue({
           reply: '🧾 Resumen de tu pedido',
@@ -155,6 +160,11 @@ describe('orquestación de conversaciones del bot', () => {
     // La IA NO participa en ningún mensaje del modo menú
     expect(current.ai.callAI).not.toHaveBeenCalled()
     expect(current.prompt.buildPrompt).not.toHaveBeenCalled()
+    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botPrompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+      }),
+    )
     // El total lo sigue calculando money.ts vía processOrderPayload: el menú
     // solo aporta QUÉ pidió el cliente, nunca un monto
     expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
