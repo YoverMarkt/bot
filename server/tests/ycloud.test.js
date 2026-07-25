@@ -67,13 +67,38 @@ describe('cliente de YCloud', () => {
     expect(post).toHaveBeenCalledWith(
       'https://api.ycloud.com/v2/whatsapp/inboundMessages/inbound-message-id/typingIndicator',
       {},
-      { headers: REQUEST_HEADERS, timeout: 8000 },
+      { headers: REQUEST_HEADERS, timeout: 3000 },
+    )
+  })
+
+  it('marca explícitamente como leído con el endpoint oficial', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({})
+
+    await ycloud.markAsRead(API_KEY, 'inbound-message-id')
+
+    expect(post).toHaveBeenCalledWith(
+      'https://api.ycloud.com/v2/whatsapp/inboundMessages/inbound-message-id/markAsRead',
+      {},
+      { headers: REQUEST_HEADERS, timeout: 3000 },
+    )
+  })
+
+  it('codifica un wamid antes de incluirlo en la ruta', async () => {
+    const post = vi.spyOn(axios, 'post').mockResolvedValue({})
+
+    await ycloud.markAsRead(API_KEY, 'wamid.HBgN/a+b==')
+
+    expect(post).toHaveBeenCalledWith(
+      'https://api.ycloud.com/v2/whatsapp/inboundMessages/wamid.HBgN%2Fa%2Bb%3D%3D/markAsRead',
+      {},
+      { headers: REQUEST_HEADERS, timeout: 3000 },
     )
   })
 
   it('no llama a YCloud si falta el id del mensaje entrante', async () => {
     const post = vi.spyOn(axios, 'post').mockResolvedValue({})
 
+    await ycloud.markAsRead(API_KEY, '   ')
     await ycloud.showTyping(API_KEY, null)
 
     expect(post).not.toHaveBeenCalled()

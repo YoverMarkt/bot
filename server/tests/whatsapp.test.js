@@ -50,6 +50,7 @@ describe('integración multi-proveedor de WhatsApp', () => {
   it('delega YCloud con número y clave pertenecientes al mismo negocio', async () => {
     process.env.YCLOUD_API_KEY = 'ycloud-global-key'
     const sendText = vi.spyOn(ycloud, 'sendText').mockResolvedValue(undefined)
+    const markAsRead = vi.spyOn(ycloud, 'markAsRead').mockResolvedValue(undefined)
     const showTyping = vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
     const business = {
       whatsapp_provider: '   ',
@@ -64,6 +65,7 @@ describe('integración multi-proveedor de WhatsApp', () => {
     expect(sendText).toHaveBeenCalledWith(
       'ycloud-business-key', '+593990000010', '+593990000001', 'Hola',
     )
+    expect(markAsRead).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
     expect(showTyping).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
   })
 
@@ -85,6 +87,7 @@ describe('integración multi-proveedor de WhatsApp', () => {
   })
 
   it('no usa typing para Meta y los fallos no filtran respuestas del proveedor', async () => {
+    const markAsRead = vi.spyOn(ycloud, 'markAsRead').mockResolvedValue(undefined)
     const showTyping = vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
     const providerError = Object.assign(new Error('Meta no disponible'), {
       isAxiosError: true,
@@ -99,9 +102,77 @@ describe('integración multi-proveedor de WhatsApp', () => {
     await expect(whatsapp.sendText(business, '593990000001', 'Hola')).rejects.toBe(providerError)
     await whatsapp.sendTyping(business, 'inbound-a')
 
+    expect(markAsRead).not.toHaveBeenCalled()
     expect(showTyping).not.toHaveBeenCalled()
     expect(log).toHaveBeenCalledWith('❌ [meta] sendText:', 'Meta no disponible')
     expect(JSON.stringify(log.mock.calls)).not.toContain('secret-that-must-not-be-logged')
+  })
+
+  it('intenta el respaldo de typing y registra fallos de lectura sin filtrar secretos', async () => {
+    const providerError = Object.assign(new Error('Request failed with status code 404'), {
+      isAxiosError: true,
+      response: { data: { apiKey: 'secret-that-must-not-be-logged' } },
+    })
+    const markAsRead = vi.spyOn(ycloud, 'markAsRead').mockRejectedValue(providerError)
+    const showTyping = vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const business = {
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'ycloud-business-key',
+      ycloud_number: '+593990000010',
+    }
+
+    await expect(whatsapp.sendTyping(business, 'inbound-a')).resolves.toBeUndefined()
+
+    expect(markAsRead).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
+    expect(showTyping).toHaveBeenCalledWith('ycloud-business-key', 'inbound-a')
+    expect(warning).toHaveBeenCalledWith(
+      '⚠️  [ycloud] markAsRead:',
+      'Request failed with status code 404',
+    )
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('secret-that-must-not-be-logged')
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('ycloud-business-key')
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('inbound-a')
+  })
+
+  it('conserva la lectura si falla únicamente el indicador de escritura', async () => {
+    const markAsRead = vi.spyOn(ycloud, 'markAsRead').mockResolvedValue(undefined)
+    const showTyping = vi.spyOn(ycloud, 'showTyping')
+      .mockRejectedValue(new Error('typing no disponible'))
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const business = {
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'ycloud-business-key',
+      ycloud_number: '+593990000010',
+    }
+
+    await expect(whatsapp.sendTyping(business, 'inbound-a')).resolves.toBeUndefined()
+
+    expect(markAsRead).toHaveBeenCalledOnce()
+    expect(showTyping).toHaveBeenCalledOnce()
+    expect(warning).toHaveBeenCalledWith(
+      '⚠️  [ycloud] typingIndicator:',
+      'typing no disponible',
+    )
+  })
+
+  it('neutraliza rechazos desconocidos antes de escribirlos en logs', async () => {
+    vi.spyOn(ycloud, 'markAsRead').mockRejectedValue({
+      apiKey: 'secret-that-must-not-be-logged',
+    })
+    vi.spyOn(ycloud, 'showTyping').mockResolvedValue(undefined)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await whatsapp.sendTyping({
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'ycloud-business-key',
+    }, 'inbound-a')
+
+    expect(warning).toHaveBeenCalledWith(
+      '⚠️  [ycloud] markAsRead:',
+      'Error no identificado',
+    )
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('secret-that-must-not-be-logged')
   })
 
   it('mantiene el transporte WhatsApp aislado y sin secretos', () => {

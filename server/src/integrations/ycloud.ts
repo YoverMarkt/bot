@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const BASE_URL = 'https://api.ycloud.com/v2'
 const OUTBOUND_TIMEOUT_MS = 15_000
+const INBOUND_ACTION_TIMEOUT_MS = 3_000
 
 function headers(apiKey: string) {
   return { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
@@ -130,14 +131,39 @@ export async function sendVideo(
   }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
 }
 
-// Marca el mensaje entrante como leído (✓✓ azul) y muestra "escribiendo…".
-// YCloud retira el indicador al enviar la respuesta o después de 25 segundos.
-export async function showTyping(apiKey: string, inboundMessageId?: string | null): Promise<void> {
-  if (!inboundMessageId) return
+function inboundActionUrl(
+  inboundMessageId: string,
+  action: 'markAsRead' | 'typingIndicator',
+): string {
+  return `${BASE_URL}/whatsapp/inboundMessages/${encodeURIComponent(inboundMessageId)}/${action}`
+}
 
+// Marca explícitamente el mensaje entrante como leído (✓✓ azul).
+// YCloud acepta tanto el `id` propio del inbound como su `wamid`.
+export async function markAsRead(
+  apiKey: string,
+  inboundMessageId?: string | null,
+): Promise<void> {
+  const id = String(inboundMessageId || '').trim()
+  if (!id) return
   await axios.post(
-    `${BASE_URL}/whatsapp/inboundMessages/${inboundMessageId}/typingIndicator`,
+    inboundActionUrl(id, 'markAsRead'),
     {},
-    { headers: headers(apiKey), timeout: 8000 },
+    { headers: headers(apiKey), timeout: INBOUND_ACTION_TIMEOUT_MS },
+  )
+}
+
+// Muestra "escribiendo…"; este endpoint también marca leído, por lo que sirve
+// como respaldo si YCloud rechaza temporalmente la operación explícita.
+export async function showTyping(
+  apiKey: string,
+  inboundMessageId?: string | null,
+): Promise<void> {
+  const id = String(inboundMessageId || '').trim()
+  if (!id) return
+  await axios.post(
+    inboundActionUrl(id, 'typingIndicator'),
+    {},
+    { headers: headers(apiKey), timeout: INBOUND_ACTION_TIMEOUT_MS },
   )
 }

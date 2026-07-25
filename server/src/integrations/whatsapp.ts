@@ -12,6 +12,7 @@ export interface WhatsAppBusiness {
 }
 
 interface YCloudClient {
+  markAsRead(apiKey: string, inboundId: string): Promise<void>
   showTyping(apiKey: string, inboundId: string): Promise<void>
   sendText(apiKey: string, from: string, to: string, text: string): Promise<void>
   sendInteractive(
@@ -56,22 +57,41 @@ const ycloudNumberFor = (business: WhatsAppBusiness) => (
   business.ycloud_number || business.whatsapp_number
 ) as string
 
-function errorDetail(error: unknown): unknown {
+function errorDetail(error: unknown): string {
   if (axios.isAxiosError(error)) return error.message
-  return error instanceof Error ? error.message : error
+  return error instanceof Error ? error.message : 'Error no identificado'
 }
 
 async function sendTyping(
   business: WhatsAppBusiness,
   inboundId?: string | null,
 ): Promise<void> {
+  let provider: WhatsAppProvider
   try {
-    const provider = providerFor(business)
-    if (provider === 'ycloud' && inboundId) {
-      await ycloud.showTyping(ycloudKeyFor(business), inboundId)
-    }
+    provider = providerFor(business)
   } catch {
-    // El indicador es best-effort y nunca debe interrumpir la respuesta.
+    // La lectura es best-effort y nunca debe interrumpir la respuesta.
+    return
+  }
+  if (provider !== 'ycloud' || !inboundId) return
+
+  const apiKey = ycloudKeyFor(business)
+  // Ambas operaciones marcan como leído. Se ejecutan en paralelo para que un
+  // timeout del indicador no retrase otros 8 segundos la respuesta del bot.
+  const [readResult, typingResult] = await Promise.allSettled([
+    ycloud.markAsRead(apiKey, inboundId),
+    ycloud.showTyping(apiKey, inboundId),
+  ])
+  if (readResult.status === 'rejected') {
+    // Solo se registra el mensaje resumido de Axios; nunca response.data,
+    // headers, credenciales ni el identificador del cliente.
+    console.warn('⚠️  [ycloud] markAsRead:', errorDetail(readResult.reason))
+  }
+  if (typingResult.status === 'rejected') {
+    console.warn(
+      '⚠️  [ycloud] typingIndicator:',
+      errorDetail(typingResult.reason),
+    )
   }
 }
 

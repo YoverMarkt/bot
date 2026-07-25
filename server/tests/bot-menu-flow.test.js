@@ -257,6 +257,31 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(configurado.reply).toContain('Bienvenido a Hostal Vista Andina. Es un placer atenderle.')
   })
 
+  it('entiende frases naturales sobre habitaciones desde el menú principal', () => {
+    const args = { products: [], roomTypes: habitaciones }
+    const mensajes = [
+      'De las habitaciones',
+      'Necesito información de una habitación',
+      'Quiero ver los cuartos',
+      'Información del hospedaje',
+      'Busco alojamiento',
+      'Hola\nNecesito\nInformación\nDe las habitaciones',
+    ]
+
+    mensajes.forEach((message, index) => {
+      const contact = `intencion-habitaciones-${index}`
+      resetMenuFlow(hostal.id, contact)
+      enviar(hostal, contact, 'hola', args)
+
+      const respuesta = enviar(hostal, contact, message, args)
+      expect(respuesta.reply).toBe('Estas son nuestras habitaciones 👇')
+      expect(respuesta.reply).not.toContain('No te entendí')
+      expect(titulos(respuesta.options)).toContain('Matrimonial')
+      expect(titulos(respuesta.options)).toContain('Familiar')
+      expect(respuesta.action).toBeUndefined()
+    })
+  })
+
   it('recibe al huésped SOLO con habitaciones y cotiza desde la habitación elegida', () => {
     resetMenuFlow(hostal.id, 'c4')
     const args = { products: [], roomTypes: habitaciones }

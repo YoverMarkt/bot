@@ -865,6 +865,15 @@ const isGreeting = (text: string): boolean => (
   /^(?:hola+|holi|buen dia|buenos dias|buenas|muy buenas)(?:\s|$)/.test(text)
 )
 
+// En el menú principal también aceptamos cómo habla normalmente un huésped.
+// No hace falta que copie el título exacto del botón: frases como
+// "información de las habitaciones" o "busco un cuarto" llevan al mismo
+// inventario. Se evalúa solo en negocios con hospedaje y solo desde el inicio,
+// por lo que no interfiere con fechas, cantidades ni una cotización en curso.
+const wantsToSeeRooms = (text: string): boolean => (
+  /\b(?:habitacion(?:es)?|cuartos?|hospedaje|alojamiento)\b/.test(text)
+)
+
 const goTo = (state: FlowState, view: FlowView, input: MenuFlowInput): MenuFlowResult => {
   state.view = view
   return renderView(view, state, input)
@@ -906,10 +915,16 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   const view = state.view
   const current = renderView(view, state, input)
   const choice = matchOption(input.message, current.options)
+  const roomIntentFromMain = (
+    view.kind === 'main'
+    && Boolean(input.business.lodging_enabled)
+    && wantsToSeeRooms(text)
+  )
 
   // Una opción real siempre gana: así un producto cuyo nombre empiece por
-  // "Hola" no se confunde con un saludo.
-  if (!choice && isGreeting(text)) {
+  // "Hola" no se confunde con un saludo. La intención natural de ver
+  // habitaciones también gana si llegó fragmentada junto al saludo.
+  if (!choice && !roomIntentFromMain && isGreeting(text)) {
     state.view = { kind: 'main' }
     return welcomeReply(input)
   }
@@ -955,7 +970,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           reply: `Este es tu último pedido con los precios de hoy 👇${note}\n\n${summary.reply}`,
         }
       }
-      if (choice === OPT_ROOMS) return goTo(state, { kind: 'rooms' }, input)
+      if (
+        choice === OPT_ROOMS
+        || roomIntentFromMain
+      ) {
+        return goTo(state, { kind: 'rooms' }, input)
+      }
       if (choice === OPT_BOOK) return goTo(state, { kind: 'booking', step: 'date' }, input)
       break
     }
