@@ -414,6 +414,11 @@ const capitalize = (value: string): string => value ? value.charAt(0).toUpperCas
 const activeProducts = (products: FlowProduct[]): FlowProduct[] =>
   products.filter(item => item.active !== false && String(item.name || '').trim())
 
+// La identidad de una categoría es canónica y sin tildes/puntuación, tanto para
+// el dato guardado como para la opción elegida. La etiqueta visible conserva la
+// escritura original del catálogo.
+const canonicalTag = (value: unknown): string => normalizeText(String(value || ''))
+
 // Las categorías son los tags reales del catálogo; sin tags suficientes se
 // listan los productos directo (nada de categorías inventadas)
 const categoriesOf = (products: FlowProduct[]): string[] => {
@@ -421,9 +426,10 @@ const categoriesOf = (products: FlowProduct[]): string[] => {
   const labels: string[] = []
   let untagged = 0
   for (const product of activeProducts(products)) {
-    const tag = String(product.tags?.[0] || '').trim().toLowerCase()
+    const label = String(product.tags?.[0] || '').trim().toLowerCase()
+    const tag = canonicalTag(label)
     if (!tag) { untagged += 1; continue }
-    if (!seen.has(tag)) { seen.add(tag); labels.push(capitalize(tag)) }
+    if (!seen.has(tag)) { seen.add(tag); labels.push(capitalize(label)) }
   }
   if (labels.length < 2) return []
   if (untagged > 0) labels.push('Otros')
@@ -433,8 +439,11 @@ const categoriesOf = (products: FlowProduct[]): string[] => {
 const productsInCategory = (products: FlowProduct[], tag: string | null): FlowProduct[] => {
   const list = activeProducts(products)
   if (tag === null) return list
-  if (tag === 'otros') return list.filter(item => !String(item.tags?.[0] || '').trim())
-  return list.filter(item => String(item.tags?.[0] || '').trim().toLowerCase() === tag)
+  const canonical = canonicalTag(tag)
+  if (canonical === 'otros') {
+    return list.filter(item => !canonicalTag(item.tags?.[0]))
+  }
+  return list.filter(item => canonicalTag(item.tags?.[0]) === canonical)
 }
 
 // Rearma el carrito del último pedido con el catálogo VIGENTE. Si un producto
@@ -495,7 +504,7 @@ const modifierOption = (modifier: FlowModifier): MenuOption => ({
 const modifiersForTag = (input: MenuFlowInput, tag: string): FlowModifier[] =>
   (input.modifiers || []).filter(modifier => (
     modifierLabel(modifier)
-    && String(modifier.category_tag || '').trim().toLowerCase() === tag
+    && canonicalTag(modifier.category_tag) === canonicalTag(tag)
   ))
 
 // Toda habitación muestra su precio: exacto si es por unidad, "desde" si la

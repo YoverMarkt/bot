@@ -1,6 +1,6 @@
 # DEPLOY — BotPanel en Railway
 
-Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** con dominio propio. La base de datos ya está en Supabase (no se toca).
+Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** con dominio propio. La base de datos ya está en Supabase: Railway no la migra automáticamente y deben verificarse las migraciones pendientes antes del deploy.
 
 ---
 
@@ -100,7 +100,11 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] Un negocio de prueba con productos + prompt + horario (usa el **checklist de onboarding** del panel).
 - [ ] Números/keys de WhatsApp de cada negocio cargados desde el panel admin.
 - [ ] Cada negocio YCloud tiene su Endpoint ID y signing secret guardados, y una prueba real recibe `YCloud-Signature` válida.
+- [ ] En una base nueva se aplicó `schema.sql` una sola vez; en una base existente **no se usó como upgrade**.
 - [ ] `migration-hospedaje.sql` aplicada sin errores.
+- [ ] `migration-preparacion-produccion.sql` aplicada antes de las migraciones nuevas.
+- [ ] `migration-modo-menu.sql` aplicada antes de desplegar el modo menú.
+- [ ] `migration-modificadores-menu.sql` aplicada después de modo menú y con RLS/permisos cerrados.
 - [ ] `migration-eliminar-kapso-retell.sql` aplicada antes de `migration-identificadores-canales.sql`.
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.
@@ -111,6 +115,15 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 
 ## Notas
 
-- **Supabase** ya es tu base 24/7 (no migra nada al deploy). Solo asegúrate de haber corrido los `.sql` de migración (ya hechos).
+- **Supabase** ya es tu base 24/7 (Railway no migra nada al deploy). Ejecuta solo
+  las migraciones pendientes y respeta este orden final:
+  `preparacion-produccion` → `modo-menu` → `modificadores-menu` →
+  `eliminar-kapso-retell` → `identificadores-canales` → `firmas-webhooks` →
+  `inbox-webhooks`.
+- **No reejecutes `migration-eliminar-kapso-retell.sql`** sobre una base que ya
+  completó identificadores, firmas e inbox. Es destructiva y puede reinstalar
+  contratos transitorios reemplazados después.
+- **No ejecutes `schema.sql` como upgrade** de una base existente; se reserva
+  para una base nueva y vacía.
 - Los errores HTTP se aíslan por petición. Ante un error fatal, el proceso cierra ordenadamente para que Railway lo reinicie en un estado limpio.
 - `trust proxy` está activado para que el rate-limit funcione detrás del proxy de Railway.

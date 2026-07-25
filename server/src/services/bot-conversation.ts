@@ -3,6 +3,7 @@ import type {
   ActionProduct,
   ActionSession,
   BookingCreationOutcome,
+  LodgingActionOutcome,
 } from './bot-actions'
 import type { BookingTag, ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
@@ -154,7 +155,7 @@ interface ConversationActions {
     send(message: string): Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
-  }): Promise<unknown>
+  }): Promise<LodgingActionOutcome>
   processLodgingRequest(input: {
     business: ActionBusiness
     phone: string
@@ -162,7 +163,7 @@ interface ConversationActions {
     request: ParsedBotOutput['lodgingRequest']
     guestMessages?: string[]
     send(message: string): Promise<unknown>
-  }): Promise<unknown>
+  }): Promise<LodgingActionOutcome>
 }
 
 interface ConversationMedia {
@@ -318,6 +319,8 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
     await database.saveMessage(business.id, phone, 'user', text)
     const action = flow.action
+    let menuReply = flow.reply
+    let menuOptions = flow.options
 
     // Derivar a una persona: misma ruta que el resto del bot
     if (action?.type === 'handoff') {
@@ -337,7 +340,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // El total oficial lo calcula SIEMPRE money.ts con las RPC atómicas: el
     // menú solo aporta qué pidió el cliente, nunca un monto.
     if (action?.type === 'order') {
-      await actions.processOrderPayload({
+      const orderProcessed = await actions.processOrderPayload({
         business,
         phone,
         session,
@@ -349,8 +352,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         preFiltered: false,
         send,
       })
+      // processOrderPayload ya envía el resumen oficial cuando crea el pedido.
+      // El menú solo vuelve a presentar navegación; si falló, reemplaza por
+      // completo la confirmación optimista que produjo la máquina de estados.
+      menuReply = orderProcessed
+        ? `¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
+        : `No pude confirmar de forma segura si el pedido quedó registrado. Para evitar duplicarlo, no lo envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
     } else if (action?.type === 'stay_quote') {
-      await actions.processLodgingQuote({
+      const lodgingOutcome = await actions.processLodgingQuote({
         business,
         phone,
         originalText: text,
@@ -363,8 +372,11 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         sendImage,
         sendVideo: input.sendVideo,
       })
+      // La acción ya envió y guardó la cotización o el mensaje seguro de error.
+      // Solo una cotización válida conserva los botones para solicitarla.
+      if (lodgingOutcome !== 'quoted') return
     } else if (action?.type === 'stay_request') {
-      await actions.processLodgingRequest({
+      const lodgingOutcome = await actions.processLodgingRequest({
         business,
         phone,
         originalText: text,
@@ -375,10 +387,15 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         guestMessages: [text, action.contactName],
         send,
       })
+      // Todos los outcomes de una solicitud real (éxito, retry o handoff) ya
+      // enviaron su mensaje oficial. No duplicar ni contradecir ese resultado.
+      if (lodgingOutcome !== 'none') return
+      menuReply = 'No pude procesar la solicitud de hospedaje. Intenta nuevamente o habla con el equipo 🙏'
+      menuOptions = []
     } else if (action?.type === 'booking') {
       // El día y la hora vienen de la agenda real, ya resueltos por el menú:
       // los campos "raw" y los normalizados coinciden a propósito.
-      await actions.createBookingFromTag(business, phone, {
+      const bookingOutcome = await actions.createBookingFromTag(business, phone, {
         contactName: action.name,
         bookingDateRaw: action.date,
         bookingTimeRaw: action.time,
@@ -386,6 +403,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         bookingTime: action.time,
         service: 'Cita',
       }, products)
+      if (bookingOutcome === 'duplicate') {
+        menuReply = `Tu solicitud para ese horario ya está registrada. No necesitas enviarla de nuevo 😊\n¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
+      } else if (bookingOutcome === 'conflict') {
+        menuReply = `Ese horario acaba de ocuparse. No registré la cita; elige otro horario actualizado desde el menú 🙏`
+      } else if (bookingOutcome !== 'created') {
+        menuReply = `No pude confirmar de forma segura si la cita quedó registrada. Para evitar duplicarla, no la envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
+      }
     }
 
     // Media solicitada por el cliente ("Ver fotos y videos"): se envían los
@@ -404,10 +428,10 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
     // Primero se intentan botones/listas nativas; si el canal no los soporta
     // (Telegram, Meta) se cae a texto numerado, que el motor entiende igual.
-    const message = renderMenuOptions(flow.reply, flow.options)
+    const message = renderMenuOptions(menuReply, menuOptions)
     let sentNatively = false
-    if (flow.options.length && input.sendOptions) {
-      const nativeOptions = flow.options.map((option, index) => {
+    if (menuOptions.length && input.sendOptions) {
+      const nativeOptions = menuOptions.map((option, index) => {
         const title = typeof option === 'string' ? option : option.title
         // Si la opción ES un número (cantidades, adultos, niños), el id lleva
         // ese número para que "0 niños" registre 0 y no la posición del botón.
@@ -420,7 +444,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       })
       try {
         sentNatively = await input.sendOptions(
-          flow.reply.trim() || PROMPT_PICK_OPTION,
+          menuReply.trim() || PROMPT_PICK_OPTION,
           nativeOptions,
         )
       } catch { /* el fallback de texto cubre cualquier fallo */ }

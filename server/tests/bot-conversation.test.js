@@ -224,6 +224,241 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
+  it('reemplaza la confirmación optimista del menú cuando el pedido no se creó', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Pedido recibido! 🙌',
+          options: ['🛒 Hacer un pedido', '💬 Hablar con el equipo'],
+          action: {
+            type: 'order',
+            summary: 'resumen',
+            totalCents: 1000,
+            payload: 'Producto A x1',
+            items: [{ name: 'Producto A', qty: 1 }],
+          },
+        }),
+      },
+      actions: { processOrderPayload: vi.fn().mockResolvedValue(false) },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '✅ Confirmar pedido',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('No pude confirmar de forma segura'),
+    )
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('evitar duplicarlo'),
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Pedido recibido'),
+    )
+  })
+
+  it('conserva el resumen oficial del pedido sin duplicar una segunda confirmación', async () => {
+    const processOrderPayload = vi.fn().mockImplementation(async ({ send }) => {
+      await send('🧾 Resumen oficial — Total: $10.00')
+      return true
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Pedido recibido! 🙌',
+          options: ['🛒 Hacer un pedido'],
+          action: {
+            type: 'order',
+            summary: 'resumen',
+            totalCents: 1000,
+            payload: 'Producto A x1',
+            items: [{ name: 'Producto A', qty: 1 }],
+          },
+        }),
+      },
+      actions: { processOrderPayload },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '✅ Confirmar pedido',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith('🧾 Resumen oficial — Total: $10.00')
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Pedido recibido'),
+    )
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('¿Necesitas algo más?'),
+    )
+  })
+
+  it('preserva la cotización oficial y solo después ofrece sus acciones válidas', async () => {
+    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
+      await send('🏨 Cotización oficial — Total: $90.00')
+      return 'quoted'
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '',
+          options: ['🛎️ Solicitar esta habitación', '📅 Cotizar otras fechas'],
+          action: {
+            type: 'stay_quote',
+            quote: {
+              checkIn: '2026-08-10',
+              checkOut: '2026-08-13',
+              roomsCount: 1,
+              adults: 2,
+              children: 0,
+              roomTypeId: 'room-a',
+            },
+          },
+        }),
+      },
+      actions: { processLodgingQuote },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+      text: '2 adultos',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith('🏨 Cotización oficial — Total: $90.00')
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. 🛎️ Solicitar esta habitación'),
+    )
+  })
+
+  it('no ofrece solicitar una habitación cuando la cotización pidió reintentar', async () => {
+    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
+      await send('No hay disponibilidad; indícame otras fechas.')
+      return 'retry'
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '',
+          options: ['🛎️ Solicitar esta habitación'],
+          action: {
+            type: 'stay_quote',
+            quote: {
+              checkIn: '2026-08-10',
+              checkOut: '2026-08-13',
+              roomsCount: 1,
+              adults: 2,
+              children: 0,
+            },
+          },
+        }),
+      },
+      actions: { processLodgingQuote },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+    }))
+
+    expect(current.send).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith(
+      'No hay disponibilidad; indícame otras fechas.',
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Solicitar esta habitación'),
+    )
+  })
+
+  it('no duplica ni contradice el mensaje oficial de una solicitud de hospedaje', async () => {
+    const processLodgingRequest = vi.fn().mockImplementation(async ({ send }) => {
+      await send('✅ Solicitud de hospedaje registrada — pendiente de confirmación')
+      return 'requested'
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Listo! Registré tu solicitud.',
+          options: ['🏠 Menú principal'],
+          action: {
+            type: 'stay_request',
+            roomTypeId: 'room-a',
+            contactName: 'Ana Pérez',
+          },
+        }),
+      },
+      actions: { processLodgingRequest },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+      text: 'Ana Pérez',
+    }))
+
+    expect(current.send).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith(
+      '✅ Solicitud de hospedaje registrada — pendiente de confirmación',
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('¡Listo! Registré'),
+    )
+  })
+
+  it.each([
+    ['duplicate', 'ya está registrada'],
+    ['conflict', 'acaba de ocuparse'],
+    ['error', 'No pude confirmar de forma segura si la cita quedó registrada'],
+  ])('reemplaza la confirmación del menú cuando la cita termina en %s', async (
+    bookingOutcome,
+    expectedText,
+  ) => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Listo, Ana! Registré tu solicitud de cita.',
+          options: ['📅 Agendar una cita', '💬 Hablar con el equipo'],
+          action: {
+            type: 'booking',
+            date: '2026-08-10',
+            time: '10:00',
+            name: 'Ana',
+          },
+        }),
+      },
+      actions: {
+        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        takes_bookings: true,
+      },
+      text: 'Ana',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Registré tu solicitud de cita'),
+    )
+  })
+
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {
     const current = setup({
       reports: {

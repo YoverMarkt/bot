@@ -70,14 +70,22 @@ const db = require('../db') as ReportsDatabase
 
 const money = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
 
-// ── Comparar teléfonos de forma flexible (últimos 9 dígitos) ──
+// `key9` conserva la agrupación histórica de clientes en reportes. La
+// autorización del dueño es distinta: exige el identificador completo para que
+// dos países (o un valor corto) nunca colisionen por sufijo.
 const digits = (s: unknown) => String(s || '').replace(/\D/g, '')
 const key9 = (s: unknown) => digits(s).slice(-9)
+function canonicalOwnerIdentifier(value: unknown): string | null {
+  const raw = String(value ?? '').trim()
+  if (/^tg_-?\d+$/i.test(raw)) return raw.toLowerCase()
+  if (!/^\+?[0-9 ().-]+$/.test(raw)) return null
+  const phone = raw.replace(/[+ ().-]/g, '')
+  return /^[0-9]{8,15}$/.test(phone) ? phone : null
+}
 function samePhone(a: unknown, b: unknown) {
-  const x = digits(a), y = digits(b)
-  if (!x || !y) return false
-  const n = Math.min(x.length, y.length, 9)
-  return n > 0 && x.slice(-n) === y.slice(-n)
+  const x = canonicalOwnerIdentifier(a)
+  const y = canonicalOwnerIdentifier(b)
+  return x !== null && x === y
 }
 
 // ── Rangos de fecha por período ───────────────────────────

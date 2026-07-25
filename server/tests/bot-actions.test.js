@@ -223,7 +223,7 @@ describe('acciones de etiquetas del bot', () => {
     )
   })
 
-  it('activa handoff, registra el hueco y responde sin cambiar de tenant', async () => {
+  it('activa handoff por etiqueta explícita aunque la respuesta no sea incierta', async () => {
     const { actions, database } = setup()
     const send = vi.fn().mockResolvedValue(undefined)
 
@@ -233,7 +233,7 @@ describe('acciones de etiquetas del bot', () => {
       originalText: 'Necesito una persona',
       hasSale: false,
       hasHandoffTag: true,
-      isUncertain: true,
+      isUncertain: false,
       wasManual: false,
       send,
     })

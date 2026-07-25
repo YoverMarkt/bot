@@ -321,10 +321,10 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
   } : { ...EMPTY_ROOM })
   const [amenities, setAmenities] = useState(form.amenities.join(', '))
   // media_urls se guarda como un solo arreglo; en el panel lo separamos en
-  // fotos y un video (como en productos) clasificando cada URL. Al guardar se
-  // reconstruye el arreglo, sin tocar el backend, el esquema ni el bot.
+  // fotos y videos clasificando cada URL. Aunque el cargador reemplaza el
+  // video principal, conservamos cualquier video adicional de datos previos.
   const [photos, setPhotos] = useState<string[]>(() => (form.media_urls ?? []).filter(url => !isVideoUrl(url)))
-  const [video, setVideo] = useState<string>(() => (form.media_urls ?? []).find(isVideoUrl) ?? '')
+  const [videos, setVideos] = useState<string[]>(() => (form.media_urls ?? []).filter(isVideoUrl))
   const [photoStatus, setPhotoStatus] = useState('')
   const [videoStatus, setVideoStatus] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -360,7 +360,7 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
     setVideoStatus('Subiendo…'); setUploading(true)
     try {
       const uploaded = await uploadMedia(file)
-      setVideo(uploaded.url)
+      setVideos(current => [uploaded.url, ...current.slice(1)])
       setVideoStatus('✓ Video cargado')
     } catch (error) {
       setVideoStatus(`✗ ${errorText(error)}`)
@@ -371,7 +371,7 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
   }
 
   const removePhoto = (index: number) => setPhotos(current => current.filter((_, i) => i !== index))
-  const removeVideo = () => { setVideo(''); setVideoStatus('') }
+  const removeVideo = () => { setVideos(current => current.slice(1)); setVideoStatus('') }
 
   const save = useMutation({
     mutationFn: () => {
@@ -384,7 +384,7 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
           child_rate: null,
         } : {}),
         amenities: splitList(amenities),
-        media_urls: [...photos, video].filter(Boolean),
+        media_urls: [...photos, ...videos],
       }
       return room ? lodging.updateRoomType(room.id, payload) : lodging.createRoomType(payload)
     },
@@ -456,9 +456,9 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
             </div>
             <div className="rounded-lg border border-dashed border-input p-3">
               <Label htmlFor="room-video" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground/90"><Film className="h-3.5 w-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
-              {video && (
+              {videos.length > 0 && (
                 <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-primary">
-                  <span>✓ Video cargado</span>
+                  <span>✓ {videos.length === 1 ? 'Video cargado' : `${videos.length} videos conservados`}</span>
                   <button type="button" aria-label="Quitar video" onClick={removeVideo} className="rounded-full bg-black/70 p-0.5 text-white"><X className="h-3 w-3" /></button>
                 </div>
               )}

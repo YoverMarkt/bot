@@ -98,7 +98,7 @@ export default function Simulator() {
           <h1 className="text-2xl font-bold text-foreground">Simulador de Bot</h1>
           <p className="text-sm text-muted-foreground">Prueba el bot de cualquier negocio sin WhatsApp real</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
           {/* Modo de conversación: menú guiado (sin IA) o IA conversacional */}
           {/* El modo configurado del negocio lleva un punto: si pruebas el otro,
               se avisa para no confundir la prueba con lo que recibe el cliente */}
@@ -113,7 +113,7 @@ export default function Simulator() {
             ))}
           </div>
           <Select value={bizId} onValueChange={selectBiz}>
-            <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="min-w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
+            <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="w-full min-w-0 sm:w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
             <SelectContent>
               {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
@@ -133,16 +133,16 @@ export default function Simulator() {
 
       <Card className="flex-1 min-h-0 py-0 gap-0 overflow-hidden">
         {/* Barra del chat */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
-          <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/20 font-bold text-primary">
             {biz ? biz.name.charAt(0).toUpperCase() : <BotIcon className="w-4 h-4" />}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>
             <div className="text-xs text-muted-foreground">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
           </div>
           {testingOtherMode && (
-            <div className="ml-auto rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-600 dark:text-amber-400">
+            <div className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-600 sm:ml-auto sm:w-auto dark:text-amber-400">
               ⚠️ Estás probando <strong>{mode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>, pero en WhatsApp este negocio usa <strong>{realMode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>
             </div>
           )}

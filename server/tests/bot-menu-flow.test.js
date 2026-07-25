@@ -92,6 +92,60 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(confirmado.reply).toContain('Pedido recibido')
   })
 
+  it('usa la misma categoría canónica con tildes y puntuación en productos y modificadores', () => {
+    const negocio = {
+      id: 'categorias-con-tildes',
+      name: 'Tienda Familiar',
+      takes_orders: true,
+      takes_bookings: false,
+      lodging_enabled: false,
+    }
+    const catalogo = [
+      {
+        id: 'perfume-ninos',
+        name: 'Colonia Infantil',
+        price: 8,
+        tags: ['perfumería & niños'],
+        stock: 'disponible',
+        active: true,
+      },
+      {
+        id: 'te-frio',
+        name: 'Té Helado',
+        price: 2,
+        tags: ['bebidas frías'],
+        stock: 'disponible',
+        active: true,
+      },
+    ]
+    const args = {
+      products: catalogo,
+      modifiers: [{
+        category_tag: 'PERFUMERÍA & NIÑOS',
+        group_label: 'Aroma',
+        name: 'Suave',
+        description: 'Sin alcohol',
+      }],
+    }
+
+    resetMenuFlow(negocio.id, 'acentos-a')
+    enviar(negocio, 'acentos-a', 'hola', args)
+    const categorias = enviar(negocio, 'acentos-a', '🛒 Hacer un pedido', args)
+    expect(titulos(categorias.options)).toContain('Perfumería & niños')
+    expect(titulos(categorias.options)).toContain('Bebidas frías')
+
+    const aromas = enviar(negocio, 'acentos-a', 'Perfumería & niños', args)
+    expect(titulos(aromas.options)).toContain('Suave')
+    const productosPerfumeria = enviar(negocio, 'acentos-a', 'Suave', args)
+    expect(titulos(productosPerfumeria.options)).toContain('Colonia Infantil')
+
+    resetMenuFlow(negocio.id, 'acentos-b')
+    enviar(negocio, 'acentos-b', 'hola', args)
+    enviar(negocio, 'acentos-b', '📋 Ver productos y precios', args)
+    const bebidas = enviar(negocio, 'acentos-b', 'Bebidas frías', args)
+    expect(titulos(bebidas.options)).toContain('Té Helado')
+  })
+
   it('repite el último pedido con los precios de HOY y descarta lo agotado', () => {
     resetMenuFlow(pizzeria.id, 'rep1')
     // La Hawaiana subió de $8.50 a $9.99 desde el pedido anterior y la Coca se agotó

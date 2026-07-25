@@ -98,19 +98,41 @@ npm run build
 npm start
 ```
 
-Para esta versión, ejecuta una vez en Supabase SQL Editor:
+Para una base nueva y vacía, ejecuta una sola vez `server/schema.sql`. **Nunca
+uses `schema.sql` como upgrade de una base existente**: en una base viva aplica
+solamente las migraciones pendientes.
+
+Para esta versión, el orden canónico de migraciones pendientes en una base
+existente es:
 
 ```text
 server/migration-atomicidad-reservas.sql
 server/migration-hospedaje.sql
 server/migration-preparacion-produccion.sql
+server/migration-modo-menu.sql
+server/migration-modificadores-menu.sql
 server/migration-eliminar-kapso-retell.sql
 server/migration-identificadores-canales.sql
 server/migration-firmas-webhooks.sql
 server/migration-inbox-webhooks.sql
 ```
 
-Ejecuta las migraciones pendientes en ese orden. `migration-eliminar-kapso-retell.sql` es destructiva: después de respaldar cualquier dato que quieras conservar fuera del sistema, elimina columnas, secretos y metadatos de integraciones retiradas; aborta sin convertir datos si algún negocio todavía las usa. Debe ejecutarse **antes** de `migration-identificadores-canales.sql`. La siguiente crea la resolución exacta y única de WhatsApp para Meta/YCloud. `migration-firmas-webhooks.sql` agrega por negocio el Endpoint ID y signing secret oficial de YCloud y retira la configuración Meta por negocio que no se consumía. Finalmente, `migration-inbox-webhooks.sql` instala la cola durable, leases y reintentos; debe ejecutarse **después** de firmas y antes del runtime que habilita el worker. Telegram conserva su flujo independiente.
+Ejecuta **solo las pendientes** y en ese orden. `migration-modo-menu.sql` agrega
+el modo por negocio y los índices para repetir pedidos;
+`migration-modificadores-menu.sql` crea las opciones/sabores con RLS cerrada.
+`migration-eliminar-kapso-retell.sql` es destructiva: después de respaldar
+cualquier dato que quieras conservar fuera del sistema, elimina columnas,
+secretos y metadatos de integraciones retiradas; aborta sin convertir datos si
+algún negocio todavía las usa. Debe ejecutarse **una sola vez** y antes de
+`migration-identificadores-canales.sql`. **No la reejecutes sobre una base que
+ya completó identificadores, firmas e inbox**, porque reinstala contratos
+transitorios que las migraciones posteriores reemplazan. La siguiente crea la
+resolución exacta y única de WhatsApp para Meta/YCloud.
+`migration-firmas-webhooks.sql` agrega por negocio el Endpoint ID y signing
+secret oficial de YCloud y retira la configuración Meta por negocio que no se
+consumía. Finalmente, `migration-inbox-webhooks.sql` instala la cola durable,
+leases y reintentos; debe ejecutarse **después** de firmas y antes del runtime
+que habilita el worker. Telegram conserva su flujo independiente.
 
 - Admin:   `http://localhost:3000/app-admin`
 - Cliente: `http://localhost:3000/app`

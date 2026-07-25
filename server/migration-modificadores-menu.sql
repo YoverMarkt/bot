@@ -12,6 +12,8 @@
 -- Correr en: Supabase → SQL Editor. Idempotente.
 -- ─────────────────────────────────────────────────────────────────────────
 
+begin;
+
 create table if not exists public.menu_modifiers (
   id            uuid primary key default gen_random_uuid(),
   business_id   uuid not null references public.businesses(id) on delete cascade,
@@ -36,3 +38,9 @@ alter table public.menu_modifiers enable row level security;
 
 -- Igual que el resto del esquema: sin políticas permisivas; solo el service
 -- role del servidor accede (salta RLS). El frontend nunca lee esta tabla directo.
+revoke all on table public.menu_modifiers
+  from public, anon, authenticated, service_role;
+grant select, insert, update, delete on table public.menu_modifiers
+  to service_role;
+
+commit;

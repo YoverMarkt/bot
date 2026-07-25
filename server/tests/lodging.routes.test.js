@@ -161,8 +161,8 @@ describe('rutas cliente de hospedaje', () => {
     })
 
     // El negocio sale del JWT, nunca de un parámetro manipulable; el rango se
-    // filtra por confirmed_at con el día "hasta" completo
-    expect(getStays).toHaveBeenCalledWith('business-a', '2026-07-01T00:00:00.000Z', '2026-07-31T23:59:59.999Z')
+    // filtra por días completos de America/Guayaquil (UTC-05:00).
+    expect(getStays).toHaveBeenCalledWith('business-a', '2026-07-01T05:00:00.000Z', '2026-08-01T04:59:59.999Z')
     expect(response.status).toBe(200)
     expect(response.body).toMatchObject({
       currency: 'USD', totalRevenue: 435, stays: 3, nights: 6, averagePerStay: 145,
@@ -173,6 +173,22 @@ describe('rutas cliente de hospedaje', () => {
       { roomTypeName: 'Matrimonial', stays: 2, nights: 3, revenue: 135 },
     ])
     expect(response.body.items).toHaveLength(3)
+  })
+
+  it('incluye exactamente los bordes de un día de America/Guayaquil', async () => {
+    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays').mockResolvedValue([])
+    vi.spyOn(db, 'getLodgingSettings').mockResolvedValue({ currency: 'USD' })
+
+    const response = await dispatch('get', '/api/client/lodging/revenue', {
+      auth: authorization(), query: { from: '2026-07-31', to: '2026-07-31' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(getStays).toHaveBeenCalledWith(
+      'business-a',
+      '2026-07-31T05:00:00.000Z',
+      '2026-08-01T04:59:59.999Z',
+    )
   })
 
   it('valida el rango de fechas del reporte de ingresos', async () => {

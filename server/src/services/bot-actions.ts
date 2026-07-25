@@ -750,27 +750,30 @@ function createBotActions(dependencies: BotActionDependencies) {
     const {
       business, phone, originalText, hasSale, hasHandoffTag, isUncertain, wasManual, send,
     } = input
-    if (isUncertain && !wasManual) {
-      const handoffMessage = 'Permítame un momento por favor 🙏 enseguida un asesor de nuestro equipo continuará con usted para ayudarle mejor ✨'
-      const { error } = await database.upsertSession(business.id, phone, {
-        manual_mode: true,
-        last_message: originalText,
-        last_message_at: new Date().toISOString(),
-        unread_owner: true,
-      })
-      if (error) logger.error('❌ upsertSession error:', error)
-      else logger.log(`🤚 [${business.name}] manual_mode=true guardado para ${phone}`)
-      void database.recordAiGap(
-        business.id,
-        phone,
-        originalText,
-        hasHandoffTag ? 'handoff' : 'uncertain',
-      ).catch(error => logger.error(
-        '❌ recordAiGap:',
-        error instanceof Error ? error.message : error,
-      ))
-      await database.saveMessage(business.id, phone, 'assistant', handoffMessage)
-      await send(handoffMessage)
+    const needsHandoff = hasHandoffTag || isUncertain
+    if (needsHandoff) {
+      if (!wasManual) {
+        const handoffMessage = 'Permítame un momento por favor 🙏 enseguida un asesor de nuestro equipo continuará con usted para ayudarle mejor ✨'
+        const { error } = await database.upsertSession(business.id, phone, {
+          manual_mode: true,
+          last_message: originalText,
+          last_message_at: new Date().toISOString(),
+          unread_owner: true,
+        })
+        if (error) logger.error('❌ upsertSession error:', error)
+        else logger.log(`🤚 [${business.name}] manual_mode=true guardado para ${phone}`)
+        void database.recordAiGap(
+          business.id,
+          phone,
+          originalText,
+          hasHandoffTag ? 'handoff' : 'uncertain',
+        ).catch(error => logger.error(
+          '❌ recordAiGap:',
+          error instanceof Error ? error.message : error,
+        ))
+        await database.saveMessage(business.id, phone, 'assistant', handoffMessage)
+        await send(handoffMessage)
+      }
       return { handled: true }
     }
 
@@ -782,7 +785,7 @@ function createBotActions(dependencies: BotActionDependencies) {
         unread_owner: true,
       })
       logger.log(`🛒 [${business.name}] VENTA detectada — chat a manual para confirmar/coordinar — ${phone}`)
-    } else if (!isUncertain) {
+    } else {
       await database.upsertSession(business.id, phone, {
         manual_mode: false,
         last_message: originalText,

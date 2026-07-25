@@ -2,7 +2,9 @@
 -- BOTPANEL SAAS — Schema COMPLETO y ACTUALIZADO para Supabase
 --
 -- Refleja el estado REAL de la base de datos (consolidado).
--- Idempotente: seguro de correr en una base nueva o existente.
+-- SOLO para una base nueva y vacía. NO usar como upgrade de una base existente:
+-- los CREATE TABLE IF NOT EXISTS no agregan columnas faltantes y algunas
+-- secciones reemplazan funciones/contratos completos.
 --
 -- INSTRUCCIONES:
 --   Supabase → tu proyecto → SQL Editor → New query → pega TODO → RUN
@@ -1785,6 +1787,11 @@ alter table ai_gaps               enable row level security;
 alter table orders                enable row level security;
 alter table order_items           enable row level security;
 alter table webhook_inbound_events enable row level security;
+
+revoke all on table menu_modifiers
+  from public, anon, authenticated, service_role;
+grant select, insert, update, delete on table menu_modifiers
+  to service_role;
 
 revoke all on table webhook_inbound_events from public, anon, authenticated;
 grant select, insert, update, delete on table webhook_inbound_events

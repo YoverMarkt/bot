@@ -204,6 +204,22 @@ function dateField(value: unknown, name: string): string {
   return clean
 }
 
+// America/Guayaquil usa UTC-05:00 todo el año. confirmed_at se almacena como
+// timestamptz, por lo que un día de calendario ecuatoriano va de las 05:00Z
+// hasta un milisegundo antes de las 05:00Z del día siguiente.
+const ECUADOR_UTC_OFFSET_MS = 5 * 60 * 60 * 1000
+const ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+function ecuadorDayStartUtc(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + ECUADOR_UTC_OFFSET_MS).toISOString()
+}
+
+function ecuadorDayEndUtc(date: string): string {
+  return new Date(
+    Date.parse(`${date}T00:00:00.000Z`) + ECUADOR_UTC_OFFSET_MS + ONE_DAY_MS - 1,
+  ).toISOString()
+}
+
 function timeField(value: unknown, name: string): string {
   const clean = textField(value, name, 8, true) as string
   if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(clean)) {
@@ -637,12 +653,11 @@ router.get('/api/client/lodging/revenue', ...guards, async (req, res) => {
     }
     const settings = normalizedSettings(await db.getLodgingSettings(businessId))
     const currency = typeof settings.currency === 'string' ? settings.currency : 'USD'
-    // Se filtra por confirmed_at (timestamp): el día "hasta" se toma completo
-    // para no dejar fuera las confirmaciones de esa misma tarde.
+    // Se filtra por confirmed_at usando días completos de Ecuador, no UTC.
     const stays = await db.getConfirmedLodgingStays(
       businessId,
-      from ? `${from}T00:00:00.000Z` : null,
-      to ? `${to}T23:59:59.999Z` : null,
+      from ? ecuadorDayStartUtc(from) : null,
+      to ? ecuadorDayEndUtc(to) : null,
     )
 
     const byRoom = new Map<string, { roomTypeName: string; stays: number; nights: number; revenue: number }>()

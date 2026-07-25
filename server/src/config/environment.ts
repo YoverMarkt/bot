@@ -30,9 +30,13 @@ export function isProductionEnvironment(env: NodeJS.ProcessEnv): boolean {
 
 function validBaseUrl(value: string | undefined): boolean {
   try {
-    const url = new URL(value || '')
-    const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname)
-    return url.protocol === 'https:' || (local && url.protocol === 'http:')
+    if (!value || value !== value.trim()) return false
+    const url = new URL(value)
+    const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
+    const secureProtocol = url.protocol === 'https:' || (local && url.protocol === 'http:')
+    // BASE_URL se concatena con rutas de webhook. Exigir el origen canónico
+    // evita dobles slashes, rutas prefijadas, queries, hashes y credenciales.
+    return secureProtocol && value === url.origin
   } catch {
     return false
   }
@@ -58,7 +62,7 @@ export function inspectEnvironment(env: NodeJS.ProcessEnv): EnvironmentStatus {
     invalid.push('ADMIN_PASSWORD (mínimo 12 caracteres)')
   }
   if (production && hasValue(env, 'BASE_URL') && !validBaseUrl(env.BASE_URL)) {
-    invalid.push('BASE_URL (HTTPS obligatorio salvo localhost)')
+    invalid.push('BASE_URL (origen HTTPS sin ruta, query, hash ni slash final; HTTP solo en localhost)')
   }
   if (hasValue(env, 'META_GRAPH_API_VERSION')
     && !validMetaGraphApiVersion(env.META_GRAPH_API_VERSION)) {

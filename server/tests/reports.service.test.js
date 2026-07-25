@@ -24,12 +24,37 @@ describe('servicio de reportes del dueño', () => {
     expect(sales).not.toHaveBeenCalled()
   })
 
+  it('rechaza colisiones de sufijo entre países y valores de dueño demasiado cortos', async () => {
+    const sales = vi.spyOn(db, 'getSalesWithItems')
+
+    const countryCollision = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '+593 99 111 2233' },
+      '+1 991 112 233',
+      'ventas de hoy',
+    )
+    const shortOwner = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '2233' },
+      '+593 99 111 2233',
+      'ventas de hoy',
+    )
+
+    expect(countryCollision).toEqual({ handled: false })
+    expect(shortOwner).toEqual({ handled: false })
+    expect(sales).not.toHaveBeenCalled()
+  })
+
+  it('mantiene identificadores Telegram exactos sin mezclarlos con teléfonos', () => {
+    expect(reports.samePhone('tg_123456789', 'TG_123456789')).toBe(true)
+    expect(reports.samePhone('tg_123456789', 'tg_9123456789')).toBe(false)
+    expect(reports.samePhone('tg_123456789', '123456789')).toBe(false)
+  })
+
   it('pide un período antes de consultar datos', async () => {
     const sales = vi.spyOn(db, 'getSalesWithItems')
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '0991112233',
+      '593991112233',
       'muéstrame las ventas',
     )
 
@@ -54,7 +79,7 @@ describe('servicio de reportes del dueño', () => {
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '0991112233',
+      '593991112233',
       'ventas de hoy',
     )
 
@@ -79,7 +104,7 @@ describe('servicio de reportes del dueño', () => {
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233', lodging_enabled: true },
-      '0991112233',
+      '593991112233',
       'reporte de la semana',
     )
 
@@ -108,7 +133,7 @@ describe('servicio de reportes del dueño', () => {
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '0991112233',
+      '593991112233',
       'reporte de la semana',
     )
 

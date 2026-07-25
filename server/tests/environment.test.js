@@ -39,7 +39,7 @@ describe('configuración de entorno', () => {
 
     expect(status.missing).toEqual([])
     expect(status.invalid).toEqual(expect.arrayContaining([
-      'BASE_URL (HTTPS obligatorio salvo localhost)',
+      'BASE_URL (origen HTTPS sin ruta, query, hash ni slash final; HTTP solo en localhost)',
       'YCLOUD_WEBHOOK_SECRET (mínimo 32 caracteres)',
       'TELEGRAM_WEBHOOK_SECRET (mínimo 32 caracteres)',
     ]))
@@ -49,6 +49,21 @@ describe('configuración de entorno', () => {
     expect(() => assertEnvironment(validEnvironment({
       BASE_URL: 'http://127.0.0.1:3199',
     }))).not.toThrow()
+  })
+
+  it.each([
+    'https://bot.example.com/',
+    'https://bot.example.com/webhooks',
+    'https://bot.example.com?source=railway',
+    'https://bot.example.com#production',
+    'https://user:password@bot.example.com',
+  ])('rechaza BASE_URL que no sea un origen canónico puro: %s', (baseUrl) => {
+    expect(inspectEnvironment(validEnvironment({
+      NODE_ENV: 'production',
+      BASE_URL: baseUrl,
+    })).invalid).toContain(
+      'BASE_URL (origen HTTPS sin ruta, query, hash ni slash final; HTTP solo en localhost)',
+    )
   })
 
   it('acepta el fallback global opcional de YCloud cuando es fuerte', () => {
