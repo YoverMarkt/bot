@@ -22,6 +22,7 @@ interface FlowProduct {
   stock?: string | null
   tags?: string[] | null
   image_url?: string | null
+  video_url?: string | null
   active?: boolean | null
 }
 
@@ -41,16 +42,30 @@ interface FlowSlots {
   [date: string]: { label?: string; slots?: string[] }
 }
 
+// Modificador de menú (p. ej. el SABOR de la pizza): opción que el cliente
+// elige además del producto, sin cambiar el precio. Agrupado por category_tag.
+interface FlowModifier {
+  category_tag?: string | null
+  group_label?: string | null
+  name?: string | null
+  description?: string | null
+}
+
 interface CartItem {
   productId: string
   name: string
   quantity: number
   priceCents: number
+  // Modificador elegido (p. ej. el sabor). Viaja pegado a la línea del pedido.
+  modifier?: string
 }
 
 type FlowView =
   | { kind: 'main' }
   | { kind: 'categories'; intent: 'order' | 'browse'; page: number }
+  // Paso de modificador (sabor): antes de elegir el producto/tamaño, cuando la
+  // categoría tiene modificadores y el cliente está pidiendo.
+  | { kind: 'modifier'; tag: string; page: number }
   | { kind: 'products'; intent: 'order' | 'browse'; tag: string | null; page: number }
   | { kind: 'product'; intent: 'order' | 'browse'; productId: string; tag: string | null; page: number }
   | { kind: 'quantity'; productId: string }
@@ -71,6 +86,8 @@ interface FlowState {
   cart: CartItem[]
   // Última cotización emitida: permite "Solicitar esta habitación" después
   lastStay?: { roomTypeId?: string; checkIn: string; checkOut: string }
+  // Modificador elegido (sabor) pendiente de adjuntar al producto/tamaño
+  pendingModifier?: string
   updatedAt: number
 }
 
@@ -79,7 +96,10 @@ type FlowAction =
   // `payload` va en el MISMO formato que ##PEDIDO:producto x cantidad; ...##
   // para que el canal real lo procese con money.ts y las RPC atómicas de
   // siempre: el menú no crea un camino de dinero paralelo.
-  | { type: 'order'; summary: string; totalCents: number; payload: string }
+  // `payload` es respaldo (formato ##PEDIDO##); `items` lleva cada línea con su
+  // modificador (sabor) para que money.ts calcule el precio por el producto y
+  // pliegue el sabor en el nombre visible.
+  | { type: 'order'; summary: string; totalCents: number; payload: string; items: { name: string; qty: number; note?: string | null }[] }
   | { type: 'stay_quote'; quote: { checkIn: string; checkOut: string; roomsCount: number; adults: number; children: number; roomTypeId?: string } }
   | { type: 'stay_request'; roomTypeId: string; contactName: string }
   | { type: 'booking'; date: string; time: string; name: string }
@@ -98,6 +118,7 @@ export interface MenuFlowInput {
   message: string
   products: FlowProduct[]
   roomTypes?: FlowRoomType[]
+  modifiers?: FlowModifier[]
   availableSlots?: FlowSlots
   lastOrderItems?: LastOrderItem[]
 }
@@ -107,10 +128,20 @@ export interface MenuFlowInput {
 // arriba y el detalle debajo (precio, capacidad). Igual que el menú del banco.
 export type MenuOption = string | { title: string; description?: string }
 
+// Archivo de un ítem (habitación o producto) que el bot envía cuando el cliente
+// pide verlo. `isVideo` decide si va por sendVideo o sendImage en el canal real.
+export interface FlowMediaItem {
+  url: string
+  isVideo: boolean
+}
+
 export interface MenuFlowResult {
   reply: string
   options: MenuOption[]
   image?: string | null
+  // Fotos y videos a enviar (paso "Ver fotos y videos"): fotos primero, video
+  // al final. El ejecutor los manda con sendImage/sendVideo existentes.
+  media?: FlowMediaItem[]
   action?: FlowAction
 }
 
@@ -119,6 +150,7 @@ const OPT_ORDER = '🛒 Hacer un pedido'
 const OPT_REPEAT = '🔄 Repetir mi último pedido'
 const OPT_BROWSE = '📋 Ver productos y precios'
 const OPT_ROOMS = '🛏️ Ver habitaciones'
+const OPT_MEDIA = '📷 Ver fotos y videos'
 const OPT_STAY = '📅 Cotizar estadía'
 const OPT_STAY_AGAIN = '📅 Cotizar otras fechas'
 const STAY_REQUEST_OPTION = '🛎️ Solicitar esta habitación'
@@ -138,6 +170,8 @@ const PAGE_SIZE = 6
 const CATEGORY_PAGE_SIZE = 9
 // Habitaciones: 8 + "Ver más" + "Volver" = 10, el tope exacto de la lista.
 const ROOM_PAGE_SIZE = 8
+// Modificadores (sabores): 8 + "Ver más" + "Volver" = 10.
+const MODIFIER_PAGE_SIZE = 8
 const FLOW_TTL_MS = 30 * 60 * 1000
 const PROMPT_CHOOSE = 'Elige una opción del menú 👇'
 const NOT_UNDERSTOOD = `🙏 No te entendí. ${PROMPT_CHOOSE}`
@@ -448,6 +482,22 @@ const productOption = (product: FlowProduct): MenuOption => {
   return { title: productLabel(product), description: detail }
 }
 
+// ── Modificadores (sabores) ───────────────────────────────────────────
+const modifierLabel = (modifier: FlowModifier): string => String(modifier.name || '').trim()
+
+// El sabor va de título y sus ingredientes de descripción, igual que el menú.
+const modifierOption = (modifier: FlowModifier): MenuOption => ({
+  title: modifierLabel(modifier),
+  description: String(modifier.description || '').trim(),
+})
+
+// Modificadores activos de una categoría (tag), en orden y con nombre válido.
+const modifiersForTag = (input: MenuFlowInput, tag: string): FlowModifier[] =>
+  (input.modifiers || []).filter(modifier => (
+    modifierLabel(modifier)
+    && String(modifier.category_tag || '').trim().toLowerCase() === tag
+  ))
+
 // Toda habitación muestra su precio: exacto si es por unidad, "desde" si la
 // tarifa depende de las personas (el total oficial lo da la cotización)
 const roomRateText = (room: FlowRoomType): string | null => {
@@ -491,6 +541,36 @@ const roomIsFixedCapacity = (room?: FlowRoomType | null): boolean => {
   const max = Number(room.max_guests)
   if (!Number.isInteger(max) || max <= 0) return false
   return max <= roomBaseOccupancy(room)
+}
+
+// ── Media de un ítem (fotos + video) para el paso "Ver fotos y videos" ──
+const optionText = (option: MenuOption): string => typeof option === 'string' ? option : option.title
+// Cloudinary usa /video/upload/; también aceptamos extensiones comunes.
+const isVideoMedia = (url: string): boolean =>
+  /\/video\/upload\//i.test(url) || /\.(?:mp4|mov|webm|m4v|avi|mkv|ogv)(?:$|[?#])/i.test(url)
+const isHttps = (url: unknown): url is string => typeof url === 'string' && /^https:\/\//i.test(url.trim())
+
+// Habitación: hasta 5 fotos + 1 video (fotos primero). Solo URLs HTTPS: lo que
+// no se pueda enviar al canal real no se ofrece (fallo cerrado).
+const roomMediaList = (room?: FlowRoomType | null): FlowMediaItem[] => {
+  const all = (room?.media_urls || []).filter(isHttps).map(url => ({ url: url.trim(), isVideo: isVideoMedia(url) }))
+  return [...all.filter(item => !item.isVideo).slice(0, 5), ...all.filter(item => item.isVideo).slice(0, 1)]
+}
+
+// Producto: su imagen y su video del catálogo (foto primero).
+const productMediaList = (product?: FlowProduct | null): FlowMediaItem[] => {
+  const items: FlowMediaItem[] = []
+  if (isHttps(product?.image_url)) items.push({ url: product!.image_url!.trim(), isVideo: false })
+  if (isHttps(product?.video_url)) items.push({ url: product!.video_url!.trim(), isVideo: true })
+  return items
+}
+
+// Título del mensaje que acompaña a la media enviada ("fotos" / "fotos y el video").
+const mediaCaption = (name: string, media: FlowMediaItem[]): string => {
+  const hasVideo = media.some(item => item.isVideo)
+  const hasPhoto = media.some(item => !item.isVideo)
+  const what = hasPhoto && hasVideo ? 'las fotos y el video' : hasVideo ? 'el video' : 'las fotos'
+  return `📷 Aquí tienes ${what} de *${name.trim()}* 👇`
 }
 
 // ── Menú principal por capacidades reales ─────────────────────────────
@@ -550,12 +630,28 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         ],
       }
     }
+    case 'modifier': {
+      // Sabores de la categoría con sus ingredientes (título + descripción),
+      // paginados. Es el primer paso al pedir: sabor → luego el tamaño.
+      const mods = modifiersForTag(input, view.tag)
+      const groupLabel = String(mods[0]?.group_label || 'opción').toLowerCase()
+      const shown = mods.slice(view.page * MODIFIER_PAGE_SIZE, (view.page + 1) * MODIFIER_PAGE_SIZE)
+      const hasMore = mods.length > (view.page + 1) * MODIFIER_PAGE_SIZE
+      return {
+        reply: `Elige el ${groupLabel} 👇`,
+        options: [...shown.map(modifierOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
+      }
+    }
     case 'products': {
       const list = productsInCategory(input.products, view.tag)
       const page = list.slice(view.page * PAGE_SIZE, view.page * PAGE_SIZE + PAGE_SIZE)
       const hasMore = list.length > (view.page + 1) * PAGE_SIZE
+      // Al pedir con sabor ya elegido, el paso siguiente es el tamaño.
+      const orderPrompt = state.pendingModifier
+        ? `Ahora elige el tamaño 👇`
+        : `Elige el producto que deseas 👇`
       return {
-        reply: view.intent === 'order' ? `Elige el producto que deseas 👇` : `Estos son nuestros productos 👇`,
+        reply: view.intent === 'order' ? orderPrompt : `Estos son nuestros productos 👇`,
         options: [...page.map(productOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
       }
     }
@@ -570,10 +666,11 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         product.stock === 'agotado' ? 'Por ahora está agotado 😔' : '',
       ].filter(Boolean)
       const canOrder = Boolean(input.business.takes_orders) && cents !== null && product.stock !== 'agotado'
+      const media = productMediaList(product)
+      if (media.length) lines.push('¿Quieres ver las fotos y videos? 👇')
       return {
         reply: lines.join('\n'),
-        options: [...(canOrder ? [OPT_ASK] : []), OPT_BACK, OPT_HOME],
-        image: product.image_url || null,
+        options: [...(media.length ? [OPT_MEDIA] : []), ...(canOrder ? [OPT_ASK] : []), OPT_BACK, OPT_HOME],
       }
     }
     case 'quantity': {
@@ -591,7 +688,7 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       }
     }
     case 'order-confirm': {
-      const lines = state.cart.map(item => `• ${item.quantity}x ${item.name} — ${money(item.priceCents * item.quantity)}`)
+      const lines = state.cart.map(item => `• ${item.quantity}x ${item.name}${item.modifier ? ` — ${item.modifier}` : ''} — ${money(item.priceCents * item.quantity)}`)
       const total = state.cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
       return {
         reply: `🧾 Resumen de tu pedido:\n${lines.join('\n')}\n*Total: ${money(total)}*\n¿Lo confirmamos?`,
@@ -618,18 +715,20 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       if (!room) return renderView({ kind: 'rooms' }, state, input)
       const amenities = (room.amenities || []).map(item => String(item).trim()).filter(Boolean)
       const rate = roomRateText(room)
+      const media = roomMediaList(room)
       const lines = [
         `*${String(room.name || '').trim()}*`,
         room.description ? String(room.description).trim() : '',
         amenities.length ? `✨ Incluye: ${amenities.join(', ')}` : '',
         room.max_guests ? `👥 Capacidad: hasta ${room.max_guests} persona(s)` : '',
         rate ? `💵 Tarifa: ${rate}` : '',
-        `¿Te gustó? Cotiza tus fechas aquí mismo y te doy el total oficial 👇`,
+        media.length
+          ? `¿Quieres ver las fotos y videos de esta habitación? 👇`
+          : `¿Te gustó? Cotiza tus fechas aquí mismo y te doy el total oficial 👇`,
       ].filter(Boolean)
       return {
         reply: lines.join('\n'),
-        options: [OPT_STAY, OPT_BACK, OPT_HOME],
-        image: room.media_urls?.[0] || null,
+        options: [...(media.length ? [OPT_MEDIA] : []), OPT_STAY, OPT_BACK, OPT_HOME],
       }
     }
     case 'stay':
@@ -797,12 +896,41 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
       if (choice === OPT_MORE) return goTo(state, { ...view, page: view.page + 1 }, input)
       if (choice) {
-        return goTo(state, { kind: 'products', intent: view.intent, tag: normalizeText(choice), page: 0 }, input)
+        const tag = normalizeText(choice)
+        // Al pedir, si la categoría tiene modificadores (sabores) se elige
+        // primero el sabor y luego el producto/tamaño.
+        if (view.intent === 'order' && modifiersForTag(input, tag).length) {
+          return goTo(state, { kind: 'modifier', tag, page: 0 }, input)
+        }
+        return goTo(state, { kind: 'products', intent: view.intent, tag, page: 0 }, input)
+      }
+      break
+    }
+    case 'modifier': {
+      if (choice === OPT_BACK) {
+        state.pendingModifier = undefined
+        return goTo(state, categoriesOf(input.products).length
+          ? { kind: 'categories', intent: 'order', page: 0 }
+          : { kind: 'main' }, input)
+      }
+      if (choice === OPT_MORE) return goTo(state, { ...view, page: view.page + 1 }, input)
+      if (choice) {
+        const modifier = modifiersForTag(input, view.tag).find(item => modifierLabel(item) === choice)
+        if (modifier) {
+          // Sabor elegido: se recuerda y se pasa a elegir el tamaño.
+          state.pendingModifier = modifierLabel(modifier)
+          return goTo(state, { kind: 'products', intent: 'order', tag: view.tag, page: 0 }, input)
+        }
       }
       break
     }
     case 'products': {
       if (choice === OPT_BACK) {
+        // Si veníamos de elegir sabor, "Volver" regresa a los sabores
+        if (state.pendingModifier && view.tag) {
+          state.pendingModifier = undefined
+          return goTo(state, { kind: 'modifier', tag: view.tag, page: 0 }, input)
+        }
         return goTo(state, categoriesOf(input.products).length
           ? { kind: 'categories', intent: view.intent, page: 0 }
           : { kind: 'main' }, input)
@@ -815,7 +943,10 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         const product = list.find(item => productLabel(item) === choice)
         if (product) {
           if (view.intent === 'order') {
-            if (product.stock === 'agotado' || priceCentsOf(product) === null) {
+            // Con fotos/video, o si no se puede pedir directo (agotado / sin
+            // precio), se muestra el detalle para que el cliente vea qué va a
+            // comprar; si no hay media, va directo a la cantidad (ruta rápida).
+            if (productMediaList(product).length || product.stock === 'agotado' || priceCentsOf(product) === null) {
               return goTo(state, { kind: 'product', intent: view.intent, productId: product.id, tag: view.tag, page: view.page }, input)
             }
             return goTo(state, { kind: 'quantity', productId: product.id }, input)
@@ -826,6 +957,16 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       break
     }
     case 'product': {
+      const product = input.products.find(item => item.id === view.productId)
+      if (choice === OPT_MEDIA && product) {
+        const media = productMediaList(product)
+        const detail = renderView(view, state, input)
+        return {
+          reply: mediaCaption(String(product.name || 'este producto'), media),
+          options: detail.options.filter(option => optionText(option) !== OPT_MEDIA),
+          media,
+        }
+      }
       if (choice === OPT_BACK) {
         return goTo(state, { kind: 'products', intent: view.intent, tag: view.tag, page: view.page }, input)
       }
@@ -843,9 +984,18 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         const product = input.products.find(item => item.id === view.productId)
         const cents = product ? priceCentsOf(product) : null
         if (product && cents !== null) {
-          state.cart.push({ productId: product.id, name: String(product.name).trim(), quantity, priceCents: cents })
+          // El sabor pendiente se pega a esta línea y se limpia.
+          const modifier = state.pendingModifier
+          state.cart.push({
+            productId: product.id,
+            name: String(product.name).trim(),
+            quantity,
+            priceCents: cents,
+            ...(modifier ? { modifier } : {}),
+          })
+          state.pendingModifier = undefined
           const added = { ...goTo(state, { kind: 'after-add' }, input) }
-          added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()} ✅\n${added.reply}`
+          added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()}${modifier ? ` — ${modifier}` : ''} ✅\n${added.reply}`
           return added
         }
       }
@@ -860,7 +1010,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         return goTo(state, { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
       }
       if (choice) {
-        return goTo(state, { kind: 'products', intent: 'order', tag: normalizeText(choice), page: 0 }, input)
+        const tag = normalizeText(choice)
+        // Misma regla: si la categoría tiene sabores, se elige primero
+        if (modifiersForTag(input, tag).length) {
+          return goTo(state, { kind: 'modifier', tag, page: 0 }, input)
+        }
+        return goTo(state, { kind: 'products', intent: 'order', tag, page: 0 }, input)
       }
       break
     }
@@ -873,6 +1028,9 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           summary: summaryView.reply,
           totalCents: total,
           payload: state.cart.map(item => `${item.name} x${item.quantity}`).join('; '),
+          // Cada línea con su sabor: el servidor calcula el precio por el
+          // producto (tamaño) y pliega el sabor en el nombre visible.
+          items: state.cart.map(item => ({ name: item.name, qty: item.quantity, note: item.modifier || null })),
         }
         state.cart = []
         const home = goTo(state, { kind: 'main' }, input)
@@ -898,6 +1056,16 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       break
     }
     case 'room': {
+      const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
+      if (choice === OPT_MEDIA && room) {
+        const media = roomMediaList(room)
+        const detail = renderView(view, state, input)
+        return {
+          reply: `${mediaCaption(String(room.name || 'esta habitación'), media)} ¿Cotizamos tus fechas?`,
+          options: detail.options.filter(option => optionText(option) !== OPT_MEDIA),
+          media,
+        }
+      }
       if (choice === OPT_BACK) return goTo(state, { kind: 'rooms' }, input)
       if (choice === OPT_STAY) {
         // La habitación elegida acompaña a la cotización

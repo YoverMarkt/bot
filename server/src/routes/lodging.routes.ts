@@ -637,7 +637,13 @@ router.get('/api/client/lodging/revenue', ...guards, async (req, res) => {
     }
     const settings = normalizedSettings(await db.getLodgingSettings(businessId))
     const currency = typeof settings.currency === 'string' ? settings.currency : 'USD'
-    const stays = await db.getConfirmedLodgingStays(businessId, from, to)
+    // Se filtra por confirmed_at (timestamp): el día "hasta" se toma completo
+    // para no dejar fuera las confirmaciones de esa misma tarde.
+    const stays = await db.getConfirmedLodgingStays(
+      businessId,
+      from ? `${from}T00:00:00.000Z` : null,
+      to ? `${to}T23:59:59.999Z` : null,
+    )
 
     const byRoom = new Map<string, { roomTypeName: string; stays: number; nights: number; revenue: number }>()
     let totalRevenue = 0

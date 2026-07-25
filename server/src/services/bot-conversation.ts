@@ -66,6 +66,7 @@ interface ConversationDatabase {
   getProducts(businessId: string): Promise<ConversationProduct[]>
   // Solo los usa el modo menú
   getLodgingRoomTypes?(businessId: string): Promise<Record<string, unknown>[]>
+  getMenuModifiers?(businessId: string, categoryTag?: string | null): Promise<Record<string, unknown>[]>
   getLastOrderForContact?(
     businessId: string,
     contactPhone: string,
@@ -138,6 +139,7 @@ interface ConversationActions {
     phone: string
     session?: ActionSession | null
     payload: string | null
+    items?: { name: string; qty: number; note?: string | null }[]
     products: ActionProduct[]
     preFiltered: boolean
     send(message: string): Promise<unknown>
@@ -287,10 +289,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     sendOptions?: ProcessMessageInput['sendOptions']
   }): Promise<void> {
     const { business, phone, text, session, send, sendImage } = input
-    const [products, roomTypes, availableSlots, lastOrder] = await Promise.all([
+    const [products, roomTypes, modifiers, availableSlots, lastOrder] = await Promise.all([
       database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
       business.lodging_enabled === true && database.getLodgingRoomTypes
         ? database.getLodgingRoomTypes(business.id).catch(() => [])
+        : Promise.resolve([]),
+      business.takes_orders !== false && database.getMenuModifiers
+        ? database.getMenuModifiers(business.id).catch(() => [])
         : Promise.resolve([]),
       business.takes_bookings === true
         ? database.getAvailableSlots(business.id).catch(() => null)
@@ -306,6 +311,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       message: text,
       products: products as MenuFlowInput['products'],
       roomTypes: roomTypes as MenuFlowInput['roomTypes'],
+      modifiers: modifiers as MenuFlowInput['modifiers'],
       availableSlots: (availableSlots || {}) as MenuFlowInput['availableSlots'],
       lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
     })
@@ -336,6 +342,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         phone,
         session,
         payload: action.payload,
+        // Ítems con su sabor: money.ts resuelve el precio por el tamaño y
+        // pliega el sabor en el nombre de la línea.
+        items: action.items,
         products,
         preFiltered: false,
         send,
@@ -377,6 +386,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         bookingTime: action.time,
         service: 'Cita',
       }, products)
+    }
+
+    // Media solicitada por el cliente ("Ver fotos y videos"): se envían los
+    // archivos del ítem ANTES del texto con las opciones, para que los vea y
+    // luego decida. Un archivo que falle no corta el flujo (best-effort).
+    if (flow.media?.length) {
+      for (const item of flow.media) {
+        try {
+          if (item.isVideo) { if (input.sendVideo) await input.sendVideo(item.url) }
+          else if (sendImage) await sendImage(item.url)
+        } catch { /* best-effort */ }
+      }
     }
 
     // El texto propio del menú (bienvenida, listas, confirmaciones) va después

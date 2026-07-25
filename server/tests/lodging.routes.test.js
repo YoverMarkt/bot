@@ -160,8 +160,9 @@ describe('rutas cliente de hospedaje', () => {
       auth: authorization(), query: { from: '2026-07-01', to: '2026-07-31' },
     })
 
-    // El negocio sale del JWT, nunca de un parámetro manipulable
-    expect(getStays).toHaveBeenCalledWith('business-a', '2026-07-01', '2026-07-31')
+    // El negocio sale del JWT, nunca de un parámetro manipulable; el rango se
+    // filtra por confirmed_at con el día "hasta" completo
+    expect(getStays).toHaveBeenCalledWith('business-a', '2026-07-01T00:00:00.000Z', '2026-07-31T23:59:59.999Z')
     expect(response.status).toBe(200)
     expect(response.body).toMatchObject({
       currency: 'USD', totalRevenue: 435, stays: 3, nights: 6, averagePerStay: 145,

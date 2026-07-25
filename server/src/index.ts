@@ -32,6 +32,7 @@ import productsRouter = require('./routes/products.routes')
 import ordersRouter = require('./routes/orders.routes')
 import webhooksRouter = require('./routes/webhooks.routes')
 import lodgingRouter = require('./routes/lodging.routes')
+import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
@@ -187,6 +188,7 @@ app.use(salesRouter)
 app.use(reportsRouter)
 app.use(bookingsRouter)
 app.use(productsRouter)
+app.use(menuModifiersRouter)
 app.use(ordersRouter)
 app.use(webhooksRouter)
 app.use(lodgingRouter)

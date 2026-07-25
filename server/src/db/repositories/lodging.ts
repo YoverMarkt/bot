@@ -206,8 +206,10 @@ const getLodgingRequests = async (
 }
 
 // Estadías CONFIRMADAS para el reporte de ingresos (separado de ventas). Se
-// filtran por fecha de entrada (check_in) dentro del rango; el monto es el
-// total oficial que ya calculó la RPC al cotizar, nunca un valor de la IA.
+// filtran por fecha de CONFIRMACIÓN (confirmed_at): el ingreso se cuenta el día
+// que el equipo confirmó la reserva, no cuándo llega el huésped. Así "confirmé
+// hoy" aparece en el reporte de hoy. El monto es el total oficial que ya
+// calculó la RPC al cotizar, nunca un valor de la IA.
 const getConfirmedLodgingStays = async (
   businessId: string,
   from?: string | null,
@@ -222,9 +224,9 @@ const getConfirmedLodgingStays = async (
     `)
     .eq('business_id', businessId)
     .eq('status', 'confirmed')
-    .order('check_in', { ascending: false })
-  if (from) query = query.gte('check_in', from)
-  if (to) query = query.lte('check_in', to)
+    .order('confirmed_at', { ascending: false })
+  if (from) query = query.gte('confirmed_at', from)
+  if (to) query = query.lte('confirmed_at', to)
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data || []) as DataRecord[]

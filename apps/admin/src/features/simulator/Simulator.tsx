@@ -57,10 +57,21 @@ export default function Simulator() {
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null; video?: string | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; media?: { url: string; isVideo: boolean }[] | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t, mode }),
       })
+      // Paso "Ver fotos y videos": los archivos llegan como mensajes separados
+      // ANTES del texto, igual que WhatsApp los envía uno por uno.
+      if (d.media?.length) {
+        setMsgs(m => [...m, ...d.media!.map(item => ({
+          role: 'bot' as const,
+          text: '',
+          image: item.isVideo ? null : item.url,
+          video: item.isVideo ? item.url : null,
+          at: now(),
+        }))])
+      }
       if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, options: d.options, at: now() }])
       // La nota de media ("no tengo foto de ese producto…") llega como
       // mensaje aparte, igual que en WhatsApp/Telegram.
@@ -153,11 +164,13 @@ export default function Simulator() {
             </div>
           ) : (
             <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-                m.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
-              }`}>
-                {m.text}
-              </div>
+              {m.text && (
+                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
+                }`}>
+                  {m.text}
+                </div>
+              )}
               {m.image && (
                 <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-input"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />

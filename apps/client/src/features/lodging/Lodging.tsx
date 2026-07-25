@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BedDouble,
+  Camera,
   CalendarRange,
   Check,
+  Film,
   Pencil,
   Plus,
   Search,
@@ -118,6 +120,12 @@ function money(value: number | string | null | undefined, currency = 'USD'): str
 
 function splitList(value: string): string[] {
   return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
+}
+
+// Clasifica una URL guardada como video (Cloudinary usa /video/upload/; también
+// aceptamos extensiones comunes). Las subidas nuevas ya vienen clasificadas.
+function isVideoUrl(url: string): boolean {
+  return url.includes('/video/upload/') || /\.(mp4|mov|webm|m4v|avi|mkv|ogv)(\?|#|$)/i.test(url)
 }
 
 function errorText(error: unknown): string {
@@ -312,33 +320,58 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
     active: room.active,
   } : { ...EMPTY_ROOM })
   const [amenities, setAmenities] = useState(form.amenities.join(', '))
-  const [media, setMedia] = useState(form.media_urls.join('\n'))
+  // media_urls se guarda como un solo arreglo; en el panel lo separamos en
+  // fotos y un video (como en productos) clasificando cada URL. Al guardar se
+  // reconstruye el arreglo, sin tocar el backend, el esquema ni el bot.
+  const [photos, setPhotos] = useState<string[]>(() => (form.media_urls ?? []).filter(url => !isVideoUrl(url)))
+  const [video, setVideo] = useState<string>(() => (form.media_urls ?? []).find(isVideoUrl) ?? '')
+  const [photoStatus, setPhotoStatus] = useState('')
+  const [videoStatus, setVideoStatus] = useState('')
   const [uploading, setUploading] = useState(false)
 
-  const handleMediaUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    const isVideo = file.type.startsWith('video/')
-    const limit = isVideo ? MEDIA_LIMITS.video : MEDIA_LIMITS.image
-    if ((!file.type.startsWith('image/') && !isVideo) || file.size > limit) {
-      toast.error(file.size > limit
-        ? `El archivo pesa ${fmtMB(file.size)} y supera el límite de ${fmtMB(limit)}.`
-        : 'Selecciona una imagen o un video.')
-      event.target.value = ''
-      return
+    if (photos.length >= 5) { setPhotoStatus('✗ Máximo 5 fotos por habitación.'); event.target.value = ''; return }
+    if (!file.type.startsWith('image/')) { setPhotoStatus('✗ Selecciona una imagen.'); event.target.value = ''; return }
+    if (file.size > MEDIA_LIMITS.image) {
+      setPhotoStatus(`✗ Supera el límite de 5 MB (pesa ${fmtMB(file.size)}).`); event.target.value = ''; return
     }
-    setUploading(true)
+    setPhotoStatus('Subiendo…'); setUploading(true)
     try {
       const uploaded = await uploadMedia(file)
-      setMedia(current => [current.trim(), uploaded.url].filter(Boolean).join('\n'))
-      toast.success('Archivo subido y agregado a la habitación')
+      setPhotos(current => [...current, uploaded.url])
+      setPhotoStatus('✓ Foto agregada')
     } catch (error) {
-      toast.error(errorText(error))
+      setPhotoStatus(`✗ ${errorText(error)}`)
     } finally {
       setUploading(false)
       event.target.value = ''
     }
   }
+
+  const uploadVideo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('video/')) { setVideoStatus('✗ Selecciona un video.'); event.target.value = ''; return }
+    if (file.size > MEDIA_LIMITS.video) {
+      setVideoStatus(`✗ Supera el límite de 16 MB (pesa ${fmtMB(file.size)}).`); event.target.value = ''; return
+    }
+    setVideoStatus('Subiendo…'); setUploading(true)
+    try {
+      const uploaded = await uploadMedia(file)
+      setVideo(uploaded.url)
+      setVideoStatus('✓ Video cargado')
+    } catch (error) {
+      setVideoStatus(`✗ ${errorText(error)}`)
+    } finally {
+      setUploading(false)
+      event.target.value = ''
+    }
+  }
+
+  const removePhoto = (index: number) => setPhotos(current => current.filter((_, i) => i !== index))
+  const removeVideo = () => { setVideo(''); setVideoStatus('') }
 
   const save = useMutation({
     mutationFn: () => {
@@ -351,7 +384,7 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
           child_rate: null,
         } : {}),
         amenities: splitList(amenities),
-        media_urls: splitList(media),
+        media_urls: [...photos, video].filter(Boolean),
       }
       return room ? lodging.updateRoomType(room.id, payload) : lodging.createRoomType(payload)
     },
@@ -403,11 +436,36 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
           </>}
           <div className="sm:col-span-2"><Field label="Descripción" htmlFor="room-description"><Textarea id="room-description" rows={3} value={form.description ?? ''} onChange={event => setForm({ ...form, description: event.target.value })} placeholder="Vista, tamaño, tipo de camas y cualquier condición importante" /></Field></div>
           <div className="sm:col-span-2"><Field label="Servicios incluidos (separados por coma)" htmlFor="room-amenities"><Input id="room-amenities" value={amenities} onChange={event => setAmenities(event.target.value)} placeholder="Wi-Fi, desayuno, baño privado, piscina" /></Field></div>
-          <div className="space-y-3 sm:col-span-2">
-            <Field label="Subir una foto o video" htmlFor="room-media-file"><Input id="room-media-file" type="file" accept="image/*,video/*" disabled={uploading} onChange={handleMediaUpload} /></Field>
-            {uploading && <p className="text-xs text-muted-foreground">Subiendo a Cloudinary…</p>}
-            <Field label="Archivos de la habitación (una URL por línea)" htmlFor="room-media"><Textarea id="room-media" rows={3} value={media} onChange={event => setMedia(event.target.value)} placeholder={'https://…/foto.jpg\nhttps://…/video.mp4'} /></Field>
-            <p className="text-xs text-muted-foreground">Puedes subir varios archivos uno por uno o pegar URLs HTTPS. El bot enviará hasta tres al presentar la cotización.</p>
+          <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-dashed border-input p-3">
+              <Label htmlFor="room-photos" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground/90"><Camera className="h-3.5 w-3.5" /> Fotos <span className="font-normal text-muted-foreground/80">({photos.length}/5, máx 5 MB c/u)</span></Label>
+              {photos.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {photos.map((url, index) => (
+                    <div key={url} className="relative">
+                      <img src={url} alt="" className="h-16 w-16 rounded object-cover" />
+                      <button type="button" aria-label="Quitar foto" onClick={() => removePhoto(index)} className="absolute -right-1.5 -top-1.5 rounded-full bg-black/70 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Input id="room-photos" type="file" accept="image/*" className="w-full text-xs" disabled={uploading || photos.length >= 5} onChange={uploadPhoto} />
+              {photos.length >= 5
+                ? <p className="mt-1 text-[11px] text-muted-foreground">Llegaste al máximo de 5 fotos.</p>
+                : photoStatus && <div className="mt-1 text-[11px]">{photoStatus}</div>}
+            </div>
+            <div className="rounded-lg border border-dashed border-input p-3">
+              <Label htmlFor="room-video" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground/90"><Film className="h-3.5 w-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
+              {video && (
+                <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-primary">
+                  <span>✓ Video cargado</span>
+                  <button type="button" aria-label="Quitar video" onClick={removeVideo} className="rounded-full bg-black/70 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                </div>
+              )}
+              <Input id="room-video" type="file" accept="video/*" className="w-full text-xs" disabled={uploading} onChange={uploadVideo} />
+              {videoStatus && <div className="mt-1 text-[11px]">{videoStatus}</div>}
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">Se guardan en Cloudinary. El bot enviará hasta tres archivos al presentar la cotización.</p>
           </div>
           <Label htmlFor="room-active" className="mb-0 flex cursor-pointer items-center gap-2"><Checkbox id="room-active" checked={form.active} onCheckedChange={checked => setForm({ ...form, active: checked === true })} /> Mostrar y cotizar este tipo</Label>
           {!canSave && <p className="text-sm text-destructive sm:col-span-2" role="alert">Completa el nombre, usa cupos y capacidades válidos y configura una tarifa base mayor que cero, salvo en cotización manual.</p>}
@@ -580,7 +638,7 @@ function RevenuePanel() {
           <Field label="Hasta" htmlFor="revenue-to"><Input id="revenue-to" type="date" value={range.to} onChange={event => setRange(current => ({ ...current, to: event.target.value }))} /></Field>
           <Button variant="outline" onClick={() => setRange(monthRange())}>Mes actual</Button>
         </div>
-        <p className="text-xs text-muted-foreground">Ingresos de las estadías <strong>confirmadas</strong> cuya entrada cae en el rango. Es un reporte aparte de las ventas de productos.</p>
+        <p className="text-xs text-muted-foreground">Ingresos de las estadías <strong>confirmadas en el rango</strong> (por la fecha en que las confirmaste). Es un reporte aparte de las ventas de productos.</p>
       </Card>
 
       {query.isLoading ? <PanelSkeleton />

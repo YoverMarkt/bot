@@ -395,6 +395,129 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(parseStayRange('no se todavia', hoy)).toEqual({ ok: false, reason: 'no_entendi' })
   })
 
+  it('pizza: elige SABOR (con ingredientes) y luego TAMAÑO, precio exacto y sabor pegado', () => {
+    const pizzeria2 = { id: 'monster-pizza', name: 'Monster Pizza', takes_orders: true, takes_bookings: false, lodging_enabled: false }
+    const pizzaProducts = [
+      { id: 'ps1', name: 'Pizza Personal', price: 2.75, tags: ['pizzas'], stock: 'disponible', active: true },
+      { id: 'ps2', name: 'Pizza Familiar', price: 10.50, tags: ['pizzas'], stock: 'disponible', active: true },
+      { id: 'b1', name: 'Cola 1 Litro', price: 1.50, tags: ['bebidas'], stock: 'disponible', active: true },
+    ]
+    const sabores = [
+      { category_tag: 'pizzas', group_label: 'Sabor', name: 'Hawaiana', description: 'Jamón y piña' },
+      { category_tag: 'pizzas', group_label: 'Sabor', name: 'Monster', description: 'Pepperoni, carne y champiñones' },
+    ]
+    const args = { products: pizzaProducts, modifiers: sabores }
+
+    resetMenuFlow(pizzeria2.id, 'pz1')
+    enviar(pizzeria2, 'pz1', 'hola', args)
+    const cats = enviar(pizzeria2, 'pz1', '🛒 Hacer un pedido', args)
+    expect(titulos(cats.options)).toContain('Pizzas')
+
+    // Al elegir Pizzas (categoría con sabores) primero pregunta el SABOR con ingredientes
+    const flavors = enviar(pizzeria2, 'pz1', 'Pizzas', args)
+    expect(flavors.reply).toContain('Elige el sabor')
+    expect(titulos(flavors.options)).toContain('Hawaiana')
+    expect(detalle(flavors.options, 'Hawaiana')).toContain('Jamón y piña')
+
+    // Elegido el sabor, ahora el TAMAÑO con su precio real
+    const sizes = enviar(pizzeria2, 'pz1', 'Hawaiana', args)
+    expect(sizes.reply).toContain('tamaño')
+    expect(titulos(sizes.options)).toContain('Pizza Familiar')
+    expect(detalle(sizes.options, 'Pizza Familiar')).toContain('$10.50')
+
+    enviar(pizzeria2, 'pz1', 'Pizza Familiar', args)
+    const added = enviar(pizzeria2, 'pz1', '1', args)
+    expect(added.reply).toContain('Pizza Familiar — Hawaiana')
+
+    const resumen = enviar(pizzeria2, 'pz1', '✅ Finalizar pedido', args)
+    expect(resumen.reply).toContain('Pizza Familiar — Hawaiana')
+    expect(resumen.reply).toContain('Total: $10.50')
+
+    const confirmado = enviar(pizzeria2, 'pz1', '✅ Confirmar pedido', args)
+    expect(confirmado.action).toEqual(expect.objectContaining({ type: 'order', totalCents: 1050 }))
+    // El pedido lleva el tamaño (para el precio) y el sabor como modificador
+    expect(confirmado.action.items).toEqual([{ name: 'Pizza Familiar', qty: 1, note: 'Hawaiana' }])
+
+    // Una categoría SIN sabores (bebidas) va directo a los productos
+    resetMenuFlow(pizzeria2.id, 'pz2')
+    enviar(pizzeria2, 'pz2', 'hola', args)
+    enviar(pizzeria2, 'pz2', '🛒 Hacer un pedido', args)
+    const bebidas = enviar(pizzeria2, 'pz2', 'Bebidas', args)
+    expect(titulos(bebidas.options)).toContain('Cola 1 Litro')
+    expect(bebidas.reply).not.toContain('sabor')
+  })
+
+  it('hospedaje: ofrece "Ver fotos y videos" solo si la habitación tiene media y las envía (fotos primero, video al final)', () => {
+    resetMenuFlow(hostal.id, 'media-hab')
+    const conMedia = [
+      {
+        id: 'rm1', name: 'Suite Vista', base_rate: 60, pricing_model: 'per_unit', max_guests: 2,
+        media_urls: [
+          'https://res.cloudinary.com/demo/image/upload/foto1.jpg',
+          'https://res.cloudinary.com/demo/video/upload/tour.mp4',
+          'https://res.cloudinary.com/demo/image/upload/foto2.jpg',
+        ],
+      },
+      // Sin media: no debe ofrecer el paso de fotos
+      { id: 'rm2', name: 'Sencilla', base_rate: 30, pricing_model: 'per_unit', max_guests: 1 },
+    ]
+    const args = { products: [], roomTypes: conMedia }
+    enviar(hostal, 'media-hab', 'hola', args)
+    enviar(hostal, 'media-hab', '🛏️ Ver habitaciones', args)
+
+    const conFotos = enviar(hostal, 'media-hab', 'Suite Vista', args)
+    expect(titulos(conFotos.options)).toContain('📷 Ver fotos y videos')
+    expect(conFotos.reply).toContain('¿Quieres ver las fotos y videos')
+
+    const enviadas = enviar(hostal, 'media-hab', '📷 Ver fotos y videos', args)
+    // Fotos primero, el video al final; solo URLs HTTPS
+    expect(enviadas.media).toEqual([
+      { url: 'https://res.cloudinary.com/demo/image/upload/foto1.jpg', isVideo: false },
+      { url: 'https://res.cloudinary.com/demo/image/upload/foto2.jpg', isVideo: false },
+      { url: 'https://res.cloudinary.com/demo/video/upload/tour.mp4', isVideo: true },
+    ])
+    // Tras enviarlas, el cliente puede seguir con la cotización (sin repetir el botón de fotos)
+    expect(titulos(enviadas.options)).toContain('📅 Cotizar estadía')
+    expect(titulos(enviadas.options)).not.toContain('📷 Ver fotos y videos')
+
+    // Volver a la lista y abrir la habitación SIN media: no ofrece el paso de fotos
+    enviar(hostal, 'media-hab', '⬅️ Volver', args)
+    const sinFotos = enviar(hostal, 'media-hab', 'Sencilla', args)
+    expect(titulos(sinFotos.options)).not.toContain('📷 Ver fotos y videos')
+  })
+
+  it('pedido: un producto con foto pasa por su detalle para ver qué comprará; sin foto va directo a la cantidad', () => {
+    const pizzeria3 = { id: 'pizza-media', name: 'Pizza Media', takes_orders: true, takes_bookings: false, lodging_enabled: false }
+    const conFoto = [
+      { id: 'pm1', name: 'Pizza Deluxe', price: 12, tags: ['pizzas'], stock: 'disponible', active: true, image_url: 'https://res.cloudinary.com/demo/image/upload/deluxe.jpg', video_url: 'https://res.cloudinary.com/demo/video/upload/deluxe.mp4' },
+      { id: 'pm2', name: 'Pizza Simple', price: 8, tags: ['pizzas'], stock: 'disponible', active: true },
+    ]
+    const args = { products: conFoto }
+
+    resetMenuFlow(pizzeria3.id, 'pm-a')
+    enviar(pizzeria3, 'pm-a', 'hola', args)
+    enviar(pizzeria3, 'pm-a', '🛒 Hacer un pedido', args)
+    enviar(pizzeria3, 'pm-a', 'Pizzas', args)
+    // Con foto: al elegirla se muestra el detalle con el paso de fotos y "Pedirlo"
+    const detalleProd = enviar(pizzeria3, 'pm-a', 'Pizza Deluxe', args)
+    expect(titulos(detalleProd.options)).toContain('📷 Ver fotos y videos')
+    expect(titulos(detalleProd.options)).toContain('🛒 Pedirlo')
+
+    const fotos = enviar(pizzeria3, 'pm-a', '📷 Ver fotos y videos', args)
+    expect(fotos.media).toEqual([
+      { url: 'https://res.cloudinary.com/demo/image/upload/deluxe.jpg', isVideo: false },
+      { url: 'https://res.cloudinary.com/demo/video/upload/deluxe.mp4', isVideo: true },
+    ])
+
+    // Sin foto: al elegirla va directo a la cantidad (ruta rápida, sin detalle)
+    resetMenuFlow(pizzeria3.id, 'pm-b')
+    enviar(pizzeria3, 'pm-b', 'hola', args)
+    enviar(pizzeria3, 'pm-b', '🛒 Hacer un pedido', args)
+    enviar(pizzeria3, 'pm-b', 'Pizzas', args)
+    const cantidad = enviar(pizzeria3, 'pm-b', 'Pizza Simple', args)
+    expect(cantidad.reply).toContain('¿Cuántas unidades')
+  })
+
   it('deriva al equipo cuando el cliente lo pide y con la opción del menú', () => {
     resetMenuFlow(pizzeria.id, 'c5')
     const args = { products: productos }

@@ -35,6 +35,39 @@ export const deleteProduct = (id: string) =>
 export const reindex = () =>
   api<{ message?: string }>('/api/client/reindex', { method: 'POST' })
 
+// ── Modificadores de menú (sabores de pizza, salsas, extras) ──
+// Una opción que el cliente elige además del producto, agrupada por categoría.
+export type MenuModifier = {
+  id: string
+  category_tag: string
+  group_label: string
+  name: string
+  description: string | null
+  sort: number
+  active: boolean
+}
+
+export type MenuModifierPayload = {
+  category_tag: string
+  group_label: string
+  name: string
+  description?: string | null
+  sort?: number
+  active?: boolean
+}
+
+export const getMenuModifiers = () =>
+  api<MenuModifier[]>('/api/client/menu-modifiers')
+
+export const createMenuModifier = (p: MenuModifierPayload) =>
+  api<MenuModifier>('/api/client/menu-modifiers', { method: 'POST', body: JSON.stringify(p) })
+
+export const updateMenuModifier = (id: string, p: MenuModifierPayload) =>
+  api<MenuModifier>(`/api/client/menu-modifiers/${id}`, { method: 'PUT', body: JSON.stringify(p) })
+
+export const deleteMenuModifier = (id: string) =>
+  api(`/api/client/menu-modifiers/${id}`, { method: 'DELETE' })
+
 // Subida de media a Cloudinary vía backend (multipart — no usa el wrapper JSON).
 // Límites estándar de WhatsApp: imagen 5 MB · video 16 MB (el server también los valida).
 export const MEDIA_LIMITS = { image: 5 * 1024 * 1024, video: 16 * 1024 * 1024 }

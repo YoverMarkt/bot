@@ -428,6 +428,26 @@ create table if not exists products (
   created_at      timestamptz default now()
 );
 
+-- ── Modificadores de menú (sabores de pizza, salsas, extras) ──
+-- Opción que el cliente elige ADEMÁS del producto sin cambiar el precio.
+-- Agrupados por category_tag (la categoría del catálogo a la que aplican).
+create table if not exists public.menu_modifiers (
+  id            uuid primary key default gen_random_uuid(),
+  business_id   uuid not null references businesses(id) on delete cascade,
+  category_tag  text not null check (char_length(btrim(category_tag)) between 1 and 60),
+  group_label   text not null default 'Opción' check (char_length(btrim(group_label)) between 1 and 60),
+  name          text not null check (char_length(btrim(name)) between 1 and 120),
+  description   text,
+  sort          integer not null default 0,
+  active        boolean not null default true,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists idx_menu_modifiers_business_tag
+  on public.menu_modifiers (business_id, category_tag);
+create unique index if not exists uq_menu_modifiers_business_tag_name
+  on public.menu_modifiers (business_id, category_tag, lower(name));
+
 -- ── TABLA 4: Políticas + prompt del bot por negocio ────────
 create table if not exists bot_policies (
   id                uuid primary key default gen_random_uuid(),
@@ -1749,6 +1769,7 @@ alter table businesses            enable row level security;
 alter table business_channel_identifiers enable row level security;
 alter table client_users          enable row level security;
 alter table products              enable row level security;
+alter table menu_modifiers        enable row level security;
 alter table bot_policies          enable row level security;
 alter table conversation_history  enable row level security;
 alter table conversation_sessions enable row level security;

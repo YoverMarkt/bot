@@ -13,6 +13,7 @@ import orders = require('./repositories/orders')
 import stats = require('./repositories/stats')
 import webhookEvents = require('./repositories/webhook-events')
 import lodging = require('./repositories/lodging')
+import menuModifiers = require('./repositories/menu-modifiers')
 
 const database: Record<string, unknown> = {
   ...businesses,
@@ -30,6 +31,7 @@ const database: Record<string, unknown> = {
   ...stats,
   ...webhookEvents,
   ...lodging,
+  ...menuModifiers,
 }
 
 export = database

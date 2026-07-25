@@ -35,6 +35,7 @@ const db = require('../db') as {
   ): Promise<DatabaseResult>
   clearSimHistory(businessId: string): Promise<DatabaseResult>
   getLodgingRoomTypes(businessId: string): Promise<unknown[]>
+  getMenuModifiers(businessId: string, categoryTag?: string | null): Promise<unknown[]>
   getAvailableSlots(
     businessId: string,
   ): Promise<Record<string, { label?: string; slots?: string[] }> | null>
@@ -130,9 +131,10 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // MODO MENÚ (estilo banco): el CÓDIGO conduce toda la conversación con
     // opciones de los datos reales; la IA no participa en ningún mensaje.
     if (mode === 'menu') {
-      const [products, roomTypes, availableSlots, lastOrder] = await Promise.all([
+      const [products, roomTypes, modifiers, availableSlots, lastOrder] = await Promise.all([
         db.getProducts(business.id),
         business.lodging_enabled === true ? db.getLodgingRoomTypes(business.id) : Promise.resolve([]),
+        business.takes_orders !== false ? db.getMenuModifiers(business.id) : Promise.resolve([]),
         business.takes_bookings === true ? db.getAvailableSlots(business.id) : Promise.resolve(null),
         // Paridad con el canal real: el simulador también ofrece repetir pedido
         business.takes_orders !== false
@@ -145,6 +147,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         message,
         products: products as MenuFlowInput['products'],
         roomTypes: roomTypes as MenuFlowInput['roomTypes'],
+        modifiers: modifiers as MenuFlowInput['modifiers'],
         availableSlots: availableSlots || {},
         lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
       })
@@ -201,6 +204,9 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         options: flowOptions,
         image: flowImage,
         video: flowVideo,
+        // Paso "Ver fotos y videos": lista completa (fotos + video) que el canal
+        // real envía como mensajes separados; el simulador la muestra igual.
+        media: (flow.media || []).map(item => ({ url: item.url, isVideo: item.isVideo })),
         mediaNote: null,
         actionNote,
       })

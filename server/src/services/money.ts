@@ -1,6 +1,9 @@
 export interface ParsedOrderItem {
   name: string
   qty: number
+  // Modificador de la línea (p. ej. el sabor de la pizza). NO cambia el precio
+  // —eso lo pone el producto (tamaño)—; solo se muestra pegado a la línea.
+  note?: string | null
 }
 
 export interface CatalogProduct {
@@ -15,6 +18,7 @@ export interface ResolvedOrderItem {
   product: CatalogProduct
   qty: number
   unit: number
+  note?: string | null
 }
 
 export interface ComputedOrderItem {
@@ -100,15 +104,23 @@ function resolveItems(
       unresolved.push(`${match.name} (sin precio cargado)`)
       continue
     }
-    resolved.push({ product: match, qty: item.qty, unit: money(unit) })
+    resolved.push({ product: match, qty: item.qty, unit: money(unit), note: item.note || null })
   }
   return { resolved, unresolved }
+}
+
+// El sabor (u otro modificador) se pliega en el nombre visible de la línea:
+// "Pizza Familiar — Hawaiana". El precio ya salió del producto (tamaño).
+function displayName(item: ResolvedOrderItem): string {
+  const base = String(item.product.name || '').trim()
+  const note = String(item.note || '').trim()
+  return note ? `${base} — ${note}` : base
 }
 
 function computeOrder(resolved: ResolvedOrderItem[]): ComputedOrder {
   const items = resolved.map(item => ({
     product_id: item.product.id,
-    product_name: item.product.name,
+    product_name: displayName(item),
     quantity: item.qty,
     unit_price: item.unit,
     line_total: money(item.unit * item.qty),
