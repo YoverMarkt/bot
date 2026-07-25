@@ -225,6 +225,9 @@ export interface ProcessLodgingQuoteInput extends LodgingMediaInput {
   // Habitación ya elegida por el huésped (modo menú): la cotización se centra
   // en ella y solo muestra alternativas si esa habitación no tiene cupo.
   focusRoomTypeId?: string | null
+  // En modo menú la habitación ya tuvo su paso opcional de fotos/videos.
+  // Evita volver a enviar esa misma media al completar la cotización.
+  includeMedia?: boolean
   send(message: string): Promise<unknown>
 }
 
@@ -596,13 +599,17 @@ function createBotActions(dependencies: BotActionDependencies) {
     }
     if (computed.outcome === 'handoff' || computed.outcome === 'error') {
       await handoffLodging(business, phone, originalText, computed.message, send)
-      if (computed.mediaOptions) await sendLodgingMedia(computed.mediaOptions, input)
+      if (input.includeMedia !== false && computed.mediaOptions) {
+        await sendLodgingMedia(computed.mediaOptions, input)
+      }
       return computed.outcome
     }
 
     await keepAutomated(business, phone, originalText)
     await sendAndSave(business, phone, computed.message, send)
-    if (computed.mediaOptions) await sendLodgingMedia(computed.mediaOptions, input)
+    if (input.includeMedia !== false && computed.mediaOptions) {
+      await sendLodgingMedia(computed.mediaOptions, input)
+    }
     if (computed.logLine) logger.log(computed.logLine)
     return 'quoted'
   }

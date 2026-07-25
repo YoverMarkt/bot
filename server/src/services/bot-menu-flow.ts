@@ -67,12 +67,12 @@ type FlowView =
   // categoría tiene modificadores y el cliente está pidiendo.
   | { kind: 'modifier'; tag: string; page: number }
   | { kind: 'products'; intent: 'order' | 'browse'; tag: string | null; page: number }
-  | { kind: 'product'; intent: 'order' | 'browse'; productId: string; tag: string | null; page: number }
+  | { kind: 'product'; intent: 'order' | 'browse'; productId: string; tag: string | null; page: number; mediaShown?: boolean }
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
   | { kind: 'rooms'; page?: number }
-  | { kind: 'room'; roomTypeId: string }
+  | { kind: 'room'; roomTypeId: string; mediaShown?: boolean }
   | { kind: 'stay'; step: 'dates' | 'adults' | 'children'; roomTypeId?: string; checkIn?: string; checkOut?: string; adults?: number }
   // Paso posterior a la cotización: sus opciones (solicitar / cotizar otras
   // fechas / equipo) son una vista propia para que el botón nativo (que envía
@@ -557,7 +557,6 @@ const roomIsFixedCapacity = (room?: FlowRoomType | null): boolean => {
 }
 
 // ── Media de un ítem (fotos + video) para el paso "Ver fotos y videos" ──
-const optionText = (option: MenuOption): string => typeof option === 'string' ? option : option.title
 // Cloudinary usa /video/upload/; también aceptamos extensiones comunes.
 const isVideoMedia = (url: string): boolean =>
   /\/video\/upload\//i.test(url) || /\.(?:mp4|mov|webm|m4v|avi|mkv|ogv)(?:$|[?#])/i.test(url)
@@ -720,10 +719,11 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       ].filter(Boolean)
       const canOrder = Boolean(input.business.takes_orders) && cents !== null && product.stock !== 'agotado'
       const media = productMediaList(product)
-      if (media.length) lines.push('¿Quieres ver las fotos y videos? 👇')
+      const canShowMedia = media.length > 0 && !view.mediaShown
+      if (canShowMedia) lines.push('¿Quieres ver las fotos y videos? 👇')
       return {
         reply: lines.join('\n'),
-        options: [...(media.length ? [OPT_MEDIA] : []), ...(canOrder ? [OPT_ASK] : []), OPT_BACK, OPT_HOME],
+        options: [...(canShowMedia ? [OPT_MEDIA] : []), ...(canOrder ? [OPT_ASK] : []), OPT_BACK, OPT_HOME],
       }
     }
     case 'quantity': {
@@ -769,19 +769,20 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       const amenities = (room.amenities || []).map(item => String(item).trim()).filter(Boolean)
       const rate = roomRateText(room)
       const media = roomMediaList(room)
+      const canShowMedia = media.length > 0 && !view.mediaShown
       const lines = [
         `*${String(room.name || '').trim()}*`,
         room.description ? String(room.description).trim() : '',
         amenities.length ? `✨ Incluye: ${amenities.join(', ')}` : '',
         room.max_guests ? `👥 Capacidad: hasta ${room.max_guests} persona(s)` : '',
         rate ? `💵 Tarifa: ${rate}` : '',
-        media.length
+        canShowMedia
           ? `¿Quieres ver las fotos y videos de esta habitación? 👇`
           : `¿Te gustó? Cotiza tus fechas aquí mismo y te doy el total oficial 👇`,
       ].filter(Boolean)
       return {
         reply: lines.join('\n'),
-        options: [...(media.length ? [OPT_MEDIA] : []), OPT_STAY, OPT_BACK, OPT_HOME],
+        options: [...(canShowMedia ? [OPT_MEDIA] : []), OPT_STAY, OPT_BACK, OPT_HOME],
       }
     }
     case 'stay':
@@ -1047,10 +1048,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       const product = input.products.find(item => item.id === view.productId)
       if (choice === OPT_MEDIA && product) {
         const media = productMediaList(product)
-        const detail = renderView(view, state, input)
+        // La lista visible elimina "Ver fotos y videos"; el estado debe guardar
+        // lo mismo para que el próximo id numérico 1 sea "Pedirlo", no Media.
+        const detail = goTo(state, { ...view, mediaShown: true }, input)
         return {
           reply: mediaCaption(String(product.name || 'este producto'), media),
-          options: detail.options.filter(option => optionText(option) !== OPT_MEDIA),
+          options: detail.options,
           media,
         }
       }
@@ -1146,10 +1149,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
       if (choice === OPT_MEDIA && room) {
         const media = roomMediaList(room)
-        const detail = renderView(view, state, input)
+        // Mantener sincronizadas las opciones visibles y la máquina de estado:
+        // tras ver la media, el id 1 de WhatsApp corresponde a Cotizar.
+        const detail = goTo(state, { ...view, mediaShown: true }, input)
         return {
           reply: `${mediaCaption(String(room.name || 'esta habitación'), media)} ¿Cotizamos tus fechas?`,
-          options: detail.options.filter(option => optionText(option) !== OPT_MEDIA),
+          options: detail.options,
           media,
         }
       }

@@ -418,6 +418,8 @@ describe('orquestación de conversaciones del bot', () => {
       await send('🏨 Cotización oficial — Total: $90.00')
       return 'quoted'
     })
+    const sendImage = vi.fn().mockResolvedValue(undefined)
+    const sendVideo = vi.fn().mockResolvedValue(undefined)
     const current = setup({
       menuFlow: {
         advanceMenuFlow: vi.fn().mockReturnValue({
@@ -447,12 +449,20 @@ describe('orquestación de conversaciones del bot', () => {
         takes_orders: false,
       },
       text: '2 adultos',
+      sendImage,
+      sendVideo,
     }))
 
     expect(current.send).toHaveBeenCalledWith('🏨 Cotización oficial — Total: $90.00')
     expect(current.send).toHaveBeenCalledWith(
       expect.stringContaining('1. 🛎️ Solicitar esta habitación'),
     )
+    const quoteInput = processLodgingQuote.mock.calls[0][0]
+    expect(quoteInput.includeMedia).toBe(false)
+    expect(quoteInput.sendImage).toBeUndefined()
+    expect(quoteInput.sendVideo).toBeUndefined()
+    expect(sendImage).not.toHaveBeenCalled()
+    expect(sendVideo).not.toHaveBeenCalled()
   })
 
   it('no ofrece solicitar una habitación cuando la cotización pidió reintentar', async () => {

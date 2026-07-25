@@ -410,6 +410,35 @@ describe('acciones de etiquetas del bot', () => {
     expect(database.createOrder).not.toHaveBeenCalled()
   })
 
+  it('no repite la media al cotizar desde el flujo de menú', async () => {
+    const { actions } = setup()
+    const send = vi.fn().mockResolvedValue(undefined)
+    const sendImage = vi.fn().mockResolvedValue(undefined)
+    const sendVideo = vi.fn().mockResolvedValue(undefined)
+
+    await expect(actions.processLodgingQuote({
+      business: { ...business, lodging_enabled: true },
+      phone: '0990000001',
+      originalText: '2 adultos',
+      quote: {
+        checkInRaw: '2026-08-10', checkOutRaw: '2026-08-13',
+        roomsRaw: '1', roomsCount: 1,
+        adultsRaw: '2', childrenRaw: '0',
+        checkIn: '2026-08-10', checkOut: '2026-08-13',
+        adults: 2, children: 0,
+      },
+      focusRoomTypeId: '11111111-1111-4111-8111-111111111111',
+      includeMedia: false,
+      send,
+      sendImage,
+      sendVideo,
+    })).resolves.toBe('quoted')
+
+    expect(send).toHaveBeenCalledWith(expect.stringContaining('Total oficial'))
+    expect(sendImage).not.toHaveBeenCalled()
+    expect(sendVideo).not.toHaveBeenCalled()
+  })
+
   it('distingue impuestos adicionales en el resumen oficial', async () => {
     const current = setup({
       lodging: {

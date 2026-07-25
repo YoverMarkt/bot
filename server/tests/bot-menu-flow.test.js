@@ -594,6 +594,14 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(titulos(enviadas.options)).toContain('📅 Cotizar estadía')
     expect(titulos(enviadas.options)).not.toContain('📷 Ver fotos y videos')
 
+    // WhatsApp devuelve el id numérico del botón. Después de ver media, "1"
+    // es Cotizar (ya no Media) y debe avanzar a fechas sin reenviar archivos.
+    const fechas = enviar(hostal, 'media-hab', '1', args)
+    expect(fechas.reply).toContain('¿Qué días deseas hospedarte?')
+    expect(fechas.reply).toContain('Suite Vista')
+    expect(fechas.media).toBeUndefined()
+    expect(titulos(fechas.options)).toEqual(['⬅️ Volver'])
+
     // Volver a la lista y abrir la habitación SIN media: no ofrece el paso de fotos
     enviar(hostal, 'media-hab', '⬅️ Volver', args)
     const sinFotos = enviar(hostal, 'media-hab', 'Sencilla', args)
@@ -622,6 +630,11 @@ describe('modo menú estilo banco (sin IA)', () => {
       { url: 'https://res.cloudinary.com/demo/image/upload/deluxe.jpg', isVideo: false },
       { url: 'https://res.cloudinary.com/demo/video/upload/deluxe.mp4', isVideo: true },
     ])
+    // El id 1 visible tras la media corresponde a "Pedirlo", no vuelve a abrir
+    // fotos/videos. Debe avanzar a cantidad igual que el título exacto.
+    const cantidadTrasFotos = enviar(pizzeria3, 'pm-a', '1', args)
+    expect(cantidadTrasFotos.reply).toContain('¿Cuántas unidades')
+    expect(cantidadTrasFotos.media).toBeUndefined()
 
     // Sin foto: al elegirla va directo a la cantidad (ruta rápida, sin detalle)
     resetMenuFlow(pizzeria3.id, 'pm-b')

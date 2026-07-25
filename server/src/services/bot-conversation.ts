@@ -152,6 +152,7 @@ interface ConversationActions {
     quote: ParsedBotOutput['lodgingQuote']
     guestMessages?: string[]
     focusRoomTypeId?: string | null
+    includeMedia?: boolean
     send(message: string): Promise<unknown>
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
@@ -387,9 +388,10 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         // La habitación ya elegida centra la cotización: el huésped ve SOLO su
         // total, no todas las habitaciones (las demás solo si la suya no tiene cupo).
         focusRoomTypeId: action.quote.roomTypeId ?? null,
+        // El modo menú ya ofreció la media como un paso explícito. Cotizar no
+        // debe repetir fotos ni videos, aunque el huésped no haya abierto ese paso.
+        includeMedia: false,
         send,
-        sendImage,
-        sendVideo: input.sendVideo,
       })
       // La acción ya envió y guardó la cotización o el mensaje seguro de error.
       // Solo una cotización válida conserva los botones para solicitarla.

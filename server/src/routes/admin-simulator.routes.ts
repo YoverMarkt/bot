@@ -157,8 +157,8 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       let reply = flow.reply
       let flowOptions = flow.options
       let actionNote: string | null = null
-      let flowImage = flow.image || null
-      let flowVideo: string | null = null
+      const flowImage = flow.image || null
+      const flowVideo: string | null = null
       if (flow.action?.type === 'handoff') {
         reply = HANDOFF_REPLY
         actionNote = '🤚 El cliente pidió una persona: en el canal real la conversación pasa a modo manual y el equipo continúa.'
@@ -174,11 +174,8 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
           flowOptions = flowOptions.filter(option => optionTitle(option) !== STAY_REQUEST_OPTION)
         }
         reply = computed.message
-        for (const url of (computed.mediaOptions || []).flatMap(option => option.mediaUrls || [])) {
-          if (!/^https:\/\//i.test(url)) continue
-          if (/\.(?:mp4|mov|webm)(?:$|[?#])/i.test(url)) flowVideo = flowVideo || url
-          else flowImage = flowImage || url
-        }
+        // Igual que WhatsApp en modo menú: completar una cotización no vuelve
+        // a mostrar la media. Esa se ofrece únicamente en su paso explícito.
         actionNote = computed.outcome === 'handoff' || computed.outcome === 'error'
           ? '🏨 En el canal real esta conversación pasa a un asesor del equipo (la cotización no pudo resolverse automáticamente).'
           : '🏨 Cotización oficial calculada por el servidor. Datos reunidos SOLO con menús: la IA no participó en ningún mensaje.'
