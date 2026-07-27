@@ -71,7 +71,22 @@ const getBusinessByPhone = async (phone?: string | null) => {
   return routedBusiness(route.data as ChannelRouteRecord | null)
 }
 
-const businessListFields = 'id,slug,name,type,whatsapp_number,active,bot_active,suspended,plan,plan_expires_at,created_at,notes'
+const businessListFields = [
+  'id',
+  'slug',
+  'name',
+  'type',
+  'whatsapp_number',
+  'active',
+  'bot_active',
+  'suspended',
+  'plan',
+  'plan_expires_at',
+  'monthly_contact_limit',
+  'monthly_outbound_message_limit',
+  'created_at',
+  'notes',
+].join(',')
 
 const getAllBusinesses = async () => {
   const current = await db

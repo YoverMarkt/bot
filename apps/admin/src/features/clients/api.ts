@@ -20,14 +20,37 @@ export type BusinessRow = {
   suspended: boolean
   plan: string | null
   plan_expires_at: string | null
+  monthly_contact_limit: number | null
+  monthly_outbound_message_limit: number | null
   created_at: string
   notes: string | null
   // Modo real configurado del negocio: el simulador arranca con este
   chat_mode?: 'menu' | 'ai' | null
 }
 
+export type MonthlyUsageRow = {
+  business_id: string
+  period_start: string
+  period_end: string
+  active_contacts: number
+  inbound_messages: number
+  outbound_messages: number
+  outbound_text_messages: number
+  outbound_image_messages: number
+  outbound_video_messages: number
+  outbound_interactive_messages: number
+  contact_limit: number | null
+  outbound_message_limit: number | null
+  contact_overage: number
+  outbound_message_overage: number
+  includes_history_estimate: boolean
+}
+
 export const getStats = () => api<AdminStats>('/api/admin/stats')
 export const getClients = () => api<BusinessRow[]>('/api/admin/clients')
+export const getMonthlyUsage = (month?: string) => api<MonthlyUsageRow[]>(
+  `/api/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`,
+)
 
 export const suspendClient = (id: string, reason?: string) =>
   api(`/api/admin/clients/${id}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) })

@@ -139,6 +139,41 @@ describe('clientes y onboarding del superadmin', () => {
     expect(JSON.stringify(response.body)).not.toContain('signing-secret-new')
   })
 
+  it('aplica los límites recomendados cuando se elige un plan', async () => {
+    vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-pro', name: 'Nueva Pro' },
+      error: null,
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({
+      error: null,
+    })
+
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Nueva Pro',
+        whatsapp_number: '+593999000001',
+        monthly_rate: '99',
+        plan: 'pro',
+        client_email: 'owner@example.com',
+        client_password: 'safe-password',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-pro',
+        ycloud_webhook_secret: 'signing-secret-pro',
+      },
+    })
+
+    expect(response.status).toBe(201)
+    expect(updateBusiness).toHaveBeenCalledWith('business-pro', {
+      monthly_contact_limit: 500,
+      monthly_outbound_message_limit: 2500,
+    })
+    expect(response.body).toMatchObject({
+      monthly_contact_limit: 500,
+      monthly_outbound_message_limit: 2500,
+    })
+  })
+
   it('rechaza teléfonos locales antes de crear o actualizar el negocio', async () => {
     const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding')
     const updateBusiness = vi.spyOn(db, 'updateBusiness')

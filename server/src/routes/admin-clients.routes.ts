@@ -134,10 +134,34 @@ const ALLOWED_BUSINESS_FIELDS = [
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
   'chat_mode',
+  'monthly_contact_limit', 'monthly_outbound_message_limit',
 ] as const
 
 // Solo estos dos modos existen; cualquier otro valor lo rechaza la base.
 const CHAT_MODES = ['menu', 'ai'] as const
+const USAGE_LIMITS = {
+  monthly_contact_limit: 1_000_000,
+  monthly_outbound_message_limit: 10_000_000,
+} as const
+type UsageLimitField = keyof typeof USAGE_LIMITS
+const PLAN_USAGE_PRESETS: Record<string, Record<UsageLimitField, number>> = {
+  micro: {
+    monthly_contact_limit: 50,
+    monthly_outbound_message_limit: 250,
+  },
+  basic: {
+    monthly_contact_limit: 200,
+    monthly_outbound_message_limit: 1_000,
+  },
+  pro: {
+    monthly_contact_limit: 500,
+    monthly_outbound_message_limit: 2_500,
+  },
+  premium: {
+    monthly_contact_limit: 2_000,
+    monthly_outbound_message_limit: 10_000,
+  },
+}
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -160,6 +184,60 @@ function invalidChatMode(body: Record<string, unknown>): boolean {
   if (!('chat_mode' in body)) return false
   const value = body.chat_mode
   return !CHAT_MODES.some(mode => mode === value)
+}
+
+function parsedUsageLimit(
+  body: Record<string, unknown>,
+  field: keyof typeof USAGE_LIMITS,
+): number | null | undefined {
+  if (!(field in body)) return undefined
+  if (body[field] === null || body[field] === '') return null
+  const value = Number(body[field])
+  if (!Number.isInteger(value) || value < 1 || value > USAGE_LIMITS[field]) {
+    return undefined
+  }
+  return value
+}
+
+function usageLimitError(body: Record<string, unknown>): string | null {
+  for (const [field, label] of [
+    ['monthly_contact_limit', 'El límite mensual de contactos'],
+    ['monthly_outbound_message_limit', 'El límite mensual de mensajes'],
+  ] as const) {
+    if (!(field in body)) continue
+    if (body[field] === null || body[field] === '') continue
+    if (parsedUsageLimit(body, field) === undefined) {
+      return `${label} debe ser un número entero válido`
+    }
+  }
+  return null
+}
+
+function resolvedUsageLimits(
+  body: Record<string, unknown>,
+  usePlanPreset: boolean,
+): Record<UsageLimitField, number | null | undefined> {
+  const plan = typeof body.plan === 'string'
+    ? body.plan.trim().toLowerCase()
+    : ''
+  const preset = usePlanPreset ? PLAN_USAGE_PRESETS[plan] : undefined
+  return {
+    monthly_contact_limit: parsedUsageLimit(body, 'monthly_contact_limit')
+      ?? (
+        body.monthly_contact_limit === null || body.monthly_contact_limit === ''
+          ? null
+          : preset?.monthly_contact_limit
+      ),
+    monthly_outbound_message_limit: parsedUsageLimit(
+      body,
+      'monthly_outbound_message_limit',
+    ) ?? (
+      body.monthly_outbound_message_limit === null
+        || body.monthly_outbound_message_limit === ''
+        ? null
+        : preset?.monthly_outbound_message_limit
+    ),
+  }
 }
 
 function isActiveLodgingConstraint(error: unknown): boolean {
@@ -233,6 +311,8 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   if (invalidChatMode(body)) {
     return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
+  const limitsError = usageLimitError(body)
+  if (limitsError) return res.status(400).json({ error: limitsError })
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
@@ -241,6 +321,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   if (!(parsedMonthlyRate > 0)) {
     return res.status(400).json({ error: 'La tarifa mensual debe ser mayor que cero' })
   }
+  const usageLimits = resolvedUsageLimits(body, 'plan' in body)
 
   try {
     const slug = `${name
@@ -271,6 +352,9 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       bot_active: true,
       suspended: false,
       notes: body.notes,
+      monthly_contact_limit: usageLimits.monthly_contact_limit,
+      monthly_outbound_message_limit:
+        usageLimits.monthly_outbound_message_limit,
     }
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
     const monthlyRate = parsedMonthlyRate
@@ -283,16 +367,23 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     assertDatabaseResult(result, 'crear onboarding')
     const business = result.data
     if (!business) throw new Error('crear onboarding: respuesta vacía')
-    // chat_mode es una columna nueva que la RPC atómica de onboarding todavía
-    // no conoce (lodging_enabled sí lo inserta ella). Se aplica justo después:
-    // es una preferencia, no un invariante de dinero, así que si fallara el
-    // negocio queda creado con el modo por defecto y se corrige desde el panel.
+    // La RPC atómica todavía no conoce chat_mode ni los límites de consumo
+    // (lodging_enabled sí lo inserta ella). Se aplican juntos justo después;
+    // son preferencias editables y no invariantes de dinero.
+    const postCreatePreferences: Record<string, unknown> = {}
     if (typeof body.chat_mode === 'string') {
+      postCreatePreferences.chat_mode = body.chat_mode
+    }
+    for (const field of Object.keys(USAGE_LIMITS) as UsageLimitField[]) {
+      const value = usageLimits[field]
+      if (value !== undefined) postCreatePreferences[field] = value
+    }
+    if (Object.keys(postCreatePreferences).length) {
       assertDatabaseResult(
-        await db.updateBusiness(String(business.id), { chat_mode: body.chat_mode }),
-        'aplicar el modo de conversación',
+        await db.updateBusiness(String(business.id), postCreatePreferences),
+        'aplicar preferencias del negocio',
       )
-      business.chat_mode = body.chat_mode
+      Object.assign(business, postCreatePreferences)
     }
     if (monthlyRate) {
       console.log(`💳 12 meses generados para ${name} — $${monthlyRate}/mes`)
@@ -318,6 +409,8 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   if (invalidChatMode(body)) {
     return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
+  const limitsError = usageLimitError(body)
+  if (limitsError) return res.status(400).json({ error: limitsError })
   if (typeof body.client_password === 'string' && body.client_password
     && body.client_password.length < MIN_PASSWORD_LENGTH) {
     return res.status(400).json({
@@ -327,6 +420,11 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   const businessData: Record<string, unknown> = {}
   for (const field of ALLOWED_BUSINESS_FIELDS) {
     if (field in body) businessData[field] = body[field]
+  }
+  const usageLimits = resolvedUsageLimits(body, 'plan' in body)
+  for (const field of Object.keys(USAGE_LIMITS) as UsageLimitField[]) {
+    const value = usageLimits[field]
+    if (value !== undefined) businessData[field] = value
   }
   if ('whatsapp_provider' in businessData) {
     businessData.whatsapp_provider = configuredWhatsAppProvider(body)

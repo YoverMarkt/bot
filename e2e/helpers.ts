@@ -136,7 +136,49 @@ export async function mockAdminApi(page: Page) {
         id: 'biz-e2e', slug: 'negocio-e2e', name: 'Negocio E2E', type: 'tienda',
         whatsapp_number: '+593999999999', active: true, bot_active: true,
         suspended: false, plan: 'basic', plan_expires_at: null,
+        monthly_contact_limit: 50, monthly_outbound_message_limit: 250,
         created_at: '2026-07-11T00:00:00.000Z', notes: null,
+      }, {
+        id: 'biz-limit', slug: 'negocio-limite', name: 'Negocio al límite', type: 'cafetería',
+        whatsapp_number: '+593999999998', active: true, bot_active: true,
+        suspended: false, plan: 'micro', plan_expires_at: null,
+        monthly_contact_limit: 50, monthly_outbound_message_limit: 250,
+        created_at: '2026-07-10T00:00:00.000Z', notes: null,
+      }])
+    }
+    if (path === '/api/admin/usage') {
+      return json(route, [{
+        business_id: 'biz-e2e',
+        period_start: '2026-07-01',
+        period_end: '2026-07-31',
+        active_contacts: 25,
+        inbound_messages: 70,
+        outbound_messages: 251,
+        outbound_text_messages: 230,
+        outbound_image_messages: 30,
+        outbound_video_messages: 5,
+        outbound_interactive_messages: 15,
+        contact_limit: 50,
+        outbound_message_limit: 250,
+        contact_overage: 0,
+        outbound_message_overage: 1,
+        includes_history_estimate: false,
+      }, {
+        business_id: 'biz-limit',
+        period_start: '2026-07-01',
+        period_end: '2026-07-31',
+        active_contacts: 50,
+        inbound_messages: 100,
+        outbound_messages: 250,
+        outbound_text_messages: 250,
+        outbound_image_messages: 0,
+        outbound_video_messages: 0,
+        outbound_interactive_messages: 0,
+        contact_limit: 50,
+        outbound_message_limit: 250,
+        contact_overage: 0,
+        outbound_message_overage: 0,
+        includes_history_estimate: false,
       }])
     }
 

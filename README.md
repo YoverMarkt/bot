@@ -135,7 +135,9 @@ consumía. `migration-inbox-webhooks.sql` instala la cola durable, leases y
 reintentos. Finalmente, `migration-agrupado-webhooks.sql` añade la espera
 durable de 3 segundos y agrupa textos rápidos consecutivos en una sola
 respuesta; debe ejecutarse **después** del inbox y antes del runtime que consume
-esos lotes. Telegram conserva su flujo independiente.
+esos lotes. `migration-consumo-planes.sql` agrega después el libro mayor de
+mensajes, los límites mensuales y la consulta de Medición del superadmin.
+Telegram conserva su flujo independiente.
 
 En una **actualización con el worker ya activo**, el orden de rolling deploy más
 seguro es: desplegar primero este runtime compatible, esperar que Railway retire
@@ -165,7 +167,7 @@ En producción **NO se usa el túnel** — se usa un dominio fijo.
 
 1. Usa Node.js 22+ y crea una cuenta en **Railway**
 2. Conecta este repositorio
-3. Antes de desplegar el código, ejecuta las migraciones de la lista anterior en el mismo orden; la última es `server/migration-agrupado-webhooks.sql`
+3. Antes de desplegar el código, ejecuta las migraciones de la lista anterior en el mismo orden; la última es `server/migration-consumo-planes.sql`
 4. Configura las **variables de entorno** de `server/.env.example`, incluido `NODE_ENV=production`
 5. **Importante:** define `BASE_URL=https://tu-dominio.up.railway.app`
    - Esto **desactiva el túnel** y hace que Telegram use webhook

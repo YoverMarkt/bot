@@ -1,8 +1,13 @@
 import axios from 'axios'
 import { metaGraphUrl } from '../config/meta-graph'
 import type { WhatsAppProvider } from '../types/channels'
+import {
+  recordOutboundUsage,
+  type OutboundMessageType,
+} from '../db/repositories/usage'
 
 export interface WhatsAppBusiness {
+  id?: string | null
   whatsapp_provider?: string | null
   meta_phone_id?: string | null
   meta_token?: string | null
@@ -64,6 +69,15 @@ const ycloudNumberFor = (business: WhatsAppBusiness) => (
 function errorDetail(error: unknown): string {
   if (axios.isAxiosError(error)) return error.message
   return error instanceof Error ? error.message : 'Error no identificado'
+}
+
+async function recordAcceptedMessage(
+  business: WhatsAppBusiness,
+  provider: WhatsAppProvider,
+  to: string,
+  messageType: OutboundMessageType,
+): Promise<void> {
+  await recordOutboundUsage(business.id, provider, to, messageType)
 }
 
 async function sendTyping(
@@ -132,6 +146,7 @@ async function sendText(
         text,
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'text')
   } catch (error) {
     console.error(`❌ [${provider}] sendText:`, errorDetail(error))
     throw error
@@ -175,6 +190,7 @@ async function sendImage(
         deliveryMode === 'direct',
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'image')
   } catch (error) {
     console.error(`❌ [${provider}] sendImage:`, errorDetail(error))
     throw error
@@ -218,6 +234,7 @@ async function sendVideo(
         deliveryMode === 'direct',
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'video')
   } catch (error) {
     console.error(`❌ [${provider}] sendVideo:`, errorDetail(error))
     throw error
@@ -237,7 +254,7 @@ async function sendInteractive(
 ): Promise<boolean> {
   if (providerFor(business) !== 'ycloud') return false
   try {
-    return await ycloud.sendInteractive(
+    const sent = await ycloud.sendInteractive(
       ycloudKeyFor(business),
       ycloudNumberFor(business),
       to,
@@ -246,6 +263,10 @@ async function sendInteractive(
       listButtonText,
       deliveryMode === 'direct',
     )
+    if (sent) {
+      await recordAcceptedMessage(business, 'ycloud', to, 'interactive')
+    }
+    return sent
   } catch (error) {
     // Nunca dejar al cliente sin respuesta: el llamador cae a texto
     console.error('❌ [ycloud] sendInteractive:', errorDetail(error))

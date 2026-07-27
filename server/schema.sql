@@ -394,6 +394,295 @@ $$;
 
 commit;
 
+-- ============================================================
+-- MEDICIÓN DE CONSUMO MENSUAL POR NEGOCIO
+-- Migración incremental: migration-consumo-planes.sql
+-- ============================================================
+
+begin;
+
+create extension if not exists pgcrypto;
+
+create table if not exists public.message_usage_migration_state (
+  key          text primary key,
+  completed_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'businesses'
+      and column_name = 'monthly_contact_limit'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'businesses'
+      and column_name = 'monthly_outbound_message_limit'
+  ) then
+    insert into public.message_usage_migration_state (key)
+    values ('limits_v1')
+    on conflict (key) do nothing;
+  end if;
+end;
+$$;
+
+alter table public.businesses
+  add column if not exists monthly_contact_limit integer,
+  add column if not exists monthly_outbound_message_limit integer;
+
+do $$
+begin
+  if not exists (
+    select 1 from public.message_usage_migration_state
+    where key = 'limits_v1'
+  ) then
+    update public.businesses
+    set monthly_contact_limit = coalesce(monthly_contact_limit, 50),
+        monthly_outbound_message_limit =
+          coalesce(monthly_outbound_message_limit, 250)
+    where lower(coalesce(plan, 'basic')) in ('basic', 'micro', 'founder');
+
+    insert into public.message_usage_migration_state (key)
+    values ('limits_v1');
+  end if;
+end;
+$$;
+
+alter table public.businesses
+  alter column monthly_contact_limit set default 50,
+  alter column monthly_outbound_message_limit set default 250;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'businesses_monthly_contact_limit_check'
+      and conrelid = 'public.businesses'::regclass
+  ) then
+    alter table public.businesses
+      add constraint businesses_monthly_contact_limit_check
+      check (
+        monthly_contact_limit is null
+        or monthly_contact_limit between 1 and 1000000
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'businesses_monthly_outbound_limit_check'
+      and conrelid = 'public.businesses'::regclass
+  ) then
+    alter table public.businesses
+      add constraint businesses_monthly_outbound_limit_check
+      check (
+        monthly_outbound_message_limit is null
+        or monthly_outbound_message_limit between 1 and 10000000
+      );
+  end if;
+end;
+$$;
+
+create table if not exists public.message_usage_events (
+  id                uuid primary key default gen_random_uuid(),
+  business_id       uuid not null
+                    references public.businesses(id) on delete cascade,
+  provider          text not null
+                    check (provider in ('meta', 'ycloud', 'telegram', 'legacy')),
+  direction         text not null check (direction in ('inbound', 'outbound')),
+  message_type      text not null
+                    check (message_type in (
+                      'text', 'image', 'video', 'audio', 'interactive', 'other'
+                    )),
+  contact_key_hash  text not null
+                    check (contact_key_hash ~ '^[0-9a-f]{64}$'),
+  source_kind       text not null
+                    check (source_kind in ('webhook', 'send', 'history')),
+  source_key        text not null
+                    check (char_length(source_key) between 1 and 200),
+  occurred_at       timestamptz not null default now(),
+  created_at        timestamptz not null default now(),
+  unique (business_id, source_key)
+);
+
+create index if not exists idx_message_usage_business_period
+  on public.message_usage_events (business_id, occurred_at);
+create index if not exists idx_message_usage_business_direction_period
+  on public.message_usage_events (business_id, direction, occurred_at);
+create index if not exists idx_message_usage_contact_period
+  on public.message_usage_events (business_id, contact_key_hash, occurred_at);
+
+-- El esquema consolidado se ejecuta sobre una base vacía: no hay historial
+-- anterior que reconstruir. El marcador evita un backfill accidental futuro.
+insert into public.message_usage_migration_state (key)
+values ('conversation_history_v1')
+on conflict (key) do nothing;
+
+create or replace function public.record_inbound_message_usage()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_message_type text;
+  v_inbound_hash text;
+begin
+  if new.stream_key_hash is null then
+    return new;
+  end if;
+
+  v_message_type := case new.payload #>> '{content,kind}'
+    when 'text' then 'text'
+    when 'image' then 'image'
+    when 'audio' then 'audio'
+    else 'other'
+  end;
+  v_inbound_hash := encode(digest(
+    coalesce(nullif(new.payload ->> 'inboundId', ''), new.message_id_hash),
+    'sha256'
+  ), 'hex');
+
+  insert into public.message_usage_events (
+    business_id, provider, direction, message_type, contact_key_hash,
+    source_kind, source_key, occurred_at
+  ) values (
+    new.business_id,
+    new.provider,
+    'inbound',
+    v_message_type,
+    new.stream_key_hash,
+    'webhook',
+    'inbound:' || new.provider || ':' || v_inbound_hash,
+    new.received_at
+  )
+  on conflict (business_id, source_key) do nothing;
+
+  return new;
+end;
+$$;
+
+create or replace function public.get_admin_monthly_usage(
+  p_month date default null
+)
+returns table (
+  business_id uuid,
+  period_start date,
+  period_end date,
+  active_contacts bigint,
+  inbound_messages bigint,
+  outbound_messages bigint,
+  outbound_text_messages bigint,
+  outbound_image_messages bigint,
+  outbound_video_messages bigint,
+  outbound_interactive_messages bigint,
+  contact_limit integer,
+  outbound_message_limit integer,
+  contact_overage bigint,
+  outbound_message_overage bigint,
+  includes_history_estimate boolean
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  with bounds as (
+    select
+      date_trunc(
+        'month',
+        coalesce(p_month, (now() at time zone 'America/Guayaquil')::date)
+      )::date as starts_on
+  ),
+  period_window as (
+    select
+      starts_on,
+      (starts_on + interval '1 month')::date as ends_before,
+      starts_on::timestamp at time zone 'America/Guayaquil' as starts_at,
+      (starts_on + interval '1 month')::timestamp
+        at time zone 'America/Guayaquil' as ends_at
+    from bounds
+  )
+  select
+    business.id,
+    period_window.starts_on,
+    period_window.ends_before - 1,
+    count(distinct usage.contact_key_hash)
+      filter (where usage.direction = 'inbound'),
+    count(usage.id) filter (where usage.direction = 'inbound'),
+    count(usage.id) filter (where usage.direction = 'outbound'),
+    count(usage.id) filter (
+      where usage.direction = 'outbound' and usage.message_type = 'text'
+    ),
+    count(usage.id) filter (
+      where usage.direction = 'outbound' and usage.message_type = 'image'
+    ),
+    count(usage.id) filter (
+      where usage.direction = 'outbound' and usage.message_type = 'video'
+    ),
+    count(usage.id) filter (
+      where usage.direction = 'outbound'
+        and usage.message_type = 'interactive'
+    ),
+    business.monthly_contact_limit,
+    business.monthly_outbound_message_limit,
+    case
+      when business.monthly_contact_limit is null then 0
+      else greatest(
+        count(distinct usage.contact_key_hash)
+          filter (where usage.direction = 'inbound')
+          - business.monthly_contact_limit,
+        0
+      )
+    end,
+    case
+      when business.monthly_outbound_message_limit is null then 0
+      else greatest(
+        count(usage.id) filter (where usage.direction = 'outbound')
+          - business.monthly_outbound_message_limit,
+        0
+      )
+    end,
+    coalesce(
+      bool_or(usage.source_kind = 'history')
+        filter (where usage.id is not null),
+      false
+    )
+  from public.businesses as business
+  cross join period_window
+  left join public.message_usage_events as usage
+    on usage.business_id = business.id
+   and usage.occurred_at >= period_window.starts_at
+   and usage.occurred_at < period_window.ends_at
+  group by
+    business.id,
+    business.created_at,
+    business.monthly_contact_limit,
+    business.monthly_outbound_message_limit,
+    period_window.starts_on,
+    period_window.ends_before
+  order by business.created_at desc;
+$$;
+
+alter table public.message_usage_events enable row level security;
+alter table public.message_usage_migration_state enable row level security;
+
+revoke all on table public.message_usage_events
+  from public, anon, authenticated;
+grant select, insert on table public.message_usage_events to service_role;
+revoke all on table public.message_usage_migration_state
+  from public, anon, authenticated;
+
+revoke all on function public.record_inbound_message_usage()
+  from public, anon, authenticated;
+revoke all on function public.get_admin_monthly_usage(date)
+  from public, anon, authenticated;
+grant execute on function public.get_admin_monthly_usage(date)
+  to service_role;
+
+commit;
+
 -- ── TABLA 2: Usuarios del panel del cliente (dueño + empleados) ─
 create table if not exists client_users (
   id            uuid primary key default gen_random_uuid(),
@@ -712,6 +1001,12 @@ create table if not exists webhook_inbound_events (
     )
   )
 );
+
+drop trigger if exists webhook_inbound_message_usage
+  on public.webhook_inbound_events;
+create trigger webhook_inbound_message_usage
+after insert on public.webhook_inbound_events
+for each row execute function public.record_inbound_message_usage();
 
 -- ── ÍNDICES ────────────────────────────────────────────────
 create index if not exists idx_products_biz      on products(business_id);

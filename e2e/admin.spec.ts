@@ -65,6 +65,56 @@ test('la tabla de clientes ocupa el contenido y alinea sus acciones', async ({ p
   await expect(actionButtons.first()).toHaveCSS('cursor', 'pointer')
 })
 
+test('Medición muestra todos los negocios y alerta visualmente los excesos', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/usage`)
+
+  await expect(page.getByRole('heading', { name: 'Medición' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Medición' })).toHaveClass(/text-primary/)
+  await expect(page.getByText('Negocio E2E')).toBeVisible()
+  await expect(page.getByText('Límite excedido')).toBeVisible()
+  await expect(page.getByText('Límite alcanzado')).toBeVisible()
+  await expect(page.getByText('Exceso: +1')).toBeVisible()
+  await expect(page.getByText('50%')).toBeVisible()
+  await expect(page.getByText('101%')).toBeVisible()
+  await expect(page.getByText('100%').first()).toBeVisible()
+  await expect(page.getByText('Exceso: +0')).toHaveCount(0)
+
+  const exceededBusiness = page.locator('[data-slot="card"]')
+    .filter({ has: page.getByText('Negocio E2E', { exact: true }) })
+  const contacts = exceededBusiness.getByRole('progressbar', { name: /Contactos activos/ })
+  const messages = exceededBusiness.getByRole('progressbar', { name: /Mensajes enviados/ })
+  await expect(contacts).toBeVisible()
+  await expect(messages).toBeVisible()
+  const [contactsColor, messagesColor] = await Promise.all([
+    contacts.locator('[data-slot="progress-indicator"]').evaluate(
+      element => getComputedStyle(element).backgroundColor,
+    ),
+    messages.locator('[data-slot="progress-indicator"]').evaluate(
+      element => getComputedStyle(element).backgroundColor,
+    ),
+  ])
+  expect(contactsColor).not.toBe(messagesColor)
+
+  await expect(page.getByText('230', { exact: true })).toBeVisible()
+  await expect(page.getByText('30', { exact: true })).toBeVisible()
+  await expect(page.getByText('5', { exact: true })).toBeVisible()
+  await expect(page.getByText('15', { exact: true })).toBeVisible()
+})
+
+test('Medición conserva las barras dentro de una pantalla móvil', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/usage`)
+
+  await expect(page.getByRole('heading', { name: 'Medición' })).toBeVisible()
+  await expect.poll(() => page.locator('main').evaluate(element => (
+    element.scrollWidth <= element.clientWidth + 1
+  ))).toBe(true)
+})
+
 test('el sidebar admin queda fijo y solo se desplaza el contenido', async ({ page }) => {
   await seedAdminSession(page)
   await mockAdminApi(page)
@@ -131,6 +181,11 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
   await expect(salesMode).toContainText('Solo informa y deriva')
   await expect(lodgingMode).toContainText('Sin cotización')
   await expect(dialog.getByText(/Se creará un horario inicial/)).toBeVisible()
+
+  await dialog.getByRole('combobox', { name: 'Plan' }).click()
+  await page.getByRole('option', { name: /Pro — 500/ }).click()
+  await expect(dialog.getByLabel('Contactos al mes')).toHaveValue('500')
+  await expect(dialog.getByLabel('Mensajes enviados al mes')).toHaveValue('2500')
   await expectConnectedLabels(dialog)
 })
 

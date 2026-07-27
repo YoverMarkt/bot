@@ -32,9 +32,17 @@ const EMPTY = {
   telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
   lodging: 'no', chat_mode: 'ai',
-  plan: 'basic', monthly_rate: '', plan_expires_at: '',
+  plan: 'micro', monthly_rate: '', plan_expires_at: '',
+  monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
 }
+
+const PLAN_USAGE_PRESETS = {
+  micro: { contacts: '50', messages: '250' },
+  basic: { contacts: '200', messages: '1000' },
+  pro: { contacts: '500', messages: '2500' },
+  premium: { contacts: '2000', messages: '10000' },
+} as const
 
 export default function ClientModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState(EMPTY)
@@ -70,6 +78,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         plan: c.plan ?? 'basic',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         plan_expires_at: c.plan_expires_at ? c.plan_expires_at.slice(0, 10) : '',
+        monthly_contact_limit: c.monthly_contact_limit != null
+          ? String(c.monthly_contact_limit)
+          : '',
+        monthly_outbound_message_limit: c.monthly_outbound_message_limit != null
+          ? String(c.monthly_outbound_message_limit)
+          : '',
         client_email: c.client_email ?? '', client_password: '',
         notes: c.notes ?? '',
       })
@@ -119,6 +133,18 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     })
   }
 
+  const selectPlan = (value: string) => {
+    const preset = PLAN_USAGE_PRESETS[value as keyof typeof PLAN_USAGE_PRESETS]
+    setF(prev => ({
+      ...prev,
+      plan: value,
+      ...(preset ? {
+        monthly_contact_limit: preset.contacts,
+        monthly_outbound_message_limit: preset.messages,
+      } : {}),
+    }))
+  }
+
   const requestVerification = () => {
     const payload: adm.ProviderVerificationPayload = {
       provider: f.whatsapp_provider as adm.ProviderVerificationPayload['provider'],
@@ -165,6 +191,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       plan: f.plan,
       monthly_rate: parseFloat(f.monthly_rate) || null,
       plan_expires_at: f.plan_expires_at || null,
+      monthly_contact_limit: f.monthly_contact_limit
+        ? Number(f.monthly_contact_limit)
+        : null,
+      monthly_outbound_message_limit: f.monthly_outbound_message_limit
+        ? Number(f.monthly_outbound_message_limit)
+        : null,
       notes: f.notes || null,
     }
     if (f.ycloud_api_key.trim()) payload.ycloud_api_key = f.ycloud_api_key.trim()
@@ -377,21 +409,49 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
             <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-3">
               <div>
                 <Label htmlFor="client-plan">Plan</Label>
-                <Select value={f.plan} onValueChange={setVal('plan')}>
+                <Select value={f.plan} onValueChange={selectPlan}>
                   <SelectTrigger id="client-plan" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="basic">Básico</SelectItem>
-                    <SelectItem value="pro">Pro</SelectItem>
-                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="micro">Micro / Fundador — 50 / 250</SelectItem>
+                    <SelectItem value="basic">Básico — 200 / 1.000</SelectItem>
+                    <SelectItem value="pro">Pro — 500 / 2.500</SelectItem>
+                    <SelectItem value="premium">Premium — 2.000 / 10.000</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div><Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label><Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
               <div><Label htmlFor="client-plan-expires-at">Plan vence</Label><Input id="client-plan-expires-at" type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
+              <div>
+                <Label htmlFor="client-contact-limit">Contactos al mes</Label>
+                <Input
+                  id="client-contact-limit"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={f.monthly_contact_limit}
+                  onChange={set('monthly_contact_limit')}
+                  placeholder="Sin límite"
+                />
+              </div>
+              <div>
+                <Label htmlFor="client-outbound-limit">Mensajes enviados al mes</Label>
+                <Input
+                  id="client-outbound-limit"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={f.monthly_outbound_message_limit}
+                  onChange={set('monthly_outbound_message_limit')}
+                  placeholder="Sin límite"
+                />
+              </div>
               <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" value={f.client_email} onChange={set('client_email')} /></div>
               <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
               <div><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
             </div>
+            <p className="-mt-2 mb-4 text-xs text-muted-foreground">
+              Al cambiar el plan se cargan sus límites recomendados. Puedes personalizarlos según el contrato o dejarlos vacíos; Medición solo alerta y nunca apaga el bot.
+            </p>
 
             {!id && <p className="mb-4 text-xs text-muted-foreground">Se creará un horario inicial de lunes a viernes, 09:00–18:00, y sábado, 09:00–13:00. El dueño puede cambiarlo inmediatamente desde Horarios.</p>}
 
