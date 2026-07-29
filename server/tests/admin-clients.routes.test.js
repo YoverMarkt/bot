@@ -67,8 +67,8 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 14 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(14)
+  it('protege sus 13 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(13)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -130,7 +130,7 @@ describe('clientes y onboarding del superadmin', () => {
       }),
       'owner@example.com',
       expect.any(String),
-      30,
+      25,
     )
     const passwordHash = createOnboarding.mock.calls[0][2]
     expect(passwordHash).not.toBe('safe-password')
@@ -140,14 +140,10 @@ describe('clientes y onboarding del superadmin', () => {
   })
 
   it('aplica los límites recomendados cuando se elige un plan', async () => {
-    vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
       data: { id: 'business-pro', name: 'Nueva Pro' },
       error: null,
     })
-    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({
-      error: null,
-    })
-
     const response = await dispatch('post', '/api/admin/clients', {
       auth: authorization(),
       body: {
@@ -164,13 +160,14 @@ describe('clientes y onboarding del superadmin', () => {
     })
 
     expect(response.status).toBe(201)
-    expect(updateBusiness).toHaveBeenCalledWith('business-pro', {
-      monthly_contact_limit: 500,
-      monthly_outbound_message_limit: 2500,
-    })
+    expect(createOnboarding).toHaveBeenCalledWith(expect.objectContaining({
+      plan: 'pro',
+      monthly_contact_limit: 400,
+      monthly_outbound_message_limit: 2000,
+    }), 'owner@example.com', expect.any(String), 99)
     expect(response.body).toMatchObject({
-      monthly_contact_limit: 500,
-      monthly_outbound_message_limit: 2500,
+      monthly_contact_limit: 400,
+      monthly_outbound_message_limit: 2000,
     })
   })
 
@@ -309,33 +306,58 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response.status).toBe(201)
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({ whatsapp_provider: 'telegram', telegram_bot_token: 'bot-token' }),
-      'owner@example.com', expect.any(String), 20,
+      'owner@example.com', expect.any(String), 25,
     )
+  })
+
+  it('reaplica deliberadamente los valores vigentes sin tocar cobros históricos', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      plan: 'basic',
+      monthly_rate: 49,
+      monthly_contact_limit: 50,
+      monthly_outbound_message_limit: 250,
+      whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001',
+      ycloud_api_key: 'stored-secret',
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling').mockResolvedValue({
+      error: null,
+    })
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(),
+      params: { id: 'business-a' },
+      body: { plan: 'basic', apply_plan_defaults: true },
+    })
+
+    expect(response).toEqual({ status: 200, body: { ok: true } })
+    expect(updateBusiness).not.toHaveBeenCalled()
+    expect(updatePlan).toHaveBeenCalledWith('business-a', 'basic', 50, 200, 1000)
   })
 
   it('solo envía campos permitidos y no confirma una facturación rechazada', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', whatsapp_provider: 'ycloud',
+      id: 'business-a', plan: 'micro', whatsapp_provider: 'ycloud',
       whatsapp_number: '+593999000001', ycloud_api_key: 'stored-secret',
     })
     const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
-    vi.spyOn(db, 'countBilling').mockResolvedValue(1)
-    vi.spyOn(db, 'updatePendingBilling').mockResolvedValue({
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling').mockResolvedValue({
       error: { message: 'fallo de base' },
     })
 
     const response = await dispatch('put', '/api/admin/clients/:id', {
       auth: authorization(), params: { id: 'business-a' },
       body: {
-        name: 'Actualizado', monthly_rate: '25', id: 'business-b',
+        name: 'Actualizado', plan: 'pro', monthly_rate: '25', id: 'business-b',
         client_password: 'never-in-business', unknown: 'discard',
       },
     })
 
-    expect(updateBusiness).toHaveBeenCalledWith('business-a', {
-      name: 'Actualizado', monthly_rate: 25,
-    })
+    expect(updateBusiness).toHaveBeenCalledWith('business-a', { name: 'Actualizado' })
+    expect(updatePlan).toHaveBeenCalledWith('business-a', 'pro', 99, 400, 2000)
     expect(response).toEqual({
       status: 500, body: { error: 'No se pudo actualizar el cliente' },
     })
@@ -351,7 +373,7 @@ describe('clientes y onboarding del superadmin', () => {
         message: 'No se puede deshabilitar hospedaje con solicitudes o estadías activas',
       },
     })
-    const countBilling = vi.spyOn(db, 'countBilling')
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling')
 
     const response = await dispatch('put', '/api/admin/clients/:id', {
       auth: authorization(), params: { id: 'business-a' },
@@ -364,7 +386,7 @@ describe('clientes y onboarding del superadmin', () => {
         error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
       },
     })
-    expect(countBilling).not.toHaveBeenCalled()
+    expect(updatePlan).not.toHaveBeenCalled()
   })
 
   it('rechaza proveedores no permitidos antes de consultar o modificar el negocio', async () => {

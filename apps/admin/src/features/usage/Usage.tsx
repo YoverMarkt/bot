@@ -18,6 +18,7 @@ import {
   type BusinessRow,
   type MonthlyUsageRow,
 } from '../clients/api'
+import { planLabel } from '../clients/plans'
 import { Badge } from '@botpanel/ui/components/badge'
 import {
   Card,
@@ -184,7 +185,7 @@ function UsageCard({ item }: { item: BusinessUsage }) {
           <div className="min-w-0">
             <CardTitle className="truncate">{business.name}</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {business.type || 'Negocio'} · Plan {business.plan || 'sin asignar'}
+              {business.type || 'Negocio'} · Plan {planLabel(business.plan)}
             </p>
           </div>
           <StatusBadge status={status} />

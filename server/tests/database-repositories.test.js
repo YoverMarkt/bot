@@ -85,8 +85,8 @@ describe('migración de la capa de datos', () => {
       'updateBusiness',
       'suspendBusiness',
       'reactivateBusiness',
+      'updateBusinessPlanBilling',
       'deleteBusiness',
-      'getExpiredBusinesses',
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
@@ -103,6 +103,9 @@ describe('migración de la capa de datos', () => {
   it('conserva el aislamiento y la eliminación transaccional del agregado', () => {
     expect(businessesSource).toContain(".eq('id', id)")
     expect(businessesSource).toContain("db.from('businesses').delete().eq('id', id)")
+    expect(businessesSource).toContain("db.rpc('reactivate_business_with_billing'")
+    expect(businessesSource).toContain("db.rpc('update_business_plan_billing'")
+    expect(businessesSource).not.toContain('plan_expires_at')
     expect(businessesSource).not.toContain("p_business ->> 'business_id'")
   })
 
@@ -140,12 +143,8 @@ describe('migración de la capa de datos', () => {
       'getPolicies',
       'upsertPolicies',
       'getBilling',
-      'createBilling',
-      'createBillingBatch',
+      'ensureCurrentMonthBilling',
       'updateBillingStatus',
-      'countBilling',
-      'updatePendingBilling',
-      'generateYearBilling',
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
@@ -160,20 +159,14 @@ describe('migración de la capa de datos', () => {
     expect(usersSource).toContain(".eq('role', 'employee')")
     expect(policiesSource).toContain(".eq('business_id', businessId)")
     expect(policiesSource).toContain('business_id: businessId')
-    expect(billingSource).toContain(".eq('business_id', businessId)")
+    expect(billingSource).toContain("db.rpc('ensure_current_month_billing')")
   })
 
-  it('conserva el contrato de las 12 cuotas anuales', () => {
-    const rows = db.generateYearBilling('business-a', 24.5)
-
-    expect(rows).toHaveLength(12)
-    expect(rows.every(row => (
-      row.business_id === 'business-a'
-      && row.amount === 24.5
-      && row.status === 'pending'
-      && /^\d{4}-\d{2}-\d{2}$/.test(row.period_start)
-      && /^\d{4}-\d{2}-\d{2}$/.test(row.period_end)
-    ))).toBe(true)
+  it('delega la cuota corriente a la RPC protegida de Ecuador', () => {
+    expect(billingSource).toContain("db.rpc('ensure_current_month_billing')")
+    expect(billingSource).not.toContain('generateYearBilling')
+    expect(billingSource).not.toContain('createBillingBatch')
+    expect(billingSource).not.toContain('updatePendingBilling')
   })
 
   it('migra catálogo y RAG sin perder el contrato público', () => {

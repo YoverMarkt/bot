@@ -19,6 +19,7 @@ import {
   recommendedModeForBusinessType,
   recommendedSalesForBusinessType,
 } from './business-types'
+import { PLAN_CATALOG, planById } from './plans'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
@@ -32,17 +33,10 @@ const EMPTY = {
   telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
   lodging: 'no', chat_mode: 'ai',
-  plan: 'micro', monthly_rate: '', plan_expires_at: '',
+  plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
 }
-
-const PLAN_USAGE_PRESETS = {
-  micro: { contacts: '50', messages: '250' },
-  basic: { contacts: '200', messages: '1000' },
-  pro: { contacts: '500', messages: '2500' },
-  premium: { contacts: '2000', messages: '10000' },
-} as const
 
 export default function ClientModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState(EMPTY)
@@ -55,6 +49,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   const [salesTouched, setSalesTouched] = useState(false)
   const [lodgingTouched, setLodgingTouched] = useState(false)
   const [chatModeTouched, setChatModeTouched] = useState(false)
+  const [applyPlanDefaults, setApplyPlanDefaults] = useState(false)
 
   // Editar → cargar el detalle real (el server nunca manda esto a paneles de cliente)
   useEffect(() => {
@@ -75,9 +70,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         sales: c.takes_orders === false ? 'informa' : 'vende',
         lodging: c.lodging_enabled ? 'yes' : 'no',
         chat_mode: c.chat_mode === 'menu' ? 'menu' : 'ai',
-        plan: c.plan ?? 'basic',
+        plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
-        plan_expires_at: c.plan_expires_at ? c.plan_expires_at.slice(0, 10) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
           ? String(c.monthly_contact_limit)
           : '',
@@ -134,14 +128,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   }
 
   const selectPlan = (value: string) => {
-    const preset = PLAN_USAGE_PRESETS[value as keyof typeof PLAN_USAGE_PRESETS]
+    const preset = planById(value)
+    if (!preset) return
+    setApplyPlanDefaults(true)
     setF(prev => ({
       ...prev,
-      plan: value,
-      ...(preset ? {
-        monthly_contact_limit: preset.contacts,
-        monthly_outbound_message_limit: preset.messages,
-      } : {}),
+      plan: preset.id,
+      monthly_rate: String(preset.monthlyRate),
+      monthly_contact_limit: String(preset.monthlyContactLimit),
+      monthly_outbound_message_limit: String(preset.monthlyOutboundMessageLimit),
     }))
   }
 
@@ -173,7 +168,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     e.preventDefault()
     setError('')
     if (!f.name.trim() || !f.whatsapp_number.trim()) { setError('Nombre y número de WhatsApp son obligatorios'); return }
-    if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('La tarifa mensual es obligatoria al crear (genera la facturación)'); return }
+    if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('Selecciona un plan con una tarifa mensual válida'); return }
     if (!id && (!f.client_email.trim() || !f.client_password)) { setError('El correo y la contraseña del dueño son obligatorios al crear'); return }
     const payload: BusinessPayload = {
       name: f.name.trim(), type: f.type.trim() || 'negocio',
@@ -188,16 +183,19 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       takes_orders: f.sales !== 'informa',
       lodging_enabled: f.lodging === 'yes',
       chat_mode: f.chat_mode === 'menu' ? 'menu' : 'ai',
-      plan: f.plan,
-      monthly_rate: parseFloat(f.monthly_rate) || null,
-      plan_expires_at: f.plan_expires_at || null,
-      monthly_contact_limit: f.monthly_contact_limit
-        ? Number(f.monthly_contact_limit)
-        : null,
-      monthly_outbound_message_limit: f.monthly_outbound_message_limit
-        ? Number(f.monthly_outbound_message_limit)
-        : null,
       notes: f.notes || null,
+    }
+    const officialPlan = planById(f.plan)
+    if (officialPlan) {
+      payload.plan = officialPlan.id
+      payload.monthly_rate = parseFloat(f.monthly_rate) || null
+      payload.monthly_contact_limit = f.monthly_contact_limit
+        ? Number(f.monthly_contact_limit)
+        : null
+      payload.monthly_outbound_message_limit = f.monthly_outbound_message_limit
+        ? Number(f.monthly_outbound_message_limit)
+        : null
+      if (id && applyPlanDefaults) payload.apply_plan_defaults = true
     }
     if (f.ycloud_api_key.trim()) payload.ycloud_api_key = f.ycloud_api_key.trim()
     if (f.ycloud_webhook_secret.trim()) {
@@ -405,22 +403,30 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               </div>
             </div>
 
-            {/* Plan + acceso */}
-            <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-3">
+            {/* Plan y facturación */}
+            <div className="mb-4 rounded-lg border border-border/70 p-3">
+              <h3 className="mb-3 text-sm font-semibold">Plan y facturación automática</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label htmlFor="client-plan">Plan</Label>
                 <Select value={f.plan} onValueChange={selectPlan}>
                   <SelectTrigger id="client-plan" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="micro">Micro / Fundador — 50 / 250</SelectItem>
-                    <SelectItem value="basic">Básico — 200 / 1.000</SelectItem>
-                    <SelectItem value="pro">Pro — 500 / 2.500</SelectItem>
-                    <SelectItem value="premium">Premium — 2.000 / 10.000</SelectItem>
+                    {!planById(f.plan) && (
+                      <SelectItem value={f.plan} disabled>Plan anterior: {f.plan}</SelectItem>
+                    )}
+                    {PLAN_CATALOG.map(plan => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.label} — ${plan.monthlyRate}/mes · {plan.monthlyContactLimit.toLocaleString('es-EC')} / {plan.monthlyOutboundMessageLimit.toLocaleString('es-EC')}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label><Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
-              <div><Label htmlFor="client-plan-expires-at">Plan vence</Label><Input id="client-plan-expires-at" type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
+              <div>
+                <Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label>
+                <Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} readOnly aria-describedby="client-plan-help" />
+              </div>
               <div>
                 <Label htmlFor="client-contact-limit">Contactos al mes</Label>
                 <Input
@@ -429,8 +435,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   min="1"
                   step="1"
                   value={f.monthly_contact_limit}
-                  onChange={set('monthly_contact_limit')}
-                  placeholder="Sin límite"
+                  readOnly
+                  aria-describedby="client-plan-help"
                 />
               </div>
               <div>
@@ -441,17 +447,33 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   min="1"
                   step="1"
                   value={f.monthly_outbound_message_limit}
-                  onChange={set('monthly_outbound_message_limit')}
-                  placeholder="Sin límite"
+                  readOnly
+                  aria-describedby="client-plan-help"
                 />
               </div>
+              </div>
+              <p id="client-plan-help" className="mt-3 text-xs text-muted-foreground">
+                La tarifa y los límites pertenecen al plan seleccionado. Cada mes se crea una sola cuota automáticamente; Medición alerta los excesos y la suspensión por falta de pago continúa siendo manual.
+              </p>
+              {id && planById(f.plan) && (
+                <Button
+                  className="mt-3"
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => selectPlan(f.plan)}
+                >
+                  Aplicar valores vigentes del plan
+                </Button>
+              )}
+            </div>
+
+            {/* Acceso del dueño */}
+            <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
               <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" value={f.client_email} onChange={set('client_email')} /></div>
               <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
-              <div><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
+              <div className="sm:col-span-2"><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
             </div>
-            <p className="-mt-2 mb-4 text-xs text-muted-foreground">
-              Al cambiar el plan se cargan sus límites recomendados. Puedes personalizarlos según el contrato o dejarlos vacíos; Medición solo alerta y nunca apaga el bot.
-            </p>
 
             {!id && <p className="mb-4 text-xs text-muted-foreground">Se creará un horario inicial de lunes a viernes, 09:00–18:00, y sábado, 09:00–13:00. El dueño puede cambiarlo inmediatamente desde Horarios.</p>}
 

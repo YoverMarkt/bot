@@ -7,6 +7,7 @@ import { Button } from '@botpanel/ui/components/button'
 import { Textarea } from '@botpanel/ui/components/textarea'
 import { Smartphone, Bot as BotIcon, TriangleAlert } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
+import { planLabel } from './plans'
 
 // ── Herramientas por negocio (paridad con el admin viejo):
 // 👁 Ver negocio (datos + estadísticas + últimas conversaciones)
@@ -29,7 +30,7 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Negocio</div>
             <div><strong className="text-foreground/90">Tipo:</strong> {c.type || '—'}</div>
             <div><strong className="text-foreground/90">Número:</strong> {c.whatsapp_number || '—'}</div>
-            <div><strong className="text-foreground/90">Plan:</strong> <span className="capitalize">{c.plan || '—'}</span></div>
+            <div><strong className="text-foreground/90">Plan:</strong> {planLabel(c.plan)}</div>
             <div><strong className="text-foreground/90">Estado:</strong> {c.suspended ? 'Suspendido' : 'Activo'}</div>
           </div>
           <div className="rounded-xl bg-muted/60 p-4 text-sm text-foreground/80 space-y-1">

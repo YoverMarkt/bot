@@ -81,7 +81,6 @@ const businessListFields = [
   'bot_active',
   'suspended',
   'plan',
-  'plan_expires_at',
   'monthly_contact_limit',
   'monthly_outbound_message_limit',
   'created_at',
@@ -136,27 +135,23 @@ const suspendBusiness = async (id: string, reason: string) => (
   }).eq('id', id)
 )
 
-const reactivateBusiness = async (id: string) => {
-  const expires = new Date()
-  expires.setFullYear(expires.getFullYear() + 1)
-  return db.from('businesses').update({
-    suspended: false,
-    bot_active: true,
-    suspension_reason: null,
-    plan_expires_at: expires.toISOString(),
-  }).eq('id', id)
-}
+const reactivateBusiness = async (id: string) => (
+  db.rpc('reactivate_business_with_billing', { p_business_id: id })
+)
 
-const getExpiredBusinesses = async () => {
-  const { data } = await db
-    .from('businesses')
-    .select('id, name')
-    .eq('suspended', false)
-    .eq('active', true)
-    .not('plan_expires_at', 'is', null)
-    .lt('plan_expires_at', new Date().toISOString())
-  return data || []
-}
+const updateBusinessPlanBilling = async (
+  id: string,
+  plan: string,
+  monthlyRate: number,
+  monthlyContactLimit: number,
+  monthlyOutboundMessageLimit: number,
+) => db.rpc('update_business_plan_billing', {
+  p_business_id: id,
+  p_plan: plan,
+  p_monthly_rate: monthlyRate,
+  p_monthly_contact_limit: monthlyContactLimit,
+  p_monthly_outbound_message_limit: monthlyOutboundMessageLimit,
+})
 
 // Todas las FK usan ON DELETE CASCADE; PostgreSQL elimina el agregado completo.
 const deleteBusiness = async (id: string) => (
@@ -174,6 +169,6 @@ export = {
   updateBusiness,
   suspendBusiness,
   reactivateBusiness,
-  getExpiredBusinesses,
+  updateBusinessPlanBilling,
   deleteBusiness,
 }

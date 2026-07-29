@@ -19,7 +19,6 @@ export type BusinessRow = {
   bot_active: boolean
   suspended: boolean
   plan: string | null
-  plan_expires_at: string | null
   monthly_contact_limit: number | null
   monthly_outbound_message_limit: number | null
   created_at: string
@@ -84,7 +83,7 @@ export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'>
   meta_token?: string
   telegram_bot_token?: string
   client_password?: string
-  plan_expires_at?: string | null
+  apply_plan_defaults?: boolean
 }
 
 export type ProviderVerificationPayload = {

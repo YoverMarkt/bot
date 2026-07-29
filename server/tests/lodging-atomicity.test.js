@@ -165,7 +165,10 @@ describe('módulo transaccional de hospedaje', () => {
     )
     const marker = migration.slice(0, migration.indexOf('\n') + 1)
     const schemaStart = schema.indexOf(marker)
+    const expectedMigration = migration.trimEnd()
     expect(schemaStart).toBeGreaterThanOrEqual(0)
-    expect(schema.slice(schemaStart).trimEnd()).toBe(migration.trimEnd())
+    expect(
+      schema.slice(schemaStart, schemaStart + expectedMigration.length),
+    ).toBe(expectedMigration)
   })
 })

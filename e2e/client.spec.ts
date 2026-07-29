@@ -328,7 +328,10 @@ test('un pedido se confirma y completa sin generar cobros automáticos', async (
   await expect(page.getByRole('button', { name: 'Marcar completado' })).toBeVisible()
   await page.getByRole('button', { name: 'Marcar completado' }).click()
   const completeDialog = page.getByRole('alertdialog', { name: 'Completar pedido' })
-  await completeDialog.getByRole('button', { name: 'Marcar completado' }).click()
+  await expect(completeDialog).toBeVisible()
+  // El refetch desmonta el diálogo inmediatamente; dispatchEvent evita que
+  // Playwright reintente un click exitoso sobre un nodo ya retirado.
+  await completeDialog.getByRole('button', { name: 'Marcar completado' }).dispatchEvent('click')
   await expect.poll(() => statusPayload).toEqual({ status: 'completado' })
 })
 

@@ -3,15 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as bill from './api'
 import type { BillingRow } from './api'
 import { getClients } from '../clients/api'
-import { Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
-import { Input } from '@botpanel/ui/components/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
-import { Label } from '@botpanel/ui/components/label'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // Facturación — paridad con el panel viejo: filtros por cliente/estado
@@ -43,13 +40,17 @@ export default function Billing() {
   const [fClient, setFClient] = useState('')
   const [fStatus, setFStatus] = useState('')
   const [page, setPage] = useState(1)
-  const [showNew, setShowNew] = useState(false)
 
   const { data: records = [], isLoading } = useQuery({ queryKey: ['adm-billing'], queryFn: bill.getBilling })
   const { data: clients = [] } = useQuery({ queryKey: ['adm-clients'], queryFn: getClients })
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['adm-billing'] })
-  const mPaid = useMutation({ mutationFn: bill.markPaid, onSettled: refresh })
+  const mPaid = useMutation({
+    mutationFn: bill.markPaid,
+    onSuccess: () => toast.success('Cobro marcado como pagado'),
+    onError: error => toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago'),
+    onSettled: refresh,
+  })
 
   const filtered = useMemo(() => {
     const list = records.filter(b => {
@@ -78,19 +79,19 @@ export default function Billing() {
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Facturación</h1>
-          <p className="text-sm text-muted-foreground">Historial de pagos y cobros pendientes</p>
+          <p className="text-sm text-muted-foreground">Cuotas mensuales generadas automáticamente e historial de pagos</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* Radix no permite value="" en un item → centinela 'all' ↔ '' (Todos) */}
           <Select value={fClient || 'all'} onValueChange={v => { setFClient(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger id="billing-client-filter" aria-label="Filtrar por cliente" className="w-48"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="billing-client-filter" aria-label="Filtrar por cliente" className="w-full sm:w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los clientes</SelectItem>
               {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={fStatus || 'all'} onValueChange={v => { setFStatus(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger id="billing-status-filter" aria-label="Filtrar por estado" className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger id="billing-status-filter" aria-label="Filtrar por estado" className="w-full sm:w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="pending">Pendiente</SelectItem>
@@ -99,7 +100,6 @@ export default function Billing() {
               <SelectItem value="future">Próximo</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={() => setShowNew(true)}><span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Nuevo registro</span></Button>
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export default function Billing() {
           ))}
         </Card>
       ) : (
-        <Card className="py-0 gap-0 overflow-x-auto flex-1">
+        <Card className="py-0 gap-0 overflow-hidden flex-1">
           <Table>
             <TableHeader>
               <TableRow>
@@ -133,7 +133,12 @@ export default function Billing() {
                   <TableCell><StatusPill b={b} /></TableCell>
                   <TableCell className="text-right">
                     {b.status !== 'paid' && (
-                      <Button size="sm" onClick={() => mPaid.mutate(b.id)} disabled={isFuture(b) || mPaid.isPending}>
+                      <Button
+                        size="sm"
+                        onClick={() => mPaid.mutate(b.id)}
+                        disabled={isFuture(b) || mPaid.isPending}
+                        aria-label={`Marcar pagado: ${b.businesses?.name || 'cliente'}, ${mesLabel(b.period_start)}`}
+                      >
                         Marcar pagado
                       </Button>
                     )}
@@ -167,85 +172,6 @@ export default function Billing() {
           </div>
         </div>
       )}
-
-      {showNew && <NewCharge clients={clients} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); refresh() }} />}
     </div>
-  )
-}
-
-function NewCharge({ clients, onClose, onSaved }: {
-  clients: { id: string; name: string }[]
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [f, setF] = useState({ business_id: '', amount: '', status: 'pending', period_start: '', period_end: '', notes: '' })
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (!f.business_id || !f.amount) { setError('Cliente y monto son obligatorios'); return }
-    setSaving(true); setError('')
-    try {
-      await bill.createBilling({
-        business_id: f.business_id,
-        amount: parseFloat(f.amount),
-        status: f.status,
-        period_start: f.period_start || null,
-        period_end: f.period_end || null,
-        notes: f.notes || null,
-      })
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar')
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-md">
-      <form onSubmit={save}>
-        <DialogHeader className="mb-4">
-          <DialogTitle>Nuevo registro</DialogTitle>
-          <DialogDescription>Registra una cuota o cobro para el negocio seleccionado.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label htmlFor="new-charge-client">Cliente *</Label>
-            <Select value={f.business_id} onValueChange={v => setF({ ...f, business_id: v })}>
-              <SelectTrigger id="new-charge-client" className="w-full"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
-              <SelectContent>
-                {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div><Label htmlFor="new-charge-amount">Monto ($) *</Label><Input id="new-charge-amount" type="number" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} placeholder="35.00" /></div>
-            <div>
-              <Label htmlFor="new-charge-status">Estado</Label>
-              <Select value={f.status} onValueChange={v => setF({ ...f, status: v })}>
-                <SelectTrigger id="new-charge-status" className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">Pendiente</SelectItem>
-                  <SelectItem value="paid">Pagado</SelectItem>
-                  <SelectItem value="overdue">Vencido</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div><Label htmlFor="new-charge-period-start">Inicio del período</Label><Input id="new-charge-period-start" type="date" value={f.period_start} onChange={e => setF({ ...f, period_start: e.target.value })} /></div>
-            <div><Label htmlFor="new-charge-period-end">Fin del período</Label><Input id="new-charge-period-end" type="date" value={f.period_end} onChange={e => setF({ ...f, period_end: e.target.value })} /></div>
-          </div>
-          <div><Label htmlFor="new-charge-notes">Notas</Label><Input id="new-charge-notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></div>
-        </div>
-        {error && <p className="text-sm text-destructive mt-3">✗ {error}</p>}
-        <DialogFooter className="mx-0 mb-0 mt-5 px-0 pb-0">
-          <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
-          <Button disabled={saving}>
-            {saving ? 'Guardando…' : 'Guardar'}
-          </Button>
-        </DialogFooter>
-      </form>
-      </DialogContent>
-    </Dialog>
   )
 }

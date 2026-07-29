@@ -43,7 +43,6 @@ interface ConsultationRow { product_id?: string | null; products?: { name?: stri
 interface HistoryRow { contact_phone?: string | null; role?: string | null; created_at: string }
 interface UserMessageRow { content?: string | null }
 interface AiGapRow { question?: string | null }
-interface BusinessRow { plan_expires_at?: string | null }
 interface LodgingStayRow { total?: number | string | null; nights?: number | string | null }
 
 interface ReportsDatabase {
@@ -60,7 +59,6 @@ interface ReportsDatabase {
   getCustomerSales(businessId: string): Promise<SaleRow[]>
   getUserMessagesInRange(businessId: string, from?: string, to?: string): Promise<UserMessageRow[]>
   getAiGaps(businessId: string, from?: string, to?: string): Promise<AiGapRow[]>
-  getBusinessById(businessId: string): Promise<BusinessRow | null>
   getConfirmedLodgingStays(businessId: string, from?: string | null, to?: string | null): Promise<LodgingStayRow[]>
 }
 
@@ -554,7 +552,7 @@ async function getDashboard(bizId: string, period: ReportPeriod) {
 // Vigila condiciones con los cálculos que ya existen y devuelve avisos
 // ordenados por severidad. Solo lectura, sin push (eso es Fase 2).
 async function computeAlerts(bizId: string) {
-  const [lowStock, pending, comp, cust, abandoned, unanswered, today, biz] = await Promise.all([
+  const [lowStock, pending, comp, cust, abandoned, unanswered, today] = await Promise.all([
     db.getLowStockProducts(bizId),
     db.getPendingOrders(bizId),
     computeComparison(bizId, 'semana'),
@@ -562,7 +560,6 @@ async function computeAlerts(bizId: string) {
     computeAbandoned(bizId, 'mes'),
     computeUnanswered(bizId, 'semana'),
     computeSummary(bizId, 'hoy'),
-    db.getBusinessById(bizId)
   ])
   type AlertLevel = 'critical' | 'warning' | 'info' | 'good'
   const alerts: Array<{ level: AlertLevel; icon: string; text: string }> = []
@@ -578,10 +575,6 @@ async function computeAlerts(bizId: string) {
   if (unanswered.count)      alerts.push({ level: 'info', icon: '🧠', text: `${unanswered.count} pregunta(s) que el bot no supo responder` })
   if (new Date().getHours() >= 14 && today.orders === 0)
     alerts.push({ level: 'info', icon: '🌙', text: 'Aún sin ventas registradas hoy' })
-  if (biz?.plan_expires_at) {
-    const days = Math.ceil((new Date(biz.plan_expires_at).getTime() - Date.now()) / 86400000)
-    if (days >= 0 && days <= 7) alerts.push({ level: 'critical', icon: '💳', text: `Tu plan vence en ${days} día(s)` })
-  }
   const rank: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, good: 3 }
   alerts.sort((a, b) => rank[a.level] - rank[b.level])
   return { count: alerts.length, alerts }

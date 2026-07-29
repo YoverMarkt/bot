@@ -1,5 +1,11 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
+import {
+  getPlanDefinition,
+  normalizePlanId,
+  type PlanDefinition,
+  type PlanId,
+} from '../config/plans'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -14,10 +20,6 @@ interface DatabaseResult<T = unknown> {
 
 interface CreatedBusiness extends BusinessRecord {
   id: string
-}
-
-interface BillingRow extends Record<string, unknown> {
-  business_id: string
 }
 
 const db = require('../db') as {
@@ -35,6 +37,13 @@ const db = require('../db') as {
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
   reactivateBusiness(businessId: string): Promise<DatabaseResult>
+  updateBusinessPlanBilling(
+    businessId: string,
+    plan: string,
+    monthlyRate: number,
+    monthlyContactLimit: number,
+    monthlyOutboundMessageLimit: number,
+  ): Promise<DatabaseResult>
   createClientUser(data: Record<string, unknown>): Promise<DatabaseResult>
   updateClientUser(
     businessId: string,
@@ -42,10 +51,6 @@ const db = require('../db') as {
     passwordHash: string | null,
   ): Promise<DatabaseResult>
   upsertPolicies(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
-  generateYearBilling(businessId: string, amount: number): BillingRow[]
-  createBillingBatch(rows: BillingRow[]): Promise<DatabaseResult>
-  countBilling(businessId: string): Promise<number>
-  updatePendingBilling(businessId: string, amount: number): Promise<DatabaseResult>
   getProducts(businessId: string): Promise<unknown[]>
   getConversations(businessId: string): Promise<unknown[]>
   getPolicies(businessId: string): Promise<unknown>
@@ -61,6 +66,10 @@ const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12
 const ALLOWED_MESSAGING_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
 type MessagingProvider = (typeof ALLOWED_MESSAGING_PROVIDERS)[number]
+type UsageLimits = {
+  monthly_contact_limit: number
+  monthly_outbound_message_limit: number
+}
 
 function configuredText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0
@@ -128,40 +137,16 @@ function channelConfigurationError(body: Record<string, unknown>): string | null
 const ALLOWED_BUSINESS_FIELDS = [
   'name', 'type', 'description', 'hours', 'address', 'phone', 'social',
   'payment_methods', 'whatsapp_number', 'whatsapp_provider', 'plan',
-  'plan_expires_at', 'active', 'bot_active', 'suspended', 'notes', 'slogan',
-  'monthly_rate', 'owner_phone', 'ycloud_api_key', 'ycloud_number',
+  'active', 'bot_active', 'suspended', 'notes', 'slogan',
+  'owner_phone', 'ycloud_api_key', 'ycloud_number',
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
   'chat_mode',
-  'monthly_contact_limit', 'monthly_outbound_message_limit',
 ] as const
 
 // Solo estos dos modos existen; cualquier otro valor lo rechaza la base.
 const CHAT_MODES = ['menu', 'ai'] as const
-const USAGE_LIMITS = {
-  monthly_contact_limit: 1_000_000,
-  monthly_outbound_message_limit: 10_000_000,
-} as const
-type UsageLimitField = keyof typeof USAGE_LIMITS
-const PLAN_USAGE_PRESETS: Record<string, Record<UsageLimitField, number>> = {
-  micro: {
-    monthly_contact_limit: 50,
-    monthly_outbound_message_limit: 250,
-  },
-  basic: {
-    monthly_contact_limit: 200,
-    monthly_outbound_message_limit: 1_000,
-  },
-  pro: {
-    monthly_contact_limit: 500,
-    monthly_outbound_message_limit: 2_500,
-  },
-  premium: {
-    monthly_contact_limit: 2_000,
-    monthly_outbound_message_limit: 10_000,
-  },
-}
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -186,58 +171,15 @@ function invalidChatMode(body: Record<string, unknown>): boolean {
   return !CHAT_MODES.some(mode => mode === value)
 }
 
-function parsedUsageLimit(
-  body: Record<string, unknown>,
-  field: keyof typeof USAGE_LIMITS,
-): number | null | undefined {
-  if (!(field in body)) return undefined
-  if (body[field] === null || body[field] === '') return null
-  const value = Number(body[field])
-  if (!Number.isInteger(value) || value < 1 || value > USAGE_LIMITS[field]) {
-    return undefined
-  }
-  return value
-}
-
-function usageLimitError(body: Record<string, unknown>): string | null {
-  for (const [field, label] of [
-    ['monthly_contact_limit', 'El límite mensual de contactos'],
-    ['monthly_outbound_message_limit', 'El límite mensual de mensajes'],
-  ] as const) {
-    if (!(field in body)) continue
-    if (body[field] === null || body[field] === '') continue
-    if (parsedUsageLimit(body, field) === undefined) {
-      return `${label} debe ser un número entero válido`
-    }
-  }
-  return null
-}
-
-function resolvedUsageLimits(
-  body: Record<string, unknown>,
-  usePlanPreset: boolean,
-): Record<UsageLimitField, number | null | undefined> {
-  const plan = typeof body.plan === 'string'
-    ? body.plan.trim().toLowerCase()
-    : ''
-  const preset = usePlanPreset ? PLAN_USAGE_PRESETS[plan] : undefined
+function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
   return {
-    monthly_contact_limit: parsedUsageLimit(body, 'monthly_contact_limit')
-      ?? (
-        body.monthly_contact_limit === null || body.monthly_contact_limit === ''
-          ? null
-          : preset?.monthly_contact_limit
-      ),
-    monthly_outbound_message_limit: parsedUsageLimit(
-      body,
-      'monthly_outbound_message_limit',
-    ) ?? (
-      body.monthly_outbound_message_limit === null
-        || body.monthly_outbound_message_limit === ''
-        ? null
-        : preset?.monthly_outbound_message_limit
-    ),
+    monthly_contact_limit: plan.monthlyContactLimit,
+    monthly_outbound_message_limit: plan.monthlyOutboundMessageLimit,
   }
+}
+
+function requestedPlan(body: Record<string, unknown>, fallback: PlanId): PlanDefinition | null {
+  return getPlanDefinition('plan' in body ? body.plan : fallback)
 }
 
 function isActiveLodgingConstraint(error: unknown): boolean {
@@ -311,17 +253,15 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   if (invalidChatMode(body)) {
     return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
-  const limitsError = usageLimitError(body)
-  if (limitsError) return res.status(400).json({ error: limitsError })
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
   }
-  const parsedMonthlyRate = Number.parseFloat(String(body.monthly_rate || ''))
-  if (!(parsedMonthlyRate > 0)) {
-    return res.status(400).json({ error: 'La tarifa mensual debe ser mayor que cero' })
+  const planDefinition = requestedPlan(body, 'micro')
+  if (!planDefinition) {
+    return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
   }
-  const usageLimits = resolvedUsageLimits(body, 'plan' in body)
+  const usageLimits = usageLimitsForPlan(planDefinition)
 
   try {
     const slug = `${name
@@ -344,10 +284,10 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
       lodging_enabled: body.lodging_enabled === true,
+      chat_mode: body.chat_mode === 'menu' ? 'menu' : 'ai',
       ai_provider: body.ai_provider || null,
       owner_phone: body.owner_phone || null,
-      plan: body.plan || 'basic',
-      plan_expires_at: body.plan_expires_at || null,
+      plan: planDefinition.id,
       active: true,
       bot_active: true,
       suspended: false,
@@ -357,7 +297,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
         usageLimits.monthly_outbound_message_limit,
     }
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
-    const monthlyRate = parsedMonthlyRate
+    const monthlyRate = planDefinition.monthlyRate
     const result = await db.createBusinessOnboarding(
       businessPayload,
       clientEmail,
@@ -367,27 +307,8 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     assertDatabaseResult(result, 'crear onboarding')
     const business = result.data
     if (!business) throw new Error('crear onboarding: respuesta vacía')
-    // La RPC atómica todavía no conoce chat_mode ni los límites de consumo
-    // (lodging_enabled sí lo inserta ella). Se aplican juntos justo después;
-    // son preferencias editables y no invariantes de dinero.
-    const postCreatePreferences: Record<string, unknown> = {}
-    if (typeof body.chat_mode === 'string') {
-      postCreatePreferences.chat_mode = body.chat_mode
-    }
-    for (const field of Object.keys(USAGE_LIMITS) as UsageLimitField[]) {
-      const value = usageLimits[field]
-      if (value !== undefined) postCreatePreferences[field] = value
-    }
-    if (Object.keys(postCreatePreferences).length) {
-      assertDatabaseResult(
-        await db.updateBusiness(String(business.id), postCreatePreferences),
-        'aplicar preferencias del negocio',
-      )
-      Object.assign(business, postCreatePreferences)
-    }
-    if (monthlyRate) {
-      console.log(`💳 12 meses generados para ${name} — $${monthlyRate}/mes`)
-    }
+    Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
+    console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
     res.status(201).json(sanitizeBusinessForAdmin(business))
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)
@@ -409,8 +330,9 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   if (invalidChatMode(body)) {
     return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
-  const limitsError = usageLimitError(body)
-  if (limitsError) return res.status(400).json({ error: limitsError })
+  if ('plan' in body && !normalizePlanId(body.plan)) {
+    return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
+  }
   if (typeof body.client_password === 'string' && body.client_password
     && body.client_password.length < MIN_PASSWORD_LENGTH) {
     return res.status(400).json({
@@ -421,21 +343,30 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   for (const field of ALLOWED_BUSINESS_FIELDS) {
     if (field in body) businessData[field] = body[field]
   }
-  const usageLimits = resolvedUsageLimits(body, 'plan' in body)
-  for (const field of Object.keys(USAGE_LIMITS) as UsageLimitField[]) {
-    const value = usageLimits[field]
-    if (value !== undefined) businessData[field] = value
-  }
   if ('whatsapp_provider' in businessData) {
     businessData.whatsapp_provider = configuredWhatsAppProvider(body)
-  }
-  if ('monthly_rate' in businessData) {
-    businessData.monthly_rate = Number.parseFloat(String(businessData.monthly_rate)) || null
   }
 
   try {
     const existingBusiness = await db.getBusinessById(req.params.id)
     if (!existingBusiness) return res.status(404).json({ error: 'No encontrado' })
+
+    const currentPlanId = normalizePlanId(existingBusiness.plan)
+    const nextPlan = 'plan' in body
+      ? getPlanDefinition(body.plan)
+      : null
+    const planChanged = Boolean(nextPlan && (
+      nextPlan.id !== currentPlanId || body.apply_plan_defaults === true
+    ))
+    if (nextPlan) {
+      // El cambio financiero se ejecuta después en una sola RPC junto con las
+      // cuotas. Los aliases antiguos sí pueden normalizarse sin tocar importes.
+      if (!planChanged && existingBusiness.plan !== nextPlan.id) {
+        businessData.plan = nextPlan.id
+      } else {
+        delete businessData.plan
+      }
+    }
 
     // Una edición puede conservar secretos que el navegador nunca recibe.
     // Validamos el estado que realmente quedará guardado, no solo el fragmento
@@ -456,20 +387,17 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
       assertDatabaseResult(result, 'actualizar negocio')
     }
 
-    const monthlyRate = Number.parseFloat(String(body.monthly_rate || ''))
-    if (monthlyRate > 0) {
-      const existing = await db.countBilling(req.params.id)
-      if (existing > 0) {
-        assertDatabaseResult(
-          await db.updatePendingBilling(req.params.id, monthlyRate),
-          'actualizar facturación pendiente',
-        )
-      } else {
-        assertDatabaseResult(
-          await db.createBillingBatch(db.generateYearBilling(req.params.id, monthlyRate)),
-          'crear facturación',
-        )
-      }
+    if (planChanged && nextPlan) {
+      assertDatabaseResult(
+        await db.updateBusinessPlanBilling(
+          req.params.id,
+          nextPlan.id,
+          nextPlan.monthlyRate,
+          nextPlan.monthlyContactLimit,
+          nextPlan.monthlyOutboundMessageLimit,
+        ),
+        'actualizar plan y facturación',
+      )
     }
 
     if (typeof body.client_email === 'string' && body.client_email) {
@@ -506,24 +434,6 @@ router.delete('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     safeFailure(res, 'eliminar el cliente', error)
   }
 })
-
-router.post(
-  '/api/admin/clients/:id/generate-billing',
-  auth.authAdmin,
-  async (req, res) => {
-    const monthlyRate = Number.parseFloat(String((req.body as Record<string, unknown>).monthly_rate || ''))
-    if (!(monthlyRate > 0)) {
-      return res.status(400).json({ error: 'Tarifa mensual requerida' })
-    }
-    try {
-      const rows = db.generateYearBilling(req.params.id, monthlyRate)
-      assertDatabaseResult(await db.createBillingBatch(rows), 'crear facturación')
-      res.json({ ok: true, created: rows.length })
-    } catch (error) {
-      safeFailure(res, 'generar la facturación', error)
-    }
-  },
-)
 
 router.post('/api/admin/clients/:id/suspend', auth.authAdmin, async (req, res) => {
   const reason = typeof req.body?.reason === 'string' && req.body.reason

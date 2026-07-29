@@ -36,8 +36,10 @@ import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
-  getExpiredBusinesses(): Promise<Array<{ id: string; name: string }>>
-  suspendBusiness(businessId: string, reason: string): Promise<unknown>
+  ensureCurrentMonthBilling(): Promise<{
+    data: number | null
+    error: { message?: string } | null
+  }>
   cleanupWebhookEvents(): Promise<{
     data: number | null
     error: { message?: string } | null
@@ -247,18 +249,15 @@ const handleHttpError: ErrorRequestHandler = (error: OperationalError, req, res,
 }
 app.use(handleHttpError)
 
-async function checkExpiredClients(): Promise<void> {
+async function generateCurrentMonthBilling(): Promise<void> {
   try {
-    const expired = await db.getExpiredBusinesses()
-    for (const business of expired) {
-      await db.suspendBusiness(business.id, 'Plan vencido — renovación requerida')
-      console.log(`⛔ Auto-suspendido por vencimiento: ${business.name}`)
-    }
-    if (expired.length) {
-      console.log(`⏰ Verificación: ${expired.length} cliente(s) suspendido(s) por vencimiento`)
+    const result = await db.ensureCurrentMonthBilling()
+    if (result.error) throw new Error(result.error.message || 'RPC sin detalle')
+    if (result.data) {
+      console.log(`💳 Facturación mensual: ${result.data} cuota(s) generada(s)`)
     }
   } catch (error) {
-    console.error('Error verificando vencimientos:', errorMessage(error))
+    console.error('❌ Generación de facturación mensual:', errorMessage(error))
   }
 }
 
@@ -281,8 +280,8 @@ httpServer = app.listen(port, () => {
   console.log(`📡 Webhook: http://localhost:${port}/webhook\n`)
 
   webhookInboxWorker.start()
-  setTimeout(checkExpiredClients, 3000)
-  setInterval(checkExpiredClients, 60 * 60 * 1000)
+  setTimeout(generateCurrentMonthBilling, 3000)
+  setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
   setTimeout(cleanupWebhookInbox, 5000)
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
 

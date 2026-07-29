@@ -135,16 +135,32 @@ export async function mockAdminApi(page: Page) {
       return json(route, [{
         id: 'biz-e2e', slug: 'negocio-e2e', name: 'Negocio E2E', type: 'tienda',
         whatsapp_number: '+593999999999', active: true, bot_active: true,
-        suspended: false, plan: 'basic', plan_expires_at: null,
-        monthly_contact_limit: 50, monthly_outbound_message_limit: 250,
+        suspended: false, plan: 'basic',
+        monthly_contact_limit: 200, monthly_outbound_message_limit: 1000,
         created_at: '2026-07-11T00:00:00.000Z', notes: null,
       }, {
         id: 'biz-limit', slug: 'negocio-limite', name: 'Negocio al límite', type: 'cafetería',
         whatsapp_number: '+593999999998', active: true, bot_active: true,
-        suspended: false, plan: 'micro', plan_expires_at: null,
+        suspended: false, plan: 'micro',
         monthly_contact_limit: 50, monthly_outbound_message_limit: 250,
         created_at: '2026-07-10T00:00:00.000Z', notes: null,
       }])
+    }
+    if (path === '/api/admin/billing' && route.request().method() === 'GET') {
+      return json(route, [{
+        id: 'billing-e2e',
+        business_id: 'biz-e2e',
+        amount: 50,
+        status: 'pending',
+        period_start: '2026-07-01',
+        period_end: '2026-07-31',
+        paid_at: null,
+        notes: null,
+        businesses: { name: 'Negocio E2E' },
+      }])
+    }
+    if (path.startsWith('/api/admin/billing/') && route.request().method() === 'PUT') {
+      return json(route, { ok: true })
     }
     if (path === '/api/admin/usage') {
       return json(route, [{
