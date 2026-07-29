@@ -132,6 +132,14 @@ function ProviderBadge({ provider }: { provider: FlowBusiness['provider'] }) {
   )
 }
 
+async function confirmHandledMutation(
+  action: () => Promise<unknown>,
+): Promise<void> {
+  // React Query ya presenta el error mediante onError; consumir el rechazo
+  // evita una promesa no controlada al cerrar el diálogo de confirmación.
+  await action().catch(() => undefined)
+}
+
 function TemplateCandidate({
   business,
   template,
@@ -180,7 +188,7 @@ function TemplateCandidate({
           title={`Crear ${template.title} para ${business.name}`}
           description="Se creará un Flow en estado borrador dentro de la cuenta WABA del negocio. Todavía no se enviará a clientes ni quedará habilitado."
           confirmLabel="Crear borrador"
-          onConfirm={async () => { await onProvision() }}
+          onConfirm={() => confirmHandledMutation(onProvision)}
         />
       ) : (
         <Button variant="outline" size="sm" disabled>
@@ -304,7 +312,7 @@ function DefinitionRow({
               title={`Crear una nueva versión de ${definition.name}`}
               description="Se conservará el historial actual y se creará otro borrador para corregirlo antes de publicar. No se habilitará automáticamente."
               confirmLabel="Crear nueva versión"
-              onConfirm={async () => { await onReprovision() }}
+              onConfirm={() => confirmHandledMutation(onReprovision)}
             />
           )}
 
@@ -322,7 +330,7 @@ function DefinitionRow({
               title={`Publicar ${definition.name}`}
               description="Antes de continuar verifica el borrador en WhatsApp Manager. Su estructura ya no podrá modificarse. Si existe otra versión activa, seguirá atendiendo clientes hasta que confirmes el cambio por separado."
               confirmLabel="Publicar versión"
-              onConfirm={async () => { await onPublish() }}
+              onConfirm={() => confirmHandledMutation(onPublish)}
             />
           )}
 
@@ -343,7 +351,7 @@ function DefinitionRow({
                 ? `Los nuevos clientes pasarán de la versión ${definition.activeVersion ?? 'actual'} a la versión ${definition.version} inmediatamente. Las sesiones ya iniciadas conservarán su versión.`
                 : `La versión ${definition.version} quedará seleccionada, pero el Flow seguirá deshabilitado hasta que lo habilites por separado.`}
               confirmLabel={`Activar versión ${definition.version}`}
-              onConfirm={async () => { await onActivate() }}
+              onConfirm={() => confirmHandledMutation(onActivate)}
             />
           )}
 
@@ -369,7 +377,9 @@ function DefinitionRow({
                 ? 'El bot dejará de abrir nuevas sesiones con este Flow. Las sesiones ya iniciadas podrán terminar.'
                 : 'El bot podrá comenzar a abrir este Flow para los clientes del negocio.'}
               confirmLabel={definition.enabled ? 'Deshabilitar' : 'Habilitar'}
-              onConfirm={async () => { await onToggle(!definition.enabled) }}
+              onConfirm={() => confirmHandledMutation(
+                () => onToggle(!definition.enabled),
+              )}
             />
           )}
         </div>
@@ -592,11 +602,11 @@ function useProvisionMutation() {
     ),
     onSuccess: (_result, variables) => {
       toast.success(`Borrador creado para ${variables.businessName}`)
-      void queryClient.invalidateQueries({ queryKey: ['adm-flows'] })
     },
     onError: error => toast.error(
       error instanceof Error ? error.message : 'No se pudo crear el borrador',
     ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['adm-flows'] }),
   })
 }
 
@@ -612,11 +622,11 @@ function usePublishMutation() {
           ? `Versión publicada para ${variables.businessName}; falta activarla`
           : `Flow publicado para ${variables.businessName}`,
       )
-      void queryClient.invalidateQueries({ queryKey: ['adm-flows'] })
     },
     onError: error => toast.error(
       error instanceof Error ? error.message : 'No se pudo publicar el Flow',
     ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['adm-flows'] }),
   })
 }
 
@@ -632,11 +642,11 @@ function useActivateMutation() {
     ),
     onSuccess: (_result, variables) => {
       toast.success(`Nueva versión activa para ${variables.businessName}`)
-      void queryClient.invalidateQueries({ queryKey: ['adm-flows'] })
     },
     onError: error => toast.error(
       error instanceof Error ? error.message : 'No se pudo activar la versión',
     ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['adm-flows'] }),
   })
 }
 
@@ -652,11 +662,11 @@ function useToggleMutation() {
     ),
     onSuccess: (_result, variables) => {
       toast.success(variables.enabled ? 'Flow habilitado' : 'Flow deshabilitado')
-      void queryClient.invalidateQueries({ queryKey: ['adm-flows'] })
     },
     onError: error => toast.error(
       error instanceof Error ? error.message : 'No se pudo actualizar el Flow',
     ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['adm-flows'] }),
   })
 }
 

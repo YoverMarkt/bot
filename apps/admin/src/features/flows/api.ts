@@ -63,9 +63,13 @@ export type AdminFlowsResponse = {
 
 type FlowMutationResult = {
   ok?: boolean
+  status?: FlowDefinitionStatus
+  error?: string
+  validationErrors?: unknown[]
   isActive?: boolean
   activationRequired?: boolean
   activeVersion?: number
+  enabled?: boolean
   idempotent?: boolean
 }
 
@@ -76,13 +80,46 @@ const businessPath = (businessId: string): string => (
 export const getAdminFlows = () =>
   api<AdminFlowsResponse>('/api/admin/flows')
 
-export const provisionBusinessFlow = (
+function flowValidationMessage(errors: unknown[] | undefined): string | null {
+  const first = errors?.[0]
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return null
+  const record = first as Record<string, unknown>
+  const message = typeof record.message === 'string'
+    ? record.message.trim()
+    : typeof record.error === 'string'
+      ? record.error.trim()
+      : ''
+  return message || null
+}
+
+export const provisionBusinessFlow = async (
   businessId: string,
   templateKey: string,
-) => api<FlowMutationResult>(`${businessPath(businessId)}/provision`, {
-  method: 'POST',
-  body: JSON.stringify({ templateKey }),
-})
+) => {
+  const result = await api<FlowMutationResult>(
+    `${businessPath(businessId)}/provision`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ templateKey }),
+    },
+  )
+  const status = String(result.status || '').toLowerCase()
+  const hasValidationContract = Array.isArray(result.validationErrors)
+  const validationErrors = hasValidationContract
+    ? result.validationErrors as unknown[]
+    : []
+  if (result.ok !== true
+    || status !== 'draft'
+    || !hasValidationContract
+    || validationErrors.length) {
+    throw new Error(
+      flowValidationMessage(validationErrors)
+      || result.error
+      || 'YCloud no confirmó un borrador válido del Flow',
+    )
+  }
+  return result
+}
 
 export const publishBusinessFlow = (
   businessId: string,
@@ -90,7 +127,13 @@ export const publishBusinessFlow = (
 ) => api<FlowMutationResult>(
   `${businessPath(businessId)}/${encodeURIComponent(definitionId)}/publish`,
   { method: 'POST' },
-)
+).then((result) => {
+  if (result.ok !== true
+    || String(result.status || '').toLowerCase() !== 'published') {
+    throw new Error(result.error || 'El proveedor no confirmó la publicación del Flow')
+  }
+  return result
+})
 
 export const activateBusinessFlowVersion = (
   businessId: string,
@@ -102,7 +145,14 @@ export const activateBusinessFlowVersion = (
     method: 'POST',
     body: JSON.stringify({ versionId }),
   },
-)
+).then((result) => {
+  if (result.ok !== true
+    || String(result.status || '').toLowerCase() !== 'published'
+    || result.isActive !== true) {
+    throw new Error(result.error || 'No se confirmó la versión activa del Flow')
+  }
+  return result
+})
 
 export const setBusinessFlowEnabled = (
   businessId: string,
@@ -114,4 +164,9 @@ export const setBusinessFlowEnabled = (
     method: 'PATCH',
     body: JSON.stringify({ enabled }),
   },
-)
+).then((result) => {
+  if (result.ok !== true || result.enabled !== enabled) {
+    throw new Error(result.error || 'No se confirmó el estado del Flow')
+  }
+  return result
+})

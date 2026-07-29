@@ -195,7 +195,12 @@ export type YCloudFlowCategory =
   | 'SURVEY'
   | 'OTHER'
 
-export type YCloudFlowStatus = 'DRAFT' | 'PUBLISHED' | 'DEPRECATED'
+export type YCloudFlowStatus =
+  | 'DRAFT'
+  | 'PUBLISHED'
+  | 'DEPRECATED'
+  | 'BLOCKED'
+  | 'THROTTLED'
 
 export interface YCloudFlowValidationError {
   error?: string
@@ -320,6 +325,20 @@ export async function listFlows(
     headers: headers(apiKey),
     timeout: OUTBOUND_TIMEOUT_MS,
   })
+  return response.data
+}
+
+export async function retrieveFlow(
+  apiKey: string,
+  flowId: string,
+): Promise<YCloudFlowListItem> {
+  const response = await axios.get<YCloudFlowListItem>(
+    flowUrl(requiredFlowValue(flowId, 'flowId')),
+    {
+      headers: headers(apiKey),
+      timeout: OUTBOUND_TIMEOUT_MS,
+    },
+  )
   return response.data
 }
 

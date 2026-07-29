@@ -169,6 +169,26 @@ describe('WhatsApp Flows mediante YCloud', () => {
     ])
   })
 
+  it('recupera un Flow por su ID exacto para verificar el borrador', async () => {
+    const get = vi.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        id: 'flow/created',
+        status: 'DRAFT',
+        validationErrors: [],
+      },
+    })
+
+    await expect(ycloud.retrieveFlow(API_KEY, 'flow/created')).resolves.toEqual({
+      id: 'flow/created',
+      status: 'DRAFT',
+      validationErrors: [],
+    })
+    expect(get).toHaveBeenCalledWith(
+      `${BASE_URL}/whatsapp/flows/flow%2Fcreated`,
+      { headers: REQUEST_HEADERS, timeout: 15000 },
+    )
+  })
+
   it('rechaza configuración insegura o JSON inválido antes de llamar a YCloud', async () => {
     const post = vi.spyOn(axios, 'post').mockResolvedValue({ data: {} })
 

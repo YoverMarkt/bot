@@ -32,6 +32,8 @@ interface BusinessRecord extends JsonRecord {
   takes_orders?: boolean | null
   takes_bookings?: boolean | null
   lodging_enabled?: boolean | null
+  active?: boolean | null
+  suspended?: boolean | null
 }
 
 interface FlowDefinitionWithVersions extends FlowDefinitionRecord {
@@ -95,6 +97,16 @@ const auth = require('../middleware/auth') as {
 const router = createRouter()
 const YCLOUD_PHONE_NUMBERS_URL = 'https://api.ycloud.com/v2/whatsapp/phoneNumbers'
 const PROVIDER_TIMEOUT_MS = 15_000
+const FLOW_RETRIEVE_DELAYS_MS = [250, 500, 1_000, 2_000] as const
+
+class FlowVerificationError extends Error {
+  status = 409
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'FlowVerificationError'
+  }
+}
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -169,6 +181,46 @@ async function discoverYCloudWabaId(
   return wabaId
 }
 
+async function retrieveCreatedFlow(
+  apiKey: string,
+  providerFlowId: string,
+): Promise<ycloud.YCloudFlowListItem> {
+  for (
+    let attempt = 0;
+    attempt <= FLOW_RETRIEVE_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    try {
+      return await ycloud.retrieveFlow(apiKey, providerFlowId)
+    } catch (error) {
+      const notFound = axios.isAxiosError(error)
+        && error.response?.status === 404
+      if (!notFound) throw error
+      const delay = FLOW_RETRIEVE_DELAYS_MS[attempt]
+      if (delay === undefined) {
+        throw new FlowVerificationError(
+          'YCloud creó el Flow, pero todavía no permite verificar el borrador remoto.',
+        )
+      }
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+  throw new FlowVerificationError('No se pudo verificar el borrador remoto en YCloud.')
+}
+
+function remoteValidationErrors(
+  flow: ycloud.YCloudFlowListItem,
+): unknown[] {
+  const value = (flow as JsonRecord).validationErrors
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    throw new FlowVerificationError(
+      'YCloud devolvió una validación inesperada para el borrador remoto.',
+    )
+  }
+  return value
+}
+
 function versionsOf(
   definition: FlowDefinitionWithVersions,
 ): FlowVersionRecord[] {
@@ -229,6 +281,7 @@ function validationErrorsOf(version: FlowVersionRecord): unknown[] {
 }
 
 function httpStatus(error: unknown): number {
+  if (error instanceof FlowVerificationError) return error.status
   if (!axios.isAxiosError(error)) return 500
   if (error.response?.status === 401 || error.response?.status === 403) return 409
   if (error.response?.status === 400 || error.response?.status === 404) return 409
@@ -354,6 +407,16 @@ router.post(
         error: 'La arquitectura de esa plantilla está preparada, pero todavía no es publicable',
       })
     }
+    if (business.active === false || business.suspended === true) {
+      return res.status(409).json({
+        error: 'El negocio debe estar activo y sin suspensión para crear este Flow',
+      })
+    }
+    if (!recommendedFlowCapabilities(business).includes(template.capability)) {
+      return res.status(409).json({
+        error: 'El negocio no tiene habilitada la capacidad requerida por esta plantilla',
+      })
+    }
     const provider = providerOf(business)
     if (provider !== 'ycloud') {
       return res.status(409).json({
@@ -426,24 +489,54 @@ router.post(
         status: 'provisioning',
         providerFlowId,
       })
-      const remote = await ycloud.listFlows(ycloudApiKey(business), wabaId)
-      const remoteFlow = (remote.items || []).find(item => item.id === providerFlowId)
-      const errors = remoteFlow?.validationErrors || []
-      const state = errors.length ? 'blocked' : 'draft'
+      const remoteFlow = await retrieveCreatedFlow(
+        ycloudApiKey(business),
+        providerFlowId,
+      )
+      if (text(remoteFlow.id) !== providerFlowId) {
+        throw new FlowVerificationError(
+          'YCloud devolvió un Flow distinto al verificar el borrador remoto.',
+        )
+      }
+      const errors = remoteValidationErrors(remoteFlow)
+      if (errors.length) {
+        await db.updateFlowVersionState({
+          businessId: business.id,
+          flowVersionId: version.id,
+          status: 'blocked',
+          providerFlowId,
+          validationErrors: errors,
+        })
+        return res.status(409).json({
+          error: validationMessage(errors)
+            || 'YCloud encontró errores de validación en el borrador',
+          ok: false,
+          definitionId: definition.id,
+          versionId: version.id,
+          providerFlowId,
+          status: 'blocked',
+          validationErrors: errors,
+        })
+      }
+      if (text(remoteFlow.status).toUpperCase() !== 'DRAFT') {
+        throw new FlowVerificationError(
+          'YCloud devolvió un estado inesperado al verificar el borrador remoto.',
+        )
+      }
       const saved = await db.updateFlowVersionState({
         businessId: business.id,
         flowVersionId: version.id,
-        status: state,
+        status: 'draft',
         providerFlowId,
-        validationErrors: errors,
+        validationErrors: [],
       })
       return res.status(201).json({
-        ok: !errors.length,
+        ok: true,
         definitionId: definition.id,
         versionId: saved.id,
         providerFlowId,
-        status: state,
-        validationErrors: errors,
+        status: 'draft',
+        validationErrors: [],
       })
     } catch (error) {
       if (version) {

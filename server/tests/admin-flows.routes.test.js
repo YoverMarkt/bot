@@ -106,6 +106,39 @@ function definition(overrides = {}) {
   }
 }
 
+function mockProvisioning(currentBusiness = business()) {
+  vi.spyOn(db, 'getBusinessById').mockResolvedValue(currentBusiness)
+  vi.spyOn(db, 'listFlowDefinitions').mockResolvedValue([])
+  vi.spyOn(axios, 'get').mockResolvedValue({
+    data: {
+      items: [{ phoneNumber: '+593999000001', wabaId: 'waba-1' }],
+    },
+  })
+  vi.spyOn(db, 'upsertFlowDefinition').mockResolvedValue(definition())
+  vi.spyOn(db, 'createFlowVersion').mockResolvedValue(
+    definition().whatsapp_flow_versions[0],
+  )
+  const update = vi.spyOn(db, 'updateFlowVersionState')
+    .mockImplementation(async input => ({
+      ...definition().whatsapp_flow_versions[0],
+      status: input.status,
+      provider_flow_id: input.providerFlowId || null,
+      validation_errors: input.validationErrors || [],
+    }))
+  vi.spyOn(ycloud, 'createFlow').mockResolvedValue({
+    id: 'remote-flow-1',
+    success: true,
+  })
+  return { update }
+}
+
+function providerNotFound() {
+  const error = new Error('not found')
+  error.isAxiosError = true
+  error.response = { status: 404, data: {} }
+  return error
+}
+
 beforeEach(() => {
   process.env.JWT_SECRET = JWT_SECRET
   process.env.BASE_URL = 'https://bot.example.com'
@@ -230,12 +263,10 @@ describe('administración de WhatsApp Flows', () => {
       id: 'remote-flow-1',
       success: true,
     })
-    vi.spyOn(ycloud, 'listFlows').mockResolvedValue({
-      items: [{
-        id: 'remote-flow-1',
-        status: 'DRAFT',
-        validationErrors: [],
-      }],
+    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
+      id: 'remote-flow-1',
+      status: 'DRAFT',
+      validationErrors: [],
     })
     const publishFlow = vi.spyOn(ycloud, 'publishFlow')
 
@@ -272,6 +303,144 @@ describe('administración de WhatsApp Flows', () => {
       }),
     )
     expect(publishFlow).not.toHaveBeenCalled()
+  })
+
+  it('reintenta un 404 breve y solo acepta el borrador remoto exacto', async () => {
+    mockProvisioning()
+    const retrieve = vi.spyOn(ycloud, 'retrieveFlow')
+      .mockRejectedValueOnce(providerNotFound())
+      .mockResolvedValue({
+        id: 'remote-flow-1',
+        status: 'DRAFT',
+        validationErrors: [],
+      })
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/provision',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+        body: { templateKey: 'order_standard' },
+      },
+    )
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({
+      ok: true,
+      status: 'draft',
+      validationErrors: [],
+    })
+    expect(retrieve).toHaveBeenCalledTimes(2)
+  })
+
+  it('marca blocked y responde error si YCloud devuelve errores de validación', async () => {
+    const { update } = mockProvisioning()
+    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
+      id: 'remote-flow-1',
+      status: 'DRAFT',
+      validationErrors: [{ message: 'Componente inválido' }],
+    })
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/provision',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+        body: { templateKey: 'order_standard' },
+      },
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.body).toMatchObject({
+      error: 'Componente inválido',
+      ok: false,
+      status: 'blocked',
+    })
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'blocked',
+      validationErrors: [{ message: 'Componente inválido' }],
+    }))
+  })
+
+  it.each([
+    ['estado publicado', async () => ({
+      id: 'remote-flow-1',
+      status: 'PUBLISHED',
+      validationErrors: [],
+    })],
+    ['ID remoto distinto', async () => ({
+      id: 'remote-flow-other',
+      status: 'DRAFT',
+      validationErrors: [],
+    })],
+    ['Flow remoto ausente', async () => {
+      throw providerNotFound()
+    }],
+  ])('marca failed cuando YCloud devuelve %s', async (_case, retrieveResult) => {
+    const { update } = mockProvisioning()
+    vi.spyOn(ycloud, 'retrieveFlow').mockImplementation(retrieveResult)
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/provision',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+        body: { templateKey: 'order_standard' },
+      },
+    )
+
+    expect(response.status).toBe(409)
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'failed',
+      providerFlowId: 'remote-flow-1',
+    }))
+  })
+
+  it('rechaza una plantilla si el negocio no tiene esa capacidad', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business({
+      type: 'hostal',
+      takes_orders: false,
+      lodging_enabled: true,
+    }))
+    const create = vi.spyOn(ycloud, 'createFlow')
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/provision',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+        body: { templateKey: 'order_standard' },
+      },
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.body.error).toMatch(/capacidad requerida/)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['inactivo', { active: false }],
+    ['suspendido', { suspended: true }],
+  ])('rechaza un negocio %s antes de tocar YCloud', async (_state, state) => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business(state))
+    const create = vi.spyOn(ycloud, 'createFlow')
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/provision',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+        body: { templateKey: 'order_standard' },
+      },
+    )
+
+    expect(response.status).toBe(409)
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('publica solo con la acción explícita y activa esa versión', async () => {
@@ -670,8 +839,10 @@ describe('administración de WhatsApp Flows', () => {
       id: 'remote-flow-2',
       success: true,
     })
-    vi.spyOn(ycloud, 'listFlows').mockResolvedValue({
-      items: [{ id: 'remote-flow-2', status: 'DRAFT', validationErrors: [] }],
+    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
+      id: 'remote-flow-2',
+      status: 'DRAFT',
+      validationErrors: [],
     })
 
     await dispatch(

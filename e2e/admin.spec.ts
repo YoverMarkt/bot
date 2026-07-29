@@ -120,6 +120,9 @@ test('Medición conserva las barras dentro de una pantalla móvil', async ({ pag
 test('Flows administra borradores, publicación y habilitación sin llamadas reales', async ({ page }) => {
   await seedAdminSession(page)
   await mockAdminApi(page)
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  let cafeProvisionFailed = false
   const mutations: Array<{
     path: string
     method: string
@@ -201,10 +204,38 @@ test('Flows administra borradores, publicación y habilitación sin llamadas rea
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path === '/api/admin/flows' && request.method() === 'GET') {
+      const body = cafeProvisionFailed
+        ? {
+            ...response,
+            businesses: response.businesses.map(business => (
+              business.id === 'cafe-e2e'
+                ? {
+                    ...business,
+                    wabaId: 'waba-cafe-1',
+                    definitions: [{
+                      id: 'definition-blocked',
+                      templateKey: 'order_standard',
+                      capability: 'order',
+                      name: 'Pedido',
+                      enabled: false,
+                      versionId: 'version-blocked-1',
+                      providerFlowId: 'flow-blocked-1',
+                      status: 'BLOCKED',
+                      version: 1,
+                      isActive: false,
+                      activeVersion: null,
+                      lastError: 'Componente inválido en YCloud',
+                      updatedAt: '2026-07-28T21:00:00.000Z',
+                    }],
+                  }
+                : business
+            )),
+          }
+        : response
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(response),
+        body: JSON.stringify(body),
       })
     }
     mutations.push({
@@ -212,10 +243,31 @@ test('Flows administra borradores, publicación y habilitación sin llamadas rea
       method: request.method(),
       body: request.postDataJSON() as unknown,
     })
+    if (path === '/api/admin/flows/cafe-e2e/provision') {
+      cafeProvisionFailed = true
+      return route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'Componente inválido en YCloud',
+          ok: false,
+          status: 'blocked',
+          validationErrors: [{ message: 'Componente inválido en YCloud' }],
+        }),
+      })
+    }
+    const requestBody = request.postDataJSON() as { enabled?: boolean } | null
+    const mutationResult = path.endsWith('/publish')
+      ? { ok: true, status: 'published' }
+      : path.endsWith('/activate')
+        ? { ok: true, status: 'published', isActive: true }
+        : request.method() === 'PATCH'
+          ? { ok: true, enabled: requestBody?.enabled === true }
+          : { ok: true }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ ok: true }),
+      body: JSON.stringify(mutationResult),
     })
   })
 
@@ -235,7 +287,12 @@ test('Flows administra borradores, publicación y habilitación sin llamadas rea
 
   await page.getByRole('button', { name: 'Crear borrador Pedido para Cafetería E2E' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Crear borrador' }).click()
-  await expect(page.getByText('Borrador creado para Cafetería E2E')).toBeVisible()
+  await expect(page.getByText('Componente inválido en YCloud').first()).toBeVisible()
+  await expect(page.getByText('Borrador creado para Cafetería E2E')).not.toBeVisible()
+  await expect(page.getByText('Bloqueado', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', {
+    name: 'Crear borrador Pedido para Cafetería E2E',
+  })).not.toBeVisible()
 
   await page.getByRole('button', { name: 'Publicar Pedido de Pizzería E2E' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Publicar versión' }).click()
@@ -275,6 +332,7 @@ test('Flows administra borradores, publicación y habilitación sin llamadas rea
       body: { enabled: false },
     },
   ])
+  expect(pageErrors).toEqual([])
   await expectConnectedLabels(page.locator('main'))
   await page.setViewportSize({ width: 390, height: 844 })
   await expect.poll(() => page.locator('main').evaluate(element => (
