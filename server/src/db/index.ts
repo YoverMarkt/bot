@@ -15,6 +15,8 @@ import webhookEvents = require('./repositories/webhook-events')
 import lodging = require('./repositories/lodging')
 import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
+import whatsappFlows = require('./repositories/whatsapp-flows')
+import deliveryDispatch = require('./repositories/delivery-dispatch')
 
 const database: Record<string, unknown> = {
   ...businesses,
@@ -34,6 +36,8 @@ const database: Record<string, unknown> = {
   ...lodging,
   ...menuModifiers,
   ...usage,
+  ...whatsappFlows,
+  ...deliveryDispatch,
 }
 
 export = database

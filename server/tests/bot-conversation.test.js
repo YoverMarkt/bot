@@ -88,11 +88,16 @@ function setup(overrides = {}) {
     advanceMenuFlow: vi.fn().mockReturnValue({ reply: 'Menú', options: [] }),
     ...overrides.menuFlow,
   }
+  const flows = {
+    launchOrderFlow: vi.fn().mockResolvedValue(false),
+    ...overrides.flows,
+  }
   const logger = { log: vi.fn(), error: vi.fn() }
   const sleep = vi.fn().mockResolvedValue(undefined)
   const now = vi.fn().mockReturnValue(30_000_000)
   const conversation = createBotConversation({
     database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
+    flows,
     logger, sleep, now,
   })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -101,13 +106,15 @@ function setup(overrides = {}) {
   const sendVideo = vi.fn().mockResolvedValue(undefined)
   return {
     conversation, database, reports, schedule, ai, prompt, tags, actions,
-    media, menuFlow, logger, sleep, now, send, sendImage, sendTyping, sendVideo,
+    media, menuFlow, flows, logger, sleep, now, send, sendImage, sendTyping,
+    sendVideo,
   }
 }
 
 function input(setupResult, overrides = {}) {
   return {
     business,
+    channel: 'whatsapp',
     phone: '0990000001',
     text: '¿Tienen Perfume Floral Intenso?',
     send: setupResult.send,
@@ -177,6 +184,177 @@ describe('orquestación de conversaciones del bot', () => {
     // Las opciones salen numeradas para que el cliente pueda responder "1"
     expect(current.send).toHaveBeenCalledWith(
       expect.stringContaining('1. ✅ Confirmar pedido'),
+    )
+  })
+
+  it('abre el Flow publicado al elegir pedir y no duplica el recorrido del menú', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Elige una categoría',
+          options: ['Pizzas', 'Bebidas'],
+          action: { type: 'launch_order_flow' },
+        }),
+      },
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+    const sendOptions = vi.fn().mockResolvedValue(true)
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '🛒 Hacer un pedido',
+      sendOptions,
+    }))
+
+    expect(current.flows.launchOrderFlow).toHaveBeenCalledWith({
+      business: expect.objectContaining({ id: 'business-a' }),
+      phone: '0990000001',
+      source: 'menu',
+    })
+    expect(sendOptions).not.toHaveBeenCalled()
+    expect(current.send).not.toHaveBeenCalled()
+    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
+    expect(current.database.saveMessage).toHaveBeenCalledWith(
+      'business-a',
+      '0990000001',
+      'assistant',
+      '🧾 Formulario de pedido enviado al cliente.',
+    )
+  })
+
+  it('mantiene el recorrido del menú en Telegram sin intentar abrir un WhatsApp Flow', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Elige una categoría',
+          options: ['Pizzas', 'Bebidas'],
+          action: { type: 'launch_order_flow' },
+        }),
+      },
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      channel: 'telegram',
+      text: '🛒 Hacer un pedido',
+    }))
+
+    expect(current.flows.launchOrderFlow).not.toHaveBeenCalled()
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. Pizzas'),
+    )
+  })
+
+  it('abre el Flow ante una intención explícita de pedido en modo IA', async () => {
+    const current = setup({
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'ai' },
+      text: 'Hola, quiero hacer un pedido',
+    }))
+
+    expect(current.flows.launchOrderFlow).toHaveBeenCalledWith({
+      business: expect.objectContaining({ id: 'business-a' }),
+      phone: '0990000001',
+      source: 'ai',
+    })
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+    expect(current.database.saveMessage).toHaveBeenCalledWith(
+      'business-a',
+      '0990000001',
+      'user',
+      'Hola, quiero hacer un pedido',
+    )
+    expect(current.database.saveMessage).toHaveBeenCalledWith(
+      'business-a',
+      '0990000001',
+      'assistant',
+      '🧾 Formulario de pedido enviado al cliente.',
+    )
+  })
+
+  it('mantiene la conversación IA en Telegram sin intentar abrir un WhatsApp Flow', async () => {
+    const current = setup({
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'ai' },
+      channel: 'telegram',
+      text: 'Hola, quiero hacer un pedido',
+    }))
+
+    expect(current.flows.launchOrderFlow).not.toHaveBeenCalled()
+    expect(current.ai.callAI).toHaveBeenCalledOnce()
+    expect(current.send).toHaveBeenCalledWith('Respuesta final')
+  })
+
+  it('conserva la conversación IA si el Flow de pedido no está disponible', async () => {
+    const current = setup({
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(false),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'ai' },
+      text: 'Quiero hacer un pedido',
+    }))
+
+    expect(current.flows.launchOrderFlow).toHaveBeenCalledOnce()
+    expect(current.ai.callAI).toHaveBeenCalledOnce()
+    expect(current.send).toHaveBeenCalledWith('Respuesta final')
+  })
+
+  it('no abre un carrito nuevo al consultar un pedido existente', async () => {
+    const current = setup({
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'ai' },
+      text: '¿Dónde está mi pedido?',
+    }))
+
+    expect(current.flows.launchOrderFlow).not.toHaveBeenCalled()
+    expect(current.ai.callAI).toHaveBeenCalledOnce()
+  })
+
+  it('conserva el menú actual si el Flow no está disponible', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Elige una categoría',
+          options: ['Pizzas', 'Bebidas'],
+          action: { type: 'launch_order_flow' },
+        }),
+      },
+      flows: {
+        launchOrderFlow: vi.fn().mockResolvedValue(false),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '1',
+      sendOptions: vi.fn().mockResolvedValue(false),
+    }))
+
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. Pizzas'),
     )
   })
 

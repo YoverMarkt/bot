@@ -2,6 +2,12 @@ import axios from 'axios'
 import { metaGraphUrl } from '../config/meta-graph'
 import type { WhatsAppProvider } from '../types/channels'
 import {
+  buildWhatsAppFlowInteractive,
+  buildWhatsAppFlowTemplate,
+  type WhatsAppFlowLaunch,
+  type WhatsAppFlowTemplateLaunch,
+} from './whatsapp-flow'
+import {
   recordOutboundUsage,
   type OutboundMessageType,
 } from '../db/repositories/usage'
@@ -29,6 +35,20 @@ interface YCloudClient {
     listButtonText?: string,
     direct?: boolean,
   ): Promise<boolean>
+  sendSessionFlow(
+    apiKey: string,
+    from: string,
+    to: string,
+    launch: WhatsAppFlowLaunch,
+    direct?: boolean,
+  ): Promise<void>
+  sendFlowTemplate(
+    apiKey: string,
+    from: string,
+    to: string,
+    launch: WhatsAppFlowTemplateLaunch,
+    direct?: boolean,
+  ): Promise<void>
   sendImage(
     apiKey: string,
     from: string,
@@ -274,4 +294,105 @@ async function sendInteractive(
   }
 }
 
-export { sendTyping, sendText, sendImage, sendVideo, sendInteractive }
+/**
+ * Sends a published Flow as a free-form interactive message. The caller is
+ * responsible for ensuring that the customer-service window is still open.
+ */
+async function sendSessionFlow(
+  business: WhatsAppBusiness,
+  to: string,
+  launch: WhatsAppFlowLaunch,
+  deliveryMode: DeliveryMode = 'direct',
+): Promise<void> {
+  const provider = providerFor(business)
+  try {
+    if (provider === 'meta') {
+      await axios.post(
+        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'interactive',
+          interactive: buildWhatsAppFlowInteractive(launch),
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${business.meta_token}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: OUTBOUND_TIMEOUT_MS,
+        },
+      )
+    } else {
+      await ycloud.sendSessionFlow(
+        ycloudKeyFor(business),
+        ycloudNumberFor(business),
+        to,
+        launch,
+        deliveryMode === 'direct',
+      )
+    }
+    // El esquema de consumo agrupa CTA, listas y Flows en "interactive".
+    await recordAcceptedMessage(business, provider, to, 'interactive')
+  } catch (error) {
+    console.error(`❌ [${provider}] sendSessionFlow:`, errorDetail(error))
+    throw error
+  }
+}
+
+/**
+ * Sends an approved template whose button launches a Flow. This is the safe
+ * transport outside the customer-service window.
+ */
+async function sendFlowTemplate(
+  business: WhatsAppBusiness,
+  to: string,
+  launch: WhatsAppFlowTemplateLaunch,
+  deliveryMode: DeliveryMode = 'direct',
+): Promise<void> {
+  const provider = providerFor(business)
+  try {
+    if (provider === 'meta') {
+      await axios.post(
+        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
+        {
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: buildWhatsAppFlowTemplate(launch),
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${business.meta_token}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: OUTBOUND_TIMEOUT_MS,
+        },
+      )
+    } else {
+      await ycloud.sendFlowTemplate(
+        ycloudKeyFor(business),
+        ycloudNumberFor(business),
+        to,
+        launch,
+        deliveryMode === 'direct',
+      )
+    }
+    await recordAcceptedMessage(business, provider, to, 'interactive')
+  } catch (error) {
+    console.error(`❌ [${provider}] sendFlowTemplate:`, errorDetail(error))
+    throw error
+  }
+}
+
+export {
+  sendTyping,
+  sendText,
+  sendImage,
+  sendVideo,
+  sendInteractive,
+  sendSessionFlow,
+  sendFlowTemplate,
+}
+export type { WhatsAppFlowLaunch, WhatsAppFlowTemplateLaunch }

@@ -10,6 +10,10 @@ export type SaleItem = {
   quantity: number
   unit_price: number
   line_total: number
+  line_number?: number | null
+  modifier_ids?: string[]
+  modifier_names?: string[]
+  item_note?: string | null
 }
 
 export type Sale = {
@@ -33,6 +37,13 @@ export type Order = {
   discount: number | string
   total: number | string
   currency?: string
+  fulfillment_type?: 'delivery' | 'pickup' | 'onsite' | null
+  delivery_address?: string | null
+  delivery_reference?: string | null
+  payment_method?: string | null
+  requested_fulfillment_at?: string | null
+  customer_notes?: string | null
+  delivery_fee?: number | string
   created_at: string
   order_items: SaleItem[]
 }

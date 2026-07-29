@@ -48,12 +48,17 @@ function setup(overrides = {}) {
     ...overrides.http,
   }
   const logger = { log: vi.fn() }
+  const flow = {
+    handleResponse: vi.fn().mockResolvedValue(undefined),
+    ...overrides.flow,
+  }
   return {
     database,
     bot,
+    flow,
     http,
     logger,
-    process: createInboundWebhookProcessor({ database, bot, http, logger }),
+    process: createInboundWebhookProcessor({ database, bot, flow, http, logger }),
   }
 }
 
@@ -115,6 +120,51 @@ describe('procesador durable de webhooks', () => {
         channelAddress: metaAddress,
       },
     )
+  })
+
+  it('entrega una respuesta de Flow al procesador estructurado y no al bot', async () => {
+    const current = setup()
+    const response = {
+      flow_token: 'flow-token-with-enough-entropy',
+      fulfillment: 'pickup',
+      items_json: '[]',
+    }
+
+    await current.process(payload({
+      content: {
+        kind: 'flow_response',
+        responseJson: JSON.stringify(response),
+      },
+    }))
+
+    expect(current.flow.handleResponse).toHaveBeenCalledWith({
+      businessId: 'business-a',
+      provider: 'meta',
+      from: '+593988000001',
+      inboundId: 'inbound-a',
+      channelAddress: metaAddress,
+      response,
+    })
+    expect(current.bot.handleMessage).not.toHaveBeenCalled()
+    expect(current.bot.handleImage).not.toHaveBeenCalled()
+  })
+
+  it('rechaza respuestas de Flow sin token o demasiado grandes', () => {
+    expect(() => parseInboundWebhookPayload(payload({
+      content: {
+        kind: 'flow_response',
+        responseJson: JSON.stringify({ fulfillment: 'pickup' }),
+      },
+    }))).toThrow(/Flow inválida/)
+    expect(() => parseInboundWebhookPayload(payload({
+      content: {
+        kind: 'flow_response',
+        responseJson: JSON.stringify({
+          flow_token: 'valid-token',
+          large: 'x'.repeat(70 * 1024),
+        }),
+      },
+    }))).toThrow(/Flow inválida/)
   })
 
   it('propaga al bot el bypass solo para un lote durable validado y consolidado', async () => {

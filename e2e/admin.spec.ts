@@ -117,6 +117,171 @@ test('Medición conserva las barras dentro de una pantalla móvil', async ({ pag
   ))).toBe(true)
 })
 
+test('Flows administra borradores, publicación y habilitación sin llamadas reales', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  const mutations: Array<{
+    path: string
+    method: string
+    body: unknown
+  }> = []
+  const response = {
+    templates: [{
+      key: 'order_standard',
+      capability: 'order',
+      version: 1,
+      title: 'Pedido',
+      description: 'Catálogo, variantes, entrega y confirmación.',
+      categories: ['OTHER'],
+      firstScreen: 'ORDER_METHOD',
+      implementation: 'ready',
+    }, {
+      key: 'lodging_standard',
+      capability: 'lodging',
+      version: 1,
+      title: 'Cotizar hospedaje',
+      description: 'Fechas, huéspedes y habitación.',
+      categories: ['OTHER'],
+      firstScreen: 'LODGING_DATES',
+      implementation: 'foundation',
+    }],
+    businesses: [{
+      id: 'pizza-e2e',
+      name: 'Pizzería E2E',
+      type: 'pizzeria',
+      provider: 'ycloud',
+      wabaId: null,
+      recommendedCapabilities: ['order'],
+      definitions: [{
+        id: 'definition-draft',
+        templateKey: 'order_standard',
+        capability: 'order',
+        name: 'Pedido',
+        enabled: false,
+        versionId: 'version-draft-1',
+        providerFlowId: 'flow-draft-1',
+        status: 'DRAFT',
+        version: 1,
+        isActive: false,
+        activeVersion: null,
+        lastError: null,
+        updatedAt: '2026-07-28T20:00:00.000Z',
+      }],
+    }, {
+      id: 'hostal-e2e',
+      name: 'Hostal E2E',
+      type: 'hostal',
+      provider: 'meta',
+      wabaId: 'waba-hostal-1',
+      recommendedCapabilities: ['lodging'],
+      definitions: [{
+        id: 'definition-published',
+        templateKey: 'lodging_standard',
+        capability: 'lodging',
+        name: 'Cotizar hospedaje',
+        enabled: true,
+        versionId: 'version-published-2',
+        providerFlowId: 'flow-published-1',
+        status: 'PUBLISHED',
+        version: 2,
+        isActive: false,
+        activeVersion: 1,
+      }],
+    }, {
+      id: 'cafe-e2e',
+      name: 'Cafetería E2E',
+      type: 'cafeteria',
+      provider: 'ycloud',
+      wabaId: null,
+      recommendedCapabilities: ['order'],
+      definitions: [],
+    }],
+  }
+  await page.route('**/api/admin/flows**', async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === '/api/admin/flows' && request.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(response),
+      })
+    }
+    mutations.push({
+      path,
+      method: request.method(),
+      body: request.postDataJSON() as unknown,
+    })
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true }),
+    })
+  })
+
+  await page.goto(`${adminUrl}#/flows`)
+
+  await expect(page.getByRole('heading', { name: 'WhatsApp Flows' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Flows' })).toHaveClass(/text-primary/)
+  await expect(page.getByText('Pizzería E2E')).toBeVisible()
+  await expect(page.getByText('Se detectará al crear').first()).toBeVisible()
+  await expect(page.getByText('flow-draft-1')).toBeVisible()
+  await expect(page.getByText('Borrador', { exact: true })).toBeVisible()
+  await expect(page.getByText('Publicado', { exact: true })).toBeVisible()
+  await expect(page.getByText('Versión candidata', { exact: true })).toBeVisible()
+  await expect(page.getByText('Habilitado', { exact: true })).toBeVisible()
+  await expect(page.getByText('Versión 2')).toBeVisible()
+  await expect(page.getByText(/La versión 1 continúa activa/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Crear borrador Pedido para Cafetería E2E' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Crear borrador' }).click()
+  await expect(page.getByText('Borrador creado para Cafetería E2E')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Publicar Pedido de Pizzería E2E' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Publicar versión' }).click()
+  await expect(page.getByText('Flow publicado para Pizzería E2E')).toBeVisible()
+
+  await page.getByRole('button', {
+    name: 'Activar versión 2 de Cotizar hospedaje para Hostal E2E',
+  }).click()
+  await page.getByRole('alertdialog').getByRole('button', {
+    name: 'Activar versión 2',
+  }).click()
+  await expect(page.getByText('Nueva versión activa para Hostal E2E')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Deshabilitar Cotizar hospedaje de Hostal E2E' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Deshabilitar' }).click()
+  await expect(page.getByText('Flow deshabilitado')).toBeVisible()
+
+  expect(mutations).toEqual([
+    {
+      path: '/api/admin/flows/cafe-e2e/provision',
+      method: 'POST',
+      body: { templateKey: 'order_standard' },
+    },
+    {
+      path: '/api/admin/flows/pizza-e2e/definition-draft/publish',
+      method: 'POST',
+      body: null,
+    },
+    {
+      path: '/api/admin/flows/hostal-e2e/definition-published/activate',
+      method: 'POST',
+      body: { versionId: 'version-published-2' },
+    },
+    {
+      path: '/api/admin/flows/hostal-e2e/definition-published',
+      method: 'PATCH',
+      body: { enabled: false },
+    },
+  ])
+  await expectConnectedLabels(page.locator('main'))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(() => page.locator('main').evaluate(element => (
+    element.scrollWidth <= element.clientWidth + 1
+  ))).toBe(true)
+})
+
 test('el sidebar admin queda fijo y solo se desplaza el contenido', async ({ page }) => {
   await seedAdminSession(page)
   await mockAdminApi(page)

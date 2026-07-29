@@ -412,6 +412,71 @@ describe('webhooks WhatsApp', () => {
     )
   })
 
+  it('persiste nfm_reply como respuesta estructurada de Flow y nunca como texto', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    const body = ycloudPayload('ycloud-event-flow-1', 'ycloud-message-flow-1')
+    delete body.whatsappInboundMessage.text
+    body.whatsappInboundMessage.type = 'interactive'
+    body.whatsappInboundMessage.interactive = {
+      type: 'nfm_reply',
+      nfm_reply: {
+        name: 'flow',
+        body: 'Sent',
+        response_json: JSON.stringify({
+          flow_token: 'flow-token-with-enough-entropy',
+          fulfillment: 'pickup',
+          items_json: '[]',
+        }),
+      },
+    }
+
+    const response = await dispatch('post', '/webhook/ycloud', {
+      body,
+      ...signedYCloudRequest(body),
+    })
+
+    expect(response.status).toBe(200)
+    expect(db.enqueueWebhookEvent).toHaveBeenCalledWith(
+      'business-a', 'ycloud', 'ycloud-event-flow-1',
+      'ycloud:business-a:+593999000001',
+      expect.objectContaining({
+        content: {
+          kind: 'flow_response',
+          responseJson: JSON.stringify({
+            flow_token: 'flow-token-with-enough-entropy',
+            fulfillment: 'pickup',
+            items_json: '[]',
+          }),
+        },
+      }),
+    )
+  })
+
+  it('ignora respuestas Flow malformadas o excesivas antes del inbox', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    const body = ycloudPayload('ycloud-event-flow-bad-1', 'ycloud-message-flow-bad-1')
+    delete body.whatsappInboundMessage.text
+    body.whatsappInboundMessage.type = 'interactive'
+    body.whatsappInboundMessage.interactive = {
+      type: 'nfm_reply',
+      nfm_reply: {
+        name: 'flow',
+        body: 'Sent',
+        response_json: '{"fulfillment":"pickup"}',
+      },
+    }
+
+    const response = await dispatch('post', '/webhook/ycloud', {
+      body,
+      ...signedYCloudRequest(body),
+    })
+
+    expect(response.status).toBe(200)
+    expect(db.enqueueWebhookEvent).not.toHaveBeenCalled()
+  })
+
   it('prefiere el id numérico del botón sobre el título, que WhatsApp trunca', async () => {
     process.env.NODE_ENV = 'production'
     delete process.env.BASE_URL

@@ -31,6 +31,7 @@ import bookingsRouter = require('./routes/bookings.routes')
 import productsRouter = require('./routes/products.routes')
 import ordersRouter = require('./routes/orders.routes')
 import webhooksRouter = require('./routes/webhooks.routes')
+import whatsappFlowDataExchangeRouter = require('./routes/whatsapp-flow-data-exchange.routes')
 import lodgingRouter = require('./routes/lodging.routes')
 import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 
@@ -44,6 +45,7 @@ interface StartupDatabase {
     data: number | null
     error: { message?: string } | null
   }>
+  expireFlowSessions(businessId?: string | null): Promise<number>
 }
 
 interface OperationalError extends Error {
@@ -193,6 +195,7 @@ app.use(bookingsRouter)
 app.use(productsRouter)
 app.use(menuModifiersRouter)
 app.use(ordersRouter)
+app.use(whatsappFlowDataExchangeRouter)
 app.use(webhooksRouter)
 app.use(lodgingRouter)
 
@@ -271,6 +274,19 @@ async function cleanupWebhookInbox(): Promise<void> {
   }
 }
 
+async function expireWhatsAppFlowSessions(): Promise<void> {
+  try {
+    const expired = await db.expireFlowSessions(null)
+    if (expired) {
+      console.log(`🧹 WhatsApp Flows: ${expired} sesión(es) expirada(s)`)
+    }
+  } catch (error) {
+    // Durante un despliegue gradual la app puede arrancar antes de ejecutar la
+    // migración; el error se registra sin derribar el bot existente.
+    console.error('❌ Expiración de WhatsApp Flows:', errorMessage(error))
+  }
+}
+
 const port = process.env.PORT || 3000
 httpServer = app.listen(port, () => {
   logEnvironment()
@@ -284,6 +300,8 @@ httpServer = app.listen(port, () => {
   setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
   setTimeout(cleanupWebhookInbox, 5000)
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
+  setTimeout(expireWhatsAppFlowSessions, 10_000)
+  setInterval(expireWhatsAppFlowSessions, 15 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)

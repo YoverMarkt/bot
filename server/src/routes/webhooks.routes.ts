@@ -39,8 +39,14 @@ interface InboundMessage {
   text?: { body?: string }
   button?: { text?: string; payload?: string }
   interactive?: {
+    type?: string
     button_reply?: { id?: string; title?: string }
     list_reply?: { id?: string; title?: string }
+    nfm_reply?: {
+      name?: string
+      body?: string
+      response_json?: string
+    }
   }
   audio?: MediaReference
   voice?: MediaReference
@@ -179,6 +185,8 @@ function metaMessages(body: MetaWebhookBody): Array<{
 }
 
 function metaContent(message: InboundMessage): InboundWebhookPayload['content'] | null {
+  const flowResponse = interactiveFlowResponse(message)
+  if (flowResponse) return flowResponse
   const text = message.type === 'text'
     ? message.text?.body
     : message.type === 'button'
@@ -203,11 +211,39 @@ function metaContent(message: InboundMessage): InboundWebhookPayload['content'] 
   return null
 }
 
+const MAX_FLOW_RESPONSE_BYTES = 64 * 1024
+
+function interactiveFlowResponse(
+  message: InboundMessage,
+): InboundWebhookPayload['content'] | null {
+  if (message.type !== 'interactive'
+    || message.interactive?.type !== 'nfm_reply'
+    || message.interactive.nfm_reply?.name !== 'flow') {
+    return null
+  }
+  const responseJson = message.interactive.nfm_reply.response_json
+  if (typeof responseJson !== 'string'
+    || Buffer.byteLength(responseJson, 'utf8') > MAX_FLOW_RESPONSE_BYTES) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(responseJson) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const token = (parsed as { flow_token?: unknown }).flow_token
+    if (typeof token !== 'string' || !token.trim() || token.length > 512) return null
+    return { kind: 'flow_response', responseJson: JSON.stringify(parsed) }
+  } catch {
+    return null
+  }
+}
+
 function headerText(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 function ycloudContent(message: InboundMessage): InboundWebhookPayload['content'] | null {
+  const flowResponse = interactiveFlowResponse(message)
+  if (flowResponse) return flowResponse
   let text: string | undefined
   if (message.type === 'text') text = message.text?.body
   if (message.type === 'button') text = message.button?.text

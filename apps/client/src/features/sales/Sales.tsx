@@ -29,6 +29,12 @@ const ORDER_BADGE: Record<Order['status'], string> = {
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
+const FULFILLMENT_LABEL = {
+  delivery: 'Entrega a domicilio',
+  pickup: 'Retiro en el local',
+  onsite: 'Consumo en el local',
+} as const
+
 export default function Sales() {
   // Prellenado desde Conversaciones (botón "Registrar venta" del chat)
   const [params] = useSearchParams()
@@ -77,7 +83,7 @@ function BotOrders() {
     }),
     onSuccess: (_data, variables) => {
       const messages = {
-        confirmado: 'Pedido confirmado. Coordina la entrega directamente con el cliente.',
+        confirmado: 'Pedido confirmado. Si es delivery, el aviso al motorizado quedó guardado como borrador y todavía no se enviará.',
         completado: 'Pedido marcado como completado.',
         cancelado: 'Pedido cancelado.',
       }
@@ -123,12 +129,70 @@ function BotOrders() {
           </div>
           <div className="mt-2 text-sm text-muted-foreground space-y-0.5">
             {o.order_items.map((i, idx) => (
-              <div key={idx} className="flex justify-between">
-                <span>{i.quantity} × {i.product_name}</span>
-                <span>{money(i.unit_price)} c/u = {money(i.line_total)}</span>
+              <div key={idx} className="flex justify-between gap-3">
+                <span>
+                  {i.quantity} × {i.product_name}
+                  {Boolean(i.modifier_names?.length) && (
+                    <span className="text-foreground/80"> — {i.modifier_names?.join(', ')}</span>
+                  )}
+                  {i.item_note && (
+                    <span className="block text-xs text-muted-foreground">
+                      Nota: {i.item_note}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0">{money(i.unit_price)} c/u = {money(i.line_total)}</span>
               </div>
             ))}
           </div>
+          {o.fulfillment_type && (
+            <div className="mt-3 rounded-lg border border-border/60 bg-muted/25 p-3 text-sm">
+              <div className="font-medium text-foreground">
+                {FULFILLMENT_LABEL[o.fulfillment_type]}
+              </div>
+              {o.delivery_address && (
+                <div className="mt-1 text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Dirección:</span>{' '}
+                  {o.delivery_address}
+                </div>
+              )}
+              {o.delivery_reference && (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Referencia:</span>{' '}
+                  {o.delivery_reference}
+                </div>
+              )}
+              {o.payment_method && (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Pago:</span>{' '}
+                  {o.payment_method}
+                </div>
+              )}
+              {o.requested_fulfillment_at && (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Hora solicitada:</span>{' '}
+                  {fmtDate(o.requested_fulfillment_at)}
+                </div>
+              )}
+              {o.customer_notes && (
+                <div className="whitespace-pre-line text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Notas:</span>{' '}
+                  {o.customer_notes}
+                </div>
+              )}
+              {Number(o.delivery_fee) > 0 && (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-foreground/80">Envío:</span>{' '}
+                  {money(o.delivery_fee || 0)}
+                </div>
+              )}
+              {o.fulfillment_type === 'delivery' && o.status === 'confirmado' && (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                  Aviso al motorizado retenido como borrador; ningún mensaje se envía automáticamente todavía.
+                </p>
+              )}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-2">
             <div>
               {Number(o.discount) > 0 && <span className="mr-3 text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
@@ -142,7 +206,11 @@ function BotOrders() {
                 <ConfirmAction
                   trigger={<Button size="sm" disabled={updateStatus.isPending}><Check /> {o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}</Button>}
                   title={o.status === 'pendiente' ? 'Confirmar pedido' : 'Completar pedido'}
-                  description={o.status === 'pendiente' ? 'El pedido quedará confirmado para que el negocio coordine la entrega con el cliente.' : 'El pedido quedará cerrado como completado y contará en su estado final.'}
+                  description={o.status === 'pendiente'
+                    ? o.fulfillment_type === 'delivery'
+                      ? 'El pedido quedará confirmado y se guardará un borrador de aviso al motorizado. En esta etapa no se enviará ningún mensaje automáticamente.'
+                      : 'El pedido quedará confirmado para que el negocio lo prepare.'
+                    : 'El pedido quedará cerrado como completado y contará en su estado final.'}
                   confirmLabel={o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}
                   onConfirm={() => updateStatus.mutate({ id: o.id, status: o.status === 'pendiente' ? 'confirmado' : 'completado' })}
                 />

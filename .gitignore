@@ -2,6 +2,7 @@ node_modules/
 server/node_modules/
 server/.env
 .env
+.railway/
 *.log
 .DS_Store
 playwright-report/

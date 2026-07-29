@@ -171,6 +171,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     business: EntryBusiness,
     phone: string,
     text: string,
+    channel: ProcessMessageInput['channel'],
     send: (message: string) => Promise<unknown>,
     sendImage?: (
       url: string,
@@ -193,6 +194,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       business,
       phone,
       text,
+      channel,
       send,
       sendImage,
       sendTyping,
@@ -217,6 +219,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
         business,
         from,
         text,
+        'telegram',
         message => context.reply(message),
         async (url, caption) => {
           try {
@@ -261,6 +264,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       business,
       from,
       text,
+      'whatsapp',
       message => whatsapp.sendText(business, from, message),
       (url, caption, deliveryMode) => deliveryMode
         ? whatsapp.sendImage(business, from, url, caption, deliveryMode)
@@ -371,6 +375,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
         business,
         from,
         query,
+        'telegram',
         message => context.reply(message),
         async (url, caption) => {
           try {
@@ -405,6 +410,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       business,
       from,
       query,
+      'whatsapp',
       message => whatsapp.sendText(business, from, message),
       (url, caption) => whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),

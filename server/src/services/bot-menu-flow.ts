@@ -93,6 +93,7 @@ interface FlowState {
 
 type FlowAction =
   | { type: 'handoff' }
+  | { type: 'launch_order_flow' }
   // `payload` va en el MISMO formato que ##PEDIDO:producto x cantidad; ...##
   // para que el canal real lo procese con money.ts y las RPC atómicas de
   // siempre: el menú no crea un camino de dinero paralelo.
@@ -944,9 +945,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
     case 'main': {
       const categories = categoriesOf(input.products)
       if (choice === OPT_ORDER) {
-        return goTo(state, categories.length
+        return {
+          ...goTo(state, categories.length
           ? { kind: 'categories', intent: 'order', page: 0 }
-          : { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
+          : { kind: 'products', intent: 'order', tag: null, page: 0 }, input),
+          action: { type: 'launch_order_flow' },
+        }
       }
       if (choice === OPT_BROWSE) {
         return goTo(state, categories.length

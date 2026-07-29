@@ -101,6 +101,9 @@ webhooks y CORS tengan un único origen canónico.
 1. [ ] Crear el proyecto en Railway apuntando al repo `YoverMarkt/bot`. Si
    Railway inicia un deploy automático sin variables, puede fallar; se
    relanzará después de completar estos pasos.
+   En **Service → Settings → Source**, seleccionar y confirmar la rama `main`
+   antes de enviar el release. Un commit de un autor no vinculado puede quedar
+   pendiente de aprobación en Railway en lugar de desplegarse automáticamente.
 2. [ ] Abrir el servicio → **Settings → Networking → Public Networking** y
    pulsar **Generate Domain**. Railway no crea un dominio público por defecto.
 3. [ ] Copiar el origen generado, por ejemplo
@@ -111,6 +114,30 @@ webhooks y CORS tengan un único origen canónico.
 6. [ ] Revisar el log: debe decir `🚀 BotPanel corriendo`.
 7. [ ] Confirmar que `/api/health` responde HTTP 200 y probar:
    `/app-admin`, `/app`, `/privacidad` y `/terminos`.
+
+### Nota temporal de auditoría (28-07-2026)
+
+Los paneles usan `react-router-dom@7.18.2`. Esa versión contiene el
+[backport oficial del arreglo GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/pull/15353)
+y fue publicada como
+[release firmada 7.18.2](https://github.com/remix-run/react-router/releases/tag/react-router%407.18.2).
+El feed de `npm audit` todavía puede mostrar dos vulnerabilidades altas porque
+su rango no incorporó el backport recién publicado. No ejecutar
+`npm audit fix --force` ni bajar a 7.11.0; vuelve a consultar el audit cuando
+el advisory actualice su metadata.
+
+### WhatsApp Flows
+
+Antes del deploy que incorpora Flows, ejecuta completa
+`server/migration-whatsapp-flows.sql` en Supabase. Con el servicio saludable,
+el endpoint dinámico queda disponible en:
+
+`https://<dominio-activo>/webhook/ycloud/flows/data-exchange`
+
+No se configura manualmente en cada formulario: `Superadmin → Flows` entrega
+esa URL HTTPS a YCloud al crear el borrador. Crear, publicar, activar una
+versión de reemplazo y habilitar el Flow son decisiones separadas para que un
+formulario inválido nunca llegue a clientes.
 
 ---
 

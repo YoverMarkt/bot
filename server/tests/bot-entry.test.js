@@ -90,6 +90,7 @@ describe('entrada de canales del bot', () => {
     expect(current.database.getBusinessBySlug).not.toHaveBeenCalled()
     const input = current.conversation.processMessage.mock.calls[0][0]
     expect(input.business).toBe(businessA)
+    expect(input.channel).toBe('whatsapp')
     expect(input.phone).toBe('0990000001')
     await input.send('Respuesta')
     await input.sendImage('https://cdn.example/a.jpg', 'Foto')
@@ -119,6 +120,7 @@ describe('entrada de canales del bot', () => {
     expect(current.database.getBusinessByChannel).not.toHaveBeenCalled()
     const input = current.conversation.processMessage.mock.calls[0][0]
     expect(input.business).toBe(businessA)
+    expect(input.channel).toBe('telegram')
     await input.send('Respuesta TG')
     await input.sendImage('https://cdn.example/a.jpg', 'Foto TG')
     await input.sendTyping()

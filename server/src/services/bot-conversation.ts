@@ -180,6 +180,14 @@ interface ConversationMenuFlow {
   advanceMenuFlow(input: MenuFlowInput): MenuFlowResult
 }
 
+interface ConversationFlows {
+  launchOrderFlow(input: {
+    business: ConversationBusiness & Record<string, unknown>
+    phone: string
+    source?: 'menu' | 'ai'
+  }): Promise<boolean>
+}
+
 export interface BotConversationDependencies {
   database: ConversationDatabase
   reports: ConversationReports
@@ -190,6 +198,7 @@ export interface BotConversationDependencies {
   actions: ConversationActions
   media: ConversationMedia
   menuFlow: ConversationMenuFlow
+  flows?: ConversationFlows
   logger?: ConversationLogger
   sleep?: (milliseconds: number) => Promise<void>
   now?: () => number
@@ -197,6 +206,7 @@ export interface BotConversationDependencies {
 
 export interface ProcessMessageInput {
   business: ConversationBusiness
+  channel: 'whatsapp' | 'telegram'
   phone: string
   text: string
   send(message: string): Promise<unknown>
@@ -275,6 +285,78 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
   }
 
+  function explicitlyStartsOrder(text: string): boolean {
+    const normalizedText = String(text || '')
+      .toLocaleLowerCase('es')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!normalizedText) return false
+    // Consultas sobre un pedido existente no deben abrir un carrito nuevo.
+    if (/\b(estado|seguimiento|rastrear|donde|cancelar|cambiar|modificar)\b.{0,35}\b(mi |el )?pedido\b/
+      .test(normalizedText)
+      || /\b(mi |el )?pedido\b.{0,35}\b(estado|seguimiento|llega|cancelar|cambiar|modificar)\b/
+        .test(normalizedText)) {
+      return false
+    }
+    return /^(?:hola\s+)?(?:quiero\s+)?(?:hacer|realizar|armar|iniciar)\s+(?:un\s+)?pedido\b/
+      .test(normalizedText)
+      || /^(?:pedir|comprar|ordenar)\b/.test(normalizedText)
+      || /\b(?:quiero|quisiera|deseo|necesito)\b.{0,45}\b(?:hacer|realizar|armar|iniciar|pedir|comprar|ordenar)\b/
+        .test(normalizedText)
+  }
+
+  async function tryLaunchOrderFlow(input: {
+    business: ConversationBusiness
+    channel: ProcessMessageInput['channel']
+    phone: string
+    text: string
+    saveUserMessage: boolean
+    source: 'menu' | 'ai'
+  }): Promise<boolean> {
+    if (input.channel !== 'whatsapp' || !dependencies.flows) return false
+    try {
+      const launched = await dependencies.flows.launchOrderFlow({
+        business: input.business as ConversationBusiness & Record<string, unknown>,
+        phone: input.phone,
+        source: input.source,
+      })
+      if (!launched) return false
+      if (input.saveUserMessage) {
+        await database.saveMessage(
+          input.business.id,
+          input.phone,
+          'user',
+          input.text,
+        )
+      }
+      await database.saveMessage(
+        input.business.id,
+        input.phone,
+        'assistant',
+        '🧾 Formulario de pedido enviado al cliente.',
+      )
+      await database.upsertSession(input.business.id, input.phone, {
+        last_message: input.text,
+        last_message_at: new Date(now()).toISOString(),
+      })
+      logger.log(
+        `🧾 [${input.business.name}] WhatsApp Flow de pedido iniciado — ${input.phone}`,
+      )
+      return true
+    } catch (error) {
+      // Fallback transparente al recorrido existente: nunca dejar al cliente
+      // sin atención si el proveedor o el Flow fallan temporalmente.
+      logger.error(
+        `❌ [${input.business.name}] no se pudo iniciar WhatsApp Flow:`,
+        error instanceof Error ? error.message : error,
+      )
+      return false
+    }
+  }
+
   // ── MODO MENÚ (sin IA) ──────────────────────────────────────────────
   // Las opciones se envían numeradas: hoy WhatsApp solo recibe texto desde
   // esta integración. El motor acepta tanto el texto exacto como el número,
@@ -291,6 +373,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
   async function runMenuMode(input: {
     business: ConversationBusiness
+    channel: ProcessMessageInput['channel']
     phone: string
     text: string
     session?: ConversationSession | null
@@ -355,6 +438,19 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         send,
       })
       if (outcome.handled) return
+    }
+
+    if (input.channel === 'whatsapp'
+      && action?.type === 'launch_order_flow'
+      && await tryLaunchOrderFlow({
+        business,
+        channel: input.channel,
+        phone,
+        text,
+        saveUserMessage: false,
+        source: 'menu',
+      })) {
+      return
     }
 
     // El total oficial lo calcula SIEMPRE money.ts con las RPC atómicas: el
@@ -493,7 +589,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
   async function processMessage(input: ProcessMessageInput): Promise<void> {
     const {
-      business, phone, text, send, sendImage, sendTyping, sendVideo,
+      business, channel, phone, text, send, sendImage, sendTyping, sendVideo,
     } = input
 
     if (business.suspended) {
@@ -541,12 +637,31 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
+    // Los comercios con catálogos grandes suelen usar conversación con IA
+    // (farmacias, supermercados, etc.). Una intención explícita de iniciar un
+    // pedido también abre el Flow allí; si no está publicado, todo continúa
+    // por la conversación actual sin perder el mensaje.
+    if (channel === 'whatsapp'
+      && business.chat_mode !== 'menu'
+      && business.takes_orders !== false
+      && explicitlyStartsOrder(text)
+      && await tryLaunchOrderFlow({
+        business,
+        channel,
+        phone,
+        text,
+        saveUserMessage: true,
+        source: 'ai',
+      })) {
+      return
+    }
+
     // MODO MENÚ: el CÓDIGO conduce toda la conversación con opciones armadas
     // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
     // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
     if (business.chat_mode === 'menu') {
       await runMenuMode({
-        business, phone, text, session, send, sendImage, sendTyping, sendVideo,
+        business, channel, phone, text, session, send, sendImage, sendTyping, sendVideo,
         sendOptions: input.sendOptions,
       })
       return
@@ -927,6 +1042,8 @@ const conversation = createBotConversation({
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
   menuFlow: require('./bot-menu-flow') as ConversationMenuFlow,
+  flows: require('./whatsapp-flow-launcher')
+    .whatsappFlowLauncher as ConversationFlows,
 })
 
 export const processMessage = conversation.processMessage

@@ -56,7 +56,10 @@ El servidor valida estas variables antes de abrir el puerto. Una variable faltan
 
 ## 4. Primer deploy y verificación
 
-1. Railway despliega solo al hacer push a `main`.
+1. Confirma en **Service → Settings → Source** que la rama conectada sea
+   `main`. Railway crea el despliegue al recibir un commit en esa rama; si el
+   autor del commit no está vinculado a Railway, el panel puede pedir aprobarlo
+   manualmente antes de ejecutarlo.
 2. Abre la URL temporal de Railway (`https://xxx.up.railway.app`):
    - `/` → redirige a `/app-admin` (login superadmin).
    - `/app` → login de negocios.
@@ -109,8 +112,15 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.
 - [ ] `migration-agrupado-webhooks.sql` aplicada después del inbox; en una actualización activa, después de retirar la réplica anterior.
+- [ ] `migration-whatsapp-flows.sql` aplicada después de las migraciones de webhooks y menú. Debe terminar con `Success. No rows returned` antes de desplegar el runtime de Flows.
 - [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
+
+Para WhatsApp Flows, `BASE_URL` también publica
+`/webhook/ycloud/flows/data-exchange`. El superadmin crea primero un borrador,
+después lo publica, activa explícitamente cualquier versión de reemplazo y
+finalmente lo habilita. No habilites un Flow hasta confirmar que el borrador no
+muestra errores de validación del proveedor.
 
 Para actualizar una instancia que ya está atendiendo webhooks, despliega primero
 el runtime compatible, espera que Railway retire la réplica anterior y aplica

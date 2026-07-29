@@ -15,6 +15,7 @@ export interface InboundMediaReference {
 type InboundContent =
   | { kind: 'text'; text: string }
   | { kind: 'audio' | 'image'; media: InboundMediaReference }
+  | { kind: 'flow_response'; responseJson: string }
 
 interface InboundBatchMetadata {
   version: 1
@@ -85,9 +86,23 @@ interface InboundLogger {
   log(...values: unknown[]): void
 }
 
+export interface InboundFlowResponse {
+  businessId: string
+  provider: WhatsAppProvider
+  from: string
+  inboundId: string
+  channelAddress: WhatsAppChannelAddress
+  response: Record<string, unknown>
+}
+
+interface InboundFlowProcessor {
+  handleResponse(input: InboundFlowResponse): Promise<unknown>
+}
+
 export interface InboundWebhookDependencies {
   database: InboundDatabase
   bot: InboundBot
+  flow?: InboundFlowProcessor
   http?: InboundHttpClient
   env?: NodeJS.ProcessEnv
   logger?: InboundLogger
@@ -100,6 +115,7 @@ export interface InboundWebhookExpectation {
 }
 
 const MAX_TEXT_LENGTH = 16_384
+const MAX_FLOW_RESPONSE_BYTES = 64 * 1024
 const MAX_IDENTIFIER_LENGTH = 512
 const MAX_INBOX_BATCH_EVENTS = 20
 const META_IMAGE_LIMIT = 5 * 1024 * 1024
@@ -145,6 +161,24 @@ function inboundMediaReference(value: unknown): InboundMediaReference | null {
     ...(id ? { id } : {}),
     ...(url ? { url } : {}),
     ...(mimeType ? { mimeType } : {}),
+  }
+}
+
+function flowResponseJson(value: unknown): string | null {
+  if (typeof value !== 'string'
+    || Buffer.byteLength(value, 'utf8') > MAX_FLOW_RESPONSE_BYTES) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown
+    const record = recordValue(parsed)
+    const token = boundedText(record?.flow_token, MAX_IDENTIFIER_LENGTH)
+    if (!record || !token) return null
+    // Canonicalizar elimina espacios innecesarios y garantiza que el contenido
+    // durable siga siendo JSON válido antes de llegar al procesador de Flows.
+    return JSON.stringify(record)
+  } catch {
+    return null
   }
 }
 
@@ -207,6 +241,10 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
       throw new Error('Media durable de webhook inválida')
     }
     parsedContent = { kind: content.kind, media }
+  } else if (content.kind === 'flow_response') {
+    const responseJson = flowResponseJson(content.responseJson)
+    if (!responseJson) throw new Error('Respuesta durable de Flow inválida')
+    parsedContent = { kind: 'flow_response', responseJson }
   } else {
     throw new Error('Tipo durable de webhook no soportado')
   }
@@ -352,6 +390,22 @@ export function createInboundWebhookProcessor(
       return
     }
 
+    if (payload.content.kind === 'flow_response') {
+      if (!dependencies.flow) {
+        throw new Error('El procesador de respuestas WhatsApp Flow no está configurado')
+      }
+      const response = JSON.parse(payload.content.responseJson) as Record<string, unknown>
+      await dependencies.flow.handleResponse({
+        businessId: payload.businessId,
+        provider: payload.provider,
+        from: payload.from,
+        inboundId: payload.inboundId,
+        channelAddress: payload.channelAddress,
+        response,
+      })
+      return
+    }
+
     const isAudio = payload.content.kind === 'audio'
     let media: { data: Buffer; mimeType?: string }
     if (payload.provider === 'meta') {
@@ -411,6 +465,8 @@ export function createInboundWebhookProcessor(
 const processor = createInboundWebhookProcessor({
   database: require('../db') as InboundDatabase,
   bot: require('./bot-entry') as InboundBot,
+  flow: require('./whatsapp-flow-runtime')
+    .whatsappFlowResponseProcessor as InboundFlowProcessor,
 })
 
 export const processInboundWebhook = processor
