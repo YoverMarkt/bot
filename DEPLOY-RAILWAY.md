@@ -49,9 +49,9 @@ En Railway → pestaña **Variables**. Copiar los valores desde tu `server/.env`
 - [ ] `ADMIN_PASSWORD` — contraseña del superadmin. **Mínimo 12 caracteres.**
 
 ### Obligatoria en PRODUCCIÓN
-- [ ] `BASE_URL` — el origen público generado en la sección 3, por ejemplo
-      `https://vezzper-production.up.railway.app`. Debe ser HTTPS y escribirse
-      **sin slash final, ruta, query ni hash**.
+- [ ] `BASE_URL` — el origen público generado en la sección 3. Hoy el servicio
+      real es `https://web-production-3433c.up.railway.app`. Debe ser HTTPS y
+      escribirse **sin slash final, ruta, query ni hash**.
 - [ ] `NODE_ENV=production`
 
 ### Variables que Railway inyecta
@@ -103,8 +103,9 @@ webhooks y CORS tengan un único origen canónico.
    relanzará después de completar estos pasos.
 2. [ ] Abrir el servicio → **Settings → Networking → Public Networking** y
    pulsar **Generate Domain**. Railway no crea un dominio público por defecto.
-3. [ ] Copiar el origen generado, por ejemplo
-   `https://vezzper-production.up.railway.app`, sin el slash final.
+3. [ ] Copiar el origen generado, sin el slash final. El servicio actual es
+   `https://web-production-3433c.up.railway.app` — Railway asigna el nombre al
+   generar el dominio, así que **no lo asumas: cópialo de la consola**.
 4. [ ] Abrir **Variables**, cargar todas las variables de la sección 2 y usar
    ese origen como `BASE_URL`.
 5. [ ] Confirmar que Railway detectó `railway.json` y lanzar **Deploy/Redeploy**.
@@ -131,11 +132,19 @@ webhooks y CORS tengan un único origen canónico.
 
 Una vez con `BASE_URL` en producción:
 1. [ ] En YCloud, apuntar el webhook a
-   `https://<dominio-activo>/webhook/ycloud`. Durante las pruebas será, por
-   ejemplo, `https://vezzper-production.up.railway.app/webhook/ycloud`.
+   `https://<dominio-activo>/webhook/ycloud`. Hoy es
+   `https://web-production-3433c.up.railway.app/webhook/ycloud`.
    **No usar `/webhook`**, porque esa ruta corresponde a Meta directo.
 2. [ ] Configurar el `endpoint ID` + `signing secret` (por negocio en el panel, o como variables globales).
 3. [ ] Hacer una prueba real enviando un mensaje al número conectado.
+
+> ⚠️ **Si el bot deja de recibir mensajes:** revisa primero el log de *Webhooks*
+> en YCloud, que muestra el código HTTP de cada entrega. Un **503** viene del
+> servidor (mira los logs de Railway: la línea `❌ Webhook YCloud persistencia:`
+> trae el motivo literal) y un **401** es endpoint ID o firma. Ojo: tras varios
+> fallos seguidos YCloud **deja de entregar** aunque el endpoint siga marcado
+> `active`; se reactiva volviendo a guardarlo (verifica después que el signing
+> secret no haya cambiado).
 
 ---
 
