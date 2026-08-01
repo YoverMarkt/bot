@@ -16,8 +16,6 @@ export const ALLOWED_KEYS = [
   'deepseek_api_key',
   'ai_provider',
   'telegram_bot_token',
-  'ycloud_verify_token',
-  'retell_api_key',
   'cloudinary_cloud_name',
   'cloudinary_api_key',
   'cloudinary_api_secret',

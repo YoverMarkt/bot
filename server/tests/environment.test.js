@@ -24,7 +24,7 @@ describe('configuración de entorno', () => {
 
   it('falla cerrado cuando falta configuración crítica', () => {
     expect(() => assertEnvironment({ NODE_ENV: 'production' })).toThrow(
-      /SUPABASE_URL.*JWT_SECRET.*BASE_URL.*WEBHOOK_SECRET/,
+      /SUPABASE_URL.*JWT_SECRET.*BASE_URL/,
     )
   })
 
@@ -32,23 +32,68 @@ describe('configuración de entorno', () => {
     const status = inspectEnvironment(validEnvironment({
       NODE_ENV: 'production',
       BASE_URL: 'http://example.com',
-      WEBHOOK_SECRET: 'corto',
+      YCLOUD_WEBHOOK_SECRET: 'corto',
       TELEGRAM_BOT_TOKEN: 'telegram-token-valid',
       TELEGRAM_WEBHOOK_SECRET: 'corto',
     }))
 
     expect(status.missing).toEqual([])
     expect(status.invalid).toEqual(expect.arrayContaining([
-      'BASE_URL (HTTPS obligatorio salvo localhost)',
-      'WEBHOOK_SECRET (mínimo 32 caracteres)',
+      'BASE_URL (origen HTTPS sin ruta, query, hash ni slash final; HTTP solo en localhost)',
+      'YCLOUD_WEBHOOK_SECRET (mínimo 32 caracteres)',
       'TELEGRAM_WEBHOOK_SECRET (mínimo 32 caracteres)',
     ]))
   })
 
-  it('acepta localhost HTTP para smoke tests controlados', () => {
+  it('acepta localhost HTTP sin exigir un secreto global de YCloud', () => {
     expect(() => assertEnvironment(validEnvironment({
       BASE_URL: 'http://127.0.0.1:3199',
-      WEBHOOK_SECRET: 'w'.repeat(32),
     }))).not.toThrow()
+  })
+
+  it.each([
+    'https://bot.example.com/',
+    'https://bot.example.com/webhooks',
+    'https://bot.example.com?source=railway',
+    'https://bot.example.com#production',
+    'https://user:password@bot.example.com',
+  ])('rechaza BASE_URL que no sea un origen canónico puro: %s', (baseUrl) => {
+    expect(inspectEnvironment(validEnvironment({
+      NODE_ENV: 'production',
+      BASE_URL: baseUrl,
+    })).invalid).toContain(
+      'BASE_URL (origen HTTPS sin ruta, query, hash ni slash final; HTTP solo en localhost)',
+    )
+  })
+
+  it('acepta el fallback global opcional de YCloud cuando es fuerte', () => {
+    expect(() => assertEnvironment(validEnvironment({
+      NODE_ENV: 'production',
+      BASE_URL: 'https://bot.example.com',
+      YCLOUD_WEBHOOK_ENDPOINT_ID: 'endpoint-global',
+      YCLOUD_WEBHOOK_SECRET: 'y'.repeat(32),
+    }))).not.toThrow()
+  })
+
+  it('rechaza un fallback global YCloud incompleto', () => {
+    const status = inspectEnvironment(validEnvironment({
+      NODE_ENV: 'production',
+      BASE_URL: 'https://bot.example.com',
+      YCLOUD_WEBHOOK_SECRET: 'y'.repeat(32),
+    }))
+
+    expect(status.invalid).toContain(
+      'YCLOUD_WEBHOOK_ENDPOINT_ID y YCLOUD_WEBHOOK_SECRET deben configurarse juntos',
+    )
+  })
+
+  it('valida el formato de una versión Meta configurada manualmente', () => {
+    expect(inspectEnvironment(validEnvironment({
+      META_GRAPH_API_VERSION: 'v25.0/../../host',
+    })).invalid).toContain('META_GRAPH_API_VERSION (formato vN.0)')
+
+    expect(inspectEnvironment(validEnvironment({
+      META_GRAPH_API_VERSION: 'v25.0',
+    })).invalid).not.toContain('META_GRAPH_API_VERSION (formato vN.0)')
   })
 })

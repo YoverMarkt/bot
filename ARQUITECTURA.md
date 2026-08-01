@@ -72,7 +72,7 @@ bot/                                  ← monorepo (npm workspaces)
 │   │   │   ├── sales.routes.ts
 │   │   │   ├── sessions.routes.ts
 │   │   │   ├── admin.routes.ts
-│   │   │   └── webhooks.routes.ts    ←   Meta/YCloud/Kapso (anti-duplicados)
+│   │   │   └── webhooks.routes.ts    ←   Meta/YCloud (anti-duplicados)
 │   │   ├── services/                 ← la LÓGICA (rutas delgadas, servicios gordos)
 │   │   │   ├── money.ts              ←   núcleo monetario tipado
 │   │   │   ├── bot.service.ts        ←   processMessage, prompt, media

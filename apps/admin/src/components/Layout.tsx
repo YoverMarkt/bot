@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { session } from '../api/client'
-import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, LogOut, Crown, Sun, Moon, Menu } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, MessageSquare, Plug, Settings, Calculator, LogOut, Crown, Sun, Moon, Menu, Shield, FileText, Gauge } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { Button } from '@botpanel/ui/components/button'
@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 const SECTIONS = [
   { to: '/',            label: 'Dashboard',     icon: LayoutDashboard },
   { to: '/clients',     label: 'Clientes',      icon: Users },
+  { to: '/usage',       label: 'Medición',      icon: Gauge },
   { to: '/billing',     label: 'Facturación',   icon: CreditCard },
   { to: '/simulator',   label: 'Simulador',     icon: MessageSquare },
   { to: '/connections', label: 'Conexiones',    icon: Plug },
@@ -46,6 +47,17 @@ export default function Layout() {
         ))}
       </nav>
       <div className="p-3 border-t border-border">
+        {/* Páginas legales públicas de Vezzper (se sirven fuera de la app React) */}
+        <div className="mb-1 flex flex-col gap-0.5">
+          <a href="/privacidad" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted">
+            <Shield className="w-4 h-4" /> Política de Privacidad
+          </a>
+          <a href="/terminos" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted">
+            <FileText className="w-4 h-4" /> Términos y Condiciones
+          </a>
+        </div>
         <Button variant="ghost" onClick={() => setTheme(toggleTheme())} className="w-full justify-start">
           <span className="inline-flex items-center gap-2">
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}

@@ -1,11 +1,11 @@
--- Deduplicación persistente y multiempresa para Meta, YCloud y Kapso.
+-- Deduplicación persistente y multiempresa para Meta y YCloud.
 -- Solo almacena SHA-256 del identificador del proveedor; no guarda payload,
 -- mensajes, teléfonos ni credenciales. Es idempotente y no modifica datos vivos.
 
 create table if not exists public.webhook_inbound_events (
   id              uuid primary key default gen_random_uuid(),
   business_id     uuid not null references businesses(id) on delete cascade,
-  provider        text not null check (provider in ('meta', 'ycloud', 'kapso')),
+  provider        text not null check (provider in ('meta', 'ycloud')),
   message_id_hash text not null check (message_id_hash ~ '^[0-9a-f]{64}$'),
   received_at     timestamptz not null default now()
 );
@@ -34,7 +34,7 @@ begin
   if p_business_id is null then
     raise exception using errcode = '22023', message = 'El negocio es obligatorio';
   end if;
-  if p_provider not in ('meta', 'ycloud', 'kapso') then
+  if p_provider not in ('meta', 'ycloud') then
     raise exception using errcode = '22023', message = 'Proveedor de webhook inválido';
   end if;
   if p_message_id_hash is null or p_message_id_hash !~ '^[0-9a-f]{64}$' then

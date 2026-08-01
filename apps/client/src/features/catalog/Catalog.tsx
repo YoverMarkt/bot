@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-react'
+import { Search, Film, Plus, Pencil, Trash2, Package, Camera, UtensilsCrossed } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
-import type { Product, ProductPayload } from './api'
+import type { Product, ProductPayload, MenuModifier, MenuModifierPayload } from './api'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -11,9 +11,11 @@ import { Input } from '@botpanel/ui/components/input'
 import { Textarea } from '@botpanel/ui/components/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { Badge } from '@botpanel/ui/components/badge'
+import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
@@ -64,11 +66,24 @@ export default function Catalog() {
 
   return (
     <div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-foreground">Catálogo</h1>
+        <p className="text-sm text-muted-foreground">Lo que el bot ofrece a tus clientes</p>
+      </div>
+
+      <Tabs defaultValue="productos">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto">
+          <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="opciones">Sabores / Opciones</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="opciones" className="mt-4">
+          <ModifiersPanel products={products} />
+        </TabsContent>
+
+        <TabsContent value="productos" className="mt-4">
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Catálogo</h1>
-          <p className="text-sm text-muted-foreground">{products.length} producto(s) — lo que el bot ofrece a tus clientes</p>
-        </div>
+        <p className="text-sm text-muted-foreground">{products.length} producto(s)</p>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <Input
             id="catalog-search"
@@ -130,6 +145,8 @@ export default function Catalog() {
           {filtered.length === 0 && <p className="text-sm text-muted-foreground col-span-full">No hay productos{search ? ' que coincidan con la búsqueda' : ' aún — agrega el primero'}.</p>}
         </div>
       )}
+        </TabsContent>
+      </Tabs>
 
       {editing && (
         <ProductModal
@@ -292,6 +309,191 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
           </Button>
         </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Pestaña de Sabores / Opciones (modificadores del menú) ──
+// Un modificador es una opción que el cliente elige ADEMÁS del producto sin
+// cambiar el precio (p. ej. el sabor de la pizza). Se agrupa por categoría y
+// aplica a todos los productos de esa categoría (todos los tamaños).
+function ModifiersPanel({ products }: { products: Product[] }) {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<MenuModifier | { category_tag: string; group_label: string } | null>(null)
+  const { data: modifiers = [], isLoading, isError, refetch } =
+    useQuery({ queryKey: ['menu-modifiers'], queryFn: catApi.getMenuModifiers })
+
+  const categoryTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of products) for (const t of (p.tags ?? [])) if (t.trim()) set.add(t.trim().toLowerCase())
+    return [...set].sort()
+  }, [products])
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['menu-modifiers'] })
+  const mDelete = useMutation({
+    mutationFn: catApi.deleteMenuModifier,
+    onSuccess: () => { refresh(); toast.success('Opción eliminada') },
+    onError: () => toast.error('No se pudo eliminar'),
+  })
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { category_tag: string; group_label: string; items: MenuModifier[] }>()
+    for (const m of modifiers) {
+      const key = `${m.category_tag}||${m.group_label}`
+      if (!map.has(key)) map.set(key, { category_tag: m.category_tag, group_label: m.group_label, items: [] })
+      map.get(key)!.items.push(m)
+    }
+    return [...map.values()]
+  }, [modifiers])
+
+  if (isLoading) return <div className="space-y-3"><Skeleton className="h-10 w-64" /><Skeleton className="h-32 w-full" /></div>
+  if (isError) return <QueryError onRetry={() => { void refetch() }} />
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Opciones que el cliente elige <strong>además</strong> del producto, sin cambiar el precio — por ejemplo el <strong>sabor</strong> de la pizza. Se agrupan por categoría y aplican a todos los productos de esa categoría (todos los tamaños).
+        </p>
+        <Button onClick={() => setEditing({ category_tag: categoryTags[0] || '', group_label: 'Sabor' })}>
+          <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar opción</span>
+        </Button>
+      </div>
+
+      {groups.length === 0 ? (
+        <Card className="items-center gap-2 p-8 text-center">
+          <UtensilsCrossed className="h-9 w-9 text-muted-foreground/60" />
+          <p className="font-medium">Aún no hay opciones</p>
+          <p className="max-w-lg text-sm text-muted-foreground">Si vendes pizzas, agrega aquí los <strong>sabores</strong> con sus ingredientes. El cliente elegirá el sabor y luego el tamaño.</p>
+        </Card>
+      ) : groups.map(g => (
+        <Card key={`${g.category_tag}||${g.group_label}`} className="gap-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold">{g.group_label}</p>
+              <p className="text-xs text-muted-foreground">Categoría: {g.category_tag} · {g.items.length} opción(es)</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setEditing({ category_tag: g.category_tag, group_label: g.group_label })}>
+              <Plus className="w-3.5 h-3.5" /> Agregar
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {g.items.map(m => (
+              <div key={m.id} className="flex items-center gap-3 rounded-lg border p-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{m.name}{!m.active && <Badge variant="outline" className="ml-2">Oculta</Badge>}</p>
+                  {m.description && <p className="text-xs text-muted-foreground">{m.description}</p>}
+                </div>
+                <Button variant="ghost" size="icon-sm" aria-label={`Editar ${m.name}`} onClick={() => setEditing(m)}><Pencil className="w-3.5 h-3.5" /></Button>
+                <ConfirmAction
+                  trigger={<Button variant="ghost" size="icon-sm" aria-label={`Eliminar ${m.name}`}><Trash2 className="w-3.5 h-3.5" /></Button>}
+                  title={`Eliminar “${m.name}”`}
+                  description="Dejará de aparecer como opción en el bot."
+                  confirmLabel="Eliminar"
+                  destructive
+                  onConfirm={() => mDelete.mutate(m.id)}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+
+      {editing && (
+        <ModifierModal
+          modifier={'id' in editing ? editing : null}
+          prefill={'id' in editing ? null : editing}
+          categoryTags={categoryTags}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal crear/editar un modificador (sabor) ──
+function ModifierModal({ modifier, prefill, categoryTags, onClose, onSaved }: {
+  modifier: MenuModifier | null
+  prefill: { category_tag: string; group_label: string } | null
+  categoryTags: string[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [f, setF] = useState<MenuModifierPayload>(() => ({
+    category_tag: modifier?.category_tag ?? prefill?.category_tag ?? categoryTags[0] ?? '',
+    group_label: modifier?.group_label ?? prefill?.group_label ?? 'Sabor',
+    name: modifier?.name ?? '',
+    description: modifier?.description ?? '',
+    active: modifier?.active ?? true,
+  }))
+  const [saving, setSaving] = useState(false)
+  const upd = (patch: Partial<MenuModifierPayload>) => setF(prev => ({ ...prev, ...patch }))
+  const valid = Boolean(f.category_tag.trim() && f.name.trim() && f.group_label.trim())
+
+  async function save() {
+    if (!valid) return
+    setSaving(true)
+    try {
+      const payload: MenuModifierPayload = {
+        category_tag: f.category_tag.trim().toLowerCase(),
+        group_label: f.group_label.trim(),
+        name: f.name.trim(),
+        description: f.description?.trim() || null,
+        active: f.active !== false,
+      }
+      if (modifier) await catApi.updateMenuModifier(modifier.id, payload)
+      else await catApi.createMenuModifier(payload)
+      toast.success('Opción guardada')
+      onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{modifier ? 'Editar opción' : 'Nueva opción'}</DialogTitle>
+          <DialogDescription>Por ejemplo, un sabor de pizza con sus ingredientes.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="mod-cat">Categoría</Label>
+            {categoryTags.length ? (
+              <Select value={f.category_tag} onValueChange={v => upd({ category_tag: v })}>
+                <SelectTrigger id="mod-cat" className="w-full"><SelectValue placeholder="Elige una categoría…" /></SelectTrigger>
+                <SelectContent>{categoryTags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              </Select>
+            ) : (
+              <Input id="mod-cat" value={f.category_tag} onChange={e => upd({ category_tag: e.target.value })} placeholder="pizzas" />
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">La etiqueta de los productos a los que aplica (p. ej. “pizzas”). Aplica a todos los de esa categoría.</p>
+          </div>
+          <div>
+            <Label htmlFor="mod-group">Grupo</Label>
+            <Input id="mod-group" value={f.group_label} onChange={e => upd({ group_label: e.target.value })} placeholder="Sabor" />
+          </div>
+          <div>
+            <Label htmlFor="mod-name">Nombre</Label>
+            <Input id="mod-name" value={f.name} onChange={e => upd({ name: e.target.value })} placeholder="Hawaiana" />
+          </div>
+          <div>
+            <Label htmlFor="mod-desc">Ingredientes / descripción</Label>
+            <Textarea id="mod-desc" value={f.description ?? ''} onChange={e => upd({ description: e.target.value })} placeholder="Jamón y piña" rows={2} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={f.active !== false} onCheckedChange={v => upd({ active: v === true })} /> Visible para los clientes
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={save} disabled={!valid || saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

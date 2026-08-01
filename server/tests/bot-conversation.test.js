@@ -84,11 +84,15 @@ function setup(overrides = {}) {
     sendRequestedProductMedia: vi.fn().mockResolvedValue(false),
     ...overrides.media,
   }
+  const menuFlow = {
+    advanceMenuFlow: vi.fn().mockReturnValue({ reply: 'Menú', options: [] }),
+    ...overrides.menuFlow,
+  }
   const logger = { log: vi.fn(), error: vi.fn() }
   const sleep = vi.fn().mockResolvedValue(undefined)
   const now = vi.fn().mockReturnValue(30_000_000)
   const conversation = createBotConversation({
-    database, reports, schedule, ai, prompt, tags, actions, media,
+    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
     logger, sleep, now,
   })
   const send = vi.fn().mockResolvedValue(undefined)
@@ -97,7 +101,7 @@ function setup(overrides = {}) {
   const sendVideo = vi.fn().mockResolvedValue(undefined)
   return {
     conversation, database, reports, schedule, ai, prompt, tags, actions,
-    media, logger, sleep, now, send, sendImage, sendTyping, sendVideo,
+    media, menuFlow, logger, sleep, now, send, sendImage, sendTyping, sendVideo,
   }
 }
 
@@ -130,6 +134,458 @@ describe('orquestación de conversaciones del bot', () => {
     }))
     expect(inactive.send).not.toHaveBeenCalled()
     expect(inactive.reports.handleOwnerMessage).not.toHaveBeenCalled()
+  })
+
+  it('en modo menú conduce el código: sin IA y el dinero por el núcleo de siempre', async () => {
+    const current = setup({
+      database: {
+        getPolicies: vi.fn().mockResolvedValue({
+          bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+        }),
+      },
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '🧾 Resumen de tu pedido',
+          options: ['✅ Confirmar pedido', '🏠 Menú principal'],
+          action: { type: 'order', summary: 'resumen', totalCents: 1950, payload: 'Pizza Hawaiana x2' },
+        }),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '1',
+    }))
+
+    // La IA NO participa en ningún mensaje del modo menú
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+    expect(current.prompt.buildPrompt).not.toHaveBeenCalled()
+    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botPrompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+      }),
+    )
+    expect(current.sendTyping).toHaveBeenCalledTimes(1)
+    expect(current.sendTyping.mock.invocationCallOrder[0]).toBeLessThan(
+      current.menuFlow.advanceMenuFlow.mock.invocationCallOrder[0],
+    )
+    // El total lo sigue calculando money.ts vía processOrderPayload: el menú
+    // solo aporta QUÉ pidió el cliente, nunca un monto
+    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: 'Pizza Hawaiana x2' }),
+    )
+    // Las opciones salen numeradas para que el cliente pueda responder "1"
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. ✅ Confirmar pedido'),
+    )
+  })
+
+  it('continúa el modo menú si marcar el mensaje como leído falla', async () => {
+    const current = setup()
+    current.sendTyping.mockRejectedValueOnce(new Error('YCloud no disponible'))
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+    }))
+
+    expect(current.sendTyping).toHaveBeenCalledTimes(1)
+    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith('Menú')
+  })
+
+  it('el modo menú manda botones nativos y cae a texto numerado si el canal no puede', async () => {
+    const flujo = {
+      advanceMenuFlow: vi.fn().mockReturnValue({
+        reply: 'Estas son nuestras habitaciones 👇',
+        options: [{ title: 'Matrimonial', description: '$35.00/noche' }, '⬅️ Volver'],
+      }),
+    }
+
+    // Canal con soporte nativo: no se envía el texto numerado
+    const nativo = setup({ menuFlow: flujo })
+    const sendOptions = vi.fn().mockResolvedValue(true)
+    await nativo.conversation.processMessage(input(nativo, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+      sendOptions,
+    }))
+    expect(sendOptions).toHaveBeenCalledWith(
+      'Estas son nuestras habitaciones 👇',
+      [
+        { id: '1', title: 'Matrimonial', description: '$35.00/noche' },
+        { id: '2', title: '⬅️ Volver', description: undefined },
+      ],
+    )
+    expect(nativo.send).not.toHaveBeenCalled()
+
+    // Canal sin soporte (o falla el envío): las opciones van numeradas
+    const texto = setup({ menuFlow: flujo })
+    await texto.conversation.processMessage(input(texto, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'hola',
+      sendOptions: vi.fn().mockResolvedValue(false),
+    }))
+    expect(texto.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. Matrimonial — $35.00/noche'),
+    )
+  })
+
+  it('envía todas las fotos, luego el video y al final el CTA en modo directo', async () => {
+    const media = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        url: `https://cdn.example.com/foto-${index + 1}.jpg`,
+        isVideo: false,
+      })),
+      { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
+    ]
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
+          options: ['📅 Cotizar estadía'],
+          media,
+        }),
+      },
+    })
+    const events = []
+    const sendImage = vi.fn(async url => { events.push(`image:${url}`) })
+    const sendVideo = vi.fn(async url => { events.push(`video:${url}`) })
+    const sendOptions = vi.fn(async () => {
+      events.push('cta')
+      return true
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '📷 Ver fotos y videos',
+      sendImage,
+      sendVideo,
+      sendOptions,
+    }))
+
+    expect(events).toEqual([
+      ...media.slice(0, 5).map(item => `image:${item.url}`),
+      `video:${media[5].url}`,
+      'cta',
+    ])
+    for (const [url] of media.slice(0, 5).map(item => [item.url])) {
+      expect(sendImage).toHaveBeenCalledWith(url, undefined, 'direct')
+    }
+    expect(sendVideo).toHaveBeenCalledWith(
+      'https://cdn.example.com/recorrido.mp4',
+      undefined,
+      'direct',
+    )
+    expect(sendOptions).toHaveBeenCalledWith(
+      '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
+      [{ id: '1', title: '📅 Cotizar estadía', description: undefined }],
+      'direct',
+    )
+    expect(current.send).not.toHaveBeenCalled()
+  })
+
+  it('no adelanta el CTA mientras el último video todavía se está enviando', async () => {
+    let releaseVideo
+    const pendingVideo = new Promise(resolve => { releaseVideo = resolve })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¿Cotizamos tus fechas?',
+          options: ['📅 Cotizar estadía'],
+          media: [
+            { url: 'https://cdn.example.com/foto.jpg', isVideo: false },
+            { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
+          ],
+        }),
+      },
+    })
+    const sendOptions = vi.fn().mockResolvedValue(true)
+    const sendVideo = vi.fn().mockReturnValue(pendingVideo)
+
+    const processing = current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '📷 Ver fotos y videos',
+      sendVideo,
+      sendOptions,
+    }))
+
+    await vi.waitFor(() => expect(sendVideo).toHaveBeenCalledOnce())
+    expect(sendOptions).not.toHaveBeenCalled()
+
+    releaseVideo()
+    await processing
+
+    expect(sendOptions).toHaveBeenCalledOnce()
+    expect(sendVideo.mock.invocationCallOrder[0]).toBeLessThan(
+      sendOptions.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('el modo menú deriva a una persona con la misma ruta que el resto del bot', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '', options: [], action: { type: 'handoff' },
+        }),
+      },
+      actions: { handleConversationOutcome: vi.fn().mockResolvedValue({ handled: true }) },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: 'asesor',
+    }))
+
+    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ hasHandoffTag: true }),
+    )
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+  })
+
+  it('reemplaza la confirmación optimista del menú cuando el pedido no se creó', async () => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Pedido recibido! 🙌',
+          options: ['🛒 Hacer un pedido', '💬 Hablar con el equipo'],
+          action: {
+            type: 'order',
+            summary: 'resumen',
+            totalCents: 1000,
+            payload: 'Producto A x1',
+            items: [{ name: 'Producto A', qty: 1 }],
+          },
+        }),
+      },
+      actions: { processOrderPayload: vi.fn().mockResolvedValue(false) },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '✅ Confirmar pedido',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('No pude confirmar de forma segura'),
+    )
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('evitar duplicarlo'),
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Pedido recibido'),
+    )
+  })
+
+  it('conserva el resumen oficial del pedido sin duplicar una segunda confirmación', async () => {
+    const processOrderPayload = vi.fn().mockImplementation(async ({ send }) => {
+      await send('🧾 Resumen oficial — Total: $10.00')
+      return true
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Pedido recibido! 🙌',
+          options: ['🛒 Hacer un pedido'],
+          action: {
+            type: 'order',
+            summary: 'resumen',
+            totalCents: 1000,
+            payload: 'Producto A x1',
+            items: [{ name: 'Producto A', qty: 1 }],
+          },
+        }),
+      },
+      actions: { processOrderPayload },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...business, chat_mode: 'menu' },
+      text: '✅ Confirmar pedido',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith('🧾 Resumen oficial — Total: $10.00')
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Pedido recibido'),
+    )
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('¿Necesitas algo más?'),
+    )
+  })
+
+  it('preserva la cotización oficial y solo después ofrece sus acciones válidas', async () => {
+    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
+      await send('🏨 Cotización oficial — Total: $90.00')
+      return 'quoted'
+    })
+    const sendImage = vi.fn().mockResolvedValue(undefined)
+    const sendVideo = vi.fn().mockResolvedValue(undefined)
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '',
+          options: ['🛎️ Solicitar esta habitación', '📅 Cotizar otras fechas'],
+          action: {
+            type: 'stay_quote',
+            quote: {
+              checkIn: '2026-08-10',
+              checkOut: '2026-08-13',
+              roomsCount: 1,
+              adults: 2,
+              children: 0,
+              roomTypeId: 'room-a',
+            },
+          },
+        }),
+      },
+      actions: { processLodgingQuote },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+      text: '2 adultos',
+      sendImage,
+      sendVideo,
+    }))
+
+    expect(current.send).toHaveBeenCalledWith('🏨 Cotización oficial — Total: $90.00')
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining('1. 🛎️ Solicitar esta habitación'),
+    )
+    const quoteInput = processLodgingQuote.mock.calls[0][0]
+    expect(quoteInput.includeMedia).toBe(false)
+    expect(quoteInput.sendImage).toBeUndefined()
+    expect(quoteInput.sendVideo).toBeUndefined()
+    expect(sendImage).not.toHaveBeenCalled()
+    expect(sendVideo).not.toHaveBeenCalled()
+  })
+
+  it('no ofrece solicitar una habitación cuando la cotización pidió reintentar', async () => {
+    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
+      await send('No hay disponibilidad; indícame otras fechas.')
+      return 'retry'
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '',
+          options: ['🛎️ Solicitar esta habitación'],
+          action: {
+            type: 'stay_quote',
+            quote: {
+              checkIn: '2026-08-10',
+              checkOut: '2026-08-13',
+              roomsCount: 1,
+              adults: 2,
+              children: 0,
+            },
+          },
+        }),
+      },
+      actions: { processLodgingQuote },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+    }))
+
+    expect(current.send).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith(
+      'No hay disponibilidad; indícame otras fechas.',
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Solicitar esta habitación'),
+    )
+  })
+
+  it('no duplica ni contradice el mensaje oficial de una solicitud de hospedaje', async () => {
+    const processLodgingRequest = vi.fn().mockImplementation(async ({ send }) => {
+      await send('✅ Solicitud de hospedaje registrada — pendiente de confirmación')
+      return 'requested'
+    })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Listo! Registré tu solicitud.',
+          options: ['🏠 Menú principal'],
+          action: {
+            type: 'stay_request',
+            roomTypeId: 'room-a',
+            contactName: 'Ana Pérez',
+          },
+        }),
+      },
+      actions: { processLodgingRequest },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+        takes_orders: false,
+      },
+      text: 'Ana Pérez',
+    }))
+
+    expect(current.send).toHaveBeenCalledTimes(1)
+    expect(current.send).toHaveBeenCalledWith(
+      '✅ Solicitud de hospedaje registrada — pendiente de confirmación',
+    )
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('¡Listo! Registré'),
+    )
+  })
+
+  it.each([
+    ['duplicate', 'ya está registrada'],
+    ['conflict', 'acaba de ocuparse'],
+    ['error', 'No pude confirmar de forma segura si la cita quedó registrada'],
+  ])('reemplaza la confirmación del menú cuando la cita termina en %s', async (
+    bookingOutcome,
+    expectedText,
+  ) => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¡Listo, Ana! Registré tu solicitud de cita.',
+          options: ['📅 Agendar una cita', '💬 Hablar con el equipo'],
+          action: {
+            type: 'booking',
+            date: '2026-08-10',
+            time: '10:00',
+            name: 'Ana',
+          },
+        }),
+      },
+      actions: {
+        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        takes_bookings: true,
+      },
+      text: 'Ana',
+    }))
+
+    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('Registré tu solicitud de cita'),
+    )
   })
 
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {
@@ -265,6 +721,7 @@ describe('orquestación de conversaciones del bot', () => {
       phone: '0990000001',
       originalText: 'Somos dos del 10 al 13 de agosto',
       quote: lodgingQuote,
+      guestMessages: ['Somos dos del 10 al 13 de agosto'],
       send: current.send,
       sendImage: current.sendImage,
       sendVideo: current.sendVideo,
@@ -279,7 +736,6 @@ describe('orquestación de conversaciones del bot', () => {
       lodgingBusiness,
       [product],
       {},
-      false,
       'Somos dos del 10 al 13 de agosto',
       null,
       [],
@@ -482,7 +938,6 @@ describe('orquestación de conversaciones del bot', () => {
       business,
       [product],
       {},
-      false,
       'La vez pasada vi Perfume Floral Intenso, muéstrame foto',
       null,
       [],

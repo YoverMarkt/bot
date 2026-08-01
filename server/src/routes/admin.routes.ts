@@ -5,6 +5,7 @@ import providersRouter = require('./admin-providers.routes')
 import settingsRouter = require('./admin-settings.routes')
 import tunnelRouter = require('./admin-tunnel.routes')
 import simulatorRouter = require('./admin-simulator.routes')
+import usageRouter = require('./admin-usage.routes')
 
 const router = createRouter()
 
@@ -14,5 +15,6 @@ router.use(providersRouter)
 router.use(settingsRouter)
 router.use(tunnelRouter)
 router.use(simulatorRouter)
+router.use(usageRouter)
 
 export = router

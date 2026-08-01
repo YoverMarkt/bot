@@ -22,7 +22,6 @@ export type TunnelState = {
   active: boolean
   provider: string | null
   startedAt: string | null
-  webhookSecret?: string
 }
 
 export const getTunnel = () => api<TunnelState>('/api/admin/tunnel')

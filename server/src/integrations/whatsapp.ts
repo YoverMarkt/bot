@@ -1,25 +1,41 @@
 import axios from 'axios'
+import { metaGraphUrl } from '../config/meta-graph'
+import type { WhatsAppProvider } from '../types/channels'
+import {
+  recordOutboundUsage,
+  type OutboundMessageType,
+} from '../db/repositories/usage'
 
 export interface WhatsAppBusiness {
+  id?: string | null
   whatsapp_provider?: string | null
   meta_phone_id?: string | null
   meta_token?: string | null
-  kapso_api_key?: string | null
-  kapso_number_id?: string | null
   ycloud_api_key?: string | null
   ycloud_number?: string | null
   whatsapp_number?: string | null
 }
 
 interface YCloudClient {
+  markAsRead(apiKey: string, inboundId: string): Promise<void>
   showTyping(apiKey: string, inboundId: string): Promise<void>
   sendText(apiKey: string, from: string, to: string, text: string): Promise<void>
+  sendInteractive(
+    apiKey: string,
+    from: string,
+    to: string,
+    body: string,
+    options: { id: string; title: string; description?: string }[],
+    listButtonText?: string,
+    direct?: boolean,
+  ): Promise<boolean>
   sendImage(
     apiKey: string,
     from: string,
     to: string,
     imageUrl: string,
     caption?: string,
+    direct?: boolean,
   ): Promise<void>
   sendVideo(
     apiKey: string,
@@ -27,19 +43,21 @@ interface YCloudClient {
     to: string,
     videoUrl: string,
     caption?: string,
+    direct?: boolean,
   ): Promise<void>
 }
 
 const ycloud = require('./ycloud') as YCloudClient
+const OUTBOUND_TIMEOUT_MS = 15_000
+type DeliveryMode = 'queued' | 'direct'
 
-const providerFor = (business: WhatsAppBusiness) => business.whatsapp_provider || 'ycloud'
-
-// Un negocio solo-Telegram no tiene canal WhatsApp: fallar con un mensaje
-// claro en vez de llamar a YCloud con credenciales ajenas (daba un 401 confuso).
-const assertWhatsAppChannel = (provider: string): void => {
+function providerFor(business: WhatsAppBusiness): WhatsAppProvider {
+  const provider = String(business.whatsapp_provider || '').trim() || 'ycloud'
+  if (provider === 'meta' || provider === 'ycloud') return provider
   if (provider === 'telegram') {
     throw new Error('El negocio opera solo por Telegram: no hay canal WhatsApp para este envío')
   }
+  throw new Error(`Proveedor WhatsApp no soportado: ${provider}`)
 }
 const ycloudKeyFor = (business: WhatsAppBusiness) => (
   business.ycloud_api_key || process.env.YCLOUD_API_KEY
@@ -48,22 +66,50 @@ const ycloudNumberFor = (business: WhatsAppBusiness) => (
   business.ycloud_number || business.whatsapp_number
 ) as string
 
-function errorDetail(error: unknown): unknown {
+function errorDetail(error: unknown): string {
   if (axios.isAxiosError(error)) return error.message
-  return error instanceof Error ? error.message : error
+  return error instanceof Error ? error.message : 'Error no identificado'
+}
+
+async function recordAcceptedMessage(
+  business: WhatsAppBusiness,
+  provider: WhatsAppProvider,
+  to: string,
+  messageType: OutboundMessageType,
+): Promise<void> {
+  await recordOutboundUsage(business.id, provider, to, messageType)
 }
 
 async function sendTyping(
   business: WhatsAppBusiness,
   inboundId?: string | null,
 ): Promise<void> {
-  const provider = providerFor(business)
+  let provider: WhatsAppProvider
   try {
-    if (provider === 'ycloud' && inboundId) {
-      await ycloud.showTyping(ycloudKeyFor(business), inboundId)
-    }
+    provider = providerFor(business)
   } catch {
-    // El indicador es best-effort y nunca debe interrumpir la respuesta.
+    // La lectura es best-effort y nunca debe interrumpir la respuesta.
+    return
+  }
+  if (provider !== 'ycloud' || !inboundId) return
+
+  const apiKey = ycloudKeyFor(business)
+  // Ambas operaciones marcan como leído. Se ejecutan en paralelo para que un
+  // timeout del indicador no retrase otros 8 segundos la respuesta del bot.
+  const [readResult, typingResult] = await Promise.allSettled([
+    ycloud.markAsRead(apiKey, inboundId),
+    ycloud.showTyping(apiKey, inboundId),
+  ])
+  if (readResult.status === 'rejected') {
+    // Solo se registra el mensaje resumido de Axios; nunca response.data,
+    // headers, credenciales ni el identificador del cliente.
+    console.warn('⚠️  [ycloud] markAsRead:', errorDetail(readResult.reason))
+  }
+  if (typingResult.status === 'rejected') {
+    console.warn(
+      '⚠️  [ycloud] typingIndicator:',
+      errorDetail(typingResult.reason),
+    )
   }
 }
 
@@ -73,11 +119,10 @@ async function sendText(
   text: string,
 ): Promise<void> {
   const provider = providerFor(business)
-  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
-        `https://graph.facebook.com/v19.0/${business.meta_phone_id}/messages`,
+        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -90,23 +135,7 @@ async function sendText(
             Authorization: `Bearer ${business.meta_token}`,
             'Content-Type': 'application/json',
           },
-        },
-      )
-    } else if (provider === 'kapso') {
-      const apiKey = business.kapso_api_key || process.env.KAPSO_API_KEY
-      await axios.post(
-        'https://api.kapso.ai/v1/messages',
-        {
-          number_id: business.kapso_number_id,
-          to,
-          type: 'text',
-          text: { body: text },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          timeout: OUTBOUND_TIMEOUT_MS,
         },
       )
     } else {
@@ -117,6 +146,7 @@ async function sendText(
         text,
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'text')
   } catch (error) {
     console.error(`❌ [${provider}] sendText:`, errorDetail(error))
     throw error
@@ -128,13 +158,13 @@ async function sendImage(
   to: string,
   imageUrl: string,
   caption = '',
+  deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
   const provider = providerFor(business)
-  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
-        `https://graph.facebook.com/v19.0/${business.meta_phone_id}/messages`,
+        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -147,23 +177,7 @@ async function sendImage(
             Authorization: `Bearer ${business.meta_token}`,
             'Content-Type': 'application/json',
           },
-        },
-      )
-    } else if (provider === 'kapso') {
-      const apiKey = business.kapso_api_key || process.env.KAPSO_API_KEY
-      await axios.post(
-        'https://api.kapso.ai/v1/messages',
-        {
-          number_id: business.kapso_number_id,
-          to,
-          type: 'image',
-          image: { url: imageUrl, caption },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          timeout: OUTBOUND_TIMEOUT_MS,
         },
       )
     } else {
@@ -173,8 +187,10 @@ async function sendImage(
         to,
         imageUrl,
         caption,
+        deliveryMode === 'direct',
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'image')
   } catch (error) {
     console.error(`❌ [${provider}] sendImage:`, errorDetail(error))
     throw error
@@ -186,13 +202,13 @@ async function sendVideo(
   to: string,
   videoUrl: string,
   caption = '',
+  deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
   const provider = providerFor(business)
-  assertWhatsAppChannel(provider)
   try {
     if (provider === 'meta') {
       await axios.post(
-        `https://graph.facebook.com/v19.0/${business.meta_phone_id}/messages`,
+        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -205,23 +221,7 @@ async function sendVideo(
             Authorization: `Bearer ${business.meta_token}`,
             'Content-Type': 'application/json',
           },
-        },
-      )
-    } else if (provider === 'kapso') {
-      const apiKey = business.kapso_api_key || process.env.KAPSO_API_KEY
-      await axios.post(
-        'https://api.kapso.ai/v1/messages',
-        {
-          number_id: business.kapso_number_id,
-          to,
-          type: 'video',
-          video: { url: videoUrl, caption },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          timeout: OUTBOUND_TIMEOUT_MS,
         },
       )
     } else {
@@ -231,12 +231,47 @@ async function sendVideo(
         to,
         videoUrl,
         caption,
+        deliveryMode === 'direct',
       )
     }
+    await recordAcceptedMessage(business, provider, to, 'video')
   } catch (error) {
     console.error(`❌ [${provider}] sendVideo:`, errorDetail(error))
     throw error
   }
 }
 
-export { sendTyping, sendText, sendImage, sendVideo }
+// Menú con botones/listas nativas. Solo YCloud lo soporta hoy; con cualquier
+// otro proveedor devuelve false y quien llama envía el menú como texto
+// numerado, que el motor entiende igual.
+async function sendInteractive(
+  business: WhatsAppBusiness,
+  to: string,
+  body: string,
+  options: { id: string; title: string; description?: string }[],
+  listButtonText?: string,
+  deliveryMode: DeliveryMode = 'queued',
+): Promise<boolean> {
+  if (providerFor(business) !== 'ycloud') return false
+  try {
+    const sent = await ycloud.sendInteractive(
+      ycloudKeyFor(business),
+      ycloudNumberFor(business),
+      to,
+      body,
+      options,
+      listButtonText,
+      deliveryMode === 'direct',
+    )
+    if (sent) {
+      await recordAcceptedMessage(business, 'ycloud', to, 'interactive')
+    }
+    return sent
+  } catch (error) {
+    // Nunca dejar al cliente sin respuesta: el llamador cae a texto
+    console.error('❌ [ycloud] sendInteractive:', errorDetail(error))
+    return false
+  }
+}
+
+export { sendTyping, sendText, sendImage, sendVideo, sendInteractive }

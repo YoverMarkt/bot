@@ -8,16 +8,29 @@ const db = require('../dist/db')
 const bcrypt = require('bcryptjs')
 const JWT_SECRET = 'admin-clients-test-secret'
 let originalJwtSecret
+let originalYCloudWebhookSecret
+let originalYCloudWebhookEndpointId
 
 beforeEach(() => {
   originalJwtSecret = process.env.JWT_SECRET
+  originalYCloudWebhookSecret = process.env.YCLOUD_WEBHOOK_SECRET
+  originalYCloudWebhookEndpointId = process.env.YCLOUD_WEBHOOK_ENDPOINT_ID
   process.env.JWT_SECRET = JWT_SECRET
+  process.env.YCLOUD_WEBHOOK_SECRET = 'ycloud-signing-secret-test'
+  process.env.YCLOUD_WEBHOOK_ENDPOINT_ID = 'ycloud-endpoint-test'
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
   if (originalJwtSecret === undefined) delete process.env.JWT_SECRET
   else process.env.JWT_SECRET = originalJwtSecret
+  if (originalYCloudWebhookSecret === undefined) delete process.env.YCLOUD_WEBHOOK_SECRET
+  else process.env.YCLOUD_WEBHOOK_SECRET = originalYCloudWebhookSecret
+  if (originalYCloudWebhookEndpointId === undefined) {
+    delete process.env.YCLOUD_WEBHOOK_ENDPOINT_ID
+  } else {
+    process.env.YCLOUD_WEBHOOK_ENDPOINT_ID = originalYCloudWebhookEndpointId
+  }
 })
 
 function authorization(role = 'admin') {
@@ -54,8 +67,8 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 14 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(14)
+  it('protege sus 13 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(13)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -66,7 +79,9 @@ describe('clientes y onboarding del superadmin', () => {
   it('devuelve el detalle sin credenciales y con su estado de configuración', async () => {
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
       id: 'business-a', name: 'Mas Pura', ycloud_api_key: 'ycloud-secret',
-      meta_token: 'meta-secret', kapso_verify_token: '',
+      ycloud_webhook_secret: 'ycloud-signing-secret',
+      ycloud_webhook_endpoint_id: 'endpoint-a',
+      meta_token: 'meta-secret',
     })
     vi.spyOn(db, 'getClientUserByBusiness').mockResolvedValue({ email: 'owner@example.com' })
 
@@ -79,11 +94,12 @@ describe('clientes y onboarding del superadmin', () => {
       client_email: 'owner@example.com',
       credential_status: {
         ycloud_api_key: true,
+        ycloud_webhook_secret: true,
         meta_token: true,
-        kapso_verify_token: false,
       },
     })
     expect(JSON.stringify(response.body)).not.toContain('ycloud-secret')
+    expect(JSON.stringify(response.body)).not.toContain('ycloud-signing-secret')
     expect(JSON.stringify(response.body)).not.toContain('meta-secret')
   })
 
@@ -96,9 +112,11 @@ describe('clientes y onboarding del superadmin', () => {
     const response = await dispatch('post', '/api/admin/clients', {
       auth: authorization(),
       body: {
-        name: ' Nueva ', whatsapp_number: ' +593999 ', monthly_rate: '30',
+        name: ' Nueva ', whatsapp_number: ' +593999000001 ', monthly_rate: '30',
         client_email: 'owner@example.com', client_password: 'safe-password',
         ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
         lodging_enabled: true,
       },
     })
@@ -106,16 +124,105 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response.status).toBe(201)
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Nueva', whatsapp_number: '+593999', lodging_enabled: true,
+        name: 'Nueva', whatsapp_number: '+593999000001', lodging_enabled: true,
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
       }),
       'owner@example.com',
       expect.any(String),
-      30,
+      25,
     )
     const passwordHash = createOnboarding.mock.calls[0][2]
     expect(passwordHash).not.toBe('safe-password')
     expect(await bcrypt.compare('safe-password', passwordHash)).toBe(true)
-    expect(JSON.stringify(response.body)).not.toContain('secret')
+    expect(JSON.stringify(response.body)).not.toContain('"ycloud_api_key":"secret"')
+    expect(JSON.stringify(response.body)).not.toContain('signing-secret-new')
+  })
+
+  it('aplica los límites recomendados cuando se elige un plan', async () => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-pro', name: 'Nueva Pro' },
+      error: null,
+    })
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Nueva Pro',
+        whatsapp_number: '+593999000001',
+        monthly_rate: '99',
+        plan: 'pro',
+        client_email: 'owner@example.com',
+        client_password: 'safe-password',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-pro',
+        ycloud_webhook_secret: 'signing-secret-pro',
+      },
+    })
+
+    expect(response.status).toBe(201)
+    expect(createOnboarding).toHaveBeenCalledWith(expect.objectContaining({
+      plan: 'pro',
+      monthly_contact_limit: 400,
+      monthly_outbound_message_limit: 2000,
+    }), 'owner@example.com', expect.any(String), 99)
+    expect(response.body).toMatchObject({
+      monthly_contact_limit: 400,
+      monthly_outbound_message_limit: 2000,
+    })
+  })
+
+  it('rechaza teléfonos locales antes de crear o actualizar el negocio', async () => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding')
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+
+    const creation = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Nueva', whatsapp_number: '0999000001', monthly_rate: '30',
+        client_email: 'owner@example.com', client_password: 'safe-password',
+        ycloud_api_key: 'secret',
+      },
+    })
+    const update = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_number: '0999000001' },
+    })
+
+    expect(creation.status).toBe(400)
+    expect(update.status).toBe(400)
+    expect(creation.body.error).toContain('E.164')
+    expect(update.body.error).toContain('E.164')
+    expect(createOnboarding).not.toHaveBeenCalled()
+    expect(updateBusiness).not.toHaveBeenCalled()
+  })
+
+  it('explica que el número de WhatsApp ya es de otro negocio en vez de fallar en genérico', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Negocio ya configurado: la ruta valida el estado final, no solo el formulario
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      name: 'Hostal',
+      whatsapp_provider: 'ycloud',
+      ycloud_api_key: 'clave-ycloud',
+      ycloud_webhook_secret: 'secreto-webhook',
+      ycloud_webhook_endpoint_id: '6a41a4f44de0392666e757f4',
+    })
+    vi.spyOn(db, 'updateBusiness').mockResolvedValue({
+      error: {
+        message: 'duplicate key value violates unique constraint "businesses_whatsapp_number_key"',
+      },
+    })
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_number: '+593991716574' },
+    })
+
+    // El número identifica al negocio dentro del bot: la base lo bloquea y el
+    // panel debe decir POR QUÉ, no un "no se pudo actualizar" a ciegas
+    expect(response.status).toBe(409)
+    expect(response.body.error).toContain('ya está asignado a otro negocio')
+    expect(response.body.error).not.toContain('duplicate key')
   })
 
   it('no ejecuta escrituras compensatorias si la RPC atómica rechaza el onboarding', async () => {
@@ -129,7 +236,7 @@ describe('clientes y onboarding del superadmin', () => {
       auth: authorization(),
       body: {
         name: 'Nueva',
-        whatsapp_number: '+593999',
+        whatsapp_number: '+593999000001',
         monthly_rate: '30',
         client_email: 'owner@example.com',
         client_password: 'safe-password',
@@ -150,7 +257,7 @@ describe('clientes y onboarding del superadmin', () => {
     const response = await dispatch('post', '/api/admin/clients', {
       auth: authorization(),
       body: {
-        name: 'Nueva', whatsapp_number: '+593999',
+        name: 'Nueva', whatsapp_number: '+593999000001',
         client_email: 'owner@example.com',
       },
     })
@@ -169,7 +276,7 @@ describe('clientes y onboarding del superadmin', () => {
       auth: authorization(),
       body: {
         name: 'Nueva',
-        whatsapp_number: '+593999',
+        whatsapp_number: '+593999000001',
         client_email: 'owner@example.com',
         client_password: 'corta',
       },
@@ -199,41 +306,74 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response.status).toBe(201)
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({ whatsapp_provider: 'telegram', telegram_bot_token: 'bot-token' }),
-      'owner@example.com', expect.any(String), 20,
+      'owner@example.com', expect.any(String), 25,
     )
+  })
+
+  it('reaplica deliberadamente los valores vigentes sin tocar cobros históricos', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      plan: 'basic',
+      monthly_rate: 49,
+      monthly_contact_limit: 50,
+      monthly_outbound_message_limit: 250,
+      whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001',
+      ycloud_api_key: 'stored-secret',
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling').mockResolvedValue({
+      error: null,
+    })
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(),
+      params: { id: 'business-a' },
+      body: { plan: 'basic', apply_plan_defaults: true },
+    })
+
+    expect(response).toEqual({ status: 200, body: { ok: true } })
+    expect(updateBusiness).not.toHaveBeenCalled()
+    expect(updatePlan).toHaveBeenCalledWith('business-a', 'basic', 50, 200, 1000)
   })
 
   it('solo envía campos permitidos y no confirma una facturación rechazada', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', plan: 'micro', whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001', ycloud_api_key: 'stored-secret',
+    })
     const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
-    vi.spyOn(db, 'countBilling').mockResolvedValue(1)
-    vi.spyOn(db, 'updatePendingBilling').mockResolvedValue({
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling').mockResolvedValue({
       error: { message: 'fallo de base' },
     })
 
     const response = await dispatch('put', '/api/admin/clients/:id', {
       auth: authorization(), params: { id: 'business-a' },
       body: {
-        name: 'Actualizado', monthly_rate: '25', id: 'business-b',
+        name: 'Actualizado', plan: 'pro', monthly_rate: '25', id: 'business-b',
         client_password: 'never-in-business', unknown: 'discard',
       },
     })
 
-    expect(updateBusiness).toHaveBeenCalledWith('business-a', {
-      name: 'Actualizado', monthly_rate: 25,
-    })
+    expect(updateBusiness).toHaveBeenCalledWith('business-a', { name: 'Actualizado' })
+    expect(updatePlan).toHaveBeenCalledWith('business-a', 'pro', 99, 400, 2000)
     expect(response).toEqual({
       status: 500, body: { error: 'No se pudo actualizar el cliente' },
     })
   })
 
   it('explica por qué no puede apagar hospedaje con inventario comprometido', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001', ycloud_api_key: 'stored-secret',
+    })
     vi.spyOn(db, 'updateBusiness').mockResolvedValue({
       error: {
         message: 'No se puede deshabilitar hospedaje con solicitudes o estadías activas',
       },
     })
-    const countBilling = vi.spyOn(db, 'countBilling')
+    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling')
 
     const response = await dispatch('put', '/api/admin/clients/:id', {
       auth: authorization(), params: { id: 'business-a' },
@@ -246,7 +386,62 @@ describe('clientes y onboarding del superadmin', () => {
         error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
       },
     })
-    expect(countBilling).not.toHaveBeenCalled()
+    expect(updatePlan).not.toHaveBeenCalled()
+  })
+
+  it('rechaza proveedores no permitidos antes de consultar o modificar el negocio', async () => {
+    const getBusiness = vi.spyOn(db, 'getBusinessById')
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_provider: 'legacy-provider' },
+    })
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: 'Proveedor de mensajería no válido' },
+    })
+    expect(getBusiness).not.toHaveBeenCalled()
+    expect(updateBusiness).not.toHaveBeenCalled()
+  })
+
+  it('valida un cambio de proveedor con los secretos guardados y el payload nuevo', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001', ycloud_api_key: 'ycloud-stored',
+      meta_token: 'meta-stored', meta_phone_id: 'phone-old',
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_provider: 'meta', meta_phone_id: 'phone-new' },
+    })
+
+    expect(response).toEqual({ status: 200, body: { ok: true } })
+    expect(updateBusiness).toHaveBeenCalledWith('business-a', {
+      whatsapp_provider: 'meta', meta_phone_id: 'phone-new',
+    })
+    expect(JSON.stringify(response.body)).not.toContain('meta-stored')
+  })
+
+  it('no cambia a Meta cuando la configuración efectiva no tiene token', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001', ycloud_api_key: 'ycloud-stored',
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { whatsapp_provider: 'meta', meta_phone_id: 'phone-new' },
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error).toContain('Meta requiere Token y Phone ID')
+    expect(updateBusiness).not.toHaveBeenCalled()
+    expect(JSON.stringify(response.body)).not.toContain('ycloud-stored')
   })
 
   it.each([

@@ -13,6 +13,7 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@botpanel/ui/components/dropdown-menu'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
+import { planLabel } from './plans'
 
 export default function Clients() {
   const qc = useQueryClient()
@@ -48,16 +49,6 @@ export default function Clients() {
     if (c.bot_active) return <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400">Activo</Badge>
     return <Badge variant="secondary">Pausado</Badge>
   }
-  // Vencimiento con pills de días (igual que el viejo; T12:00:00 evita desfase de zona)
-  function expLabel(c: BusinessRow) {
-    if (!c.plan_expires_at) return <span className="text-muted-foreground/70 text-xs">—</span>
-    const exp = new Date(c.plan_expires_at.split('T')[0] + 'T12:00:00')
-    const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000)
-    if (daysLeft < 0) return <Badge variant="secondary" className="bg-destructive/10 text-destructive">Vencido</Badge>
-    if (daysLeft <= 10) return <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 tabular-nums" title={exp.toLocaleDateString('es')}>{daysLeft}d</Badge>
-    return <span className="text-xs text-muted-foreground">{exp.toLocaleDateString('es')}</span>
-  }
-
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -78,20 +69,19 @@ export default function Clients() {
         <QueryError onRetry={() => { void refetch() }} />
       ) : (
         <Card className="flex-1 w-full gap-0 overflow-hidden py-0">
-          <Table className="min-w-[1040px]">
+          <Table className="min-w-[920px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Negocio</TableHead>
                 <TableHead>WhatsApp</TableHead>
                 <TableHead>Plan</TableHead>
-                <TableHead>Vencimiento</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Bot</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {!filtered.length && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">No hay clientes aún</TableCell></TableRow>}
+              {!filtered.length && <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No hay clientes aún</TableCell></TableRow>}
               {filtered.map(c => (
                 <TableRow key={c.id}>
                   <TableCell>
@@ -99,8 +89,7 @@ export default function Clients() {
                     <div className="text-xs text-muted-foreground">{c.type || '—'}</div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-foreground/80">{c.whatsapp_number || '—'}</TableCell>
-                  <TableCell><Badge variant="secondary" className="capitalize">{c.plan || 'basic'}</Badge></TableCell>
-                  <TableCell>{expLabel(c)}</TableCell>
+                  <TableCell><Badge variant="secondary">{planLabel(c.plan)}</Badge></TableCell>
                   <TableCell>{statusPill(c)}</TableCell>
                   <TableCell>{botPill(c)}</TableCell>
                   <TableCell className="w-[1%]">

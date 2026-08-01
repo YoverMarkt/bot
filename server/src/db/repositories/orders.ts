@@ -29,6 +29,22 @@ const getOrders = async (businessId: string, limit = 100) => {
   return (data || []) as OrderData[]
 }
 
+// Último pedido de UN contacto dentro de SU negocio. Alimenta "repetir pedido":
+// se leen los ítems para rearmar el carrito, pero los precios NO se reutilizan
+// (se recalculan con el catálogo vigente en bot-menu-flow).
+const getLastOrderForContact = async (businessId: string, contactPhone: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .select('*, order_items(*)')
+    .eq('business_id', businessId)
+    .eq('contact_phone', contactPhone)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data || null) as OrderData | null
+}
+
 const updateOrder = async (
   businessId: string,
   id: string,
@@ -54,4 +70,10 @@ const setOrderStatus = async (businessId: string, id: string, status: string) =>
   },
 )
 
-export = { createOrder, getOrders, updateOrder, setOrderStatus }
+export = {
+  createOrder,
+  getOrders,
+  getLastOrderForContact,
+  updateOrder,
+  setOrderStatus,
+}

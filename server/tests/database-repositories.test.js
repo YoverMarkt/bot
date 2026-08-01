@@ -12,6 +12,10 @@ const businessesSource = readFileSync(
   `${serverDir}/src/db/repositories/businesses.ts`,
   'utf8',
 )
+const channelsSource = readFileSync(
+  `${serverDir}/src/types/channels.ts`,
+  'utf8',
+)
 const usersSource = readFileSync(
   `${serverDir}/src/db/repositories/client-users.ts`,
   'utf8',
@@ -73,6 +77,7 @@ describe('migración de la capa de datos', () => {
     for (const method of [
       'getBusinessById',
       'getBusinessBySlug',
+      'getBusinessByChannel',
       'getBusinessByPhone',
       'getAllBusinesses',
       'createBusiness',
@@ -80,8 +85,8 @@ describe('migración de la capa de datos', () => {
       'updateBusiness',
       'suspendBusiness',
       'reactivateBusiness',
+      'updateBusinessPlanBilling',
       'deleteBusiness',
-      'getExpiredBusinesses',
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
@@ -98,7 +103,31 @@ describe('migración de la capa de datos', () => {
   it('conserva el aislamiento y la eliminación transaccional del agregado', () => {
     expect(businessesSource).toContain(".eq('id', id)")
     expect(businessesSource).toContain("db.from('businesses').delete().eq('id', id)")
+    expect(businessesSource).toContain("db.rpc('reactivate_business_with_billing'")
+    expect(businessesSource).toContain("db.rpc('update_business_plan_billing'")
+    expect(businessesSource).not.toContain('plan_expires_at')
     expect(businessesSource).not.toContain("p_business ->> 'business_id'")
+  })
+
+  it('resuelve canales por proveedor e identificador completo sin sufijos', () => {
+    const compatibilityResolver = businessesSource.slice(
+      businessesSource.indexOf('const getBusinessByPhone'),
+      businessesSource.indexOf('const businessListFields'),
+    )
+    expect(businessesSource).toContain("from('business_channel_identifiers')")
+    expect(businessesSource).toContain(".select('business_id,businesses(*)')")
+    expect(businessesSource).toContain(".eq('provider', address.provider)")
+    expect(businessesSource).toContain(
+      ".eq('identifier_type', address.identifierType)",
+    )
+    expect(businessesSource).toContain(
+      ".eq('canonical_identifier', canonical)",
+    )
+    expect(compatibilityResolver).not.toContain("from('businesses')")
+    expect(businessesSource).not.toContain('No se pudo cargar el negocio del canal')
+    expect(businessesSource).not.toMatch(/slice\(\s*-9\s*\)/)
+    expect(channelsSource).toContain('/^[1-9][0-9]{7,14}$/')
+    expect(channelsSource).toContain('nunca infiere país ni compara sufijos')
   })
 
   it('mantiene usuarios, políticas y facturación en repositorios tipados', () => {
@@ -114,12 +143,8 @@ describe('migración de la capa de datos', () => {
       'getPolicies',
       'upsertPolicies',
       'getBilling',
-      'createBilling',
-      'createBillingBatch',
+      'ensureCurrentMonthBilling',
       'updateBillingStatus',
-      'countBilling',
-      'updatePendingBilling',
-      'generateYearBilling',
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
@@ -134,20 +159,14 @@ describe('migración de la capa de datos', () => {
     expect(usersSource).toContain(".eq('role', 'employee')")
     expect(policiesSource).toContain(".eq('business_id', businessId)")
     expect(policiesSource).toContain('business_id: businessId')
-    expect(billingSource).toContain(".eq('business_id', businessId)")
+    expect(billingSource).toContain("db.rpc('ensure_current_month_billing')")
   })
 
-  it('conserva el contrato de las 12 cuotas anuales', () => {
-    const rows = db.generateYearBilling('business-a', 24.5)
-
-    expect(rows).toHaveLength(12)
-    expect(rows.every(row => (
-      row.business_id === 'business-a'
-      && row.amount === 24.5
-      && row.status === 'pending'
-      && /^\d{4}-\d{2}-\d{2}$/.test(row.period_start)
-      && /^\d{4}-\d{2}-\d{2}$/.test(row.period_end)
-    ))).toBe(true)
+  it('delega la cuota corriente a la RPC protegida de Ecuador', () => {
+    expect(billingSource).toContain("db.rpc('ensure_current_month_billing')")
+    expect(billingSource).not.toContain('generateYearBilling')
+    expect(billingSource).not.toContain('createBillingBatch')
+    expect(billingSource).not.toContain('updatePendingBilling')
   })
 
   it('migra catálogo y RAG sin perder el contrato público', () => {
@@ -301,12 +320,24 @@ describe('migración de la capa de datos', () => {
   })
 
   it('cierra estadísticas y webhooks en repositorios TypeScript', () => {
-    for (const method of ['getAdminStats', 'getClientStats', 'claimWebhookEvent']) {
+    for (const method of [
+      'getAdminStats',
+      'getClientStats',
+      'claimWebhookEvent',
+      'enqueueWebhookEvent',
+      'leaseWebhookEvents',
+      'renewWebhookEventLease',
+      'completeWebhookEvent',
+      'failWebhookEvent',
+      'cleanupWebhookEvents',
+    ]) {
       expect(db[method]).toBeTypeOf('function')
     }
     expect(statsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
       .toBeGreaterThanOrEqual(4)
     expect(webhookEventsSource).toContain("createHash('sha256')")
-    expect(webhookEventsSource).toContain("db.rpc('claim_webhook_event'")
+    expect(webhookEventsSource).toContain("'claim_webhook_event'")
+    expect(webhookEventsSource).toContain("'enqueue_webhook_event'")
+    expect(webhookEventsSource).toContain("'lease_webhook_events'")
   })
 })

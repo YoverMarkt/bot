@@ -23,7 +23,7 @@ const money0 = (v: number) => '$' + v.toLocaleString('en-US', { maximumFractionD
 const card = 'p-5 gap-0'
 
 export default function Calculator() {
-  const [f, setF] = useState({ clients: '1000', msgs: '8', photo: '20', audio: '15', wa: '0.01', buffer: '20', fixed: '11', mult: '3', price: '' })
+  const [f, setF] = useState({ clients: '1000', msgs: '8', photo: '20', audio: '15', wa: '0.02', buffer: '0', fixed: '11', mult: '3', price: '' })
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
   const num = (k: keyof typeof f) => Number(f[k]) || 0
 
@@ -96,8 +96,8 @@ export default function Calculator() {
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground/70 mt-3">
-            El colchón te cubre si el cliente conversa más de lo estimado. Gracias a la regla de eficiencia
-            (una sola respuesta completa por turno) no se paga de más.
+            El valor inicial de Meta usa el escenario conservador de $0,02 por mensaje saliente para octubre.
+            Actualízalo cuando Meta publique la tarifa definitiva; el colchón permite simular un costo todavía mayor.
           </p>
         </Card>
 

@@ -120,6 +120,29 @@ describe('computeOrder (totales EN CÓDIGO)', () => {
   })
 })
 
+describe('modificador de línea (sabor de pizza) — precio por el tamaño', () => {
+  const SIZES = [{ id: 's1', name: 'Pizza Familiar', price: '10.50', price_sale: null }]
+
+  it('pliega el sabor en el nombre y cobra el precio del tamaño', () => {
+    const { resolved, unresolved } = m.resolveItems(
+      [{ name: 'Pizza Familiar', qty: 2, note: 'Hawaiana' }],
+      SIZES,
+    )
+    expect(unresolved).toEqual([])
+    const order = m.computeOrder(resolved)
+    expect(order.items[0].product_name).toBe('Pizza Familiar — Hawaiana')
+    expect(order.items[0].product_id).toBe('s1')
+    expect(order.items[0].unit_price).toBe(10.50) // el precio SALE del tamaño
+    expect(order.items[0].line_total).toBe(21.00)
+    expect(m.buildSummary(order)).toContain('Pizza Familiar — Hawaiana')
+  })
+
+  it('sin modificador, el nombre queda igual', () => {
+    const { resolved } = m.resolveItems([{ name: 'Pizza Familiar', qty: 1 }], SIZES)
+    expect(m.computeOrder(resolved).items[0].product_name).toBe('Pizza Familiar')
+  })
+})
+
 describe('buildSummary (resumen oficial — lo envía el SERVIDOR, no la IA)', () => {
   const order = {
     items: [

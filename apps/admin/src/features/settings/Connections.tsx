@@ -10,11 +10,8 @@ import { Card } from '@botpanel/ui/components/card'
 const card = 'p-5 mb-5 gap-0'
 
 const WH_PROVIDERS = [
-  { name: 'YCloud',        path: '/webhook/ycloud',         desc: 'YCloud → Webhooks → Add Endpoint', secret: true },
-  { name: 'Kapso',         path: '/webhook/kapso',          desc: 'Kapso → Configuración → Webhook URL', secret: true },
+  { name: 'YCloud',        path: '/webhook/ycloud',         desc: 'YCloud → Webhooks → Add Endpoint' },
   { name: 'Meta',          path: '/webhook',                desc: 'Meta → App → WhatsApp → Webhook URL' },
-  { name: 'Retell LLM',    path: '/api/retell/llm',         desc: 'Retell → Agent → Custom LLM URL' },
-  { name: 'Retell Events', path: '/api/retell/call-events', desc: 'Retell → Agent → Call Events URL' },
 ]
 
 export default function Connections() {
@@ -56,7 +53,7 @@ export default function Connections() {
           <div className="mt-3 space-y-2">
             <div className="text-xs uppercase tracking-wide text-muted-foreground">URLs de webhooks (copiar y pegar en cada proveedor)</div>
             {WH_PROVIDERS.map(p => {
-              const url = base + p.path + (p.secret && tunnel?.webhookSecret ? `?secret=${tunnel.webhookSecret}` : '')
+              const url = base + p.path
               return (
                 <div key={p.name} className="flex items-center gap-2 text-xs">
                   <span className="shrink-0 w-24 text-center rounded bg-muted border border-input text-foreground/80 px-2 py-1">{p.name}</span>
@@ -68,6 +65,9 @@ export default function Connections() {
             })}
           </div>
         )}
+        <p className="text-[11px] text-muted-foreground/70 mt-3">
+          YCloud firma cada solicitud con <code>YCloud-Signature</code>. Guarda el Endpoint ID y el signing secret del endpoint en el negocio correspondiente.
+        </p>
         <p className="text-[11px] text-muted-foreground/70 mt-3">En producción con BASE_URL configurada, la URL es fija y el túnel no se usa.</p>
       </Card>
     </div>

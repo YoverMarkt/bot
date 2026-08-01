@@ -48,6 +48,11 @@ const db = require('../db') as {
     from?: string | null,
     to?: string | null,
   ): Promise<DataRecord[]>
+  getConfirmedLodgingStays(
+    businessId: string,
+    from?: string | null,
+    to?: string | null,
+  ): Promise<DataRecord[]>
   expireLodgingHolds(businessId: string): Promise<DatabaseResult>
   getLodgingRequestById(
     businessId: string,
@@ -197,6 +202,22 @@ function dateField(value: unknown, name: string): string {
     throw new InvalidLodgingInput(`${name} es inválida`)
   }
   return clean
+}
+
+// America/Guayaquil usa UTC-05:00 todo el año. confirmed_at se almacena como
+// timestamptz, por lo que un día de calendario ecuatoriano va de las 05:00Z
+// hasta un milisegundo antes de las 05:00Z del día siguiente.
+const ECUADOR_UTC_OFFSET_MS = 5 * 60 * 60 * 1000
+const ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+function ecuadorDayStartUtc(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00.000Z`) + ECUADOR_UTC_OFFSET_MS).toISOString()
+}
+
+function ecuadorDayEndUtc(date: string): string {
+  return new Date(
+    Date.parse(`${date}T00:00:00.000Z`) + ECUADOR_UTC_OFFSET_MS + ONE_DAY_MS - 1,
+  ).toISOString()
 }
 
 function timeField(value: unknown, name: string): string {
@@ -618,6 +639,72 @@ router.get('/api/client/lodging/requests', ...guards, async (req, res) => {
     typeof req.query.from === 'string' ? req.query.from : null,
     typeof req.query.to === 'string' ? req.query.to : null,
   ))
+})
+
+// Reporte de ingresos por estadías CONFIRMADAS (separado de las ventas de
+// productos). Los montos ya los calculó la RPC al cotizar; aquí solo se suman.
+router.get('/api/client/lodging/revenue', ...guards, async (req, res) => {
+  try {
+    const businessId = getClientBusinessId(req)
+    const from = req.query.from !== undefined ? dateField(req.query.from, 'Desde') : null
+    const to = req.query.to !== undefined ? dateField(req.query.to, 'Hasta') : null
+    if (from && to && to < from) {
+      throw new InvalidLodgingInput('El rango de fechas es inválido')
+    }
+    const settings = normalizedSettings(await db.getLodgingSettings(businessId))
+    const currency = typeof settings.currency === 'string' ? settings.currency : 'USD'
+    // Se filtra por confirmed_at usando días completos de Ecuador, no UTC.
+    const stays = await db.getConfirmedLodgingStays(
+      businessId,
+      from ? ecuadorDayStartUtc(from) : null,
+      to ? ecuadorDayEndUtc(to) : null,
+    )
+
+    const byRoom = new Map<string, { roomTypeName: string; stays: number; nights: number; revenue: number }>()
+    let totalRevenue = 0
+    let totalNights = 0
+    const items = stays.map((stay) => {
+      const total = Number(stay.total) || 0
+      const nights = Number(stay.nights) || 0
+      totalRevenue += total
+      totalNights += nights
+      const name = typeof stay.room_type_name === 'string' && stay.room_type_name.trim()
+        ? stay.room_type_name
+        : 'Sin tipo'
+      const bucket = byRoom.get(name) || { roomTypeName: name, stays: 0, nights: 0, revenue: 0 }
+      bucket.stays += 1
+      bucket.nights += nights
+      bucket.revenue += total
+      byRoom.set(name, bucket)
+      return {
+        id: stay.id,
+        roomTypeName: name,
+        contactName: stay.contact_name ?? null,
+        contactPhone: stay.contact_phone ?? null,
+        checkIn: stay.check_in,
+        checkOut: stay.check_out,
+        adults: Number(stay.adults) || 0,
+        children: Number(stay.children) || 0,
+        nights,
+        total,
+        confirmedAt: stay.confirmed_at ?? stay.created_at ?? null,
+      }
+    })
+
+    res.json({
+      currency,
+      from,
+      to,
+      totalRevenue,
+      stays: items.length,
+      nights: totalNights,
+      averagePerStay: items.length ? totalRevenue / items.length : 0,
+      byRoomType: [...byRoom.values()].sort((a, b) => b.revenue - a.revenue),
+      items,
+    })
+  } catch (error) {
+    safeFailure(res, 'consultar ingresos de hospedaje', error)
+  }
 })
 
 router.put('/api/client/lodging/requests/:id/status', ...guards, async (req, res) => {

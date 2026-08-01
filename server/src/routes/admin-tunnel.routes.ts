@@ -20,18 +20,15 @@ const auth = require('../middleware/auth') as {
 const router = createRouter()
 
 router.get('/api/admin/tunnel', auth.authAdmin, (_req, res) => {
-  // Este secreto solo se entrega al superadmin para configurar la URL del webhook.
-  const webhookSecret = process.env.WEBHOOK_SECRET || ''
   if (process.env.BASE_URL) {
     return res.json({
       url: process.env.BASE_URL,
       active: true,
       provider: 'dominio propio',
       startedAt: null,
-      webhookSecret,
     })
   }
-  res.json({ ...tunnel.getState(), webhookSecret })
+  res.json(tunnel.getState())
 })
 
 router.post('/api/admin/tunnel/start', auth.authAdmin, async (_req, res) => {

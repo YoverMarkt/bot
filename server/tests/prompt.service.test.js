@@ -32,7 +32,6 @@ describe('constructor tipado del prompt', () => {
       business,
       [product],
       { shipping: 'Envío local', returns: 'Siete días', discounts: 'Ninguno' },
-      false,
       'producto a',
     )
 
@@ -59,13 +58,13 @@ describe('constructor tipado del prompt', () => {
       '2026-07-20': { label: 'Lunes 20', slots: ['09:00', '10:00'] },
     }
     const enabled = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, false, 'reservar', slots,
+      { ...business, takes_bookings: true }, [product], {}, 'reservar', slots,
     )
     const disabled = promptService.buildPrompt(
-      { ...business, takes_bookings: false }, [product], {}, false, 'reservar', slots,
+      { ...business, takes_bookings: false }, [product], {}, 'reservar', slots,
     )
     const withoutSlots = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, false, 'reservar', null,
+      { ...business, takes_bookings: true }, [product], {}, 'reservar', null,
     )
 
     expect(enabled).toContain('Lunes 20 (2026-07-20): 09:00, 10:00')
@@ -123,6 +122,17 @@ describe('constructor tipado del prompt', () => {
     })
     expect(lodgingPrompt).toContain(`HOY es ${hoyEcuador}`)
     expect(lodgingPrompt).toContain('fechas FUTURAS a partir de hoy')
+    // El calendario real de los próximos días lo escribe el CÓDIGO: el modelo
+    // no debe calcular qué fecha es "el lunes" o "mañana"
+    const mananaEcuador = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', {
+      timeZone: 'America/Guayaquil',
+    })
+    const diaSemanaManana = new Date(Date.now() + 86_400_000).toLocaleDateString('es-EC', {
+      weekday: 'long', timeZone: 'America/Guayaquil',
+    })
+    expect(lodgingPrompt).toContain('CALENDARIO REAL de los próximos días')
+    expect(lodgingPrompt).toContain(`${diaSemanaManana}=${mananaEcuador}`)
+    expect(lodgingPrompt).toContain('NUNCA la calcules tú')
     expect(lodgingPrompt).toContain(
       '##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO##',
     )
@@ -144,8 +154,7 @@ describe('constructor tipado del prompt', () => {
     )
   })
 
-  it('adapta voz, fuera de horario y postventa sin filtrar enlaces', () => {
-    const voicePrompt = promptService.buildPrompt(business, [product], {}, true)
+  it('adapta fuera de horario y postventa sin filtrar enlaces', () => {
     const closedSchedule = Array.from({ length: 7 }, (_, day) => ({
       day_of_week: day,
       open_time: '00:00:00',
@@ -153,11 +162,9 @@ describe('constructor tipado del prompt', () => {
       is_active: true,
     }))
     const closedPrompt = promptService.buildPrompt(
-      business, [product], {}, false, '', null, closedSchedule, false, true,
+      business, [product], {}, '', null, closedSchedule, false, true,
     )
 
-    expect(voicePrompt).toContain('Es una llamada de voz: sin markdown ni emojis')
-    expect(voicePrompt).not.toContain('[FOTO]')
     expect(closedPrompt).toContain('FUERA del horario de atención')
     expect(closedPrompt).toContain('ACABA DE COMPLETAR una compra')
     expect(closedPrompt).not.toContain(product.image_url)
@@ -167,10 +174,10 @@ describe('constructor tipado del prompt', () => {
     const withMedia = promptService.buildPrompt(
       business,
       [{ ...product, video_url: 'https://media.example.com/a.mp4' }],
-      {}, false, 'producto a',
+      {}, 'producto a',
     )
     const withoutMedia = promptService.buildPrompt(
-      business, [{ ...product, image_url: null }], {}, false, 'producto a',
+      business, [{ ...product, image_url: null }], {}, 'producto a',
     )
 
     expect(withMedia).toContain('$12.50 — disponible [FOTO] [VIDEO]')

@@ -15,17 +15,8 @@ export type BillingRow = {
 
 export const getBilling = () => api<BillingRow[]>('/api/admin/billing')
 
-export const createBilling = (p: {
-  business_id: string
-  amount: number
-  status: string
-  period_start: string | null
-  period_end: string | null
-  notes: string | null
-}) => api<BillingRow>('/api/admin/billing', { method: 'POST', body: JSON.stringify(p) })
-
 export const markPaid = (id: string) =>
   api(`/api/admin/billing/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ status: 'paid', paid_at: new Date().toISOString() }),
+    body: JSON.stringify({ status: 'paid' }),
   })

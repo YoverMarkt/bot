@@ -9,8 +9,8 @@ BotPanel maneja credenciales de WhatsApp, keys de IA y datos de muchos negocios.
 
 ## Cuándo se activa
 - Tocar login admin/cliente, JWT, middlewares `authAdmin`/`authClient`.
-- Manejar API keys (IA, YCloud, Meta, Kapso) o la service key.
-- Webhooks (`/webhook`, `/webhook/ycloud`, `/webhook/kapso`) o endpoints sin auth.
+- Manejar API keys (IA, YCloud, Meta) o la service key.
+- Webhooks (`/webhook`, `/webhook/ycloud`) o endpoints sin auth.
 - Devolver datos al frontend o agregar un endpoint público.
 
 ## Checklist de seguridad
@@ -33,7 +33,7 @@ BotPanel maneja credenciales de WhatsApp, keys de IA y datos de muchos negocios.
 - [ ] Validar la forma del payload antes de usarlo (`body?.entry?.[0]?.changes...`).
 - [ ] Rate limiting puesto en login y webhooks (`loginLimiter`, `webhookLimiter`) — no quitarlo.
 - [ ] Meta: si `META_APP_SECRET` está configurado, se verifica la firma HMAC (`verifyMetaSignature`). No romper esa verificación.
-- [ ] YCloud/Kapso: verificación opt-in por secreto en la URL (`verifyWebhookSecret`). Si `WEBHOOK_SECRET` está definido, la URL debe llevar `?secret=<valor>`; si no, no se exige. No romper esa lógica.
+- [ ] YCloud: verificación opt-in por secreto en la URL (`verifyWebhookSecret`). Si `WEBHOOK_SECRET` está definido, la URL debe llevar `?secret=<valor>`; si no, no se exige. No romper esa lógica.
 - [ ] Escapar HTML al renderizar contenido del cliente en los paneles (usar `esc(...)`) → anti-XSS.
 
 ## Señales de alerta (vulnerabilidades comunes)

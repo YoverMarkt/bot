@@ -1,6 +1,13 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
+import {
+  getPlanDefinition,
+  normalizePlanId,
+  type PlanDefinition,
+  type PlanId,
+} from '../config/plans'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
+import { normalizeChannelIdentifier } from '../types/channels'
 
 interface DatabaseError {
   message?: string
@@ -13,10 +20,6 @@ interface DatabaseResult<T = unknown> {
 
 interface CreatedBusiness extends BusinessRecord {
   id: string
-}
-
-interface BillingRow extends Record<string, unknown> {
-  business_id: string
 }
 
 const db = require('../db') as {
@@ -34,6 +37,13 @@ const db = require('../db') as {
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
   reactivateBusiness(businessId: string): Promise<DatabaseResult>
+  updateBusinessPlanBilling(
+    businessId: string,
+    plan: string,
+    monthlyRate: number,
+    monthlyContactLimit: number,
+    monthlyOutboundMessageLimit: number,
+  ): Promise<DatabaseResult>
   createClientUser(data: Record<string, unknown>): Promise<DatabaseResult>
   updateClientUser(
     businessId: string,
@@ -41,10 +51,6 @@ const db = require('../db') as {
     passwordHash: string | null,
   ): Promise<DatabaseResult>
   upsertPolicies(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
-  generateYearBilling(businessId: string, amount: number): BillingRow[]
-  createBillingBatch(rows: BillingRow[]): Promise<DatabaseResult>
-  countBilling(businessId: string): Promise<number>
-  updatePendingBilling(businessId: string, amount: number): Promise<DatabaseResult>
   getProducts(businessId: string): Promise<unknown[]>
   getConversations(businessId: string): Promise<unknown[]>
   getPolicies(businessId: string): Promise<unknown>
@@ -58,34 +64,72 @@ const bcrypt = require('bcryptjs') as {
 
 const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12
+const ALLOWED_MESSAGING_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
+type MessagingProvider = (typeof ALLOWED_MESSAGING_PROVIDERS)[number]
+type UsageLimits = {
+  monthly_contact_limit: number
+  monthly_outbound_message_limit: number
+}
 
 function configuredText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function configuredWhatsAppProvider(
+  body: Record<string, unknown>,
+): MessagingProvider | null {
+  if (!Object.prototype.hasOwnProperty.call(body, 'whatsapp_provider')) return 'ycloud'
+  if (!configuredText(body.whatsapp_provider)) return null
+  const provider = String(body.whatsapp_provider).trim()
+  return ALLOWED_MESSAGING_PROVIDERS.find(candidate => candidate === provider) || null
+}
+
+function channelIdentifierFormatError(body: Record<string, unknown>): string | null {
+  for (const [field, label] of [
+    ['whatsapp_number', 'El número de WhatsApp'],
+    ['ycloud_number', 'El número YCloud'],
+  ] as const) {
+    if (configuredText(body[field])
+      && !normalizeChannelIdentifier('phone', String(body[field]))) {
+      return `${label} debe usar formato internacional E.164 con 8 a 15 dígitos`
+    }
+  }
+  for (const [field, label] of [
+    ['meta_phone_id', 'El Phone ID de Meta'],
+    ['ycloud_webhook_endpoint_id', 'El Endpoint ID de YCloud'],
+  ] as const) {
+    if (configuredText(body[field])
+      && !normalizeChannelIdentifier('account_id', String(body[field]))) {
+      return `${label} es inválido`
+    }
+  }
+  return null
+}
+
 function channelConfigurationError(body: Record<string, unknown>): string | null {
-  const provider = configuredText(body.whatsapp_provider)
-    ? String(body.whatsapp_provider)
-    : 'ycloud'
+  const formatError = channelIdentifierFormatError(body)
+  if (formatError) return formatError
+  const provider = configuredWhatsAppProvider(body)
+  if (!provider) return 'Proveedor de mensajería no válido'
   if (provider === 'ycloud' && !configuredText(body.ycloud_api_key)
     && !configuredText(process.env.YCLOUD_API_KEY)) {
-    return 'Configura una API Key de YCloud antes de crear el negocio'
+    return 'Configura una API Key de YCloud antes de guardar el negocio'
+  }
+  if (provider === 'ycloud' && !configuredText(body.ycloud_webhook_secret)
+    && !configuredText(process.env.YCLOUD_WEBHOOK_SECRET)) {
+    return 'YCloud requiere el Signing Secret del webhook antes de guardar el negocio'
+  }
+  if (provider === 'ycloud' && !configuredText(body.ycloud_webhook_endpoint_id)
+    && !configuredText(process.env.YCLOUD_WEBHOOK_ENDPOINT_ID)) {
+    return 'YCloud requiere el Endpoint ID del webhook antes de guardar el negocio'
   }
   if (provider === 'meta'
     && (!configuredText(body.meta_token) || !configuredText(body.meta_phone_id))) {
-    return 'Meta requiere Token y Phone ID antes de crear el negocio'
-  }
-  if (provider === 'kapso'
-    && ((!configuredText(body.kapso_api_key) && !configuredText(process.env.KAPSO_API_KEY))
-      || !configuredText(body.kapso_number_id))) {
-    return 'Kapso requiere API Key y Number ID antes de crear el negocio'
+    return 'Meta requiere Token y Phone ID antes de guardar el negocio'
   }
   if (provider === 'telegram' && !configuredText(body.telegram_bot_token)
     && !configuredText(process.env.TELEGRAM_BOT_TOKEN)) {
-    return 'Telegram requiere un Bot Token antes de crear el negocio'
-  }
-  if (!['ycloud', 'meta', 'kapso', 'telegram'].includes(provider)) {
-    return 'Proveedor de WhatsApp no válido'
+    return 'Telegram requiere un Bot Token antes de guardar el negocio'
   }
   return null
 }
@@ -93,12 +137,16 @@ function channelConfigurationError(body: Record<string, unknown>): string | null
 const ALLOWED_BUSINESS_FIELDS = [
   'name', 'type', 'description', 'hours', 'address', 'phone', 'social',
   'payment_methods', 'whatsapp_number', 'whatsapp_provider', 'plan',
-  'plan_expires_at', 'active', 'bot_active', 'suspended', 'notes', 'slogan',
-  'monthly_rate', 'owner_phone', 'ycloud_api_key', 'ycloud_number',
-  'kapso_api_key', 'kapso_number_id', 'kapso_verify_token', 'meta_token',
-  'meta_phone_id', 'meta_verify_token', 'telegram_bot_token', 'retell_agent_id',
+  'active', 'bot_active', 'suspended', 'notes', 'slogan',
+  'owner_phone', 'ycloud_api_key', 'ycloud_number',
+  'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
+  'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
+  'chat_mode',
 ] as const
+
+// Solo estos dos modos existen; cualquier otro valor lo rechaza la base.
+const CHAT_MODES = ['menu', 'ai'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -115,9 +163,44 @@ function safeFailure(res: Response, context: string, error: unknown) {
   return res.status(500).json({ error: `No se pudo ${context}` })
 }
 
+// El modo se valida aquí además de en la base: así el panel recibe un mensaje
+// claro en vez de un error de restricción de Postgres.
+function invalidChatMode(body: Record<string, unknown>): boolean {
+  if (!('chat_mode' in body)) return false
+  const value = body.chat_mode
+  return !CHAT_MODES.some(mode => mode === value)
+}
+
+function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
+  return {
+    monthly_contact_limit: plan.monthlyContactLimit,
+    monthly_outbound_message_limit: plan.monthlyOutboundMessageLimit,
+  }
+}
+
+function requestedPlan(body: Record<string, unknown>, fallback: PlanId): PlanDefinition | null {
+  return getPlanDefinition('plan' in body ? body.plan : fallback)
+}
+
 function isActiveLodgingConstraint(error: unknown): boolean {
   return error instanceof Error
     && error.message.includes('No se puede deshabilitar hospedaje')
+}
+
+// Dos negocios NUNCA pueden compartir el mismo identificador de canal: el bot
+// resuelve a qué negocio pertenece cada mensaje por el número de WhatsApp o el
+// slug de Telegram. La base lo bloquea; aquí se traduce a un mensaje entendible
+// en vez del genérico "no se pudo actualizar".
+function duplicateChannelMessage(error: unknown): string | null {
+  if (!(error instanceof Error)) return null
+  if (!/duplicate key|llave duplicada/i.test(error.message)) return null
+  if (/whatsapp_number|business_channel_phone|business_channel_identifier/i.test(error.message)) {
+    return 'Ese número de WhatsApp ya está asignado a otro negocio. Cada negocio necesita su propio número: quítalo del otro negocio antes de asignarlo aquí.'
+  }
+  if (/businesses_slug_key|\bslug\b/i.test(error.message)) {
+    return 'Ese identificador (slug) ya lo usa otro negocio. Elige uno distinto.'
+  }
+  return 'Ese dato ya está registrado en otro negocio y debe ser único.'
 }
 
 router.get('/api/admin/stats', auth.authAdmin, async (_req, res) => {
@@ -167,10 +250,18 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   }
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
-  const parsedMonthlyRate = Number.parseFloat(String(body.monthly_rate || ''))
-  if (!(parsedMonthlyRate > 0)) {
-    return res.status(400).json({ error: 'La tarifa mensual debe ser mayor que cero' })
+  if (invalidChatMode(body)) {
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
   }
+  const whatsappProvider = configuredWhatsAppProvider(body)
+  if (!whatsappProvider) {
+    return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
+  }
+  const planDefinition = requestedPlan(body, 'micro')
+  if (!planDefinition) {
+    return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
+  }
+  const usageLimits = usageLimitsForPlan(planDefinition)
 
   try {
     const slug = `${name
@@ -182,31 +273,31 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       name,
       type: body.type || 'negocio',
       whatsapp_number: whatsappNumber,
-      whatsapp_provider: body.whatsapp_provider || 'ycloud',
-      kapso_api_key: body.kapso_api_key,
-      kapso_number_id: body.kapso_number_id,
-      kapso_verify_token: body.kapso_verify_token,
+      whatsapp_provider: whatsappProvider,
       ycloud_api_key: body.ycloud_api_key,
       ycloud_number: body.ycloud_number,
+      ycloud_webhook_endpoint_id: body.ycloud_webhook_endpoint_id,
+      ycloud_webhook_secret: body.ycloud_webhook_secret,
       meta_token: body.meta_token,
       meta_phone_id: body.meta_phone_id,
-      meta_verify_token: body.meta_verify_token,
       telegram_bot_token: body.telegram_bot_token || null,
-      retell_agent_id: body.retell_agent_id || null,
       takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
       lodging_enabled: body.lodging_enabled === true,
+      chat_mode: body.chat_mode === 'menu' ? 'menu' : 'ai',
       ai_provider: body.ai_provider || null,
       owner_phone: body.owner_phone || null,
-      plan: body.plan || 'basic',
-      plan_expires_at: body.plan_expires_at || null,
+      plan: planDefinition.id,
       active: true,
       bot_active: true,
       suspended: false,
       notes: body.notes,
+      monthly_contact_limit: usageLimits.monthly_contact_limit,
+      monthly_outbound_message_limit:
+        usageLimits.monthly_outbound_message_limit,
     }
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
-    const monthlyRate = parsedMonthlyRate
+    const monthlyRate = planDefinition.monthlyRate
     const result = await db.createBusinessOnboarding(
       businessPayload,
       clientEmail,
@@ -216,17 +307,32 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     assertDatabaseResult(result, 'crear onboarding')
     const business = result.data
     if (!business) throw new Error('crear onboarding: respuesta vacía')
-    if (monthlyRate) {
-      console.log(`💳 12 meses generados para ${name} — $${monthlyRate}/mes`)
-    }
+    Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
+    console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
     res.status(201).json(sanitizeBusinessForAdmin(business))
   } catch (error) {
+    const duplicated = duplicateChannelMessage(error)
+    if (duplicated) {
+      console.error('❌ crear el cliente:', errorMessage(error))
+      return res.status(409).json({ error: duplicated })
+    }
     safeFailure(res, 'crear el cliente', error)
   }
 })
 
 router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   const body = req.body as Record<string, unknown>
+  const identifierError = channelIdentifierFormatError(body)
+  if (identifierError) return res.status(400).json({ error: identifierError })
+  if ('whatsapp_provider' in body && !configuredWhatsAppProvider(body)) {
+    return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
+  }
+  if (invalidChatMode(body)) {
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+  }
+  if ('plan' in body && !normalizePlanId(body.plan)) {
+    return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
+  }
   if (typeof body.client_password === 'string' && body.client_password
     && body.client_password.length < MIN_PASSWORD_LENGTH) {
     return res.status(400).json({
@@ -237,30 +343,61 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   for (const field of ALLOWED_BUSINESS_FIELDS) {
     if (field in body) businessData[field] = body[field]
   }
-  if ('monthly_rate' in businessData) {
-    businessData.monthly_rate = Number.parseFloat(String(businessData.monthly_rate)) || null
+  if ('whatsapp_provider' in businessData) {
+    businessData.whatsapp_provider = configuredWhatsAppProvider(body)
   }
 
   try {
+    const existingBusiness = await db.getBusinessById(req.params.id)
+    if (!existingBusiness) return res.status(404).json({ error: 'No encontrado' })
+
+    const currentPlanId = normalizePlanId(existingBusiness.plan)
+    const nextPlan = 'plan' in body
+      ? getPlanDefinition(body.plan)
+      : null
+    const planChanged = Boolean(nextPlan && (
+      nextPlan.id !== currentPlanId || body.apply_plan_defaults === true
+    ))
+    if (nextPlan) {
+      // El cambio financiero se ejecuta después en una sola RPC junto con las
+      // cuotas. Los aliases antiguos sí pueden normalizarse sin tocar importes.
+      if (!planChanged && existingBusiness.plan !== nextPlan.id) {
+        businessData.plan = nextPlan.id
+      } else {
+        delete businessData.plan
+      }
+    }
+
+    // Una edición puede conservar secretos que el navegador nunca recibe.
+    // Validamos el estado que realmente quedará guardado, no solo el fragmento
+    // enviado por el formulario.
+    const effectiveBusiness: Record<string, unknown> = {
+      ...existingBusiness,
+      ...businessData,
+    }
+    if (!('whatsapp_provider' in businessData)
+      && !configuredText(existingBusiness.whatsapp_provider)) {
+      effectiveBusiness.whatsapp_provider = 'ycloud'
+    }
+    const channelError = channelConfigurationError(effectiveBusiness)
+    if (channelError) return res.status(400).json({ error: channelError })
+
     if (Object.keys(businessData).length) {
       const result = await db.updateBusiness(req.params.id, businessData)
       assertDatabaseResult(result, 'actualizar negocio')
     }
 
-    const monthlyRate = Number.parseFloat(String(body.monthly_rate || ''))
-    if (monthlyRate > 0) {
-      const existing = await db.countBilling(req.params.id)
-      if (existing > 0) {
-        assertDatabaseResult(
-          await db.updatePendingBilling(req.params.id, monthlyRate),
-          'actualizar facturación pendiente',
-        )
-      } else {
-        assertDatabaseResult(
-          await db.createBillingBatch(db.generateYearBilling(req.params.id, monthlyRate)),
-          'crear facturación',
-        )
-      }
+    if (planChanged && nextPlan) {
+      assertDatabaseResult(
+        await db.updateBusinessPlanBilling(
+          req.params.id,
+          nextPlan.id,
+          nextPlan.monthlyRate,
+          nextPlan.monthlyContactLimit,
+          nextPlan.monthlyOutboundMessageLimit,
+        ),
+        'actualizar plan y facturación',
+      )
     }
 
     if (typeof body.client_email === 'string' && body.client_email) {
@@ -279,6 +416,11 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
         error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
       })
     }
+    const duplicated = duplicateChannelMessage(error)
+    if (duplicated) {
+      console.error('❌ actualizar el cliente:', errorMessage(error))
+      return res.status(409).json({ error: duplicated })
+    }
     safeFailure(res, 'actualizar el cliente', error)
   }
 })
@@ -292,24 +434,6 @@ router.delete('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     safeFailure(res, 'eliminar el cliente', error)
   }
 })
-
-router.post(
-  '/api/admin/clients/:id/generate-billing',
-  auth.authAdmin,
-  async (req, res) => {
-    const monthlyRate = Number.parseFloat(String((req.body as Record<string, unknown>).monthly_rate || ''))
-    if (!(monthlyRate > 0)) {
-      return res.status(400).json({ error: 'Tarifa mensual requerida' })
-    }
-    try {
-      const rows = db.generateYearBilling(req.params.id, monthlyRate)
-      assertDatabaseResult(await db.createBillingBatch(rows), 'crear facturación')
-      res.json({ ok: true, created: rows.length })
-    } catch (error) {
-      safeFailure(res, 'generar la facturación', error)
-    }
-  },
-)
 
 router.post('/api/admin/clients/:id/suspend', auth.authAdmin, async (req, res) => {
   const reason = typeof req.body?.reason === 'string' && req.body.reason

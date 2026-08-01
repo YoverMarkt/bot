@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "../../../packages/ui/src/shadcn-tailwind.css";
 @source "../../../packages/ui/src";
 @import "@fontsource-variable/geist";
 

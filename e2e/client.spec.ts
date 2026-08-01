@@ -152,6 +152,12 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
 test('hospedaje muestra configuración segura y conserva controles accesibles', async ({ page }) => {
   let settingsPayload: Record<string, unknown> | null = null
   let availabilityPayload: Record<string, unknown> | null = null
+  let roomPayload: Record<string, unknown> | null = null
+  const roomMediaUrls = [
+    'https://cdn.example.com/cabana.jpg',
+    'https://res.cloudinary.com/demo/video/upload/cabana-recorrido.mp4',
+    'https://cdn.example.com/cabana-vista.webm',
+  ]
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
@@ -194,13 +200,21 @@ test('hospedaje muestra configuración segura y conserva controles accesibles', 
         }),
       })
     }
+    if (path.endsWith('/room-types/room-e2e') && method === 'PUT') {
+      roomPayload = route.request().postDataJSON() as Record<string, unknown>
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'room-e2e', ...roomPayload }),
+      })
+    }
     const data = path.endsWith('/settings') ? {
       currency: 'USD', check_in_time: '15:00', check_out_time: '11:00',
       quote_expiry_minutes: 15, hold_minutes: 45, tax_rate: 0,
       service_fee: 0, prices_include_tax: true,
     } : path.endsWith('/room-types') ? [{
       id: 'room-e2e', name: 'Cabaña familiar', description: 'Frente al lago',
-      amenities: ['Wi-Fi'], media_urls: [], total_units: 3, max_guests: 4,
+      amenities: ['Wi-Fi'], media_urls: roomMediaUrls, total_units: 3, max_guests: 4,
       pricing_model: 'per_unit', base_occupancy: 4, base_rate: 80,
       weekend_rate: 95, extra_adult_rate: 0, child_rate: 0, active: true,
     }] : []
@@ -212,6 +226,11 @@ test('hospedaje muestra configuración segura y conserva controles accesibles', 
   await expect(page.getByText('El bot cotiza; el equipo confirma')).toBeVisible()
   await page.getByRole('tab', { name: 'Habitaciones' }).click()
   await expect(page.getByText('Cabaña familiar')).toBeVisible()
+  await page.getByRole('button', { name: 'Editar Cabaña familiar' }).click()
+  await expect(page.getByText('2 videos conservados')).toBeVisible()
+  await page.getByRole('button', { name: 'Guardar habitación' }).click()
+  await expect.poll(() => roomPayload).not.toBeNull()
+  expect(roomPayload).toMatchObject({ media_urls: roomMediaUrls })
   await page.getByRole('tab', { name: 'Configuración' }).click()
   await expect(page.getByLabel('Retener por (minutos)')).toHaveValue('45')
   await page.getByLabel('Impuesto (%)').fill('12')
@@ -309,7 +328,10 @@ test('un pedido se confirma y completa sin generar cobros automáticos', async (
   await expect(page.getByRole('button', { name: 'Marcar completado' })).toBeVisible()
   await page.getByRole('button', { name: 'Marcar completado' }).click()
   const completeDialog = page.getByRole('alertdialog', { name: 'Completar pedido' })
-  await completeDialog.getByRole('button', { name: 'Marcar completado' }).click()
+  await expect(completeDialog).toBeVisible()
+  // El refetch desmonta el diálogo inmediatamente; dispatchEvent evita que
+  // Playwright reintente un click exitoso sobre un nodo ya retirado.
+  await completeDialog.getByRole('button', { name: 'Marcar completado' }).dispatchEvent('click')
   await expect.poll(() => statusPayload).toEqual({ status: 'completado' })
 })
 

@@ -14,10 +14,12 @@ import {
   CUSTOM_BUSINESS_TYPE,
   businessTypeChoice,
   isLodgingBusinessType,
+  recommendedChatModeForBusinessType,
   recommendedLodgingForBusinessType,
   recommendedModeForBusinessType,
   recommendedSalesForBusinessType,
 } from './business-types'
+import { PLAN_CATALOG, planById } from './plans'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
@@ -26,12 +28,13 @@ import {
 const EMPTY = {
   name: '', type: 'negocio', whatsapp_number: '', owner_phone: '',
   whatsapp_provider: 'ycloud', ycloud_api_key: '',
-  meta_token: '', meta_phone_id: '', meta_verify_token: '',
-  kapso_api_key: '', kapso_number_id: '', kapso_verify_token: '',
-  telegram_bot_token: '', retell_agent_id: '',
+  ycloud_webhook_endpoint_id: '', ycloud_webhook_secret: '',
+  meta_token: '', meta_phone_id: '',
+  telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
-  lodging: 'no',
-  plan: 'basic', monthly_rate: '', plan_expires_at: '',
+  lodging: 'no', chat_mode: 'ai',
+  plan: 'micro', monthly_rate: '25',
+  monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
 }
 
@@ -45,6 +48,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   const [modeTouched, setModeTouched] = useState(false)
   const [salesTouched, setSalesTouched] = useState(false)
   const [lodgingTouched, setLodgingTouched] = useState(false)
+  const [chatModeTouched, setChatModeTouched] = useState(false)
+  const [applyPlanDefaults, setApplyPlanDefaults] = useState(false)
 
   // Editar → cargar el detalle real (el server nunca manda esto a paneles de cliente)
   useEffect(() => {
@@ -56,17 +61,23 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         whatsapp_number: c.whatsapp_number ?? '', owner_phone: c.owner_phone ?? '',
         whatsapp_provider: c.whatsapp_provider ?? 'ycloud',
         ycloud_api_key: '',
-        meta_token: '', meta_phone_id: c.meta_phone_id ?? '', meta_verify_token: '',
-        kapso_api_key: '', kapso_number_id: c.kapso_number_id ?? '', kapso_verify_token: '',
+        ycloud_webhook_endpoint_id: c.ycloud_webhook_endpoint_id ?? '',
+        ycloud_webhook_secret: '',
+        meta_token: '', meta_phone_id: c.meta_phone_id ?? '',
         telegram_bot_token: '',
-        retell_agent_id: c.retell_agent_id ?? '',
         ai_provider: c.ai_provider ?? '',
         mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         lodging: c.lodging_enabled ? 'yes' : 'no',
-        plan: c.plan ?? 'basic',
+        chat_mode: c.chat_mode === 'menu' ? 'menu' : 'ai',
+        plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
-        plan_expires_at: c.plan_expires_at ? c.plan_expires_at.slice(0, 10) : '',
+        monthly_contact_limit: c.monthly_contact_limit != null
+          ? String(c.monthly_contact_limit)
+          : '',
+        monthly_outbound_message_limit: c.monthly_outbound_message_limit != null
+          ? String(c.monthly_outbound_message_limit)
+          : '',
         client_email: c.client_email ?? '', client_password: '',
         notes: c.notes ?? '',
       })
@@ -91,6 +102,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       if (k === 'type' && !id && !lodgingTouched) {
         next.lodging = recommendedLodgingForBusinessType(value) ? 'yes' : 'no'
       }
+      if (k === 'type' && !id && !chatModeTouched) {
+        next.chat_mode = recommendedChatModeForBusinessType(value)
+      }
       return next
     })
   }
@@ -106,26 +120,40 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         lodging: id || lodgingTouched
           ? prev.lodging
           : recommendedLodgingForBusinessType(type) ? 'yes' : 'no',
+        chat_mode: id || chatModeTouched
+          ? prev.chat_mode
+          : recommendedChatModeForBusinessType(type),
       }
     })
   }
 
+  const selectPlan = (value: string) => {
+    const preset = planById(value)
+    if (!preset) return
+    setApplyPlanDefaults(true)
+    setF(prev => ({
+      ...prev,
+      plan: preset.id,
+      monthly_rate: String(preset.monthlyRate),
+      monthly_contact_limit: String(preset.monthlyContactLimit),
+      monthly_outbound_message_limit: String(preset.monthlyOutboundMessageLimit),
+    }))
+  }
+
   const requestVerification = () => {
-    const typedSecret = f.whatsapp_provider === 'ycloud' ? f.ycloud_api_key
-      : f.whatsapp_provider === 'meta' ? f.meta_token
-      : f.whatsapp_provider === 'kapso' ? f.kapso_api_key
-      : f.telegram_bot_token
-    if (id && !typedSecret) return adm.verifyClient(id)
-    return adm.verifyProvider({
-      provider: f.whatsapp_provider,
+    const payload: adm.ProviderVerificationPayload = {
+      provider: f.whatsapp_provider as adm.ProviderVerificationPayload['provider'],
       ycloud_api_key: f.ycloud_api_key || undefined,
-      ycloud_number: f.whatsapp_number || undefined,
+      ycloud_number: f.whatsapp_number.trim(),
+      // Se envían para que la verificación avise si falta lo del webhook; en
+      // blanco el servidor usa lo ya guardado del negocio.
+      ycloud_webhook_secret: f.ycloud_webhook_secret || undefined,
+      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || undefined,
       meta_token: f.meta_token || undefined,
-      meta_phone_id: f.meta_phone_id || undefined,
-      kapso_api_key: f.kapso_api_key || undefined,
-      kapso_number_id: f.kapso_number_id || undefined,
+      meta_phone_id: f.meta_phone_id.trim(),
       telegram_bot_token: f.telegram_bot_token || undefined,
-    })
+    }
+    return id ? adm.verifyClient(id, payload) : adm.verifyProvider(payload)
   }
 
   async function verify() {
@@ -140,7 +168,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     e.preventDefault()
     setError('')
     if (!f.name.trim() || !f.whatsapp_number.trim()) { setError('Nombre y número de WhatsApp son obligatorios'); return }
-    if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('La tarifa mensual es obligatoria al crear (genera la facturación)'); return }
+    if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('Selecciona un plan con una tarifa mensual válida'); return }
     if (!id && (!f.client_email.trim() || !f.client_password)) { setError('El correo y la contraseña del dueño son obligatorios al crear'); return }
     const payload: BusinessPayload = {
       name: f.name.trim(), type: f.type.trim() || 'negocio',
@@ -148,23 +176,32 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       owner_phone: f.owner_phone.trim() || null,
       whatsapp_provider: f.whatsapp_provider as BusinessPayload['whatsapp_provider'],
       ycloud_number: f.whatsapp_number.trim() || null,
+      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || null,
       meta_phone_id: f.meta_phone_id || null,
-      kapso_number_id: f.kapso_number_id || null,
-      retell_agent_id: f.retell_agent_id || null,
       ai_provider: f.ai_provider || null,
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
       lodging_enabled: f.lodging === 'yes',
-      plan: f.plan,
-      monthly_rate: parseFloat(f.monthly_rate) || null,
-      plan_expires_at: f.plan_expires_at || null,
+      chat_mode: f.chat_mode === 'menu' ? 'menu' : 'ai',
       notes: f.notes || null,
     }
+    const officialPlan = planById(f.plan)
+    if (officialPlan) {
+      payload.plan = officialPlan.id
+      payload.monthly_rate = parseFloat(f.monthly_rate) || null
+      payload.monthly_contact_limit = f.monthly_contact_limit
+        ? Number(f.monthly_contact_limit)
+        : null
+      payload.monthly_outbound_message_limit = f.monthly_outbound_message_limit
+        ? Number(f.monthly_outbound_message_limit)
+        : null
+      if (id && applyPlanDefaults) payload.apply_plan_defaults = true
+    }
     if (f.ycloud_api_key.trim()) payload.ycloud_api_key = f.ycloud_api_key.trim()
+    if (f.ycloud_webhook_secret.trim()) {
+      payload.ycloud_webhook_secret = f.ycloud_webhook_secret.trim()
+    }
     if (f.meta_token.trim()) payload.meta_token = f.meta_token.trim()
-    if (f.meta_verify_token.trim()) payload.meta_verify_token = f.meta_verify_token.trim()
-    if (f.kapso_api_key.trim()) payload.kapso_api_key = f.kapso_api_key.trim()
-    if (f.kapso_verify_token.trim()) payload.kapso_verify_token = f.kapso_verify_token.trim()
     if (f.telegram_bot_token.trim()) payload.telegram_bot_token = f.telegram_bot_token.trim()
     if (f.client_email) payload.client_email = f.client_email.trim()
     if (f.client_password) payload.client_password = f.client_password
@@ -275,6 +312,20 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
               </div>
               <div>
+                <Label htmlFor="client-chat-mode">Quién conduce la conversación</Label>
+                <Select value={f.chat_mode} onValueChange={value => {
+                  setChatModeTouched(true)
+                  setVal('chat_mode')(value)
+                }}>
+                  <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="menu">Menú de opciones (sin IA)</SelectItem>
+                    <SelectItem value="ai">Conversación con IA</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">Menú: el cliente elige entre opciones armadas con los datos reales del negocio; nada se inventa. IA: conversa libre y el servidor sigue calculando los totales.</p>
+              </div>
+              <div>
                 <Label htmlFor="client-lodging-mode">Hospedaje</Label>
                 <Select value={f.lodging} onValueChange={value => {
                   setLodgingTouched(true)
@@ -324,31 +375,25 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <SelectContent>
                     <SelectItem value="ycloud">YCloud</SelectItem>
                     <SelectItem value="meta">Meta (oficial)</SelectItem>
-                    <SelectItem value="kapso">Kapso</SelectItem>
                     <SelectItem value="telegram">Solo Telegram</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {f.whatsapp_provider === 'ycloud' && (
-                <div><Label htmlFor="client-ycloud-api-key">YCloud API Key {savedCredentials.ycloud_api_key && '— guardada'}</Label><Input id="client-ycloud-api-key" type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} placeholder={savedCredentials.ycloud_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div><Label htmlFor="client-ycloud-api-key">YCloud API Key {savedCredentials.ycloud_api_key && '— guardada'}</Label><Input id="client-ycloud-api-key" type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} placeholder={savedCredentials.ycloud_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
+                  <div><Label htmlFor="client-ycloud-endpoint-id">Webhook Endpoint ID</Label><Input id="client-ycloud-endpoint-id" value={f.ycloud_webhook_endpoint_id} onChange={set('ycloud_webhook_endpoint_id')} placeholder="Cópialo desde Developers → Webhooks" /></div>
+                  <div><Label htmlFor="client-ycloud-signing-secret">Webhook Signing Secret {savedCredentials.ycloud_webhook_secret && '— guardado'}</Label><Input id="client-ycloud-signing-secret" type="password" value={f.ycloud_webhook_secret} onChange={set('ycloud_webhook_secret')} placeholder={savedCredentials.ycloud_webhook_secret ? 'Escribe solo para reemplazarlo' : 'whsec_…'} /></div>
+                </div>
               )}
               {f.whatsapp_provider === 'meta' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div><Label htmlFor="client-meta-token">Meta Token {savedCredentials.meta_token && '— guardado'}</Label><Input id="client-meta-token" type="password" value={f.meta_token} onChange={set('meta_token')} placeholder={savedCredentials.meta_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
                   <div><Label htmlFor="client-meta-phone-id">Phone ID</Label><Input id="client-meta-phone-id" value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
-                  <div><Label htmlFor="client-meta-verify-token">Verify Token {savedCredentials.meta_verify_token && '— guardado'}</Label><Input id="client-meta-verify-token" type="password" value={f.meta_verify_token} onChange={set('meta_verify_token')} placeholder={savedCredentials.meta_verify_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
                 </div>
               )}
-              {f.whatsapp_provider === 'kapso' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div><Label htmlFor="client-kapso-api-key">Kapso API Key {savedCredentials.kapso_api_key && '— guardada'}</Label><Input id="client-kapso-api-key" type="password" value={f.kapso_api_key} onChange={set('kapso_api_key')} placeholder={savedCredentials.kapso_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
-                  <div><Label htmlFor="client-kapso-number-id">Number ID</Label><Input id="client-kapso-number-id" value={f.kapso_number_id} onChange={set('kapso_number_id')} /></div>
-                  <div><Label htmlFor="client-kapso-verify-token">Verify Token {savedCredentials.kapso_verify_token && '— guardado'}</Label><Input id="client-kapso-verify-token" type="password" value={f.kapso_verify_token} onChange={set('kapso_verify_token')} placeholder={savedCredentials.kapso_verify_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-3 mt-3 sm:grid-cols-2">
+              <div className="mt-3">
                 <div><Label htmlFor="client-telegram-token">Telegram Bot Token {savedCredentials.telegram_bot_token ? '— guardado' : '(opcional)'}</Label><Input id="client-telegram-token" type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} placeholder={savedCredentials.telegram_bot_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                <div><Label htmlFor="client-retell-agent-id">Retell Agent ID (voz telefónica, opcional)</Label><Input id="client-retell-agent-id" value={f.retell_agent_id} onChange={set('retell_agent_id')} placeholder="agent_…" /></div>
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <Button variant="outline" size="sm" type="button" onClick={verify} >
@@ -358,24 +403,76 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               </div>
             </div>
 
-            {/* Plan + acceso */}
-            <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-3">
+            {/* Plan y facturación */}
+            <div className="mb-4 rounded-lg border border-border/70 p-3">
+              <h3 className="mb-3 text-sm font-semibold">Plan y facturación automática</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label htmlFor="client-plan">Plan</Label>
-                <Select value={f.plan} onValueChange={setVal('plan')}>
+                <Select value={f.plan} onValueChange={selectPlan}>
                   <SelectTrigger id="client-plan" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="basic">Básico</SelectItem>
-                    <SelectItem value="pro">Pro</SelectItem>
-                    <SelectItem value="premium">Premium</SelectItem>
+                    {!planById(f.plan) && (
+                      <SelectItem value={f.plan} disabled>Plan anterior: {f.plan}</SelectItem>
+                    )}
+                    {PLAN_CATALOG.map(plan => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.label} — ${plan.monthlyRate}/mes · {plan.monthlyContactLimit.toLocaleString('es-EC')} / {plan.monthlyOutboundMessageLimit.toLocaleString('es-EC')}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label><Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} onChange={set('monthly_rate')} /></div>
-              <div><Label htmlFor="client-plan-expires-at">Plan vence</Label><Input id="client-plan-expires-at" type="date" value={f.plan_expires_at} onChange={set('plan_expires_at')} /></div>
+              <div>
+                <Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label>
+                <Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} readOnly aria-describedby="client-plan-help" />
+              </div>
+              <div>
+                <Label htmlFor="client-contact-limit">Contactos al mes</Label>
+                <Input
+                  id="client-contact-limit"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={f.monthly_contact_limit}
+                  readOnly
+                  aria-describedby="client-plan-help"
+                />
+              </div>
+              <div>
+                <Label htmlFor="client-outbound-limit">Mensajes enviados al mes</Label>
+                <Input
+                  id="client-outbound-limit"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={f.monthly_outbound_message_limit}
+                  readOnly
+                  aria-describedby="client-plan-help"
+                />
+              </div>
+              </div>
+              <p id="client-plan-help" className="mt-3 text-xs text-muted-foreground">
+                La tarifa y los límites pertenecen al plan seleccionado. Cada mes se crea una sola cuota automáticamente; Medición alerta los excesos y la suspensión por falta de pago continúa siendo manual.
+              </p>
+              {id && planById(f.plan) && (
+                <Button
+                  className="mt-3"
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => selectPlan(f.plan)}
+                >
+                  Aplicar valores vigentes del plan
+                </Button>
+              )}
+            </div>
+
+            {/* Acceso del dueño */}
+            <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
               <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" value={f.client_email} onChange={set('client_email')} /></div>
               <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
-              <div><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
+              <div className="sm:col-span-2"><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
             </div>
 
             {!id && <p className="mb-4 text-xs text-muted-foreground">Se creará un horario inicial de lunes a viernes, 09:00–18:00, y sábado, 09:00–13:00. El dueño puede cambiarlo inmediatamente desde Horarios.</p>}

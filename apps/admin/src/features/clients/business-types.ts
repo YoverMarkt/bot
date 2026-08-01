@@ -91,6 +91,34 @@ export function recommendedLodgingForBusinessType(type: string): boolean {
   return isLodgingBusinessType(type)
 }
 
+export type BusinessChatMode = 'menu' | 'ai'
+
+// Negocios donde el cliente NO explora un catálogo, sino que pregunta o manda
+// su lista: catálogos enormes (farmacia, supermercado), consultoría y
+// cotización a medida. Ahí el menú frustra y conviene la IA.
+const AI_FIRST_KEYWORDS = [
+  'farmacia',
+  'supermercado',
+  'inmobiliaria',
+  'taller automotriz',
+  'servicios profesionales',
+  'distribuidora',
+  'mayorista',
+  'consultoria',
+]
+
+// El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
+// manda siempre y nunca se sobrescribe a un negocio existente.
+export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
+  const normalized = normalizeBusinessType(type)
+  if (!normalized) return 'ai'
+  if (AI_FIRST_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'ai'
+  // Alojamiento, citas y venta con catálogo acotado: el cliente explora → menú
+  if (isLodgingBusinessType(type)) return 'menu'
+  if (BOOKING_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'menu'
+  return recommendedSalesForBusinessType(type) === 'vende' ? 'menu' : 'ai'
+}
+
 export function businessTypeChoice(type: string): string {
   return BUSINESS_TYPE_OPTIONS.some(option => option.value === type)
     ? type

@@ -24,12 +24,37 @@ describe('servicio de reportes del dueño', () => {
     expect(sales).not.toHaveBeenCalled()
   })
 
+  it('rechaza colisiones de sufijo entre países y valores de dueño demasiado cortos', async () => {
+    const sales = vi.spyOn(db, 'getSalesWithItems')
+
+    const countryCollision = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '+593 99 111 2233' },
+      '+1 991 112 233',
+      'ventas de hoy',
+    )
+    const shortOwner = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '2233' },
+      '+593 99 111 2233',
+      'ventas de hoy',
+    )
+
+    expect(countryCollision).toEqual({ handled: false })
+    expect(shortOwner).toEqual({ handled: false })
+    expect(sales).not.toHaveBeenCalled()
+  })
+
+  it('mantiene identificadores Telegram exactos sin mezclarlos con teléfonos', () => {
+    expect(reports.samePhone('tg_123456789', 'TG_123456789')).toBe(true)
+    expect(reports.samePhone('tg_123456789', 'tg_9123456789')).toBe(false)
+    expect(reports.samePhone('tg_123456789', '123456789')).toBe(false)
+  })
+
   it('pide un período antes de consultar datos', async () => {
     const sales = vi.spyOn(db, 'getSalesWithItems')
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '0991112233',
+      '593991112233',
       'muéstrame las ventas',
     )
 
@@ -54,7 +79,7 @@ describe('servicio de reportes del dueño', () => {
 
     const result = await reports.handleOwnerMessage(
       { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '0991112233',
+      '593991112233',
       'ventas de hoy',
     )
 
@@ -64,6 +89,56 @@ describe('servicio de reportes del dueño', () => {
     expect(getCustomers).toHaveBeenCalledWith('business-a')
     expect(getWriters).toHaveBeenCalledWith('business-a', expect.any(String))
     expect(getSales).not.toHaveBeenCalledWith('business-b', expect.anything())
+  })
+
+  it('suma los ingresos de hospedaje al resumen cuando el negocio tiene alojamiento', async () => {
+    vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+      { total: 20, contact_phone: '0991112233', sold_at: new Date().toISOString(), sale_items: [{ quantity: 1 }] },
+    ])
+    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([{ contact_phone: '0991112233', sold_at: new Date().toISOString() }])
+    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(1)
+    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays').mockResolvedValue([
+      { total: 125, nights: 3 },
+      { total: 45, nights: 1 },
+    ])
+
+    const result = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '+593 99 111 2233', lodging_enabled: true },
+      '593991112233',
+      'reporte de la semana',
+    )
+
+    expect(result.handled).toBe(true)
+    expect(result.reply).toContain('📊 Reporte general')
+    expect(result.reply).toContain('Total vendido: $20.00')
+    expect(result.reply).toContain('🏨 Hospedaje')
+    expect(result.reply).toContain('Ingresos: $170.00') // 125 + 45
+    expect(result.reply).toContain('Estadías: 2 · Noches: 4')
+    expect(result.reply).toContain('Total general (hospedaje + ventas): $190.00') // 170 + 20
+    // Para un hotel, el hospedaje va ANTES que las ventas de productos
+    expect(result.reply.indexOf('🏨 Hospedaje')).toBeLessThan(result.reply.indexOf('🛒 Ventas de productos'))
+    // El pie ofrece pedir cada reporte por separado
+    expect(result.reply).toContain('También puedes pedirme por separado')
+    // El negocio sale del objeto resuelto, nunca de un parámetro manipulable
+    expect(getStays).toHaveBeenCalledWith('business-a', expect.any(String), expect.any(String))
+  })
+
+  it('no agrega hospedaje al resumen de un negocio sin alojamiento', async () => {
+    vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+      { total: 20, contact_phone: '0991112233', sold_at: new Date().toISOString(), sale_items: [{ quantity: 1 }] },
+    ])
+    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([{ contact_phone: '0991112233', sold_at: new Date().toISOString() }])
+    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(1)
+    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays')
+
+    const result = await reports.handleOwnerMessage(
+      { id: 'business-a', owner_phone: '+593 99 111 2233' },
+      '593991112233',
+      'reporte de la semana',
+    )
+
+    expect(result.reply).not.toContain('Hospedaje')
+    expect(getStays).not.toHaveBeenCalled()
   })
 
   it('unifica al mismo cliente aunque el teléfono cambie de formato', async () => {

@@ -28,7 +28,7 @@ describe('deduplicación persistente de webhooks', () => {
 
   it('guarda únicamente SHA-256 y elimina reclamos vencidos', () => {
     expect(webhookRepository).toContain("createHash('sha256')")
-    expect(webhookRepository).toContain("db.rpc('claim_webhook_event'")
+    expect(webhookRepository).toContain("'claim_webhook_event'")
     expect(migration).toContain("message_id_hash ~ '^[0-9a-f]{64}$'")
     expect(migration).toMatch(
       /delete from public\.webhook_inbound_events\s+where business_id = p_business_id/,

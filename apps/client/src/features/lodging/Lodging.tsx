@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BedDouble,
+  Camera,
   CalendarRange,
   Check,
+  Film,
   Pencil,
   Plus,
   Search,
@@ -120,6 +122,12 @@ function splitList(value: string): string[] {
   return value.split(/[\n,]/).map(item => item.trim()).filter(Boolean)
 }
 
+// Clasifica una URL guardada como video (Cloudinary usa /video/upload/; también
+// aceptamos extensiones comunes). Las subidas nuevas ya vienen clasificadas.
+function isVideoUrl(url: string): boolean {
+  return url.includes('/video/upload/') || /\.(mp4|mov|webm|m4v|avi|mkv|ogv)(\?|#|$)/i.test(url)
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : 'No se pudo completar la operación'
 }
@@ -162,11 +170,13 @@ export default function Lodging() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="requests">Solicitudes</TabsTrigger>
+          <TabsTrigger value="revenue">Ingresos</TabsTrigger>
           <TabsTrigger value="rooms">Habitaciones</TabsTrigger>
           <TabsTrigger value="availability">Disponibilidad</TabsTrigger>
           <TabsTrigger value="settings">Configuración</TabsTrigger>
         </TabsList>
         <TabsContent value="requests" className="mt-4"><RequestsPanel /></TabsContent>
+        <TabsContent value="revenue" className="mt-4"><RevenuePanel /></TabsContent>
         <TabsContent value="rooms" className="mt-4"><RoomsPanel /></TabsContent>
         <TabsContent value="availability" className="mt-4"><AvailabilityPanel /></TabsContent>
         <TabsContent value="settings" className="mt-4"><SettingsPanel /></TabsContent>
@@ -310,33 +320,58 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
     active: room.active,
   } : { ...EMPTY_ROOM })
   const [amenities, setAmenities] = useState(form.amenities.join(', '))
-  const [media, setMedia] = useState(form.media_urls.join('\n'))
+  // media_urls se guarda como un solo arreglo; en el panel lo separamos en
+  // fotos y videos clasificando cada URL. Aunque el cargador reemplaza el
+  // video principal, conservamos cualquier video adicional de datos previos.
+  const [photos, setPhotos] = useState<string[]>(() => (form.media_urls ?? []).filter(url => !isVideoUrl(url)))
+  const [videos, setVideos] = useState<string[]>(() => (form.media_urls ?? []).filter(isVideoUrl))
+  const [photoStatus, setPhotoStatus] = useState('')
+  const [videoStatus, setVideoStatus] = useState('')
   const [uploading, setUploading] = useState(false)
 
-  const handleMediaUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    const isVideo = file.type.startsWith('video/')
-    const limit = isVideo ? MEDIA_LIMITS.video : MEDIA_LIMITS.image
-    if ((!file.type.startsWith('image/') && !isVideo) || file.size > limit) {
-      toast.error(file.size > limit
-        ? `El archivo pesa ${fmtMB(file.size)} y supera el límite de ${fmtMB(limit)}.`
-        : 'Selecciona una imagen o un video.')
-      event.target.value = ''
-      return
+    if (photos.length >= 5) { setPhotoStatus('✗ Máximo 5 fotos por habitación.'); event.target.value = ''; return }
+    if (!file.type.startsWith('image/')) { setPhotoStatus('✗ Selecciona una imagen.'); event.target.value = ''; return }
+    if (file.size > MEDIA_LIMITS.image) {
+      setPhotoStatus(`✗ Supera el límite de 5 MB (pesa ${fmtMB(file.size)}).`); event.target.value = ''; return
     }
-    setUploading(true)
+    setPhotoStatus('Subiendo…'); setUploading(true)
     try {
       const uploaded = await uploadMedia(file)
-      setMedia(current => [current.trim(), uploaded.url].filter(Boolean).join('\n'))
-      toast.success('Archivo subido y agregado a la habitación')
+      setPhotos(current => [...current, uploaded.url])
+      setPhotoStatus('✓ Foto agregada')
     } catch (error) {
-      toast.error(errorText(error))
+      setPhotoStatus(`✗ ${errorText(error)}`)
     } finally {
       setUploading(false)
       event.target.value = ''
     }
   }
+
+  const uploadVideo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('video/')) { setVideoStatus('✗ Selecciona un video.'); event.target.value = ''; return }
+    if (file.size > MEDIA_LIMITS.video) {
+      setVideoStatus(`✗ Supera el límite de 16 MB (pesa ${fmtMB(file.size)}).`); event.target.value = ''; return
+    }
+    setVideoStatus('Subiendo…'); setUploading(true)
+    try {
+      const uploaded = await uploadMedia(file)
+      setVideos(current => [uploaded.url, ...current.slice(1)])
+      setVideoStatus('✓ Video cargado')
+    } catch (error) {
+      setVideoStatus(`✗ ${errorText(error)}`)
+    } finally {
+      setUploading(false)
+      event.target.value = ''
+    }
+  }
+
+  const removePhoto = (index: number) => setPhotos(current => current.filter((_, i) => i !== index))
+  const removeVideo = () => { setVideos(current => current.slice(1)); setVideoStatus('') }
 
   const save = useMutation({
     mutationFn: () => {
@@ -349,7 +384,7 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
           child_rate: null,
         } : {}),
         amenities: splitList(amenities),
-        media_urls: splitList(media),
+        media_urls: [...photos, ...videos],
       }
       return room ? lodging.updateRoomType(room.id, payload) : lodging.createRoomType(payload)
     },
@@ -401,11 +436,36 @@ function RoomDialog({ room, onClose }: { room: LodgingRoomType | null; onClose: 
           </>}
           <div className="sm:col-span-2"><Field label="Descripción" htmlFor="room-description"><Textarea id="room-description" rows={3} value={form.description ?? ''} onChange={event => setForm({ ...form, description: event.target.value })} placeholder="Vista, tamaño, tipo de camas y cualquier condición importante" /></Field></div>
           <div className="sm:col-span-2"><Field label="Servicios incluidos (separados por coma)" htmlFor="room-amenities"><Input id="room-amenities" value={amenities} onChange={event => setAmenities(event.target.value)} placeholder="Wi-Fi, desayuno, baño privado, piscina" /></Field></div>
-          <div className="space-y-3 sm:col-span-2">
-            <Field label="Subir una foto o video" htmlFor="room-media-file"><Input id="room-media-file" type="file" accept="image/*,video/*" disabled={uploading} onChange={handleMediaUpload} /></Field>
-            {uploading && <p className="text-xs text-muted-foreground">Subiendo a Cloudinary…</p>}
-            <Field label="Archivos de la habitación (una URL por línea)" htmlFor="room-media"><Textarea id="room-media" rows={3} value={media} onChange={event => setMedia(event.target.value)} placeholder={'https://…/foto.jpg\nhttps://…/video.mp4'} /></Field>
-            <p className="text-xs text-muted-foreground">Puedes subir varios archivos uno por uno o pegar URLs HTTPS. El bot enviará hasta tres al presentar la cotización.</p>
+          <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-dashed border-input p-3">
+              <Label htmlFor="room-photos" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground/90"><Camera className="h-3.5 w-3.5" /> Fotos <span className="font-normal text-muted-foreground/80">({photos.length}/5, máx 5 MB c/u)</span></Label>
+              {photos.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {photos.map((url, index) => (
+                    <div key={url} className="relative">
+                      <img src={url} alt="" className="h-16 w-16 rounded object-cover" />
+                      <button type="button" aria-label="Quitar foto" onClick={() => removePhoto(index)} className="absolute -right-1.5 -top-1.5 rounded-full bg-black/70 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Input id="room-photos" type="file" accept="image/*" className="w-full text-xs" disabled={uploading || photos.length >= 5} onChange={uploadPhoto} />
+              {photos.length >= 5
+                ? <p className="mt-1 text-[11px] text-muted-foreground">Llegaste al máximo de 5 fotos.</p>
+                : photoStatus && <div className="mt-1 text-[11px]">{photoStatus}</div>}
+            </div>
+            <div className="rounded-lg border border-dashed border-input p-3">
+              <Label htmlFor="room-video" className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-foreground/90"><Film className="h-3.5 w-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
+              {videos.length > 0 && (
+                <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-primary">
+                  <span>✓ {videos.length === 1 ? 'Video cargado' : `${videos.length} videos conservados`}</span>
+                  <button type="button" aria-label="Quitar video" onClick={removeVideo} className="rounded-full bg-black/70 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                </div>
+              )}
+              <Input id="room-video" type="file" accept="video/*" className="w-full text-xs" disabled={uploading} onChange={uploadVideo} />
+              {videoStatus && <div className="mt-1 text-[11px]">{videoStatus}</div>}
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">Se guardan en Cloudinary. El bot enviará hasta tres archivos al presentar la cotización.</p>
           </div>
           <Label htmlFor="room-active" className="mb-0 flex cursor-pointer items-center gap-2"><Checkbox id="room-active" checked={form.active} onCheckedChange={checked => setForm({ ...form, active: checked === true })} /> Mostrar y cotizar este tipo</Label>
           {!canSave && <p className="text-sm text-destructive sm:col-span-2" role="alert">Completa el nombre, usa cupos y capacidades válidos y configura una tarifa base mayor que cero, salvo en cotización manual.</p>}
@@ -541,6 +601,82 @@ function RequestsPanel() {
       <div><h2 className="font-semibold">Pendientes ({pending.length})</h2><p className="text-sm text-muted-foreground">Confirma antes de que venza la retención. El servidor vuelve a validar el cupo.</p></div>
       {pending.length === 0 ? <EmptyState icon={CalendarRange} title="Sin solicitudes pendientes" description="Cuando un huésped elija una cotización del bot, aparecerá aquí para la decisión del equipo autorizado." /> : <div className="grid gap-4 xl:grid-cols-2">{pending.map(request => <RequestCard key={request.id} request={request} busy={status.isPending} onStatus={next => status.mutate({ id: request.id, next })} />)}</div>}
       {history.length > 0 && <><div><h2 className="font-semibold">Historial</h2><p className="text-sm text-muted-foreground">Solicitudes confirmadas, rechazadas, canceladas o vencidas.</p></div><div className="grid gap-3 xl:grid-cols-2">{history.map(request => <RequestCard key={request.id} request={request} busy={status.isPending} onStatus={next => status.mutate({ id: request.id, next })} />)}</div></>}
+    </div>
+  )
+}
+
+// Rango del mes actual (por defecto del reporte de ingresos)
+function monthRange(): { from: string; to: string } {
+  const now = new Date()
+  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return {
+    from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+    to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  }
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return <Card className="gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="text-2xl font-bold text-foreground">{value}</p></Card>
+}
+
+// Ingresos por estadías CONFIRMADAS (aparte de las ventas de productos). Los
+// montos ya los calculó el servidor; aquí solo se leen y agrupan.
+function RevenuePanel() {
+  const [range, setRange] = useState(monthRange)
+  const query = useQuery({
+    queryKey: ['lodging-revenue', range.from, range.to],
+    queryFn: () => lodging.getLodgingRevenue(range.from, range.to),
+  })
+  const data = query.data
+  const currency = data?.currency || 'USD'
+
+  return (
+    <div className="space-y-5">
+      <Card className="gap-4 p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Desde" htmlFor="revenue-from"><Input id="revenue-from" type="date" value={range.from} onChange={event => setRange(current => ({ ...current, from: event.target.value }))} /></Field>
+          <Field label="Hasta" htmlFor="revenue-to"><Input id="revenue-to" type="date" value={range.to} onChange={event => setRange(current => ({ ...current, to: event.target.value }))} /></Field>
+          <Button variant="outline" onClick={() => setRange(monthRange())}>Mes actual</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Ingresos de las estadías <strong>confirmadas en el rango</strong> (por la fecha en que las confirmaste). Es un reporte aparte de las ventas de productos.</p>
+      </Card>
+
+      {query.isLoading ? <PanelSkeleton />
+        : query.isError ? <QueryError onRetry={() => { void query.refetch() }} />
+          : !data ? null
+            : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <StatCard label="Ingresos confirmados" value={money(data.totalRevenue, currency)} />
+                  <StatCard label="Estadías" value={String(data.stays)} />
+                  <StatCard label="Noches vendidas" value={String(data.nights)} />
+                </div>
+                {data.stays === 0 ? (
+                  <EmptyState icon={CalendarRange} title="Sin ingresos en el rango" description="Cuando confirmes estadías en la pestaña Solicitudes, sus ingresos aparecerán aquí." />
+                ) : (
+                  <>
+                    <Card className="gap-3 p-4">
+                      <CardTitle className="text-base">Por tipo de habitación</CardTitle>
+                      <div className="space-y-2">{data.byRoomType.map(row => (
+                        <div key={row.roomTypeName} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                          <div className="min-w-0"><p className="truncate font-medium">{row.roomTypeName}</p><p className="text-xs text-muted-foreground">{row.stays} estadía(s) · {row.nights} noche(s)</p></div>
+                          <p className="font-semibold">{money(row.revenue, currency)}</p>
+                        </div>
+                      ))}</div>
+                    </Card>
+                    <Card className="gap-3 p-4">
+                      <CardTitle className="text-base">Estadías confirmadas ({data.stays})</CardTitle>
+                      <div className="space-y-2">{data.items.map(item => (
+                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                          <div className="min-w-0"><p className="truncate font-medium">{item.contactName || item.contactPhone || 'Huésped'} · {item.roomTypeName}</p><p className="text-xs text-muted-foreground">{item.checkIn} → {item.checkOut} · {item.nights} noche(s) · {item.adults} adulto(s), {item.children} niño(s)</p></div>
+                          <p className="font-semibold">{money(item.total, currency)}</p>
+                        </div>
+                      ))}</div>
+                    </Card>
+                  </>
+                )}
+              </>
+            )}
     </div>
   )
 }

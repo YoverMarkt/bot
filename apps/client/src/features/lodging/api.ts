@@ -212,6 +212,48 @@ export const setLodgingRequestStatus = (id: string, status: LodgingRequestStatus
     body: JSON.stringify({ status }),
   })
 
+// ── Reporte de ingresos por estadías confirmadas (aparte de ventas) ──
+export type LodgingRevenueItem = {
+  id: string
+  roomTypeName: string
+  contactName: string | null
+  contactPhone: string | null
+  checkIn: string
+  checkOut: string
+  adults: number
+  children: number
+  nights: number
+  total: number
+  confirmedAt: string | null
+}
+
+export type LodgingRevenueByRoom = {
+  roomTypeName: string
+  stays: number
+  nights: number
+  revenue: number
+}
+
+export type LodgingRevenue = {
+  currency: string
+  from: string | null
+  to: string | null
+  totalRevenue: number
+  stays: number
+  nights: number
+  averagePerStay: number
+  byRoomType: LodgingRevenueByRoom[]
+  items: LodgingRevenueItem[]
+}
+
+export const getLodgingRevenue = (from: string, to: string) => {
+  const query = new URLSearchParams()
+  if (from) query.set('from', from)
+  if (to) query.set('to', to)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return api<LodgingRevenue>(`/api/client/lodging/revenue${suffix}`)
+}
+
 export const getLodgingBlocks = async (): Promise<LodgingBlock[]> => {
   const rows = await api<Array<Record<string, unknown>>>('/api/client/lodging/blocks')
   return rows.map(row => {

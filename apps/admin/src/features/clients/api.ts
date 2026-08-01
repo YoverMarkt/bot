@@ -19,13 +19,37 @@ export type BusinessRow = {
   bot_active: boolean
   suspended: boolean
   plan: string | null
-  plan_expires_at: string | null
+  monthly_contact_limit: number | null
+  monthly_outbound_message_limit: number | null
   created_at: string
   notes: string | null
+  // Modo real configurado del negocio: el simulador arranca con este
+  chat_mode?: 'menu' | 'ai' | null
+}
+
+export type MonthlyUsageRow = {
+  business_id: string
+  period_start: string
+  period_end: string
+  active_contacts: number
+  inbound_messages: number
+  outbound_messages: number
+  outbound_text_messages: number
+  outbound_image_messages: number
+  outbound_video_messages: number
+  outbound_interactive_messages: number
+  contact_limit: number | null
+  outbound_message_limit: number | null
+  contact_overage: number
+  outbound_message_overage: number
+  includes_history_estimate: boolean
 }
 
 export const getStats = () => api<AdminStats>('/api/admin/stats')
 export const getClients = () => api<BusinessRow[]>('/api/admin/clients')
+export const getMonthlyUsage = (month?: string) => api<MonthlyUsageRow[]>(
+  `/api/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`,
+)
 
 export const suspendClient = (id: string, reason?: string) =>
   api(`/api/admin/clients/${id}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) })
@@ -39,29 +63,38 @@ export const setBotActive = (id: string, bot_active: boolean) =>
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
 export type BusinessDetail = BusinessRow & {
   owner_phone: string | null
-  whatsapp_provider: 'ycloud' | 'meta' | 'kapso' | 'telegram' | null
+  whatsapp_provider: 'ycloud' | 'meta' | 'telegram' | null
   ycloud_number: string | null
+  ycloud_webhook_endpoint_id: string | null
   meta_phone_id: string | null
-  kapso_number_id: string | null
-  retell_agent_id: string | null
   ai_provider: string | null
   takes_bookings: boolean | null
   takes_orders: boolean | null
   lodging_enabled: boolean | null
+  chat_mode: 'menu' | 'ai' | null
   monthly_rate: number | null
   client_email: string
-  credential_status: Record<'ycloud_api_key' | 'meta_token' | 'meta_verify_token' | 'kapso_api_key' | 'kapso_verify_token' | 'telegram_bot_token', boolean>
+  credential_status: Record<'ycloud_api_key' | 'ycloud_webhook_secret' | 'meta_token' | 'telegram_bot_token', boolean>
 }
 
 export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'> & {
   ycloud_api_key?: string
+  ycloud_webhook_secret?: string
   meta_token?: string
-  meta_verify_token?: string
-  kapso_api_key?: string
-  kapso_verify_token?: string
   telegram_bot_token?: string
   client_password?: string
-  plan_expires_at?: string | null
+  apply_plan_defaults?: boolean
+}
+
+export type ProviderVerificationPayload = {
+  provider: NonNullable<BusinessDetail['whatsapp_provider']>
+  ycloud_api_key?: string
+  ycloud_number?: string
+  ycloud_webhook_secret?: string
+  ycloud_webhook_endpoint_id?: string
+  meta_token?: string
+  meta_phone_id?: string
+  telegram_bot_token?: string
 }
 
 export const getClient = (id: string) => api<BusinessDetail>(`/api/admin/clients/${id}`)
@@ -72,7 +105,7 @@ export const createClient = (p: BusinessPayload) =>
 export const updateClient = (id: string, p: BusinessPayload) =>
   api(`/api/admin/clients/${id}`, { method: 'PUT', body: JSON.stringify(p) })
 
-export const verifyProvider = (payload: Record<string, string | undefined>) =>
+export const verifyProvider = (payload: ProviderVerificationPayload) =>
   api<{ ok: boolean; info: string }>('/api/admin/verify-provider', { method: 'POST', body: JSON.stringify(payload) })
 
 // ── Herramientas por negocio (paridad con el admin viejo) ──
@@ -91,9 +124,13 @@ export const getClientPolicies = (id: string) =>
 export const saveClientPolicies = (id: string, p: Record<string, string>) =>
   api(`/api/admin/clients/${id}/policies`, { method: 'PUT', body: JSON.stringify(p) })
 
-// Verificar credenciales GUARDADAS de un negocio (botón de la tabla)
-export const verifyClient = (id: string) =>
-  api<{ ok: boolean; info: string }>(`/api/admin/clients/${id}/verify`, { method: 'POST' })
+// Verifica la configuración prospectiva sin revelar los secretos guardados.
+// Los valores no enviados se completan exclusivamente dentro del servidor.
+export const verifyClient = (id: string, payload?: ProviderVerificationPayload) =>
+  api<{ ok: boolean; info: string }>(`/api/admin/clients/${id}/verify`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  })
 
 export const deleteClient = (id: string) =>
   api(`/api/admin/clients/${id}`, { method: 'DELETE' })
