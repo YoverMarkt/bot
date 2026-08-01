@@ -5,9 +5,16 @@ import {
   buildStorefrontCatalog,
   canOrder,
   publicBusiness,
+  storefrontCapabilities,
   storefrontStatus,
   type StorefrontBusiness,
 } from '../services/storefront'
+import {
+  quoteLodging,
+  requestLodging,
+  LodgingServiceError,
+  type LodgingErrorCode,
+} from '../services/lodging'
 
 // Rutas de la mini app del negocio.
 //
@@ -211,6 +218,143 @@ router.get('/api/store/:slug/payment-info', requireStorefrontSession, async (req
   const account = await db.getBusinessBankAccount(req.storefront!.businessId)
   if (!account) return res.status(404).json({ error: 'El negocio no tiene datos de pago cargados' })
   return res.json(account)
+})
+
+// ── Hospedaje ──────────────────────────────────────────────────────────────
+//
+// Una estadía NO es un pedido y por eso no pasa por el carrito: no se piden
+// "2 habitaciones" como se piden 2 pizzas, se piden noches concretas y el
+// servidor decide qué cabe. Se reutilizan `quoteLodging`/`requestLodging`, las
+// mismas del bot: una sola fuente de verdad para disponibilidad y precios.
+
+const quoteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas, espera un momento' },
+})
+
+/** Traduce el error del servicio a algo que el huésped entienda. */
+const lodgingMessage = (code: LodgingErrorCode): { status: number; error: string } => {
+  switch (code) {
+    case 'unavailable':
+      return { status: 409, error: 'No hay disponibilidad para esas fechas' }
+    case 'quote_expired':
+      return { status: 409, error: 'La cotización expiró, vuelve a consultar las fechas' }
+    case 'quote_not_found':
+      return { status: 409, error: 'Primero consulta disponibilidad para esas fechas' }
+    case 'room_type_not_found':
+      return { status: 404, error: 'Esa habitación no está en la cotización' }
+    case 'manual_quote':
+      // Rule #8: sin precio automático NO se muestra ningún total inventado.
+      return { status: 409, error: 'Esta opción necesita cotización manual, escríbenos por WhatsApp' }
+    case 'lodging_disabled':
+      return { status: 409, error: 'Este negocio no recibe reservas por aquí' }
+    case 'invalid_input':
+      return { status: 400, error: 'Revisa las fechas y el número de huéspedes' }
+    default:
+      return { status: 500, error: 'No pudimos consultar la disponibilidad' }
+  }
+}
+
+/** Estado y capacidades del negocio de la URL. Compartido por cotizar y pedir. */
+const lodgingGuard = async (slug: string) => {
+  const business = await db.getBusinessBySlug(slug.trim())
+  const { status } = await readStatus(business)
+  return { business, status, capabilities: storefrontCapabilities(business) }
+}
+
+router.post('/api/store/:slug/stay/quote', quoteLimiter, requireStorefrontSession, async (req, res) => {
+  const { businessId, contactPhone } = req.storefront!
+  const { status, capabilities } = await lodgingGuard(String(req.params.slug || ""))
+  if (!capabilities.lodging) {
+    return res.status(409).json({ error: 'Este negocio no ofrece hospedaje' })
+  }
+
+  const body = (req.body || {}) as Record<string, unknown>
+  const entero = (value: unknown, fallback: number) => {
+    const parsed = Number.parseInt(String(value ?? ''), 10)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  try {
+    const quote = await quoteLodging({
+      businessId,
+      // El teléfono sale de la sesión, jamás del cuerpo: así nadie cotiza
+      // —ni luego reclama— a nombre de otro huésped.
+      contactPhone,
+      checkIn: String(body.checkIn || '').trim(),
+      checkOut: String(body.checkOut || '').trim(),
+      adults: entero(body.adults, 1),
+      children: entero(body.children, 0),
+      roomsCount: entero(body.rooms, 1),
+    })
+
+    // Igual que el bot: solo se muestra lo que de verdad tiene cupo, y sin
+    // total automático no se pinta precio alguno.
+    const options = quote.options.filter(option => (
+      Number.isInteger(option.availableUnits)
+      && Number.isInteger(option.unitsRequired)
+      && option.unitsRequired > 0
+      && option.availableUnits >= option.unitsRequired
+    ))
+
+    return res.json({
+      ...quote,
+      options,
+      status,
+      // Se puede mirar con el negocio cerrado; solicitar es otra cosa.
+      canRequest: canOrder(status),
+    })
+  } catch (error) {
+    const code = error instanceof LodgingServiceError
+      ? error.code
+      : 'database_error'
+    const { status: httpStatus, error: message } = lodgingMessage(code)
+    return res.status(httpStatus).json({ error: message, code })
+  }
+})
+
+router.post('/api/store/:slug/stay/request', orderLimiter, requireStorefrontSession, async (req, res) => {
+  const { businessId, contactPhone } = req.storefront!
+  const { status, capabilities } = await lodgingGuard(String(req.params.slug || ""))
+  if (!capabilities.lodging) {
+    return res.status(409).json({ error: 'Este negocio no ofrece hospedaje' })
+  }
+  if (!canOrder(status)) {
+    return res.status(409).json({
+      error: status === 'cerrada'
+        ? 'El negocio está cerrado ahora mismo'
+        : 'Esta tienda no está recibiendo solicitudes',
+      status,
+    })
+  }
+
+  const body = (req.body || {}) as Record<string, unknown>
+  const roomTypeId = String(body.roomTypeId || '').trim()
+  const contactName = String(body.name || '').trim().slice(0, 120)
+  if (!roomTypeId) return res.status(400).json({ error: 'Elige una habitación' })
+  if (contactName.length < 2) {
+    return res.status(400).json({ error: 'Necesitamos el nombre de quien se hospeda' })
+  }
+
+  const result = await requestLodging({
+    businessId,
+    contactPhone,
+    contactName,
+    roomTypeId,
+    notes: String(body.notes || '').slice(0, 300) || null,
+  })
+
+  if (!result.ok) {
+    const { status: httpStatus, error: message } = lodgingMessage(result.error.code)
+    return res.status(httpStatus).json({ error: message, code: result.error.code })
+  }
+
+  // Es una RETENCIÓN, no una reserva confirmada: el equipo confirma a mano y
+  // coordina el pago. La app debe decirlo con todas sus letras.
+  return res.status(201).json({ ...result.request, confirmed: false })
 })
 
 export = router

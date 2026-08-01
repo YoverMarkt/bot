@@ -72,6 +72,30 @@ export interface CatalogExtra {
 
 export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 
+/**
+ * Qué sabe hacer esta tienda. NO es lo mismo vender comida que alojar gente, y
+ * la app no puede adivinarlo: un hostal con carrito de "+/− habitaciones" sería
+ * un producto roto, porque una estadía se pide por fechas, no por unidades.
+ *
+ * Manda la bandera del negocio, nunca su `type`: el tipo solo recomienda
+ * valores al crearlo y el dueño puede cambiarlos a mano.
+ */
+export interface StorefrontCapabilities {
+  /** Catálogo con carrito: comida, bebidas, retail. */
+  orders: boolean
+  /** Estadías por fechas: hotel, hostal, alojamiento. */
+  lodging: boolean
+}
+
+export function storefrontCapabilities(
+  business: StorefrontBusiness | null,
+): StorefrontCapabilities {
+  return {
+    orders: business?.takes_orders === true,
+    lodging: business?.lodging_enabled === true,
+  }
+}
+
 const money = (value: unknown): number | null => {
   const parsed = Number.parseFloat(String(value ?? ''))
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null
@@ -92,6 +116,11 @@ export function storefrontStatus(input: {
   if (!business || business.active === false) return 'no_disponible'
   if (business.suspended === true) return 'suspendida'
   if (business.storefront_enabled !== true) return 'no_disponible'
+  // Una tienda que no vende ni aloja no tiene nada que mostrar. Es el caso de
+  // la barbería: enciende la tienda por error y el cliente abre una app vacía.
+  // Mejor no existir que existir rota; la barbería se queda con el agente.
+  const capacidades = storefrontCapabilities(business)
+  if (!capacidades.orders && !capacidades.lodging) return 'no_disponible'
   return input.outsideHours ? 'cerrada' : 'abierta'
 }
 
@@ -213,5 +242,8 @@ export function publicBusiness(business: StorefrontBusiness) {
     description: business.description || null,
     address: business.address || null,
     phone: business.whatsapp_number || business.phone || null,
+    // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
+    // `type`, que es exactamente lo que el proyecto decidió no hacer.
+    capabilities: storefrontCapabilities(business),
   }
 }

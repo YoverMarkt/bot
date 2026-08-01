@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* Tema de la tienda. Es la app que ve el CLIENTE FINAL, no el panel: manda la
+   foto del producto, el precio se lee de un vistazo y el pulgar alcanza todo.
+   Por eso no reutiliza el tema de los paneles. */
+@theme {
+  --color-marca: oklch(0.511 0.262 276.966);      /* indigo de marca */
+  --color-marca-suave: oklch(0.96 0.03 276.966);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --fondo: oklch(0.985 0 0);
+  --superficie: oklch(1 0 0);
+  --texto: oklch(0.16 0 0);
+  --tenue: oklch(0.55 0 0);
+  --linea: oklch(0.92 0 0);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: oklch(0.16 0 0);
+    --superficie: oklch(0.21 0 0);
+    --texto: oklch(0.97 0 0);
+    --tenue: oklch(0.68 0 0);
+    --linea: oklch(0.29 0 0);
+    color-scheme: dark;
+  }
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--font-sans);
+  /* El rebote elástico de iOS dentro del webview de WhatsApp se ve roto. */
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utilidades del tema, para no repetir var() por toda la app. */
+@utility superficie { background-color: var(--superficie); }
+@utility borde-tema { border-color: var(--linea); }
+@utility texto-tenue { color: var(--tenue); }
+
+/* La barra inferior no puede quedar debajo del gesto de inicio del iPhone. */
+@utility pb-seguro { padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
+
+/* Carrusel de categorías: se desliza, pero sin barra a la vista. */
+@utility sin-barra {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@keyframes entrar {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes subir {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@utility animar-entrada { animation: entrar 0.22s ease-out both; }
+@utility animar-hoja { animation: subir 0.26s cubic-bezier(0.32, 0.72, 0, 1) both; }

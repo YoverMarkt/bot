@@ -1,0 +1,167 @@
+// Lo que devuelve el servidor. Se declara aquí para que la app no invente
+// campos: si el backend cambia, el compilador avisa antes que un cliente.
+
+export interface Capabilities {
+  /** Catálogo con carrito: comida, bebidas, retail. */
+  orders: boolean
+  /** Estadías por fechas: hotel, hostal. */
+  lodging: boolean
+}
+
+export interface Business {
+  id: string
+  name: string
+  slug: string
+  type: string | null
+  slogan: string | null
+  description: string | null
+  address: string | null
+  phone: string | null
+  capabilities: Capabilities
+}
+
+export type StoreStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
+
+export interface Category {
+  id: string
+  name: string
+  description: string | null
+  imageUrl: string | null
+}
+
+export interface Variant {
+  id: string
+  name: string
+  price: number
+  priceSale: number | null
+}
+
+export interface Extra {
+  id: string
+  group: string
+  name: string
+  description: string | null
+  price: number
+  maxSelectable: number | null
+}
+
+export interface Product {
+  id: string
+  name: string
+  description: string | null
+  imageUrl: string | null
+  videoUrl: string | null
+  categoryId: string | null
+  tags: string[]
+  available: boolean
+  /** Con variantes es un "desde"; sin ellas, el precio final. */
+  priceFrom: number | null
+  hasVariants: boolean
+  variants: Variant[]
+  extras: Extra[]
+}
+
+export interface Catalog {
+  business: Business | null
+  status: StoreStatus
+  canOrder: boolean
+  categories: Category[]
+  products: Product[]
+  uncategorized: number
+}
+
+export interface Address {
+  id: string
+  label: string
+  address: string
+  reference: string | null
+  is_default: boolean
+}
+
+export interface Me {
+  phone: string
+  name: string | null
+  addresses: Address[]
+}
+
+/** Una línea del carrito, ya resuelta contra el catálogo. */
+export interface CartLine {
+  /** Identidad de la línea: mismo producto con distintos extras son dos líneas. */
+  key: string
+  product: Product
+  variant: Variant | null
+  extras: Extra[]
+  quantity: number
+  note: string
+  /** Solo para pintar. El importe que se cobra lo calcula el servidor. */
+  unitPrice: number
+}
+
+export type Fulfillment = 'delivery' | 'pickup' | 'onsite'
+
+export interface OrderResult {
+  id?: string
+  order_number?: number | string
+  total?: number | string
+  [key: string]: unknown
+}
+
+export interface BankAccount {
+  bank_name?: string | null
+  account_type?: string | null
+  account_number?: string | null
+  holder_name?: string | null
+  holder_id?: string | null
+  instructions?: string | null
+  [key: string]: unknown
+}
+
+// ── Hospedaje ──────────────────────────────────────────────────────────────
+
+export interface StayOption {
+  roomTypeId: string
+  name: string
+  description: string | null
+  maxGuests: number
+  availableUnits: number
+  unitsRequired: number
+  currency: string
+  pricesIncludeTax: boolean
+  subtotal: number | null
+  tax: number | null
+  fees: number | null
+  total: number | null
+  amenities: string[]
+  mediaUrls: string[]
+}
+
+export interface StayQuote {
+  quoteId: string
+  checkIn: string
+  checkOut: string
+  checkInTime: string
+  checkOutTime: string
+  adults: number
+  children: number
+  roomsCount: number
+  nights: number
+  expiresAt: string
+  options: StayOption[]
+  status: StoreStatus
+  canRequest: boolean
+}
+
+export interface StayRequest {
+  requestId: string
+  roomTypeName: string
+  checkIn: string
+  checkOut: string
+  checkInTime: string
+  checkOutTime: string
+  nights: number
+  total: number
+  currency: string
+  expiresAt: string
+  /** Siempre false: esto es una retención, la confirma el equipo. */
+  confirmed: boolean
+}
