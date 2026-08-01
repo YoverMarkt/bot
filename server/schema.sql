@@ -2671,6 +2671,255 @@ grant execute on function public.fail_webhook_event(uuid, uuid, text, integer)
 grant execute on function public.cleanup_webhook_events()
   to service_role;
 
+-- ── CATÁLOGO PARA LA TIENDA WEB DEL NEGOCIO ────────────────
+-- La tienda que se abre desde WhatsApp necesita categorías con imagen,
+-- variantes con precio propio y extras con coste. El precio sigue siendo
+-- autoridad del servidor: estas tablas solo amplían de dónde sale.
+alter table public.businesses
+  add column if not exists storefront_enabled boolean not null default false;
+
+create table if not exists public.product_categories (
+  id              uuid primary key default gen_random_uuid(),
+  business_id     uuid not null references public.businesses(id) on delete cascade,
+  name            text not null,
+  description     text,
+  image_url       text,
+  image_public_id text,
+  sort            integer not null default 0,
+  active          boolean not null default true,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint product_categories_textos_check check (
+    char_length(btrim(name)) between 1 and 60
+    and char_length(coalesce(description, '')) <= 300
+    and sort between 0 and 999
+  )
+);
+create index if not exists idx_product_categories_negocio
+  on public.product_categories (business_id, sort);
+create unique index if not exists uq_product_categories_nombre
+  on public.product_categories (business_id, lower(btrim(name)));
+
+alter table public.products
+  add column if not exists category_id uuid references public.product_categories(id) on delete set null;
+create index if not exists idx_products_categoria
+  on public.products (business_id, category_id);
+
+-- Un producto sin variantes sigue usando su propio `price`.
+create table if not exists public.product_variants (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  product_id  uuid not null references public.products(id) on delete cascade,
+  name        text not null,
+  price       numeric(10,2) not null,
+  price_sale  numeric(10,2),
+  stock       text not null default 'disponible',
+  sort        integer not null default 0,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint product_variants_datos_check check (
+    char_length(btrim(name)) between 1 and 60
+    and price >= 0 and price <= 100000
+    and (price_sale is null or (price_sale >= 0 and price_sale <= 100000))
+    and stock in ('disponible', 'agotado')
+    and sort between 0 and 999
+  )
+);
+create index if not exists idx_product_variants_producto
+  on public.product_variants (business_id, product_id, sort);
+create unique index if not exists uq_product_variants_nombre
+  on public.product_variants (product_id, lower(btrim(name)));
+
+-- Los extras extienden menu_modifiers en vez de duplicar el concepto: esa tabla
+-- ya resuelve los sabores del modo menú y el dueño los gestiona en un solo sitio.
+alter table public.menu_modifiers
+  add column if not exists price_delta numeric(10,2) not null default 0,
+  add column if not exists product_id uuid references public.products(id) on delete cascade,
+  add column if not exists max_selectable integer;
+alter table public.menu_modifiers
+  alter column category_tag drop not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.menu_modifiers'::regclass
+      and conname = 'menu_modifiers_alcance_check'
+  ) then
+    alter table public.menu_modifiers
+      add constraint menu_modifiers_alcance_check
+      check (
+        (category_tag is not null or product_id is not null)
+        and price_delta >= 0 and price_delta <= 100000
+        and (max_selectable is null or max_selectable between 1 and 20)
+      );
+  end if;
+end;
+$$;
+
+create index if not exists idx_menu_modifiers_producto
+  on public.menu_modifiers (business_id, product_id)
+  where product_id is not null;
+create unique index if not exists uq_menu_modifiers_producto_nombre
+  on public.menu_modifiers (business_id, product_id, lower(btrim(name)))
+  where product_id is not null;
+
+-- Datos bancarios que ve el cliente al transferir. Los publica el negocio.
+create table if not exists public.business_bank_accounts (
+  id             uuid primary key default gen_random_uuid(),
+  business_id    uuid not null references public.businesses(id) on delete cascade,
+  bank_name      text not null,
+  account_type   text not null default 'ahorros',
+  account_number text not null,
+  holder_name    text not null,
+  holder_id      text,
+  instructions   text,
+  active         boolean not null default true,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint business_bank_accounts_datos_check check (
+    char_length(btrim(bank_name)) between 1 and 80
+    and char_length(btrim(account_number)) between 1 and 40
+    and char_length(btrim(holder_name)) between 1 and 120
+    and account_type in ('ahorros', 'corriente')
+    and char_length(coalesce(holder_id, '')) <= 20
+    and char_length(coalesce(instructions, '')) <= 300
+  )
+);
+create index if not exists idx_business_bank_accounts_negocio
+  on public.business_bank_accounts (business_id, active);
+
+-- ── CLIENTES DE LA TIENDA Y SESIONES ───────────────────────
+-- La mini app no tiene registro: el cliente ya se identificó al escribir por
+-- WhatsApp y el enlace que le manda el bot ES su sesión. El cliente se guarda
+-- como identidad GLOBAL con una relación por negocio, así cada negocio ve lo
+-- suyo y nunca sabe que ese teléfono también compra en otro sitio.
+create table if not exists public.customers (
+  id         uuid primary key default gen_random_uuid(),
+  phone      text not null,
+  name       text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint customers_datos_check check (
+    phone ~ '^[0-9]{8,15}$' and char_length(coalesce(name, '')) <= 120
+  )
+);
+create unique index if not exists uq_customers_phone on public.customers (phone);
+
+create table if not exists public.business_customers (
+  id                uuid primary key default gen_random_uuid(),
+  business_id       uuid not null references public.businesses(id) on delete cascade,
+  customer_id       uuid not null references public.customers(id) on delete cascade,
+  display_name      text,
+  first_order_at    timestamptz,
+  last_order_at     timestamptz,
+  total_orders      integer not null default 0,
+  total_spent       numeric(12,2) not null default 0,
+  marketing_consent boolean not null default false,
+  notes             text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  constraint business_customers_datos_check check (
+    total_orders >= 0 and total_spent >= 0
+    and char_length(coalesce(display_name, '')) <= 120
+    and char_length(coalesce(notes, '')) <= 500
+  )
+);
+create unique index if not exists uq_business_customers
+  on public.business_customers (business_id, customer_id);
+create index if not exists idx_business_customers_recientes
+  on public.business_customers (business_id, last_order_at desc);
+
+-- Por negocio a propósito: que una pizzería vea a dónde pidió ese cliente en
+-- otro local sería filtrar datos entre negocios.
+create table if not exists public.customer_addresses (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  customer_id uuid not null references public.customers(id) on delete cascade,
+  label       text not null default 'Casa',
+  address     text not null,
+  reference   text,
+  latitude    numeric(10,7),
+  longitude   numeric(10,7),
+  is_default  boolean not null default false,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint customer_addresses_datos_check check (
+    char_length(btrim(label)) between 1 and 40
+    and char_length(btrim(address)) between 1 and 300
+    and char_length(coalesce(reference, '')) <= 300
+    and (latitude is null or latitude between -90 and 90)
+    and (longitude is null or longitude between -180 and 180)
+  )
+);
+create index if not exists idx_customer_addresses_cliente
+  on public.customer_addresses (business_id, customer_id, active);
+
+-- Se guarda el HASH del token, nunca el token.
+create table if not exists public.storefront_sessions (
+  id            uuid primary key default gen_random_uuid(),
+  business_id   uuid not null references public.businesses(id) on delete cascade,
+  customer_id   uuid not null references public.customers(id) on delete cascade,
+  token_hash    text not null,
+  contact_phone text not null,
+  expires_at    timestamptz not null,
+  last_seen_at  timestamptz,
+  revoked_at    timestamptz,
+  created_at    timestamptz not null default now(),
+  constraint storefront_sessions_datos_check check (
+    token_hash ~ '^[0-9a-f]{64}$' and contact_phone ~ '^[0-9]{8,15}$'
+  )
+);
+create unique index if not exists uq_storefront_sessions_token
+  on public.storefront_sessions (token_hash);
+create index if not exists idx_storefront_sessions_vigentes
+  on public.storefront_sessions (expires_at) where revoked_at is null;
+
+alter table public.orders
+  add column if not exists customer_id uuid references public.customers(id) on delete set null,
+  add column if not exists source text not null default 'whatsapp',
+  add column if not exists address_id uuid references public.customer_addresses(id) on delete set null,
+  add column if not exists fulfillment text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.orders'::regclass and conname = 'orders_origen_check'
+  ) then
+    alter table public.orders add constraint orders_origen_check check (
+      source in ('whatsapp', 'storefront', 'marketplace', 'manual')
+      and (fulfillment is null or fulfillment in ('delivery', 'pickup', 'onsite'))
+    );
+  end if;
+end;
+$$;
+create index if not exists idx_orders_cliente
+  on public.orders (business_id, customer_id, created_at desc);
+
+create or replace function public.cleanup_storefront_sessions(p_days integer default 2)
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_deleted integer;
+  v_days integer := greatest(coalesce(p_days, 2), 1);
+begin
+  with deleted as (
+    delete from public.storefront_sessions as target
+    where target.expires_at < now() - make_interval(days => v_days)
+    returning 1
+  )
+  select count(*)::integer into v_deleted from deleted;
+  return coalesce(v_deleted, 0);
+end;
+$$;
+revoke all on function public.cleanup_storefront_sessions(integer)
+  from public, anon, authenticated;
+
 -- ── REGISTRO DE ERRORES DE PLATAFORMA ──────────────────────
 -- La huella llega calculada desde Node y NO se genera con digest() aquí: esa
 -- función fuera del search_path fue justamente lo que tumbó el canal de entrada
@@ -2792,6 +3041,13 @@ alter table orders                enable row level security;
 alter table order_items           enable row level security;
 alter table webhook_inbound_events enable row level security;
 alter table platform_errors       enable row level security;
+alter table product_categories    enable row level security;
+alter table product_variants      enable row level security;
+alter table business_bank_accounts enable row level security;
+alter table customers             enable row level security;
+alter table business_customers    enable row level security;
+alter table customer_addresses    enable row level security;
+alter table storefront_sessions   enable row level security;
 
 revoke all on table menu_modifiers
   from public, anon, authenticated, service_role;
