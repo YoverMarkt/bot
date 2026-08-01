@@ -45,7 +45,30 @@ export type MonthlyUsageRow = {
   includes_history_estimate: boolean
 }
 
+export type ChannelStatus = 'ok' | 'silencio' | 'nunca_recibio' | 'sin_canal'
+
+export type ChannelHealth = {
+  checkedAt: string
+  silenceHours: number
+  alert: boolean
+  businesses: Array<{
+    businessId: string
+    name: string
+    status: ChannelStatus
+    lastInboundAt: string | null
+    hoursSinceLastInbound: number | null
+    detail: string
+  }>
+  recentFailures: Array<{
+    provider: string
+    status: number
+    reason: string
+    at: string
+  }>
+}
+
 export const getStats = () => api<AdminStats>('/api/admin/stats')
+export const getChannelHealth = () => api<ChannelHealth>('/api/admin/channel-health')
 export const getClients = () => api<BusinessRow[]>('/api/admin/clients')
 export const getMonthlyUsage = (month?: string) => api<MonthlyUsageRow[]>(
   `/api/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`,

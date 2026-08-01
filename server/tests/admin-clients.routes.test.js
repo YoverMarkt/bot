@@ -67,11 +67,18 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 13 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(13)
+  it('protege sus 14 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(14)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
+      auth: authorization('client'),
+    })).status).toBe(403)
+  })
+
+  it('la salud del canal también exige superadmin', async () => {
+    expect((await dispatch('get', '/api/admin/channel-health')).status).toBe(401)
+    expect((await dispatch('get', '/api/admin/channel-health', {
       auth: authorization('client'),
     })).status).toBe(403)
   })

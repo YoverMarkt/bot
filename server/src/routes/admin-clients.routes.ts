@@ -6,6 +6,11 @@ import {
   type PlanDefinition,
   type PlanId,
 } from '../config/plans'
+import {
+  diagnoseChannels,
+  type ChannelActivity,
+  type DiagnosableBusiness,
+} from '../services/channel-health'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -25,6 +30,7 @@ interface CreatedBusiness extends BusinessRecord {
 const db = require('../db') as {
   getAdminStats(): Promise<unknown>
   getAllBusinesses(): Promise<unknown[]>
+  getLastInboundByBusiness(businessIds: string[]): Promise<ChannelActivity[]>
   getBusinessById(businessId: string): Promise<CreatedBusiness | null>
   getClientUserByBusiness(businessId: string): Promise<{ email?: string } | null>
   createBusinessOnboarding(
@@ -205,6 +211,17 @@ function duplicateChannelMessage(error: unknown): string | null {
 
 router.get('/api/admin/stats', auth.authAdmin, async (_req, res) => {
   res.json(await db.getAdminStats())
+})
+
+// Vigilancia del canal de entrada: responde "¿siguen llegando mensajes?".
+// Existe porque en julio de 2026 el bot estuvo cinco días mudo sin que nada
+// avisara — el servidor vivía, pero ningún WhatsApp entraba.
+router.get('/api/admin/channel-health', auth.authAdmin, async (_req, res) => {
+  const businesses = await db.getAllBusinesses() as DiagnosableBusiness[]
+  const activity = await db.getLastInboundByBusiness(
+    businesses.map(business => business.id),
+  )
+  res.json(diagnoseChannels({ businesses, activity }))
 })
 
 router.get('/api/admin/clients', auth.authAdmin, async (_req, res) => {

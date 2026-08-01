@@ -42,4 +42,45 @@ const getClientStats = async (businessId: string) => {
   }
 }
 
-export = { getAdminStats, getClientStats }
+// Cuándo entró el último mensaje de cada negocio. Alimenta la vigilancia del
+// canal (`services/channel-health.ts`): si esto se queda quieto, el bot está
+// mudo aunque el servidor siga en pie.
+const getLastInboundByBusiness = async (businessIds: string[]) => {
+  const ids = businessIds.filter(Boolean)
+  if (!ids.length) return []
+  // Una consulta por negocio, pero mínima: una sola fila y dos columnas. Se
+  // resuelve con el índice de la cola y mantiene el egress casi en cero.
+  return Promise.all(ids.map(async (businessId) => {
+    const { data, error } = await db
+      .from('webhook_inbound_events')
+      .select('received_at')
+      .eq('business_id', businessId)
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    return {
+      businessId,
+      lastInboundAt: (data?.received_at as string | undefined) || null,
+    }
+  }))
+}
+
+// El entrante más reciente de toda la plataforma, para el healthcheck.
+const getLastInboundAt = async (): Promise<string | null> => {
+  const { data, error } = await db
+    .from('webhook_inbound_events')
+    .select('received_at')
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data?.received_at as string | undefined) || null
+}
+
+export = {
+  getAdminStats,
+  getClientStats,
+  getLastInboundByBusiness,
+  getLastInboundAt,
+}
