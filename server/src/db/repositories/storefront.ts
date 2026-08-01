@@ -190,6 +190,26 @@ const cleanupStorefrontSessions = async (days = 2) => db.rpc(
   { p_days: days },
 )
 
+// El pedido de la tienda: la RPC resuelve cada precio desde la base. Aquí solo
+// se traducen los nombres de los parámetros.
+const createStorefrontOrder = async (input: {
+  businessId: string
+  customerId: string | null
+  contactPhone: string
+  contactName?: string | null
+  addressId?: string | null
+  fulfillment?: string | null
+  items: unknown[]
+}) => db.rpc('create_storefront_order', {
+  p_business_id: input.businessId,
+  p_customer_id: input.customerId,
+  p_contact_phone: input.contactPhone,
+  p_contact_name: input.contactName || null,
+  p_address_id: input.addressId || null,
+  p_fulfillment: input.fulfillment || null,
+  p_items: input.items,
+})
+
 export = {
   resolveCustomer,
   getBusinessCustomer,
@@ -201,4 +221,5 @@ export = {
   touchStorefrontSession,
   revokeStorefrontSessions,
   cleanupStorefrontSessions,
+  createStorefrontOrder,
 }
