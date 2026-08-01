@@ -33,7 +33,7 @@ describe('arquitectura reutilizable de WhatsApp Flows', () => {
       'order', 'appointment', 'lodging', 'lead',
     ])
     expect(templates.flowTemplateByKey('order_standard')).toMatchObject({
-      version: 1,
+      version: 2,
       firstScreen: 'ORDER_METHOD',
       implementation: 'ready',
     })
@@ -44,9 +44,9 @@ describe('arquitectura reutilizable de WhatsApp Flows', () => {
     expect(json.data_api_version).toBe('3.0')
     expect(json.screens.map(screen => screen.id)).toEqual([
       'ORDER_METHOD',
-      'ORDER_ITEM_1',
-      'ORDER_ITEM_2',
-      'ORDER_ITEM_3',
+      'ORDER_ITEM_ONE',
+      'ORDER_ITEM_TWO',
+      'ORDER_ITEM_THREE',
       'ORDER_DETAILS',
       'ORDER_REVIEW',
     ])

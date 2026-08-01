@@ -21,6 +21,7 @@ import {
   provisionBusinessFlow,
   publishBusinessFlow,
   setBusinessFlowEnabled,
+  setupRecommendedBusinessFlows,
   type BusinessFlowDefinition,
   type FlowBusiness,
   type FlowTemplate,
@@ -50,6 +51,11 @@ type DefinitionVariables = {
   businessName: string
   definitionId: string
   enabled?: boolean
+}
+
+type BusinessVariables = {
+  businessId: string
+  businessName: string
 }
 
 const capabilityNames: Record<string, string> = {
@@ -427,6 +433,7 @@ function BusinessFlowCard({
   publishMutation,
   activateMutation,
   toggleMutation,
+  setupMutation,
 }: {
   business: FlowBusiness
   templates: FlowTemplate[]
@@ -434,6 +441,7 @@ function BusinessFlowCard({
   publishMutation: ReturnType<typeof usePublishMutation>
   activateMutation: ReturnType<typeof useActivateMutation>
   toggleMutation: ReturnType<typeof useToggleMutation>
+  setupMutation: ReturnType<typeof useSetupMutation>
 }) {
   const recommended = new Set(business.recommendedCapabilities)
   const missingTemplates = templates.filter(template => (
@@ -441,6 +449,17 @@ function BusinessFlowCard({
     && !business.definitions.some(definition => definition.templateKey === template.key)
   ))
   const whatsappProvider = business.provider === 'meta' || business.provider === 'ycloud'
+  const fullyReady = business.recommendedCapabilities.length > 0
+    && business.recommendedCapabilities.every(capability => (
+      business.definitions.some(definition => (
+        definition.capability === capability
+        && normalizedStatus(definition) === 'PUBLISHED'
+        && definition.isActive
+        && definition.enabled
+      ))
+    ))
+  const settingUp = setupMutation.isPending
+    && setupMutation.variables?.businessId === business.id
 
   return (
     <Card>
@@ -453,7 +472,36 @@ function BusinessFlowCard({
             </CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">{business.type || 'Negocio'}</p>
           </div>
-          <ProviderBadge provider={business.provider} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProviderBadge provider={business.provider} />
+            {fullyReady && (
+              <Badge
+                variant="secondary"
+                className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              >
+                Flow técnico listo
+              </Badge>
+            )}
+            {business.provider === 'ycloud' && !fullyReady && (
+              <ConfirmAction
+                trigger={(
+                  <Button size="sm" disabled={settingUp}>
+                    <Rocket />
+                    {settingUp ? 'Preparando…' : 'Preparar y activar'}
+                  </Button>
+                )}
+                title={`Preparar Flows para ${business.name}`}
+                description="Se crearán las plantillas recomendadas, se validarán en YCloud y, solo si el proveedor confirma que están publicadas, se activarán para este negocio."
+                confirmLabel="Publicar y activar"
+                onConfirm={async () => {
+                  await setupMutation.mutateAsync({
+                    businessId: business.id,
+                    businessName: business.name,
+                  })
+                }}
+              />
+            )}
+          </div>
         </div>
 
         <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
@@ -482,6 +530,13 @@ function BusinessFlowCard({
             </div>
           </div>
         </div>
+        {fullyReady && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Publicado, activo y habilitado. El bot lo abrirá cuando este negocio
+            tenga configurados los datos reales que necesita; mientras tanto
+            conservará la atención normal por chat.
+          </p>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -670,6 +725,26 @@ function useToggleMutation() {
   })
 }
 
+function useSetupMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (variables: BusinessVariables) => (
+      setupRecommendedBusinessFlows(variables.businessId)
+    ),
+    onSuccess: (_result, variables) => {
+      toast.success(
+        `Flows técnicos publicados y activos para ${variables.businessName}`,
+      )
+    },
+    onError: error => toast.error(
+      error instanceof Error
+        ? error.message
+        : 'No se pudieron preparar todos los Flows',
+    ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['adm-flows'] }),
+  })
+}
+
 export default function Flows() {
   const [search, setSearch] = useState('')
   const query = useQuery({
@@ -680,6 +755,7 @@ export default function Flows() {
   const publishMutation = usePublishMutation()
   const activateMutation = useActivateMutation()
   const toggleMutation = useToggleMutation()
+  const setupMutation = useSetupMutation()
 
   const businesses = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('es')
@@ -732,7 +808,7 @@ export default function Flows() {
             <Workflow className="size-6 text-primary" /> WhatsApp Flows
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Crea y controla formularios estructurados por negocio. Un borrador nunca se habilita automáticamente.
+            Cada negocio nuevo conectado por YCloud prepara automáticamente el Flow que corresponde a sus capacidades. Desde aquí también puedes probar, versionar y controlar cada publicación.
           </p>
         </div>
         <Button
@@ -747,9 +823,9 @@ export default function Flows() {
 
       <Alert className="mb-5">
         <AlertTriangle />
-        <AlertTitle>Publicación controlada</AlertTitle>
+        <AlertTitle>Automático, con verificación antes de activar</AlertTitle>
         <AlertDescription>
-          Primero crea y prueba el borrador. Publicar, activar una versión y habilitar el Flow son acciones controladas para evitar cambios accidentales en clientes.
+          El panel solo habilita un Flow después de comprobar en YCloud que no tiene errores y que su estado remoto es Publicado. Si falta catálogo, habitaciones u horario, el bot conserva el recorrido normal por chat.
         </AlertDescription>
       </Alert>
 
@@ -801,6 +877,7 @@ export default function Flows() {
               publishMutation={publishMutation}
               activateMutation={activateMutation}
               toggleMutation={toggleMutation}
+              setupMutation={setupMutation}
             />
           ))}
         </div>

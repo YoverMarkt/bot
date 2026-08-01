@@ -5,8 +5,8 @@ import jwt from 'jsonwebtoken'
 const require = createRequire(import.meta.url)
 const router = require('../dist/routes/admin-flows.routes')
 const db = require('../dist/db')
-const axios = require('axios')
 const ycloud = require('../dist/integrations/ycloud')
+const flowProvisioner = require('../dist/services/whatsapp-flow-provisioner')
 
 const JWT_SECRET = 'admin-flows-test-secret'
 const BUSINESS_ID = '10000000-0000-4000-8000-000000000001'
@@ -106,43 +106,30 @@ function definition(overrides = {}) {
   }
 }
 
-function mockProvisioning(currentBusiness = business()) {
-  vi.spyOn(db, 'getBusinessById').mockResolvedValue(currentBusiness)
-  vi.spyOn(db, 'listFlowDefinitions').mockResolvedValue([])
-  vi.spyOn(axios, 'get').mockResolvedValue({
-    data: {
-      items: [{ phoneNumber: '+593999000001', wabaId: 'waba-1' }],
-    },
-  })
-  vi.spyOn(db, 'upsertFlowDefinition').mockResolvedValue(definition())
-  vi.spyOn(db, 'createFlowVersion').mockResolvedValue(
-    definition().whatsapp_flow_versions[0],
-  )
-  const update = vi.spyOn(db, 'updateFlowVersionState')
-    .mockImplementation(async input => ({
-      ...definition().whatsapp_flow_versions[0],
-      status: input.status,
-      provider_flow_id: input.providerFlowId || null,
-      validation_errors: input.validationErrors || [],
-    }))
-  vi.spyOn(ycloud, 'createFlow').mockResolvedValue({
-    id: 'remote-flow-1',
-    success: true,
-  })
-  return { update }
-}
-
-function providerNotFound() {
-  const error = new Error('not found')
-  error.isAxiosError = true
-  error.response = { status: 404, data: {} }
-  return error
+function provisionResult(overrides = {}) {
+  return {
+    ok: true,
+    businessId: BUSINESS_ID,
+    templateKey: 'order_standard',
+    capability: 'order',
+    status: 'draft',
+    stage: 'draft',
+    idempotent: false,
+    definitionId: DEFINITION_ID,
+    versionId: VERSION_ID,
+    providerFlowId: 'remote-flow-1',
+    enabled: false,
+    validationErrors: [],
+    ...overrides,
+  }
 }
 
 beforeEach(() => {
   process.env.JWT_SECRET = JWT_SECRET
   process.env.BASE_URL = 'https://bot.example.com'
   delete process.env.YCLOUD_API_KEY
+  vi.spyOn(db, 'isWhatsAppFlowCapabilitiesSchemaReady')
+    .mockResolvedValue(true)
 })
 
 afterEach(() => {
@@ -197,6 +184,89 @@ describe('administración de WhatsApp Flows', () => {
     expect(JSON.stringify(response.body)).not.toContain('ycloud-test-secret')
   })
 
+  it('prepara, publica y habilita las capacidades recomendadas en una acción', async () => {
+    const setup = vi.spyOn(
+      flowProvisioner,
+      'setupRecommendedFlowsForBusiness',
+    ).mockResolvedValue({
+      ok: true,
+      businessId: BUSINESS_ID,
+      status: 'ready',
+      publishAndEnable: true,
+      results: [{
+        status: 'published',
+        capability: 'lodging',
+        enabled: true,
+      }],
+    })
+
+    const response = await dispatch(
+      '/api/admin/flows/:businessId/setup-recommended',
+      'post',
+      {
+        auth: authorization(),
+        params: { businessId: BUSINESS_ID },
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.body).toMatchObject({
+      ok: true,
+      status: 'ready',
+    })
+    expect(setup).toHaveBeenCalledWith(
+      BUSINESS_ID,
+      { publishAndEnable: true },
+    )
+  })
+
+  it.each([
+    [
+      '/api/admin/flows/:businessId/:definitionId/publish',
+      {},
+    ],
+    [
+      '/api/admin/flows/:businessId/:definitionId/activate',
+      { versionId: VERSION_ID },
+    ],
+    [
+      '/api/admin/flows/:businessId/:definitionId',
+      { enabled: true },
+    ],
+  ])('bloquea %s si el esquema productivo no está listo', async (
+    path,
+    body,
+  ) => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business())
+    db.isWhatsAppFlowCapabilitiesSchemaReady.mockResolvedValue(false)
+    const publish = vi.spyOn(ycloud, 'publishFlow')
+    const activate = vi.spyOn(db, 'activateFlowVersion')
+    const upsert = vi.spyOn(db, 'upsertFlowDefinition')
+
+    const response = await dispatch(
+      path,
+      path.endsWith('/publish') || path.endsWith('/activate')
+        ? 'post'
+        : 'patch',
+      {
+        auth: authorization(),
+        params: {
+          businessId: BUSINESS_ID,
+          definitionId: DEFINITION_ID,
+        },
+        body,
+      },
+    )
+
+    expect(response.status).toBe(409)
+    expect(response.body.error).toContain(
+      'migration-whatsapp-flows-capacidades.sql',
+    )
+    expect(publish).not.toHaveBeenCalled()
+    expect(activate).not.toHaveBeenCalled()
+    expect(upsert).not.toHaveBeenCalled()
+  })
+
   it('distingue en el GET la versión candidata de la versión activa', async () => {
     const current = {
       ...definition().whatsapp_flow_versions[0],
@@ -239,35 +309,9 @@ describe('administración de WhatsApp Flows', () => {
     )
   })
 
-  it('crea únicamente un borrador YCloud y nunca lo publica implícitamente', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business())
-    vi.spyOn(db, 'listFlowDefinitions').mockResolvedValue([])
-    vi.spyOn(axios, 'get').mockResolvedValue({
-      data: {
-        items: [{
-          phoneNumber: '+593999000001',
-          wabaId: 'waba-1',
-        }],
-      },
-    })
-    vi.spyOn(db, 'upsertFlowDefinition').mockResolvedValue(definition())
-    vi.spyOn(db, 'createFlowVersion').mockResolvedValue(
-      definition().whatsapp_flow_versions[0],
-    )
-    vi.spyOn(db, 'updateFlowVersionState').mockImplementation(async input => ({
-      ...definition().whatsapp_flow_versions[0],
-      status: input.status,
-      provider_flow_id: input.providerFlowId || null,
-    }))
-    const createFlow = vi.spyOn(ycloud, 'createFlow').mockResolvedValue({
-      id: 'remote-flow-1',
-      success: true,
-    })
-    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
-      id: 'remote-flow-1',
-      status: 'DRAFT',
-      validationErrors: [],
-    })
+  it('delega el borrador correctivo al provisioner con forceNewVersion', async () => {
+    const provision = vi.spyOn(flowProvisioner, 'provisionFlowDraft')
+      .mockResolvedValue(provisionResult())
     const publishFlow = vi.spyOn(ycloud, 'publishFlow')
 
     const response = await dispatch(
@@ -282,105 +326,37 @@ describe('administración de WhatsApp Flows', () => {
 
     expect(response).toEqual({
       status: 201,
-      body: expect.objectContaining({
-        ok: true,
-        status: 'draft',
-        providerFlowId: 'remote-flow-1',
-      }),
+      body: provisionResult(),
     })
-    expect(createFlow).toHaveBeenCalledWith(
-      'ycloud-test-secret',
-      expect.objectContaining({
-        wabaId: 'waba-1',
-        publish: false,
-        endpointUri: 'https://bot.example.com/webhook/ycloud/flows/data-exchange',
-      }),
-    )
-    expect(db.updateFlowVersionState).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: 'provisioning',
-        providerFlowId: 'remote-flow-1',
-      }),
+    expect(provision).toHaveBeenCalledWith(
+      BUSINESS_ID,
+      'order_standard',
+      { forceNewVersion: true },
     )
     expect(publishFlow).not.toHaveBeenCalled()
   })
 
-  it('reintenta un 404 breve y solo acepta el borrador remoto exacto', async () => {
-    mockProvisioning()
-    const retrieve = vi.spyOn(ycloud, 'retrieveFlow')
-      .mockRejectedValueOnce(providerNotFound())
-      .mockResolvedValue({
-        id: 'remote-flow-1',
-        status: 'DRAFT',
-        validationErrors: [],
-      })
-
-    const response = await dispatch(
-      '/api/admin/flows/:businessId/provision',
-      'post',
-      {
-        auth: authorization(),
-        params: { businessId: BUSINESS_ID },
-        body: { templateKey: 'order_standard' },
-      },
-    )
-
-    expect(response.status).toBe(201)
-    expect(response.body).toMatchObject({
-      ok: true,
-      status: 'draft',
-      validationErrors: [],
-    })
-    expect(retrieve).toHaveBeenCalledTimes(2)
-  })
-
-  it('marca blocked y responde error si YCloud devuelve errores de validación', async () => {
-    const { update } = mockProvisioning()
-    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
-      id: 'remote-flow-1',
-      status: 'DRAFT',
-      validationErrors: [{ message: 'Componente inválido' }],
-    })
-
-    const response = await dispatch(
-      '/api/admin/flows/:businessId/provision',
-      'post',
-      {
-        auth: authorization(),
-        params: { businessId: BUSINESS_ID },
-        body: { templateKey: 'order_standard' },
-      },
-    )
-
-    expect(response.status).toBe(409)
-    expect(response.body).toMatchObject({
-      error: 'Componente inválido',
-      ok: false,
-      status: 'blocked',
-    })
-    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
-      status: 'blocked',
-      validationErrors: [{ message: 'Componente inválido' }],
-    }))
-  })
-
   it.each([
-    ['estado publicado', async () => ({
-      id: 'remote-flow-1',
-      status: 'PUBLISHED',
-      validationErrors: [],
-    })],
-    ['ID remoto distinto', async () => ({
-      id: 'remote-flow-other',
-      status: 'DRAFT',
-      validationErrors: [],
-    })],
-    ['Flow remoto ausente', async () => {
-      throw providerNotFound()
-    }],
-  ])('marca failed cuando YCloud devuelve %s', async (_case, retrieveResult) => {
-    const { update } = mockProvisioning()
-    vi.spyOn(ycloud, 'retrieveFlow').mockImplementation(retrieveResult)
+    ['blocked', 'verify_draft', [{ message: 'Componente inválido' }]],
+    ['unsupported', 'provider', []],
+    ['failed', 'validate', []],
+    ['failed', 'credentials', []],
+    ['failed', 'lease', []],
+    ['failed', 'lease_lost', []],
+  ])('responde 409 para %s en %s', async (
+    status,
+    stage,
+    validationErrors,
+  ) => {
+    vi.spyOn(flowProvisioner, 'provisionFlowDraft').mockResolvedValue(
+      provisionResult({
+        ok: false,
+        status,
+        stage,
+        validationErrors,
+        error: 'No se puede preparar el Flow',
+      }),
+    )
 
     const response = await dispatch(
       '/api/admin/flows/:businessId/provision',
@@ -393,55 +369,35 @@ describe('administración de WhatsApp Flows', () => {
     )
 
     expect(response.status).toBe(409)
-    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
-      status: 'failed',
-      providerFlowId: 'remote-flow-1',
-    }))
+    expect(response.body).toMatchObject({ status, stage })
   })
 
-  it('rechaza una plantilla si el negocio no tiene esa capacidad', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business({
-      type: 'hostal',
-      takes_orders: false,
-      lodging_enabled: true,
-    }))
-    const create = vi.spyOn(ycloud, 'createFlow')
+  it.each(['create_remote', 'verify_draft'])(
+    'responde 502 ante fallo proveedor en %s',
+    async (stage) => {
+      vi.spyOn(flowProvisioner, 'provisionFlowDraft').mockResolvedValue(
+        provisionResult({
+          ok: false,
+          status: 'failed',
+          stage,
+          error: 'YCloud no respondió',
+        }),
+      )
 
-    const response = await dispatch(
-      '/api/admin/flows/:businessId/provision',
-      'post',
-      {
-        auth: authorization(),
-        params: { businessId: BUSINESS_ID },
-        body: { templateKey: 'order_standard' },
-      },
-    )
+      const response = await dispatch(
+        '/api/admin/flows/:businessId/provision',
+        'post',
+        {
+          auth: authorization(),
+          params: { businessId: BUSINESS_ID },
+          body: { templateKey: 'order_standard' },
+        },
+      )
 
-    expect(response.status).toBe(409)
-    expect(response.body.error).toMatch(/capacidad requerida/)
-    expect(create).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['inactivo', { active: false }],
-    ['suspendido', { suspended: true }],
-  ])('rechaza un negocio %s antes de tocar YCloud', async (_state, state) => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business(state))
-    const create = vi.spyOn(ycloud, 'createFlow')
-
-    const response = await dispatch(
-      '/api/admin/flows/:businessId/provision',
-      'post',
-      {
-        auth: authorization(),
-        params: { businessId: BUSINESS_ID },
-        body: { templateKey: 'order_standard' },
-      },
-    )
-
-    expect(response.status).toBe(409)
-    expect(create).not.toHaveBeenCalled()
-  })
+      expect(response.status).toBe(502)
+      expect(response.body).toMatchObject({ status: 'failed', stage })
+    },
+  )
 
   it('publica solo con la acción explícita y activa esa versión', async () => {
     const draft = definition()
@@ -807,69 +763,15 @@ describe('administración de WhatsApp Flows', () => {
     expect(upsert).not.toHaveBeenCalled()
   })
 
-  it('no apaga una versión activa mientras prepara su reemplazo', async () => {
-    const current = definition({ enabled: true })
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business())
-    vi.spyOn(axios, 'get').mockResolvedValue({
-      data: {
-        items: [{
-          phoneNumber: '+593999000001',
-          wabaId: 'waba-1',
-        }],
-      },
-    })
-    vi.spyOn(db, 'listFlowDefinitions').mockResolvedValue([current])
-    const upsert = vi.spyOn(db, 'upsertFlowDefinition')
-      .mockResolvedValue(current)
-    vi.spyOn(db, 'createFlowVersion').mockResolvedValue({
-      ...current.whatsapp_flow_versions[0],
-      id: '10000000-0000-4000-8000-000000000099',
-      version: 2,
-      provider_flow_id: null,
-      status: 'draft',
-    })
-    vi.spyOn(db, 'updateFlowVersionState').mockImplementation(async input => ({
-      ...current.whatsapp_flow_versions[0],
-      id: '10000000-0000-4000-8000-000000000099',
-      version: 2,
-      status: input.status,
-      provider_flow_id: input.providerFlowId || null,
-    }))
-    vi.spyOn(ycloud, 'createFlow').mockResolvedValue({
-      id: 'remote-flow-2',
-      success: true,
-    })
-    vi.spyOn(ycloud, 'retrieveFlow').mockResolvedValue({
-      id: 'remote-flow-2',
-      status: 'DRAFT',
-      validationErrors: [],
-    })
-
-    await dispatch(
-      '/api/admin/flows/:businessId/provision',
-      'post',
-      {
-        auth: authorization(),
-        params: { businessId: BUSINESS_ID },
-        body: { templateKey: 'order_standard' },
-      },
-    )
-
-    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
-      id: DEFINITION_ID,
-      enabled: true,
-    }))
-  })
-
   it('no filtra la API Key aunque el proveedor la incluya en un error', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business())
-    const error = new Error('Request failed')
-    error.isAxiosError = true
-    error.response = {
-      status: 401,
-      data: { message: 'La credencial ycloud-test-secret es inválida' },
-    }
-    vi.spyOn(axios, 'get').mockRejectedValue(error)
+    vi.spyOn(flowProvisioner, 'provisionFlowDraft').mockResolvedValue(
+      provisionResult({
+        ok: false,
+        status: 'failed',
+        stage: 'credentials',
+        error: 'La credencial •••••• es inválida',
+      }),
+    )
 
     const response = await dispatch(
       '/api/admin/flows/:businessId/provision',

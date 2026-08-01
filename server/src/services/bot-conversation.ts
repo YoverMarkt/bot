@@ -20,6 +20,7 @@ interface ConversationBusiness extends ActionBusiness, BotMediaBusiness {
   ai_provider?: string | null
   // 'menu' → la conversación la conduce bot-menu-flow (sin IA)
   chat_mode?: string | null
+  lead_enabled?: boolean | null
 }
 
 interface ConversationProduct extends ActionProduct, BotMediaProduct {
@@ -178,10 +179,27 @@ interface ConversationLogger {
 
 interface ConversationMenuFlow {
   advanceMenuFlow(input: MenuFlowInput): MenuFlowResult
+  resetMenuFlow?(businessId: string, contact: string): void
 }
 
 interface ConversationFlows {
   launchOrderFlow(input: {
+    business: ConversationBusiness & Record<string, unknown>
+    phone: string
+    source?: 'menu' | 'ai'
+  }): Promise<boolean>
+  launchAppointmentFlow?(input: {
+    business: ConversationBusiness & Record<string, unknown>
+    phone: string
+    source?: 'menu' | 'ai'
+  }): Promise<boolean>
+  launchLodgingFlow?(input: {
+    business: ConversationBusiness & Record<string, unknown>
+    phone: string
+    source?: 'menu' | 'ai'
+    preferredRoomTypeId?: string | null
+  }): Promise<boolean>
+  launchLeadFlow?(input: {
     business: ConversationBusiness & Record<string, unknown>
     phone: string
     source?: 'menu' | 'ai'
@@ -285,14 +303,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
   }
 
-  function explicitlyStartsOrder(text: string): boolean {
-    const normalizedText = String(text || '')
+  function normalizedIntentText(text: string): string {
+    return String(text || '')
       .toLocaleLowerCase('es')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim()
+  }
+
+  function explicitlyStartsOrder(text: string): boolean {
+    const normalizedText = normalizedIntentText(text)
     if (!normalizedText) return false
     // Consultas sobre un pedido existente no deben abrir un carrito nuevo.
     if (/\b(estado|seguimiento|rastrear|donde|cancelar|cambiar|modificar)\b.{0,35}\b(mi |el )?pedido\b/
@@ -308,54 +330,144 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         .test(normalizedText)
   }
 
-  async function tryLaunchOrderFlow(input: {
+  function explicitlyStartsAppointment(text: string): boolean {
+    const normalizedText = normalizedIntentText(text)
+    return /\b(?:agendar|reservar|solicitar|sacar|pedir)\b.{0,35}\b(?:cita|turno|consulta)\b/
+      .test(normalizedText)
+  }
+
+  function explicitlyStartsLodging(text: string): boolean {
+    const normalizedText = normalizedIntentText(text)
+    // Una petición de fotos, videos o información debe conservar el recorrido
+    // conversacional existente. Abrir el cotizador aquí ocultaría precisamente
+    // el contenido que el huésped acaba de pedir.
+    if (/\b(?:fotos?|imagenes?|videos?|informacion|detalles?)\b/
+      .test(normalizedText)) {
+      return false
+    }
+    return /\b(?:cotizar|reservar|solicitar)\b.{0,45}\b(?:hospedaje|habitacion|habitaciones|cabana|estadia|alojamiento)\b/
+      .test(normalizedText)
+  }
+
+  function explicitlyStartsLead(text: string): boolean {
+    const normalizedText = normalizedIntentText(text)
+    return /\b(?:dejar|enviar|registrar|hacer|solicitar)\b.{0,35}\b(?:solicitud|cotizacion|consulta)\b/
+      .test(normalizedText)
+      || /\b(?:quiero|necesito)\b.{0,35}\b(?:que me contacten|hablar con ventas)\b/
+        .test(normalizedText)
+  }
+
+  async function tryLaunchFlow(input: {
     business: ConversationBusiness
     channel: ProcessMessageInput['channel']
     phone: string
     text: string
     saveUserMessage: boolean
     source: 'menu' | 'ai'
+    capability: 'order' | 'appointment' | 'lodging' | 'lead'
+    preferredRoomTypeId?: string | null
   }): Promise<boolean> {
     if (input.channel !== 'whatsapp' || !dependencies.flows) return false
+    let launched = false
     try {
-      const launched = await dependencies.flows.launchOrderFlow({
+      const launchInput = {
         business: input.business as ConversationBusiness & Record<string, unknown>,
         phone: input.phone,
         source: input.source,
-      })
-      if (!launched) return false
-      if (input.saveUserMessage) {
-        await database.saveMessage(
-          input.business.id,
-          input.phone,
-          'user',
-          input.text,
-        )
       }
-      await database.saveMessage(
-        input.business.id,
-        input.phone,
-        'assistant',
-        '🧾 Formulario de pedido enviado al cliente.',
-      )
-      await database.upsertSession(input.business.id, input.phone, {
-        last_message: input.text,
-        last_message_at: new Date(now()).toISOString(),
-      })
-      logger.log(
-        `🧾 [${input.business.name}] WhatsApp Flow de pedido iniciado — ${input.phone}`,
-      )
-      return true
+      launched = Boolean(input.capability === 'order'
+        ? await dependencies.flows.launchOrderFlow(launchInput)
+        : input.capability === 'appointment'
+          ? await dependencies.flows.launchAppointmentFlow?.(launchInput)
+          : input.capability === 'lodging'
+            ? await dependencies.flows.launchLodgingFlow?.({
+              ...launchInput,
+              preferredRoomTypeId: input.preferredRoomTypeId,
+            })
+            : await dependencies.flows.launchLeadFlow?.(launchInput))
     } catch (error) {
-      // Fallback transparente al recorrido existente: nunca dejar al cliente
-      // sin atención si el proveedor o el Flow fallan temporalmente.
+      // Solo una falla al intentar el envío habilita el recorrido anterior.
+      // Si el proveedor no confirmó el Flow, el cliente aún necesita fallback.
       logger.error(
         `❌ [${input.business.name}] no se pudo iniciar WhatsApp Flow:`,
         error instanceof Error ? error.message : error,
       )
       return false
     }
+    if (!launched) return false
+
+    // El Flow ya fue aceptado. A partir de aquí toda persistencia es
+    // best-effort: un fallo de historial no puede provocar que enviemos además
+    // el recorrido legacy y dejemos dos formularios activos para la misma
+    // intención.
+    if (input.source === 'menu' && dependencies.menuFlow.resetMenuFlow) {
+      try {
+        dependencies.menuFlow.resetMenuFlow(
+          input.business.id,
+          input.phone,
+        )
+      } catch (error) {
+        logger.error(
+          `❌ [${input.business.name}] no se pudo reiniciar el menú tras lanzar Flow:`,
+          error instanceof Error ? error.message : error,
+        )
+      }
+    }
+    if (input.saveUserMessage) {
+      try {
+        await database.saveMessage(
+          input.business.id,
+          input.phone,
+          'user',
+          input.text,
+        )
+      } catch (error) {
+        logger.error(
+          `❌ [${input.business.name}] Flow enviado, pero no se guardó el mensaje del cliente:`,
+          error instanceof Error ? error.message : error,
+        )
+      }
+    }
+    try {
+      await database.saveMessage(
+        input.business.id,
+        input.phone,
+        'assistant',
+        input.capability === 'order'
+          ? '🧾 Formulario de pedido enviado al cliente.'
+          : input.capability === 'appointment'
+            ? '📅 Formulario de cita enviado al cliente.'
+            : input.capability === 'lodging'
+              ? '🏨 Formulario de hospedaje enviado al cliente.'
+              : '📝 Formulario de solicitud enviado al cliente.',
+      )
+    } catch (error) {
+      logger.error(
+        `❌ [${input.business.name}] Flow enviado, pero no se guardó el mensaje del asistente:`,
+        error instanceof Error ? error.message : error,
+      )
+    }
+    try {
+      await database.upsertSession(input.business.id, input.phone, {
+        last_message: input.text,
+        last_message_at: new Date(now()).toISOString(),
+      })
+    } catch (error) {
+      logger.error(
+        `❌ [${input.business.name}] Flow enviado, pero no se actualizó la sesión:`,
+        error instanceof Error ? error.message : error,
+      )
+    }
+    logger.log(
+      `📋 [${input.business.name}] WhatsApp Flow ${input.capability} iniciado — ${input.phone}`,
+    )
+    return true
   }
+
+  const tryLaunchOrderFlow = (input: Omit<
+    Parameters<typeof tryLaunchFlow>[0],
+    'capability'
+  >) => tryLaunchFlow({ ...input, capability: 'order' })
 
   // ── MODO MENÚ (sin IA) ──────────────────────────────────────────────
   // Las opciones se envían numeradas: hoy WhatsApp solo recibe texto desde
@@ -451,6 +563,66 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         source: 'menu',
       })) {
       return
+    }
+
+    if (input.channel === 'whatsapp'
+      && action?.type === 'launch_appointment_flow'
+      && await tryLaunchFlow({
+        business,
+        channel: input.channel,
+        phone,
+        text,
+        saveUserMessage: false,
+        source: 'menu',
+        capability: 'appointment',
+      })) {
+      return
+    }
+
+    if (input.channel === 'whatsapp'
+      && action?.type === 'launch_lodging_flow'
+      && await tryLaunchFlow({
+        business,
+        channel: input.channel,
+        phone,
+        text,
+        saveUserMessage: false,
+        source: 'menu',
+        capability: 'lodging',
+        preferredRoomTypeId: action.roomTypeId,
+      })) {
+      return
+    }
+
+    if (input.channel === 'whatsapp'
+      && action?.type === 'launch_lead_flow') {
+      const launched = await tryLaunchFlow({
+        business,
+        channel: input.channel,
+        phone,
+        text,
+        saveUserMessage: false,
+        source: 'menu',
+        capability: 'lead',
+      })
+      if (launched) return
+
+      // Un negocio informativo no tiene un recorrido transaccional legacy.
+      // Si su Flow no está disponible, se deriva de inmediato al equipo en vez
+      // de devolver el mismo botón y dejar al cliente en un bucle.
+      const outcome = await actions.handleConversationOutcome({
+        business,
+        phone,
+        originalText: text,
+        hasSale: false,
+        hasHandoffTag: true,
+        isUncertain: false,
+        wasManual: session?.manual_mode,
+        send,
+      })
+      if (outcome.handled) return
+      menuReply = 'No pude abrir el formulario en este momento. Habla con el equipo para continuar 🙏'
+      menuOptions = ['💬 Hablar con el equipo', '🏠 Menú principal']
     }
 
     // El total oficial lo calcula SIEMPRE money.ts con las RPC atómicas: el
@@ -643,7 +815,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // por la conversación actual sin perder el mensaje.
     if (channel === 'whatsapp'
       && business.chat_mode !== 'menu'
-      && business.takes_orders !== false
+      && business.takes_orders === true
       && explicitlyStartsOrder(text)
       && await tryLaunchOrderFlow({
         business,
@@ -652,6 +824,57 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         text,
         saveUserMessage: true,
         source: 'ai',
+      })) {
+      return
+    }
+
+    if (channel === 'whatsapp'
+      && business.chat_mode !== 'menu'
+      && business.takes_bookings === true
+      && explicitlyStartsAppointment(text)
+      && await tryLaunchFlow({
+        business,
+        channel,
+        phone,
+        text,
+        saveUserMessage: true,
+        source: 'ai',
+        capability: 'appointment',
+      })) {
+      return
+    }
+
+    if (channel === 'whatsapp'
+      && business.chat_mode !== 'menu'
+      && business.lodging_enabled === true
+      && explicitlyStartsLodging(text)
+      && await tryLaunchFlow({
+        business,
+        channel,
+        phone,
+        text,
+        saveUserMessage: true,
+        source: 'ai',
+        capability: 'lodging',
+      })) {
+      return
+    }
+
+    if (channel === 'whatsapp'
+      && business.chat_mode !== 'menu'
+      && business.takes_orders !== true
+      && business.takes_bookings !== true
+      && business.lodging_enabled !== true
+      && business.lead_enabled !== false
+      && explicitlyStartsLead(text)
+      && await tryLaunchFlow({
+        business,
+        channel,
+        phone,
+        text,
+        saveUserMessage: true,
+        source: 'ai',
+        capability: 'lead',
       })) {
       return
     }

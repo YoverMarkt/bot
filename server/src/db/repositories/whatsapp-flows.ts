@@ -18,6 +18,7 @@ export type JsonObject = Record<string, unknown>
 // esa fila nunca se usa para construir una lista parcial.
 export const WHATSAPP_FLOW_CATALOG_PRODUCT_LIMIT = 200
 export const WHATSAPP_FLOW_CATALOG_MODIFIER_LIMIT = 200
+export const WHATSAPP_FLOW_APPOINTMENT_SERVICE_LIMIT = 200
 
 export interface FlowCatalogProductRecord extends JsonObject {
   id: string
@@ -37,6 +38,20 @@ export interface FlowCatalogModifierRecord extends JsonObject {
   group_label?: string | null
   name: string
   active?: boolean | null
+}
+
+export interface FlowAppointmentServiceRecord extends JsonObject {
+  id: string
+  business_id: string
+  name: string
+  duration_minutes: number | string
+  active?: boolean | null
+}
+
+export interface FlowAppointmentAvailabilityRecord extends JsonObject {
+  booking_date: string
+  booking_time: string
+  duration_minutes?: number | string | null
 }
 
 export interface FlowDefinitionRecord extends JsonObject {
@@ -64,6 +79,8 @@ export interface FlowVersionRecord extends JsonObject {
   status: FlowVersionStatus
   is_active: boolean
   flow_json: JsonObject
+  data_api_version?: string | null
+  data_exchange_endpoint_path?: string | null
 }
 
 export interface FlowSessionRecord extends JsonObject {
@@ -95,6 +112,9 @@ export interface FlowSubmissionRecord extends JsonObject {
   processing_status: string
   payload: JsonObject
   order_id?: string | null
+  booking_id?: string | null
+  lodging_request_id?: string | null
+  lead_id?: string | null
 }
 
 export interface FlowSubmissionClaimResult extends JsonObject {
@@ -111,6 +131,14 @@ export interface FlowSessionContextUpdateResult extends JsonObject {
 export interface FlowOrderCreationResult extends JsonObject {
   created: boolean
   order: JsonObject
+}
+
+export interface FlowDomainCreationResult extends JsonObject {
+  result: string
+  created: boolean
+  booking?: JsonObject | null
+  request?: JsonObject | null
+  lead?: JsonObject | null
 }
 
 export interface UpsertFlowDefinitionInput {
@@ -212,6 +240,32 @@ export interface RecordFlowMetricInput {
   occurredAt?: string | null
 }
 
+export interface FlowAppointmentAvailabilityInput {
+  businessId: string
+  serviceId?: string | null
+  durationMinutes?: number | null
+  daysAhead?: number
+}
+
+export interface FlowProvisioningLeaseInput {
+  businessId: string
+  templateKey: string
+  ownerToken: string
+  leaseSeconds?: number
+}
+
+export interface ReleaseFlowProvisioningLeaseInput {
+  businessId: string
+  templateKey: string
+  ownerToken: string
+}
+
+export interface CreateFlowDomainResourceInput {
+  businessId: string
+  submissionId: string
+  contactPhone: string
+}
+
 interface DbError {
   message: string
 }
@@ -279,6 +333,114 @@ export function createWhatsAppFlowsRepository(client: SupabaseClient) {
       throw new Error(`No se pudieron consultar las opciones del Flow: ${response.error.message}`)
     }
     return (response.data || []) as FlowCatalogModifierRecord[]
+  }
+
+  const getFlowAppointmentServices = async (
+    businessId: string,
+  ): Promise<FlowAppointmentServiceRecord[]> => {
+    const response = await client
+      .from('products')
+      .select('id, business_id, name, duration_minutes, active')
+      .eq('business_id', businessId)
+      .eq('active', true)
+      .gte('duration_minutes', 1)
+      .lte('duration_minutes', 1440)
+      .order('name')
+      .limit(WHATSAPP_FLOW_APPOINTMENT_SERVICE_LIMIT + 1)
+    if (response.error) {
+      throw new Error(`No se pudieron consultar los servicios del Flow: ${response.error.message}`)
+    }
+    return (response.data || []) as FlowAppointmentServiceRecord[]
+  }
+
+  const getFlowAppointmentAvailability = async (
+    input: FlowAppointmentAvailabilityInput,
+  ): Promise<FlowAppointmentAvailabilityRecord[]> => {
+    const response = await client.rpc(
+      'get_whatsapp_flow_booking_availability',
+      {
+        p_business_id: input.businessId,
+        p_service_id: input.serviceId || null,
+        p_days_ahead: input.daysAhead || 30,
+      },
+    )
+    if (response.error) {
+      throw new Error(`No se pudo consultar la disponibilidad del Flow: ${response.error.message}`)
+    }
+    return (response.data || []) as FlowAppointmentAvailabilityRecord[]
+  }
+
+  const isWhatsAppFlowCapabilitiesSchemaReady =
+    async (): Promise<boolean> => {
+      const response = await client.rpc(
+        'whatsapp_flow_capabilities_schema_ready',
+      )
+      if (response.error) {
+        const missingFunction = response.error.code === 'PGRST202'
+          || response.error.code === '42883'
+          || /whatsapp_flow_capabilities_schema_ready.*(not found|does not exist)/i
+            .test(response.error.message || '')
+        if (missingFunction) return false
+        throw new Error(
+          `No se pudo verificar el esquema de WhatsApp Flows: ${
+            response.error.message
+          }`,
+        )
+      }
+      return response.data === true
+    }
+
+  const acquireFlowProvisioningLease = async (
+    input: FlowProvisioningLeaseInput,
+  ): Promise<boolean> => {
+    const response = await client.rpc(
+      'acquire_whatsapp_flow_provisioning_lease',
+      {
+        p_business_id: input.businessId,
+        p_template_key: input.templateKey,
+        p_owner_token: input.ownerToken,
+        p_lease_seconds: input.leaseSeconds || 900,
+      },
+    )
+    return unwrap(
+      response as DbResponse<boolean>,
+      'No se pudo adquirir el lease de aprovisionamiento',
+    )
+  }
+
+  const releaseFlowProvisioningLease = async (
+    input: ReleaseFlowProvisioningLeaseInput,
+  ): Promise<boolean> => {
+    const response = await client.rpc(
+      'release_whatsapp_flow_provisioning_lease',
+      {
+        p_business_id: input.businessId,
+        p_template_key: input.templateKey,
+        p_owner_token: input.ownerToken,
+      },
+    )
+    return unwrap(
+      response as DbResponse<boolean>,
+      'No se pudo liberar el lease de aprovisionamiento',
+    )
+  }
+
+  const renewFlowProvisioningLease = async (
+    input: FlowProvisioningLeaseInput,
+  ): Promise<boolean> => {
+    const response = await client.rpc(
+      'renew_whatsapp_flow_provisioning_lease',
+      {
+        p_business_id: input.businessId,
+        p_template_key: input.templateKey,
+        p_owner_token: input.ownerToken,
+        p_lease_seconds: input.leaseSeconds || 900,
+      },
+    )
+    return unwrap(
+      response as DbResponse<boolean>,
+      'No se pudo renovar el lease de aprovisionamiento',
+    )
   }
 
   const upsertFlowDefinition = async (
@@ -558,6 +720,57 @@ export function createWhatsAppFlowsRepository(client: SupabaseClient) {
     )
   }
 
+  const createBookingFromFlowSubmission = async (
+    input: CreateFlowDomainResourceInput,
+  ): Promise<FlowDomainCreationResult> => {
+    const response = await client.rpc(
+      'create_booking_from_flow_submission',
+      {
+        p_business_id: input.businessId,
+        p_submission_id: input.submissionId,
+        p_contact_phone: input.contactPhone,
+      },
+    )
+    return unwrap(
+      response as DbResponse<FlowDomainCreationResult>,
+      'No se pudo crear la cita desde el Flow',
+    )
+  }
+
+  const createLodgingRequestFromFlowSubmission = async (
+    input: CreateFlowDomainResourceInput,
+  ): Promise<FlowDomainCreationResult> => {
+    const response = await client.rpc(
+      'create_lodging_request_from_flow_submission',
+      {
+        p_business_id: input.businessId,
+        p_submission_id: input.submissionId,
+        p_contact_phone: input.contactPhone,
+      },
+    )
+    return unwrap(
+      response as DbResponse<FlowDomainCreationResult>,
+      'No se pudo crear la solicitud de hospedaje desde el Flow',
+    )
+  }
+
+  const createLeadFromFlowSubmission = async (
+    input: CreateFlowDomainResourceInput,
+  ): Promise<FlowDomainCreationResult> => {
+    const response = await client.rpc(
+      'create_lead_from_flow_submission',
+      {
+        p_business_id: input.businessId,
+        p_submission_id: input.submissionId,
+        p_contact_phone: input.contactPhone,
+      },
+    )
+    return unwrap(
+      response as DbResponse<FlowDomainCreationResult>,
+      'No se pudo crear la solicitud de información desde el Flow',
+    )
+  }
+
   const recordFlowMetric = async (
     input: RecordFlowMetricInput,
   ): Promise<boolean> => {
@@ -608,6 +821,12 @@ export function createWhatsAppFlowsRepository(client: SupabaseClient) {
   return {
     getFlowCatalogProducts,
     getFlowCatalogModifiers,
+    getFlowAppointmentServices,
+    getFlowAppointmentAvailability,
+    isWhatsAppFlowCapabilitiesSchemaReady,
+    acquireFlowProvisioningLease,
+    renewFlowProvisioningLease,
+    releaseFlowProvisioningLease,
     upsertFlowDefinition,
     listFlowDefinitions,
     createFlowVersion,
@@ -620,6 +839,9 @@ export function createWhatsAppFlowsRepository(client: SupabaseClient) {
     recordFlowSubmission,
     completeFlowSubmission,
     createOrderFromFlowSubmission,
+    createBookingFromFlowSubmission,
+    createLodgingRequestFromFlowSubmission,
+    createLeadFromFlowSubmission,
     recordFlowMetric,
     expireFlowSessions,
     getFlowMetrics,
@@ -630,6 +852,18 @@ const repository = createWhatsAppFlowsRepository(db)
 
 export const getFlowCatalogProducts = repository.getFlowCatalogProducts
 export const getFlowCatalogModifiers = repository.getFlowCatalogModifiers
+export const getFlowAppointmentServices =
+  repository.getFlowAppointmentServices
+export const getFlowAppointmentAvailability =
+  repository.getFlowAppointmentAvailability
+export const isWhatsAppFlowCapabilitiesSchemaReady =
+  repository.isWhatsAppFlowCapabilitiesSchemaReady
+export const acquireFlowProvisioningLease =
+  repository.acquireFlowProvisioningLease
+export const renewFlowProvisioningLease =
+  repository.renewFlowProvisioningLease
+export const releaseFlowProvisioningLease =
+  repository.releaseFlowProvisioningLease
 export const upsertFlowDefinition = repository.upsertFlowDefinition
 export const listFlowDefinitions = repository.listFlowDefinitions
 export const createFlowVersion = repository.createFlowVersion
@@ -643,6 +877,12 @@ export const recordFlowSubmission = repository.recordFlowSubmission
 export const completeFlowSubmission = repository.completeFlowSubmission
 export const createOrderFromFlowSubmission =
   repository.createOrderFromFlowSubmission
+export const createBookingFromFlowSubmission =
+  repository.createBookingFromFlowSubmission
+export const createLodgingRequestFromFlowSubmission =
+  repository.createLodgingRequestFromFlowSubmission
+export const createLeadFromFlowSubmission =
+  repository.createLeadFromFlowSubmission
 export const recordFlowMetric = repository.recordFlowMetric
 export const expireFlowSessions = repository.expireFlowSessions
 export const getFlowMetrics = repository.getFlowMetrics

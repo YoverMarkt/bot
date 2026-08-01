@@ -225,6 +225,9 @@ export interface YCloudFlowListItem {
   status?: YCloudFlowStatus
   categories?: YCloudFlowCategory[]
   validationErrors?: YCloudFlowValidationError[]
+  jsonVersion?: string | null
+  dataApiVersion?: string | null
+  endpointUrl?: string | null
 }
 
 export interface YCloudFlowList {

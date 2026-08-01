@@ -86,6 +86,7 @@ function setup(overrides = {}) {
   }
   const menuFlow = {
     advanceMenuFlow: vi.fn().mockReturnValue({ reply: 'Menú', options: [] }),
+    resetMenuFlow: vi.fn(),
     ...overrides.menuFlow,
   }
   const flows = {
@@ -222,6 +223,128 @@ describe('orquestación de conversaciones del bot', () => {
       'assistant',
       '🧾 Formulario de pedido enviado al cliente.',
     )
+    expect(current.menuFlow.resetMenuFlow)
+      .toHaveBeenCalledWith('business-a', '0990000001')
+  })
+
+  it.each([
+    [
+      'cita',
+      { type: 'launch_appointment_flow' },
+      'launchAppointmentFlow',
+    ],
+    [
+      'hospedaje',
+      { type: 'launch_lodging_flow', roomTypeId: 'room-a' },
+      'launchLodgingFlow',
+    ],
+  ])('reinicia el recorrido legacy al lanzar correctamente un Flow de %s', async (
+    _label,
+    action,
+    launcherMethod,
+  ) => {
+    const launch = vi.fn().mockResolvedValue(true)
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Paso legacy que no debe enviarse',
+          options: ['Continuar'],
+          action,
+        }),
+      },
+      flows: {
+        [launcherMethod]: launch,
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        takes_bookings: true,
+        lodging_enabled: true,
+      },
+      text: 'Continuar',
+    }))
+
+    expect(launch).toHaveBeenCalledOnce()
+    expect(current.menuFlow.resetMenuFlow)
+      .toHaveBeenCalledWith('business-a', '0990000001')
+    expect(current.send).not.toHaveBeenCalled()
+  })
+
+  it('deriva al equipo si el Flow de lead no está disponible en modo menú', async () => {
+    const handoff = vi.fn().mockResolvedValue({ handled: true })
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Menú principal',
+          options: ['📝 Solicitar información', '💬 Hablar con el equipo'],
+          action: { type: 'launch_lead_flow' },
+        }),
+      },
+      flows: {
+        launchLeadFlow: vi.fn().mockResolvedValue(false),
+      },
+      actions: {
+        handleConversationOutcome: handoff,
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: false,
+      },
+      text: '📝 Solicitar información',
+    }))
+
+    expect(handoff).toHaveBeenCalledWith(expect.objectContaining({
+      hasHandoffTag: true,
+      originalText: '📝 Solicitar información',
+    }))
+    expect(current.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('📝 Solicitar información'),
+    )
+  })
+
+  it('no activa el fallback si falla persistir después de enviar el Flow', async () => {
+    const saveMessage = vi.fn()
+      .mockResolvedValueOnce({ error: null })
+      .mockRejectedValueOnce(new Error('historial no disponible'))
+    const current = setup({
+      database: { saveMessage },
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: '¿Qué fechas deseas?',
+          options: ['⬅️ Volver'],
+          action: {
+            type: 'launch_lodging_flow',
+            roomTypeId: 'room-a',
+          },
+        }),
+      },
+      flows: {
+        launchLodgingFlow: vi.fn().mockResolvedValue(true),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'menu',
+        lodging_enabled: true,
+      },
+      text: '📅 Cotizar estadía',
+    }))
+
+    expect(current.flows.launchLodgingFlow).toHaveBeenCalledOnce()
+    expect(current.send).not.toHaveBeenCalled()
+    expect(current.menuFlow.resetMenuFlow).toHaveBeenCalledOnce()
+    expect(current.database.upsertSession).toHaveBeenCalledOnce()
   })
 
   it('mantiene el recorrido del menú en Telegram sin intentar abrir un WhatsApp Flow', async () => {
@@ -300,6 +423,32 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.send).toHaveBeenCalledWith('Respuesta final')
   })
 
+  it.each([
+    'Quiero solicitar información de las habitaciones',
+    'Quiero solicitar fotos y videos de la habitación',
+  ])('no desvía una solicitud informativa o de media al Flow de hospedaje: %s', async (
+    text,
+  ) => {
+    const launchLodgingFlow = vi.fn().mockResolvedValue(true)
+    const current = setup({
+      flows: { launchLodgingFlow },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        chat_mode: 'ai',
+        takes_orders: false,
+        lodging_enabled: true,
+      },
+      text,
+    }))
+
+    expect(launchLodgingFlow).not.toHaveBeenCalled()
+    expect(current.ai.callAI).toHaveBeenCalledOnce()
+    expect(current.send).toHaveBeenCalledWith('Respuesta final')
+  })
+
   it('conserva la conversación IA si el Flow de pedido no está disponible', async () => {
     const current = setup({
       flows: {
@@ -356,6 +505,123 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.send).toHaveBeenCalledWith(
       expect.stringContaining('1. Pizzas'),
     )
+  })
+
+  it.each([
+    [
+      'cita',
+      { type: 'launch_appointment_flow' },
+      'launchAppointmentFlow',
+      ['Lunes 10:00', 'Martes 11:00'],
+      {
+        takes_orders: false,
+        takes_bookings: true,
+        lodging_enabled: false,
+      },
+    ],
+    [
+      'hospedaje',
+      { type: 'launch_lodging_flow', roomTypeId: 'room-a' },
+      'launchLodgingFlow',
+      ['Escribe tus fechas', '⬅️ Volver'],
+      {
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: true,
+      },
+    ],
+  ])('conserva el recorrido legacy de %s si el Flow no está disponible', async (
+    _label,
+    action,
+    launcherMethod,
+    options,
+    capabilities,
+  ) => {
+    const current = setup({
+      menuFlow: {
+        advanceMenuFlow: vi.fn().mockReturnValue({
+          reply: 'Continuemos por el chat',
+          options,
+          action,
+        }),
+      },
+      flows: {
+        [launcherMethod]: vi.fn().mockResolvedValue(false),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        ...capabilities,
+        chat_mode: 'menu',
+      },
+      text: 'Continuar',
+      sendOptions: vi.fn().mockResolvedValue(false),
+    }))
+
+    expect(current.flows[launcherMethod]).toHaveBeenCalledOnce()
+    expect(current.send).toHaveBeenCalledWith(
+      expect.stringContaining(options[0]),
+    )
+  })
+
+  it.each([
+    [
+      'cita',
+      'Quiero reservar una cita',
+      'launchAppointmentFlow',
+      {
+        takes_orders: false,
+        takes_bookings: true,
+        lodging_enabled: false,
+      },
+    ],
+    [
+      'hospedaje',
+      'Quiero cotizar un hospedaje',
+      'launchLodgingFlow',
+      {
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: true,
+      },
+    ],
+    [
+      'lead',
+      'Quiero solicitar una cotización',
+      'launchLeadFlow',
+      {
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: false,
+        lead_enabled: true,
+      },
+    ],
+  ])('conserva la conversación IA para %s si falta el Flow operativo', async (
+    _label,
+    text,
+    launcherMethod,
+    capabilities,
+  ) => {
+    const current = setup({
+      flows: {
+        [launcherMethod]: vi.fn().mockResolvedValue(false),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: {
+        ...business,
+        ...capabilities,
+        chat_mode: 'ai',
+      },
+      text,
+    }))
+
+    expect(current.flows[launcherMethod]).toHaveBeenCalledOnce()
+    expect(current.ai.callAI).toHaveBeenCalledOnce()
+    expect(current.send).toHaveBeenCalledWith('Respuesta final')
   })
 
   it('continúa el modo menú si marcar el mensaje como leído falla', async () => {

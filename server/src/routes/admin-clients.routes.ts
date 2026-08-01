@@ -22,6 +22,15 @@ interface CreatedBusiness extends BusinessRecord {
   id: string
 }
 
+interface AutomaticFlowSetupResult {
+  ok: boolean
+  businessId: string
+  status: 'ready' | 'partial' | 'unsupported' | 'failed'
+  publishAndEnable: boolean
+  results: unknown[]
+  error?: string
+}
+
 const db = require('../db') as {
   getAdminStats(): Promise<unknown>
   getAllBusinesses(): Promise<unknown[]>
@@ -60,6 +69,12 @@ const auth = require('../middleware/auth') as {
 }
 const bcrypt = require('bcryptjs') as {
   hash(value: string, rounds: number): Promise<string>
+}
+const flowProvisioner = require('../services/whatsapp-flow-provisioner') as {
+  setupRecommendedFlowsForBusiness(
+    businessId: string,
+    options: { publishAndEnable: boolean },
+  ): Promise<AutomaticFlowSetupResult>
 }
 
 const router = createRouter()
@@ -282,7 +297,9 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       meta_phone_id: body.meta_phone_id,
       telegram_bot_token: body.telegram_bot_token || null,
       takes_bookings: body.takes_bookings === true,
-      takes_orders: body.takes_orders !== false,
+      // Las capacidades son opt-in. Una llamada incompleta a la API no debe
+      // convertir por accidente un negocio informativo en uno que toma pedidos.
+      takes_orders: body.takes_orders === true,
       lodging_enabled: body.lodging_enabled === true,
       chat_mode: body.chat_mode === 'menu' ? 'menu' : 'ai',
       ai_provider: body.ai_provider || null,
@@ -309,7 +326,38 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     if (!business) throw new Error('crear onboarding: respuesta vacía')
     Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
     console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
-    res.status(201).json(sanitizeBusinessForAdmin(business))
+
+    // La transacción de onboarding ya terminó. YCloud es un sistema externo:
+    // un fallo suyo nunca debe revertir el negocio ni hacer que el navegador
+    // repita la creación. Para altas desde integraciones se permite opt-out
+    // explícito; el panel usa la preparación automática por defecto.
+    let flowSetup: AutomaticFlowSetupResult | null = null
+    if (body.auto_setup_flows !== false) {
+      try {
+        flowSetup = await flowProvisioner.setupRecommendedFlowsForBusiness(
+          business.id,
+          { publishAndEnable: true },
+        )
+      } catch (flowError) {
+        console.error(
+          `❌ preparar WhatsApp Flows para ${business.id}:`,
+          errorMessage(flowError),
+        )
+        flowSetup = {
+          ok: false,
+          businessId: business.id,
+          status: 'failed',
+          publishAndEnable: true,
+          results: [],
+          error: 'El negocio fue creado, pero no se pudo preparar su WhatsApp Flow',
+        }
+      }
+    }
+
+    res.status(201).json({
+      ...sanitizeBusinessForAdmin(business),
+      ...(flowSetup ? { flow_setup: flowSetup } : {}),
+    })
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)
     if (duplicated) {

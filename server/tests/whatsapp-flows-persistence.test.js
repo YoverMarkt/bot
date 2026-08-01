@@ -38,6 +38,72 @@ function fakeCatalogClient(result = ok([])) {
 }
 
 describe('persistencia segura de WhatsApp Flows', () => {
+  it('trata la RPC de readiness ausente como esquema no preparado', async () => {
+    const missing = {
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message:
+          'Could not find public.whatsapp_flow_capabilities_schema_ready',
+      },
+    }
+    const client = fakeClient([missing, ok(true)])
+    const repository = createWhatsAppFlowsRepository(client)
+
+    await expect(repository.isWhatsAppFlowCapabilitiesSchemaReady())
+      .resolves.toBe(false)
+    await expect(repository.isWhatsAppFlowCapabilitiesSchemaReady())
+      .resolves.toBe(true)
+    expect(client.rpc).toHaveBeenNthCalledWith(
+      1,
+      'whatsapp_flow_capabilities_schema_ready',
+    )
+  })
+
+  it('adquiere, renueva y libera el lease con el mismo owner token', async () => {
+    const client = fakeClient([ok(true), ok(true), ok(true)])
+    const repository = createWhatsAppFlowsRepository(client)
+    const ownerToken = '20000000-0000-4000-8000-000000000002'
+
+    await expect(repository.acquireFlowProvisioningLease({
+      businessId: 'business-lease',
+      templateKey: 'order_standard',
+      ownerToken,
+      leaseSeconds: 600,
+    })).resolves.toBe(true)
+    await expect(repository.renewFlowProvisioningLease({
+      businessId: 'business-lease',
+      templateKey: 'order_standard',
+      ownerToken,
+      leaseSeconds: 600,
+    })).resolves.toBe(true)
+    await expect(repository.releaseFlowProvisioningLease({
+      businessId: 'business-lease',
+      templateKey: 'order_standard',
+      ownerToken,
+    })).resolves.toBe(true)
+
+    expect(client.rpc.mock.calls).toEqual([
+      ['acquire_whatsapp_flow_provisioning_lease', {
+        p_business_id: 'business-lease',
+        p_template_key: 'order_standard',
+        p_owner_token: ownerToken,
+        p_lease_seconds: 600,
+      }],
+      ['renew_whatsapp_flow_provisioning_lease', {
+        p_business_id: 'business-lease',
+        p_template_key: 'order_standard',
+        p_owner_token: ownerToken,
+        p_lease_seconds: 600,
+      }],
+      ['release_whatsapp_flow_provisioning_lease', {
+        p_business_id: 'business-lease',
+        p_template_key: 'order_standard',
+        p_owner_token: ownerToken,
+      }],
+    ])
+  })
+
   it('consulta productos del Flow con proyección ligera y fila centinela', async () => {
     const { client, query } = fakeCatalogClient(ok([{ id: 'product-a' }]))
     const repository = createWhatsAppFlowsRepository(client)

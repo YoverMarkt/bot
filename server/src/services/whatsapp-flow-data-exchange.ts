@@ -2,13 +2,16 @@ import {
   WHATSAPP_FLOW_CATALOG_MODIFIER_LIMIT,
   WHATSAPP_FLOW_CATALOG_PRODUCT_LIMIT,
   type FlowProvider,
+  type FlowSessionContextUpdateResult,
   type JsonObject,
   type ResolvedFlowSession,
 } from '../db/repositories/whatsapp-flows'
+import { recordFlowMetricBestEffort } from './whatsapp-flow-metrics'
 
 const PROVIDER: FlowProvider = 'ycloud'
 const MAX_TOKEN_LENGTH = 512
 const MAX_ITEMS = 3
+const MAX_DYNAMIC_OPTIONS = 200
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type DataRecord = Record<string, unknown>
@@ -20,6 +23,9 @@ interface FlowBusiness extends DataRecord {
   bot_active?: boolean | null
   suspended?: boolean | null
   takes_orders?: boolean | null
+  takes_bookings?: boolean | null
+  lodging_enabled?: boolean | null
+  lead_enabled?: boolean | null
   payment_methods?: string | null
 }
 
@@ -85,10 +91,31 @@ export interface WhatsAppFlowDataExchangeDependencies {
     flowToken: string,
     expectedRevision: number,
     context: JsonObject,
-  ): Promise<JsonObject>
+  ): Promise<FlowSessionContextUpdateResult>
   getBusinessById(businessId: string): Promise<FlowBusiness | null>
   getFlowCatalogProducts(businessId: string): Promise<FlowProduct[]>
   getFlowCatalogModifiers(businessId: string): Promise<FlowModifier[]>
+  getFlowAppointmentServices?(businessId: string): Promise<DataRecord[]>
+  getFlowAppointmentAvailability?(input: {
+    businessId: string
+    serviceId: string | null
+    durationMinutes: number | null
+    daysAhead: number
+  }): Promise<DataRecord[]>
+  quoteLodging?(input: {
+    businessId: string
+    contactPhone: string
+    checkIn: string
+    checkOut: string
+    adults: number
+    children: number
+    roomsCount: number
+    idempotencyKey: string
+  }): Promise<unknown>
+  getLodgingQuoteById?(
+    businessId: string,
+    quoteId: string,
+  ): Promise<unknown | null>
   recordFlowMetric?(input: {
     businessId: string
     provider: FlowProvider
@@ -136,6 +163,7 @@ const normalized = (value: unknown): string => String(value || '')
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/[^\p{L}\p{N}]+/gu, '-')
   .replace(/^-+|-+$/g, '')
+  .slice(0, 64)
 
 const cleanText = (
   value: unknown,
@@ -164,17 +192,21 @@ const priceCents = (product: FlowProduct): number | null => {
 const money = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 const optionTitle = (value: unknown): string => {
   const clean = String(value || '').trim()
+  return clean.length <= 30 ? clean : `${clean.slice(0, 29)}…`
+}
+const headingText = (value: unknown): string => {
+  const clean = String(value || '').trim()
   return clean.length <= 80 ? clean : `${clean.slice(0, 79)}…`
 }
 
 const availableProducts = (products: FlowProduct[]): FlowProduct[] => (
-  products.filter(product => (
+  [...new Map(products.filter(product => (
     product.active !== false
     && product.stock !== 'agotado'
     && UUID_PATTERN.test(String(product.id || ''))
     && Boolean(String(product.name || '').trim())
     && priceCents(product) !== null
-  ))
+  )).map(product => [String(product.id), product])).values()]
 )
 
 interface Category {
@@ -191,16 +223,17 @@ const categories = (products: FlowProduct[]): Category[] => {
       if (id && !choices.has(id)) choices.set(id, title)
     }
   }
-  if (!choices.size) return [{ id: 'all', title: 'Todos' }]
+  if (!choices.size) return [{ id: '__all__', title: 'Todos' }]
   const hasUntagged = products.some(product => !(product.tags || []).some(tag => normalized(tag)))
-  if (hasUntagged) choices.set('otros', 'Otros')
+  if (hasUntagged) choices.set('__other__', 'Otros')
+  if (choices.size > MAX_DYNAMIC_OPTIONS) throw new FlowCatalogLimitError()
   return [...choices].map(([id, title]) => ({ id, title: optionTitle(title) }))
 }
 
 const productInCategory = (product: FlowProduct, categoryId: string): boolean => {
-  if (categoryId === 'all') return true
+  if (categoryId === '__all__') return true
   const tags = product.tags || []
-  if (categoryId === 'otros') return !tags.some(tag => normalized(tag))
+  if (categoryId === '__other__') return !tags.some(tag => normalized(tag))
   return tags.some(tag => normalized(tag) === categoryId)
 }
 
@@ -223,7 +256,10 @@ const modifiersForCategory = (
   modifier.active !== false
   && UUID_PATTERN.test(String(modifier.id || ''))
   && Boolean(String(modifier.name || '').trim())
-  && (categoryId === 'all' || normalized(modifier.category_tag) === categoryId)
+    && (
+      categoryId === '__all__'
+      || normalized(modifier.category_tag) === categoryId
+    )
 ))
 
 const modifierOptions = (modifiers: FlowModifier[]): DataRecord[] => (
@@ -317,9 +353,15 @@ function paymentMethods(value?: string | null): DataRecord[] {
     .map(label => label.trim())
     .filter(Boolean)
   const effective = labels.length ? labels : ['Efectivo']
-  return effective.slice(0, 10).map((title, index) => ({
-    id: normalized(title) || `payment-${index + 1}`,
-    title,
+  const unique = new Map<string, string>()
+  for (const [index, title] of effective.entries()) {
+    const id = normalized(title) || `payment-${index + 1}`
+    if (!unique.has(id)) unique.set(id, title)
+    if (unique.size >= 10) break
+  }
+  return [...unique].map(([id, title]) => ({
+    id,
+    title: optionTitle(title),
   }))
 }
 
@@ -329,12 +371,16 @@ const fulfillmentOptions = (): DataRecord[] => [
   { id: 'onsite', title: 'Consumir en el local' },
 ]
 
-const itemScreen = (position: number): string => `ORDER_ITEM_${position}`
+const itemScreen = (position: number): string => {
+  if (position === 1) return 'ORDER_ITEM_ONE'
+  if (position === 2) return 'ORDER_ITEM_TWO'
+  return 'ORDER_ITEM_THREE'
+}
 
 function backTarget(screen: string | null, itemCount: number): string {
-  if (screen === 'ORDER_ITEM_1') return 'ORDER_METHOD'
-  if (screen === 'ORDER_ITEM_2') return 'ORDER_ITEM_1'
-  if (screen === 'ORDER_ITEM_3') return 'ORDER_ITEM_2'
+  if (screen === 'ORDER_ITEM_ONE') return 'ORDER_METHOD'
+  if (screen === 'ORDER_ITEM_TWO') return 'ORDER_ITEM_ONE'
+  if (screen === 'ORDER_ITEM_THREE') return 'ORDER_ITEM_TWO'
   if (screen === 'ORDER_DETAILS') {
     return itemScreen(Math.max(1, Math.min(itemCount, MAX_ITEMS)))
   }
@@ -350,7 +396,7 @@ function catalogData(
   const categoryOptions = categories(products)
   const selectedCategory = categoryOptions.some(option => option.id === categoryId)
     ? categoryId as string
-    : categoryOptions[0]?.id || 'all'
+    : categoryOptions[0]?.id || '__all__'
   const selectedProducts = productsForCategory(products, selectedCategory)
   return {
     categories: categoryOptions,
@@ -393,9 +439,9 @@ function recoverableErrorResponse(
     : null
   const validScreen = [
     'ORDER_METHOD',
-    'ORDER_ITEM_1',
-    'ORDER_ITEM_2',
-    'ORDER_ITEM_3',
+    'ORDER_ITEM_ONE',
+    'ORDER_ITEM_TWO',
+    'ORDER_ITEM_THREE',
     'ORDER_DETAILS',
   ].includes(requestedScreen)
     ? requestedScreen
@@ -420,13 +466,13 @@ function recoverableErrorResponse(
     return {
       screen,
       data: {
-        business_name: String(business.name || 'Nuestro negocio').trim(),
+        business_name: headingText(business.name || 'Nuestro negocio'),
         fulfillment_options: fulfillmentOptions(),
         error_message: error.publicMessage,
       },
     }
   }
-  if (/^ORDER_ITEM_[123]$/.test(screen)) {
+  if (/^ORDER_ITEM_(?:ONE|TWO|THREE)$/.test(screen)) {
     const category = typeof requestData.category_id === 'string'
       ? requestData.category_id
       : null
@@ -455,7 +501,7 @@ function catalogLimitResponse(
   return {
     screen: 'ORDER_METHOD',
     data: {
-      business_name: String(business.name || 'Nuestro negocio').trim(),
+      business_name: headingText(business.name || 'Nuestro negocio'),
       fulfillment_options: fulfillmentOptions(),
       error_message: error.publicMessage,
     },
@@ -477,13 +523,13 @@ function backResponse(
     return {
       screen,
       data: {
-        business_name: String(business.name || 'Nuestro negocio').trim(),
+        business_name: headingText(business.name || 'Nuestro negocio'),
         fulfillment_options: fulfillmentOptions(),
         error_message: '',
       },
     }
   }
-  if (/^ORDER_ITEM_[123]$/.test(screen)) {
+  if (/^ORDER_ITEM_(?:ONE|TWO|THREE)$/.test(screen)) {
     return {
       screen,
       data: {
@@ -525,8 +571,8 @@ function backResponse(
 
 function validateSession(session: ResolvedFlowSession | null): ResolvedFlowSession {
   if (!session) throw new FlowDataExchangeError(401, 'La sesión del formulario no es válida.')
-  if (session.provider !== PROVIDER || session.flow?.capability_key !== 'order') {
-    throw new FlowDataExchangeError(403, 'Este formulario no corresponde a pedidos.')
+  if (session.provider !== PROVIDER) {
+    throw new FlowDataExchangeError(403, 'Este formulario no corresponde al proveedor.')
   }
   if (session.status !== 'open' || Date.parse(session.expires_at) <= Date.now()) {
     throw new FlowDataExchangeError(410, 'La sesión del formulario expiró. Vuelve al chat.')
@@ -538,22 +584,35 @@ function validateBusiness(business: FlowBusiness | null): FlowBusiness {
   if (!business
     || business.active === false
     || business.bot_active === false
-    || business.suspended === true
-    || business.takes_orders === false) {
-    throw new FlowDataExchangeError(403, 'Los pedidos no están disponibles en este momento.')
+    || business.suspended === true) {
+    throw new FlowDataExchangeError(403, 'Este formulario no está disponible en este momento.')
   }
   return business
 }
 
-async function recordStepMetric(
+function validateOrderBusiness(
+  session: ResolvedFlowSession,
+  business: FlowBusiness,
+): FlowBusiness {
+  if (session.flow?.capability_key !== 'order'
+    || business.takes_orders !== true) {
+    throw new FlowDataExchangeError(
+      403,
+      'Este formulario no corresponde a pedidos.',
+    )
+  }
+  return business
+}
+
+function recordStepMetric(
   dependencies: WhatsAppFlowDataExchangeDependencies,
   session: ResolvedFlowSession,
   eventType: string,
   discriminator = '',
-): Promise<void> {
-  if (!dependencies.recordFlowMetric) return
-  try {
-    await dependencies.recordFlowMetric({
+): void {
+  recordFlowMetricBestEffort(
+    dependencies.recordFlowMetric,
+    {
       businessId: session.business_id,
       provider: PROVIDER,
       flowVersionId: session.flow_version_id,
@@ -566,10 +625,8 @@ async function recordStepMetric(
         discriminator,
       ].join(':'),
       metadata: {},
-    })
-  } catch {
-    // Observabilidad best-effort: no se interrumpe el formulario.
-  }
+    },
+  )
 }
 
 async function persistContext(
@@ -637,7 +694,7 @@ export function createWhatsAppFlowDataExchangeService(
       void dependencies.getFlowSessionByToken(PROVIDER, flowToken)
         .then(async (resolvedSession) => {
           if (resolvedSession) {
-            await recordStepMetric(
+            recordStepMetric(
               dependencies,
               resolvedSession,
               'flow.error',
@@ -657,13 +714,76 @@ export function createWhatsAppFlowDataExchangeService(
     const business = validateBusiness(
       await dependencies.getBusinessById(session.business_id),
     )
+    const capability = String(session.flow?.capability_key || '')
+
+    if (capability === 'appointment') {
+      // Carga diferida: los handlers especializados importan la clase de error
+      // de este módulo y no deben crear un ciclo durante su inicialización.
+      const appointment = require(
+        './whatsapp-flow-data-exchange-appointment'
+      ) as typeof import('./whatsapp-flow-data-exchange-appointment')
+      return appointment.createWhatsAppFlowAppointmentDataExchangeService(
+        dependencies as unknown as
+          import('./whatsapp-flow-data-exchange-appointment')
+            .WhatsAppFlowAppointmentDataExchangeDependencies,
+      )(request)
+    }
+
+    if (capability === 'lodging') {
+      if (!dependencies.quoteLodging || !dependencies.getLodgingQuoteById) {
+        throw new FlowDataExchangeError(
+          503,
+          'La cotización de hospedaje no está disponible en este momento.',
+        )
+      }
+      if (!business.id || business.id !== session.business_id) {
+        throw new FlowDataExchangeError(
+          403,
+          'El formulario no pertenece a este negocio.',
+        )
+      }
+      const lodging = require(
+        './whatsapp-flow-data-exchange-lodging'
+      ) as typeof import('./whatsapp-flow-data-exchange-lodging')
+      return lodging.createWhatsAppFlowLodgingDataExchangeHandler(
+        dependencies as unknown as
+          import('./whatsapp-flow-data-exchange-lodging')
+            .LodgingFlowDependencies,
+      )({
+        request,
+        session: session as unknown as
+          import('./whatsapp-flow-data-exchange-lodging').LodgingFlowSession,
+        business: business as
+          import('./whatsapp-flow-data-exchange-lodging').LodgingFlowBusiness,
+        flowToken,
+      })
+    }
+
+    if (capability === 'lead') {
+      const lead = require(
+        './whatsapp-flow-data-exchange-lead'
+      ) as typeof import('./whatsapp-flow-data-exchange-lead')
+      return lead.handleLeadFlowDataExchange({
+        request,
+        session,
+        business,
+        flowToken,
+      }, dependencies)
+    }
+
+    validateOrderBusiness(session, business)
     const intent = intentFrom(request, requestData)
     const [catalogProducts, catalogModifiers] = await Promise.all([
       dependencies.getFlowCatalogProducts(session.business_id),
       dependencies.getFlowCatalogModifiers(session.business_id),
     ])
     const products = availableProducts(catalogProducts)
-    const modifiers = catalogModifiers.filter(modifier => modifier.active !== false)
+    const modifiers = [
+      ...new Map(catalogModifiers
+        .filter(modifier => modifier.active !== false)
+        .map(modifier => [String(modifier.id), modifier]))
+        .values(),
+    ]
     const currentContext = contextOf(session)
     const currentItems = cartItems(currentContext)
 
@@ -685,9 +805,9 @@ export function createWhatsAppFlowDataExchangeService(
           : currentItems.length
             ? 'ORDER_DETAILS'
             : currentContext.fulfillment
-              ? 'ORDER_ITEM_1'
+              ? 'ORDER_ITEM_ONE'
               : 'ORDER_METHOD')
-      await recordStepMetric(
+      recordStepMetric(
         dependencies,
         session,
         'step.back',
@@ -704,11 +824,11 @@ export function createWhatsAppFlowDataExchangeService(
     }
 
     if (request.action === 'INIT') {
-      await recordStepMetric(dependencies, session, 'step.init')
+      recordStepMetric(dependencies, session, 'step.init')
       return {
         screen: 'ORDER_METHOD',
         data: {
-          business_name: String(business.name || 'Nuestro negocio').trim(),
+          business_name: headingText(business.name || 'Nuestro negocio'),
           fulfillment_options: fulfillmentOptions(),
           error_message: '',
         },
@@ -727,14 +847,14 @@ export function createWhatsAppFlowDataExchangeService(
       }
       delete nextContext.order_draft
       await persistContext(dependencies, session, flowToken, nextContext)
-      await recordStepMetric(
+      recordStepMetric(
         dependencies,
         session,
         'step.start_order',
         fulfillment,
       )
       return {
-        screen: 'ORDER_ITEM_1',
+        screen: 'ORDER_ITEM_ONE',
         data: {
           ...catalogData(products, modifiers),
           cart_summary: cartSummary([]),
@@ -753,7 +873,7 @@ export function createWhatsAppFlowDataExchangeService(
       if (!(data.products as unknown[]).length) {
         throw new FlowDataExchangeError(409, 'No hay productos disponibles en esa categoría.')
       }
-      await recordStepMetric(
+      recordStepMetric(
         dependencies,
         session,
         'step.load_products',
@@ -808,7 +928,7 @@ export function createWhatsAppFlowDataExchangeService(
         items: compactItems,
       }
       await persistContext(dependencies, session, flowToken, nextContext)
-      await recordStepMetric(
+      recordStepMetric(
         dependencies,
         session,
         'step.save_item',
@@ -874,7 +994,7 @@ export function createWhatsAppFlowDataExchangeService(
         items: currentItems,
         order_draft: canonicalPayload,
       })
-      await recordStepMetric(dependencies, session, 'step.review_order')
+      recordStepMetric(dependencies, session, 'step.review_order')
       return {
         screen: 'ORDER_REVIEW',
         data: {

@@ -14,6 +14,12 @@ const SOLD_OUT_ID = '20000000-0000-4000-8000-000000000002'
 const OTHER_TENANT_ID = '20000000-0000-4000-8000-000000000003'
 const MODIFIER_ID = '30000000-0000-4000-8000-000000000001'
 const TOKEN = 'valid-flow-token_1234567890'
+const NOT_SETTLED = Symbol('not-settled-before-next-turn')
+
+const beforeNextTurn = promise => Promise.race([
+  promise,
+  new Promise(resolve => setImmediate(() => resolve(NOT_SETTLED))),
+])
 
 function fixture(overrides = {}) {
   let session = {
@@ -168,6 +174,119 @@ describe('YCloud WhatsApp Flow data_exchange para pedidos', () => {
     )
   })
 
+  it('limita y deduplica títulos e IDs de todas las opciones dinámicas', async () => {
+    const longTag = `Pizzas artesanales ${'muy '.repeat(30)}especiales`
+    const longProduct = `Pizza familiar ${'extra '.repeat(20)}grande`
+    const longModifier = `Sabor ${'premium '.repeat(20)}de la casa`
+    const { exchange } = fixture({
+      dependencies: {
+        getBusinessById: vi.fn(async () => ({
+          id: BUSINESS_ID,
+          name: 'N'.repeat(120),
+          active: true,
+          bot_active: true,
+          suspended: false,
+          takes_orders: true,
+          payment_methods:
+            `Efectivo, efectivo, EFECTÍVO, ${'Transferencia '.repeat(10)}`,
+        })),
+        getFlowCatalogProducts: vi.fn(async () => [{
+          id: PRODUCT_ID,
+          business_id: BUSINESS_ID,
+          name: longProduct,
+          price: 12.5,
+          stock: 'disponible',
+          tags: [longTag],
+          active: true,
+        }]),
+        getFlowCatalogModifiers: vi.fn(async () => [{
+          id: MODIFIER_ID,
+          business_id: BUSINESS_ID,
+          category_tag: longTag,
+          name: longModifier,
+          active: true,
+        }]),
+      },
+    })
+
+    const initial = await exchange({
+      version: '3.0',
+      action: 'INIT',
+      flow_token: TOKEN,
+      data: {},
+    })
+    expect(initial.data.business_name).toHaveLength(80)
+
+    const started = await exchange({
+      version: '3.0',
+      action: 'data_exchange',
+      screen: 'ORDER_METHOD',
+      flow_token: TOKEN,
+      data: { intent: 'start_order', fulfillment: 'pickup' },
+    })
+    for (const source of [
+      started.data.categories,
+      started.data.products,
+      started.data.modifiers,
+    ]) {
+      expect(new Set(source.map(option => option.id)).size).toBe(source.length)
+      expect(source.every(option => [...option.title].length <= 30)).toBe(true)
+    }
+
+    const details = await exchange({
+      version: '3.0',
+      action: 'data_exchange',
+      screen: 'ORDER_ITEM_ONE',
+      flow_token: TOKEN,
+      data: {
+        intent: 'save_item',
+        item_position: 1,
+        category_id: started.data.categories[0].id,
+        product_id: PRODUCT_ID,
+        modifier_id: MODIFIER_ID,
+        quantity: '1',
+        item_note: '',
+        next_step: 'finish_items',
+      },
+    })
+    expect(details.screen).toBe('ORDER_DETAILS')
+    expect(
+      new Set(details.data.payment_methods.map(option => option.id)).size,
+    ).toBe(details.data.payment_methods.length)
+    expect(
+      details.data.payment_methods.every(option => [...option.title].length <= 30),
+    ).toBe(true)
+  })
+
+  it('falla visible si las etiquetas producen más de 200 categorías', async () => {
+    const products = productsOfSize(200).map((product, index) => ({
+      ...product,
+      tags: [`Categoría ${index}`, `Categoría extra ${index}`],
+    }))
+    const { exchange } = fixture({
+      dependencies: {
+        getFlowCatalogProducts: vi.fn(async () => products),
+        getFlowCatalogModifiers: vi.fn(async () => []),
+      },
+    })
+
+    const response = await exchange({
+      version: '3.0',
+      action: 'data_exchange',
+      screen: 'ORDER_METHOD',
+      flow_token: TOKEN,
+      data: { intent: 'start_order', fulfillment: 'pickup' },
+    })
+
+    expect(response).toMatchObject({
+      screen: 'ORDER_METHOD',
+      data: {
+        error_message: expect.stringMatching(/demasiado grande|chat/i),
+      },
+    })
+    expect(response.data).not.toHaveProperty('categories')
+  })
+
   it('guarda con CAS, excluye agotados y nunca acepta precios del cliente', async () => {
     const { exchange, dependencies, session } = fixture()
     const started = await exchange({
@@ -176,7 +295,7 @@ describe('YCloud WhatsApp Flow data_exchange para pedidos', () => {
       flow_token: TOKEN,
       data: { intent: 'start_order', fulfillment: 'delivery' },
     })
-    expect(started.screen).toBe('ORDER_ITEM_1')
+    expect(started.screen).toBe('ORDER_ITEM_ONE')
     expect(started.data.products).toEqual([{
       id: PRODUCT_ID,
       title: 'Pizza familiar · $12.50',
@@ -269,6 +388,43 @@ describe('YCloud WhatsApp Flow data_exchange para pedidos', () => {
     expect(session().context.order_draft.total_cents).toBe(2500)
   })
 
+  it('persiste el pedido y responde sin esperar una métrica colgada', async () => {
+    const current = fixture({
+      session: {
+        context: {
+          fulfillment: 'delivery',
+          items: [{
+            product_id: PRODUCT_ID,
+            quantity: 2,
+            modifier_ids: [MODIFIER_ID],
+            note: null,
+          }],
+        },
+        context_revision: 4,
+      },
+      dependencies: {
+        recordFlowMetric: vi.fn(() => new Promise(() => {})),
+      },
+    })
+
+    const response = await beforeNextTurn(current.exchange({
+      version: '3.0',
+      action: 'data_exchange',
+      flow_token: TOKEN,
+      data: {
+        intent: 'review_order',
+        contact_name: 'Andrea',
+        address: 'Av. Principal 123',
+        payment_method: 'efectivo',
+      },
+    }))
+
+    expect(response).not.toBe(NOT_SETTLED)
+    expect(response).toMatchObject({ screen: 'ORDER_REVIEW' })
+    expect(current.session().context.order_draft.total_cents).toBe(2500)
+    expect(current.dependencies.updateFlowSessionContext).toHaveBeenCalledOnce()
+  })
+
   it('reconstruye BACK desde el estado del servidor sin confiar en datos del teléfono', async () => {
     const { exchange, dependencies } = fixture({
       session: {
@@ -299,7 +455,7 @@ describe('YCloud WhatsApp Flow data_exchange para pedidos', () => {
       },
     })
 
-    expect(response.screen).toBe('ORDER_ITEM_1')
+    expect(response.screen).toBe('ORDER_ITEM_ONE')
     expect(response.data.products).toEqual([{
       id: PRODUCT_ID,
       title: 'Pizza familiar · $12.50',
@@ -454,7 +610,7 @@ describe('YCloud WhatsApp Flow data_exchange para pedidos', () => {
       data: { intent: 'start_order', fulfillment: 'pickup' },
     })
 
-    expect(response.screen).toBe('ORDER_ITEM_1')
+    expect(response.screen).toBe('ORDER_ITEM_ONE')
     expect(response.data.products).toHaveLength(200)
     expect(response.data.products.at(-1)).toEqual({
       id: products.at(-1).id,

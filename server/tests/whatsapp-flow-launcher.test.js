@@ -9,10 +9,17 @@ const {
 const BUSINESS_ID = '10000000-0000-4000-8000-000000000001'
 const VERSION_ID = '10000000-0000-4000-8000-000000000002'
 const SESSION_ID = '10000000-0000-4000-8000-000000000003'
+const PRODUCT_ID = '20000000-0000-4000-8000-000000000001'
 
 function setup(overrides = {}) {
   const dependencies = {
-    getFlowCatalogProducts: vi.fn(async () => [{ id: 'product-a' }]),
+    getFlowCatalogProducts: vi.fn(async () => [{
+      id: PRODUCT_ID,
+      name: 'Pizza familiar',
+      price: 12.5,
+      tags: ['Pizzas'],
+      active: true,
+    }]),
     getFlowCatalogModifiers: vi.fn(async () => []),
     getActiveFlowVersion: vi.fn(async () => ({
       id: VERSION_ID,
@@ -127,6 +134,32 @@ describe('launcher de WhatsApp Flow', () => {
         )),
       },
     ],
+    [
+      'el catálogo solo contiene productos sin precio operativo',
+      {
+        getFlowCatalogProducts: vi.fn(async () => [{
+          id: PRODUCT_ID,
+          name: 'Producto sin precio',
+          price: 0,
+          active: true,
+        }]),
+      },
+    ],
+    [
+      'las categorías exceden lo que el formulario puede representar',
+      {
+        getFlowCatalogProducts: vi.fn(async () => [{
+          id: PRODUCT_ID,
+          name: 'Producto con demasiadas categorías',
+          price: 1,
+          tags: Array.from(
+            { length: 201 },
+            (_, index) => `Categoría ${index + 1}`,
+          ),
+          active: true,
+        }]),
+      },
+    ],
   ])('cae al chat normal antes de crear la sesión cuando %s', async (
     _reason,
     overrides,
@@ -147,7 +180,13 @@ describe('launcher de WhatsApp Flow', () => {
     const current = setup({
       getFlowCatalogProducts: vi.fn(async () => Array.from(
         { length: 200 },
-        (_, index) => ({ id: `product-${index}` }),
+        (_, index) => ({
+          id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+          name: `Producto ${index + 1}`,
+          price: 1,
+          tags: ['Catálogo'],
+          active: true,
+        }),
       )),
       getFlowCatalogModifiers: vi.fn(async () => Array.from(
         { length: 200 },

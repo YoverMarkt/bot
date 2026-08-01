@@ -8,12 +8,17 @@ import {
   type FlowDataExchangeRequest,
   type WhatsAppFlowDataExchangeDependencies,
 } from '../services/whatsapp-flow-data-exchange'
+import { quoteLodging } from '../services/lodging'
 
 const YCLOUD_FLOW_DATA_EXCHANGE_PATH =
   '/webhook/ycloud/flows/data-exchange'
 const MAX_FLOW_DATA_EXCHANGE_BYTES = 64 * 1024
 
 const db = require('../db') as WhatsAppFlowDataExchangeDependencies
+const productionDependencies: WhatsAppFlowDataExchangeDependencies = {
+  ...db,
+  quoteLodging,
+}
 
 // Adaptador de transporte del piloto: YCloud entrega JSON plano por HTTPS.
 // La lógica de negocio vive en un servicio que recibe el contrato normalizado;
@@ -29,7 +34,7 @@ function requestSize(request: Request): number {
 }
 
 function createWhatsAppFlowDataExchangeRouter(
-  dependencies: WhatsAppFlowDataExchangeDependencies = db,
+  dependencies: WhatsAppFlowDataExchangeDependencies = productionDependencies,
 ) {
   const router = createRouter()
   const exchange = createWhatsAppFlowDataExchangeService(dependencies)

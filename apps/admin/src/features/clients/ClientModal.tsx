@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
 import { BedDouble, RadioTower, Search } from 'lucide-react'
@@ -67,7 +68,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         telegram_bot_token: '',
         ai_provider: c.ai_provider ?? '',
         mode: c.takes_bookings ? 'citas' : 'normal',
-        sales: c.takes_orders === false ? 'informa' : 'vende',
+        sales: c.takes_orders === true ? 'vende' : 'informa',
         lodging: c.lodging_enabled ? 'yes' : 'no',
         chat_mode: c.chat_mode === 'menu' ? 'menu' : 'ai',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
@@ -231,8 +232,25 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       }
     }
     try {
-      if (id) await adm.updateClient(id, payload)
-      else await adm.createClient(payload)
+      if (id) {
+        await adm.updateClient(id, payload)
+      } else {
+        setVfy('Creando negocio y preparando su WhatsApp Flow…')
+        const created = await adm.createClient(payload)
+        const setup = created.flow_setup
+        if (setup?.status === 'ready') {
+          toast.success(
+            'Negocio creado y Flow técnico activo. Ya puedes cargar su catálogo, horario o habitaciones.',
+          )
+        } else if (setup) {
+          const detail = setup.error
+            || setup.results.find(result => result.error)?.error
+            || 'puedes reintentarlo desde WhatsApp Flows'
+          toast.warning(`Negocio creado; el Flow quedó pendiente: ${detail}`)
+        } else {
+          toast.success('Negocio creado')
+        }
+      }
       onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar')

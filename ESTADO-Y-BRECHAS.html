@@ -1,0 +1,1303 @@
+<title>BotPanel — Estado de los 36 capítulos</title>
+
+<style>
+  :root {
+    --ground: #F5F6FB;
+    --surface: #FFFFFF;
+    --surface-2: #FBFBFE;
+    --ink: #15172B;
+    --ink-2: #4B5070;
+    --ink-3: #767C9A;
+    --line: #E1E3F0;
+    --line-2: #EDEEF7;
+    --accent: #4F46E5;
+    --accent-soft: #EEEDFD;
+    --ok: #0E8A6A;
+    --ok-soft: #E2F4EE;
+    --mid: #A6660B;
+    --mid-soft: #FBF0DE;
+    --gap: #BE3547;
+    --gap-soft: #FBE7E9;
+    --off: #6E7591;
+    --off-soft: #EDEFF5;
+    --shadow: 0 1px 2px rgba(21, 23, 43, .05), 0 8px 24px -16px rgba(21, 23, 43, .18);
+
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0C0E1A;
+      --surface: #15182C;
+      --surface-2: #191D34;
+      --ink: #E9EAF5;
+      --ink-2: #A5AAC5;
+      --ink-3: #7C82A0;
+      --line: #262B46;
+      --line-2: #202441;
+      --accent: #8F88FF;
+      --accent-soft: #201F45;
+      --ok: #3DBE9A;
+      --ok-soft: #102E28;
+      --mid: #DDA24A;
+      --mid-soft: #2E2313;
+      --gap: #EE7684;
+      --gap-soft: #34171D;
+      --off: #8A91AD;
+      --off-soft: #1E2238;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -18px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0C0E1A;
+    --surface: #15182C;
+    --surface-2: #191D34;
+    --ink: #E9EAF5;
+    --ink-2: #A5AAC5;
+    --ink-3: #7C82A0;
+    --line: #262B46;
+    --line-2: #202441;
+    --accent: #8F88FF;
+    --accent-soft: #201F45;
+    --ok: #3DBE9A;
+    --ok-soft: #102E28;
+    --mid: #DDA24A;
+    --mid-soft: #2E2313;
+    --gap: #EE7684;
+    --gap-soft: #34171D;
+    --off: #8A91AD;
+    --off-soft: #1E2238;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -18px rgba(0, 0, 0, .8);
+  }
+
+  :root[data-theme="light"] {
+    --ground: #F5F6FB;
+    --surface: #FFFFFF;
+    --surface-2: #FBFBFE;
+    --ink: #15172B;
+    --ink-2: #4B5070;
+    --ink-3: #767C9A;
+    --line: #E1E3F0;
+    --line-2: #EDEEF7;
+    --accent: #4F46E5;
+    --accent-soft: #EEEDFD;
+    --ok: #0E8A6A;
+    --ok-soft: #E2F4EE;
+    --mid: #A6660B;
+    --mid-soft: #FBF0DE;
+    --gap: #BE3547;
+    --gap-soft: #FBE7E9;
+    --off: #6E7591;
+    --off-soft: #EDEFF5;
+    --shadow: 0 1px 2px rgba(21, 23, 43, .05), 0 8px 24px -16px rgba(21, 23, 43, .18);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 44px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  a { color: var(--accent); }
+
+  :where(button, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* ── Encabezado ─────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: 18px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(30px, 5.2vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .lede {
+    max-width: 64ch;
+    color: var(--ink-2);
+    font-size: 17px;
+  }
+
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Tarjetas de conteo ─────────────────────── */
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .tally-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--bar, var(--line));
+    border-radius: 3px;
+    padding: 14px 16px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: var(--shadow);
+  }
+
+  .tally-num {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    color: var(--bar, var(--ink));
+  }
+
+  .tally-name { font-size: 13.5px; font-weight: 600; }
+  .tally-note { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
+
+  .c-have { --bar: var(--ok); }
+  .c-half { --bar: var(--mid); }
+  .c-none { --bar: var(--gap); }
+  .c-never { --bar: var(--off); }
+
+  /* ── Barra de filtros ───────────────────────── */
+  .filters {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 0;
+    margin: -12px 0 -8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .filters-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-right: 4px;
+  }
+
+  .chip-btn {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+
+  .chip-btn:hover { border-color: var(--ink-3); }
+
+  .chip-btn[aria-pressed="true"] {
+    color: var(--surface);
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dotc, var(--ink-3));
+    flex: none;
+  }
+
+  .chip-btn[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--dotc) 35%, transparent); }
+
+  /* ── Matriz visual ──────────────────────────── */
+  .matrix { display: flex; flex-direction: column; gap: 22px; }
+
+  .matrix-band { display: flex; flex-direction: column; gap: 9px; }
+
+  .band-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .band-num {
+    font-family: var(--serif);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .band-name { font-size: 14px; font-weight: 600; }
+  .band-meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+  .cells {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+    gap: 7px;
+  }
+
+  .cell {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--sc);
+    border-radius: 3px;
+    padding: 8px 10px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .cell-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cell-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+  }
+
+  .s-have { --sc: var(--ok); }
+  .s-half { --sc: var(--mid); }
+  .s-none { --sc: var(--gap); }
+  .never { --sc: var(--off); }
+
+  .never-flag {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .1em;
+    color: var(--off);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 0 4px;
+  }
+
+  /* ── Detalle por capítulo ───────────────────── */
+  .vol { display: flex; flex-direction: column; gap: 14px; }
+
+  .vol-head {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .vol-title {
+    font-family: var(--serif);
+    font-size: clamp(21px, 3vw, 27px);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 0;
+  }
+
+  .vol-sub { font-size: 14px; color: var(--ink-2); }
+
+  .score {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score b { color: var(--ink); font-weight: 600; }
+
+  .rows { display: flex; flex-direction: column; gap: 9px; }
+
+  .row {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--sc);
+    border-radius: 3px;
+    padding: 13px 15px 14px;
+    display: grid;
+    gap: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .row-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+
+  .row-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .row-name { font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .b-have { background: var(--ok-soft); color: var(--ok); }
+  .b-half { background: var(--mid-soft); color: var(--mid); }
+  .b-none { background: var(--gap-soft); color: var(--gap); }
+  .b-never { background: var(--off-soft); color: var(--off); }
+  .b-rank { background: var(--accent-soft); color: var(--accent); }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; }
+
+  @media (max-width: 680px) {
+    .pair { grid-template-columns: 1fr; }
+  }
+
+  .field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+  .field-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--lc, var(--ink-3));
+  }
+
+  .field-text { font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+  .field-text b { color: var(--ink); font-weight: 600; }
+
+  .l-have { --lc: var(--ok); }
+  .l-none { --lc: var(--gap); }
+
+  /* ── Plan ───────────────────────────────────── */
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .phase-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 13px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .phase-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .phase-name { font-size: 15.5px; font-weight: 650; }
+  .phase-cost { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+  .task {
+    display: grid;
+    grid-template-columns: 30px 1fr auto;
+    gap: 4px 12px;
+    align-items: baseline;
+    padding: 11px 16px;
+    border-top: 1px solid var(--line-2);
+  }
+
+  .task:first-of-type { border-top: 0; }
+
+  .task-n {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .task-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .task-name { font-size: 14.5px; font-weight: 600; }
+  .task-why { font-size: 13px; color: var(--ink-2); }
+  .task-side { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+  @media (max-width: 620px) {
+    .task { grid-template-columns: 26px 1fr; }
+    .task-side { grid-column: 2; justify-content: flex-start; margin-top: 3px; }
+  }
+
+  /* ── Tabla de decisiones ────────────────────── */
+  .scroller { overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
+
+  table { border-collapse: collapse; width: 100%; min-width: 520px; }
+
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-2);
+    font-size: 14px;
+    vertical-align: top;
+  }
+
+  th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td.tool { font-weight: 650; white-space: nowrap; }
+  td.trigger { color: var(--ink-2); }
+
+  /* ── Preguntas ──────────────────────────────── */
+  .qa { display: flex; flex-direction: column; gap: 9px; }
+
+  .q {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 3px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--gap);
+    border-radius: 3px;
+    padding: 12px 15px;
+  }
+
+  .q-n {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .q-text { font-size: 15px; font-weight: 600; }
+  .q-now { grid-column: 2; font-size: 13.5px; color: var(--ink-2); }
+  .q-now b { color: var(--gap); font-weight: 600; }
+
+  h2.sec {
+    font-family: var(--serif);
+    font-size: clamp(23px, 3.4vw, 31px);
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 0 0 4px;
+    text-wrap: balance;
+  }
+
+  .sec-note { color: var(--ink-2); font-size: 15px; max-width: 66ch; margin: 0 0 18px; }
+
+  .block { display: flex; flex-direction: column; gap: 12px; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+    font-size: 13px;
+    color: var(--ink-3);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: .89em;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    padding: 1px 4px;
+  }
+
+  .hidden { display: none !important; }
+  .dimmed { opacity: .22; }
+
+  /* ── Progreso ───────────────────────────────── */
+  .progress {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 15px 17px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .progress-top {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .progress-num {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ok);
+  }
+
+  .progress-label { font-size: 14px; font-weight: 600; }
+  .progress-note { font-size: 13px; color: var(--ink-3); margin-left: auto; }
+
+  .bar {
+    display: flex;
+    height: 10px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--line-2);
+  }
+
+  .bar span { display: block; }
+  .bar .seg-have { background: var(--ok); }
+  .bar .seg-half { background: var(--mid); }
+  .bar .seg-none { background: var(--gap); }
+  .bar .seg-never { background: var(--off); opacity: .45; }
+
+  .bar-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bar-key span { display: inline-flex; align-items: center; gap: 6px; }
+
+  .swatch { width: 9px; height: 9px; border-radius: 2px; background: var(--swc); flex: none; }
+
+  .empty-log {
+    background: var(--surface);
+    border: 1px dashed var(--line);
+    border-radius: 3px;
+    padding: 15px 17px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  .empty-log b { color: var(--ink); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Auditoría · 29 julio 2026 · commit ecbaf07</div>
+    <h1>BotPanel contra el Manual Maestro: los 36 capítulos, uno por uno</h1>
+    <p class="lede">
+      Todo lo que <strong>tengo</strong>, lo que está <strong>a medias</strong>, lo que
+      <strong>no tengo</strong> y lo que <strong>no se debe construir</strong>. Verificado en el
+      código real: 73.000 líneas, 30 tablas, 37 funciones PostgreSQL, 786 pruebas.
+    </p>
+    <div class="tally">
+      <div class="tally-card c-have">
+        <span class="tally-num">11</span>
+        <span class="tally-name">Lo tengo</span>
+        <span class="tally-note">No falta implementar nada</span>
+      </div>
+      <div class="tally-card c-half">
+        <span class="tally-num">14</span>
+        <span class="tally-name">A medias</span>
+        <span class="tally-note">Funciona, le falta algo que importa</span>
+      </div>
+      <div class="tally-card c-none">
+        <span class="tally-num">11</span>
+        <span class="tally-name">No lo tengo</span>
+        <span class="tally-note">No existe en el proyecto</span>
+      </div>
+      <div class="tally-card c-never">
+        <span class="tally-num">9</span>
+        <span class="tally-name">No construir</span>
+        <span class="tally-note">Decisión con disparador escrito</span>
+      </div>
+    </div>
+
+    <div class="progress">
+      <div class="progress-top">
+        <span class="progress-num">11 / 29</span>
+        <span class="progress-label">capítulos en verde</span>
+        <span class="progress-note">Actualizado el 29 jul 2026</span>
+      </div>
+      <div class="bar" role="img" aria-label="11 capítulos en verde, 14 a medias, 4 pendientes de trabajo y 7 que son decisiones de no construir">
+        <span class="seg-have" style="width: 30.6%"></span>
+        <span class="seg-half" style="width: 38.9%"></span>
+        <span class="seg-none" style="width: 11.1%"></span>
+        <span class="seg-never" style="width: 19.4%"></span>
+      </div>
+      <div class="bar-key">
+        <span style="--swc: var(--ok)"><i class="swatch"></i>11 en verde</span>
+        <span style="--swc: var(--mid)"><i class="swatch"></i>14 a medias</span>
+        <span style="--swc: var(--gap)"><i class="swatch"></i>4 sin empezar</span>
+        <span style="--swc: var(--off)"><i class="swatch"></i>7 decisiones — no se pintan nunca</span>
+      </div>
+      <p class="tally-note" style="margin: 0">
+        La meta no es 36 sino <b>29</b>: siete capítulos son decisiones de no construir (Prisma,
+        Redis, BullMQ, Kubernetes, Clean pura, el stack de observabilidad, Docker para desplegar) y
+        dejarlos así es el resultado correcto, no una tarea pendiente.
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <span class="filters-label">Ver</span>
+    <button class="chip-btn" data-f="all" aria-pressed="true">Todo</button>
+    <button class="chip-btn" data-f="s-have" aria-pressed="false" style="--dotc: var(--ok)"><span class="dot"></span>Lo tengo</button>
+    <button class="chip-btn" data-f="s-half" aria-pressed="false" style="--dotc: var(--mid)"><span class="dot"></span>A medias</button>
+    <button class="chip-btn" data-f="s-none" aria-pressed="false" style="--dotc: var(--gap)"><span class="dot"></span>No lo tengo</button>
+    <button class="chip-btn" data-f="never" aria-pressed="false" style="--dotc: var(--off)"><span class="dot"></span>No construir</button>
+  </div>
+
+  <!-- ══ MATRIZ ══════════════════════════════════ -->
+  <section class="block">
+    <h2 class="sec">La matriz completa</h2>
+    <p class="sec-note">
+      Los 36 capítulos de los cuatro volúmenes. El color es el estado; el detalle de cada uno está
+      más abajo.
+    </p>
+
+    <div class="matrix" id="matrix">
+
+      <div class="matrix-band">
+        <div class="band-head">
+          <span class="band-num">I</span>
+          <span class="band-name">Fundamentos y backend</span>
+          <span class="band-meta">cómo está construido · 7 tengo / 0 medias / 3 no</span>
+        </div>
+        <div class="cells">
+          <div class="cell item s-have"><span class="cell-top">01</span><span class="cell-name">Visión y objetivos</span></div>
+          <div class="cell item s-have"><span class="cell-top">02</span><span class="cell-name">Arquitectura general</span></div>
+          <div class="cell item s-have"><span class="cell-top">03</span><span class="cell-name">Clean Architecture</span></div>
+          <div class="cell item s-have"><span class="cell-top">04</span><span class="cell-name">Domain-Driven Design</span></div>
+          <div class="cell item s-have"><span class="cell-top">05</span><span class="cell-name">Patrones de diseño</span></div>
+          <div class="cell item s-have"><span class="cell-top">06</span><span class="cell-name">Backend Node + Express + TS</span></div>
+          <div class="cell item s-have"><span class="cell-top">07</span><span class="cell-name">PostgreSQL avanzado</span></div>
+          <div class="cell item s-none never"><span class="cell-top">08<span class="never-flag">NO</span></span><span class="cell-name">Prisma ORM</span></div>
+          <div class="cell item s-none never"><span class="cell-top">09<span class="never-flag">NO</span></span><span class="cell-name">Redis</span></div>
+          <div class="cell item s-none never"><span class="cell-top">10<span class="never-flag">NO</span></span><span class="cell-name">BullMQ</span></div>
+        </div>
+      </div>
+
+      <div class="matrix-band">
+        <div class="band-head">
+          <span class="band-num">II</span>
+          <span class="band-name">Integraciones, seguridad e IA</span>
+          <span class="band-meta">cómo se comporta con el mundo real · 1 tengo / 8 medias / 1 no</span>
+        </div>
+        <div class="cells">
+          <div class="cell item s-half"><span class="cell-top">11</span><span class="cell-name">Sistema de colas</span></div>
+          <div class="cell item s-none"><span class="cell-top">12</span><span class="cell-name">WebSockets</span></div>
+          <div class="cell item s-have"><span class="cell-top">13</span><span class="cell-name">Multi-tenancy</span></div>
+          <div class="cell item s-half"><span class="cell-top">14</span><span class="cell-name">Autenticación y roles</span></div>
+          <div class="cell item s-half"><span class="cell-top">15</span><span class="cell-name">Seguridad OWASP</span></div>
+          <div class="cell item s-half"><span class="cell-top">16</span><span class="cell-name">WhatsApp Cloud API</span></div>
+          <div class="cell item s-half"><span class="cell-top">17</span><span class="cell-name">WhatsApp Flows</span></div>
+          <div class="cell item s-half"><span class="cell-top">18</span><span class="cell-name">Agentes de IA</span></div>
+          <div class="cell item s-half"><span class="cell-top">19</span><span class="cell-name">Ingeniería de prompts</span></div>
+          <div class="cell item s-half"><span class="cell-top">20</span><span class="cell-name">Memoria conversacional</span></div>
+        </div>
+      </div>
+
+      <div class="matrix-band">
+        <div class="band-head">
+          <span class="band-num">III</span>
+          <span class="band-name">Infraestructura y DevOps</span>
+          <span class="band-meta">cómo se opera · 1 tengo / 4 medias / 5 no</span>
+        </div>
+        <div class="cells">
+          <div class="cell item s-half"><span class="cell-top">21</span><span class="cell-name">RAG y búsqueda semántica</span></div>
+          <div class="cell item s-none never"><span class="cell-top">22<span class="never-flag">NO</span></span><span class="cell-name">Observabilidad</span></div>
+          <div class="cell item s-none"><span class="cell-top">23</span><span class="cell-name">Logging</span></div>
+          <div class="cell item s-have"><span class="cell-top">24</span><span class="cell-name">Testing</span></div>
+          <div class="cell item s-half"><span class="cell-top">25</span><span class="cell-name">CI/CD</span></div>
+          <div class="cell item s-none never"><span class="cell-top">26<span class="never-flag">NO</span></span><span class="cell-name">Docker</span></div>
+          <div class="cell item s-none never"><span class="cell-top">27<span class="never-flag">NO</span></span><span class="cell-name">Kubernetes</span></div>
+          <div class="cell item s-none never"><span class="cell-top">28<span class="never-flag">NO</span></span><span class="cell-name">Alta disponibilidad</span></div>
+          <div class="cell item s-half"><span class="cell-top">29</span><span class="cell-name">Optimización de costos</span></div>
+          <div class="cell item s-half"><span class="cell-top">30</span><span class="cell-name">Facturación</span></div>
+        </div>
+      </div>
+
+      <div class="matrix-band">
+        <div class="band-head">
+          <span class="band-num">IV</span>
+          <span class="band-name">Operación y producción</span>
+          <span class="band-meta">cómo se sostiene el negocio · 2 tengo / 2 medias / 2 no</span>
+        </div>
+        <div class="cells">
+          <div class="cell item s-have"><span class="cell-top">31</span><span class="cell-name">Panel de administración</span></div>
+          <div class="cell item s-half"><span class="cell-top">32</span><span class="cell-name">Analítica y métricas</span></div>
+          <div class="cell item s-half"><span class="cell-top">33</span><span class="cell-name">Roadmap de escalabilidad</span></div>
+          <div class="cell item s-none"><span class="cell-top">34</span><span class="cell-name">Disaster Recovery</span></div>
+          <div class="cell item s-none"><span class="cell-top">35</span><span class="cell-name">Checklist de producción</span></div>
+          <div class="cell item s-have"><span class="cell-top">36</span><span class="cell-name">Apéndices y convenciones</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ VOLUMEN I ═══════════════════════════════ -->
+  <section class="vol">
+    <div class="vol-head">
+      <h2 class="vol-title">Volumen I · Fundamentos y backend</h2>
+      <p class="vol-sub">Qué mide: cómo está construido el sistema.</p>
+      <div class="score"><span>Nota contra el manual <b>8,5/10</b></span><span>Contra tu etapa real <b>9,5/10</b></span><span>El volumen más sólido</span></div>
+    </div>
+    <div class="rows">
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">01</span><span class="row-name">Visión y objetivos</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Producto y mercado definidos, <b>6 planes</b> con límites reales de contactos y mensajes, calculadora de precios en el panel admin.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Decidir y escribir: cliente ideal, métrica norte, y <b>validar que $25/mes deje margen</b> con IA + WhatsApp. No es código.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">02</span><span class="row-name">Arquitectura general</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Monorepo con workspaces, 22 routers, 32 servicios, 20 repositorios, <code>ARQUITECTURA.md</code> con el plan estrangulador.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Diagramas: contexto, contenedores y sobre todo el <b>recorrido del mensaje entrante</b>, que hoy exige leer 6 archivos.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">03</span><span class="row-name">Clean Architecture</span><span class="badge b-have">lo tengo</span><span class="badge b-never">no migrar</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Tres capas respetadas en 99 archivos (rutas → servicios → repositorios) e inyección de dependencias en los servicios críticos.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Nada útil. La versión pura añadiría mapeo en 20 repositorios a cambio de cero valor. Opcional: una prueba que verifique la regla de dependencia.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">04</span><span class="row-name">Domain-Driven Design</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Contextos ya separados de hecho: hospedaje ≠ citas ≠ pedidos, dinero, canales, facturación, Flows.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Un glosario: hoy «cliente» significa dos cosas (el negocio que paga y el comprador que escribe) y eso ya causa ambigüedad.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">05</span><span class="row-name">Patrones de diseño</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text"><b>8 patrones en uso real:</b> Repository, Adapter, Strategy, inyección de dependencias, máquina de estados, inbox durable con leases, idempotencia por SHA-256 y fallo cerrado.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Solo documentarlos. Hoy un programador nuevo los redescubre leyendo código.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">06</span><span class="row-name">Backend Node + Express + TypeScript</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">26.672 líneas de TS estricto, errores async tipados, cabeceras de seguridad, rate limit por ruta, arranque que <b>falla cerrado</b> si falta configuración, apagado ordenado con SIGTERM.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Zod en los bordes públicos, contrato de API, versionado <code>/api/v1</code>, paginación consistente.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">07</span><span class="row-name">PostgreSQL avanzado</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">30 tablas, 43 índices, <b>37 funciones</b>: atomicidad en la base y no en JavaScript, locks por negocio, exclusión de intervalos, trigger anti-sobreventa, pgvector.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Backups</b> (plan free = sin copias), medir con EXPLAIN, retención del historial de conversaciones.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">08</span><span class="row-name">Prisma ORM</span><span class="badge b-never">no construir</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text"><code>supabase-js</code> + 20 repositorios tipados a mano + RPC. Prisma te quitaría las 37 funciones y el modelo de permisos.</span></div>
+          <div class="field l-none"><span class="field-label">Falta lo de verdad</span><span class="field-text"><b>Corredor de migraciones:</b> 32 archivos <code>.sql</code> aplicados a mano, sin orden ni registro de qué se aplicó dónde.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">09</span><span class="row-name">Redis</span><span class="badge b-never">no construir</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Caché en memoria del proceso para configuración y estado del menú (30 min). Con una instancia, es la respuesta correcta.</span></div>
+          <div class="field l-none"><span class="field-label">Disparador</span><span class="field-text">El día que corras <b>una segunda instancia</b>: ahí la caché en memoria se vuelve incoherente.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">10</span><span class="row-name">BullMQ</span><span class="badge b-never">no construir</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Cola durable <b>ya construida sobre PostgreSQL</b>: leases, renovación, reintentos con backoff, dead-letter, limpieza y worker con pruebas.</span></div>
+          <div class="field l-none"><span class="field-label">Disparador</span><span class="field-text">Miles de trabajos por minuto o varias colas con prioridades distintas.</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ VOLUMEN II ══════════════════════════════ -->
+  <section class="vol">
+    <div class="vol-head">
+      <h2 class="vol-title">Volumen II · Integraciones, seguridad e IA</h2>
+      <p class="vol-sub">Qué mide: cómo se comporta el sistema con el mundo real. El volumen del «casi».</p>
+      <div class="score"><span>Nota contra el manual <b>5/10</b></span><span>Contra tu etapa real <b>5,5/10</b></span><span>Aquí está el 60% del trabajo pendiente</span></div>
+    </div>
+    <div class="rows">
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">11</span><span class="row-name">Sistema de colas</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Cola de <b>entrada</b> completa: nada se pierde si el proceso muere, nada se duplica (SHA-256), dead-letter y reintentos exponenciales.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Cola de <b>salida</b>: los envíos no tienen reintentos (solo un <code>catch</code>). Métricas de cola. Trabajos programados idempotentes: hoy son <code>setInterval</code> y la facturación puede saltarse un mes.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none">
+        <div class="row-head"><span class="row-num">12</span><span class="row-name">WebSockets</span><span class="badge b-none">no lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Polling cada 3 s / 5 s / 12 s y sistema de alarma de atención en el panel. Funciona.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Tiempo real — pero antes va lo barato: bajar el polling a 10 s y pausarlo con la pestaña oculta, que corta <b>70-80% del egress</b>.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">13</span><span class="row-name">Multi-tenancy</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">El pilar del proyecto: <code>business_id</code> siempre del JWT, resolución exacta de canal, revalidación de sesión en 15 s, configuración independiente por negocio, pruebas de aislamiento dedicadas.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Aplicar los límites de plan</b> (se miden, no bloquean nada) y políticas RLS por tenant: hoy el aislamiento depende solo del código.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">14</span><span class="row-name">Autenticación y autorización</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">JWT + bcrypt, RBAC con permisos granulares, mínimo 12 caracteres, rate limit en login, y revalidación en vivo: desactivar un usuario corta el acceso en 15 s.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Refresh tokens, <b>recuperación de contraseña</b> (no existe canal de email), 2FA del superadmin, revocación por dispositivo.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">15</span><span class="row-name">Seguridad OWASP</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Cabeceras + CSP verificadas por prueba (equivalente propio de Helmet), CORS, rate limit que evita que un tenant bloquee a otro, webhooks firmados por negocio, deduplicación, límite de tamaño de cuerpo.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Cifrar las keys de los negocios</b> (hoy en claro en la base), Zod, registro de auditoría, <code>npm audit</code> en CI, rotación de secretos.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">16</span><span class="row-name">WhatsApp Cloud API</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Doble proveedor por negocio (YCloud + Meta Graph v25), texto, imagen, botones, indicador de escritura, recepción firmada y encolada, marcado de lectura.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Número propio en Meta</b>, plantillas aprobadas, <b>estados de entrega</b> (hoy no sabes si tus mensajes llegan) y reintentos tipificados.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">17</span><span class="row-name">WhatsApp Flows</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">12 servicios, 4 capacidades (pedido, cita, hospedaje, lead), JSON generado según el negocio, <b>cálculo del total server-side</b>, aprovisionador, métricas, ~15 archivos de prueba.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Cifrado RSA + AES-GCM que Meta exige, publicación y versionado en Meta, prueba con un Flow real, y <b>commitear los 49 archivos sueltos</b>.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">18</span><span class="row-name">Agentes de IA</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">4 proveedores, visión, audio y embeddings; etiquetas como herramientas con <b>fallo cerrado</b>; detector de resúmenes falsos; modo menú donde la IA no participa; derivación a humano.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Fallback de modelos</b> (un proveedor sin saldo = bot muerto), <b>evals</b>, validador de precios en salida, costo por tokens.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">19</span><span class="row-name">Ingeniería de prompts</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Catálogo real, políticas, fecha de hoy y calendario de 7 días inyectados; prompt editable por negocio; plantillas por vertical.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Versionado con rollback, evaluación, y <b>log de qué prompt y qué modelo</b> produjo cada respuesta: hoy no puedes reconstruir por qué el bot dijo algo.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">20</span><span class="row-name">Memoria conversacional</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Historial por contacto y negocio (24 mensajes al prompt), sesiones con modo manual, agrupación durable de mensajes rápidos, estado de menú con TTL de 30 min.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Resumen automático al pasar de 24 mensajes, política de retención, y persistir el estado del menú: un reinicio deja al cliente a medio flujo.</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ VOLUMEN III ═════════════════════════════ -->
+  <section class="vol">
+    <div class="vol-head">
+      <h2 class="vol-title">Volumen III · Infraestructura y DevOps</h2>
+      <p class="vol-sub">Qué mide: cómo se opera. El volumen más tramposo: leído literal, te pone a montar Kubernetes.</p>
+      <div class="score"><span>Nota contra el manual <b>3,5/10</b></span><span>Contra tu etapa real <b>6/10</b></span><span>4 de sus 10 capítulos no debes construirlos</span></div>
+    </div>
+    <div class="rows">
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">21</span><span class="row-name">RAG y búsqueda semántica</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">pgvector con <b>aislamiento por tenant verificado</b> dentro de la propia función (<code>match_products(embedding, biz_id, n)</code>), embeddings al guardar producto, reindexación desde el panel.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">RAG de documentos (hoy solo productos), caché de consultas, umbral calibrado, respaldo léxico. Y los embeddings <b>dependen de OpenAI</b> aunque el negocio use otro proveedor.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">22</span><span class="row-name">Observabilidad</span><span class="badge b-none">no lo tengo</span><span class="badge b-never">el stack, no</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text"><code>/api/health</code> y uso por cliente. De las 5 métricas que pide el manual, tienes <b>una</b>.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Sentry, <code>request_id</code> y cuatro contadores (cola, dead-letter, fallos de IA, latencia). OpenTelemetry + Prometheus + Grafana serían tres sistemas más para observar un proceso.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none">
+        <div class="row-head"><span class="row-num">23</span><span class="row-name">Logging</span><span class="badge b-none">no lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">98 <code>console.*</code> con emojis, en un stdout que Railway borra.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Todo: JSON estructurado, niveles, <code>business_id</code> y <code>request_id</code> en cada línea, redacción de secretos. <b>Es la brecha más barata de cerrar del proyecto.</b></span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">24</span><span class="row-name">Testing</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">97 archivos, <b>786 casos</b>, 4 jobs de CI que bloquean el merge, y un E2E que cubre Flows, Facturación, Medición, alta con capacidades, permisos de empleados y hospedaje.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Que alguien <b>ejecute las 37 RPC</b> (hoy se verifica el texto del SQL, no su comportamiento), E2E de Conversaciones, evals de IA, cobertura y carga.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">25</span><span class="row-name">CI/CD</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">La CI completa: lint, tipos, tests, builds de los dos paneles y E2E en cada PR. <code>railway.json</code> con healthcheck y reinicio.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">La D del CD: <b>3 de 7 pasos</b>. Sin staging, sin deploy automático, sin smoke test y sin rollback escrito. Desplegar es hoy un acto de fe.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">26</span><span class="row-name">Docker</span><span class="badge b-none">no lo tengo</span><span class="badge b-never">para desplegar, no</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Build de Railway (RAILPACK) y un solo proceso que sirve la API y los dos paneles: <b>no necesitas Nginx</b>.</span></div>
+          <div class="field l-none"><span class="field-label">Falta / sirve para</span><span class="field-text">Una cosa concreta y valiosa: un <b>Postgres local</b> que permita ejecutar las RPC en pruebas (desbloquea el cap. 24).</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">27</span><span class="row-name">Kubernetes</span><span class="badge b-never">no construir</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Un proceso Node en Railway, que es exactamente lo que corresponde a esta escala.</span></div>
+          <div class="field l-none"><span class="field-label">Disparador</span><span class="field-text">Varios servicios con escalado distinto <b>y</b> un equipo que lo mantenga. Antes van staging, backups, logs y una segunda instancia.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none never">
+        <div class="row-head"><span class="row-num">28</span><span class="row-name">Alta disponibilidad</span><span class="badge b-none">no lo tengo</span><span class="badge b-never">réplicas, no</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Más de lo que parece: healthcheck con reinicio automático, apagado ordenado y una cola que <b>no pierde mensajes al reiniciar</b>.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Circuit breaker</b> — el único de los 5 ítems que necesitas ya. Balanceador y réplicas hoy <b>duplicarían la facturación</b>.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">29</span><span class="row-name">Optimización de costos</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Límite de tokens de salida, modo menú y agrupación (menos mensajes por conversación), Cloudinary como CDN, medición por negocio, y el egress ya diagnosticado.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Tokens de <b>entrada</b> (el prompt manda el catálogo completo en cada mensaje), caché de prompt, elección de modelo por plan, y aplicar el arreglo del polling.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">30</span><span class="row-name">Facturación</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">6 planes, cuota mensual generada automáticamente, pantallas de facturación y de uso, pruebas de la automatización.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Cobrar</b>: no hay pasarela (el cobro es manual, correcto por ahora), ni facturas, ni <b>suspensión por impago</b>, ni cobro de excedentes.</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ VOLUMEN IV ══════════════════════════════ -->
+  <section class="vol">
+    <div class="vol-head">
+      <h2 class="vol-title">Volumen IV · Operación y producción</h2>
+      <p class="vol-sub">Qué mide: cómo se sostiene el negocio. Contiene tu mejor capítulo y el peor de los 36.</p>
+      <div class="score"><span>Nota contra el manual <b>4/10</b></span><span>Contra tu etapa real <b>5/10</b></span><span>Panel excelente, recuperación inexistente</span></div>
+    </div>
+    <div class="rows">
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">31</span><span class="row-name">Panel de administración</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text"><b>6 de 7 funciones:</b> tenants con onboarding atómico, usuarios, roles y permisos, configuración de IA, de WhatsApp, gestión de planes; más simulador y calculadora.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text"><b>Auditoría de acciones:</b> nadie sabe quién cambió un plan, tocó una key o suspendió un negocio.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">32</span><span class="row-name">Analítica y métricas</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text"><b>16 análisis</b> para el dueño del negocio: resumen, top, poco movimiento, comparación, recurrentes, stock bajo, más consultados, abandonados, perdidos, directorio, inactivos, alertas, ingresos por estadías, ventas por vendedor.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Todo lo tuyo: <b>MRR, costo por cliente, tokens, conversión conversación→pedido</b> y tiempo de respuesta. Tienes 1,5 de los 7 KPIs del manual.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-half">
+        <div class="row-head"><span class="row-num">33</span><span class="row-name">Roadmap de escalabilidad</span><span class="badge b-half">a medias</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Un roadmap <b>con freno</b>, que es lo raro y lo correcto: cada módulo futuro con su criterio de «no construir hasta que un cliente lo pida».</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Los números. Nadie midió cuánto aguanta una instancia, así que las etapas son literatura. Y medir escala por <b>número de clientes</b> engaña: te tumba el volumen de <b>un</b> negocio grande.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none">
+        <div class="row-head"><span class="row-num">34</span><span class="row-name">Disaster Recovery</span><span class="badge b-none">no lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Tolerancia al desastre <b>pequeño</b>: el proceso puede morir y reiniciar sin perder mensajes ni duplicarlos.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">El desastre grande: <b>sin backups</b> (plan free), sin restauración probada, sin RPO/RTO, sin inventario de dónde vive cada dato, sin runbook si un tercero cae, sin export por negocio.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-none">
+        <div class="row-head"><span class="row-num">35</span><span class="row-name">Checklist de producción</span><span class="badge b-none">no lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">338 líneas de documentación de <b>cómo</b> desplegar: <code>DEPLOY.md</code>, <code>DEPLOY-RAILWAY.md</code>, instalación y credenciales.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">El checklist de <b>go-live</b>: la lista que se marca una vez, antes del primer cliente pagando. En su bloque de IA estás en <b>0 de 4</b>.</span></div>
+        </div>
+      </article>
+
+      <article class="row item s-have">
+        <div class="row-head"><span class="row-num">36</span><span class="row-name">Apéndices y convenciones</span><span class="badge b-have">lo tengo</span></div>
+        <div class="pair">
+          <div class="field l-have"><span class="field-label">Tengo</span><span class="field-text">Ya está escrito: convenciones, nomenclatura y estructura en <code>CLAUDE.md</code>, más <code>.env.example</code> con 20 variables y validación al arrancar que falla cerrado en producción.</span></div>
+          <div class="field l-none"><span class="field-label">Falta</span><span class="field-text">Nada. De las 14 herramientas «recomendadas» del apéndice usas 4; ocho están en tu lista de no construir.</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ══ PLAN ════════════════════════════════════ -->
+  <section class="block">
+    <h2 class="sec">El plan, en orden de riesgo</h2>
+    <p class="sec-note">
+      Las fases 0 a 2 son <strong>robustez</strong> y cubren el 80% del riesgo real en ~2,5 semanas.
+      El sello indigo marca la posición en la lista de los 10 más importantes.
+    </p>
+
+    <div class="block">
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 0</span><span class="phase-name">No perder el negocio</span><span class="phase-cost">~3 días</span></div>
+        <div class="task"><span class="task-n">1</span><div class="task-body"><span class="task-name">Supabase Pro + restauración probada + plan de recuperación</span><span class="task-why">Lo único irreversible. $25/mes contra perder dos años de trabajo.</span></div><div class="task-side"><span class="badge b-rank">top 1</span><span class="badge b-never">cap. 34</span></div></div>
+        <div class="task"><span class="task-n">2</span><div class="task-body"><span class="task-name">Cifrar las keys de los negocios en reposo</span><span class="task-why">Hoy una filtración de la base expone las credenciales de todos tus clientes.</span></div><div class="task-side"><span class="badge b-rank">top 5</span><span class="badge b-never">cap. 15</span></div></div>
+        <div class="task"><span class="task-n">3</span><div class="task-body"><span class="task-name">Cerrar y commitear el trabajo de Flows</span><span class="task-why">49 archivos con semanas de trabajo viviendo solo en tu disco.</span></div><div class="task-side"><span class="badge b-never">cap. 17</span></div></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 1</span><span class="phase-name">Poder operar</span><span class="phase-cost">~1 semana</span></div>
+        <div class="task"><span class="task-n">4</span><div class="task-body"><span class="task-name">Logger con nivel, <code>business_id</code> y <code>request_id</code></span><span class="task-why">Sin esto no puedes ayudar a un cliente que reclame algo de la semana pasada.</span></div><div class="task-side"><span class="badge b-rank">top 4</span><span class="badge b-never">cap. 23</span></div></div>
+        <div class="task"><span class="task-n">5</span><div class="task-body"><span class="task-name">Sentry + alerta externa de caída</span><span class="task-why">Enterarte tú antes que el cliente.</span></div><div class="task-side"><span class="badge b-rank">top 4</span><span class="badge b-never">cap. 22</span></div></div>
+        <div class="task"><span class="task-n">6</span><div class="task-body"><span class="task-name">Resiliencia de salida: reintentos, circuit breaker y fallback de modelo</span><span class="task-why">Cierra de una vez el mismo agujero de los capítulos 11, 18 y 28.</span></div><div class="task-side"><span class="badge b-rank">top 3</span><span class="badge b-never">11 · 18 · 28</span></div></div>
+        <div class="task"><span class="task-n">7</span><div class="task-body"><span class="task-name">Trabajos programados idempotentes con registro</span><span class="task-why">Que la facturación no se salte un mes al reiniciar ni se cobre dos veces.</span></div><div class="task-side"><span class="badge b-rank">top 6</span><span class="badge b-never">cap. 11</span></div></div>
+        <div class="task"><span class="task-n">8</span><div class="task-body"><span class="task-name">Contadores: cola, dead-letter, fallos de IA, latencia</span><span class="task-why">Saber que el sistema respira sin abrir la base.</span></div><div class="task-side"><span class="badge b-never">cap. 22</span></div></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 2</span><span class="phase-name">Que el negocio cobre lo que vende</span><span class="phase-cost">~1 semana</span></div>
+        <div class="task"><span class="task-n">9</span><div class="task-body"><span class="task-name">Aplicar los límites de plan</span><span class="task-why">Avisar al 80% y decidir qué pasa al 100%. Hoy vendes cupos que el sistema ignora.</span></div><div class="task-side"><span class="badge b-rank">top 7</span><span class="badge b-never">13 · 30</span></div></div>
+        <div class="task"><span class="task-n">10</span><div class="task-body"><span class="task-name">Suspensión automática por impago</span><span class="task-why">Hoy alguien puede no pagar y seguir usando el bot para siempre.</span></div><div class="task-side"><span class="badge b-never">cap. 30</span></div></div>
+        <div class="task"><span class="task-n">11</span><div class="task-body"><span class="task-name">Tokens y costo en dólares por negocio</span><span class="task-why">Es la única forma de saber si el plan Micro de $25 gana o pierde dinero.</span></div><div class="task-side"><span class="badge b-rank">top 9</span><span class="badge b-never">29 · 32</span></div></div>
+        <div class="task"><span class="task-n">12</span><div class="task-body"><span class="task-name">Escuchar los estados de entrega de WhatsApp</span><span class="task-why">Saber si tus mensajes llegan: enviado, entregado, leído, fallido.</span></div><div class="task-side"><span class="badge b-rank">top 2</span><span class="badge b-never">cap. 16</span></div></div>
+        <div class="task"><span class="task-n">13</span><div class="task-body"><span class="task-name">Bajar el polling + pausar con pestaña oculta + deduplicar reportes</span><span class="task-why">Corta la mayor parte del egress con riesgo mínimo.</span></div><div class="task-side"><span class="badge b-never">12 · 29</span></div></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 3</span><span class="phase-name">El canal definitivo</span><span class="phase-cost">operativo, en paralelo</span></div>
+        <div class="task"><span class="task-n">14</span><div class="task-body"><span class="task-name">Número en Meta: verificación, plantillas aprobadas, opt-in</span><span class="task-why">Desbloquea el negocio y, más adelante, campañas y recordatorios. No depende de que programes.</span></div><div class="task-side"><span class="badge b-rank">top 2</span><span class="badge b-never">cap. 16</span></div></div>
+        <div class="task"><span class="task-n">15</span><div class="task-body"><span class="task-name">Adaptador Meta cifrado de Flows (RSA-OAEP + AES-128-GCM)</span><span class="task-why">La arquitectura ya está preparada para recibirlo sin duplicar validaciones.</span></div><div class="task-side"><span class="badge b-never">cap. 17</span></div></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 4</span><span class="phase-name">No romper lo que funciona</span><span class="phase-cost">~1 semana</span></div>
+        <div class="task"><span class="task-n">16</span><div class="task-body"><span class="task-name">Corredor de migraciones con registro de lo aplicado</span><span class="task-why">Su urgencia empieza cuando exista un segundo entorno.</span></div><div class="task-side"><span class="badge b-rank">top 8</span><span class="badge b-never">cap. 8</span></div></div>
+        <div class="task"><span class="task-n">17</span><div class="task-body"><span class="task-name">Staging + deploy automático + smoke test + rollback escrito</span><span class="task-why">La puerta de salida: sin esto, cada despliegue es un acto de fe.</span></div><div class="task-side"><span class="badge b-rank">puerta</span><span class="badge b-never">25 · 35</span></div></div>
+        <div class="task"><span class="task-n">18</span><div class="task-body"><span class="task-name">Ejecutar de verdad las RPC en pruebas, con caso de concurrencia</span><span class="task-why">Que dos conexiones intenten sobrevender la última habitación y falle una sola.</span></div><div class="task-side"><span class="badge b-rank">top 10</span><span class="badge b-never">24 · 26</span></div></div>
+        <div class="task"><span class="task-n">19</span><div class="task-body"><span class="task-name">E2E de Conversaciones</span><span class="task-why">La pantalla que tus clientes usan todo el día es la única sin prueba de extremo a extremo.</span></div><div class="task-side"><span class="badge b-rank">top 10</span><span class="badge b-never">cap. 24</span></div></div>
+        <div class="task"><span class="task-n">20</span><div class="task-body"><span class="task-name">Evals del bot: conversaciones doradas por vertical</span><span class="task-why">Centavos por corrida y detecta que el bot inventó datos antes de que lo haga en una demo.</span></div><div class="task-side"><span class="badge b-rank">top 9</span><span class="badge b-never">cap. 18</span></div></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-tag">Fase 5</span><span class="phase-name">Profesionalizar — cuando haya clientes</span><span class="phase-cost">con señal real</span></div>
+        <div class="task"><span class="task-n">21</span><div class="task-body"><span class="task-name">Auditoría de acciones del superadmin</span><span class="task-why">Cap. 31 · quién cambió qué, sobre qué negocio y cuándo.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">22</span><div class="task-body"><span class="task-name">Métricas del SaaS: MRR, activación, conversión, costo por cliente</span><span class="task-why">Cap. 32 · los datos ya están en la base; falta la consulta y la pantalla.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">23</span><div class="task-body"><span class="task-name">Recuperación de contraseña y 2FA del superadmin</span><span class="task-why">Cap. 14 · requiere primero un canal de email, que no existe.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">24</span><div class="task-body"><span class="task-name">Zod en los bordes públicos</span><span class="task-why">Cap. 6 · webhooks, data-exchange y login primero, no todo el proyecto.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">25</span><div class="task-body"><span class="task-name">Retención y resumen del historial de conversaciones</span><span class="task-why">Caps. 7 y 20 · costo, contexto y datos personales acumulados.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">26</span><div class="task-body"><span class="task-name">Versionado de prompts + log de prompt y modelo por respuesta</span><span class="task-why">Caps. 19 y 23 · para poder responder «¿por qué dijo eso?».</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">27</span><div class="task-body"><span class="task-name">Políticas RLS por tenant</span><span class="task-why">Cap. 13 · segunda línea de defensa. Va con arquitecto-saas.</span></div><div class="task-side"></div></div>
+        <div class="task"><span class="task-n">28</span><div class="task-body"><span class="task-name">Prueba de carga y umbrales numéricos de escala</span><span class="task-why">Cap. 33 · convierte el roadmap de opinión en datos.</span></div><div class="task-side"></div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ NUNCA ═══════════════════════════════════ -->
+  <section class="block">
+    <h2 class="sec">Lo que no se construye, y cuándo reconsiderarlo</h2>
+    <p class="sec-note">
+      Nueve tecnologías del manual que a tu escala añaden operación y riesgo sin beneficio para el
+      cliente. Un «no» con motivo es información; un pendiente eterno es ruido.
+    </p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>No construir</th><th>Porque ya tienes</th><th>Disparador para reconsiderar</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="tool">Prisma</td><td>20 repositorios tipados + 37 RPC + permisos por rol de servicio</td><td class="trigger">Ninguno. Lo que sí hacía falta —migraciones versionadas— va aparte, en la fase 4</td></tr>
+          <tr><td class="tool">Redis</td><td>Caché en memoria del proceso</td><td class="trigger">Una segunda instancia: ahí la caché en memoria se vuelve incoherente</td></tr>
+          <tr><td class="tool">BullMQ</td><td>Cola durable en Postgres con leases, reintentos y dead-letter</td><td class="trigger">Miles de trabajos por minuto o colas con prioridades distintas</td></tr>
+          <tr><td class="tool">Kubernetes</td><td>Un proceso en Railway con healthcheck y reinicio</td><td class="trigger">Varios servicios con escalado distinto y un equipo que lo mantenga</td></tr>
+          <tr><td class="tool">Clean Architecture pura</td><td>Tres capas respetadas en 99 archivos</td><td class="trigger">Ninguno: el objetivo ya se cumple con el 20% del costo</td></tr>
+          <tr><td class="tool">OTel + Prometheus + Grafana</td><td>Nada — pero el mínimo es Sentry y cuatro contadores</td><td class="trigger">Más de un servicio que observar</td></tr>
+          <tr><td class="tool">Docker para desplegar</td><td>Build de Railway; un proceso sirve API y paneles</td><td class="trigger">Cambiar de proveedor o auto-hospedarte. Para pruebas con Postgres local, sí desde ya</td></tr>
+          <tr><td class="tool">Réplicas, autoescalado, multi-región</td><td>Una instancia que reinicia rápido sin perder mensajes</td><td class="trigger">Las tres precondiciones resueltas y demanda medida, no supuesta</td></tr>
+          <tr><td class="tool">Microservicios</td><td>Un monolito ordenado, correcto para la etapa</td><td class="trigger">Equipos separados por dominio</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ PRECONDICIONES ══════════════════════════ -->
+  <section class="block">
+    <h2 class="sec">Antes de una segunda instancia</h2>
+    <p class="sec-note">
+      No son tareas opcionales: son requisitos. Sin las tres, escalar horizontalmente rompe cosas
+      que hoy funcionan. La Etapa 2 del roadmap del manual no la desbloquea un balanceador.
+    </p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Requisito</th><th>Qué pasa si escalas sin él</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="tool">Trabajos programados idempotentes</td><td class="trigger">La facturación mensual se genera y se cobra <b>dos veces</b></td></tr>
+          <tr><td class="tool">Caché y estado del menú compartidos</td><td class="trigger">Un cliente a mitad de un flujo pierde el contexto según a qué instancia caiga su mensaje</td></tr>
+          <tr><td class="tool">Worker de webhooks separado del proceso web</td><td class="trigger">Dos workers compitiendo por los mismos eventos y latencia impredecible en el panel</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ PREGUNTAS ═══════════════════════════════ -->
+  <section class="block">
+    <h2 class="sec">Cómo sabrás que la plataforma es robusta</h2>
+    <p class="sec-note">
+      No es una sensación: son seis preguntas con respuesta verificable. Hoy fallas las seis. Cuando
+      las seis tengan respuesta, la escalabilidad llega casi sola.
+    </p>
+    <div class="qa">
+      <div class="q"><span class="q-n">1</span><span class="q-text">Si la base se borra hoy, ¿en cuánto vuelve y cuántos datos se pierden?</span><span class="q-now">Hoy: <b>se pierde todo</b>, y el tiempo es indefinido. Con números ya probados, no estimados.</span></div>
+      <div class="q"><span class="q-n">2</span><span class="q-text">Si un cliente reclama algo de la semana pasada, ¿puedo reconstruir qué pasó?</span><span class="q-now">Hoy: <b>no</b>. Logs sin <code>business_id</code> en un stdout que se borra.</span></div>
+      <div class="q"><span class="q-n">3</span><span class="q-text">Si YCloud u OpenAI falla diez minutos, ¿qué ve el cliente del negocio?</span><span class="q-now">Hoy: <b>silencio</b>. El mensaje se pierde sin reintento ni aviso.</span></div>
+      <div class="q"><span class="q-n">4</span><span class="q-text">Si el despliegue sale mal, ¿cuál es el comando para volver atrás?</span><span class="q-now">Hoy: <b>no está escrito</b> en ninguna parte.</span></div>
+      <div class="q"><span class="q-n">5</span><span class="q-text">¿Cuánto me cuesta y cuánto me deja cada negocio?</span><span class="q-now">Hoy: <b>desconocido</b>. Se miden mensajes, no tokens ni dólares.</span></div>
+      <div class="q"><span class="q-n">6</span><span class="q-text">Si un negocio se pasa de su plan, ¿qué ocurre?</span><span class="q-now">Hoy: <b>nada</b>. El límite se mide y se ignora.</span></div>
+    </div>
+  </section>
+
+  <!-- ══ REGISTRO DE AVANCE ══════════════════════ -->
+  <section class="block">
+    <h2 class="sec">Registro de avance</h2>
+    <p class="sec-note">
+      Cada capítulo que pasa a verde se anota aquí con su fecha y con qué lo cerró. Si la solución
+      fue distinta a la propuesta, el motivo va en la última columna: eso es lo que vale dentro de
+      seis meses.
+    </p>
+    <div class="empty-log">
+      <b>Sin cierres todavía.</b> La primera línea de esta tabla debería ser el capítulo 34 —
+      backups activos y una restauración realmente probada. Es un día de trabajo y $25/mes, y es lo
+      único de la lista que hoy protege dos años de trabajo.
+    </div>
+  </section>
+
+  <footer>
+    <span>Auditado el 29 de julio de 2026 sobre la rama <code>feat/paginas-legales</code>, commit <code>ecbaf07</code>. Cada estado está verificado en el código, no inferido de la documentación.</span>
+    <span>Fuente de esta página: <code>ESTADO-Y-BRECHAS.html</code> en la raíz del proyecto. Detalle completo, hallazgos y prompts por capítulo: <code>ESTADO-Y-BRECHAS.md</code>.</span>
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.chip-btn'));
+    var items = Array.prototype.slice.call(document.querySelectorAll('.item'));
+
+    function apply(filter) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.f === filter));
+      });
+      items.forEach(function (el) {
+        var match = filter === 'all' || el.classList.contains(filter);
+        var isCell = el.classList.contains('cell');
+        el.classList.toggle('dimmed', isCell && !match);
+        el.classList.toggle('hidden', !isCell && !match);
+      });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { apply(b.dataset.f); });
+    });
+  })();
+</script>

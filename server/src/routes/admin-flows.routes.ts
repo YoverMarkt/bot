@@ -2,21 +2,18 @@ import axios from 'axios'
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import {
-  buildOrderFlowJson,
-} from '../services/whatsapp-flow-json'
-import {
-  flowTemplateByKey,
   listFlowTemplates,
   recommendedFlowCapabilities,
 } from '../services/whatsapp-flow-templates'
-import {
-  normalizeChannelIdentifier,
-} from '../types/channels'
 import * as ycloud from '../integrations/ycloud'
 import type {
   FlowDefinitionRecord,
   FlowVersionRecord,
 } from '../db/repositories/whatsapp-flows'
+import {
+  provisionFlowDraft,
+  setupRecommendedFlowsForBusiness,
+} from '../services/whatsapp-flow-provisioner'
 
 type JsonRecord = Record<string, unknown>
 
@@ -40,18 +37,6 @@ interface FlowDefinitionWithVersions extends FlowDefinitionRecord {
   whatsapp_flow_versions?: FlowVersionRecord[] | null
 }
 
-interface YCloudPhoneNumber {
-  phoneNumber?: string | null
-  wabaId?: string | null
-  whatsappBusinessAccountId?: string | null
-  businessAccountId?: string | null
-}
-
-interface YCloudPhoneNumbersResponse {
-  items?: YCloudPhoneNumber[]
-  data?: YCloudPhoneNumber[]
-}
-
 const db = require('../db') as {
   getAllBusinesses(): Promise<Array<{ id?: string }>>
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
@@ -68,13 +53,6 @@ const db = require('../db') as {
     configuration?: JsonRecord
     enabled?: boolean
   }): Promise<FlowDefinitionRecord>
-  createFlowVersion(input: {
-    businessId: string
-    flowId: string
-    flowJson: JsonRecord
-    dataApiVersion?: string | null
-    dataExchangeEndpointPath?: string | null
-  }): Promise<FlowVersionRecord>
   updateFlowVersionState(input: {
     businessId: string
     flowVersionId: string
@@ -88,6 +66,7 @@ const db = require('../db') as {
     businessId: string,
     flowVersionId: string,
   ): Promise<FlowVersionRecord>
+  isWhatsAppFlowCapabilitiesSchemaReady(): Promise<boolean>
 }
 
 const auth = require('../middleware/auth') as {
@@ -95,18 +74,8 @@ const auth = require('../middleware/auth') as {
 }
 
 const router = createRouter()
-const YCLOUD_PHONE_NUMBERS_URL = 'https://api.ycloud.com/v2/whatsapp/phoneNumbers'
-const PROVIDER_TIMEOUT_MS = 15_000
-const FLOW_RETRIEVE_DELAYS_MS = [250, 500, 1_000, 2_000] as const
-
-class FlowVerificationError extends Error {
-  status = 409
-
-  constructor(message: string) {
-    super(message)
-    this.name = 'FlowVerificationError'
-  }
-}
+const FLOW_SCHEMA_NOT_READY_ERROR =
+  'Ejecuta migration-whatsapp-flows-capacidades.sql antes de operar WhatsApp Flows'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -120,105 +89,6 @@ function ycloudApiKey(business: BusinessRecord): string {
   const key = text(business.ycloud_api_key) || text(process.env.YCLOUD_API_KEY)
   if (!key) throw new Error('El negocio no tiene una API Key de YCloud configurada')
   return key
-}
-
-function publicDataExchangeUrl(): string {
-  const base = text(process.env.BASE_URL)
-  if (!base) {
-    throw new Error('Configura BASE_URL antes de provisionar un WhatsApp Flow')
-  }
-  let url: URL
-  try {
-    url = new URL(
-      '/webhook/ycloud/flows/data-exchange',
-      base,
-    )
-  } catch {
-    throw new Error('BASE_URL no es una URL válida')
-  }
-  if (url.protocol !== 'https:') {
-    throw new Error('BASE_URL debe usar HTTPS para provisionar un WhatsApp Flow')
-  }
-  return url.toString()
-}
-
-function providerWabaId(number: YCloudPhoneNumber): string {
-  return text(number.wabaId)
-    || text(number.whatsappBusinessAccountId)
-    || text(number.businessAccountId)
-}
-
-async function discoverYCloudWabaId(
-  business: BusinessRecord,
-): Promise<string> {
-  const apiKey = ycloudApiKey(business)
-  const configuredNumber = text(business.ycloud_number)
-    || text(business.whatsapp_number)
-  const canonical = normalizeChannelIdentifier('phone', configuredNumber)
-  if (!canonical) {
-    throw new Error('Configura el número YCloud del negocio en formato internacional')
-  }
-
-  const response = await axios.get<YCloudPhoneNumbersResponse>(
-    YCLOUD_PHONE_NUMBERS_URL,
-    {
-      headers: { 'X-API-Key': apiKey, Accept: 'application/json' },
-      params: { page: 1, limit: 100 },
-      timeout: PROVIDER_TIMEOUT_MS,
-    },
-  )
-  const numbers = response.data.items || response.data.data || []
-  const match = numbers.find(number => (
-    normalizeChannelIdentifier('phone', number.phoneNumber) === canonical
-  ))
-  if (!match) {
-    throw new Error('El número del negocio no aparece dentro de la cuenta YCloud configurada')
-  }
-  const wabaId = providerWabaId(match)
-  if (!wabaId) {
-    throw new Error('YCloud no devolvió el WABA ID del número configurado')
-  }
-  return wabaId
-}
-
-async function retrieveCreatedFlow(
-  apiKey: string,
-  providerFlowId: string,
-): Promise<ycloud.YCloudFlowListItem> {
-  for (
-    let attempt = 0;
-    attempt <= FLOW_RETRIEVE_DELAYS_MS.length;
-    attempt += 1
-  ) {
-    try {
-      return await ycloud.retrieveFlow(apiKey, providerFlowId)
-    } catch (error) {
-      const notFound = axios.isAxiosError(error)
-        && error.response?.status === 404
-      if (!notFound) throw error
-      const delay = FLOW_RETRIEVE_DELAYS_MS[attempt]
-      if (delay === undefined) {
-        throw new FlowVerificationError(
-          'YCloud creó el Flow, pero todavía no permite verificar el borrador remoto.',
-        )
-      }
-      await new Promise(resolve => setTimeout(resolve, delay))
-    }
-  }
-  throw new FlowVerificationError('No se pudo verificar el borrador remoto en YCloud.')
-}
-
-function remoteValidationErrors(
-  flow: ycloud.YCloudFlowListItem,
-): unknown[] {
-  const value = (flow as JsonRecord).validationErrors
-  if (value === undefined || value === null) return []
-  if (!Array.isArray(value)) {
-    throw new FlowVerificationError(
-      'YCloud devolvió una validación inesperada para el borrador remoto.',
-    )
-  }
-  return value
 }
 
 function versionsOf(
@@ -281,7 +151,6 @@ function validationErrorsOf(version: FlowVersionRecord): unknown[] {
 }
 
 function httpStatus(error: unknown): number {
-  if (error instanceof FlowVerificationError) return error.status
   if (!axios.isAxiosError(error)) return 500
   if (error.response?.status === 401 || error.response?.status === 403) return 409
   if (error.response?.status === 400 || error.response?.status === 404) return 409
@@ -324,25 +193,6 @@ function safeProviderError(
   return redactSecrets(`${status ? `YCloud respondió HTTP ${status}. ` : ''}${
     message || 'No se pudo completar la operación con YCloud'
   }`.slice(0, 300), business)
-}
-
-function flowJsonFor(templateKey: string): JsonRecord {
-  if (templateKey === 'order_standard') return buildOrderFlowJson()
-  throw new Error('La plantilla todavía no tiene una implementación publicable')
-}
-
-function providerFlowName(
-  business: BusinessRecord,
-  templateKey: string,
-  version: number,
-): string {
-  const stableBusiness = text(business.slug)
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    || business.id.replace(/-/g, '').slice(0, 12)
-  const base = `vezzper_${stableBusiness}_${templateKey}_v${version}`
-  return base.slice(0, 120)
 }
 
 async function allFlowBusinesses(): Promise<BusinessRecord[]> {
@@ -395,167 +245,42 @@ router.get('/api/admin/flows', auth.authAdmin, async (_req, res) => {
 })
 
 router.post(
+  '/api/admin/flows/:businessId/setup-recommended',
+  auth.authAdmin,
+  async (req, res) => {
+    const setup = await setupRecommendedFlowsForBusiness(
+      req.params.businessId,
+      { publishAndEnable: true },
+    )
+    return res.status(setup.ok ? 200 : 409).json(setup)
+  },
+)
+
+router.post(
   '/api/admin/flows/:businessId/provision',
   auth.authAdmin,
   async (req, res) => {
-    const business = await db.getBusinessById(req.params.businessId)
-    if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
-    const template = flowTemplateByKey(text(req.body?.templateKey))
-    if (!template) return res.status(400).json({ error: 'Plantilla desconocida' })
-    if (template.implementation !== 'ready') {
-      return res.status(409).json({
-        error: 'La arquitectura de esa plantilla está preparada, pero todavía no es publicable',
-      })
-    }
-    if (business.active === false || business.suspended === true) {
-      return res.status(409).json({
-        error: 'El negocio debe estar activo y sin suspensión para crear este Flow',
-      })
-    }
-    if (!recommendedFlowCapabilities(business).includes(template.capability)) {
-      return res.status(409).json({
-        error: 'El negocio no tiene habilitada la capacidad requerida por esta plantilla',
-      })
-    }
-    const provider = providerOf(business)
-    if (provider !== 'ycloud') {
-      return res.status(409).json({
-        error: provider === 'meta'
-          ? 'El adaptador de publicación Meta directa está preparado para una siguiente versión'
-          : 'WhatsApp Flows requiere un negocio conectado por YCloud',
-      })
-    }
-
-    let definition: FlowDefinitionRecord | null = null
-    let version: FlowVersionRecord | null = null
-    let providerFlowId: string | null = null
-    try {
-      const wabaId = await discoverYCloudWabaId(business)
-      const endpointUri = publicDataExchangeUrl()
-      const currentDefinitions = await db.listFlowDefinitions(business.id)
-      const currentDefinition = currentDefinitions.find(item => (
-        item.provider === 'ycloud'
-        && item.waba_id === wabaId
-        && item.flow_key === template.key
-      ))
-      definition = await db.upsertFlowDefinition({
-        ...(currentDefinition ? { id: currentDefinition.id } : {}),
-        businessId: business.id,
-        provider: 'ycloud',
-        wabaId,
-        flowKey: template.key,
-        capabilityKey: template.capability,
-        displayName: template.title,
-        description: template.description,
-        configuration: {
-          registry_version: template.version,
-          first_screen: template.firstScreen,
-        },
-        // Una versión correctiva no apaga el Flow publicado que ya sirve a
-        // clientes. La primera definición sí nace deshabilitada.
-        enabled: currentDefinition?.enabled ?? false,
-      })
-      version = await db.createFlowVersion({
-        businessId: business.id,
-        flowId: definition.id,
-        flowJson: flowJsonFor(template.key),
-        dataApiVersion: '3.0',
-        dataExchangeEndpointPath: new URL(endpointUri).pathname,
-      })
-      await db.updateFlowVersionState({
-        businessId: business.id,
-        flowVersionId: version.id,
-        status: 'provisioning',
-      })
-
-      const created = await ycloud.createFlow(ycloudApiKey(business), {
-        wabaId,
-        name: providerFlowName(business, template.key, Number(version.version)),
-        categories: template.categories,
-        flowJson: version.flow_json,
-        publish: false,
-        endpointUri,
-      })
-      providerFlowId = text(created.id)
-      if (created.success === false || !providerFlowId) {
-        throw new Error('YCloud no confirmó la creación del Flow')
-      }
-
-      // Guardar el identificador remoto antes de cualquier consulta adicional.
-      // Si el proceso falla luego, el borrador no queda huérfano en YCloud.
-      await db.updateFlowVersionState({
-        businessId: business.id,
-        flowVersionId: version.id,
-        status: 'provisioning',
-        providerFlowId,
-      })
-      const remoteFlow = await retrieveCreatedFlow(
-        ycloudApiKey(business),
-        providerFlowId,
-      )
-      if (text(remoteFlow.id) !== providerFlowId) {
-        throw new FlowVerificationError(
-          'YCloud devolvió un Flow distinto al verificar el borrador remoto.',
-        )
-      }
-      const errors = remoteValidationErrors(remoteFlow)
-      if (errors.length) {
-        await db.updateFlowVersionState({
-          businessId: business.id,
-          flowVersionId: version.id,
-          status: 'blocked',
-          providerFlowId,
-          validationErrors: errors,
-        })
-        return res.status(409).json({
-          error: validationMessage(errors)
-            || 'YCloud encontró errores de validación en el borrador',
-          ok: false,
-          definitionId: definition.id,
-          versionId: version.id,
-          providerFlowId,
-          status: 'blocked',
-          validationErrors: errors,
-        })
-      }
-      if (text(remoteFlow.status).toUpperCase() !== 'DRAFT') {
-        throw new FlowVerificationError(
-          'YCloud devolvió un estado inesperado al verificar el borrador remoto.',
-        )
-      }
-      const saved = await db.updateFlowVersionState({
-        businessId: business.id,
-        flowVersionId: version.id,
-        status: 'draft',
-        providerFlowId,
-        validationErrors: [],
-      })
-      return res.status(201).json({
-        ok: true,
-        definitionId: definition.id,
-        versionId: saved.id,
-        providerFlowId,
-        status: 'draft',
-        validationErrors: [],
-      })
-    } catch (error) {
-      if (version) {
-        try {
-          await db.updateFlowVersionState({
-            businessId: business.id,
-            flowVersionId: version.id,
-            status: 'failed',
-            providerFlowId,
-            validationErrors: [{ message: safeProviderError(error, business) }],
-          })
-        } catch {
-          // Conservar el error original: el panel puede reintentar creando versión.
-        }
-      }
-      return res.status(httpStatus(error)).json({
-        error: safeProviderError(error, business),
-      })
-    }
+    const provisioned = await provisionFlowDraft(
+      req.params.businessId,
+      text(req.body?.templateKey),
+      { forceNewVersion: true },
+    )
+    const status = provisioned.status === 'draft'
+      ? 201
+      : provisioned.error === 'Negocio no encontrado'
+        ? 404
+        : provisioned.status === 'blocked'
+          || provisioned.status === 'unsupported'
+          || provisioned.stage === 'validate'
+          || provisioned.stage === 'credentials'
+          || provisioned.stage === 'lease'
+          || provisioned.stage === 'lease_lost'
+          ? 409
+          : provisioned.stage === 'create_remote'
+            || provisioned.stage === 'verify_draft'
+            ? 502
+            : 500
+    return res.status(status).json(provisioned)
   },
 )
 
@@ -567,6 +292,9 @@ router.post(
     if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
     if (providerOf(business) !== 'ycloud') {
       return res.status(409).json({ error: 'La publicación automática actual usa YCloud' })
+    }
+    if (!await db.isWhatsAppFlowCapabilitiesSchemaReady()) {
+      return res.status(409).json({ error: FLOW_SCHEMA_NOT_READY_ERROR })
     }
     const definitions = await db.listFlowDefinitions(business.id)
     const definition = definitions.find(item => item.id === req.params.definitionId)
@@ -669,6 +397,9 @@ router.post(
     }
     const business = await db.getBusinessById(req.params.businessId)
     if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
+    if (!await db.isWhatsAppFlowCapabilitiesSchemaReady()) {
+      return res.status(409).json({ error: FLOW_SCHEMA_NOT_READY_ERROR })
+    }
     const definitions = await db.listFlowDefinitions(business.id)
     const definition = definitions.find(item => item.id === req.params.definitionId)
     if (!definition) return res.status(404).json({ error: 'Flow no encontrado' })
@@ -716,6 +447,10 @@ router.patch(
     }
     const business = await db.getBusinessById(req.params.businessId)
     if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
+    if (req.body.enabled
+      && !await db.isWhatsAppFlowCapabilitiesSchemaReady()) {
+      return res.status(409).json({ error: FLOW_SCHEMA_NOT_READY_ERROR })
+    }
     const definitions = await db.listFlowDefinitions(business.id)
     const definition = definitions.find(item => item.id === req.params.definitionId)
     if (!definition) return res.status(404).json({ error: 'Flow no encontrado' })

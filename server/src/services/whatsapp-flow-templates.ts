@@ -40,7 +40,7 @@ const FLOW_TEMPLATE_REGISTRY: readonly FlowTemplateDescriptor[] = [
   {
     key: 'order_standard',
     capability: 'order',
-    version: 1,
+    version: 2,
     title: 'Pedido',
     description: 'Catálogo, variantes, cantidades, entrega o retiro y confirmación.',
     categories: ['OTHER'],
@@ -50,32 +50,32 @@ const FLOW_TEMPLATE_REGISTRY: readonly FlowTemplateDescriptor[] = [
   {
     key: 'appointment_standard',
     capability: 'appointment',
-    version: 1,
+    version: 2,
     title: 'Agendar una cita',
     description: 'Servicio, fecha, horario disponible y datos de contacto.',
     categories: ['APPOINTMENT_BOOKING'],
     firstScreen: 'APPOINTMENT_SERVICE',
-    implementation: 'foundation',
+    implementation: 'ready',
   },
   {
     key: 'lodging_standard',
     capability: 'lodging',
-    version: 1,
+    version: 2,
     title: 'Cotizar hospedaje',
     description: 'Fechas, huéspedes, habitación, cotización y solicitud.',
     categories: ['OTHER'],
     firstScreen: 'LODGING_DATES',
-    implementation: 'foundation',
+    implementation: 'ready',
   },
   {
     key: 'lead_standard',
     capability: 'lead',
-    version: 1,
+    version: 2,
     title: 'Solicitar información',
     description: 'Interés, datos mínimos y derivación al equipo.',
     categories: ['LEAD_GENERATION', 'CONTACT_US'],
     firstScreen: 'LEAD_DETAILS',
-    implementation: 'foundation',
+    implementation: 'ready',
   },
 ] as const
 
@@ -107,9 +107,7 @@ export function recommendedFlowCapabilities(
 ): KnownFlowCapability[] {
   const capabilities: KnownFlowCapability[] = []
   if (business.lodging_enabled === true) capabilities.push('lodging')
-  // `takes_orders` históricamente fue una capacidad opt-out; algunos tenants
-  // antiguos pueden tener NULL aunque el bot ya les permita vender.
-  if (business.takes_orders !== false) capabilities.push('order')
+  if (business.takes_orders === true) capabilities.push('order')
   if (business.takes_bookings === true) capabilities.push('appointment')
   if (!capabilities.length) capabilities.push('lead')
   return capabilities

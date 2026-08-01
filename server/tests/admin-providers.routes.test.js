@@ -107,8 +107,52 @@ describe('verificación de proveedores del superadmin', () => {
       'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
       expect.objectContaining({
         headers: expect.objectContaining({ 'X-API-Key': 'ycloud-test-secret' }),
-        timeout: 10000,
+        timeout: 15000,
       }),
+    )
+  })
+
+  it('encuentra un número YCloud ubicado en una página posterior', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      phoneNumber: `+1202555${String(index).padStart(4, '0')}`,
+      displayName: `Número ${index}`,
+    }))
+    const get = vi.spyOn(axios, 'get')
+      .mockResolvedValueOnce({ data: { items: firstPage } })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{
+            phoneNumber: '+593999000001',
+            displayName: 'Negocio página 2',
+          }],
+        },
+      })
+
+    const response = await dispatch('/api/admin/verify-provider', {
+      auth: authorization(),
+      body: {
+        provider: 'ycloud',
+        ycloud_api_key: 'ycloud-test-secret',
+        ycloud_number: '+593999000001',
+        ycloud_webhook_secret: 'whsec_de_prueba',
+        ycloud_webhook_endpoint_id: '6a41a4f44de0392666e757f4',
+      },
+    })
+
+    expect(response.body).toEqual({
+      ok: true,
+      info: '✅ Conectado: +593999000001 — Negocio página 2',
+    })
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(get).toHaveBeenNthCalledWith(
+      1,
+      'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
+      expect.objectContaining({ params: { page: 1, limit: 100 } }),
+    )
+    expect(get).toHaveBeenNthCalledWith(
+      2,
+      'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
+      expect.objectContaining({ params: { page: 2, limit: 100 } }),
     )
   })
 

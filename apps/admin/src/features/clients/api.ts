@@ -25,6 +25,18 @@ export type BusinessRow = {
   notes: string | null
   // Modo real configurado del negocio: el simulador arranca con este
   chat_mode?: 'menu' | 'ai' | null
+  flow_setup?: {
+    ok: boolean
+    status: 'ready' | 'partial' | 'unsupported' | 'failed'
+    publishAndEnable: boolean
+    error?: string
+    results: Array<{
+      capability?: string | null
+      status?: string
+      enabled?: boolean
+      error?: string
+    }>
+  }
 }
 
 export type MonthlyUsageRow = {

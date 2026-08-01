@@ -85,6 +85,7 @@ function fixture(overrides = {}) {
     })),
     getContactHistory: vi.fn(async () => []),
     saveMessage: vi.fn(async () => ({ error: null })),
+    upsertSession: vi.fn(async () => ({})),
     recordFlowMetric: vi.fn(async () => true),
     sendText: vi.fn(async () => undefined),
     ...overrides,
@@ -155,6 +156,7 @@ describe('runtime de respuestas WhatsApp Flow', () => {
     expect(current.dependencies.sendText).toHaveBeenCalledOnce()
     expect(current.dependencies.sendText.mock.calls[0][2]).toContain('Total oficial')
     expect(current.dependencies.sendText.mock.calls[0][2]).toContain('40000000')
+    expect(current.dependencies.upsertSession).not.toHaveBeenCalled()
   })
 
   it('no repite la confirmación cuando la redelivery ya está en el historial', async () => {

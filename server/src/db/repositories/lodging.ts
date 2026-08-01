@@ -165,6 +165,25 @@ const getLatestLodgingQuote = async (
   return data as DataRecord | null
 }
 
+const getLodgingQuoteById = async (
+  businessId: string,
+  quoteId: string,
+) => {
+  const { data, error } = await db
+    .from('lodging_quotes')
+    .select(`
+      id, business_id, contact_phone, contact_name,
+      check_in, check_out, check_in_time, check_out_time,
+      adults, children, rooms_count, nights,
+      options, status, expires_at, accepted_at, created_at
+    `)
+    .eq('business_id', businessId)
+    .eq('id', quoteId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data as DataRecord | null
+}
+
 const createLodgingRequest = async (input: DataRecord) => db.rpc(
   'create_lodging_request_if_available',
   {
@@ -327,6 +346,7 @@ export = {
   deleteLodgingRateOverride,
   createLodgingQuote,
   getLatestLodgingQuote,
+  getLodgingQuoteById,
   createLodgingRequest,
   expireLodgingHolds,
   getLodgingRequests,

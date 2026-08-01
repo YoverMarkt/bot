@@ -17,10 +17,11 @@ const exampleOptions = (id: string, title: string) => ({
 })
 
 function itemScreen(
-  id: 'ORDER_ITEM_1' | 'ORDER_ITEM_2' | 'ORDER_ITEM_3',
+  id: 'ORDER_ITEM_ONE' | 'ORDER_ITEM_TWO' | 'ORDER_ITEM_THREE',
   position: number,
 ): JsonRecord {
   const canAddAnother = position < 3
+  const positionName = ['one', 'two', 'three'][position - 1]
   return {
     id,
     title: `Producto ${position}`,
@@ -38,10 +39,10 @@ function itemScreen(
       type: 'SingleColumnLayout',
       children: [{
         type: 'Form',
-        name: `item_${position}_form`,
+        name: `item_${positionName}_form`,
         children: [
           {
-            type: 'TextSubheading',
+            type: 'TextBody',
             text: '${data.cart_summary}',
           },
           {
@@ -85,7 +86,7 @@ function itemScreen(
           {
             type: 'TextInput',
             'input-type': 'text',
-            label: 'Nota para este producto',
+            label: 'Nota del producto',
             name: 'item_note',
             required: false,
             'max-chars': 240,
@@ -133,13 +134,13 @@ function itemScreen(
  */
 export function buildOrderFlowJson(): JsonRecord {
   return {
-    version: '5.0',
+    version: '7.3',
     data_api_version: '3.0',
     routing_model: {
-      ORDER_METHOD: ['ORDER_ITEM_1'],
-      ORDER_ITEM_1: ['ORDER_ITEM_2', 'ORDER_DETAILS'],
-      ORDER_ITEM_2: ['ORDER_ITEM_3', 'ORDER_DETAILS'],
-      ORDER_ITEM_3: ['ORDER_DETAILS'],
+      ORDER_METHOD: ['ORDER_ITEM_ONE'],
+      ORDER_ITEM_ONE: ['ORDER_ITEM_TWO', 'ORDER_DETAILS'],
+      ORDER_ITEM_TWO: ['ORDER_ITEM_THREE', 'ORDER_DETAILS'],
+      ORDER_ITEM_THREE: ['ORDER_DETAILS'],
       ORDER_DETAILS: ['ORDER_REVIEW'],
       ORDER_REVIEW: [],
     },
@@ -164,7 +165,7 @@ export function buildOrderFlowJson(): JsonRecord {
               },
               {
                 type: 'RadioButtonsGroup',
-                label: '¿Cómo deseas recibir tu pedido?',
+                label: 'Entrega o retiro',
                 name: 'fulfillment',
                 required: true,
                 'data-source': '${data.fulfillment_options}',
@@ -188,9 +189,9 @@ export function buildOrderFlowJson(): JsonRecord {
           }],
         },
       },
-      itemScreen('ORDER_ITEM_1', 1),
-      itemScreen('ORDER_ITEM_2', 2),
-      itemScreen('ORDER_ITEM_3', 3),
+      itemScreen('ORDER_ITEM_ONE', 1),
+      itemScreen('ORDER_ITEM_TWO', 2),
+      itemScreen('ORDER_ITEM_THREE', 3),
       {
         id: 'ORDER_DETAILS',
         title: 'Entrega y pago',
@@ -207,7 +208,7 @@ export function buildOrderFlowJson(): JsonRecord {
             type: 'Form',
             name: 'details_form',
             children: [
-              { type: 'TextSubheading', text: '${data.cart_summary}' },
+              { type: 'TextBody', text: '${data.cart_summary}' },
               {
                 type: 'TextInput',
                 'input-type': 'text',
@@ -219,7 +220,7 @@ export function buildOrderFlowJson(): JsonRecord {
               {
                 type: 'TextInput',
                 'input-type': 'text',
-                label: 'Dirección (solo si es entrega)',
+                label: 'Dirección de entrega',
                 name: 'address',
                 required: false,
                 'max-chars': 500,
@@ -227,7 +228,7 @@ export function buildOrderFlowJson(): JsonRecord {
               {
                 type: 'TextInput',
                 'input-type': 'text',
-                label: 'Referencia de la dirección',
+                label: 'Referencia',
                 name: 'address_reference',
                 required: false,
                 'max-chars': 500,

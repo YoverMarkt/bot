@@ -2,6 +2,9 @@ import axios from 'axios'
 import type { RequestHandler } from 'express'
 import { metaGraphUrl } from '../config/meta-graph'
 import { createRouter } from '../middleware/async'
+import {
+  listYCloudPhoneNumbersPaginated,
+} from '../services/whatsapp-flow-provisioner'
 import { normalizeChannelIdentifier } from '../types/channels'
 
 const ALLOWED_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
@@ -31,12 +34,6 @@ interface BusinessRecord {
   meta_token?: unknown
   meta_phone_id?: unknown
   telegram_bot_token?: unknown
-}
-
-interface YCloudNumber {
-  phoneNumber?: string
-  displayName?: string
-  verifiedName?: string
 }
 
 interface VerificationResult {
@@ -208,15 +205,7 @@ async function verifyProvider(payload: VerifyProviderPayload): Promise<Verificat
       const key = (ycloudApiKey || process.env.YCLOUD_API_KEY || '').trim()
       if (!key) return verificationResult(false, 'Falta YCloud API Key', effectiveSecrets)
       effectiveSecrets.ycloud_api_key = key
-      const response = await axios.get<{ items?: YCloudNumber[]; data?: YCloudNumber[] }>(
-        'https://api.ycloud.com/v2/whatsapp/phoneNumbers',
-        {
-          headers: { 'X-API-Key': key, Accept: 'application/json' },
-          params: { page: 1, limit: 10 },
-          timeout: 10000,
-        },
-      )
-      const numbers = response.data.items || response.data.data || []
+      const numbers = await listYCloudPhoneNumbersPaginated(key)
       const canonical = normalizeChannelIdentifier('phone', ycloudNumber)
       const found = canonical
         ? numbers.find(number => (

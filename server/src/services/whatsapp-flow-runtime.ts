@@ -18,12 +18,19 @@ interface RuntimeBusiness extends JsonRecord {
   bot_active?: boolean | null
   suspended?: boolean | null
   takes_orders?: boolean | null
+  takes_bookings?: boolean | null
+  lodging_enabled?: boolean | null
+  lead_enabled?: boolean | null
 }
 
 interface RuntimeOrder extends JsonRecord {
   id?: string
   total?: number | string | null
   currency?: string | null
+}
+
+interface RuntimeDomainResource extends JsonRecord {
+  id?: string
 }
 
 interface ConversationMessage {
@@ -76,6 +83,21 @@ interface RuntimeDependencies {
     deliveryFee?: number
     currency?: string
   }): Promise<JsonObject>
+  createBookingFromFlowSubmission(input: {
+    businessId: string
+    submissionId: string
+    contactPhone: string
+  }): Promise<JsonObject>
+  createLodgingRequestFromFlowSubmission(input: {
+    businessId: string
+    submissionId: string
+    contactPhone: string
+  }): Promise<JsonObject>
+  createLeadFromFlowSubmission(input: {
+    businessId: string
+    submissionId: string
+    contactPhone: string
+  }): Promise<JsonObject>
   getContactHistory(
     businessId: string,
     phone: string,
@@ -88,6 +110,11 @@ interface RuntimeDependencies {
     role: 'user' | 'assistant' | 'owner',
     content: string,
   ): Promise<MutationResult | unknown>
+  upsertSession?(
+    businessId: string,
+    phone: string,
+    data: JsonRecord,
+  ): Promise<unknown>
   recordFlowMetric(input: {
     businessId: string
     provider: FlowProvider
@@ -105,6 +132,12 @@ interface RuntimeDependencies {
 }
 
 const MAX_TOKEN_LENGTH = 512
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+type RuntimeCapability = 'order' | 'appointment' | 'lodging' | 'lead'
 
 function record(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -124,6 +157,71 @@ function flowTokenFrom(response: JsonRecord): string | null {
   return token
 }
 
+function resumableSession(session: ResolvedFlowSession): boolean {
+  return (
+    session.status === 'open'
+    && Date.parse(session.expires_at) > Date.now()
+  ) || session.status === 'submitted'
+}
+
+function runtimeCapability(
+  session: ResolvedFlowSession,
+): RuntimeCapability | null {
+  const capability = text(session.flow?.capability_key)
+  return ['order', 'appointment', 'lodging', 'lead'].includes(capability)
+    ? capability as RuntimeCapability
+    : null
+}
+
+function hasCanonicalDraft(
+  session: ResolvedFlowSession,
+  capability: RuntimeCapability,
+): boolean {
+  if (!resumableSession(session)) return false
+  const context = record(session.context)
+  if (!context) return false
+  if (capability === 'order') {
+    return Boolean(record(context.order_draft))
+  }
+  if (capability === 'appointment') {
+    const draft = record(context.appointment_draft)
+    const serviceId = text(context.service_id)
+    return Boolean(
+      draft
+      && text(draft.contact_name).length >= 2
+      && (serviceId === 'general' || UUID_PATTERN.test(serviceId))
+      && DATE_PATTERN.test(text(context.booking_date))
+      && TIME_PATTERN.test(text(context.booking_time)),
+    )
+  }
+  if (capability === 'lodging') {
+    const draft = record(context.lodging_draft)
+    return Boolean(
+      draft
+      && UUID_PATTERN.test(text(draft.quote_id))
+      && UUID_PATTERN.test(text(draft.room_type_id))
+      && text(draft.contact_name).length >= 2,
+    )
+  }
+  const draft = record(context.lead_draft)
+  return Boolean(
+    draft
+    && text(draft.contact_name).length >= 2
+    && text(draft.topic_label)
+    && text(draft.details).length >= 2,
+  )
+}
+
+function capabilityEnabled(
+  business: RuntimeBusiness,
+  capability: RuntimeCapability,
+): boolean {
+  if (capability === 'order') return business.takes_orders === true
+  if (capability === 'appointment') return business.takes_bookings === true
+  if (capability === 'lodging') return business.lodging_enabled === true
+  return business.lead_enabled !== false
+}
+
 function sessionOrderPayload(
   session: ResolvedFlowSession,
   flowToken: string,
@@ -131,10 +229,7 @@ function sessionOrderPayload(
   // `record_whatsapp_flow_submission` cambia la sesión a `submitted` antes de
   // crear el pedido. Esa sesión debe seguir siendo reanudable por el inbox
   // durable si el proceso cae o el proveedor falla después de registrarla.
-  const openAndCurrent = session.status === 'open'
-    && Date.parse(session.expires_at) > Date.now()
-  const resumableSubmission = session.status === 'submitted'
-  if ((!openAndCurrent && !resumableSubmission)
+  if (!resumableSession(session)
     || session.flow?.capability_key !== 'order') {
     return null
   }
@@ -219,6 +314,103 @@ function confirmationMessage(
   return lines.filter((line, index) => line || index === lines.length - 2).join('\n')
 }
 
+function resourceId(
+  result: JsonObject,
+  key: 'booking' | 'request' | 'lead',
+): { created: boolean; resource: RuntimeDomainResource | null } {
+  return {
+    created: result.created === true,
+    resource: record(result[key]) as RuntimeDomainResource | null,
+  }
+}
+
+function appointmentConfirmation(
+  business: RuntimeBusiness,
+  session: ResolvedFlowSession,
+  booking: RuntimeDomainResource,
+): string {
+  const context = record(session.context)
+  const id = text(booking.id)
+  const service = text(booking.service)
+    || text(context?.service_name)
+    || 'Cita'
+  const date = text(booking.booking_date) || text(context?.booking_date)
+  const time = (text(booking.booking_time) || text(context?.booking_time)).slice(0, 5)
+  return [
+    '✅ *Solicitud de cita registrada*',
+    id ? `Código: *${id.slice(0, 8).toUpperCase()}*` : '',
+    `Negocio: *${text(business.name) || 'Nuestro negocio'}*`,
+    `Servicio: ${service}`,
+    `Fecha: ${date} a las ${time}`,
+    '',
+    'La cita está pendiente. El negocio te confirmará por este chat.',
+  ].filter((line, index) => line || index === 5).join('\n')
+}
+
+function lodgingConfirmation(
+  business: RuntimeBusiness,
+  request: RuntimeDomainResource,
+): string {
+  const id = text(request.id)
+  const total = request.total === undefined
+    ? ''
+    : money(request.total, request.currency)
+  return [
+    '✅ *Solicitud de hospedaje registrada*',
+    id ? `Código: *${id.slice(0, 8).toUpperCase()}*` : '',
+    `Alojamiento: *${text(business.name) || 'Nuestro negocio'}*`,
+    `Opción: ${text(request.room_type_name) || 'Habitación seleccionada'}`,
+    `Entrada: ${text(request.check_in)} · Salida: ${text(request.check_out)}`,
+    total ? `Total oficial: *${total}*` : '',
+    '',
+    'La solicitud está pendiente. El equipo revisará y confirmará la estadía por este chat.',
+  ].filter((line, index) => line || index === 6).join('\n')
+}
+
+function leadConfirmation(
+  business: RuntimeBusiness,
+  session: ResolvedFlowSession,
+  lead: RuntimeDomainResource,
+): string {
+  const draft = record(record(session.context)?.lead_draft)
+  const id = text(lead.id)
+  return [
+    '✅ *Solicitud recibida*',
+    id ? `Código: *${id.slice(0, 8).toUpperCase()}*` : '',
+    `Negocio: *${text(business.name) || 'Nuestro negocio'}*`,
+    `Tema: ${text(lead.topic) || text(draft?.topic_label) || 'Información'}`,
+    '',
+    'El equipo revisará tu mensaje y continuará contigo por este chat.',
+  ].filter((line, index) => line || index === 4).join('\n')
+}
+
+function domainRejection(
+  capability: Exclude<RuntimeCapability, 'order'>,
+  result: string,
+): { code: string; message: string } {
+  if (capability === 'appointment') {
+    return {
+      code: result === 'service_changed' ? 'service_changed' : 'slot_unavailable',
+      message: result === 'service_changed'
+        ? '⚠️ Ese servicio cambió mientras completabas el formulario. Vuelve al menú y solicita la cita nuevamente.'
+        : '⚠️ Ese horario acaba de ocuparse. Vuelve al menú y elige una hora disponible.',
+    }
+  }
+  if (capability === 'lodging') {
+    const expired = ['quote_expired', 'expired', 'quote_not_found'].includes(result)
+    return {
+      code: expired ? 'lodging_quote_expired' : 'lodging_unavailable',
+      message: expired
+        ? '⚠️ La cotización venció antes de completar la solicitud. Vuelve a consultar las fechas para obtener disponibilidad y precio actuales.'
+        : '⚠️ La habitación elegida ya no está disponible para todo el periodo. Vuelve a cotizar o habla con el equipo.',
+    }
+  }
+  return {
+    code: 'lead_invalid',
+    message: '⚠️ No pudimos registrar la solicitud. Vuelve al chat e inténtalo nuevamente.',
+  }
+}
+
 async function confirmationWasSaved(
   dependencies: RuntimeDependencies,
   businessId: string,
@@ -267,6 +459,157 @@ async function bestEffortMetric(
   }
 }
 
+async function processDomainSubmission(
+  dependencies: RuntimeDependencies,
+  input: InboundFlowResponse,
+  session: ResolvedFlowSession,
+  business: RuntimeBusiness,
+  submissionId: string,
+  capability: Exclude<RuntimeCapability, 'order'>,
+): Promise<void> {
+  let result: JsonObject
+  let key: 'booking' | 'request' | 'lead'
+  if (capability === 'appointment') {
+    key = 'booking'
+    result = await dependencies.createBookingFromFlowSubmission({
+      businessId: input.businessId,
+      submissionId,
+      contactPhone: input.from,
+    })
+  } else if (capability === 'lodging') {
+    key = 'request'
+    result = await dependencies.createLodgingRequestFromFlowSubmission({
+      businessId: input.businessId,
+      submissionId,
+      contactPhone: input.from,
+    })
+  } else {
+    key = 'lead'
+    result = await dependencies.createLeadFromFlowSubmission({
+      businessId: input.businessId,
+      submissionId,
+      contactPhone: input.from,
+    })
+  }
+
+  const outcome = text(result.result)
+  const successful = ['created', 'duplicate'].includes(outcome)
+  if (!successful) {
+    const rejection = domainRejection(capability, outcome)
+    await dependencies.sendText(business, input.from, rejection.message)
+    try {
+      await dependencies.saveMessage(
+        input.businessId,
+        input.from,
+        'assistant',
+        rejection.message,
+      )
+    } catch {
+      // El aviso ya fue aceptado por WhatsApp.
+    }
+    await dependencies.completeFlowSubmission({
+      businessId: input.businessId,
+      submissionId,
+      status: 'rejected',
+      errorCode: rejection.code,
+    })
+    await bestEffortMetric(
+      dependencies,
+      input,
+      session,
+      'submission_rejected',
+      { capability, reason: rejection.code },
+    )
+    return
+  }
+
+  const domain = resourceId(result, key)
+  const id = text(domain.resource?.id)
+  if (!domain.resource || !id) {
+    throw new Error(`La base no devolvió el recurso ${capability} creado por el Flow`)
+  }
+
+  const alreadyConfirmed = !domain.created && await confirmationWasSaved(
+    dependencies,
+    input.businessId,
+    input.from,
+    id,
+  )
+  if (!alreadyConfirmed) {
+    if (capability === 'lead' && domain.created) {
+      const draft = record(record(session.context)?.lead_draft)
+      const ownerSummary = [
+        `📝 Nueva solicitud ${id.slice(0, 8).toUpperCase()}`,
+        `Nombre: ${text(draft?.contact_name)}`,
+        `Tema: ${text(draft?.topic_label)}`,
+        `Detalle: ${text(draft?.details)}`,
+        text(draft?.email) ? `Correo: ${text(draft?.email)}` : '',
+        text(draft?.preferred_time)
+          ? `Horario preferido: ${text(draft?.preferred_time)}`
+          : '',
+      ].filter(Boolean).join('\n')
+      try {
+        await dependencies.saveMessage(
+          input.businessId,
+          input.from,
+          'user',
+          ownerSummary,
+        )
+      } catch {
+        // La solicitud estructurada ya quedó guardada en PostgreSQL.
+      }
+    }
+
+    const message = capability === 'appointment'
+      ? appointmentConfirmation(business, session, domain.resource)
+      : capability === 'lodging'
+        ? lodgingConfirmation(business, domain.resource)
+        : leadConfirmation(business, session, domain.resource)
+    await dependencies.sendText(business, input.from, message)
+    try {
+      await dependencies.saveMessage(
+        input.businessId,
+        input.from,
+        'assistant',
+        message,
+      )
+    } catch {
+      // El proveedor ya aceptó el mensaje.
+    }
+  }
+
+  if (domain.created && dependencies.upsertSession) {
+    try {
+      const sessionUpdate: JsonObject = {
+        unread_owner: true,
+        last_message: capability === 'lead'
+          ? 'Nueva solicitud recibida mediante WhatsApp Flow'
+          : `Nueva solicitud de ${capability === 'lodging' ? 'hospedaje' : 'cita'}`,
+        last_message_at: new Date().toISOString(),
+      }
+      // Un lead sí requiere atención humana. Citas y hospedaje no deben
+      // escribir `false`: el dueño pudo haber tomado manualmente el chat
+      // mientras el cliente completaba un Flow que ya estaba abierto.
+      if (capability === 'lead') sessionUpdate.manual_mode = true
+      await dependencies.upsertSession(
+        input.businessId,
+        input.from,
+        sessionUpdate,
+      )
+    } catch {
+      // La entidad y su confirmación no dependen del badge del panel.
+    }
+  }
+
+  await bestEffortMetric(
+    dependencies,
+    input,
+    session,
+    `${capability}_created`,
+    { created: domain.created, resource_id: id },
+  )
+}
+
 function knownBusinessRuleError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   return /producto|cantidad|agotado|modificador|pedido|entrega|fulfillment|catálogo/i
@@ -290,8 +633,12 @@ export function createWhatsAppFlowResponseProcessor(
         || session.provider !== input.provider) {
         return
       }
-      const orderSubmission = sessionOrderPayload(session, flowToken)
-      if (!orderSubmission) return
+      const capability = runtimeCapability(session)
+      if (!capability || !hasCanonicalDraft(session, capability)) return
+      const orderSubmission = capability === 'order'
+        ? sessionOrderPayload(session, flowToken)
+        : null
+      if (capability === 'order' && !orderSubmission) return
 
       const business = await dependencies.getBusinessById(input.businessId)
       if (!business
@@ -299,7 +646,7 @@ export function createWhatsAppFlowResponseProcessor(
         || business.active === false
         || business.bot_active === false
         || business.suspended === true
-        || business.takes_orders === false) {
+        || !capabilityEnabled(business, capability)) {
         return
       }
 
@@ -319,6 +666,19 @@ export function createWhatsAppFlowResponseProcessor(
         || submission.processing_status === 'failed') {
         return
       }
+
+      if (capability !== 'order') {
+        await processDomainSubmission(
+          dependencies,
+          input,
+          session,
+          business,
+          submissionId,
+          capability,
+        )
+        return
+      }
+      if (!orderSubmission) return
 
       let result: { created: boolean; order: RuntimeOrder | null }
       try {

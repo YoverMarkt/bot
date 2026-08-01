@@ -6,6 +6,7 @@ import clientsRouter from '../dist/routes/admin-clients.routes.js'
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
 const bcrypt = require('bcryptjs')
+const flowProvisioner = require('../dist/services/whatsapp-flow-provisioner')
 const JWT_SECRET = 'admin-clients-test-secret'
 let originalJwtSecret
 let originalYCloudWebhookSecret
@@ -18,6 +19,14 @@ beforeEach(() => {
   process.env.JWT_SECRET = JWT_SECRET
   process.env.YCLOUD_WEBHOOK_SECRET = 'ycloud-signing-secret-test'
   process.env.YCLOUD_WEBHOOK_ENDPOINT_ID = 'ycloud-endpoint-test'
+  vi.spyOn(flowProvisioner, 'setupRecommendedFlowsForBusiness')
+    .mockImplementation(async businessId => ({
+      ok: true,
+      businessId,
+      status: 'ready',
+      publishAndEnable: true,
+      results: [{ status: 'published', enabled: true }],
+    }))
 })
 
 afterEach(() => {
@@ -125,6 +134,7 @@ describe('clientes y onboarding del superadmin', () => {
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Nueva', whatsapp_number: '+593999000001', lodging_enabled: true,
+        takes_orders: false,
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
       }),
@@ -137,6 +147,89 @@ describe('clientes y onboarding del superadmin', () => {
     expect(await bcrypt.compare('safe-password', passwordHash)).toBe(true)
     expect(JSON.stringify(response.body)).not.toContain('"ycloud_api_key":"secret"')
     expect(JSON.stringify(response.body)).not.toContain('signing-secret-new')
+    expect(response.body.flow_setup).toMatchObject({
+      ok: true,
+      status: 'ready',
+      publishAndEnable: true,
+    })
+    expect(flowProvisioner.setupRecommendedFlowsForBusiness)
+      .toHaveBeenCalledWith('business-new', { publishAndEnable: true })
+  })
+
+  it.each([
+    [
+      'pizzería',
+      {
+        takes_orders: true,
+        takes_bookings: false,
+        lodging_enabled: false,
+      },
+    ],
+    [
+      'barbería',
+      {
+        takes_orders: false,
+        takes_bookings: true,
+        lodging_enabled: false,
+      },
+    ],
+    [
+      'hostal',
+      {
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: true,
+      },
+    ],
+    [
+      'tipo futuro informativo',
+      {
+        takes_orders: false,
+        takes_bookings: false,
+        lodging_enabled: false,
+      },
+    ],
+  ])('persiste al crear las capacidades recomendadas para %s', async (
+    type,
+    capabilities,
+  ) => {
+    const createOnboarding = vi.spyOn(
+      db,
+      'createBusinessOnboarding',
+    ).mockResolvedValue({
+      data: { id: `business-${type}`, name: `Demo ${type}` },
+      error: null,
+    })
+
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: `Demo ${type}`,
+        type,
+        whatsapp_number: '+593999000001',
+        client_email: 'owner@example.com',
+        client_password: 'safe-password',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
+        ...capabilities,
+      },
+    })
+
+    expect(response.status).toBe(201)
+    expect(createOnboarding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type,
+        ...capabilities,
+      }),
+      'owner@example.com',
+      expect.any(String),
+      25,
+    )
+    expect(flowProvisioner.setupRecommendedFlowsForBusiness)
+      .toHaveBeenCalledWith(`business-${type}`, {
+        publishAndEnable: true,
+      })
   })
 
   it('aplica los límites recomendados cuando se elige un plan', async () => {
@@ -168,6 +261,45 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response.body).toMatchObject({
       monthly_contact_limit: 400,
       monthly_outbound_message_limit: 2000,
+    })
+  })
+
+  it('conserva el negocio si YCloud no puede preparar su Flow', async () => {
+    vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-created', name: 'Nueva' },
+      error: null,
+    })
+    flowProvisioner.setupRecommendedFlowsForBusiness.mockResolvedValueOnce({
+      ok: false,
+      businessId: 'business-created',
+      status: 'failed',
+      publishAndEnable: true,
+      results: [],
+      error: 'YCloud no confirmó el estado PUBLISHED',
+    })
+
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Nueva',
+        whatsapp_number: '+593999000001',
+        client_email: 'owner@example.com',
+        client_password: 'safe-password',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
+        takes_orders: true,
+      },
+    })
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({
+      id: 'business-created',
+      flow_setup: {
+        ok: false,
+        status: 'failed',
+        error: 'YCloud no confirmó el estado PUBLISHED',
+      },
     })
   })
 

@@ -11,6 +11,7 @@ interface FlowBusiness {
   takes_orders?: boolean | null
   takes_bookings?: boolean | null
   lodging_enabled?: boolean | null
+  lead_enabled?: boolean | null
 }
 
 interface FlowProduct {
@@ -94,6 +95,9 @@ interface FlowState {
 type FlowAction =
   | { type: 'handoff' }
   | { type: 'launch_order_flow' }
+  | { type: 'launch_appointment_flow' }
+  | { type: 'launch_lodging_flow'; roomTypeId?: string }
+  | { type: 'launch_lead_flow' }
   // `payload` va en el MISMO formato que ##PEDIDO:producto x cantidad; ...##
   // para que el canal real lo procese con money.ts y las RPC atómicas de
   // siempre: el menú no crea un camino de dinero paralelo.
@@ -160,6 +164,7 @@ const OPT_STAY = '📅 Cotizar estadía'
 const OPT_STAY_AGAIN = '📅 Cotizar otras fechas'
 const STAY_REQUEST_OPTION = '🛎️ Solicitar esta habitación'
 const OPT_BOOK = '📅 Agendar una cita'
+const OPT_LEAD = '📝 Solicitar información'
 const OPT_TEAM = '💬 Hablar con el equipo'
 const OPT_BACK = '⬅️ Volver'
 const OPT_HOME = '🏠 Menú principal'
@@ -649,6 +654,12 @@ const mainOptions = (input: MenuFlowInput): string[] => {
   if (input.business.takes_bookings && Object.keys(input.availableSlots || {}).length > 0) {
     options.push(OPT_BOOK)
   }
+  if (!input.business.takes_orders
+    && !input.business.takes_bookings
+    && !input.business.lodging_enabled
+    && input.business.lead_enabled !== false) {
+    options.push(OPT_LEAD)
+  }
   options.push(OPT_TEAM)
   return options
 }
@@ -981,7 +992,18 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       ) {
         return goTo(state, { kind: 'rooms' }, input)
       }
-      if (choice === OPT_BOOK) return goTo(state, { kind: 'booking', step: 'date' }, input)
+      if (choice === OPT_BOOK) {
+        return {
+          ...goTo(state, { kind: 'booking', step: 'date' }, input),
+          action: { type: 'launch_appointment_flow' },
+        }
+      }
+      if (choice === OPT_LEAD) {
+        return {
+          ...goTo(state, { kind: 'main' }, input),
+          action: { type: 'launch_lead_flow' },
+        }
+      }
       break
     }
     case 'categories': {
@@ -1165,7 +1187,17 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       if (choice === OPT_BACK) return goTo(state, { kind: 'rooms' }, input)
       if (choice === OPT_STAY) {
         // La habitación elegida acompaña a la cotización
-        return goTo(state, { kind: 'stay', step: 'dates', roomTypeId: view.roomTypeId }, input)
+        return {
+          ...goTo(
+            state,
+            { kind: 'stay', step: 'dates', roomTypeId: view.roomTypeId },
+            input,
+          ),
+          action: {
+            type: 'launch_lodging_flow',
+            roomTypeId: view.roomTypeId,
+          },
+        }
       }
       break
     }

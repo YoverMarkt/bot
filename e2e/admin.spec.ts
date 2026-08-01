@@ -146,7 +146,7 @@ test('Flows administra borradores, publicación y habilitación sin llamadas rea
       description: 'Fechas, huéspedes y habitación.',
       categories: ['OTHER'],
       firstScreen: 'LODGING_DATES',
-      implementation: 'foundation',
+      implementation: 'ready',
     }],
     businesses: [{
       id: 'pizza-e2e',
@@ -434,7 +434,21 @@ test('crea un hotel con hospedaje separado de citas y pedidos', async ({ page })
     return route.fulfill({
       status: 201,
       contentType: 'application/json',
-      body: JSON.stringify({ id: 'hotel-e2e', ...payload }),
+      body: JSON.stringify({
+        id: 'hotel-e2e',
+        ...payload,
+        flow_setup: {
+          ok: true,
+          businessId: 'hotel-e2e',
+          status: 'ready',
+          publishAndEnable: true,
+          results: [{
+            capability: 'lodging',
+            status: 'published',
+            enabled: true,
+          }],
+        },
+      }),
     })
   })
 
@@ -463,6 +477,9 @@ test('crea un hotel con hospedaje separado de citas y pedidos', async ({ page })
     monthly_outbound_message_limit: 250,
   })
   expect(payload).not.toHaveProperty('plan_expires_at')
+  await expect(page.getByText(
+    /Negocio creado y Flow técnico activo/,
+  )).toBeVisible()
 })
 
 test('Facturación muestra la cuota automática y conserva el cobro manual del pago', async ({ page }) => {

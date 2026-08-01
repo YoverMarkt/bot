@@ -61,6 +61,23 @@ export type AdminFlowsResponse = {
   businesses: FlowBusiness[]
 }
 
+export type RecommendedFlowSetupResult = {
+  ok: boolean
+  businessId: string
+  status: 'ready' | 'partial' | 'unsupported' | 'failed'
+  publishAndEnable: boolean
+  results: Array<{
+    ok: boolean
+    capability: string | null
+    templateKey: string
+    status: string
+    stage: string
+    enabled: boolean
+    error?: string
+  }>
+  error?: string
+}
+
 type FlowMutationResult = {
   ok?: boolean
   status?: FlowDefinitionStatus
@@ -170,3 +187,10 @@ export const setBusinessFlowEnabled = (
   }
   return result
 })
+
+export const setupRecommendedBusinessFlows = (
+  businessId: string,
+) => api<RecommendedFlowSetupResult>(
+  `${businessPath(businessId)}/setup-recommended`,
+  { method: 'POST' },
+)
