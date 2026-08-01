@@ -4,7 +4,7 @@ import * as adm from './api'
 import type { BusinessRow } from './api'
 import ClientModal from './ClientModal'
 import { ViewModal, PromptModal } from './ClientTools'
-import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal } from 'lucide-react'
+import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
@@ -22,8 +22,41 @@ export default function Clients() {
   const [prompting, setPrompting] = useState<BusinessRow | null>(null)
   const [vfy, setVfy] = useState<Record<string, string>>({})
   const { data: clients = [], isLoading, isError, refetch } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
+  const { data: channel } = useQuery({
+    queryKey: ['adm-channel-health'],
+    queryFn: adm.getChannelHealth,
+    refetchInterval: 60_000,
+  })
 
   const filtered = clients
+
+  // Semáforo del canal por negocio: el rojo parpadea para que no pase
+  // desapercibido en una lista larga.
+  const channelById = new Map((channel?.businesses || []).map(b => [b.businessId, b]))
+  function channelPill(c: BusinessRow) {
+    const state = channelById.get(c.id)
+    if (!state) return <span className="text-xs text-muted-foreground">—</span>
+    if (state.status === 'ok') {
+      return (
+        <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400" title={state.detail}>
+          Recibiendo
+        </Badge>
+      )
+    }
+    if (state.status === 'sin_canal') {
+      return <Badge variant="secondary" title={state.detail}>Sin canal</Badge>
+    }
+    return (
+      <Badge
+        variant="secondary"
+        title={state.detail}
+        className="animate-pulse bg-destructive/15 text-destructive ring-1 ring-destructive/40"
+      >
+        <TriangleAlert className="mr-1 h-3 w-3 shrink-0" />
+        {state.status === 'silencio' ? 'Sin mensajes' : 'Nunca recibió'}
+      </Badge>
+    )
+  }
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['adm-clients'] })
   const mSuspend = useMutation({ mutationFn: (id: string) => adm.suspendClient(id, 'Pago pendiente'), onSettled: refresh })
@@ -77,11 +110,12 @@ export default function Clients() {
                 <TableHead>Plan</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Bot</TableHead>
+                <TableHead>Canal</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {!filtered.length && <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No hay clientes aún</TableCell></TableRow>}
+              {!filtered.length && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">No hay clientes aún</TableCell></TableRow>}
               {filtered.map(c => (
                 <TableRow key={c.id}>
                   <TableCell>
@@ -92,6 +126,7 @@ export default function Clients() {
                   <TableCell><Badge variant="secondary">{planLabel(c.plan)}</Badge></TableCell>
                   <TableCell>{statusPill(c)}</TableCell>
                   <TableCell>{botPill(c)}</TableCell>
+                  <TableCell>{channelPill(c)}</TableCell>
                   <TableCell className="w-[1%]">
                     <div className="flex flex-nowrap justify-end gap-2">
                       <Button variant="outline" size="sm" onClick={() => setViewing(c)}><Eye /> Ver</Button>

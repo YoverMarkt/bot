@@ -67,8 +67,8 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 14 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(14)
+  it('protege sus 16 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(16)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -81,6 +81,17 @@ describe('clientes y onboarding del superadmin', () => {
     expect((await dispatch('get', '/api/admin/channel-health', {
       auth: authorization('client'),
     })).status).toBe(403)
+  })
+
+  // El registro puede describir fallos de cualquier negocio: jamás debe quedar
+  // al alcance de un cliente.
+  it('el registro de errores y su descarga exigen superadmin', async () => {
+    for (const path of ['/api/admin/errors', '/api/admin/errors/export']) {
+      expect((await dispatch('get', path)).status).toBe(401)
+      expect((await dispatch('get', path, {
+        auth: authorization('client'),
+      })).status).toBe(403)
+    }
   })
 
   it('devuelve el detalle sin credenciales y con su estado de configuración', async () => {

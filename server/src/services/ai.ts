@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import axios from 'axios'
+import { recordError } from './error-log'
 
 type SettingKey = 'ai_provider' | 'groq_api_key' | 'gemini_api_key'
   | 'openai_api_key' | 'anthropic_api_key' | 'deepseek_api_key'
@@ -215,7 +216,29 @@ function normalizeHistory(message: HistoryMessage): ChatCompletionMessageParam {
   }
 }
 
+// Envoltura del proveedor de IA: deja rastro del fallo en el registro de la
+// plataforma y vuelve a lanzar, para que quien llama siga decidiendo qué
+// responderle al cliente. Registrar no cambia el comportamiento.
 async function callAI(
+  systemPrompt: string,
+  history: HistoryMessage[],
+  userMessage: string,
+  businessProvider: string | null = null,
+): Promise<string | null> {
+  try {
+    return await callAIProvider(systemPrompt, history, userMessage, businessProvider)
+  } catch (error) {
+    void recordError({
+      category: 'ia',
+      code: 'llamada_fallida',
+      message: error,
+      context: { provider: businessProvider || 'por_defecto' },
+    })
+    throw error
+  }
+}
+
+async function callAIProvider(
   systemPrompt: string,
   history: HistoryMessage[],
   userMessage: string,

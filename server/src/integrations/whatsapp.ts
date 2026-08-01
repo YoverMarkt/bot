@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { metaGraphUrl } from '../config/meta-graph'
+import { recordError } from '../services/error-log'
 import type { WhatsAppProvider } from '../types/channels'
 import {
   recordOutboundUsage,
@@ -69,6 +70,24 @@ const ycloudNumberFor = (business: WhatsAppBusiness) => (
 function errorDetail(error: unknown): string {
   if (axios.isAxiosError(error)) return error.message
   return error instanceof Error ? error.message : 'Error no identificado'
+}
+
+// Deja constancia de un envío que no salió (saldo agotado, ventana de 24 h
+// cerrada, número bloqueado…). Estos fallos son mudos para el negocio: el
+// cliente simplemente no recibe la respuesta.
+function recordSendFailure(
+  business: WhatsAppBusiness,
+  provider: string,
+  operation: string,
+  error: unknown,
+): void {
+  void recordError({
+    businessId: business.id || null,
+    category: 'envio',
+    code: axios.isAxiosError(error) ? String(error.response?.status || 'sin_respuesta') : 'fallo',
+    message: errorDetail(error),
+    context: { provider, operation },
+  })
 }
 
 async function recordAcceptedMessage(
@@ -149,6 +168,7 @@ async function sendText(
     await recordAcceptedMessage(business, provider, to, 'text')
   } catch (error) {
     console.error(`❌ [${provider}] sendText:`, errorDetail(error))
+    recordSendFailure(business, provider, 'sendText', error)
     throw error
   }
 }
@@ -193,6 +213,7 @@ async function sendImage(
     await recordAcceptedMessage(business, provider, to, 'image')
   } catch (error) {
     console.error(`❌ [${provider}] sendImage:`, errorDetail(error))
+    recordSendFailure(business, provider, 'sendImage', error)
     throw error
   }
 }
@@ -237,6 +258,7 @@ async function sendVideo(
     await recordAcceptedMessage(business, provider, to, 'video')
   } catch (error) {
     console.error(`❌ [${provider}] sendVideo:`, errorDetail(error))
+    recordSendFailure(business, provider, 'sendVideo', error)
     throw error
   }
 }
@@ -270,6 +292,7 @@ async function sendInteractive(
   } catch (error) {
     // Nunca dejar al cliente sin respuesta: el llamador cae a texto
     console.error('❌ [ycloud] sendInteractive:', errorDetail(error))
+    recordSendFailure(business, 'ycloud', 'sendInteractive', error)
     return false
   }
 }

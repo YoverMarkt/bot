@@ -15,6 +15,7 @@ import dotenv from 'dotenv'
 import { assertEnvironment } from './config/environment'
 import { asyncHandler } from './middleware/async'
 import { getRecentWebhookFailures } from './services/channel-health'
+import { recordError } from './services/error-log'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
 import * as bot from './services/bot-entry'
@@ -46,6 +47,10 @@ interface StartupDatabase {
     error: { message?: string } | null
   }>
   getLastInboundAt(): Promise<string | null>
+  cleanupPlatformErrors(days?: number): Promise<{
+    data: number | null
+    error: { message?: string } | null
+  }>
 }
 
 interface OperationalError extends Error {
@@ -266,6 +271,18 @@ app.get('/api/images/:productId', asyncHandler(async (req: Request, res: Respons
 const handleHttpError: ErrorRequestHandler = (error: OperationalError, req, res, next) => {
   const requestId = req.headers['x-request-id'] || 'sin-id'
   console.error(`❌ HTTP ${req.method} ${req.path} [${requestId}]:`, errorMessage(error))
+  // Solo los fallos reales del servidor: un 400 por datos mal enviados es
+  // comportamiento normal y llenaría el registro de ruido.
+  if (!error.status || error.status >= 500) {
+    void recordError({
+      // El superadmin no tiene negocio: sus errores quedan como de plataforma.
+      businessId: (req.user && 'businessId' in req.user ? req.user.businessId : null) || null,
+      category: 'servidor',
+      code: error.status || 500,
+      message: errorMessage(error),
+      context: { method: req.method, path: req.path },
+    })
+  }
   if (res.headersSent) return next(error)
   return res.status(error.status || 500).json({
     error: error.publicMessage || 'Error interno del servidor',
@@ -295,6 +312,18 @@ async function cleanupWebhookInbox(): Promise<void> {
   }
 }
 
+// El registro de errores no puede crecer sin fin: se purga lo más viejo de 30
+// días. Si la migración todavía no se corrió, el fallo se anota y no molesta.
+async function cleanupErrorLog(): Promise<void> {
+  try {
+    const result = await db.cleanupPlatformErrors()
+    if (result.error) throw new Error(result.error.message || 'RPC sin detalle')
+    if (result.data) console.log(`🧹 Registro de errores: ${result.data} purgado(s)`)
+  } catch (error) {
+    console.error('❌ Limpieza del registro de errores:', errorMessage(error))
+  }
+}
+
 const port = process.env.PORT || 3000
 httpServer = app.listen(port, () => {
   logEnvironment()
@@ -308,6 +337,8 @@ httpServer = app.listen(port, () => {
   setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
   setTimeout(cleanupWebhookInbox, 5000)
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
+  setTimeout(cleanupErrorLog, 7000)
+  setInterval(cleanupErrorLog, 24 * 60 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)

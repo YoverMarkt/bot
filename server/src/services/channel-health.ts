@@ -6,7 +6,10 @@
 // nada avisó: `/api/health` seguía en verde porque el proceso vivía.
 //
 // Este módulo mira lo único que importa de verdad: ¿están ENTRANDO mensajes?
-// Todo es lectura y cálculo puro — no envía nada ni escribe en la base.
+// El diagnóstico es cálculo puro; lo único que escribe es el rastro del fallo
+// en el registro de errores, y siempre sin bloquear a quien lo llamó.
+
+import { recordError } from './error-log'
 
 /** Horas sin un solo mensaje entrante antes de considerar el canal en silencio. */
 export const DEFAULT_SILENCE_HOURS = 12
@@ -73,6 +76,7 @@ export function recordWebhookFailure(
   status: number,
   reason: string,
   at: Date = new Date(),
+  businessId: string | null = null,
 ): void {
   recordedFailures.unshift({
     provider,
@@ -83,6 +87,15 @@ export function recordWebhookFailure(
   if (recordedFailures.length > MAX_RECORDED_FAILURES) {
     recordedFailures.length = MAX_RECORDED_FAILURES
   }
+  // Además del registro en memoria (inmediato pero volátil), queda constancia
+  // duradera para el panel. Sin await: registrar nunca debe frenar el webhook.
+  void recordError({
+    businessId,
+    category: 'canal',
+    code: status,
+    message: reason,
+    context: { provider },
+  })
 }
 
 export function getRecentWebhookFailures(limit = 10): WebhookFailure[] {
