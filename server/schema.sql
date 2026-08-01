@@ -2857,19 +2857,25 @@ create table if not exists public.customer_addresses (
 create index if not exists idx_customer_addresses_cliente
   on public.customer_addresses (business_id, customer_id, active);
 
--- Se guarda el HASH del token, nunca el token.
+-- Se guarda el HASH del token, nunca el token. `device_hash` se graba la PRIMERA
+-- vez que se abre el enlace: a partir de ahí la sesión pertenece a ese navegador,
+-- así que un enlace reenviado no sirve para comprar.
 create table if not exists public.storefront_sessions (
   id            uuid primary key default gen_random_uuid(),
   business_id   uuid not null references public.businesses(id) on delete cascade,
   customer_id   uuid not null references public.customers(id) on delete cascade,
   token_hash    text not null,
   contact_phone text not null,
+  device_hash   text,
+  claimed_at    timestamptz,
   expires_at    timestamptz not null,
   last_seen_at  timestamptz,
   revoked_at    timestamptz,
   created_at    timestamptz not null default now(),
   constraint storefront_sessions_datos_check check (
     token_hash ~ '^[0-9a-f]{64}$' and contact_phone ~ '^[0-9]{8,15}$'
+    and (device_hash is null or device_hash ~ '^[0-9a-f]{64}$')
+    and (device_hash is null) = (claimed_at is null)
   )
 );
 create unique index if not exists uq_storefront_sessions_token

@@ -147,12 +147,18 @@ alter table public.customer_addresses enable row level security;
 -- ── 4. Sesiones de la tienda ────────────────────────────────────────────────
 -- El enlace que manda el bot. Se guarda el HASH del token, nunca el token: si
 -- alguien lee la base, no puede entrar en la tienda de nadie.
+-- `device_hash` se graba la PRIMERA vez que se abre el enlace y a partir de ahí
+-- la sesión pertenece a ese navegador. Si el cliente reenvía su enlace, quien lo
+-- reciba no podrá comprar: verá una pantalla que le invita a escribir al negocio
+-- para pedir el suyo. Un reenvío deja de ser una fuga y pasa a ser un cliente.
 create table if not exists public.storefront_sessions (
   id              uuid primary key default gen_random_uuid(),
   business_id     uuid not null references public.businesses(id) on delete cascade,
   customer_id     uuid not null references public.customers(id) on delete cascade,
   token_hash      text not null,
   contact_phone   text not null,
+  device_hash     text,
+  claimed_at      timestamptz,
   expires_at      timestamptz not null,
   last_seen_at    timestamptz,
   revoked_at      timestamptz,
@@ -171,6 +177,9 @@ begin
       check (
         token_hash ~ '^[0-9a-f]{64}$'
         and contact_phone ~ '^[0-9]{8,15}$'
+        and (device_hash is null or device_hash ~ '^[0-9a-f]{64}$')
+        -- No puede haber dispositivo sin el momento en que lo reclamó.
+        and (device_hash is null) = (claimed_at is null)
       );
   end if;
 end;
