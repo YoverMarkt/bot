@@ -94,6 +94,7 @@ function setup(overrides = {}) {
   const conversation = createBotConversation({
     database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
     logger, sleep, now,
+    ...(overrides.priceGuard ? { priceGuard: overrides.priceGuard } : {}),
   })
   const send = vi.fn().mockResolvedValue(undefined)
   const sendImage = vi.fn().mockResolvedValue(undefined)
@@ -648,6 +649,73 @@ describe('orquestación de conversaciones del bot', () => {
     )
     expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
+  })
+
+  // Vigilante de precios (regla inviolable #8). Arranca en modo observación a
+  // propósito: un falso positivo cortaría la conversación de un cliente real.
+  describe('cuando la IA cita un precio que no existe en el catálogo', () => {
+    const respuestaConPrecioInventado = {
+      parseBotOutput: vi.fn().mockReturnValue({
+        finalText: 'Te lo dejo en $40, oferta especial',
+        booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+        hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
+      }),
+    }
+
+    const guard = (mode, onInvented) => ({
+      check: () => ({ ok: false, invented: [40], quoted: [40] }),
+      mode: () => mode,
+      onInvented,
+    })
+
+    it('en modo observación lo registra pero NO corta la conversación', async () => {
+      const onInvented = vi.fn()
+      const current = setup({
+        tags: respuestaConPrecioInventado,
+        priceGuard: guard('observar', onInvented),
+      })
+
+      await current.conversation.processMessage(input(current))
+
+      expect(onInvented).toHaveBeenCalledWith(
+        expect.objectContaining({ invented: [40] }),
+      )
+      expect(current.logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('precios que no existen'),
+      )
+      // El cliente sigue recibiendo respuesta: todavía no se bloquea nada.
+      expect(current.send).toHaveBeenCalled()
+    })
+
+    it('en modo bloquear descarta el mensaje y deriva', async () => {
+      const current = setup({
+        tags: respuestaConPrecioInventado,
+        priceGuard: guard('bloquear', vi.fn()),
+      })
+
+      await current.conversation.processMessage(input(current))
+
+      expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('$40'))
+      expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ isUncertain: true, hasSale: false }),
+      )
+    })
+
+    it('no molesta cuando todos los precios son reales', async () => {
+      const onInvented = vi.fn()
+      const current = setup({
+        priceGuard: {
+          check: () => ({ ok: true, invented: [], quoted: [95] }),
+          mode: () => 'bloquear',
+          onInvented,
+        },
+      })
+
+      await current.conversation.processMessage(input(current))
+
+      expect(onInvented).not.toHaveBeenCalled()
+      expect(current.send).toHaveBeenCalled()
+    })
   })
 
   it('deriva insultos sin invocar IA ni consultar el catálogo', async () => {

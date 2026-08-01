@@ -12,7 +12,8 @@
     "lint": "eslint eslint.config.js tests && oxlint src",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "check": "npm run lint && npm run typecheck && npm test",
-    "verify:schema": "bash tests/sql/verificar-en-docker.sh"
+    "verify:schema": "bash tests/sql/verificar-en-docker.sh",
+    "evals": "npm run build && node evals/runner.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
