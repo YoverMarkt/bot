@@ -585,19 +585,22 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       } else {
         logger.log(`🌙 [${business.name}] fuera de horario — silencio (ya avisado) — ${phone}`)
       }
-      if (business.lodging_enabled !== true) {
-        await database.saveMessage(business.id, phone, 'user', text)
-        await database.upsertSession(business.id, phone, {
-          last_message: text,
-          last_message_at: new Date(now()).toISOString(),
-        })
-        if (outsideHoursMessage) {
-          await database.saveMessage(
-            business.id, phone, 'assistant', outsideHoursMessage,
-          )
-        }
-        return
+      // Fuera de horario NADIE atiende, tampoco el hospedaje. Antes el
+      // alojamiento era una excepción que respondía siempre, y eso convertía el
+      // horario configurado por el dueño en una decoración: no podía apagar el
+      // bot ni queriendo. Un hostal que quiera cotizar de madrugada configura
+      // 00:00–23:59; el control es suyo, no de una regla escondida aquí.
+      await database.saveMessage(business.id, phone, 'user', text)
+      await database.upsertSession(business.id, phone, {
+        last_message: text,
+        last_message_at: new Date(now()).toISOString(),
+      })
+      if (outsideHoursMessage) {
+        await database.saveMessage(
+          business.id, phone, 'assistant', outsideHoursMessage,
+        )
       }
+      return
     }
 
     if (sendTyping) {

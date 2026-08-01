@@ -1,0 +1,217 @@
+// Arma la tienda tal y como la ve el cliente: negocio, estado abierto/cerrado,
+// categorías, productos con sus variantes y sus extras.
+//
+// Dos reglas que se aplican aquí y no en la app:
+//
+//  1. Si el negocio está CERRADO se puede mirar, pero no pedir. Que el cliente
+//     vea el menú a las 3 de la mañana es bueno —vuelve cuando abras—; que
+//     pueda encargar una pizza que nadie va a hacer, no.
+//  2. Los precios salen SIEMPRE de la base. La app manda ids, nunca importes.
+//     Lo que se pinte en pantalla es informativo; lo que se cobra lo decide el
+//     servidor (regla inviolable #8).
+
+export interface StorefrontBusiness {
+  id: string
+  name?: string | null
+  slug?: string | null
+  type?: string | null
+  description?: string | null
+  address?: string | null
+  phone?: string | null
+  whatsapp_number?: string | null
+  slogan?: string | null
+  active?: boolean | null
+  suspended?: boolean | null
+  storefront_enabled?: boolean | null
+  takes_orders?: boolean | null
+  lodging_enabled?: boolean | null
+}
+
+export interface CatalogCategory {
+  id: string
+  name: string
+  description?: string | null
+  image_url?: string | null
+  sort?: number
+}
+
+export interface CatalogProduct {
+  id: string
+  name: string
+  description?: string | null
+  price?: string | number | null
+  price_sale?: string | number | null
+  stock?: string | null
+  image_url?: string | null
+  video_url?: string | null
+  tags?: string[] | null
+  category_id?: string | null
+}
+
+export interface CatalogVariant {
+  id: string
+  product_id: string
+  name: string
+  price: string | number
+  price_sale?: string | number | null
+  stock?: string | null
+  sort?: number
+}
+
+export interface CatalogExtra {
+  id: string
+  product_id?: string | null
+  category_tag?: string | null
+  group_label?: string | null
+  name: string
+  description?: string | null
+  price_delta: string | number
+  max_selectable?: number | null
+  sort?: number
+}
+
+export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
+
+const money = (value: unknown): number | null => {
+  const parsed = Number.parseFloat(String(value ?? ''))
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null
+}
+
+const disponible = (stock?: string | null): boolean => String(stock || 'disponible') !== 'agotado'
+
+/**
+ * ¿Puede este negocio tener tienda, y está abierta ahora?
+ *
+ * `cerrada` no es un error: la tienda se ve igual, solo que sin pedir.
+ */
+export function storefrontStatus(input: {
+  business: StorefrontBusiness | null
+  outsideHours: boolean
+}): StorefrontStatus {
+  const { business } = input
+  if (!business || business.active === false) return 'no_disponible'
+  if (business.suspended === true) return 'suspendida'
+  if (business.storefront_enabled !== true) return 'no_disponible'
+  return input.outsideHours ? 'cerrada' : 'abierta'
+}
+
+/** Solo se puede pedir con la tienda abierta. */
+export const canOrder = (status: StorefrontStatus): boolean => status === 'abierta'
+
+/**
+ * Junta catálogo, variantes y extras en la forma que consume la app: cada
+ * producto ya trae lo suyo, para que la tienda no tenga que cruzar nada.
+ */
+export function buildStorefrontCatalog(input: {
+  categories: CatalogCategory[]
+  products: CatalogProduct[]
+  variants: CatalogVariant[]
+  extras: CatalogExtra[]
+}) {
+  const variantesPorProducto = new Map<string, CatalogVariant[]>()
+  for (const variante of input.variants) {
+    const lista = variantesPorProducto.get(variante.product_id) || []
+    lista.push(variante)
+    variantesPorProducto.set(variante.product_id, lista)
+  }
+
+  const extrasPorProducto = new Map<string, CatalogExtra[]>()
+  const extrasPorEtiqueta = new Map<string, CatalogExtra[]>()
+  for (const extra of input.extras) {
+    if (extra.product_id) {
+      const lista = extrasPorProducto.get(extra.product_id) || []
+      lista.push(extra)
+      extrasPorProducto.set(extra.product_id, lista)
+    } else if (extra.category_tag) {
+      const clave = extra.category_tag.toLowerCase()
+      const lista = extrasPorEtiqueta.get(clave) || []
+      lista.push(extra)
+      extrasPorEtiqueta.set(clave, lista)
+    }
+  }
+
+  const productos = input.products.map((producto) => {
+    const variantes = (variantesPorProducto.get(producto.id) || [])
+      .filter(variante => disponible(variante.stock))
+      .map(variante => ({
+        id: variante.id,
+        name: variante.name,
+        price: money(variante.price) ?? 0,
+        priceSale: money(variante.price_sale),
+      }))
+
+    // Los extras del producto y los de sus etiquetas, sin repetir.
+    const porEtiqueta = (producto.tags || [])
+      .flatMap(tag => extrasPorEtiqueta.get(String(tag).toLowerCase()) || [])
+    const extras = [...extrasPorProducto.get(producto.id) || [], ...porEtiqueta]
+    const vistos = new Set<string>()
+
+    const precioBase = money(producto.price)
+    const precioOferta = money(producto.price_sale)
+    // Con variantes, el precio del producto es solo una referencia: "desde X".
+    const desde = variantes.length
+      ? Math.min(...variantes.map(v => v.priceSale ?? v.price))
+      : (precioOferta && precioOferta > 0 ? precioOferta : precioBase)
+
+    return {
+      id: producto.id,
+      name: producto.name,
+      description: producto.description || null,
+      imageUrl: producto.image_url || null,
+      videoUrl: producto.video_url || null,
+      categoryId: producto.category_id || null,
+      tags: producto.tags || [],
+      available: disponible(producto.stock),
+      priceFrom: desde,
+      hasVariants: variantes.length > 0,
+      variants: variantes,
+      extras: extras
+        .filter((extra) => {
+          if (vistos.has(extra.id)) return false
+          vistos.add(extra.id)
+          return true
+        })
+        .map(extra => ({
+          id: extra.id,
+          group: extra.group_label || 'Extras',
+          name: extra.name,
+          description: extra.description || null,
+          price: money(extra.price_delta) ?? 0,
+          maxSelectable: extra.max_selectable ?? null,
+        })),
+    }
+  })
+
+  // Solo se muestran las categorías que tienen algo dentro: una categoría vacía
+  // en la tienda parece un error del negocio.
+  const conProductos = new Set(productos.map(producto => producto.categoryId).filter(Boolean))
+  const categorias = input.categories
+    .filter(categoria => conProductos.has(categoria.id))
+    .map(categoria => ({
+      id: categoria.id,
+      name: categoria.name,
+      description: categoria.description || null,
+      imageUrl: categoria.image_url || null,
+    }))
+
+  return {
+    categories: categorias,
+    products: productos,
+    // Los que no tienen categoría no se pierden: la app los agrupa aparte.
+    uncategorized: productos.filter(producto => !producto.categoryId).length,
+  }
+}
+
+/** Lo que la app necesita saber del negocio. Nunca credenciales. */
+export function publicBusiness(business: StorefrontBusiness) {
+  return {
+    id: business.id,
+    name: business.name || '',
+    slug: business.slug || '',
+    type: business.type || null,
+    slogan: business.slogan || null,
+    description: business.description || null,
+    address: business.address || null,
+    phone: business.whatsapp_number || business.phone || null,
+  }
+}
