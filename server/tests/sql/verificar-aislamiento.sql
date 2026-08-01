@@ -1,0 +1,184 @@
+-- ============================================================================
+-- AISLAMIENTO MULTI-TENANT CONTRA UN POSTGRESQL REAL
+--
+-- La regla #1 del proyecto: un negocio JAMÁS puede ver ni tocar los datos de
+-- otro. Hasta ahora solo estaba probada con simulacros; aquí se comprueba con
+-- DOS negocios reales conviviendo en la misma base.
+--
+-- Un fallo aquí no es un bug: es un incidente de seguridad. Por eso cada
+-- comprobación intenta ACTIVAMENTE cruzar la frontera y exige que la base lo
+-- impida, en vez de limitarse a mirar que los datos propios estén bien.
+--
+-- Se corre sobre una base recién creada con bootstrap-supabase.sql + schema.sql.
+-- ============================================================================
+
+\set ON_ERROR_STOP on
+
+do $$
+declare
+  v_a uuid;              -- negocio A
+  v_b uuid;              -- negocio B
+  v_producto_a uuid;
+  v_producto_b uuid;
+  v_pedidos_b integer;
+  v_encolado boolean;
+  v_ok boolean;
+begin
+  -- ── Dos negocios distintos, cada uno con lo suyo ─────────────────────────
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_bookings, takes_orders
+  ) values (
+    'aislamiento-a', 'Negocio A', 'tienda',
+    'ycloud', '+593900001111', '+593900001111', true, true
+  ) returning id into v_a;
+
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_bookings, takes_orders
+  ) values (
+    'aislamiento-b', 'Negocio B', 'tienda',
+    'ycloud', '+593900002222', '+593900002222', true, true
+  ) returning id into v_b;
+
+  insert into products (business_id, name, price, stock, active)
+  values (v_a, 'Producto de A', 10.00, 'disponible', true)
+  returning id into v_producto_a;
+
+  insert into products (business_id, name, price, stock, active)
+  values (v_b, 'Producto de B', 99.00, 'disponible', true)
+  returning id into v_producto_b;
+
+  -- ── 1. DINERO: A no puede vender el producto de B ────────────────────────
+  -- Si esto pasara, un negocio podría cobrar por el catálogo del vecino.
+  begin
+    perform public.create_order_with_items(
+      v_a, '+593900009999', 'Cliente', 'pendiente', 0, 'USD',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto_b, 'quantity', 1, 'unit_price', 99.00
+      ))
+    );
+    raise exception 'FUGA: el negocio A pudo crear un pedido con el producto de B';
+  exception when sqlstate '42501' then
+    null;  -- rechazado como debe
+  end;
+
+  -- Lo mismo en las ventas manuales del panel.
+  begin
+    perform public.create_sale_with_items(
+      v_a, '+593900009999', 'Cliente', null,
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto_b, 'quantity', 1, 'unit_price', 99.00
+      ))
+    );
+    raise exception 'FUGA: el negocio A pudo registrar una venta con el producto de B';
+  exception when sqlstate '42501' then
+    null;
+  end;
+
+  -- Con su propio producto sí funciona: la barrera no rompe el uso legítimo.
+  perform public.create_order_with_items(
+    v_a, '+593900009999', 'Cliente', 'pendiente', 0, 'USD',
+    jsonb_build_array(jsonb_build_object(
+      'product_id', v_producto_a, 'quantity', 1, 'unit_price', 10.00
+    ))
+  );
+
+  -- ── 2. CATÁLOGO: la búsqueda semántica no cruza negocios ─────────────────
+  if exists (
+    select 1
+    from public.match_products(
+      array_fill(0.01::real, array[1536])::vector, v_a, 50
+    ) as encontrado
+    where encontrado.id = v_producto_b
+  ) then
+    raise exception 'FUGA: la búsqueda del negocio A devolvió un producto de B';
+  end if;
+
+  -- ── 3. COLA DE WEBHOOKS: el mismo mensaje en dos negocios no se pisa ──────
+  -- Deduplicar por hash sin mirar el negocio haría que el mensaje de un cliente
+  -- silenciara el de otro.
+  v_encolado := public.enqueue_webhook_event(
+    v_a, 'ycloud', repeat('a', 64), repeat('b', 64), '{"content":{"kind":"text"}}'::jsonb
+  );
+  if v_encolado is not true then
+    raise exception 'El negocio A no pudo encolar su mensaje';
+  end if;
+
+  v_encolado := public.enqueue_webhook_event(
+    v_b, 'ycloud', repeat('a', 64), repeat('b', 64), '{"content":{"kind":"text"}}'::jsonb
+  );
+  if v_encolado is not true then
+    raise exception 'FUGA: el mensaje del negocio A bloqueó el del negocio B';
+  end if;
+
+  -- ── 4. ERRORES: la misma huella en dos negocios son dos registros ────────
+  perform public.record_platform_error(
+    v_a, 'canal', '503', 'Mismo error', '{}'::jsonb, repeat('c', 64)
+  );
+  perform public.record_platform_error(
+    v_b, 'canal', '503', 'Mismo error', '{}'::jsonb, repeat('c', 64)
+  );
+  if (select count(*) from platform_errors where fingerprint = repeat('c', 64)) <> 2 then
+    raise exception 'FUGA: el error de un negocio se mezcló con el de otro';
+  end if;
+
+  -- ── 5. RESERVAS: la agenda de A no ocupa la de B ─────────────────────────
+  update business_schedule
+  set is_active = true, open_time = '08:00', close_time = '20:00'
+  where business_id in (v_a, v_b)
+    and day_of_week = extract(dow from current_date + 1)::int;
+
+  perform public.create_booking_if_available(
+    v_a, '+593900009999', 'Cliente', 'Servicio',
+    (current_date + 1)::date, '10:00'::time, 60
+  );
+  -- B debe poder reservar EXACTAMENTE el mismo hueco: son agendas distintas.
+  perform public.create_booking_if_available(
+    v_b, '+593900008888', 'Otro cliente', 'Servicio',
+    (current_date + 1)::date, '10:00'::time, 60
+  );
+  if (select count(*) from bookings where business_id = v_b) <> 1 then
+    raise exception 'FUGA: la reserva del negocio A bloqueó la agenda de B';
+  end if;
+
+  -- ── 6. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
+  select count(*) into v_pedidos_b from orders where business_id = v_b;
+  delete from businesses where id = v_a;
+
+  if exists (select 1 from products where business_id = v_a) then
+    raise exception 'Borrar el negocio A dejó sus productos huérfanos';
+  end if;
+  if exists (select 1 from orders where business_id = v_a) then
+    raise exception 'Borrar el negocio A dejó sus pedidos huérfanos';
+  end if;
+  if exists (select 1 from platform_errors where business_id = v_a) then
+    raise exception 'Borrar el negocio A dejó sus errores huérfanos';
+  end if;
+
+  -- Y lo más importante: no se llevó nada del vecino.
+  if not exists (select 1 from products where id = v_producto_b) then
+    raise exception 'FUGA GRAVE: borrar el negocio A eliminó el producto de B';
+  end if;
+  if (select count(*) from orders where business_id = v_b) <> v_pedidos_b then
+    raise exception 'FUGA GRAVE: borrar el negocio A alteró los pedidos de B';
+  end if;
+  if not exists (select 1 from bookings where business_id = v_b) then
+    raise exception 'FUGA GRAVE: borrar el negocio A eliminó la reserva de B';
+  end if;
+
+  -- ── 7. RLS activa en todas las tablas de negocio ─────────────────────────
+  select bool_and(c.relrowsecurity) into v_ok
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind = 'r';
+  if v_ok is not true then
+    raise exception 'Hay tablas sin RLS habilitada';
+  end if;
+
+  -- ── Limpieza ─────────────────────────────────────────────────────────────
+  delete from businesses where id = v_b;
+
+  raise notice 'AISLAMIENTO MULTI-TENANT: ninguna frontera se pudo cruzar';
+end;
+$$;

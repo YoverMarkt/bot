@@ -75,6 +75,11 @@ jobs:
       - name: Ejecutar las funciones críticas
         run: $PSQL -f server/tests/sql/verificar-esquema.sql
 
+      - name: Comprobar el aislamiento entre negocios
+        # Regla #1 del proyecto: un negocio jamás ve ni toca los datos de otro.
+        # Se prueba con DOS negocios reales conviviendo en la misma base.
+        run: $PSQL -f server/tests/sql/verificar-aislamiento.sql
+
       - name: Comprobar que la verificación detecta un esquema roto
         # Sin esto, la verificación podría quedarse en verde para siempre aunque
         # dejara de comprobar nada. Se reintroduce el fallo real de julio de 2026
