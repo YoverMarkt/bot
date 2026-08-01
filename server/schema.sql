@@ -519,11 +519,16 @@ insert into public.message_usage_migration_state (key)
 values ('conversation_history_v1')
 on conflict (key) do nothing;
 
+-- `extensions` va en el search_path porque digest() pertenece a pgcrypto, que en
+-- Supabase vive en ese esquema. Sin él la función falla con
+-- "function digest(text, unknown) does not exist" y tumba TODO el ingreso de
+-- WhatsApp: el trigger revienta al insertar, enqueue_webhook_event falla y el
+-- webhook responde 503 hasta que el proveedor deja de entregar.
 create or replace function public.record_inbound_message_usage()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_message_type text;

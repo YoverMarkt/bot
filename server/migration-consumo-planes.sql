@@ -146,11 +146,16 @@ create index if not exists idx_message_usage_contact_period
 
 -- Cada webhook nuevo ya está deduplicado por el inbox durable. El trigger
 -- copia exactamente una unidad al histórico de consumo en la misma transacción.
+-- `extensions` va en el search_path porque digest() pertenece a pgcrypto, que en
+-- Supabase vive en ese esquema. Sin él la función falla con
+-- "function digest(text, unknown) does not exist" y tumba TODO el ingreso de
+-- WhatsApp: el trigger revienta al insertar, enqueue_webhook_event falla y el
+-- webhook responde 503 hasta que el proveedor deja de entregar.
 create or replace function public.record_inbound_message_usage()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_message_type text;
