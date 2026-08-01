@@ -134,6 +134,32 @@ jobs:
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/admin
 
+  mini-app:
+    name: Mini app de la tienda (React + TS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependencias (workspaces)
+        run: npm ci
+
+      - name: Lint de la mini app
+        run: npm run lint -w @botpanel/store
+
+      # El carrito es lo único de la app con lógica propia, y decide el número
+      # que ve el cliente antes de confirmar.
+      - name: Tests del carrito
+        run: npm test -w @botpanel/store
+
+      - name: Type-check + build (tsc + vite)
+        run: npm run build -w @botpanel/store
+
   e2e:
     name: Flujos E2E (Chromium)
     runs-on: ubuntu-latest

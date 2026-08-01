@@ -6,14 +6,15 @@
     "server",
     "apps/client",
     "apps/admin",
+    "apps/store",
     "packages/ui"
   ],
   "scripts": {
     "start": "npm start -w @botpanel/server",
     "dev": "npm run dev -w @botpanel/server",
-    "build": "npm run build -w @botpanel/server && npm run build -w @botpanel/client && npm run build -w @botpanel/admin",
-    "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin",
-    "test": "npm test -w @botpanel/server",
+    "build": "npm run build -w @botpanel/server && npm run build -w @botpanel/client && npm run build -w @botpanel/admin && npm run build -w @botpanel/store",
+    "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin && npm run lint -w @botpanel/store",
+    "test": "npm test -w @botpanel/server && npm test -w @botpanel/store",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"
   },
