@@ -752,7 +752,10 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
-  it('permite cotizar hospedaje fuera de horario después de informar el horario', async () => {
+  // Antes el hospedaje era una excepción que atendía siempre, y eso convertía
+  // el horario del dueño en decoración: no podía apagar el bot ni queriendo.
+  // Ahora manda su configuración; para cotizar de madrugada pone 00:00-23:59.
+  it('el hospedaje también calla fuera de horario: manda el horario del dueño', async () => {
     const lodgingQuote = {
       checkInRaw: '2026-08-10', checkOutRaw: '2026-08-13',
       roomsRaw: '1', roomsCount: 1,
@@ -782,36 +785,18 @@ describe('orquestación de conversaciones del bot', () => {
       text: 'Somos dos del 10 al 13 de agosto',
     }))
 
+    // Informa el horario y se detiene ahí: ni IA ni cotización.
     expect(current.send).toHaveBeenCalledWith('Horario del negocio')
-    expect(current.ai.callAI).toHaveBeenCalledTimes(1)
-    expect(current.actions.processLodgingQuote).toHaveBeenCalledWith({
-      business: lodgingBusiness,
-      phone: '0990000001',
-      originalText: 'Somos dos del 10 al 13 de agosto',
-      quote: lodgingQuote,
-      guestMessages: ['Somos dos del 10 al 13 de agosto'],
-      send: current.send,
-      sendImage: current.sendImage,
-      sendVideo: current.sendVideo,
-    })
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
+
+    // La conversación se guarda igual, para que el dueño la vea al abrir.
     expect(current.database.saveMessage).toHaveBeenCalledWith(
       'business-a', '0990000001', 'user', 'Somos dos del 10 al 13 de agosto',
     )
     expect(current.database.saveMessage).toHaveBeenCalledWith(
       'business-a', '0990000001', 'assistant', 'Horario del negocio',
     )
-    expect(current.prompt.buildPrompt).toHaveBeenCalledWith(
-      lodgingBusiness,
-      [product],
-      {},
-      'Somos dos del 10 al 13 de agosto',
-      null,
-      [],
-      false,
-      false,
-    )
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 
   it('mantiene preguntas de precio y media automatizadas en modo informativo', async () => {
