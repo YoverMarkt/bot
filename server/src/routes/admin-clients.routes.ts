@@ -11,6 +11,18 @@ import {
   type ChannelActivity,
   type DiagnosableBusiness,
 } from '../services/channel-health'
+const ALLOWED_ERROR_CATEGORIES = ['canal', 'ia', 'envio', 'servidor']
+
+interface PlatformErrorRow {
+  id: string
+  business_id: string | null
+  category: string
+  code: string | null
+  message: string
+  occurrences: number
+  first_seen_at: string
+  last_seen_at: string
+}
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -31,6 +43,12 @@ const db = require('../db') as {
   getAdminStats(): Promise<unknown>
   getAllBusinesses(): Promise<unknown[]>
   getLastInboundByBusiness(businessIds: string[]): Promise<ChannelActivity[]>
+  getErrorCountsByBusiness(): Promise<unknown[]>
+  getPlatformErrors(options: {
+    category?: string
+    businessId?: string
+    limit?: number
+  }): Promise<PlatformErrorRow[]>
   getBusinessById(businessId: string): Promise<CreatedBusiness | null>
   getClientUserByBusiness(businessId: string): Promise<{ email?: string } | null>
   createBusinessOnboarding(
@@ -218,10 +236,51 @@ router.get('/api/admin/stats', auth.authAdmin, async (_req, res) => {
 // avisara — el servidor vivía, pero ningún WhatsApp entraba.
 router.get('/api/admin/channel-health', auth.authAdmin, async (_req, res) => {
   const businesses = await db.getAllBusinesses() as DiagnosableBusiness[]
-  const activity = await db.getLastInboundByBusiness(
-    businesses.map(business => business.id),
-  )
-  res.json(diagnoseChannels({ businesses, activity }))
+  const [activity, errorCounts] = await Promise.all([
+    db.getLastInboundByBusiness(businesses.map(business => business.id)),
+    db.getErrorCountsByBusiness(),
+  ])
+  res.json({
+    ...diagnoseChannels({ businesses, activity }),
+    errorsByBusiness: errorCounts,
+  })
+})
+
+// Registro de errores para diagnosticar sin entrar a los logs del servidor.
+router.get('/api/admin/errors', auth.authAdmin, async (req, res) => {
+  const query = req.query as Record<string, string | undefined>
+  res.json(await db.getPlatformErrors({
+    category: ALLOWED_ERROR_CATEGORIES.includes(String(query.category))
+      ? query.category
+      : undefined,
+    businessId: query.business_id,
+    limit: Number(query.limit) || 200,
+  }))
+})
+
+// Descarga en CSV para compartir el diagnóstico. Los mensajes ya salen
+// saneados de `services/error-log.ts`: sin credenciales ni datos personales.
+router.get('/api/admin/errors/export', auth.authAdmin, async (_req, res) => {
+  const errors = await db.getPlatformErrors({ limit: 1000 })
+  const rows = [
+    ['ultima_vez', 'primera_vez', 'veces', 'categoria', 'codigo', 'negocio', 'mensaje'],
+    ...errors.map(error => [
+      error.last_seen_at,
+      error.first_seen_at,
+      String(error.occurrences),
+      error.category,
+      error.code || '',
+      error.business_id || 'plataforma',
+      error.message,
+    ]),
+  ]
+  const csv = rows
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const stamp = new Date().toISOString().slice(0, 10)
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="errores-${stamp}.csv"`)
+  res.send(`﻿${csv}`)
 })
 
 router.get('/api/admin/clients', auth.authAdmin, async (_req, res) => {

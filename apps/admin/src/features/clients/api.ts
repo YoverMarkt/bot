@@ -65,7 +65,28 @@ export type ChannelHealth = {
     reason: string
     at: string
   }>
+  errorsByBusiness: Array<{
+    businessId: string
+    occurrences: number
+    lastSeenAt: string
+  }>
 }
+
+export type PlatformError = {
+  id: string
+  business_id: string | null
+  category: 'canal' | 'ia' | 'envio' | 'servidor'
+  code: string | null
+  message: string
+  context: Record<string, unknown>
+  occurrences: number
+  first_seen_at: string
+  last_seen_at: string
+}
+
+export const getPlatformErrors = (category?: string) => api<PlatformError[]>(
+  `/api/admin/errors${category ? `?category=${encodeURIComponent(category)}` : ''}`,
+)
 
 export const getStats = () => api<AdminStats>('/api/admin/stats')
 export const getChannelHealth = () => api<ChannelHealth>('/api/admin/channel-health')

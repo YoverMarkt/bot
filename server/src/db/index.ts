@@ -15,6 +15,7 @@ import webhookEvents = require('./repositories/webhook-events')
 import lodging = require('./repositories/lodging')
 import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
+import platformErrors = require('./repositories/platform-errors')
 
 const database: Record<string, unknown> = {
   ...businesses,
@@ -34,6 +35,7 @@ const database: Record<string, unknown> = {
   ...lodging,
   ...menuModifiers,
   ...usage,
+  ...platformErrors,
 }
 
 export = database

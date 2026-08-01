@@ -14,6 +14,7 @@ const ServerSettings = lazy(() => import('./features/settings/ServerSettings'))
 const Connections = lazy(() => import('./features/settings/Connections'))
 const Calculator = lazy(() => import('./features/calculator/Calculator'))
 const Usage = lazy(() => import('./features/usage/Usage'))
+const Errors = lazy(() => import('./features/errors/Errors'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/simulator" element={<Simulator />} />
               <Route path="/settings" element={<ServerSettings />} />
               <Route path="/connections" element={<Connections />} />
+              <Route path="/errors" element={<Errors />} />
               <Route path="/calculator" element={<Calculator />} />
               <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
