@@ -122,6 +122,43 @@ begin
     null;
   end;
 
+  -- ── 3b. Pedido de la tienda: el precio lo pone la BASE, no el cliente ─────
+  -- La app manda ids y cantidades. Si acepta un importe del cliente, cualquiera
+  -- se lleva una pizza por un céntimo.
+  update businesses set storefront_enabled = true where id = v_business;
+  insert into product_variants (business_id, product_id, name, price)
+  values (v_business, v_producto, 'Personal', 5.25);
+
+  declare
+    v_pedido jsonb;
+  begin
+    v_pedido := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'delivery',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto,
+        'variant_id', (select id from product_variants where business_id = v_business limit 1),
+        'quantity', 2,
+        -- Precio inventado: debe ignorarse por completo.
+        'unit_price', 0.01, 'total', 0.01
+      ))
+    );
+    -- 2 × 5.25 de la variante = 10.50, nunca 0.02.
+    if (v_pedido ->> 'total')::numeric <> 10.50 then
+      raise exception 'create_storefront_order no calculó el total desde la base: %', v_pedido ->> 'total';
+    end if;
+  end;
+
+  -- Un producto de otro negocio no se puede pedir aquí.
+  begin
+    perform public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'delivery',
+      jsonb_build_array(jsonb_build_object('product_id', gen_random_uuid(), 'quantity', 1))
+    );
+    raise exception 'create_storefront_order aceptó un producto ajeno';
+  exception when sqlstate '42501' then
+    null;
+  end;
+
   -- ── 4. Reservas: no se puede solapar el mismo hueco ───────────────────────
   -- El alta del negocio ya crea los 7 días (domingo inactivo, sábado corto).
   -- Se activa el día de la prueba para que no dependa de cuándo corra el CI.
