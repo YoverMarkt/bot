@@ -35,6 +35,58 @@ jobs:
       - name: Tests del servidor
         run: npm test -w @botpanel/server
 
+  # Aplica el esquema a un PostgreSQL de verdad y EJECUTA sus funciones. Es la
+  # única forma de detectar la familia de fallos que tumbó el canal cinco días en
+  # julio de 2026: PostgreSQL no valida el cuerpo de una función plpgsql al
+  # crearla, así que una migración puede aplicarse "con éxito" y reventar en el
+  # primer uso real. Los demás tests leen el SQL; este lo corre.
+  esquema:
+    name: Esquema contra PostgreSQL real
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Misma extensión pgvector que usa Supabase para el RAG del catálogo.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: botpanel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      PSQL: psql -h localhost -U postgres -d botpanel -v ON_ERROR_STOP=1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente de PostgreSQL
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Emular el entorno de Supabase
+        run: $PSQL -q -f server/tests/sql/bootstrap-supabase.sql
+
+      - name: Aplicar schema.sql en una base vacía
+        run: $PSQL -q -f server/schema.sql
+
+      - name: Ejecutar las funciones críticas
+        run: $PSQL -f server/tests/sql/verificar-esquema.sql
+
+      - name: Comprobar que la verificación detecta un esquema roto
+        # Sin esto, la verificación podría quedarse en verde para siempre aunque
+        # dejara de comprobar nada. Se reintroduce el fallo real de julio de 2026
+        # y se exige que salte.
+        run: |
+          $PSQL -q -c "alter function public.record_inbound_message_usage() set search_path = public, pg_temp;"
+          if $PSQL -q -f server/tests/sql/verificar-esquema.sql > /dev/null 2>&1; then
+            echo "❌ La verificación pasó con el esquema roto: ya no detecta nada"
+            exit 1
+          fi
+          echo "✅ La verificación detecta correctamente el esquema roto"
+
   panel-react:
     name: Panel cliente (React + TS) — build
     runs-on: ubuntu-latest
