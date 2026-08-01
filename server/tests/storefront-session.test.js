@@ -121,6 +121,41 @@ describe('sesiones de la mini app', () => {
       expect(resultado.ok).toBe(false)
       expect(resultado.reason).toBe('no_existe')
     })
+
+    // Sin esto, una sesión de la pizzería abriría la tienda del hostal con solo
+    // cambiar el slug de la URL.
+    it('un token de otro negocio no sirve aunque sea válido', () => {
+      const resultado = checkSession({
+        session: sesion({ business_id: 'biz-pizzeria' }),
+        deviceHash: MOVIL_CLIENTE,
+        expectedBusinessId: 'biz-hostal',
+        now: ahora,
+      })
+      expect(resultado.ok).toBe(false)
+      expect(resultado.reason).toBe('otro_negocio')
+    })
+
+    it('el token sí sirve en su propio negocio', () => {
+      const resultado = checkSession({
+        session: sesion({ business_id: 'biz-1' }),
+        deviceHash: MOVIL_CLIENTE,
+        expectedBusinessId: 'biz-1',
+        now: ahora,
+      })
+      expect(resultado.ok).toBe(true)
+    })
+
+    // El negocio se comprueba ANTES que nada: un token caducado de otro negocio
+    // no debe revelar siquiera que caducó.
+    it('no distingue entre un token ajeno y uno inexistente', () => {
+      const ajeno = checkSession({
+        session: sesion({ business_id: 'biz-otro', revoked_at: ahora.toISOString() }),
+        deviceHash: MOVIL_CLIENTE,
+        expectedBusinessId: 'biz-1',
+        now: ahora,
+      })
+      expect(rejectionMessage(ajeno.reason)).toBe(rejectionMessage('no_existe'))
+    })
   })
 
   describe('qué se le dice a quien no puede entrar', () => {

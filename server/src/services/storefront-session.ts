@@ -27,6 +27,7 @@ export type SessionRejection =
   | 'caducada'
   | 'revocada'
   | 'otro_dispositivo'
+  | 'otro_negocio'
 
 export interface StorefrontSessionRecord {
   id: string
@@ -90,12 +91,21 @@ export function sessionExpiry(now: Date = new Date()): Date {
 export function checkSession(input: {
   session: StorefrontSessionRecord | null
   deviceHash: string
+  /** Negocio de la URL. Se exige aquí para que ningún endpoint pueda olvidarlo. */
+  expectedBusinessId?: string | null
   now?: Date
 }): SessionCheck {
   const { session, deviceHash } = input
   const now = input.now ?? new Date()
 
   if (!session) return { ok: false, reason: 'no_existe' }
+
+  // Un token es válido para UN negocio. Sin esta comprobación, una sesión de la
+  // pizzería abriría la tienda del hostal con solo cambiar el slug de la URL.
+  if (input.expectedBusinessId && session.business_id !== input.expectedBusinessId) {
+    return { ok: false, reason: 'otro_negocio' }
+  }
+
   if (session.revoked_at) return { ok: false, reason: 'revocada' }
   if (new Date(session.expires_at).getTime() <= now.getTime()) {
     return { ok: false, reason: 'caducada' }
@@ -113,6 +123,10 @@ export function checkSession(input: {
 /** Qué contarle a quien no puede entrar. Nunca revela datos del dueño. */
 export function rejectionMessage(reason: SessionRejection): string {
   switch (reason) {
+    // Deliberadamente igual que 'no_existe': quien prueba un token de otro
+    // negocio no debe averiguar que existe y pertenece a otro sitio.
+    case 'otro_negocio':
+      return 'Este enlace no es válido. Escríbele al negocio por WhatsApp para hacer tu pedido.'
     case 'otro_dispositivo':
       return 'Este enlace es personal y ya lo está usando otra persona. Escríbele al negocio por WhatsApp y te enviará el tuyo.'
     case 'caducada':
