@@ -16,6 +16,7 @@ import lodging = require('./repositories/lodging')
 import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
 import platformErrors = require('./repositories/platform-errors')
+import storefront = require('./repositories/storefront')
 
 const database: Record<string, unknown> = {
   ...businesses,
@@ -36,6 +37,7 @@ const database: Record<string, unknown> = {
   ...menuModifiers,
   ...usage,
   ...platformErrors,
+  ...storefront,
 }
 
 export = database
