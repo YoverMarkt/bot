@@ -16,6 +16,11 @@ import { assertEnvironment } from './config/environment'
 import { asyncHandler } from './middleware/async'
 import { getRecentWebhookFailures } from './services/channel-health'
 import { recordError } from './services/error-log'
+import {
+  checkAllCredentials,
+  type MonitorableBusiness,
+} from './services/credential-monitor'
+import { providerStatusClient } from './integrations/provider-status'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
 import * as bot from './services/bot-entry'
@@ -47,6 +52,7 @@ interface StartupDatabase {
     error: { message?: string } | null
   }>
   getLastInboundAt(): Promise<string | null>
+  getAllBusinessesWithSecrets(): Promise<MonitorableBusiness[]>
   cleanupPlatformErrors(days?: number): Promise<{
     data: number | null
     error: { message?: string } | null
@@ -312,6 +318,38 @@ async function cleanupWebhookInbox(): Promise<void> {
   }
 }
 
+// Revisa solo, cada pocas horas, que las credenciales de cada negocio sigan
+// sirviendo: API key válida, número conectado, webhook apuntando aquí y con
+// saldo. El panel ya permitía hacerlo A MANO, y por eso en julio de 2026 nadie
+// se enteró de nada durante cinco días.
+async function checkCredentials(): Promise<void> {
+  try {
+    const businesses = await db.getAllBusinessesWithSecrets()
+    const problemas = await checkAllCredentials(businesses, providerStatusClient, {
+      baseUrl: process.env.BASE_URL,
+    })
+    if (!problemas.length) {
+      console.log('🔐 Credenciales: todos los negocios en orden')
+      return
+    }
+    for (const problema of problemas) {
+      const etiqueta = problema.severity === 'error' ? '❌' : '⚠️ '
+      console.error(
+        `${etiqueta} [${problema.businessName}] ${problema.provider}: ${problema.message}`,
+      )
+      void recordError({
+        businessId: problema.businessId,
+        category: 'canal',
+        code: problema.code,
+        message: problema.message,
+        context: { provider: problema.provider, severidad: problema.severity },
+      })
+    }
+  } catch (error) {
+    console.error('❌ Revisión de credenciales:', errorMessage(error))
+  }
+}
+
 // El registro de errores no puede crecer sin fin: se purga lo más viejo de 30
 // días. Si la migración todavía no se corrió, el fallo se anota y no molesta.
 async function cleanupErrorLog(): Promise<void> {
@@ -339,6 +377,10 @@ httpServer = app.listen(port, () => {
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
   setTimeout(cleanupErrorLog, 7000)
   setInterval(cleanupErrorLog, 24 * 60 * 60 * 1000)
+  // Cada 6 h: suficiente para enterarse el mismo día sin castigar a los
+  // proveedores con consultas constantes.
+  setTimeout(checkCredentials, 20_000)
+  setInterval(checkCredentials, 6 * 60 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)

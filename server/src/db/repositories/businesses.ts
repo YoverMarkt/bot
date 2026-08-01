@@ -87,6 +87,22 @@ const businessListFields = [
   'notes',
 ].join(',')
 
+// Solo para la vigilancia interna de credenciales (`services/credential-monitor.ts`).
+// Trae los secretos porque hay que preguntarle al proveedor si siguen sirviendo.
+// ⚠️ NO exponer por ninguna ruta: lo que va al panel pasa antes por
+// `sanitizeBusinessForAdmin`.
+const getAllBusinessesWithSecrets = async () => {
+  const { data, error } = await db
+    .from('businesses')
+    .select([
+      'id', 'name', 'active', 'suspended',
+      'whatsapp_provider', 'whatsapp_number', 'ycloud_number',
+      'ycloud_api_key', 'ycloud_webhook_endpoint_id', 'telegram_bot_token',
+    ].join(','))
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
 const getAllBusinesses = async () => {
   const current = await db
     .from('businesses')
@@ -164,6 +180,7 @@ export = {
   getBusinessByChannel,
   getBusinessByPhone,
   getAllBusinesses,
+  getAllBusinessesWithSecrets,
   createBusiness,
   createBusinessOnboarding,
   updateBusiness,
