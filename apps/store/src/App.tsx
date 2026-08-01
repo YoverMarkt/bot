@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getStore, isLinkProblem } from './lib/api'
+import { isMobileDevice } from './lib/device'
 import { readSlug, readToken } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
 import Gate from './screens/Gate'
+import DesktopGate from './screens/DesktopGate'
 import FoodStore from './screens/FoodStore'
 import StayStore from './screens/StayStore'
 import Picker from './screens/Picker'
@@ -17,6 +19,7 @@ import Picker from './screens/Picker'
 type Estado =
   | { fase: 'cargando' }
   | { fase: 'no_disponible' }
+  | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
   | { fase: 'lista'; business: Business; status: StoreStatus }
 
@@ -27,8 +30,16 @@ export default function App() {
 
   const cargar = useCallback(async () => {
     if (!slug) return setEstado({ fase: 'no_disponible' })
+
+    // Se comprueba el dispositivo ANTES de pedir nada con sesión, y no es un
+    // detalle de orden: la portada es pública y no consume el enlace, así que
+    // un clic desde WhatsApp Web deja el enlace intacto para cuando la persona
+    // lo abra en su teléfono.
+    const enMovil = isMobileDevice()
+
     try {
       const datos = await getStore(slug)
+      if (!enMovil) return setEstado({ fase: 'escritorio', business: datos.business })
       // Sin enlace no hay tienda: se explica en vez de mostrar una pantalla vacía.
       if (!readToken()) {
         return setEstado({ fase: 'bloqueada', business: datos.business, motivo: 'no_existe' })
@@ -38,6 +49,8 @@ export default function App() {
       if (error instanceof ApiError && error.status === 404) {
         return setEstado({ fase: 'no_disponible' })
       }
+      // Ni siquiera se pudo leer la portada; en un PC igual toca decir por qué.
+      if (!enMovil) return setEstado({ fase: 'escritorio', business: null })
       setEstado({ fase: 'no_disponible' })
     }
   }, [slug])
@@ -71,6 +84,10 @@ export default function App() {
         </p>
       </div>
     )
+  }
+
+  if (estado.fase === 'escritorio') {
+    return <DesktopGate business={estado.business} />
   }
 
   if (estado.fase === 'bloqueada') {
