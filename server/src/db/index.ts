@@ -17,6 +17,7 @@ import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
 import platformErrors = require('./repositories/platform-errors')
 import storefront = require('./repositories/storefront')
+import catalog = require('./repositories/catalog')
 
 const database: Record<string, unknown> = {
   ...businesses,
@@ -38,6 +39,7 @@ const database: Record<string, unknown> = {
   ...usage,
   ...platformErrors,
   ...storefront,
+  ...catalog,
 }
 
 export = database
