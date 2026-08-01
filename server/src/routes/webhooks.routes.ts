@@ -7,6 +7,7 @@ import {
   inboundConversationKey,
   type InboundWebhookPayload,
 } from '../services/inbound-webhook'
+import { recordWebhookFailure } from '../services/channel-health'
 import { verifyYCloudSignature } from '../services/webhook-signatures'
 import type {
   ChannelAddress,
@@ -269,6 +270,7 @@ router.get('/webhook', (req, res) => {
 router.post('/webhook', webhookLimiter, async (req, res) => {
   if (!verifyMetaSignature(req)) {
     console.warn('⚠️  Webhook Meta: firma inválida — rechazado')
+    recordWebhookFailure('meta', 401, 'Firma inválida')
     return res.sendStatus(401)
   }
   const body = req.body as MetaWebhookBody
@@ -296,6 +298,7 @@ router.post('/webhook', webhookLimiter, async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Webhook Meta persistencia:', loggedError(error))
+    recordWebhookFailure('meta', 503, `No se pudo encolar el mensaje: ${loggedError(error)}`)
     return res.sendStatus(503)
   }
 
@@ -331,6 +334,7 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     resolved = await resolveBusinessChannel(db, addresses)
   } catch (error) {
     console.error('❌ Webhook YCloud resolución:', loggedError(error))
+    recordWebhookFailure('ycloud', 503, 'No se pudo resolver el negocio del canal')
     return res.sendStatus(503)
   }
   if (!resolved) {
@@ -343,10 +347,12 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     || process.env.YCLOUD_WEBHOOK_ENDPOINT_ID?.trim()
   if (!configuredEndpointId && isProduction()) {
     console.error('❌ Webhook YCloud: falta configurar el Endpoint ID')
+    recordWebhookFailure('ycloud', 503, 'Falta configurar el Endpoint ID del webhook')
     return res.sendStatus(503)
   }
   if (configuredEndpointId && endpointId !== configuredEndpointId) {
     console.warn('⚠️  [YCloud] Endpoint ID inválido — rechazado')
+    recordWebhookFailure('ycloud', 401, 'Endpoint ID inválido')
     return res.sendStatus(401)
   }
   const signingSecret = resolved.business.ycloud_webhook_secret?.trim()
@@ -354,6 +360,7 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
   if (!signingSecret) {
     if (isProduction()) {
       console.error('❌ Webhook YCloud: falta el signing secret oficial')
+      recordWebhookFailure('ycloud', 503, 'Falta el signing secret del webhook')
       return res.sendStatus(503)
     }
   } else if (!verifyYCloudSignature(
@@ -362,6 +369,7 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     signingSecret,
   )) {
     console.warn('⚠️  [YCloud] firma inválida o fuera de tiempo — rechazado')
+    recordWebhookFailure('ycloud', 401, 'Firma inválida o fuera de tiempo')
     return res.sendStatus(401)
   }
 
@@ -394,6 +402,9 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Webhook YCloud persistencia:', loggedError(error))
+    // Este es el fallo que tuvo el bot mudo cinco días en julio de 2026: se
+    // registra para que salte en el panel el mismo minuto, no una semana después.
+    recordWebhookFailure('ycloud', 503, `No se pudo encolar el mensaje: ${loggedError(error)}`)
     return res.sendStatus(503)
   }
   return res.sendStatus(200)

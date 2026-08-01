@@ -14,6 +14,7 @@ import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { assertEnvironment } from './config/environment'
 import { asyncHandler } from './middleware/async'
+import { getRecentWebhookFailures } from './services/channel-health'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
 import * as bot from './services/bot-entry'
@@ -44,6 +45,7 @@ interface StartupDatabase {
     data: number | null
     error: { message?: string } | null
   }>
+  getLastInboundAt(): Promise<string | null>
 }
 
 interface OperationalError extends Error {
@@ -205,10 +207,22 @@ const telegramLimiter = rateLimit({
 })
 app.use('/webhook/telegram', telegramLimiter)
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
   const lastDatabaseSuccess = webhookInboxWorker
     .lastSuccessfulDatabaseOperationAt()
+  // ⚠️ `ok` refleja SOLO si este proceso puede trabajar. Railway usa esta ruta
+  // como healthcheck: si un canal en silencio la pusiera en 503, reiniciaría el
+  // contenedor en bucle y convertiría un aviso en una caída. El estado del canal
+  // viaja como dato informativo; para el diagnóstico completo por negocio está
+  // /api/admin/channel-health.
   const ok = !shuttingDown && webhookInboxWorker.isReady()
+  let lastInboundAt: string | null = null
+  try {
+    lastInboundAt = await db.getLastInboundAt()
+  } catch {
+    lastInboundAt = null
+  }
+  const recentFailures = getRecentWebhookFailures(5)
   res.status(ok ? 200 : 503).json({
     ok,
     time: new Date().toISOString(),
@@ -220,8 +234,18 @@ app.get('/api/health', (_req, res) => {
         ? null
         : new Date(lastDatabaseSuccess).toISOString(),
     },
+    inbound_channel: {
+      last_inbound_at: lastInboundAt,
+      hours_since_last_inbound: lastInboundAt === null
+        ? null
+        : Math.round(
+          ((Date.now() - new Date(lastInboundAt).getTime()) / 3_600_000) * 10,
+        ) / 10,
+      recent_failures: recentFailures.length,
+      last_failure: recentFailures[0] || null,
+    },
   })
-})
+}))
 
 app.get('/api/images/:productId', asyncHandler(async (req: Request, res: Response) => {
   const product = await db.getProductImageById(req.params.productId)
