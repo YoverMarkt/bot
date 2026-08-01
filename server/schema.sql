@@ -1013,7 +1013,45 @@ create trigger webhook_inbound_message_usage
 after insert on public.webhook_inbound_events
 for each row execute function public.record_inbound_message_usage();
 
+-- ── TABLA 18: Registro de errores de plataforma ────────────
+-- Agrupa por huella: mil repeticiones del mismo fallo son UNA fila con
+-- occurrences = 1000. `business_id` admite NULL para errores que no pertenecen
+-- a ningún negocio (arranque, webhook sin resolver). Ver
+-- migration-registro-errores.sql para las funciones que la operan.
+create table if not exists public.platform_errors (
+  id            uuid primary key default gen_random_uuid(),
+  business_id   uuid references public.businesses(id) on delete cascade,
+  category      text not null check (category in ('canal', 'ia', 'envio', 'servidor')),
+  code          text,
+  message       text not null,
+  context       jsonb not null default '{}'::jsonb,
+  fingerprint   text not null,
+  occurrences   integer not null default 1,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at  timestamptz not null default now(),
+  constraint platform_errors_tamanos_check check (
+    char_length(message) between 1 and 2000
+    and char_length(coalesce(code, '')) <= 120
+    and fingerprint ~ '^[0-9a-f]{64}$'
+    and occurrences >= 1
+    and pg_column_size(context) <= 8192
+  )
+);
+
 -- ── ÍNDICES ────────────────────────────────────────────────
+create index if not exists idx_platform_errors_recientes
+  on public.platform_errors (last_seen_at desc);
+create index if not exists idx_platform_errors_negocio
+  on public.platform_errors (business_id, last_seen_at desc);
+-- Dos índices parciales porque en SQL NULL nunca es igual a NULL: los errores
+-- sin negocio se agrupan aparte.
+create unique index if not exists uq_platform_errors_negocio_huella
+  on public.platform_errors (business_id, fingerprint)
+  where business_id is not null;
+create unique index if not exists uq_platform_errors_huella_global
+  on public.platform_errors (fingerprint)
+  where business_id is null;
+
 create index if not exists idx_products_biz      on products(business_id);
 create index if not exists idx_history_contact   on conversation_history(business_id, contact_phone);
 create index if not exists idx_history_date      on conversation_history(business_id, created_at);
@@ -2633,6 +2671,101 @@ grant execute on function public.fail_webhook_event(uuid, uuid, text, integer)
 grant execute on function public.cleanup_webhook_events()
   to service_role;
 
+-- ── REGISTRO DE ERRORES DE PLATAFORMA ──────────────────────
+-- La huella llega calculada desde Node y NO se genera con digest() aquí: esa
+-- función fuera del search_path fue justamente lo que tumbó el canal de entrada
+-- cinco días en julio de 2026.
+create or replace function public.record_platform_error(
+  p_business_id uuid,
+  p_category text,
+  p_code text,
+  p_message text,
+  p_context jsonb,
+  p_fingerprint text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_id uuid;
+  v_message text;
+  v_context jsonb;
+begin
+  if p_category not in ('canal', 'ia', 'envio', 'servidor') then
+    raise exception using errcode = '22023', message = 'Categoria de error invalida';
+  end if;
+  if p_fingerprint is null or p_fingerprint !~ '^[0-9a-f]{64}$' then
+    raise exception using errcode = '22023', message = 'Huella de error invalida';
+  end if;
+
+  v_message := left(coalesce(nullif(btrim(p_message), ''), 'Error sin detalle'), 2000);
+  v_context := case
+    when jsonb_typeof(p_context) = 'object' and pg_column_size(p_context) <= 8192
+      then p_context
+    else '{}'::jsonb
+  end;
+
+  -- Upsert atómico. Se resuelve con `on conflict` sobre los índices parciales en
+  -- lugar de capturar excepciones: así el registro nunca deja una transacción a
+  -- medias, ni siquiera si dos errores idénticos llegan a la vez.
+  if p_business_id is null then
+    insert into public.platform_errors (
+      business_id, category, code, message, context, fingerprint
+    ) values (
+      null, p_category, left(p_code, 120), v_message, v_context, p_fingerprint
+    )
+    on conflict (fingerprint) where business_id is null do update
+    set occurrences = public.platform_errors.occurrences + 1,
+        last_seen_at = now(),
+        code = excluded.code,
+        message = excluded.message,
+        context = excluded.context
+    returning id into v_id;
+  else
+    insert into public.platform_errors (
+      business_id, category, code, message, context, fingerprint
+    ) values (
+      p_business_id, p_category, left(p_code, 120), v_message, v_context, p_fingerprint
+    )
+    on conflict (business_id, fingerprint) where business_id is not null do update
+    set occurrences = public.platform_errors.occurrences + 1,
+        last_seen_at = now(),
+        code = excluded.code,
+        message = excluded.message,
+        context = excluded.context
+    returning id into v_id;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.cleanup_platform_errors(p_days integer default 30)
+returns integer
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_deleted integer;
+  v_days integer := greatest(coalesce(p_days, 30), 1);
+begin
+  with deleted as (
+    delete from public.platform_errors as target
+    where target.last_seen_at < now() - make_interval(days => v_days)
+    returning 1
+  )
+  select count(*)::integer into v_deleted from deleted;
+  return coalesce(v_deleted, 0);
+end;
+$$;
+
+revoke all on function public.record_platform_error(uuid, text, text, text, jsonb, text)
+  from public, anon, authenticated;
+revoke all on function public.cleanup_platform_errors(integer)
+  from public, anon, authenticated;
+
 -- ── ROW LEVEL SECURITY (RLS) ───────────────────────────────
 -- RLS ACTIVADO en todas las tablas. El backend usa la SERVICE KEY
 -- (la bypassa); el aislamiento real lo refuerza el filtrado por
@@ -2658,6 +2791,7 @@ alter table ai_gaps               enable row level security;
 alter table orders                enable row level security;
 alter table order_items           enable row level security;
 alter table webhook_inbound_events enable row level security;
+alter table platform_errors       enable row level security;
 
 revoke all on table menu_modifiers
   from public, anon, authenticated, service_role;

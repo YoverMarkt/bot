@@ -121,42 +121,38 @@ begin
     else '{}'::jsonb
   end;
 
-  -- Si la huella ya existe, solo suma una ocurrencia y refresca el detalle.
-  update public.platform_errors as target
-  set occurrences = target.occurrences + 1,
-      last_seen_at = now(),
-      code = left(coalesce(p_code, target.code), 120),
-      message = v_message,
-      context = v_context
-  where target.fingerprint = p_fingerprint
-    and target.business_id is not distinct from p_business_id
-  returning target.id into v_id;
-
-  if v_id is not null then
-    return v_id;
-  end if;
-
-  begin
+  -- Upsert atómico: si la huella ya existe suma una ocurrencia y refresca el
+  -- detalle. Se resuelve con `on conflict` sobre los índices parciales en lugar
+  -- de capturar excepciones, para no dejar nunca una transacción a medias ni
+  -- siquiera cuando dos errores idénticos llegan a la vez. Hacen falta dos
+  -- ramas porque en SQL NULL nunca es igual a NULL.
+  if p_business_id is null then
     insert into public.platform_errors (
       business_id, category, code, message, context, fingerprint
     ) values (
-      p_business_id,
-      p_category,
-      left(p_code, 120),
-      v_message,
-      v_context,
-      p_fingerprint
+      null, p_category, left(p_code, 120), v_message, v_context, p_fingerprint
     )
+    on conflict (fingerprint) where business_id is null do update
+    set occurrences = public.platform_errors.occurrences + 1,
+        last_seen_at = now(),
+        code = excluded.code,
+        message = excluded.message,
+        context = excluded.context
     returning id into v_id;
-  exception when unique_violation then
-    -- Dos errores idénticos a la vez: gana el primero y el segundo suma.
-    update public.platform_errors as target
-    set occurrences = target.occurrences + 1,
-        last_seen_at = now()
-    where target.fingerprint = p_fingerprint
-      and target.business_id is not distinct from p_business_id
-    returning target.id into v_id;
-  end;
+  else
+    insert into public.platform_errors (
+      business_id, category, code, message, context, fingerprint
+    ) values (
+      p_business_id, p_category, left(p_code, 120), v_message, v_context, p_fingerprint
+    )
+    on conflict (business_id, fingerprint) where business_id is not null do update
+    set occurrences = public.platform_errors.occurrences + 1,
+        last_seen_at = now(),
+        code = excluded.code,
+        message = excluded.message,
+        context = excluded.context
+    returning id into v_id;
+  end if;
 
   return v_id;
 end;
