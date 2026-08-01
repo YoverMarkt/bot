@@ -193,6 +193,22 @@ export interface BotConversationDependencies {
   logger?: ConversationLogger
   sleep?: (milliseconds: number) => Promise<void>
   now?: () => number
+  // Vigilante de precios: comprueba que la IA no cite montos que no existen en
+  // el catálogo. Opcional para no obligar a cada prueba a montarlo.
+  priceGuard?: ConversationPriceGuard
+}
+
+export interface ConversationPriceGuard {
+  check(input: {
+    text: unknown
+    allowedAmounts: Array<number | string | null | undefined>
+  }): { ok: boolean; invented: number[]; quoted: number[] }
+  mode(): 'observar' | 'bloquear'
+  onInvented(input: {
+    businessId: string
+    invented: number[]
+    text: string
+  }): void
 }
 
 export interface ProcessMessageInput {
@@ -249,6 +265,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
   const logger = dependencies.logger || console
   const sleep = dependencies.sleep || defaultSleep
   const now = dependencies.now || Date.now
+  const priceGuard = dependencies.priceGuard
   const offHoursNotified = new Map<string, number>()
 
   async function humanizedSend(
@@ -675,6 +692,40 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // La IA jamás escribe montos: si imita el formato de los resúmenes
     // oficiales (cotizaciones/pedidos del servidor) está inventando cifras.
     // Falla cerrado: el cliente no ve ese texto y continúa una persona.
+    // Regla inviolable #8: la IA conversa, el CÓDIGO calcula. Aquí se comprueba
+    // que cada monto citado exista de verdad en el catálogo del negocio.
+    // ⚠️ Arranca en modo observación: registra el hallazgo sin cortar la
+    // conversación, para calibrar con casos reales antes de descartar mensajes.
+    if (priceGuard && parsedOutput.finalText) {
+      const revision = priceGuard.check({
+        text: parsedOutput.finalText,
+        allowedAmounts: products.flatMap(product => [product.price, product.price_sale]),
+      })
+      if (!revision.ok) {
+        priceGuard.onInvented({
+          businessId: business.id,
+          invented: revision.invented,
+          text: parsedOutput.finalText,
+        })
+        logger.error(
+          `❌ [${business.name}] la IA citó precios que no existen en el catálogo: ${revision.invented.join(', ')}`,
+        )
+        if (priceGuard.mode() === 'bloquear') {
+          await actions.handleConversationOutcome({
+            business,
+            phone,
+            originalText: text,
+            hasSale: false,
+            hasHandoffTag: false,
+            isUncertain: true,
+            wasManual: session?.manual_mode,
+            send,
+          })
+          return
+        }
+      }
+    }
+
     if (tags.impersonatesOfficialSummary(parsedOutput.finalText)) {
       logger.error(`❌ [${business.name}] la IA imitó un resumen oficial con datos propios; se deriva fallando cerrado`)
       await actions.handleConversationOutcome({
@@ -917,6 +968,25 @@ function createBotConversation(dependencies: BotConversationDependencies) {
   return { humanizedSend, processMessage }
 }
 
+// Solo la instancia real ata estas dependencias concretas: el módulo en sí
+// sigue siendo puro y las pruebas lo montan con lo que necesiten.
+const priceGuardService = require('./price-guard') as {
+  checkQuotedPrices(input: {
+    text: unknown
+    allowedAmounts: Array<number | string | null | undefined>
+  }): { ok: boolean; invented: number[]; quoted: number[] }
+  priceGuardMode(): 'observar' | 'bloquear'
+}
+const { recordError } = require('./error-log') as {
+  recordError(input: {
+    businessId?: string | null
+    category: string
+    code?: string | number | null
+    message: unknown
+    context?: Record<string, unknown>
+  }): Promise<void>
+}
+
 const conversation = createBotConversation({
   database: require('../db') as ConversationDatabase,
   reports: require('./reports') as ConversationReports,
@@ -927,6 +997,20 @@ const conversation = createBotConversation({
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
   menuFlow: require('./bot-menu-flow') as ConversationMenuFlow,
+  priceGuard: {
+    check: input => priceGuardService.checkQuotedPrices(input),
+    mode: () => priceGuardService.priceGuardMode(),
+    onInvented: ({ businessId, invented, text }) => {
+      void recordError({
+        businessId,
+        category: 'ia',
+        code: 'precio_inventado',
+        // El texto va saneado por error-log antes de guardarse.
+        message: `La IA citó precios que no existen en el catálogo: ${invented.join(', ')}`,
+        context: { montos: invented.join(', '), respuesta: text.slice(0, 200) },
+      })
+    },
+  },
 })
 
 export const processMessage = conversation.processMessage
