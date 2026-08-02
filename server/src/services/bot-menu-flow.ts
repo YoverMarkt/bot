@@ -147,6 +147,10 @@ export interface MenuFlowResult {
   // al final. El ejecutor los manda con sendImage/sendVideo existentes.
   media?: FlowMediaItem[]
   action?: FlowAction
+  // El cliente acaba de llegar (o volvió al inicio). Lo usa el ejecutor para
+  // adjuntar el enlace de la tienda, que necesita base de datos y por eso no
+  // se puede armar aquí: este servicio es puro a propósito.
+  isWelcome?: boolean
 }
 
 // ── Etiquetas fijas del menú (el cliente ve exactamente estos textos) ──
@@ -656,6 +660,7 @@ const welcomeReply = (input: MenuFlowInput): MenuFlowResult => {
   return {
     reply: `${configuredWelcome(input)}\n${PROMPT_CHOOSE}`,
     options: mainOptions(input),
+    isWelcome: true,
   }
 }
 

@@ -7,6 +7,9 @@ import type {
 } from './bot-actions'
 import type { BookingTag, ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
+// Detector de saludos puros ya probado: "hola", "buenas", "menú". Es una
+// función pura sin base de datos, así que se importa directo.
+import { wantsWelcomeMenu } from './bot-menu'
 import type {
   BotMediaBusiness,
   BotMediaHistoryMessage,
@@ -20,6 +23,9 @@ interface ConversationBusiness extends ActionBusiness, BotMediaBusiness {
   ai_provider?: string | null
   // 'menu' → la conversación la conduce bot-menu-flow (sin IA)
   chat_mode?: string | null
+  // Para el enlace de la mini app: la URL se arma con el slug real.
+  slug?: string | null
+  storefront_enabled?: boolean | null
 }
 
 interface ConversationProduct extends ActionProduct, BotMediaProduct {
@@ -180,6 +186,19 @@ interface ConversationMenuFlow {
   advanceMenuFlow(input: MenuFlowInput): MenuFlowResult
 }
 
+interface ConversationStorefrontLink {
+  issueLink(input: {
+    business: { id: string; slug?: string | null; storefront_enabled?: boolean | null
+      takes_orders?: boolean | null; lodging_enabled?: boolean | null }
+    phone: string
+    name?: string | null
+  }): Promise<string | null>
+  storefrontInvite(
+    business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
+    url: string,
+  ): string
+}
+
 export interface BotConversationDependencies {
   database: ConversationDatabase
   reports: ConversationReports
@@ -190,6 +209,9 @@ export interface BotConversationDependencies {
   actions: ConversationActions
   media: ConversationMedia
   menuFlow: ConversationMenuFlow
+  // Enlace de la mini app. Opcional: sin él el bot atiende igual por chat, que
+  // es exactamente como funcionaba antes de que la tienda existiera.
+  storefrontLink?: ConversationStorefrontLink
   logger?: ConversationLogger
   sleep?: (milliseconds: number) => Promise<void>
   now?: () => number
@@ -260,7 +282,7 @@ function mentionedProductIds(products: ConversationProduct[], text: string): str
 
 function createBotConversation(dependencies: BotConversationDependencies) {
   const {
-    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
+    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow, storefrontLink,
   } = dependencies
   const logger = dependencies.logger || console
   const sleep = dependencies.sleep || defaultSleep
@@ -304,6 +326,28 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return detail ? `${index + 1}. ${title} — ${detail}` : `${index + 1}. ${title}`
     }).join('\n')
     return reply ? `${reply}\n\n${list}` : list
+  }
+
+  /**
+   * Crea el enlace de la mini app y lo devuelve ya redactado, o '' si no
+   * corresponde (el negocio no tiene tienda, falta BASE_URL, o se mandó hace
+   * poco). Nunca lanza: quedarse sin enlace no puede tumbar la conversación —
+   * el cliente sigue siendo atendido por chat como toda la vida.
+   */
+  async function storefrontInviteFor(
+    business: ConversationBusiness,
+    phone: string,
+    name?: string | null,
+  ): Promise<string> {
+    if (!storefrontLink) return ''
+    try {
+      const url = await storefrontLink.issueLink({ business, phone, name })
+      if (!url) return ''
+      logger.log(`🛍️ [${business.name}] enlace de tienda enviado a ${phone}`)
+      return storefrontLink.storefrontInvite(business, url)
+    } catch {
+      return ''
+    }
   }
 
   async function runMenuMode(input: {
@@ -469,6 +513,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       }
     }
 
+    // La bienvenida es el momento del enlace: el cliente acaba de llegar y aún
+    // no eligió nada. Va pegado al saludo, no como mensaje aparte, para que no
+    // parezca publicidad suelta.
+    if (flow.isWelcome) {
+      const invite = await storefrontInviteFor(business, phone, session?.contact_name)
+      if (invite) menuReply = `${menuReply}\n\n${invite}`
+    }
+
     // El texto propio del menú (bienvenida, listas, confirmaciones) va después
     // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
     // Primero se intentan botones/listas nativas; si el canal no los soporta
@@ -558,17 +610,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
-    // MODO MENÚ: el CÓDIGO conduce toda la conversación con opciones armadas
-    // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
-    // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
-    if (business.chat_mode === 'menu') {
-      await runMenuMode({
-        business, phone, text, session, send, sendImage, sendTyping, sendVideo,
-        sendOptions: input.sendOptions,
-      })
-      return
-    }
-
     const businessSchedule = await database.getSchedule(business.id).catch(() => [])
     const outsideHours = schedule.isOutsideHours(businessSchedule)
     let outsideHoursMessage: string | null = null
@@ -585,11 +626,15 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       } else {
         logger.log(`🌙 [${business.name}] fuera de horario — silencio (ya avisado) — ${phone}`)
       }
-      // Fuera de horario NADIE atiende, tampoco el hospedaje. Antes el
-      // alojamiento era una excepción que respondía siempre, y eso convertía el
-      // horario configurado por el dueño en una decoración: no podía apagar el
-      // bot ni queriendo. Un hostal que quiera cotizar de madrugada configura
-      // 00:00–23:59; el control es suyo, no de una regla escondida aquí.
+      // Fuera de horario NADIE atiende: ni el hospedaje, ni el modo menú.
+      // Hubo dos excepciones y las dos convertían el horario del dueño en una
+      // decoración. La segunda era peor porque no se veía: el modo menú salía
+      // por su propia rama ANTES de mirar el reloj, así que un negocio con el
+      // menú activado —el caso del hostal— atendía domingos y de madrugada
+      // aunque su horario dijera lo contrario. Esta comprobación va delante de
+      // TODOS los modos justamente para que no vuelva a pasar.
+      // Un hostal que quiera cotizar de madrugada configura 00:00–23:59; el
+      // control es suyo, no de una regla escondida aquí.
       await database.saveMessage(business.id, phone, 'user', text)
       await database.upsertSession(business.id, phone, {
         last_message: text,
@@ -600,6 +645,17 @@ function createBotConversation(dependencies: BotConversationDependencies) {
           business.id, phone, 'assistant', outsideHoursMessage,
         )
       }
+      return
+    }
+
+    // MODO MENÚ: el CÓDIGO conduce toda la conversación con opciones armadas
+    // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
+    // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
+    if (business.chat_mode === 'menu') {
+      await runMenuMode({
+        business, phone, text, session, send, sendImage, sendTyping, sendVideo,
+        sendOptions: input.sendOptions,
+      })
       return
     }
 
@@ -939,6 +995,19 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
 
     await humanizedSend(parsedOutput.finalText, send, sendTyping)
+
+    // En modo IA no hay menú de bienvenida donde colgar el enlace, así que va
+    // como mensaje propio DESPUÉS del saludo del asistente — al revés se leería
+    // como publicidad antes de siquiera responderle a la persona. Solo ante un
+    // saludo: quien ya está preguntando algo concreto no quiere un enlace.
+    if (wantsWelcomeMenu(text)) {
+      const invite = await storefrontInviteFor(business, phone, session?.contact_name)
+      if (invite) {
+        await send(invite)
+        await database.saveMessage(business.id, phone, 'assistant', invite)
+      }
+    }
+
     await actions.processOrderPayload({
       business,
       phone,
@@ -973,6 +1042,12 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
 // Solo la instancia real ata estas dependencias concretas: el módulo en sí
 // sigue siendo puro y las pruebas lo montan con lo que necesiten.
+// Se tipa con las firmas REALES del módulo (no con las que espera la
+// conversación) para que el compilador compare las dos y avise si divergen.
+const storefrontLinkService = require('./storefront-link') as {
+  issueStorefrontLink: ConversationStorefrontLink['issueLink']
+  storefrontInvite: ConversationStorefrontLink['storefrontInvite']
+}
 const priceGuardService = require('./price-guard') as {
   checkQuotedPrices(input: {
     text: unknown
@@ -1000,6 +1075,13 @@ const conversation = createBotConversation({
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
   menuFlow: require('./bot-menu-flow') as ConversationMenuFlow,
+  // Adaptador explícito, sin `as`: los nombres del módulo y los que espera la
+  // conversación no coinciden, y un cast a ciegas dejaría pasar la diferencia
+  // hasta producción — que es exactamente lo que ocurrió al escribirlo.
+  storefrontLink: {
+    issueLink: storefrontLinkService.issueStorefrontLink,
+    storefrontInvite: storefrontLinkService.storefrontInvite,
+  },
   priceGuard: {
     check: input => priceGuardService.checkQuotedPrices(input),
     mode: () => priceGuardService.priceGuardMode(),
