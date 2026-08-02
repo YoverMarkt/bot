@@ -1,0 +1,61 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "e2e/*.spec.ts"
+      ]
+    },
+    "server": {
+      "entry": [
+        "src/index.ts",
+        "tests/*.mjs",
+        "evals/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "apps/admin": {
+      "entry": [
+        "index.html"
+      ]
+    },
+    "apps/client": {
+      "entry": [
+        "index.html"
+      ]
+    },
+    "apps/store": {
+      "entry": [
+        "index.html",
+        "tests/*.test.ts"
+      ]
+    },
+    "packages/ui": {
+      "entry": [
+        "src/**/*.{ts,tsx}"
+      ]
+    }
+  },
+  "ignore": [
+    "apps/*/public/theme-boot.js"
+  ],
+  "ignoreDependencies": [
+    "class-variance-authority",
+    "clsx",
+    "radix-ui",
+    "tailwind-merge"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "includeEntryExports": false,
+  "rules": {
+    "exports": "off",
+    "types": "off",
+    "nsExports": "off",
+    "nsTypes": "off",
+    "enumMembers": "off",
+    "duplicates": "off",
+    "unlisted": "warn"
+  }
+}
