@@ -59,13 +59,11 @@ venta» para ver algo que todavía no vendió — y por eso nadie conectó nunca
    Cubierto por un E2E de regresión: entra un pedido con el panel abierto → banner solo.
    ⚠️ **Sigue habiendo un hueco real:** con el panel CERRADO no hay aviso. Cerrarlo es
    avisar por WhatsApp/Telegram al dueño (Alertas Fase 2), que exige el canal en Meta.
-2. **Sección Pedidos propia**, como bandeja de entrada, fuera de Ventas. ← **SIGUIENTE**
-   ⚠️ Hallazgo al hacer el paso 1: **`/sales` ni siquiera está en el menú lateral** — solo
-   se llega desde Conversaciones. Por eso hoy «Atender» lleva a `/sales`; con la sección
-   creada pasa a `/orders`.
-   Los botones del flujo (`Poner en preparación` → `Marcar en camino` → `Marcar entregado`)
-   ya existen en la pestaña «Pedidos del bot» de Ventas: al crear la sección se mudan tal
-   cual, con su `nextStep`.
+2. ~~**Sección Pedidos propia**, como bandeja de entrada, fuera de Ventas.~~ ✅ **HECHO (2026-08-02).**
+   `/orders` con su entrada en el menú (badge de pendientes), la máquina de estados completa
+   —aceptar → preparación → en camino → entregado, y rechazar en cualquier punto—, dirección
+   de entrega, método de pago y comprobante a la vista. Ventas quedó solo para lo ya cobrado.
+   El botón «Atender» de la alarma ya lleva ahí.
 3. **El puente a la cooperativa de reparto**, cuando el pedido pasa a «en camino».
 
 ### La decisión que NO podía esperar — ✅ HECHA (2026-08-02)

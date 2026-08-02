@@ -106,7 +106,7 @@ bot/
 │   ├── src/integrations/cloudinary.ts # Media aislada por negocio
 │   ├── src/middleware/async.ts  # Propagación tipada de errores async de Express
 │   ├── src/middleware/auth.ts   # JWT, roles y permisos tipados
-│   ├── src/routes/orders.routes.ts # Pedidos del cliente aislados por JWT
+│   ├── src/routes/orders.routes.ts # Pedidos del cliente aislados por JWT, con filtro por estado
 │   ├── src/routes/auth.routes.ts # Login admin/cliente con rate limit
 │   ├── src/routes/reports.routes.ts # Reportes y dashboard aislados por JWT
 │   ├── src/routes/sales.routes.ts # Ventas manuales y cotizaciones tipadas

@@ -320,7 +320,7 @@ test('un pedido recorre confirmación, preparación y reparto sin generar cobros
     }
     return route.fallback()
   })
-  await page.goto(`${clientUrl}#/sales`)
+  await page.goto(`${clientUrl}#/orders`)
 
   // El flujo entero de una pizzería, un paso por pantalla. El refetch desmonta
   // el diálogo en cuanto responde el PUT; dispatchEvent evita que Playwright
@@ -332,7 +332,7 @@ test('un pedido recorre confirmación, preparación y reparto sin generar cobros
     await expect.poll(() => statusPayload).toEqual({ status: esperado })
   }
 
-  await avanzar('Confirmar pedido', 'confirmado')
+  await avanzar('Aceptar pedido', 'confirmado')
   await avanzar('Poner en preparación', 'preparacion')
   await avanzar('Marcar en camino', 'en_camino')
   await avanzar('Marcar entregado', 'completado')
@@ -362,6 +362,10 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
   }))
   await page.goto(clientUrl)
 
+  // Un negocio que recibe pedidos tiene su sección propia en el menú: sin ella
+  // los pedidos quedaban escondidos dentro de Ventas y nadie los veía llegar.
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible()
+
   // Sin pedidos pendientes el panel calla (si no, el dueño la silenciaría siempre).
   await expect(page.getByRole('link', { name: 'Conversaciones' })).toBeVisible()
   await expect(page.getByText('¡Nuevo pedido!')).toHaveCount(0)
@@ -375,7 +379,7 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
   await expect(page.getByText('¡Nuevo pedido!')).toBeVisible({ timeout: 25_000 })
   await expect(page.getByText('1 pedido por confirmar')).toBeVisible()
   await page.getByRole('button', { name: 'Atender' }).click()
-  await expect(page).toHaveURL(/#\/sales$/)
+  await expect(page).toHaveURL(/#\/orders$/)
 })
 
 test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({ page }) => {
