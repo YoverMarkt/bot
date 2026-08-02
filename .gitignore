@@ -11,3 +11,7 @@ server/dist/
 
 # Informes de cobertura (se regeneran con npm run test:coverage)
 coverage/
+
+# Respaldos de la base (nunca a git: contienen datos de clientes)
+respaldos/
+*.dump

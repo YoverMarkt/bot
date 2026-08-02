@@ -20,7 +20,9 @@
     "migrate:baseline": "node --env-file=.env tests/migraciones.mjs baseline",
     "migrate": "node --env-file=.env tests/migraciones.mjs apply",
     "test:coverage": "vitest run tests/ --coverage",
-    "pretest:coverage": "npm run build"
+    "pretest:coverage": "npm run build",
+    "backup": "node --env-file=.env tests/respaldo.mjs backup",
+    "backup:verify": "node --env-file=.env tests/respaldo.mjs verify"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
