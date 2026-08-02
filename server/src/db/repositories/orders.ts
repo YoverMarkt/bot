@@ -26,9 +26,11 @@ const getOrders = async (
   limit = 100,
   status: string | null = null,
 ) => {
+  // La dirección viaja incrustada: sin ella la bandeja de Pedidos no puede
+  // decirle al repartidor a dónde va, que es medio trabajo del pedido.
   let query = db
     .from('orders')
-    .select('*, order_items(*)')
+    .select('*, order_items(*), customer_addresses:address_id (label, address, reference)')
     .eq('business_id', businessId)
   if (status) query = query.eq('status', status)
   const { data, error } = await query

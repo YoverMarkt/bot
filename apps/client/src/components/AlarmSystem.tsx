@@ -152,7 +152,7 @@ export function AlarmBanner({
     // hasta que el dueño lo confirme allí: la alarma insiste a propósito.
     navigate(
       manual.length ? '/conversations'
-      : ordersPending.length ? '/sales'
+      : ordersPending.length ? '/orders'
       : lodgingPending.length ? '/lodging'
       : '/bookings',
     )

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
 import { useBusinessInfo, isBookingBiz, isLodgingBiz, isOrderBiz, isServiceBiz } from '../lib/biz'
-import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, BedDouble } from 'lucide-react'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, BedDouble, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { AlarmBanner } from './AlarmSystem'
@@ -63,6 +63,7 @@ export default function Layout() {
     { to: '/',              label: 'Inicio',            icon: Home, perm: null },
     { to: '/catalog',       label: isServiceBiz(businessType) ? 'Servicios' : 'Catálogo', icon: Package, perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
     { to: '/conversations', label: 'Conversaciones',    icon: MessageSquare, perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
+    ...(orderBiz ? [{ to: '/orders', label: 'Pedidos', icon: Receipt, perm: 'ventas', badge: att.pendingOrders.length || undefined }] : []),
     { to: '/reports',       label: 'Reportes',          icon: BarChart3, perm: 'reportes' },
     { to: '/customers',     label: 'Clientes',          icon: Users, perm: 'reportes' },
     { to: '/reactivate',    label: 'Reactivar',         icon: RotateCcw, perm: 'reportes' },

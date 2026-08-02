@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import('./features/dashboard/Dashboard'))
 const Conversations = lazy(() => import('./features/conversations/Conversations'))
 const Catalog = lazy(() => import('./features/catalog/Catalog'))
 const Sales = lazy(() => import('./features/sales/Sales'))
+const Orders = lazy(() => import('./features/orders/Orders'))
 const Reports = lazy(() => import('./features/reports/Reports'))
 const Customers = lazy(() => import('./features/customers/Customers'))
 const Reactivar = lazy(() => import('./features/customers/Reactivar'))
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/conversations" element={<Conversations />} />
               <Route path="/catalog" element={<Catalog />} />
               <Route path="/sales" element={<Sales />} />
+              <Route path="/orders" element={<Orders />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/reactivate" element={<Reactivar />} />
