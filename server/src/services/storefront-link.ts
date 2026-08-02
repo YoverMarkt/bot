@@ -55,17 +55,26 @@ export function storefrontAvailable(business: LinkBusiness | null): boolean {
   return business.takes_orders === true || business.lodging_enabled === true
 }
 
-/** Arma la URL. Devuelve null si falta algo, en vez de un enlace roto. */
+/**
+ * Arma la URL. Devuelve null si falta algo, en vez de un enlace roto.
+ *
+ * Es deliberadamente CORTA: solo `/s/<token>`. El slug no viaja porque el
+ * token ya identifica al negocio, y en un mensaje de WhatsApp cada carácter
+ * cuenta — un enlace largo se lee como spam y la gente no lo toca. El servidor
+ * lo resuelve y redirige a la tienda real.
+ */
 export function buildStorefrontUrl(input: {
   baseUrl?: string | null
   slug?: string | null
   token: string
 }): string | null {
   const base = String(input.baseUrl || '').trim().replace(/\/+$/, '')
+  // El slug se sigue exigiendo aunque no salga en la URL: sin él la redirección
+  // no tendría destino.
   const slug = String(input.slug || '').trim()
   if (!base || !slug || !input.token) return null
   if (!/^https?:\/\//i.test(base)) return null
-  return `${base}/t/${encodeURIComponent(slug)}?s=${encodeURIComponent(input.token)}`
+  return `${base}/s/${encodeURIComponent(input.token)}`
 }
 
 /**
@@ -74,14 +83,11 @@ export function buildStorefrontUrl(input: {
  */
 export function storefrontInvite(business: LinkBusiness, url: string): string {
   const compra = business.lodging_enabled === true && business.takes_orders !== true
-    ? 'Mira las habitaciones y consulta disponibilidad'
-    : 'Arma tu pedido con fotos y precios'
-  return [
-    `🛍️ ${compra} en nuestra tienda:`,
-    url,
-    '',
-    `_Este enlace es solo tuyo y dura ${SESSION_HOURS} horas._`,
-  ].join('\n')
+    ? '🛏️ Mira las habitaciones y reserva aquí:'
+    : '🛍️ Mira la carta y pide aquí:'
+  // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
+  // dentro se lee como publicidad y el cliente lo pasa de largo.
+  return `${compra}\n${url}\n_Tu enlace personal · vence en ${SESSION_HOURS} h_`
 }
 
 export function createStorefrontLinkService(dependencies: {
