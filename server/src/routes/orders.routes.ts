@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 
-const db = require('../db') as {
+interface ModuloDb {
   getOrders(businessId: string): Promise<unknown>
   setOrderStatus(
     businessId: string,
@@ -10,10 +10,12 @@ const db = require('../db') as {
     status: string,
   ): Promise<{ data?: unknown; error?: { message?: string } | null }>
 }
-const auth = require('../middleware/auth') as {
+const db: ModuloDb = require('../db') as typeof import('../db')
+interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

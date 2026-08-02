@@ -4,20 +4,23 @@ import { createRouter } from '../middleware/async'
 
 type ReportPeriod = 'hoy' | 'semana' | 'mes'
 
-const db = require('../db') as {
+interface ModuloDb {
   getPendingOrders(businessId: string): Promise<unknown>
 }
-const reports = require('../services/reports') as {
+const db: ModuloDb = require('../db') as typeof import('../db')
+interface ModuloReports {
   getAllReports(businessId: string, period: ReportPeriod): Promise<unknown>
   getCustomerDirectory(businessId: string): Promise<unknown>
   getInactiveContacts(businessId: string, days: number): Promise<unknown>
   computeAlerts(businessId: string): Promise<unknown>
   getDashboard(businessId: string, period: ReportPeriod): Promise<unknown>
 }
-const auth = require('../middleware/auth') as {
+const reports: ModuloReports = require('../services/reports') as typeof import('../services/reports')
+interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const reportPeriods: ReportPeriod[] = ['hoy', 'semana', 'mes']

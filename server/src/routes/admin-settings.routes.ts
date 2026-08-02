@@ -19,21 +19,24 @@ interface CloudinaryVerificationPayload {
   cloudinary_api_secret?: string
 }
 
-const settings = require('../services/settings') as {
+interface ModuloSettings {
   get(key: string): Promise<string | null>
   getAll(): Promise<Record<string, string | null>>
   setMany(values: Record<string, unknown>): Promise<void>
 }
-const cloudinary = require('../integrations/cloudinary') as {
+const settings: ModuloSettings = require('../services/settings') as typeof import('../services/settings')
+interface ModuloCloudinary {
   verify(values: {
     cloud_name?: string
     api_key?: string
     api_secret?: string
   }): Promise<{ ok: boolean; info: string }>
 }
-const auth = require('../middleware/auth') as {
+const cloudinary: ModuloCloudinary = require('../integrations/cloudinary') as typeof import('../integrations/cloudinary')
+interface ModuloAuth {
   authAdmin: RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

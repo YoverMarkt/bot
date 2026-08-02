@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { WhatsAppProvider } from '../../types/channels'
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 export type OutboundMessageType = 'text' | 'image' | 'video' | 'interactive'
 

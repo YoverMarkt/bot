@@ -16,9 +16,10 @@ export interface MediaUploadResult {
   resource_type: string
 }
 
-const settings = require('../services/settings') as {
+interface ModuloSettings {
   get(key: string): Promise<string | null | undefined>
 }
+const settings: ModuloSettings = require('../services/settings') as typeof import('../services/settings')
 
 async function configure(): Promise<boolean> {
   const cloudName = await settings.get('cloudinary_cloud_name')

@@ -5,9 +5,10 @@ import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { createRouter } from '../middleware/async'
 import { isConfigured, uploadMedia } from '../integrations/cloudinary'
 
-const auth = require('../middleware/auth') as {
+interface ModuloAuth {
   authClient: RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 type MediaRouter = Router & {
   multipartFileSize: number

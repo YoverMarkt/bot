@@ -19,7 +19,12 @@ import platformErrors = require('./repositories/platform-errors')
 import storefront = require('./repositories/storefront')
 import catalog = require('./repositories/catalog')
 
-const database: Record<string, unknown> = {
+// SIN anotación a propósito: aquí TypeScript infiere el tipo REAL de los 20
+// repositorios juntos. Estuvo anotado como `Record<string, unknown>` y eso
+// tiraba todos los tipos, obligando a cada consumidor a declarar su interfaz y
+// AFIRMARLA con `as` —que el compilador no comprueba—. Así se coló en
+// producción un `issueLink` que no existía (2026-08-02).
+const database = {
   ...businesses,
   ...users,
   ...policies,

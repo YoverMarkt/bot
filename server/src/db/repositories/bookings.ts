@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { ScheduleRecord } from '../types'
 
 type ScheduleData = Record<string, unknown>
 type BookingData = Record<string, unknown>
@@ -8,20 +9,13 @@ interface BookingRpcResponse {
   booking?: unknown
 }
 
-interface ScheduleRecord extends ScheduleData {
-  day_of_week: number
-  open_time: string
-  close_time: string
-  slot_duration?: number | null
-  is_active?: boolean | null
-}
 
 interface OccupiedBooking {
   booking_time: string
   duration_minutes?: number | null
 }
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 const getSchedule = async (businessId: string) => {

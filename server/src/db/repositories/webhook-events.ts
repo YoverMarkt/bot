@@ -32,7 +32,7 @@ export interface WebhookRpcClient {
   ): PromiseLike<WebhookRpcResponse<unknown>>
 }
 
-const db = require('../client') as WebhookRpcClient
+const db: WebhookRpcClient = require('../client') as typeof import('../client')
 
 const sha256 = (value: string): string => crypto
   .createHash('sha256')

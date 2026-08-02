@@ -31,7 +31,7 @@ interface StorefrontSessionRow {
   revoked_at: string | null
 }
 
-const db = require('../db') as StorefrontDatabase
+const db: StorefrontDatabase = require('../db') as typeof import('../db')
 
 /** El token viaja en la cabecera; la URL solo lleva el slug del negocio. */
 const readToken = (req: Request): string => {

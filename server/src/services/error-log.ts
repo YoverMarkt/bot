@@ -176,6 +176,6 @@ export function createErrorLogger(database: ErrorLogDatabase) {
   }
 }
 
-const db = require('../db') as ErrorLogDatabase
+const db: ErrorLogDatabase = require('../db') as typeof import('../db')
 
 export const recordError = createErrorLogger(db)

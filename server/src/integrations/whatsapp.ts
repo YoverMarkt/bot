@@ -48,7 +48,7 @@ interface YCloudClient {
   ): Promise<void>
 }
 
-const ycloud = require('./ycloud') as YCloudClient
+const ycloud: YCloudClient = require('./ycloud') as typeof import('./ycloud')
 const OUTBOUND_TIMEOUT_MS = 15_000
 type DeliveryMode = 'queued' | 'direct'
 
