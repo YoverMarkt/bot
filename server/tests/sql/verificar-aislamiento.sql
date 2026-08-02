@@ -66,17 +66,30 @@ begin
     null;  -- rechazado como debe
   end;
 
-  -- Lo mismo en las ventas manuales del panel.
+  -- Lo mismo por el camino de las ventas. El alta manual se retiró el
+  -- 2026-08-02, así que la frontera se comprueba donde ahora nace el dinero:
+  -- nadie puede cobrarse el pedido ni la cita de otro negocio.
+  declare
+    v_pedido_a uuid;
+    v_cita_a uuid;
   begin
-    perform public.create_sale_with_items(
-      v_a, '+593900009999', 'Cliente', null,
-      jsonb_build_array(jsonb_build_object(
-        'product_id', v_producto_b, 'quantity', 1, 'unit_price', 99.00
-      ))
-    );
-    raise exception 'FUGA: el negocio A pudo registrar una venta con el producto de B';
-  exception when sqlstate '42501' then
-    null;
+    insert into orders (business_id, contact_phone, status, total)
+    values (v_a, '+593900009999', 'completado', 50.00)
+    returning id into v_pedido_a;
+
+    if public.crear_venta_desde_pedido(v_b, v_pedido_a) is not null then
+      raise exception 'FUGA: el negocio B se cobró un pedido del negocio A';
+    end if;
+
+    insert into bookings (
+      business_id, contact_phone, service, price, booking_date, booking_time, status
+    ) values (
+      v_a, '+593900009999', 'Servicio', 30.00, current_date, '10:00', 'confirmed'
+    ) returning id into v_cita_a;
+
+    if public.crear_venta_desde_cita(v_b, v_cita_a) is not null then
+      raise exception 'FUGA: el negocio B se cobró una cita del negocio A';
+    end if;
   end;
 
   -- Con su propio producto sí funciona: la barrera no rompe el uso legítimo.
