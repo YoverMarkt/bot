@@ -17,7 +17,7 @@ interface TagInput {
   color?: unknown
 }
 
-const db = require('../db') as {
+interface ModuloDb {
   getConversations(businessId: string): Promise<unknown[]>
   getSessions(businessId: string): Promise<unknown[]>
   upsertSession(
@@ -29,7 +29,7 @@ const db = require('../db') as {
   createTag(businessId: string, data: TagInput): Promise<DatabaseResult>
   updateTag(businessId: string, tagId: string, data: TagInput): Promise<DatabaseResult>
   deleteTag(businessId: string, tagId: string): Promise<DatabaseResult>
-  getBusinessById(businessId: string): Promise<BusinessRecord>
+  getBusinessById(businessId: string): Promise<BusinessRecord | null>
   saveMessage(
     businessId: string,
     phone: string,
@@ -37,10 +37,12 @@ const db = require('../db') as {
     message: string,
   ): Promise<DatabaseResult>
 }
-const auth = require('../middleware/auth') as {
+const db = require('../db') as ModuloDb
+interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
+const auth = require('../middleware/auth') as ModuloAuth
 
 const router = createRouter()
 const canManageConversations = auth.requirePermission('conversaciones')
@@ -283,6 +285,9 @@ router.post(
     if (!message?.trim()) return res.status(400).json({ error: 'Mensaje vacío' })
     try {
       const business = await db.getBusinessById(businessId)
+      // Sin negocio no hay canal por donde enviar: se corta antes de guardar
+      // un mensaje que nunca saldría.
+      if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
       const { error } = await db.saveMessage(businessId, phone, 'owner', message)
       if (error) {
         return databaseFailure(

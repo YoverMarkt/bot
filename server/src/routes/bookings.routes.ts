@@ -25,7 +25,7 @@ type Business = BusinessRecord & {
   takes_bookings?: boolean | null
 }
 
-const db = require('../db') as {
+interface ModuloDb {
   getSchedule(businessId: string): Promise<unknown>
   upsertSchedule(businessId: string, days: unknown): Promise<DatabaseResult>
   getBookings(businessId: string, from: unknown, to: unknown): Promise<unknown>
@@ -35,7 +35,7 @@ const db = require('../db') as {
     bookingId: string,
     status: BookingStatus,
   ): Promise<DatabaseResult>
-  getBusinessById(businessId: string): Promise<Business>
+  getBusinessById(businessId: string): Promise<Business | null>
   saveMessage(
     businessId: string,
     phone: string,
@@ -43,10 +43,12 @@ const db = require('../db') as {
     content: string,
   ): Promise<unknown>
 }
-const auth = require('../middleware/auth') as {
+const db = require('../db') as ModuloDb
+interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
+const auth = require('../middleware/auth') as ModuloAuth
 
 const router = createRouter()
 const canManageBookings = auth.requirePermission('citas')
@@ -112,7 +114,9 @@ router.put(
 
       if (booking.contact_phone) {
         const business = await db.getBusinessById(businessId)
-        const isLodging = /hotel|hostal|alojamiento/i.test(business.type || '')
+        // Si el negocio ya no existe, no hay a quién avisar: la reserva queda
+        // igual y se omite la notificación en vez de reventar con un 500.
+        const isLodging = /hotel|hostal|alojamiento/i.test(business?.type || '')
         const bookingName = isLodging ? 'reserva' : 'cita'
         const date = booking.booking_date
         const time = (booking.booking_time || '').slice(0, 5)
@@ -120,12 +124,14 @@ router.put(
         let message: string | null = null
 
         if (status === 'confirmed') {
-          message = `✅ ¡Tu ${bookingName}${service} quedó *confirmada* para el ${date} a las ${time}! Te esperamos en ${business.name} 😊`
+          message = `✅ ¡Tu ${bookingName}${service} quedó *confirmada* para el ${date} a las ${time}! Te esperamos en ${business?.name || 'nuestro local'} 😊`
         } else if (status === 'cancelled') {
           message = `⚠️ Lamentamos informarte que tu ${bookingName}${service} del ${date} a las ${time} fue *cancelada*. Si deseas, podemos agendarte en otro horario disponible. Escríbenos cuándo te conviene 🙏`
         }
 
-        if (message) {
+        // Sin negocio no hay canal por el que avisar. La reserva ya quedó
+        // guardada; solo se omite el mensaje al cliente.
+        if (message && business) {
           void sendToContact(business, booking.contact_phone, message)
             .then(() => db.saveMessage(business.id, booking.contact_phone as string, 'owner', message))
             .catch((error: Error) => console.error('❌ Notificación de reserva:', error.message))

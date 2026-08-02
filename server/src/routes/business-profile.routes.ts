@@ -17,9 +17,9 @@ type EditableBusinessField = (typeof editableBusinessFields)[number]
 type BusinessRecord = Record<string, unknown>
 type DatabaseResult = { error?: { message?: string } | null }
 
-const db = require('../db') as {
+interface ModuloDb {
   getClientStats(businessId: string): Promise<unknown>
-  getBusinessById(businessId: string): Promise<BusinessRecord>
+  getBusinessById(businessId: string): Promise<BusinessRecord | null>
   updateBusiness(
     businessId: string,
     data: Partial<Record<EditableBusinessField, unknown>>,
@@ -27,10 +27,12 @@ const db = require('../db') as {
   getPolicies(businessId: string): Promise<unknown>
   upsertPolicies(businessId: string, data: unknown): Promise<DatabaseResult>
 }
-const auth = require('../middleware/auth') as {
+const db = require('../db') as ModuloDb
+interface ModuloAuth {
   authClient: RequestHandler
   requireOwner: RequestHandler
 }
+const auth = require('../middleware/auth') as ModuloAuth
 
 const router = createRouter()
 
@@ -49,6 +51,8 @@ router.get('/api/client/stats', auth.authClient, async (req, res) => {
 
 router.get('/api/client/business', auth.authClient, async (req, res) => {
   const business = await db.getBusinessById(getClientBusinessId(req))
+  // Puede haberse eliminado entre la validación de la sesión y esta consulta.
+  if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
   res.json({
     id: business.id,
     name: business.name,
