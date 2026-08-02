@@ -87,9 +87,11 @@ router.get(
         db.getSession(businessId, phone),
         db.getOrders(businessId, 100),
       ])
+      // Pedido todavía EN CURSO de ese contacto: los estados de reparto
+      // también lo están, o al cobrar uno en camino no se sugeriría nada.
       const lastOrder = (orders || []).find(order => (
         order.contact_phone === phone
-        && ['pendiente', 'confirmado'].includes(order.status as string)
+        && ['pendiente', 'confirmado', 'preparacion', 'en_camino'].includes(order.status as string)
       ))
       const productsById = new Map(products.map(product => [product.id, product]))
       const suggested = (lastOrder?.order_items || []).flatMap(item => {

@@ -19,11 +19,52 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 const { money, cents } = salesApi
 
 const ORDER_BADGE: Record<Order['status'], string> = {
-  pendiente:  'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
-  confirmado: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
-  completado: 'bg-green-500/10 text-green-700 dark:text-green-300',
-  cancelado:  'bg-muted text-muted-foreground',
-  expirado:   'bg-muted text-muted-foreground',
+  pendiente:   'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  confirmado:  'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',
+  preparacion: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
+  en_camino:   'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+  completado:  'bg-green-500/10 text-green-700 dark:text-green-300',
+  cancelado:   'bg-muted text-muted-foreground',
+  expirado:    'bg-muted text-muted-foreground',
+}
+
+// El estado se guarda en snake_case; al dueño se le enseña en su idioma.
+const ORDER_LABEL: Record<Order['status'], string> = {
+  pendiente:   'pendiente',
+  confirmado:  'confirmado',
+  preparacion: 'en preparación',
+  en_camino:   'en camino',
+  completado:  'completado',
+  cancelado:   'cancelado',
+  expirado:    'expirado',
+}
+
+// Un pedido activo siempre tiene UN paso natural hacia adelante, y casi
+// siempre además la opción de cerrarlo ya (quien no reparte no pasa por «en
+// camino»). El retroceso no existe: la RPC lo rechaza, así que no se ofrece.
+type OrderAction = 'confirmado' | 'preparacion' | 'en_camino' | 'completado' | 'cancelado'
+
+const nextStep = (order: Order): { status: OrderAction; label: string; description: string } | null => {
+  // Lo que se retira en el local nunca «sale a reparto»: lo bloquea la base y
+  // aquí ni se ofrece, para no enseñar un botón que va a fallar.
+  const deliverable = !order.fulfillment || order.fulfillment === 'delivery'
+  if (order.status === 'pendiente') return {
+    status: 'confirmado', label: 'Confirmar pedido',
+    description: 'El pedido queda aceptado y el cliente entra en la cola de preparación.',
+  }
+  if (order.status === 'confirmado') return {
+    status: 'preparacion', label: 'Poner en preparación',
+    description: 'Se marca como que ya se está preparando.',
+  }
+  if (order.status === 'preparacion' && deliverable) return {
+    status: 'en_camino', label: 'Marcar en camino',
+    description: 'El pedido sale a entregarse. Es el punto donde engancha el reparto.',
+  }
+  if (order.status === 'en_camino') return {
+    status: 'completado', label: 'Marcar entregado',
+    description: 'El pedido queda cerrado como entregado.',
+  }
+  return null
 }
 
 const fmtDate = (iso: string) =>
@@ -71,13 +112,15 @@ function BotOrders() {
   const queryClient = useQueryClient()
   const { data: orders = [], isLoading } = useQuery({ queryKey: ['orders'], queryFn: salesApi.getOrders, refetchInterval: 15_000 })
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'confirmado' | 'completado' | 'cancelado' }) => api(`/api/client/orders/${id}/status`, {
+    mutationFn: ({ id, status }: { id: string; status: OrderAction }) => api(`/api/client/orders/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
     }),
     onSuccess: (_data, variables) => {
-      const messages = {
+      const messages: Record<OrderAction, string> = {
         confirmado: 'Pedido confirmado. Coordina la entrega directamente con el cliente.',
+        preparacion: 'Pedido en preparación.',
+        en_camino: 'Pedido en camino. Avísale al cliente que ya salió.',
         completado: 'Pedido marcado como completado.',
         cancelado: 'Pedido cancelado.',
       }
@@ -117,7 +160,7 @@ function BotOrders() {
               <span className="text-xs text-muted-foreground/80 ml-2">{o.contact_phone}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Badge variant="secondary" className={`uppercase ${ORDER_BADGE[o.status]}`}>{o.status}</Badge>
+              <Badge variant="secondary" className={`uppercase ${ORDER_BADGE[o.status]}`}>{ORDER_LABEL[o.status]}</Badge>
               <span className="text-xs text-muted-foreground/80">{fmtDate(o.created_at)}</span>
             </div>
           </div>
@@ -134,18 +177,25 @@ function BotOrders() {
               {Number(o.discount) > 0 && <span className="mr-3 text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
               <span className="font-bold text-foreground">Total: {money(o.total)}</span>
             </div>
-            {(o.status === 'pendiente' || o.status === 'confirmado') && (
+            {nextStep(o) && (
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                <span className="max-w-xs text-right text-xs text-muted-foreground">
-                  {o.status === 'pendiente' ? 'Confirma el pedido antes de prepararlo para la entrega.' : 'Ciérralo cuando la entrega haya terminado.'}
-                </span>
                 <ConfirmAction
-                  trigger={<Button size="sm" disabled={updateStatus.isPending}><Check /> {o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}</Button>}
-                  title={o.status === 'pendiente' ? 'Confirmar pedido' : 'Completar pedido'}
-                  description={o.status === 'pendiente' ? 'El pedido quedará confirmado para que el negocio coordine la entrega con el cliente.' : 'El pedido quedará cerrado como completado y contará en su estado final.'}
-                  confirmLabel={o.status === 'pendiente' ? 'Confirmar pedido' : 'Marcar completado'}
-                  onConfirm={() => updateStatus.mutate({ id: o.id, status: o.status === 'pendiente' ? 'confirmado' : 'completado' })}
+                  trigger={<Button size="sm" disabled={updateStatus.isPending}><Check /> {nextStep(o)!.label}</Button>}
+                  title={nextStep(o)!.label}
+                  description={nextStep(o)!.description}
+                  confirmLabel={nextStep(o)!.label}
+                  onConfirm={() => updateStatus.mutate({ id: o.id, status: nextStep(o)!.status })}
                 />
+                {/* Atajo para quien no reparte: cerrar sin recorrer todo el flujo. */}
+                {o.status !== 'pendiente' && nextStep(o)!.status !== 'completado' && (
+                  <ConfirmAction
+                    trigger={<Button variant="outline" size="sm" disabled={updateStatus.isPending}><Check /> Marcar entregado</Button>}
+                    title="Completar pedido"
+                    description="El pedido quedará cerrado como completado y contará en su estado final."
+                    confirmLabel="Marcar entregado"
+                    onConfirm={() => updateStatus.mutate({ id: o.id, status: 'completado' })}
+                  />
+                )}
                 <ConfirmAction
                   trigger={<Button variant="outline" size="sm" disabled={updateStatus.isPending}><X /> Cancelar</Button>}
                   title="Cancelar pedido"

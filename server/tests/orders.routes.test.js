@@ -112,7 +112,51 @@ describe('GET /api/client/orders', () => {
     expect(response.status).toBe(200)
     expect(response.body).toEqual(orders)
     expect(getOrders).toHaveBeenCalledOnce()
-    expect(getOrders).toHaveBeenCalledWith('business-a')
+    expect(getOrders).toHaveBeenCalledWith('business-a', 100, null)
+  })
+
+  it('filtra por estado cuando el panel vigila los pendientes', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({ authorization, query: { status: 'pendiente' } })
+
+    expect(response.status).toBe(200)
+    expect(getOrders).toHaveBeenCalledWith('business-a', 100, 'pendiente')
+  })
+
+  it('acepta filtrar por los estados de reparto', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    for (const status of ['preparacion', 'en_camino']) {
+      const response = await dispatch({ authorization, query: { status } })
+      expect(response.status).toBe(200)
+      expect(getOrders).toHaveBeenCalledWith('business-a', 100, status)
+    }
+  })
+
+  it('rechaza un estado desconocido en vez de consultarlo', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({ authorization, query: { status: 'inventado' } })
+
+    expect(response.status).toBe(400)
+    expect(response.body).toEqual({ error: 'Estado de pedido inválido' })
+    expect(getOrders).not.toHaveBeenCalled()
   })
 
   it('rechaza empleados sin permiso de ventas', async () => {
@@ -169,5 +213,33 @@ describe('PUT /api/client/orders/:id/status', () => {
     const response = await dispatchStatus({ authorization: authorization(), status: 'confirmado' })
 
     expect(response.status).toBe(409)
+  })
+
+  it('acepta los estados de reparto', async () => {
+    const setOrderStatus = vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'en_camino' } },
+      error: null,
+    })
+
+    const response = await dispatchStatus({ authorization: authorization(), status: 'en_camino' })
+
+    expect(response.status).toBe(200)
+    expect(setOrderStatus).toHaveBeenCalledWith('business-a', 'order-a', 'en_camino')
+  })
+
+  // Un pedido para retirar en el local no sale a reparto: lo decide la base y
+  // el dueño tiene que entender POR QUÉ, no un conflicto genérico.
+  it('explica que un pedido de retiro no puede salir a reparto', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'not_deliverable', order: { id: 'order-a', status: 'preparacion' } },
+      error: null,
+    })
+
+    const response = await dispatchStatus({ authorization: authorization(), status: 'en_camino' })
+
+    expect(response.status).toBe(409)
+    expect(response.body).toEqual({
+      error: 'Este pedido es para retirar en el local: no puede salir a reparto',
+    })
   })
 })

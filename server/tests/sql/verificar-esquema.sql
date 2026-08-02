@@ -210,6 +210,59 @@ begin
     end if;
   end;
 
+  -- ── 3a. El camino del reparto: preparación → en camino → entregado ────────
+  -- Es el flujo diario de una pizzería, y donde engancha la cooperativa.
+  declare
+    v_reparto uuid;
+    v_cambio jsonb;
+  begin
+    insert into orders (business_id, contact_phone, status, total, fulfillment)
+    values (v_business, '+593900000003', 'pendiente', 21.00, 'delivery')
+    returning id into v_reparto;
+
+    -- Aceptar y poner a preparar es un solo gesto: se permite saltar
+    -- «confirmado» hacia adelante.
+    perform public.set_order_status(v_business, v_reparto, 'preparacion');
+    perform public.set_order_status(v_business, v_reparto, 'en_camino');
+    if (select status from orders where id = v_reparto) <> 'en_camino' then
+      raise exception 'set_order_status no dejó salir a reparto un pedido a domicilio';
+    end if;
+
+    -- Hacia atrás NUNCA: un pedido que ya salió no vuelve a la cocina.
+    v_cambio := public.set_order_status(v_business, v_reparto, 'preparacion');
+    if v_cambio ->> 'result' <> 'invalid_transition' then
+      raise exception 'set_order_status permitió retroceder un pedido: %', v_cambio;
+    end if;
+
+    perform public.set_order_status(v_business, v_reparto, 'completado');
+    if (select status from orders where id = v_reparto) <> 'completado' then
+      raise exception 'set_order_status no pudo cerrar el pedido entregado';
+    end if;
+  end;
+
+  -- Lo que el cliente RETIRA en el local no puede salir a la calle. Lo impide
+  -- la base, no la pantalla: una pantalla se equivoca, un CHECK no.
+  declare
+    v_retiro uuid;
+    v_cambio jsonb;
+  begin
+    insert into orders (business_id, contact_phone, status, total, fulfillment)
+    values (v_business, '+593900000004', 'pendiente', 21.00, 'pickup')
+    returning id into v_retiro;
+
+    perform public.set_order_status(v_business, v_retiro, 'preparacion');
+    v_cambio := public.set_order_status(v_business, v_retiro, 'en_camino');
+    if v_cambio ->> 'result' <> 'not_deliverable' then
+      raise exception 'set_order_status mandó a reparto un pedido de retiro: %', v_cambio;
+    end if;
+
+    -- Pero sí se entrega en mano, sin pasar por «en camino».
+    perform public.set_order_status(v_business, v_retiro, 'completado');
+    if (select status from orders where id = v_retiro) <> 'completado' then
+      raise exception 'set_order_status no pudo entregar un pedido de retiro';
+    end if;
+  end;
+
   -- Regla inviolable #8: el precio lo manda el catálogo, no quien pide. Si el
   -- cliente envía otro, la RPC debe rechazarlo en vez de cobrarlo.
   begin

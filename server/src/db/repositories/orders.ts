@@ -18,11 +18,20 @@ const createOrder = async (order: OrderData, items: OrderItemData[]) => db.rpc(
   },
 )
 
-const getOrders = async (businessId: string, limit = 100) => {
-  const { data, error } = await db
+// El filtro por estado lo usa la vigilancia del panel: pedir solo los
+// «pendiente» evita traer 100 pedidos con sus ítems cada pocos segundos.
+// La ruta valida el estado; aquí solo se aplica si viene.
+const getOrders = async (
+  businessId: string,
+  limit = 100,
+  status: string | null = null,
+) => {
+  let query = db
     .from('orders')
     .select('*, order_items(*)')
     .eq('business_id', businessId)
+  if (status) query = query.eq('status', status)
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw new Error(error.message)

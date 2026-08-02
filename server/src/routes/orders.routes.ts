@@ -2,8 +2,17 @@ import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 
+// Estados que hoy acepta orders.status. El GET puede filtrar por cualquiera
+// (la vigilancia del panel consulta «pendiente»); el PUT no acepta volver a
+// «pendiente» porque es el estado inicial, nunca un destino.
+const ESTADOS_PEDIDO = [
+  'pendiente', 'confirmado', 'preparacion', 'en_camino',
+  'completado', 'cancelado', 'expirado',
+] as const
+const ESTADOS_DESTINO = ESTADOS_PEDIDO.filter(estado => estado !== 'pendiente')
+
 interface ModuloDb {
-  getOrders(businessId: string): Promise<unknown>
+  getOrders(businessId: string, limit?: number, status?: string | null): Promise<unknown>
   setOrderStatus(
     businessId: string,
     orderId: string,
@@ -26,7 +35,11 @@ router.get(
   async (req, res) => {
     // authClient garantiza estos claims; nunca se acepta businessId del request.
     const businessId = getClientBusinessId(req)
-    res.json(await db.getOrders(businessId))
+    const status = req.query.status === undefined ? null : String(req.query.status)
+    if (status !== null && !ESTADOS_PEDIDO.includes(status as typeof ESTADOS_PEDIDO[number])) {
+      return res.status(400).json({ error: 'Estado de pedido inválido' })
+    }
+    res.json(await db.getOrders(businessId, 100, status))
   },
 )
 
@@ -36,9 +49,11 @@ router.put(
   auth.requirePermission('ventas'),
   async (req, res) => {
     const status = (req.body as { status?: unknown })?.status
-    if (!['confirmado', 'completado', 'cancelado', 'expirado'].includes(String(status))) {
+    if (!ESTADOS_DESTINO.includes(String(status) as typeof ESTADOS_DESTINO[number])) {
+      // Del mismo sitio que la validación: añadir un estado no puede dejar el
+      // mensaje mintiendo sobre cuáles se aceptan.
       return res.status(400).json({
-        error: 'El estado debe ser confirmado, completado, cancelado o expirado',
+        error: `El estado debe ser ${ESTADOS_DESTINO.join(', ')}`,
       })
     }
     try {
@@ -52,11 +67,16 @@ router.put(
         return res.status(500).json({ error: 'No se pudo actualizar el pedido' })
       }
       const result = data as {
-        result?: 'updated' | 'not_found' | 'invalid_transition'
+        result?: 'updated' | 'not_found' | 'invalid_transition' | 'not_deliverable'
         order?: unknown
       } | null
       if (result?.result === 'not_found') {
         return res.status(404).json({ error: 'Pedido no encontrado' })
+      }
+      if (result?.result === 'not_deliverable') {
+        return res.status(409).json({
+          error: 'Este pedido es para retirar en el local: no puede salir a reparto',
+        })
       }
       if (result?.result === 'invalid_transition') {
         return res.status(409).json({ error: 'Ese cambio ya no es válido para el estado actual del pedido' })

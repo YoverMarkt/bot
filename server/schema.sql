@@ -963,8 +963,13 @@ create table if not exists orders (
   business_id      uuid not null references businesses(id) on delete cascade,
   contact_phone    text not null,
   contact_name     text,
+  -- Flujo hacia adelante: pendiente → confirmado → preparacion → en_camino →
+  -- completado (o cancelado desde cualquiera). Lo hace cumplir set_order_status.
   status           text not null default 'pendiente'
-                   check (status in ('pendiente','confirmado','completado','cancelado','expirado')),
+                   constraint orders_status_check check (status in (
+                     'pendiente','confirmado','preparacion','en_camino',
+                     'completado','cancelado','expirado'
+                   )),
   subtotal         numeric(10,2) not null default 0,
   discount         numeric(10,2) not null default 0,  -- solo por código/panel, jamás la IA
   total            numeric(10,2) not null default 0,
@@ -1361,7 +1366,9 @@ as $$
 declare
   v_order public.orders%rowtype;
 begin
-  if p_status not in ('confirmado', 'completado', 'cancelado', 'expirado') then
+  if p_status not in (
+    'confirmado', 'preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'
+  ) then
     raise exception using errcode = '22023', message = 'Estado de pedido inválido';
   end if;
 
@@ -1378,9 +1385,23 @@ begin
     return jsonb_build_object('result', 'updated', 'order', to_jsonb(v_order));
   end if;
 
+  -- Un pedido que el cliente retira en el local (o consume en sitio) no puede
+  -- salir a reparto. Los pedidos del bot no traen `fulfillment`: se asumen a
+  -- domicilio, que es como funcionan hoy por WhatsApp.
+  if p_status = 'en_camino'
+     and coalesce(v_order.fulfillment, 'delivery') <> 'delivery' then
+    return jsonb_build_object('result', 'not_deliverable', 'order', to_jsonb(v_order));
+  end if;
+
   if not (
-    (v_order.status = 'pendiente' and p_status in ('confirmado', 'cancelado', 'expirado'))
-    or (v_order.status = 'confirmado' and p_status in ('completado', 'cancelado', 'expirado'))
+    (v_order.status = 'pendiente'
+      and p_status in ('confirmado', 'preparacion', 'cancelado', 'expirado'))
+    or (v_order.status = 'confirmado'
+      and p_status in ('preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'))
+    or (v_order.status = 'preparacion'
+      and p_status in ('en_camino', 'completado', 'cancelado'))
+    or (v_order.status = 'en_camino'
+      and p_status in ('completado', 'cancelado'))
   ) then
     return jsonb_build_object('result', 'invalid_transition', 'order', to_jsonb(v_order));
   end if;
@@ -2989,6 +3010,22 @@ end;
 $$;
 create index if not exists idx_orders_cliente
   on public.orders (business_id, customer_id, created_at desc);
+
+-- Estados de reparto en instalaciones creadas antes de que existieran
+-- (migration-2026-08-02-estados-pedido.sql). Solo AÑADE valores permitidos:
+-- ninguna fila existente puede quedar fuera del CHECK nuevo.
+alter table public.orders drop constraint if exists orders_status_check;
+alter table public.orders add constraint orders_status_check check (
+  status in (
+    'pendiente', 'confirmado', 'preparacion', 'en_camino',
+    'completado', 'cancelado', 'expirado'
+  )
+);
+-- Pedidos en curso: los pide la alarma del panel cada 12 s por negocio y los
+-- listará la bandeja de Pedidos. Parcial para no encarecer los ya cerrados.
+create index if not exists idx_orders_activos
+  on public.orders (business_id, created_at desc)
+  where status in ('pendiente', 'confirmado', 'preparacion', 'en_camino');
 
 create or replace function public.cleanup_storefront_sessions(p_days integer default 2)
 returns integer

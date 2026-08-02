@@ -24,6 +24,7 @@ un módulo concreto, no en cada sesión.
 - [Registro de errores](#registro-de-errores)
 - [Mini app de la tienda](#mini-app-de-la-tienda)
 - [El horario del dueño manda sobre todos los modos](#el-horario-del-dueño-manda-sobre-todos-los-modos)
+- [Los estados de un pedido](#los-estados-de-un-pedido)
 
 ---
 
@@ -90,3 +91,17 @@ un módulo concreto, no en cada sesión.
 ## El horario del dueño manda sobre todos los modos
 
 **El horario del dueño manda sobre TODOS los modos (corregido 2026-08-01):** la comprobación de `isOutsideHours` va **antes** de repartir por `chat_mode`. Hubo dos excepciones que convertían el horario en decoración y la segunda no se veía: el modo menú salía por su propia rama antes de mirar el reloj, así que un negocio con el menú activado —el caso del hostal— atendía domingos y de madrugada aunque su horario dijera lo contrario. Cubierto por tests que fallan si el orden se invierte. ⚠️ Ojo con el caso legítimo: si **ningún** día está activo, `isOutsideHours` devuelve `false` a propósito —un negocio que nunca configuró horario no puede quedarse mudo—; cerrar el domingo es marcar ese día inactivo con los demás activos.
+
+---
+
+## Los estados de un pedido
+
+**La máquina de estados del pedido (decidido 2026-08-02, con la tabla `orders` todavía vacía):** un pedido va `pendiente → confirmado → preparacion → en_camino → completado`, y desde cualquiera de esos a `cancelado`. Vive en la RPC `set_order_status` de PostgreSQL, **no en el panel**: la pantalla propone, la base decide. Tres reglas y el porqué de cada una:
+
+- **Se puede saltar hacia adelante.** Aceptar un pedido y ponerlo a preparar es un solo gesto en una pizzería, y quien no reparte cierra desde `preparacion` sin pasar por `en_camino`. Obligar a recorrer los cinco pasos habría metido clics a todos para servir a uno.
+- **No se retrocede, nunca.** Un pedido que ya salió no vuelve a la cocina; si algo se tuerce, se cancela. Es lo único que después se puede auditar sin ambigüedad, y evita las preguntas que abre el retroceso (¿cuenta como entregado? ¿qué pasó con el reparto?) que hoy no hay por qué responder.
+- **`en_camino` está prohibido para los pedidos `pickup`/`onsite`**, comprobado contra la columna `fulfillment` que ya llenaba la mini app. Lo impide la base y no la pantalla, porque una pantalla se equivoca y un CHECK no. Los pedidos del bot no traen `fulfillment` y se asumen a domicilio, que es como funcionan hoy por WhatsApp. Cuando ocurre, la RPC devuelve `not_deliverable` y la ruta responde 409 con el motivo, en vez del conflicto genérico.
+
+⚠️ **El momento se eligió a propósito:** se hizo con cero pedidos reales, cuando cambiar un CHECK cuesta nada. Con una pizzería operando, lo mismo es migrar los datos de un cliente vivo. `en_camino` es además el punto donde engancharía una cooperativa de reparto, así que el estado tenía que existir antes que la sección Pedidos, que se construye alrededor de él.
+
+Verificado ejecutando la migración contra un PostgreSQL real —incluidas la irreversibilidad, el bloqueo del retiro y que el flujo anterior sigue intacto—, no solo leyéndola: Postgres acepta una función rota sin avisar. Las transiciones viven en `server/tests/sql/verificar-esquema.sql`, que el CI ejecuta en cada PR.

@@ -133,6 +133,7 @@ bot/
 │   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
 │   ├── migration-atomicidad-onboarding.sql # Negocio, dueño, políticas y cuotas transaccionales
 │   ├── migration-atomicidad-pedidos.sql # Cabecera, ítems y totales de pedidos transaccionales
+│   ├── migration-2026-08-02-estados-pedido.sql # Preparación y reparto: máquina de estados sin retroceso
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

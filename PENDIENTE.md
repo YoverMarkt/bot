@@ -51,20 +51,33 @@ venta» para ver algo que todavía no vendió — y por eso nadie conectó nunca
 
 ### El orden acordado
 
-1. **Que la alarma oiga los pedidos.** Lo más pequeño y lo que más duele: sin esto se
-   pierden pedidos. Tocar `useAttention.ts` + `AlarmSystem.tsx`.
-2. **Sección Pedidos propia**, como bandeja de entrada, fuera de Ventas.
+1. ~~**Que la alarma oiga los pedidos.**~~ ✅ **HECHO (2026-08-02).** `useAttention.ts`
+   vigila `/api/client/orders?status=pendiente` cada 12 s —filtrado en la base, no 100
+   pedidos con sus ítems— y `AlarmSystem.tsx` suena, avisa por notificación del navegador
+   y lleva a atenderlo. Sigue consultando **con la pestaña en segundo plano** (único
+   vigilado que lo hace: un pedido no espera a que el dueño vuelva a la pestaña).
+   Cubierto por un E2E de regresión: entra un pedido con el panel abierto → banner solo.
+   ⚠️ **Sigue habiendo un hueco real:** con el panel CERRADO no hay aviso. Cerrarlo es
+   avisar por WhatsApp/Telegram al dueño (Alertas Fase 2), que exige el canal en Meta.
+2. **Sección Pedidos propia**, como bandeja de entrada, fuera de Ventas. ← **SIGUIENTE**
+   ⚠️ Hallazgo al hacer el paso 1: **`/sales` ni siquiera está en el menú lateral** — solo
+   se llega desde Conversaciones. Por eso hoy «Atender» lleva a `/sales`; con la sección
+   creada pasa a `/orders`.
+   Los botones del flujo (`Poner en preparación` → `Marcar en camino` → `Marcar entregado`)
+   ya existen en la pestaña «Pedidos del bot» de Ventas: al crear la sección se mudan tal
+   cual, con su `nextStep`.
 3. **El puente a la cooperativa de reparto**, cuando el pedido pasa a «en camino».
 
-### La decisión que NO puede esperar
+### La decisión que NO podía esperar — ✅ HECHA (2026-08-02)
 
-Hoy `orders.status` acepta `pendiente · confirmado · completado · cancelado · expirado`.
-Al flujo real de una pizzería le faltan **`preparacion`** y **`en_camino`** — y ese último
-es donde engancha la cooperativa.
+`orders.status` ya acepta **`preparacion`** y **`en_camino`**, con la tabla todavía vacía:
+`migration-2026-08-02-estados-pedido.sql`. El flujo va siempre hacia adelante, se puede
+saltar pasos, no se retrocede, y `en_camino` está **prohibido en la base** para los pedidos
+`pickup`/`onsite`. El porqué de cada regla está en
+[DECISIONES.md](DECISIONES.md#los-estados-de-un-pedido).
 
-⚠️ **Añadir esos estados ahora, con cero pedidos reales, es gratis. Dentro de un mes
-significa migrar datos de un cliente que ya está operando.** Es el motivo de que esto esté
-escrito antes de empezar a construir.
+⚠️ **Queda pendiente aplicarla en Supabase** (`npm run migrate`). Hasta entonces, el panel
+ofrece los botones nuevos pero la base rechaza los estados.
 
 ### Lo que ya está resuelto y no hay que rehacer
 

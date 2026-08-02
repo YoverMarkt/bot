@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
-import { useBusinessInfo, isBookingBiz, isLodgingBiz, isServiceBiz } from '../lib/biz'
+import { useBusinessInfo, isBookingBiz, isLodgingBiz, isOrderBiz, isServiceBiz } from '../lib/biz'
 import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, BedDouble } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
@@ -34,6 +34,9 @@ export default function Layout() {
   const lodgingBiz = isLodgingBiz(
     bizInfo?.lodging_enabled ?? biz?.lodging_enabled,
   )
+  // Sin fallback local a propósito: takes_orders no viaja en el login, y el
+  // dato vivo del servidor manda si el superadmin activa pedidos hoy mismo.
+  const orderBiz = isOrderBiz(bizInfo?.takes_orders)
   const canSee = (perm: string | null) => {
     if (!perm) return true
     if (user?.role === 'owner') return true
@@ -52,6 +55,7 @@ export default function Layout() {
     watchSessions: canSee('conversaciones'),
     watchBookings: bookingBiz && canSee('citas'),
     watchLodging: lodgingBiz && canSee('hospedaje'),
+    watchOrders: orderBiz && canSee('ventas'),
   })
 
   // Menú IDÉNTICO al panel viejo (mismo orden, mismas secciones)
@@ -143,13 +147,15 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Alarma global (chats manuales sin atender + reservas pendientes) */}
+      {/* Alarma global (chats manuales, reservas, hospedaje y pedidos sin atender) */}
       <AlarmBanner
         manual={att.manual}
         pending={att.pending}
         bookings={att.bookings}
         lodgingPending={att.pendingLodging}
         lodgingRequests={att.lodgingRequests}
+        ordersPending={att.pendingOrders}
+        ordersLoaded={att.ordersLoaded}
       />
 
       {/* Notificaciones de la librería (Sonner) — expand: apiladas sin taparse */}
