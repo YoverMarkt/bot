@@ -23,6 +23,7 @@ interface PlatformErrorRow {
   first_seen_at: string
   last_seen_at: string
 }
+import { recordError } from '../services/error-log'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -184,6 +185,16 @@ function errorMessage(error: unknown): string {
 
 function safeFailure(res: Response, context: string, error: unknown) {
   console.error(`❌ ${context}:`, errorMessage(error))
+  // El panel solo puede decir «no se pudo»: enseñar el error de la base a un
+  // navegador filtraría nombres de tablas y restricciones. Pero el motivo real
+  // TIENE que quedar en algún sitio consultable — si no, un fallo como el del
+  // alta de clientes (2026-08-02) se vuelve invisible: el panel decía «no se
+  // pudo crear el cliente» y el registro de errores estaba vacío.
+  void recordError({
+    category: 'servidor',
+    code: context,
+    message: errorMessage(error),
+  })
   return res.status(500).json({ error: `No se pudo ${context}` })
 }
 

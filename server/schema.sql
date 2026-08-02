@@ -5233,8 +5233,12 @@ revoke all on function public.claim_billing_month()
   from public, anon, authenticated;
 
 drop trigger if exists billing_claim_month on public.billing;
+-- AFTER, no BEFORE: el disparador apunta con `billing_id` a la fila recién
+-- creada de `billing`, y en un BEFORE esa fila todavía no existe. Fue así
+-- hasta el 2026-08-02 y hacía imposible dar de alta cualquier cliente nuevo
+-- (ver server/migration-arreglo-cuota-alta.sql).
 create trigger billing_claim_month
-before insert or update of business_id, period_start on public.billing
+after insert or update of business_id, period_start on public.billing
 for each row execute function public.claim_billing_month();
 
 -- Se invoca al arrancar el servidor y luego una vez al día. La fecha se calcula

@@ -8,6 +8,10 @@ const migrationSource = readFileSync(
   'utf8',
 )
 const migration = migrationSource.toLowerCase()
+const correccion = readFileSync(
+  `${serverDir}/migration-arreglo-cuota-alta.sql`,
+  'utf8',
+)
 const schema = readFileSync(`${serverDir}/schema.sql`, 'utf8')
 const indexSource = readFileSync(`${serverDir}/src/index.ts`, 'utf8')
 const reportsSource = readFileSync(
@@ -20,8 +24,33 @@ const billingRoutesSource = readFileSync(
 )
 
 describe('automatización mensual de facturación', () => {
+  // El consolidado ya NO puede terminar copiando la migración de planes tal
+  // cual: aquella dejaba el disparador en BEFORE y eso impedía dar de alta
+  // cualquier cliente (2026-08-02). Lo que debe cumplirse es que una
+  // instalación nueva desde schema.sql acabe donde acaba una base existente
+  // tras aplicar la migración de planes MÁS su corrección.
   it('consolida el mismo estado final en instalaciones nuevas', () => {
-    expect(schema.trimEnd().endsWith(migrationSource.trimEnd())).toBe(true)
+    // Todo lo de la migración salvo su última sentencia (el disparador) sigue
+    // palabra por palabra en el consolidado.
+    const cuerpo = migrationSource
+      .trimEnd()
+      .slice(0, migrationSource.trimEnd().lastIndexOf('create trigger billing_claim_month'))
+    expect(cuerpo.length).toBeGreaterThan(0)
+    expect(schema).toContain(cuerpo.trimEnd())
+  })
+
+  it('el disparador de la cuota corre DESPUÉS de escribir la factura', () => {
+    // BEFORE apuntaba con billing_id a una fila de billing que aún no existía,
+    // y la clave foránea tumbaba toda la transacción del alta.
+    expect(schema).toContain(
+      'create trigger billing_claim_month\nafter insert or update of business_id',
+    )
+    expect(schema).not.toContain(
+      'create trigger billing_claim_month\nbefore insert or update of business_id',
+    )
+    expect(correccion).toContain(
+      'create trigger billing_claim_month\nafter insert or update of business_id',
+    )
   })
 
   it('preserva cobros existentes y reclama atómicamente cada negocio/mes', () => {
