@@ -963,8 +963,13 @@ create table if not exists orders (
   business_id      uuid not null references businesses(id) on delete cascade,
   contact_phone    text not null,
   contact_name     text,
+  -- Flujo hacia adelante: pendiente → confirmado → preparacion → en_camino →
+  -- completado (o cancelado desde cualquiera). Lo hace cumplir set_order_status.
   status           text not null default 'pendiente'
-                   check (status in ('pendiente','confirmado','completado','cancelado','expirado')),
+                   constraint orders_status_check check (status in (
+                     'pendiente','confirmado','preparacion','en_camino',
+                     'completado','cancelado','expirado'
+                   )),
   subtotal         numeric(10,2) not null default 0,
   discount         numeric(10,2) not null default 0,  -- solo por código/panel, jamás la IA
   total            numeric(10,2) not null default 0,
@@ -1361,7 +1366,9 @@ as $$
 declare
   v_order public.orders%rowtype;
 begin
-  if p_status not in ('confirmado', 'completado', 'cancelado', 'expirado') then
+  if p_status not in (
+    'confirmado', 'preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'
+  ) then
     raise exception using errcode = '22023', message = 'Estado de pedido inválido';
   end if;
 
@@ -1378,9 +1385,23 @@ begin
     return jsonb_build_object('result', 'updated', 'order', to_jsonb(v_order));
   end if;
 
+  -- Un pedido que el cliente retira en el local (o consume en sitio) no puede
+  -- salir a reparto. Los pedidos del bot no traen `fulfillment`: se asumen a
+  -- domicilio, que es como funcionan hoy por WhatsApp.
+  if p_status = 'en_camino'
+     and coalesce(v_order.fulfillment, 'delivery') <> 'delivery' then
+    return jsonb_build_object('result', 'not_deliverable', 'order', to_jsonb(v_order));
+  end if;
+
   if not (
-    (v_order.status = 'pendiente' and p_status in ('confirmado', 'cancelado', 'expirado'))
-    or (v_order.status = 'confirmado' and p_status in ('completado', 'cancelado', 'expirado'))
+    (v_order.status = 'pendiente'
+      and p_status in ('confirmado', 'preparacion', 'cancelado', 'expirado'))
+    or (v_order.status = 'confirmado'
+      and p_status in ('preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'))
+    or (v_order.status = 'preparacion'
+      and p_status in ('en_camino', 'completado', 'cancelado'))
+    or (v_order.status = 'en_camino'
+      and p_status in ('completado', 'cancelado'))
   ) then
     return jsonb_build_object('result', 'invalid_transition', 'order', to_jsonb(v_order));
   end if;
@@ -2990,6 +3011,67 @@ $$;
 create index if not exists idx_orders_cliente
   on public.orders (business_id, customer_id, created_at desc);
 
+-- Estados de reparto en instalaciones creadas antes de que existieran
+-- (migration-2026-08-02-estados-pedido.sql). Solo AÑADE valores permitidos:
+-- ninguna fila existente puede quedar fuera del CHECK nuevo.
+alter table public.orders drop constraint if exists orders_status_check;
+alter table public.orders add constraint orders_status_check check (
+  status in (
+    'pendiente', 'confirmado', 'preparacion', 'en_camino',
+    'completado', 'cancelado', 'expirado'
+  )
+);
+
+-- Envío, método de pago y comprobante de la tienda
+-- (migration-2026-08-02-tienda-pago-envio-marca.sql).
+alter table public.orders
+  add column if not exists shipping numeric(10,2) not null default 0,
+  add column if not exists payment_method text,
+  add column if not exists payment_proof_url text;
+alter table public.businesses
+  add column if not exists delivery_fee numeric(10,2) not null default 0,
+  add column if not exists brand_color text,
+  add column if not exists logo_url text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.orders'::regclass and conname = 'orders_pago_check'
+  ) then
+    -- `payment_method` queda nulo en los pedidos del bot, que no preguntan cómo
+    -- se paga. La tarjeta no existe: la plataforma no cobra (regla #6).
+    alter table public.orders add constraint orders_pago_check check (
+      shipping >= 0
+      and (payment_method is null or payment_method in ('transferencia', 'efectivo'))
+    );
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.businesses'::regclass and conname = 'businesses_tienda_check'
+  ) then
+    alter table public.businesses add constraint businesses_tienda_check check (
+      delivery_fee >= 0 and delivery_fee <= 999
+      and (brand_color is null or brand_color ~ '^#[0-9a-fA-F]{6}$')
+    );
+  end if;
+  -- El logo acaba en un <img> de una app pública: solo https.
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.businesses'::regclass and conname = 'businesses_logo_check'
+  ) then
+    alter table public.businesses add constraint businesses_logo_check check (
+      logo_url is null or logo_url ~ '^https://'
+    );
+  end if;
+end;
+$$;
+-- Pedidos en curso: los pide la alarma del panel cada 12 s por negocio y los
+-- listará la bandeja de Pedidos. Parcial para no encarecer los ya cerrados.
+create index if not exists idx_orders_activos
+  on public.orders (business_id, created_at desc)
+  where status in ('pendiente', 'confirmado', 'preparacion', 'en_camino');
+
 create or replace function public.cleanup_storefront_sessions(p_days integer default 2)
 returns integer
 language plpgsql
@@ -3044,6 +3126,12 @@ $$;
 
 
 -- ── Pedido de la tienda ─────────────────────────────────────────────────────
+-- La firma cambió al añadir el método de pago: dejar viva la anterior haría
+-- ambigua cualquier llamada.
+drop function if exists public.create_storefront_order(
+  uuid, uuid, text, text, uuid, text, jsonb, text
+);
+
 create or replace function public.create_storefront_order(
   p_business_id uuid,
   p_customer_id uuid,
@@ -3052,7 +3140,8 @@ create or replace function public.create_storefront_order(
   p_address_id uuid,
   p_fulfillment text,
   p_items jsonb,
-  p_notes text default null
+  p_notes text default null,
+  p_payment_method text default null
 )
 returns jsonb
 language plpgsql
@@ -3078,10 +3167,11 @@ declare
   v_unit_price numeric(10,2);
   v_line_total numeric(10,2);
   v_subtotal numeric(10,2) := 0;
+  v_shipping numeric(10,2) := 0;
   v_count integer := 0;
 begin
   -- ── El negocio debe poder recibir pedidos por la tienda ──────────────────
-  select id, active, suspended, storefront_enabled, takes_orders
+  select id, active, suspended, storefront_enabled, takes_orders, delivery_fee
   into v_business
   from public.businesses
   where id = p_business_id
@@ -3110,6 +3200,10 @@ begin
     raise exception using errcode = '22023', message = 'Tipo de entrega invalido';
   end if;
 
+  if p_payment_method is not null and p_payment_method not in ('transferencia', 'efectivo') then
+    raise exception using errcode = '22023', message = 'Metodo de pago invalido';
+  end if;
+
   -- La dirección, si viene, debe ser de ESE cliente y ESE negocio.
   if p_address_id is not null then
     if not exists (
@@ -3125,10 +3219,12 @@ begin
 
   insert into public.orders (
     business_id, customer_id, contact_phone, contact_name,
-    subtotal, discount, total, status, source, address_id, fulfillment
+    subtotal, discount, total, status, source, address_id, fulfillment,
+    payment_method
   ) values (
     p_business_id, p_customer_id, btrim(p_contact_phone), nullif(btrim(coalesce(p_contact_name, '')), ''),
-    0, 0, 0, 'pendiente', 'storefront', p_address_id, p_fulfillment
+    0, 0, 0, 'pendiente', 'storefront', p_address_id, p_fulfillment,
+    p_payment_method
   )
   returning id into v_order_id;
 
@@ -3244,24 +3340,85 @@ begin
     );
   end loop;
 
+  -- ── El envío: fijo del negocio, y SOLO si se lleva a domicilio ───────────
+  -- Quien retira en el local no paga envío. El importe sale de la ficha del
+  -- negocio, nunca del teléfono del cliente (regla inviolable #8).
   v_subtotal := round(v_subtotal, 2);
+  if p_fulfillment = 'delivery' then
+    v_shipping := round(coalesce(v_business.delivery_fee, 0), 2);
+  end if;
+
   update public.orders
   set subtotal = v_subtotal,
-      total = v_subtotal
+      shipping = v_shipping,
+      total = round(v_subtotal + v_shipping, 2)
   where id = v_order_id;
 
   return jsonb_build_object(
     'id', v_order_id,
     'subtotal', v_subtotal,
-    'total', v_subtotal,
+    'shipping', v_shipping,
+    'total', round(v_subtotal + v_shipping, 2),
     'items', v_count
   );
 end;
 $$;
 
 revoke all on function public.create_storefront_order(
-  uuid, uuid, text, text, uuid, text, jsonb, text
+  uuid, uuid, text, text, uuid, text, jsonb, text, text
 ) from public, anon, authenticated;
+
+-- ── COMPROBANTE DE TRANSFERENCIA DE LA TIENDA ──────────────
+-- Lo sube el CLIENTE desde la mini app, que no tiene JWT: su credencial es el
+-- enlace. Por eso la pertenencia se comprueba con las tres cosas a la vez
+-- —negocio, pedido y teléfono de la sesión—: sin esto, cualquiera con un id de
+-- pedido ajeno podría colgarle una imagen.
+create or replace function public.attach_storefront_payment_proof(
+  p_business_id uuid,
+  p_order_id uuid,
+  p_contact_phone text,
+  p_url text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_order public.orders%rowtype;
+begin
+  if nullif(btrim(coalesce(p_url, '')), '') is null or p_url !~ '^https://' then
+    raise exception using errcode = '22023', message = 'El comprobante debe ser una URL https';
+  end if;
+
+  select * into v_order
+  from public.orders
+  where id = p_order_id
+    and business_id = p_business_id
+    and contact_phone = btrim(p_contact_phone)
+  for update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  -- Un pedido ya cerrado no admite comprobante: o se pagó, o se anuló.
+  if v_order.status in ('completado', 'cancelado', 'expirado') then
+    return jsonb_build_object('result', 'invalid_state', 'status', v_order.status);
+  end if;
+
+  update public.orders
+  set payment_proof_url = p_url, updated_at = now()
+  where id = p_order_id and business_id = p_business_id;
+
+  return jsonb_build_object('result', 'updated');
+end;
+$$;
+
+revoke all on function public.attach_storefront_payment_proof(uuid, uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function public.attach_storefront_payment_proof(uuid, uuid, text, text)
+  to service_role;
 
 -- ── REGISTRO DE ERRORES DE PLATAFORMA ──────────────────────
 -- La huella llega calculada desde Node y NO se genera con digest() aquí: esa

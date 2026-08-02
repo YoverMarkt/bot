@@ -199,6 +199,7 @@ const createStorefrontOrder = async (input: {
   contactName?: string | null
   addressId?: string | null
   fulfillment?: string | null
+  paymentMethod?: string | null
   items: unknown[]
 }) => db.rpc('create_storefront_order', {
   p_business_id: input.businessId,
@@ -208,6 +209,21 @@ const createStorefrontOrder = async (input: {
   p_address_id: input.addressId || null,
   p_fulfillment: input.fulfillment || null,
   p_items: input.items,
+  p_payment_method: input.paymentMethod || null,
+})
+
+// El comprobante lo sube el cliente desde la mini app, sin JWT: la RPC
+// comprueba negocio + pedido + teléfono de la sesión antes de guardarlo.
+const attachStorefrontPaymentProof = async (input: {
+  businessId: string
+  orderId: string
+  contactPhone: string
+  url: string
+}) => db.rpc('attach_storefront_payment_proof', {
+  p_business_id: input.businessId,
+  p_order_id: input.orderId,
+  p_contact_phone: input.contactPhone,
+  p_url: input.url,
 })
 
 export = {
@@ -222,4 +238,5 @@ export = {
   revokeStorefrontSessions,
   cleanupStorefrontSessions,
   createStorefrontOrder,
+  attachStorefrontPaymentProof,
 }

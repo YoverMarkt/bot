@@ -133,6 +133,9 @@ bot/
 │   ├── migration-ventas-reportes.sql  # Migración de ventas + reportes (correr en Supabase)
 │   ├── migration-atomicidad-onboarding.sql # Negocio, dueño, políticas y cuotas transaccionales
 │   ├── migration-atomicidad-pedidos.sql # Cabecera, ítems y totales de pedidos transaccionales
+│   ├── migration-2026-08-02-estados-pedido.sql # Preparación y reparto: máquina de estados sin retroceso
+│   ├── migration-2026-08-02-tienda-pago-envio-marca.sql # Envío en la base, método de pago, comprobante y color por negocio
+│   ├── migration-2026-08-02-logo-negocio.sql # Logo del negocio (solo https) visible en su mini app
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

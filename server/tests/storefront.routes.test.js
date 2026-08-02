@@ -35,6 +35,7 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/catalog',
       '/api/store/:slug/me',
       '/api/store/:slug/orders',
+      '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
       '/api/store/:slug/stay/quote',
       '/api/store/:slug/stay/request',

@@ -22,6 +22,10 @@ export const isBookingBiz = (
 
 export const isLodgingBiz = (lodgingEnabled?: boolean | null) => lodgingEnabled === true
 
+// Pedidos es capacidad propia del negocio (takes_orders), independiente de
+// reservas y hospedaje. El flag vivo manda; el tipo solo lo recomienda al alta.
+export const isOrderBiz = (takesOrders?: boolean | null) => takesOrders === true
+
 const normalizeBusinessType = (type?: string | null) => (type ?? '')
   .toLocaleLowerCase('es')
   .normalize('NFD')

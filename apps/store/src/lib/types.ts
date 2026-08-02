@@ -18,7 +18,16 @@ export interface Business {
   address: string | null
   phone: string | null
   capabilities: Capabilities
+  /** Color del negocio. Nulo = el de la plataforma. */
+  brandColor: string | null
+  /** Logo del negocio, ya subido a Cloudinary. Nulo = solo el nombre. */
+  logoUrl: string | null
+  /** Costo fijo de envío a domicilio. Informativo: el oficial lo calcula la base. */
+  deliveryFee: number
 }
+
+/** Cómo dice el cliente que va a pagar. La plataforma NO cobra (regla #6). */
+export type PaymentMethod = 'transferencia' | 'efectivo'
 
 export type StoreStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 

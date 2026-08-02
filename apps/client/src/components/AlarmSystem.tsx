@@ -1,29 +1,35 @@
 // ── ALARMA INSISTENTE (port fiel del panel viejo) ───────────────────
 // Suena mientras haya pendientes SIN ATENDER (estado en BD):
 //  · chats en modo manual con unread_owner  · reservas pendientes
-// Con: banner fijo, badges, notificación del navegador para reservas
-// nuevas, silencio temporal (2 min), tope de 3 min por tanda y
-// parpadeo del título de la pestaña.
+//  · solicitudes de hospedaje por confirmar  · pedidos pendientes
+// Con: banner fijo, badges, notificación del navegador para reservas,
+// hospedaje y pedidos nuevos, silencio temporal (2 min), tope de 3 min
+// por tanda y parpadeo del título de la pestaña.
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { BedDouble, Bell, BellOff, Check, Hand, CalendarPlus } from 'lucide-react'
+import { BedDouble, Bell, BellOff, Check, Hand, CalendarPlus, ShoppingBag } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
-import type { AttentionBooking, AttentionLodgingRequest } from '../hooks/useAttention'
+import type { AttentionBooking, AttentionLodgingRequest, AttentionOrder } from '../hooks/useAttention'
 import { toast as sonnerToast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 
 const ALARM_MAX_MS = 180_000     // 3 minutos seguidos máximo por tanda
 const SILENCE_MS = 120_000       // silenciar = callar 2 minutos
 
-export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodgingRequests }: {
+export function AlarmBanner({
+  manual, pending, bookings, lodgingPending, lodgingRequests, ordersPending, ordersLoaded,
+}: {
   manual: Session[]
   pending: { id: string }[]
   bookings: AttentionBooking[]
   lodgingPending: { id: string }[]
   lodgingRequests: AttentionLodgingRequest[]
+  // Ya llegan filtrados a «pendiente»: la misma lista suena y avisa.
+  ordersPending: AttentionOrder[]
+  ordersLoaded: boolean
 }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -35,8 +41,10 @@ export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodging
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const knownIds = useRef<Set<string> | null>(null)
   const knownLodgingIds = useRef<Set<string> | null>(null)
+  const knownOrderIds = useRef<Set<string> | null>(null)
 
-  const shouldRing = manual.length > 0 || pending.length > 0 || lodgingPending.length > 0
+  const shouldRing = manual.length > 0 || pending.length > 0
+    || lodgingPending.length > 0 || ordersPending.length > 0
 
   function recheckAfter(milliseconds: number) {
     if (wakeTimer.current) clearTimeout(wakeTimer.current)
@@ -86,6 +94,24 @@ export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodging
     }
   }, [lodgingRequests])
 
+  // Detección de pedidos NUEVOS → notificación del navegador.
+  // La base se fija en cuanto la consulta responde, AUNQUE venga vacía: lo
+  // normal es no tener pedidos pendientes, y el primero que entre debe avisar.
+  useEffect(() => {
+    if (!ordersLoaded) return
+    const ids = new Set(ordersPending.map(order => order.id))
+    if (knownOrderIds.current === null) { knownOrderIds.current = ids; return }
+    const newOrders = ordersPending.filter(order => !knownOrderIds.current!.has(order.id))
+    knownOrderIds.current = ids
+    for (const order of newOrders) {
+      const amount = `$${(Number(order.total) || 0).toFixed(2)}`
+      const text = `${order.contact_name || order.contact_phone} · ${amount}`
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🛒 Nuevo pedido', { body: text })
+      }
+    }
+  }, [ordersPending, ordersLoaded])
+
   // Motor de la alarma: arranca/para según el estado real en BD
   useEffect(() => {
     const stop = () => {
@@ -122,8 +148,14 @@ export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodging
       api(`/api/client/sessions/${encodeURIComponent(s.contact_phone)}/read`, { method: 'PUT' }).catch(() => {})
     ))
     qc.invalidateQueries({ queryKey: ['sessions-watch'] })
-    // Llevar a lo que necesita atención
-    navigate(manual.length ? '/conversations' : lodgingPending.length ? '/lodging' : '/bookings')
+    // Llevar a lo que necesita atención. El pedido sigue «pendiente» en BD
+    // hasta que el dueño lo confirme allí: la alarma insiste a propósito.
+    navigate(
+      manual.length ? '/conversations'
+      : ordersPending.length ? '/sales'
+      : lodgingPending.length ? '/lodging'
+      : '/bookings',
+    )
   }
 
   function silence() {
@@ -140,13 +172,15 @@ export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodging
     )
   }
 
-  const title = [manual.length, pending.length, lodgingPending.length].filter(Boolean).length > 1
+  const title = [manual.length, pending.length, lodgingPending.length, ordersPending.length].filter(Boolean).length > 1
     ? '¡Tienes pendientes!'
     : manual.length ? '¡Atiende a un cliente!'
+    : ordersPending.length ? '¡Nuevo pedido!'
     : lodgingPending.length ? '¡Nueva solicitud de hospedaje!'
     : '¡Nueva reserva!'
   const parts = []
   if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
+  if (ordersPending.length) parts.push(`${ordersPending.length} pedido${ordersPending.length !== 1 ? 's' : ''} por confirmar`)
   if (pending.length) parts.push(`${pending.length} cita${pending.length !== 1 ? 's' : ''} por confirmar/cancelar`)
   if (lodgingPending.length) parts.push(`${lodgingPending.length} estadía${lodgingPending.length !== 1 ? 's' : ''} por confirmar`)
 
@@ -156,9 +190,11 @@ export function AlarmBanner({ manual, pending, bookings, lodgingPending, lodging
         <div className="fixed inset-x-3 bottom-4 z-50 mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-3 rounded-2xl bg-red-600 px-4 py-3 text-white shadow-2xl animate-pulse motion-reduce:animate-none sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:flex-nowrap sm:px-5">
           {manual.length
             ? <Hand className="w-5 h-5" />
-            : lodgingPending.length
-              ? <BedDouble className="w-5 h-5" />
-              : <CalendarPlus className="w-5 h-5" />}
+            : ordersPending.length
+              ? <ShoppingBag className="w-5 h-5" />
+              : lodgingPending.length
+                ? <BedDouble className="w-5 h-5" />
+                : <CalendarPlus className="w-5 h-5" />}
           <div>
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>

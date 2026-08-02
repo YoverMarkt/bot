@@ -1,7 +1,7 @@
 import { clearToken, deviceId, readToken } from './session'
 import type {
   Address, BankAccount, Catalog, Business, CartLine,
-  Fulfillment, Me, OrderResult, StayQuote, StayRequest, StoreStatus,
+  Fulfillment, Me, OrderResult, PaymentMethod, StayQuote, StayRequest, StoreStatus,
 } from './types'
 
 /**
@@ -85,12 +85,14 @@ export const createOrder = (slug: string, input: {
   name?: string
   addressId?: string | null
   fulfillment: Fulfillment
+  paymentMethod?: PaymentMethod | null
 }) => request<OrderResult>(`/${slug}/orders`, {
   method: 'POST',
   body: {
     name: input.name,
     addressId: input.addressId,
     fulfillment: input.fulfillment,
+    paymentMethod: input.paymentMethod || null,
     items: input.lines.map(linea => ({
       productId: linea.product.id,
       variantId: linea.variant?.id || null,
@@ -100,6 +102,32 @@ export const createOrder = (slug: string, input: {
     })),
   },
 })
+
+/**
+ * Comprobante de la transferencia. Va aparte del pedido y DESPUÉS de crearlo,
+ * a propósito: el pedido ya está a salvo, así que si la subida falla —o el
+ * cliente no encuentra la foto— no se pierde nada. Por eso no usa `request`:
+ * viaja como multipart, no como JSON.
+ */
+export const uploadPaymentProof = async (slug: string, orderId: string, file: File) => {
+  const cuerpo = new FormData()
+  cuerpo.append('file', file)
+  const response = await fetch(`/api/store/${slug}/orders/${orderId}/proof`, {
+    method: 'POST',
+    headers: {
+      'x-storefront-token': readToken(),
+      'x-storefront-device': deviceId(),
+    },
+    body: cuerpo,
+  })
+  let payload: Record<string, unknown> = {}
+  try { payload = await response.json() } catch { payload = {} }
+  if (!response.ok) {
+    if (response.status === 401) clearToken()
+    throw new ApiError(response.status, String(payload.error || 'No pudimos subir el comprobante'))
+  }
+  return payload as { ok: boolean; url: string }
+}
 
 // ── Hospedaje ──────────────────────────────────────────────────────────────
 

@@ -11,17 +11,20 @@ export function Boton({ children, onClick, disabled, variante = 'principal', typ
   variante?: 'principal' | 'suave' | 'linea'
   type?: 'button' | 'submit'
 }) {
+  // El principal es TINTA, no el color del negocio: así el botón que cierra el
+  // pedido se lee igual aunque el dueño elija un color pálido. El acento se
+  // reserva para señalar, no para todo.
   const estilos = {
-    principal: 'bg-marca text-white active:bg-marca/90 disabled:opacity-40',
-    suave: 'bg-marca-suave text-marca active:opacity-80 disabled:opacity-40',
-    linea: 'superficie border borde-tema active:opacity-70 disabled:opacity-40',
+    principal: 'tinta active:opacity-90 disabled:opacity-40',
+    suave: 'acento active:opacity-85 disabled:opacity-40',
+    linea: 'superficie border-2 borde-tema active:opacity-70 disabled:opacity-40',
   }[variante]
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`w-full rounded-xl px-4 py-3.5 text-[15px] font-semibold transition ${estilos}`}
+      className={`w-full rounded-2xl px-4 py-4 text-[15px] font-bold tracking-tight transition ${estilos}`}
     >
       {children}
     </button>
@@ -51,15 +54,15 @@ export function Hoja({ abierta, onCerrar, children, titulo }: {
         onClick={onCerrar}
         className="absolute inset-0 bg-black/50"
       />
-      <div className="animar-hoja superficie relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl sm:rounded-2xl sm:mb-6">
-        <div className="superficie sticky top-0 z-10 flex items-center justify-between border-b borde-tema px-4 py-3">
-          <h2 className="truncate pr-3 text-[15px] font-bold">{titulo}</h2>
+      <div className="animar-hoja superficie relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[1.75rem] sm:mb-6 sm:rounded-[1.75rem]">
+        <div className="superficie sticky top-0 z-10 flex items-center justify-between border-b borde-tema px-5 py-4">
+          <h2 className="truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
           <button
             onClick={onCerrar}
             aria-label="Cerrar"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-black/5 dark:bg-white/10"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5 dark:bg-white/10"
           >
-            <X size={17} />
+            <X size={18} />
           </button>
         </div>
         {children}
@@ -76,21 +79,21 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
   maximo?: number
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-full border borde-tema p-1">
+    <div className="flex items-center gap-1 rounded-full border-2 borde-tema p-1">
       <button
         onClick={() => onCambiar(Math.max(minimo, valor - 1))}
         disabled={valor <= minimo}
         aria-label="Quitar uno"
-        className="flex size-9 items-center justify-center rounded-full text-lg font-bold disabled:opacity-30"
+        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30 dark:active:bg-white/10"
       >
         −
       </button>
-      <span className="min-w-7 text-center text-[15px] font-bold tabular-nums">{valor}</span>
+      <span className="min-w-8 text-center text-[16px] font-extrabold tabular-nums">{valor}</span>
       <button
         onClick={() => onCambiar(Math.min(maximo, valor + 1))}
         disabled={valor >= maximo}
         aria-label="Agregar uno"
-        className="flex size-9 items-center justify-center rounded-full text-lg font-bold disabled:opacity-30"
+        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30 dark:active:bg-white/10"
       >
         +
       </button>
@@ -99,11 +102,13 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
 }
 
 export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; children: ReactNode }) {
+  // El aviso informativo va sobre el acento del negocio, con su texto legible
+  // calculado; el de alerta se queda ámbar siempre, porque «ojo» no es marca.
   const estilo = tono === 'alerta'
-    ? 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
-    : 'bg-marca-suave text-marca'
+    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+    : 'acento'
   return (
-    <div className={`rounded-xl px-3.5 py-2.5 text-[13px] font-medium ${estilo}`}>
+    <div className={`rounded-2xl px-4 py-3 text-[13.5px] font-semibold ${estilo}`}>
       {children}
     </div>
   )

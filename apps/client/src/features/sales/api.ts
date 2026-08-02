@@ -28,10 +28,17 @@ export type Order = {
   id: string
   contact_phone: string
   contact_name: string | null
-  status: 'pendiente' | 'confirmado' | 'completado' | 'cancelado' | 'expirado'
+  // Flujo hacia adelante, sin retroceso; lo hace cumplir la RPC set_order_status.
+  status: 'pendiente' | 'confirmado' | 'preparacion' | 'en_camino' | 'completado' | 'cancelado' | 'expirado'
+  // Solo los pedidos de la mini app dicen cómo se entregan.
+  fulfillment?: 'delivery' | 'pickup' | 'onsite' | null
   subtotal: number | string
   discount: number | string
+  shipping?: number | string | null
   total: number | string
+  /** Solo en pedidos de la mini app; los del bot no preguntan cómo se paga. */
+  payment_method?: 'transferencia' | 'efectivo' | null
+  payment_proof_url?: string | null
   currency?: string
   created_at: string
   order_items: SaleItem[]

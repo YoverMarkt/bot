@@ -12,6 +12,9 @@ const editableBusinessFields = [
   'phone',
   'social',
   'payment_methods',
+  'delivery_fee',
+  'brand_color',
+  'logo_url',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -69,6 +72,11 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     takes_bookings: business.takes_bookings === true,
     takes_orders: business.takes_orders !== false,
     lodging_enabled: business.lodging_enabled === true,
+    // Apariencia y envío de la mini app. El importe oficial del envío lo
+    // vuelve a calcular la base al crear el pedido; esto es la configuración.
+    delivery_fee: Number(business.delivery_fee) || 0,
+    brand_color: business.brand_color ?? null,
+    logo_url: business.logo_url ?? null,
     suspended: business.suspended,
     bot_active: business.bot_active,
   })
@@ -78,6 +86,33 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
   const data: Partial<Record<EditableBusinessField, unknown>> = {}
   for (const field of editableBusinessFields) {
     if (field in req.body) data[field] = req.body[field]
+  }
+
+  // Los dos campos que acaban en la mini app se validan aquí y no solo en el
+  // CHECK: un 400 explicando qué pasa vale más que un 500 de la base.
+  if ('delivery_fee' in data) {
+    const monto = Number(data.delivery_fee)
+    if (!Number.isFinite(monto) || monto < 0 || monto > 999) {
+      return res.status(400).json({ error: 'El costo de envío debe estar entre 0 y 999' })
+    }
+    data.delivery_fee = Math.round(monto * 100) / 100
+  }
+  if ('brand_color' in data) {
+    const color = typeof data.brand_color === 'string' ? data.brand_color.trim() : ''
+    if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+      return res.status(400).json({ error: 'El color debe ser un hex de 6 dígitos, por ejemplo #D9F950' })
+    }
+    // Vacío = volver al color de la plataforma.
+    data.brand_color = color ? color.toUpperCase() : null
+  }
+  if ('logo_url' in data) {
+    // La sube el propio panel a Cloudinary; aquí solo se acepta el resultado.
+    // Vacío = quitar el logo.
+    const url = typeof data.logo_url === 'string' ? data.logo_url.trim() : ''
+    if (url && !/^https:\/\//.test(url)) {
+      return res.status(400).json({ error: 'El logo debe ser una imagen subida desde el panel' })
+    }
+    data.logo_url = url || null
   }
 
   try {

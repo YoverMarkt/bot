@@ -291,7 +291,7 @@ test('reportes renderiza gráficos shadcn sin desbordar en móvil', async ({ pag
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
 
-test('un pedido se confirma y completa sin generar cobros automáticos', async ({ page }) => {
+test('un pedido recorre confirmación, preparación y reparto sin generar cobros automáticos', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)
   let orderStatus = 'pendiente'
@@ -321,18 +321,61 @@ test('un pedido se confirma y completa sin generar cobros automáticos', async (
     return route.fallback()
   })
   await page.goto(`${clientUrl}#/sales`)
-  await page.getByRole('button', { name: 'Confirmar pedido' }).click()
-  const confirmDialog = page.getByRole('alertdialog', { name: 'Confirmar pedido' })
-  await confirmDialog.getByRole('button', { name: 'Confirmar pedido' }).click()
-  await expect.poll(() => statusPayload).toEqual({ status: 'confirmado' })
-  await expect(page.getByRole('button', { name: 'Marcar completado' })).toBeVisible()
-  await page.getByRole('button', { name: 'Marcar completado' }).click()
-  const completeDialog = page.getByRole('alertdialog', { name: 'Completar pedido' })
-  await expect(completeDialog).toBeVisible()
-  // El refetch desmonta el diálogo inmediatamente; dispatchEvent evita que
-  // Playwright reintente un click exitoso sobre un nodo ya retirado.
-  await completeDialog.getByRole('button', { name: 'Marcar completado' }).dispatchEvent('click')
-  await expect.poll(() => statusPayload).toEqual({ status: 'completado' })
+
+  // El flujo entero de una pizzería, un paso por pantalla. El refetch desmonta
+  // el diálogo en cuanto responde el PUT; dispatchEvent evita que Playwright
+  // reintente un click que ya funcionó sobre un nodo retirado.
+  const avanzar = async (boton: string, esperado: string) => {
+    await page.getByRole('button', { name: boton, exact: true }).click()
+    const dialogo = page.getByRole('alertdialog').filter({ hasText: boton })
+    await dialogo.getByRole('button', { name: boton, exact: true }).dispatchEvent('click')
+    await expect.poll(() => statusPayload).toEqual({ status: esperado })
+  }
+
+  await avanzar('Confirmar pedido', 'confirmado')
+  await avanzar('Poner en preparación', 'preparacion')
+  await avanzar('Marcar en camino', 'en_camino')
+  await avanzar('Marcar entregado', 'completado')
+})
+
+// Regresión del pedido perdido: la alarma existía y era sorda a `orders`.
+// Aquí se comprueba que un pedido que entra ESTANDO el panel abierto enciende
+// el banner solo, sin recargar, y lleva a donde se atiende.
+test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ page }) => {
+  test.setTimeout(45_000)   // el panel consulta cada 12 s
+  await seedClientSession(page)
+  await mockClientApi(page)
+  let orders: Record<string, unknown>[] = []
+
+  await page.route('**/api/client/business', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
+      takes_bookings: false, takes_orders: true,
+    }),
+  }))
+  await page.route('**/api/client/orders**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(orders),
+  }))
+  await page.goto(clientUrl)
+
+  // Sin pedidos pendientes el panel calla (si no, el dueño la silenciaría siempre).
+  await expect(page.getByRole('link', { name: 'Conversaciones' })).toBeVisible()
+  await expect(page.getByText('¡Nuevo pedido!')).toHaveCount(0)
+
+  orders = [{
+    id: 'order-alarma', contact_phone: '+593999000111', contact_name: 'Cliente pedido',
+    status: 'pendiente', subtotal: 25, discount: 0, total: 25, currency: 'USD',
+    created_at: '2026-08-02T10:00:00.000Z',
+  }]
+
+  await expect(page.getByText('¡Nuevo pedido!')).toBeVisible({ timeout: 25_000 })
+  await expect(page.getByText('1 pedido por confirmar')).toBeVisible()
+  await page.getByRole('button', { name: 'Atender' }).click()
+  await expect(page).toHaveURL(/#\/sales$/)
 })
 
 test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({ page }) => {
