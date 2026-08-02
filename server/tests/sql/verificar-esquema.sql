@@ -303,6 +303,90 @@ begin
     end if;
   end;
 
+  -- ── 3c. El envío lo pone la BASE, no el teléfono ─────────────────────────
+  -- Si el costo de envío se calculara en la app, cualquiera pediría con envío
+  -- $0 tocando el JavaScript. Aquí sale de la ficha del negocio.
+  update businesses set delivery_fee = 2.00 where id = v_business;
+
+  declare
+    v_pedido jsonb;
+    v_variante uuid;
+  begin
+    select id into v_variante from product_variants where business_id = v_business limit 1;
+
+    v_pedido := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'delivery',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto, 'variant_id', v_variante, 'quantity', 2
+      )),
+      null, 'transferencia'
+    );
+    -- 10.50 de producto + 2.00 de envío.
+    if (v_pedido ->> 'total')::numeric <> 12.50 or (v_pedido ->> 'shipping')::numeric <> 2.00 then
+      raise exception 'create_storefront_order no sumó el envío: %', v_pedido;
+    end if;
+
+    -- Quien retira en el local NO paga envío.
+    v_pedido := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto, 'variant_id', v_variante, 'quantity', 2
+      )),
+      null, 'efectivo'
+    );
+    if (v_pedido ->> 'total')::numeric <> 10.50 or (v_pedido ->> 'shipping')::numeric <> 0 then
+      raise exception 'create_storefront_order cobró envío a un retiro en local: %', v_pedido;
+    end if;
+
+    -- Un método de pago que no existe se rechaza (la plataforma no cobra con
+    -- tarjeta: regla inviolable #6).
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
+        null, 'tarjeta'
+      );
+      raise exception 'create_storefront_order aceptó un metodo de pago inventado';
+    exception when sqlstate '22023' then
+      null;
+    end;
+
+    -- ── El comprobante: solo el dueño del pedido puede adjuntarlo ───────────
+    declare
+      v_ultimo uuid;
+      v_resultado jsonb;
+    begin
+      select id into v_ultimo from orders
+      where business_id = v_business order by created_at desc limit 1;
+
+      v_resultado := public.attach_storefront_payment_proof(
+        v_business, v_ultimo, '+593900000002', 'https://res.cloudinary.com/demo/comprobante.jpg'
+      );
+      if v_resultado ->> 'result' <> 'updated' then
+        raise exception 'attach_storefront_payment_proof no guardó el comprobante: %', v_resultado;
+      end if;
+
+      -- Otro teléfono con el id del pedido no puede colgarle nada.
+      v_resultado := public.attach_storefront_payment_proof(
+        v_business, v_ultimo, '+593900000099', 'https://res.cloudinary.com/demo/ajeno.jpg'
+      );
+      if v_resultado ->> 'result' <> 'not_found' then
+        raise exception 'FUGA: otro cliente adjuntó un comprobante a este pedido';
+      end if;
+
+      -- Y otro negocio, tampoco.
+      v_resultado := public.attach_storefront_payment_proof(
+        gen_random_uuid(), v_ultimo, '+593900000002', 'https://res.cloudinary.com/demo/ajeno.jpg'
+      );
+      if v_resultado ->> 'result' <> 'not_found' then
+        raise exception 'FUGA: otro negocio adjuntó un comprobante a este pedido';
+      end if;
+    end;
+  end;
+
+  -- Se deja como estaba para no contaminar las comprobaciones siguientes.
+  update businesses set delivery_fee = 0 where id = v_business;
+
   -- Un producto de otro negocio no se puede pedir aquí.
   begin
     perform public.create_storefront_order(

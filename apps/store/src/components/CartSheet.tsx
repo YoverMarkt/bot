@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Bike, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
+import { Banknote, Bike, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money } from '../lib/format'
 import { cartTotal, lineTotal } from '../lib/cart'
-import type { Address, CartLine, Fulfillment, Me } from '../lib/types'
+import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
 
 // El carrito y el cierre del pedido, en una sola hoja.
 //
@@ -12,7 +12,7 @@ import type { Address, CartLine, Fulfillment, Me } from '../lib/types'
 // un precio hace un minuto, gana el suyo.
 
 export default function CartSheet({
-  abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error,
+  abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
   onConfirmar, onNuevaDireccion,
 }: {
   abierta: boolean
@@ -23,10 +23,17 @@ export default function CartSheet({
   puedePedir: boolean
   enviando: boolean
   error: string | null
-  onConfirmar: (datos: { fulfillment: Fulfillment; addressId: string | null; name: string }) => void
+  deliveryFee: number
+  onConfirmar: (datos: {
+    fulfillment: Fulfillment
+    addressId: string | null
+    name: string
+    paymentMethod: PaymentMethod
+  }) => void
   onNuevaDireccion: (datos: { label: string; address: string; reference: string }) => Promise<void>
 }) {
   const [entrega, setEntrega] = useState<Fulfillment>('delivery')
+  const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
   const [nombre, setNombre] = useState('')
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
@@ -55,6 +62,27 @@ export default function CartSheet({
     { id: 'delivery' as const, icono: Bike, texto: 'A domicilio' },
     { id: 'pickup' as const, icono: ShoppingBag, texto: 'Yo lo recojo' },
   ]
+
+  const opcionesPago = [
+    {
+      id: 'transferencia' as const,
+      icono: Landmark,
+      texto: 'Transferencia bancaria',
+      detalle: 'Te mostramos la cuenta y subes tu comprobante.',
+    },
+    {
+      id: 'efectivo' as const,
+      icono: Banknote,
+      texto: 'Efectivo al recibir',
+      detalle: 'Pagas cuando llegue tu pedido.',
+    },
+  ]
+
+  // Vista previa del envío. El importe que manda es el que calcula el servidor
+  // al crear el pedido: aquí solo se anticipa para que nadie se lleve sorpresas.
+  const subtotal = cartTotal(lines)
+  const envio = entrega === 'delivery' ? deliveryFee : 0
+  const total = subtotal + envio
 
   return (
     <Hoja abierta={abierta} onCerrar={onCerrar} titulo="Tu pedido">
@@ -188,6 +216,32 @@ export default function CartSheet({
           </section>
         )}
 
+        {/* ── Cómo paga ── */}
+        {/* La tarjeta NO está y no es un olvido: la plataforma no procesa
+            cobros (regla inviolable #6). El negocio cobra por fuera. */}
+        <section>
+          <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+            ¿Cómo vas a pagar?
+          </h3>
+          <div className="space-y-2">
+            {opcionesPago.map(({ id, icono: Icono, texto, detalle }) => (
+              <button
+                key={id}
+                onClick={() => setPago(id)}
+                className={`flex w-full items-start gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition ${
+                  pago === id ? 'border-(--acento) bg-(--acento-suave)' : 'borde-tema'
+                }`}
+              >
+                <Icono size={18} className="mt-0.5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-[14.5px] font-bold">{texto}</span>
+                  <span className="block text-[12.5px] texto-tenue">{detalle}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+
         {/* ── Quién ── */}
         <section>
           <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
@@ -210,12 +264,26 @@ export default function CartSheet({
       </div>
 
       <div className="superficie sticky bottom-0 border-t borde-tema px-4 pt-3 pb-seguro">
-        <div className="mb-3 flex items-baseline justify-between">
-          <span className="text-[14px] font-semibold texto-tenue">Total</span>
-          <span className="text-[22px] font-extrabold tabular-nums">{money(cartTotal(lines))}</span>
+        <div className="mb-3 space-y-1.5">
+          <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+            <span>Subtotal</span>
+            <span className="tabular-nums">{money(subtotal)}</span>
+          </div>
+          <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+            <span>Envío</span>
+            <span className="tabular-nums">
+              {entrega === 'pickup' ? 'Retiras en el local' : envio > 0 ? money(envio) : 'Gratis'}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between border-t borde-tema pt-2">
+            <span className="text-[14px] font-bold">Total</span>
+            <span className="text-[24px] font-extrabold tracking-tight tabular-nums">{money(total)}</span>
+          </div>
         </div>
         <Boton
-          onClick={() => onConfirmar({ fulfillment: entrega, addressId: elegida, name: nombreFinal })}
+          onClick={() => onConfirmar({
+            fulfillment: entrega, addressId: elegida, name: nombreFinal, paymentMethod: pago,
+          })}
           disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
         >
           {enviando

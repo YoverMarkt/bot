@@ -1,6 +1,10 @@
 import rateLimit from 'express-rate-limit'
+import multer from 'multer'
+import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import type { ScheduleRecord } from '../db/types'
+import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
+import { isConfigured, uploadMedia } from '../integrations/cloudinary'
 import { requireStorefrontSession } from '../middleware/storefront'
 import { hashToken } from '../services/storefront-session'
 import {
@@ -41,6 +45,10 @@ interface StorefrontRouteDatabase {
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
   getBusinessCustomer(businessId: string, customerId: string): Promise<unknown>
   createStorefrontOrder(input: Record<string, unknown>): Promise<{
+    data: unknown
+    error: { message?: string; code?: string } | null
+  }>
+  attachStorefrontPaymentProof(input: Record<string, unknown>): Promise<{
     data: unknown
     error: { message?: string; code?: string } | null
   }>
@@ -228,6 +236,11 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     ? String(body.fulfillment)
     : null
 
+  // La tarjeta no está: la plataforma no procesa cobros (regla inviolable #6).
+  const paymentMethod = ['transferencia', 'efectivo'].includes(String(body.paymentMethod))
+    ? String(body.paymentMethod)
+    : null
+
   const result = await db.createStorefrontOrder({
     businessId,
     customerId,
@@ -235,6 +248,7 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     contactName: String(body.name || '').slice(0, 120) || null,
     addressId: String(body.addressId || '') || null,
     fulfillment,
+    paymentMethod,
     items: safeItems,
   })
 
@@ -253,6 +267,70 @@ router.get('/api/store/:slug/payment-info', requireStorefrontSession, async (req
   if (!account) return res.status(404).json({ error: 'El negocio no tiene datos de pago cargados' })
   return res.json(account)
 })
+
+// ── Comprobante de la transferencia ────────────────────────────────────────
+//
+// Es OPCIONAL a propósito: el pedido ya está creado cuando se llega aquí, así
+// que un cliente que no encuentra la foto no pierde su pedido.
+//
+// La imagen la sube el SERVIDOR a Cloudinary. La app nunca ve credenciales, y
+// la URL que se guarda es la que devuelve Cloudinary, no una que mande el
+// teléfono: si no, cualquiera colgaría un enlace arbitrario en el pedido.
+const proofUpload: RequestHandler = (req, res, next) => {
+  multer({ storage: multer.memoryStorage(), limits: { fileSize: MEDIA_LIMITS.image } })
+    .single('file')(req, res, error => {
+      if (error) {
+        const mapped = mapMulterError(error)
+        return res.status(mapped.status).json({ error: mapped.error })
+      }
+      next()
+    })
+}
+
+router.post(
+  '/api/store/:slug/orders/:id/proof',
+  orderLimiter,
+  requireStorefrontSession,
+  proofUpload,
+  async (req, res) => {
+    const { businessId, contactPhone } = req.storefront!
+    if (!req.file) return res.status(400).json({ error: 'No se recibió el comprobante' })
+
+    const invalido = validateMediaFile(req.file)
+    if (invalido) return res.status(invalido.status).json({ error: invalido.error })
+    if (!req.file.mimetype?.startsWith('image/')) {
+      return res.status(400).json({ error: 'El comprobante debe ser una imagen' })
+    }
+    if (!(await isConfigured())) {
+      return res.status(503).json({ error: 'El negocio no puede recibir comprobantes ahora mismo' })
+    }
+
+    try {
+      const subida = await uploadMedia(req.file.buffer, businessId)
+      const { data, error } = await db.attachStorefrontPaymentProof({
+        businessId,
+        orderId: String(req.params.id || ''),
+        contactPhone,
+        url: subida.url,
+      })
+      if (error) {
+        console.error('❌ comprobante:', error.message || 'Error desconocido')
+        return res.status(500).json({ error: 'No pudimos guardar tu comprobante' })
+      }
+      const resultado = (data || {}) as { result?: string }
+      if (resultado.result === 'not_found') {
+        return res.status(404).json({ error: 'Ese pedido no es tuyo o ya no existe' })
+      }
+      if (resultado.result === 'invalid_state') {
+        return res.status(409).json({ error: 'Ese pedido ya está cerrado' })
+      }
+      return res.json({ ok: true, url: subida.url })
+    } catch (error) {
+      console.error('❌ comprobante:', (error as Error).message)
+      return res.status(500).json({ error: 'No pudimos subir tu comprobante' })
+    }
+  },
+)
 
 // ── Hospedaje ──────────────────────────────────────────────────────────────
 //

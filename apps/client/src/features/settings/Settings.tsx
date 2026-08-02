@@ -17,6 +17,7 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
+  delivery_fee: number | null; brand_color: string | null; takes_orders?: boolean
 }
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
@@ -174,6 +175,10 @@ export function Locked() {
   )
 }
 
+// Verde de la plataforma: el mismo que usa la mini app cuando el negocio no
+// eligió color propio.
+const DEFAULT_BRAND_COLOR = '#D9F950'
+
 // ── Identidad del negocio (Ajustes del viejo: SOLO nombre, slogan y descripción) ──
 export function BusinessForm() {
   const qc = useQueryClient()
@@ -189,6 +194,8 @@ export function BusinessForm() {
         slogan: f?.slogan,
         description: f?.description,
         payment_methods: f?.payment_methods,
+        delivery_fee: Number(f?.delivery_fee) || 0,
+        brand_color: f?.brand_color || null,
       }),
     }),
     onSuccess: () => {
@@ -210,6 +217,55 @@ export function BusinessForm() {
         <div><Label htmlFor="business-slogan">Slogan / Lema</Label><Input id="business-slogan" value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
         <div><Label htmlFor="business-description">Descripción corta</Label><Textarea id="business-description" rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
         <div><Label htmlFor="business-payment-methods">Métodos de pago</Label><Input id="business-payment-methods" value={f.payment_methods ?? ''} onChange={set('payment_methods')} placeholder="Ej: transferencia, efectivo, tarjeta" /></div>
+
+        {/* ── Tu tienda (mini app) ── */}
+        <div className="border-t pt-4 mt-1 space-y-3">
+          <p className="text-[13px] font-semibold">Tu tienda</p>
+
+          <div>
+            <Label htmlFor="business-delivery-fee">Costo de envío a domicilio</Label>
+            <Input
+              id="business-delivery-fee"
+              type="number" min="0" max="999" step="0.01" inputMode="decimal"
+              value={f.delivery_fee ?? 0}
+              onChange={set('delivery_fee')}
+              placeholder="Ej: 2.00"
+            />
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              Se suma solo a los pedidos a domicilio. Quien retira en el local no lo paga.
+              Déjalo en 0 si no cobras envío.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="business-brand-color">Color de tu marca</Label>
+            <div className="flex items-center gap-2">
+              <input
+                id="business-brand-color"
+                type="color"
+                value={f.brand_color || DEFAULT_BRAND_COLOR}
+                onChange={set('brand_color')}
+                aria-label="Color de tu marca"
+                className="h-9 w-14 shrink-0 cursor-pointer rounded-md border bg-transparent p-1"
+              />
+              <Input
+                value={f.brand_color ?? ''}
+                onChange={set('brand_color')}
+                placeholder={DEFAULT_BRAND_COLOR}
+                aria-label="Color de tu marca en hexadecimal"
+              />
+              {f.brand_color && (
+                <Button variant="outline" size="sm" onClick={() => setDraft({ ...f, brand_color: null })}>
+                  Quitar
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              Con el que se pinta tu mini app. Si lo dejas vacío usa el color de la plataforma.
+              El texto encima se ajusta solo para que siempre se lea.
+            </p>
+          </div>
+        </div>
       </div>
       <div className="flex justify-end mt-4">
         <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>

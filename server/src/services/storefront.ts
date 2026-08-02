@@ -25,7 +25,17 @@ export interface StorefrontBusiness {
   storefront_enabled?: boolean | null
   takes_orders?: boolean | null
   lodging_enabled?: boolean | null
+  delivery_fee?: number | string | null
+  brand_color?: string | null
 }
+
+// El color lo escribe el dueño en su panel y acaba pintando la mini app, así
+// que se vuelve a comprobar aquí: solo un hex de 6 dígitos sale del servidor.
+// Cualquier otra cosa se descarta y la tienda usa su color por defecto.
+const HEX = /^#[0-9a-fA-F]{6}$/
+export const safeBrandColor = (valor?: string | null) => (
+  typeof valor === 'string' && HEX.test(valor.trim()) ? valor.trim().toUpperCase() : null
+)
 
 export interface CatalogCategory {
   id: string
@@ -245,5 +255,9 @@ export function publicBusiness(business: StorefrontBusiness) {
     // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
     // `type`, que es exactamente lo que el proyecto decidió no hacer.
     capabilities: storefrontCapabilities(business),
+    // El color con el que se pinta la tienda. Nulo = el de la plataforma.
+    brandColor: safeBrandColor(business.brand_color),
+    // Informativo: el importe oficial lo vuelve a calcular la base al pedir.
+    deliveryFee: Math.max(0, Number(business.delivery_fee) || 0),
   }
 }

@@ -25,6 +25,7 @@ un módulo concreto, no en cada sesión.
 - [Mini app de la tienda](#mini-app-de-la-tienda)
 - [El horario del dueño manda sobre todos los modos](#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - [Los estados de un pedido](#los-estados-de-un-pedido)
+- [Envío, pago y color de la tienda](#envío-pago-y-color-de-la-tienda)
 
 ---
 
@@ -105,3 +106,19 @@ un módulo concreto, no en cada sesión.
 ⚠️ **El momento se eligió a propósito:** se hizo con cero pedidos reales, cuando cambiar un CHECK cuesta nada. Con una pizzería operando, lo mismo es migrar los datos de un cliente vivo. `en_camino` es además el punto donde engancharía una cooperativa de reparto, así que el estado tenía que existir antes que la sección Pedidos, que se construye alrededor de él.
 
 Verificado ejecutando la migración contra un PostgreSQL real —incluidas la irreversibilidad, el bloqueo del retiro y que el flujo anterior sigue intacto—, no solo leyéndola: Postgres acepta una función rota sin avisar. Las transiciones viven en `server/tests/sql/verificar-esquema.sql`, que el CI ejecuta en cada PR.
+
+---
+
+## Envío, pago y color de la tienda
+
+**Completado el flujo del diagrama del dueño (2026-08-02).** Tres piezas que faltaban, con las decisiones que las gobiernan:
+
+**El envío es un monto fijo por negocio** (`businesses.delivery_fee`) y **lo suma PostgreSQL**, dentro de `create_storefront_order`, junto al subtotal. No es un detalle de implementación: si el envío se calculara en el teléfono, cualquiera pediría con envío $0 tocando el JavaScript (regla inviolable #8). Solo se cobra cuando `fulfillment = 'delivery'` — quien retira en el local no lo paga — y es **uno por pedido, no por unidad**. La mini app muestra una vista previa del desglose; el importe que manda es siempre el que devuelve la base. Se descartaron las zonas por precio: exigen tabla propia, pantalla de gestión y que el cliente acierte su zona, y ningún negocio real lo ha pedido todavía.
+
+**El método de pago** (`orders.payment_method`) es `transferencia` o `efectivo`, y **nunca tarjeta**: la plataforma no procesa cobros (regla inviolable #6), y el diagrama la marcaba «próximamente» a propósito. Queda nulo en los pedidos que entran por WhatsApp, que no preguntan cómo se paga. Lo que elige el cliente decide qué ve después: quien paga en efectivo no pasa por datos bancarios ni comprobante.
+
+**El comprobante es OPCIONAL y va DESPUÉS de crear el pedido.** Es la decisión con más consecuencias del bloque: el pedido ya está a salvo cuando se pide la foto, así que un cliente que no la encuentra —o una subida que falla— no pierde el pedido. La imagen la sube el SERVIDOR a Cloudinary y se guarda la URL que devuelve Cloudinary, nunca una que mande el teléfono. ⚠️ La pertenencia se comprueba en `attach_storefront_payment_proof` con **las tres cosas a la vez: negocio, pedido y teléfono de la sesión** — la mini app no tiene JWT, así que sin eso cualquiera con un id de pedido ajeno podría colgarle una imagen. Un pedido ya cerrado no admite comprobante.
+
+**El color de marca** (`businesses.brand_color`) lo elige el dueño en su panel; el verde de la plataforma es solo el valor por defecto. Se valida como hex de 6 dígitos en tres capas —CHECK, ruta y cliente— porque acaba dentro de un estilo. ⚠️ El acento se usa **siempre como fondo**, nunca como color de letra sobre blanco, y el texto que va encima **se calcula por luminancia** (`apps/store/src/lib/marca.ts`): así el negocio puede elegir amarillo o azul marino sin que nada quede ilegible. El botón principal es tinta y no el color del negocio, para que la acción que cierra el pedido se lea igual con cualquier marca.
+
+Verificado ejecutando la migración contra un PostgreSQL real: el envío no se multiplica por unidad, un precio mandado por el cliente se ignora, y otro teléfono u otro negocio no pueden adjuntar comprobante a un pedido ajeno.

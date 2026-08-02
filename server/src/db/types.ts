@@ -42,6 +42,9 @@ export interface BusinessRecord {
   calcom_link?: string | null
   ai_provider?: string | null
   slogan?: string | null
+  // Mini app: costo fijo de envío a domicilio y color con el que se pinta.
+  delivery_fee?: number | string | null
+  brand_color?: string | null
   owner_phone?: string | null
   notes?: string | null
   plan?: string | null

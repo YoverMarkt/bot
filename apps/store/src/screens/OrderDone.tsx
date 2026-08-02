@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, Copy, Landmark, MessageCircle } from 'lucide-react'
-import { getPaymentInfo } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle2, Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
+import { getPaymentInfo, uploadPaymentProof } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
 import { money } from '../lib/format'
-import type { BankAccount, Business, OrderResult } from '../lib/types'
+import type { BankAccount, Business, OrderResult, PaymentMethod } from '../lib/types'
 
 // Pedido registrado.
 //
@@ -19,20 +19,48 @@ const lineasBanco = (cuenta: BankAccount) => [
   { etiqueta: 'Cédula / RUC', valor: cuenta.holder_id, copiable: true },
 ].filter(linea => Boolean(linea.valor))
 
-export default function OrderDone({ slug, business, order, resumen }: {
+export default function OrderDone({ slug, business, order, resumen, paymentMethod }: {
   slug: string
   business: Business
   order: OrderResult
   resumen: { titulo: string; total: number | null }
+  /** Nulo en hospedaje, que no pregunta cómo se paga. */
+  paymentMethod?: PaymentMethod | null
 }) {
   const [cuenta, setCuenta] = useState<BankAccount | null>(null)
   const [copiado, setCopiado] = useState('')
+  const [comprobante, setComprobante] = useState<'ninguno' | 'subiendo' | 'listo'>('ninguno')
+  const [falloComprobante, setFalloComprobante] = useState<string | null>(null)
+  const archivo = useRef<HTMLInputElement>(null)
+
+  // Solo se piden datos bancarios a quien dijo que iba a transferir. Quien paga
+  // en efectivo no tiene por qué ver una cuenta ni un comprobante.
+  const vaATransferir = paymentMethod !== 'efectivo'
 
   useEffect(() => {
+    if (!vaATransferir) return
     // Si el negocio no cargó datos bancarios no es un error: simplemente
     // coordinará el pago por WhatsApp como siempre.
     getPaymentInfo(slug).then(setCuenta).catch(() => setCuenta(null))
-  }, [slug])
+  }, [slug, vaATransferir])
+
+  // El pedido YA está creado: si esto falla, no se pierde nada y el negocio
+  // pedirá el comprobante por WhatsApp. Por eso el fallo se cuenta sin drama.
+  const subir = async (elegido: File | undefined) => {
+    // Sin id no hay a qué adjuntarlo: se calla y queda el camino de WhatsApp.
+    if (!elegido || !order.id) return
+    setComprobante('subiendo')
+    setFalloComprobante(null)
+    try {
+      await uploadPaymentProof(slug, order.id, elegido)
+      setComprobante('listo')
+    } catch (error) {
+      setComprobante('ninguno')
+      setFalloComprobante(
+        error instanceof Error ? error.message : 'No pudimos subir tu comprobante',
+      )
+    }
+  }
 
   const copiar = async (texto: string) => {
     try {
@@ -72,13 +100,13 @@ export default function OrderDone({ slug, business, order, resumen }: {
         </div>
       )}
 
-      {cuenta && lineasBanco(cuenta).length > 0 && (
+      {vaATransferir && cuenta && lineasBanco(cuenta).length > 0 && (
         <section className="mt-6">
           <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold tracking-wide uppercase texto-tenue">
             <Landmark size={15} />
             Para transferir
           </h2>
-          <div className="superficie divide-y divide-[var(--linea)] overflow-hidden rounded-2xl border borde-tema">
+          <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
             {lineasBanco(cuenta).map(({ etiqueta, valor, copiable }) => (
               <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3">
                 <span className="text-[13px] texto-tenue">{etiqueta}</span>
@@ -96,10 +124,50 @@ export default function OrderDone({ slug, business, order, resumen }: {
           {cuenta.instructions && (
             <p className="mt-2.5 text-[13px] texto-tenue">{cuenta.instructions}</p>
           )}
-          <div className="mt-4">
-            <Aviso>
-              Envía el comprobante por WhatsApp para que el negocio lo verifique.
-            </Aviso>
+          {/* ── Comprobante ── */}
+          {/* Es opcional a propósito: el pedido ya está hecho. Quien no
+              encuentre la foto ahora la manda por WhatsApp y no pierde nada. */}
+          <div className="mt-4 space-y-3">
+            {!order.id
+              ? (
+                  <Aviso>
+                    Envía el comprobante por WhatsApp para que el negocio lo verifique.
+                  </Aviso>
+                )
+              : comprobante === 'listo'
+              ? (
+                  <Aviso>
+                    <span className="flex items-center gap-2">
+                      <CheckCircle2 size={16} />
+                      Comprobante recibido. El negocio lo va a verificar.
+                    </span>
+                  </Aviso>
+                )
+              : (
+                  <>
+                    <input
+                      ref={archivo}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={event => void subir(event.target.files?.[0])}
+                    />
+                    <Boton
+                      variante="suave"
+                      disabled={comprobante === 'subiendo'}
+                      onClick={() => archivo.current?.click()}
+                    >
+                      <span className="flex items-center justify-center gap-2">
+                        <Upload size={17} />
+                        {comprobante === 'subiendo' ? 'Subiendo…' : 'Subir comprobante'}
+                      </span>
+                    </Boton>
+                    <p className="text-center text-[12px] texto-tenue">
+                      También puedes enviarlo por WhatsApp si prefieres.
+                    </p>
+                  </>
+                )}
+            {falloComprobante && <Aviso tono="alerta">{falloComprobante}</Aviso>}
           </div>
         </section>
       )}

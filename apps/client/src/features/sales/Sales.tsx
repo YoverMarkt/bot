@@ -175,7 +175,29 @@ function BotOrders() {
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-2">
             <div>
               {Number(o.discount) > 0 && <span className="mr-3 text-xs text-muted-foreground">Descuento: −{money(o.discount)}</span>}
+              {Number(o.shipping) > 0 && <span className="mr-3 text-xs text-muted-foreground">Envío: {money(o.shipping!)}</span>}
               <span className="font-bold text-foreground">Total: {money(o.total)}</span>
+              {/* Cómo dijo el cliente que paga y su comprobante, si lo subió.
+                  Sin esto el comprobante se guardaría y no lo vería nadie. */}
+              {o.payment_method && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{o.payment_method === 'efectivo' ? '💵 Paga en efectivo' : '🏦 Transferencia'}</span>
+                  {o.payment_method === 'transferencia' && (
+                    o.payment_proof_url
+                      ? (
+                          <a
+                            href={o.payment_proof_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-primary underline underline-offset-2"
+                          >
+                            Ver comprobante
+                          </a>
+                        )
+                      : <span className="text-amber-600 dark:text-amber-400">Sin comprobante</span>
+                  )}
+                </div>
+              )}
             </div>
             {nextStep(o) && (
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
+import { aplicarColorDeMarca } from './lib/marca'
 import { readSlug, readToken } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
 import Gate from './screens/Gate'
@@ -39,6 +40,9 @@ export default function App() {
 
     try {
       const datos = await getStore(slug)
+      // El color del negocio se aplica en cuanto se conoce, antes de pintar el
+      // catálogo: así nadie ve el verde por defecto y luego un salto de color.
+      aplicarColorDeMarca(datos.business?.brandColor)
       if (!enMovil) return setEstado({ fase: 'escritorio', business: datos.business })
       // Sin enlace no hay tienda: se explica en vez de mostrar una pantalla vacía.
       if (!readToken()) {

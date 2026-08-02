@@ -204,7 +204,26 @@ describe('la tienda del negocio', () => {
         address: null,
         phone: '+593991716574',
         capabilities: { orders: true, lodging: false },
+        brandColor: null,
+        deliveryFee: 0,
       })
+    })
+
+    // El color acaba dentro de un estilo de la mini app: solo sale de aquí si
+    // es un hex de 6 dígitos. Cualquier otra cosa se descarta.
+    it('solo publica un color de marca con forma de hex', () => {
+      expect(publicBusiness(negocio({ brand_color: '#d9f950' })).brandColor).toBe('#D9F950')
+      expect(publicBusiness(negocio({ brand_color: 'rojo' })).brandColor).toBeNull()
+      expect(publicBusiness(negocio({ brand_color: '#fff' })).brandColor).toBeNull()
+      expect(
+        publicBusiness(negocio({ brand_color: 'red;background:url(x)' })).brandColor,
+      ).toBeNull()
+    })
+
+    it('publica el costo de envío como número, nunca negativo', () => {
+      expect(publicBusiness(negocio({ delivery_fee: '2.50' })).deliveryFee).toBe(2.5)
+      expect(publicBusiness(negocio({ delivery_fee: -5 })).deliveryFee).toBe(0)
+      expect(publicBusiness(negocio({ delivery_fee: null })).deliveryFee).toBe(0)
     })
 
     // La tienda es pública: una credencial filtrada aquí sería un incidente.
