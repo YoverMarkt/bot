@@ -103,15 +103,22 @@ const getBookingById = async (businessId: string, id: string) => {
   return data
 }
 
+// Pasa por la RPC y no por un update suelto porque marcar «atendida» tiene
+// que registrar la venta en la MISMA transacción: si fueran dos pasos, una
+// cita podría quedar atendida sin aparecer en ningún reporte.
 const updateBookingStatus = async (
   businessId: string,
   id: string,
   status: string,
-) => db
-  .from('bookings')
-  .update({ status })
-  .eq('business_id', businessId)
-  .eq('id', id)
+  price?: number | null,
+) => db.rpc('set_booking_status', {
+  p_business_id: businessId,
+  p_booking_id: id,
+  p_status: status,
+  // Nulo = conserva el precio que ya tuviera. Las citas del bot llegan sin
+  // precio y el dueño lo pone al atender.
+  p_price: price ?? null,
+})
 
 const getAvailableSlots = async (businessId: string, daysAhead = 7) => {
   const schedule = await getSchedule(businessId)

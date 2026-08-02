@@ -138,6 +138,7 @@ bot/
 │   ├── migration-2026-08-02-logo-negocio.sql # Logo del negocio (solo https) visible en su mini app
 │   ├── migration-2026-08-02-pedido-entregado-es-venta.sql # Entregar un pedido lo registra en el reporte de ventas
 │   ├── migration-2026-08-02-pedido-de-mostrador.sql # La venta en persona entra por el mismo camino que el resto
+│   ├── migration-2026-08-02-cita-atendida-es-venta.sql # Servicios: la cita lleva precio y al atenderla se registra la venta
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

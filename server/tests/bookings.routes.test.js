@@ -168,7 +168,8 @@ describe('rutas de horarios y reservas', () => {
       booking_time: '10:00:00',
       service: 'Consulta',
     })
-    const updateBookingStatus = vi.spyOn(db, 'updateBookingStatus').mockResolvedValue({ error: null })
+    const updateBookingStatus = vi.spyOn(db, 'updateBookingStatus')
+      .mockResolvedValue({ data: { result: 'updated' }, error: null })
     const sendToContact = vi.spyOn(notify, 'sendToContact').mockResolvedValue(undefined)
 
     const response = await dispatch('put', '/api/client/bookings/:id/status', {
@@ -194,7 +195,8 @@ describe('rutas de horarios y reservas', () => {
     }
     const business = { id: 'business-a', name: 'Clínica Demo' }
     const getBooking = vi.spyOn(db, 'getBookingById').mockResolvedValue(booking)
-    const updateBookingStatus = vi.spyOn(db, 'updateBookingStatus').mockResolvedValue({ error: null })
+    const updateBookingStatus = vi.spyOn(db, 'updateBookingStatus')
+      .mockResolvedValue({ data: { result: 'updated' }, error: null })
     vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
     const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({})
     const sendToContact = vi.spyOn(notify, 'sendToContact').mockResolvedValue(undefined)
@@ -209,7 +211,8 @@ describe('rutas de horarios y reservas', () => {
     const message = '✅ ¡Tu cita de *Consulta* quedó *confirmada* para el 2026-07-20 a las 10:30! Te esperamos en Clínica Demo 😊'
     expect(response).toEqual({ status: 200, body: { ok: true } })
     expect(getBooking).toHaveBeenCalledWith('business-a', 'booking-a')
-    expect(updateBookingStatus).toHaveBeenCalledWith('business-a', 'booking-a', 'confirmed')
+    // El cuarto argumento es el precio: nulo salvo al cerrar la cita cobrando.
+    expect(updateBookingStatus).toHaveBeenCalledWith('business-a', 'booking-a', 'confirmed', null)
     expect(sendToContact).toHaveBeenCalledWith(business, booking.contact_phone, message)
     expect(saveMessage).toHaveBeenCalledWith('business-a', booking.contact_phone, 'owner', message)
   })

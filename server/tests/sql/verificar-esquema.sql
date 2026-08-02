@@ -445,6 +445,47 @@ begin
     null;
   end;
 
+  -- ── 3e. Una cita atendida es una venta ───────────────────────────────────
+  -- El caso de la barbería: sin esto, atender a alguien no aparecía en ningún
+  -- reporte salvo que el dueño se acordara de registrarlo a mano.
+  declare
+    v_cita uuid;
+    v_resultado jsonb;
+  begin
+    insert into bookings (
+      business_id, contact_phone, contact_name, service, product_id, price,
+      booking_date, booking_time, status
+    ) values (
+      v_business, '+593900000005', 'Cliente', 'Corte', v_producto, 10.50,
+      current_date, '09:00', 'confirmed'
+    ) returning id into v_cita;
+
+    v_resultado := public.set_booking_status(v_business, v_cita, 'attended');
+    if v_resultado ->> 'result' <> 'updated' then
+      raise exception 'set_booking_status no pudo atender la cita: %', v_resultado;
+    end if;
+    if not exists (select 1 from sales where booking_id = v_cita) then
+      raise exception 'una cita atendida no generó su venta';
+    end if;
+
+    -- Reintentar no duplica el dinero.
+    perform public.set_booking_status(v_business, v_cita, 'attended');
+    if (select count(*) from sales where booking_id = v_cita) <> 1 then
+      raise exception 'atender dos veces duplicó la venta de la cita';
+    end if;
+
+    -- Una cita cerrada no se reabre.
+    v_resultado := public.set_booking_status(v_business, v_cita, 'confirmed');
+    if v_resultado ->> 'result' <> 'invalid_transition' then
+      raise exception 'una cita atendida se pudo reabrir: %', v_resultado;
+    end if;
+
+    -- Otro negocio no puede cobrarse una cita ajena.
+    if public.crear_venta_desde_cita(gen_random_uuid(), v_cita) is not null then
+      raise exception 'FUGA: otro negocio convirtió en venta una cita ajena';
+    end if;
+  end;
+
   -- ── 4. Reservas: no se puede solapar el mismo hueco ───────────────────────
   -- El alta del negocio ya crea los 7 días (domingo inactivo, sábado corto).
   -- Se activa el día de la prueba para que no dependa de cuándo corra el CI.

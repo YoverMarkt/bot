@@ -3,7 +3,10 @@ import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 import { sendToContact, type BusinessRecord } from '../services/notify'
 
-type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'no_show'
+// «Atendida» es distinto de «confirmada»: confirmar es decir «te espero»,
+// atender es que la persona vino. Solo lo segundo es dinero, y solo lo
+// segundo genera la venta (lo hace la RPC set_booking_status).
+type BookingStatus = 'pending' | 'confirmed' | 'attended' | 'cancelled' | 'no_show'
 
 interface DatabaseResult {
   error?: { message?: string } | null
@@ -34,7 +37,8 @@ interface ModuloDb {
     businessId: string,
     bookingId: string,
     status: BookingStatus,
-  ): Promise<DatabaseResult>
+    price?: number | null,
+  ): Promise<{ data?: unknown; error?: { message?: string } | null }>
   getBusinessById(businessId: string): Promise<Business | null>
   saveMessage(
     businessId: string,
@@ -57,7 +61,7 @@ const requireBookingCapability: RequestHandler = (req, res, next) => {
   if (user?.takesBookings === true) return next()
   return res.status(403).json({ error: 'Este negocio no tiene reservas habilitadas' })
 }
-const bookingStatuses: BookingStatus[] = ['pending', 'confirmed', 'cancelled', 'no_show']
+const bookingStatuses: BookingStatus[] = ['pending', 'confirmed', 'attended', 'cancelled', 'no_show']
 
 function isBookingStatus(value: unknown): value is BookingStatus {
   return typeof value === 'string' && bookingStatuses.includes(value as BookingStatus)
@@ -90,9 +94,18 @@ router.put(
   canManageBookings,
   requireBookingCapability,
   async (req, res) => {
-    const { status } = req.body as { status?: unknown }
+    const { status, price } = req.body as { status?: unknown; price?: unknown }
     if (!isBookingStatus(status)) {
       return res.status(400).json({ error: 'Estado inválido' })
+    }
+    // El precio solo tiene sentido al atender: es lo que se cobró.
+    let importe: number | null = null
+    if (price !== undefined && price !== null && price !== '') {
+      importe = Number(price)
+      if (!Number.isFinite(importe) || importe < 0 || importe > 99999) {
+        return res.status(400).json({ error: 'El precio debe estar entre 0 y 99999' })
+      }
+      importe = Math.round(importe * 100) / 100
     }
 
     try {
@@ -102,14 +115,23 @@ router.put(
         return res.status(404).json({ error: 'Reserva no encontrada' })
       }
 
-      const { error } = await db.updateBookingStatus(
+      const { data, error } = await db.updateBookingStatus(
         businessId,
         req.params.id,
         status,
+        importe,
       )
       if (error) {
         console.error('❌ actualizar reserva:', error.message || 'Error desconocido')
         return res.status(500).json({ error: 'No se pudo actualizar la reserva' })
+      }
+      const resultado = (data || {}) as { result?: string }
+      if (resultado.result === 'not_found') {
+        return res.status(404).json({ error: 'Reserva no encontrada' })
+      }
+      // Una cita cerrada no se reabre: se agenda otra.
+      if (resultado.result === 'invalid_transition') {
+        return res.status(409).json({ error: 'Esa cita ya está cerrada y no se puede reabrir' })
       }
 
       if (booking.contact_phone) {

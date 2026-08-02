@@ -262,8 +262,16 @@ describe('migración de la capa de datos', () => {
   })
 
   it('aísla disponibilidad, creación atómica y estados por business_id', () => {
+    // Bajó de 5 a 4 filtros porque el cambio de estado dejó de ser un update
+    // suelto: ahora pasa por `set_booking_status`, que recibe el negocio como
+    // parámetro y filtra dentro. El aislamiento no se relajó, cambió de sitio
+    // — y eso se comprueba justo debajo.
     expect(bookingsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
-      .toBeGreaterThanOrEqual(5)
+      .toBeGreaterThanOrEqual(4)
+    // El estado va por la RPC y SIEMPRE con el negocio: es lo que impide
+    // cerrar (y cobrar) la cita de otro.
+    expect(bookingsSource).toContain("db.rpc('set_booking_status'")
+    expect(bookingsSource).toContain('p_business_id: businessId')
     expect(bookingsSource).toContain(
       'const getBookingById = async (businessId: string, id: string)',
     )
