@@ -492,4 +492,97 @@ describe('clientes y onboarding del superadmin', () => {
       business_id: 'business-a', email: 'owner@example.com',
     }))
   })
+
+  // La tienda se enciende desde el panel del superadmin. Sin este campo en la
+  // lista blanca el interruptor existiría en la pantalla pero no guardaría
+  // nada — que es justo como estaba antes de construirlo.
+  it('guarda el interruptor de la mini app al crear', async () => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-pizza', name: 'Pizzería' },
+      error: null,
+    })
+
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Pizzería', whatsapp_number: '+593999000002', monthly_rate: '30',
+        client_email: 'duena@example.com', client_password: 'safe-password-12',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
+        storefront_enabled: true,
+      },
+    })
+
+    expect(response.status).toBe(201)
+    expect(createOnboarding).toHaveBeenCalledWith(
+      expect.objectContaining({ storefront_enabled: true }),
+      expect.any(String), expect.any(String), expect.any(Number),
+    )
+  })
+
+  // Nace apagada: encenderla sin catálogo cargado le daría al cliente final una
+  // tienda vacía, que se ve peor que no tener tienda.
+  it('la tienda nace apagada si no se pide', async () => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-barber', name: 'Barbería' },
+      error: null,
+    })
+
+    await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Barbería', whatsapp_number: '+593999000003', monthly_rate: '30',
+        client_email: 'barbero@example.com', client_password: 'safe-password-12',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
+      },
+    })
+
+    expect(createOnboarding).toHaveBeenCalledWith(
+      expect.objectContaining({ storefront_enabled: false }),
+      expect.any(String), expect.any(String), expect.any(Number),
+    )
+  })
+
+  // La ruta que se usa de verdad: encender la tienda de un negocio que ya
+  // existe. Si el campo no está en la lista blanca de `ALLOWED_BUSINESS_FIELDS`
+  // el panel guarda "con éxito" y no cambia nada — el fallo más molesto de
+  // encontrar, porque no da ningún error.
+  it('deja encender y apagar la tienda de un negocio existente', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      name: 'Pizzería',
+      plan: 'micro',
+      whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001',
+      ycloud_number: '+593999000001',
+      ycloud_api_key: 'secret',
+      ycloud_webhook_endpoint_id: 'endpoint',
+      ycloud_webhook_secret: 'signing',
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
+
+    const encender = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { storefront_enabled: true },
+    })
+
+    expect(encender.status).toBe(200)
+    expect(updateBusiness).toHaveBeenCalledWith(
+      'business-a',
+      expect.objectContaining({ storefront_enabled: true }),
+    )
+
+    updateBusiness.mockClear()
+    await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'business-a' },
+      body: { storefront_enabled: false },
+    })
+    expect(updateBusiness).toHaveBeenCalledWith(
+      'business-a',
+      expect.objectContaining({ storefront_enabled: false }),
+    )
+  })
 })

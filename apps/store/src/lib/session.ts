@@ -19,20 +19,41 @@ export function readSlug(): string {
   return indice >= 0 ? (partes[indice + 1] || '') : (partes[0] || '')
 }
 
+/**
+ * Identificador aleatorio. `crypto.randomUUID` no existe en los WebView
+ * viejos de Android —justo los que abre WhatsApp en teléfonos modestos—, así
+ * que hay un camino alternativo antes de rendirse.
+ */
+function randomId(): string {
+  try {
+    if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  } catch {
+    // Último recurso: sin generador criptográfico no se puede atar nada de
+    // forma fiable, pero al menos NO se devuelve una constante compartida —
+    // eso haría que dos teléfonos distintos parecieran el mismo.
+    return `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`
+  }
+}
+
 /** Identificador estable de este navegador. Se crea una sola vez. */
 export function deviceId(): string {
   try {
     const guardado = localStorage.getItem(DEVICE_KEY)
     if (guardado) return guardado
-    const nuevo = crypto.randomUUID()
+    const nuevo = randomId()
     localStorage.setItem(DEVICE_KEY, nuevo)
     return nuevo
   } catch {
-    // Navegador con almacenamiento bloqueado: la sesión durará lo que la
-    // pestaña. Es peor experiencia, pero nunca deja de funcionar.
-    return 'sin-almacenamiento'
+    // Almacenamiento bloqueado: se guarda en memoria para que al menos
+    // sobreviva a la navegación dentro de la misma pestaña.
+    memoriaDevice ||= randomId()
+    return memoriaDevice
   }
 }
+
+let memoriaDevice = ''
 
 /**
  * Toma el token del enlace, lo guarda y limpia la URL.

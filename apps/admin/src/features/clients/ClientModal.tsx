@@ -16,6 +16,7 @@ import {
   isLodgingBusinessType,
   recommendedChatModeForBusinessType,
   recommendedLodgingForBusinessType,
+  recommendedStorefrontForBusinessType,
   recommendedModeForBusinessType,
   recommendedSalesForBusinessType,
 } from './business-types'
@@ -32,7 +33,7 @@ const EMPTY = {
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
   ai_provider: '', mode: 'normal', sales: 'informa',
-  lodging: 'no', chat_mode: 'ai',
+  lodging: 'no', chat_mode: 'ai', storefront: 'no',
   plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
@@ -48,6 +49,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   const [modeTouched, setModeTouched] = useState(false)
   const [salesTouched, setSalesTouched] = useState(false)
   const [lodgingTouched, setLodgingTouched] = useState(false)
+  const [storefrontTouched, setStorefrontTouched] = useState(false)
   const [chatModeTouched, setChatModeTouched] = useState(false)
   const [applyPlanDefaults, setApplyPlanDefaults] = useState(false)
 
@@ -69,6 +71,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         lodging: c.lodging_enabled ? 'yes' : 'no',
+        storefront: c.storefront_enabled ? 'yes' : 'no',
         chat_mode: c.chat_mode === 'menu' ? 'menu' : 'ai',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
@@ -105,6 +108,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       if (k === 'type' && !id && !chatModeTouched) {
         next.chat_mode = recommendedChatModeForBusinessType(value)
       }
+      if (k === 'type' && !id && !storefrontTouched) {
+        next.storefront = recommendedStorefrontForBusinessType(value) ? 'yes' : 'no'
+      }
       return next
     })
   }
@@ -123,6 +129,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         chat_mode: id || chatModeTouched
           ? prev.chat_mode
           : recommendedChatModeForBusinessType(type),
+        storefront: id || storefrontTouched
+          ? prev.storefront
+          : recommendedStorefrontForBusinessType(type) ? 'yes' : 'no',
       }
     })
   }
@@ -182,6 +191,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
       lodging_enabled: f.lodging === 'yes',
+      // Un negocio que deja de vender y de alojar no puede quedarse con la
+      // tienda encendida: abriría una app vacía.
+      storefront_enabled: f.storefront === 'yes' && (f.sales !== 'informa' || f.lodging === 'yes'),
       chat_mode: f.chat_mode === 'menu' ? 'menu' : 'ai',
       notes: f.notes || null,
     }
@@ -238,6 +250,10 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       setError(err instanceof Error ? err.message : 'Error al guardar')
     } finally { setSaving(false) }
   }
+
+  // La tienda solo tiene sentido si hay algo que vender o alojar. Un negocio
+  // que solo informa abriría una app vacía, así que ni se ofrece.
+  const puedeTenerTienda = f.sales !== 'informa' || f.lodging === 'yes'
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
@@ -338,6 +354,28 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Es independiente de citas y pedidos. El dueño o un empleado con permiso de hospedaje confirma cada solicitud.</p>
+              </div>
+              <div>
+                <Label htmlFor="client-storefront">Mini app de la tienda</Label>
+                <Select
+                  value={f.storefront}
+                  onValueChange={value => {
+                    setStorefrontTouched(true)
+                    setVal('storefront')(value)
+                  }}
+                  disabled={!puedeTenerTienda}
+                >
+                  <SelectTrigger id="client-storefront" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no">Solo chat</SelectItem>
+                    <SelectItem value="yes">El bot manda su enlace de tienda</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {puedeTenerTienda
+                    ? 'El cliente recibe por WhatsApp un enlace personal para armar su pedido o consultar habitaciones. Enciéndela con el catálogo ya cargado: una tienda vacía se ve peor que ninguna.'
+                    : 'Necesita crear pedidos o cotizar estadías. Un negocio que solo informa —una barbería, por ejemplo— no tendría nada que mostrar en la tienda.'}
+                </p>
               </div>
               <div>
                 <Label htmlFor="client-ai-provider">IA de este negocio</Label>
