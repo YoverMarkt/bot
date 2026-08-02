@@ -1,5 +1,6 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
+import type { WriteResult } from '../db/types'
 import {
   getPlanDefinition,
   normalizePlanId,
@@ -40,7 +41,7 @@ interface CreatedBusiness extends BusinessRecord {
   id: string
 }
 
-const db = require('../db') as {
+const db: {
   getAdminStats(): Promise<unknown>
   getAllBusinesses(): Promise<unknown[]>
   getLastInboundByBusiness(businessIds: string[]): Promise<ChannelActivity[]>
@@ -57,7 +58,7 @@ const db = require('../db') as {
     clientEmail: string | null,
     passwordHash: string | null,
     monthlyRate: number | null,
-  ): Promise<DatabaseResult<CreatedBusiness>>
+  ): Promise<WriteResult<CreatedBusiness>>
   updateBusiness(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
@@ -79,10 +80,10 @@ const db = require('../db') as {
   getProducts(businessId: string): Promise<unknown[]>
   getConversations(businessId: string): Promise<unknown[]>
   getPolicies(businessId: string): Promise<unknown>
-}
-const auth = require('../middleware/auth') as {
+} = require('../db') as typeof import('../db')
+const auth: {
   authAdmin: RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 const bcrypt = require('bcryptjs') as {
   hash(value: string, rounds: number): Promise<string>
 }

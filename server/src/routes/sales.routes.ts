@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
+import type { WriteResult } from '../db/types'
 
 interface ProductRecord {
   id: string
@@ -49,17 +50,14 @@ interface DatabaseResult {
 
 class SaleValidationError extends Error {}
 
-const db = require('../db') as {
+const db: {
   getProducts(businessId: string): Promise<ProductRecord[]>
   getSession(businessId: string, phone: string): Promise<SessionRecord | null>
   getOrders(businessId: string, limit: number): Promise<OrderRecord[]>
   createSaleWithItems(
     data: Record<string, unknown>,
     items: NormalizedSaleItem[],
-  ): Promise<{
-    data: SaleRecord
-    error: { message: string } | null
-  }>
+  ): Promise<WriteResult<SaleRecord>>
   upsertSession(
     businessId: string,
     phone: string,
@@ -67,11 +65,11 @@ const db = require('../db') as {
   ): Promise<unknown>
   voidSale(businessId: string, saleId: string): Promise<DatabaseResult>
   getSalesByContact(businessId: string, phone: string): Promise<unknown>
-}
-const auth = require('../middleware/auth') as {
+} = require('../db') as typeof import('../db')
+const auth: {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const canManageSales = auth.requirePermission('ventas')

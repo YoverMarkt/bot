@@ -214,6 +214,24 @@ interface LodgingMediaInput {
   sendVideo?: (url: string, caption?: string) => Promise<unknown>
 }
 
+/**
+ * Lo único que necesita la cotización oficial: las fechas y cantidades ya
+ * resueltas. Deliberadamente NO es `LodgingQuoteTag`, que además carga lo que
+ * el huésped escribió en crudo (`checkInRaw`…) y solo sirve para reintentar.
+ *
+ * Que sea estrecho es lo que permite cotizar desde las dos entradas —la
+ * etiqueta que emite la IA y el menú, que nunca tuvo campos en crudo— sin el
+ * doble `as unknown as` que hacía falta antes para colar una en el hueco de la
+ * otra, y que era precisamente el compilador avisando de que el tipo mentía.
+ */
+export interface ResolvedStayQuote {
+  checkIn: string | null
+  checkOut: string | null
+  roomsCount: number | null
+  adults: number | null
+  children: number | null
+}
+
 export interface ProcessLodgingQuoteInput extends LodgingMediaInput {
   business: ActionBusiness
   phone: string
@@ -495,7 +513,7 @@ function createBotActions(dependencies: BotActionDependencies) {
   async function computeLodgingQuoteReply(
     business: ProcessLodgingQuoteInput['business'],
     contactPhone: string,
-    quote: NonNullable<ProcessLodgingQuoteInput['quote']>,
+    quote: ResolvedStayQuote,
     guestText: string | string[] = '',
     // Habitación ya elegida por el huésped (modo menú): la cotización se
     // centra en ella y solo muestra alternativas si no tiene cupo

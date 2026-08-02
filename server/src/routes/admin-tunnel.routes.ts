@@ -1,21 +1,15 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
+import type { TunnelState } from '../services/tunnel'
 
-interface TunnelState extends Record<string, unknown> {
-  url: string | null
-  active: boolean
-  provider: string | null
-  startedAt: Date | string | null
-}
-
-const tunnel = require('../services/tunnel') as {
+const tunnel: {
   getState(): TunnelState
   startTunnel(port: string | number): Promise<TunnelState>
   stopTunnel(): void
-}
-const auth = require('../middleware/auth') as {
+} = require('../services/tunnel') as typeof import('../services/tunnel')
+const auth: {
   authAdmin: RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

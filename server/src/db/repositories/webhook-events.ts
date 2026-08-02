@@ -1,7 +1,12 @@
 import crypto from 'node:crypto'
 
 export type WebhookProvider = 'meta' | 'ycloud'
+// Lo que sale de la cola: el worker lo valida antes de usarlo.
 export type WebhookInboxPayload = Record<string, unknown>
+// Lo que ENTRA a la cola: se reenvía tal cual a la RPC y esta capa no lee sus
+// campos. `object` y no `Record<string, unknown>` porque una interfaz declarada
+// no es asignable a un Record; quien encola sí tiene su payload bien tipado.
+type EnqueuedPayload = object
 export type WebhookFailureStatus = 'pending' | 'dead' | 'stale'
 
 export interface WebhookInboxLease {
@@ -68,7 +73,7 @@ export function createWebhookEventsRepository(client: WebhookRpcClient) {
     provider: WebhookProvider,
     messageId: string,
     conversationKey: string,
-    payload: WebhookInboxPayload,
+    payload: EnqueuedPayload,
   ): Promise<WebhookRpcResponse<boolean>> => rpc<boolean>(
     client,
     'enqueue_webhook_event',

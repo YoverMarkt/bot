@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
+import type { BusinessRecord , WriteResult } from '../db/types'
 
 type Permission =
   | 'catalogo'
@@ -28,27 +29,24 @@ interface UserFields {
 const bcrypt = require('bcryptjs') as {
   hash(value: string, rounds: number): Promise<string>
 }
-const db = require('../db') as {
+const db: {
   countProducts(businessId: string): Promise<number>
   getPolicies(businessId: string): Promise<DataRecord | null>
   getSchedule(businessId: string): Promise<Array<{ is_active?: unknown }>>
-  getBusinessById(businessId: string): Promise<DataRecord | null>
+  getBusinessById(businessId: string): Promise<BusinessRecord | null>
   getClientUsers(businessId: string): Promise<unknown>
-  createClientUser(data: DataRecord): Promise<{
-    data: { id: string }
-    error: { message: string } | null
-  }>
+  createClientUser(data: DataRecord): Promise<WriteResult<{ id: string }>>
   updateClientUserById(
     businessId: string,
     userId: string,
     fields: UserFields,
   ): Promise<unknown>
   deleteClientUserById(businessId: string, userId: string): Promise<unknown>
-}
-const auth = require('../middleware/auth') as {
+} = require('../db') as typeof import('../db')
+const auth: {
   authClient: RequestHandler
   requireOwner: RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12

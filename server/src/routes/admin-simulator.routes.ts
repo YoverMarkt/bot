@@ -1,5 +1,8 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
+import type { BusinessRecord } from '../db/types'
+import type { LodgingQuoteTag } from '../services/bot-tags'
+import type { ComputedLodgingQuote, ResolvedStayQuote } from '../services/bot-actions'
 import { buildWelcomeMenu, menuAsHistory, wantsWelcomeMenu } from '../services/bot-menu'
 import {
   advanceMenuFlow,
@@ -9,20 +12,11 @@ import {
   type MenuFlowInput,
 } from '../services/bot-menu-flow'
 
-interface BusinessRecord extends Record<string, unknown> {
-  id: string
-  name?: string
-  ai_provider?: string | null
-  takes_orders?: boolean | null
-  takes_bookings?: boolean | null
-  lodging_enabled?: boolean | null
-}
-
 interface DatabaseResult {
   error?: { message?: string } | null
 }
 
-const db = require('../db') as {
+const db: {
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
   getProducts(businessId: string): Promise<unknown[]>
   getPolicies(businessId: string): Promise<Record<string, unknown> | null>
@@ -43,8 +37,8 @@ const db = require('../db') as {
     businessId: string,
     contactPhone: string,
   ): Promise<{ order_items?: Record<string, unknown>[] } | null>
-}
-const bot = require('../services/bot-entry') as {
+} = require('../db') as typeof import('../db')
+const bot: {
   buildPrompt(
     business: BusinessRecord,
     products: unknown[],
@@ -57,39 +51,35 @@ const bot = require('../services/bot-entry') as {
     userMessage: string,
     provider?: string | null,
   ): Promise<string>
-}
-const auth = require('../middleware/auth') as {
+} = require('../services/bot-entry') as typeof import('../services/bot-entry')
+const auth: {
   authAdmin: RequestHandler
-}
-const tags = require('../services/bot-tags') as {
+} = require('../middleware/auth') as typeof import('../middleware/auth')
+const tags: {
   detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
   impersonatesOfficialSummary(text: string): boolean
   parseBotOutput(reply: string): {
     finalText: string
     booking: unknown
     orderPayload: string | null
-    lodgingQuote: Record<string, unknown> | null
+    lodgingQuote: LodgingQuoteTag | null
     lodgingRequest: { roomTypeIdOrName: string; contactName: string } | null
     hasSale: boolean
     hasHandoffTag: boolean
     hasActionConflict: boolean
   }
-}
-const actions = require('../services/bot-actions') as {
+} = require('../services/bot-tags') as typeof import('../services/bot-tags')
+const actions: {
   guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean
   computeLodgingQuoteReply(
     business: BusinessRecord,
     contactPhone: string,
-    quote: Record<string, unknown>,
+    quote: ResolvedStayQuote,
     guestText?: string | string[],
     focusRoomTypeId?: string | null,
-  ): Promise<{
-    outcome: 'quoted' | 'retry' | 'handoff' | 'error'
-    message: string
-    mediaOptions?: { mediaUrls?: string[] }[]
-  }>
-}
-const media = require('../services/bot-media') as {
+  ): Promise<ComputedLodgingQuote>
+} = require('../services/bot-actions') as typeof import('../services/bot-actions')
+const media: {
   sendRequestedProductMedia(input: {
     business: { id: string; name: string }
     text: string
@@ -103,7 +93,7 @@ const media = require('../services/bot-media') as {
     sendImage?: (url: string, caption?: string) => Promise<unknown>
     sendVideo?: (url: string, caption?: string) => Promise<unknown>
   }): Promise<boolean>
-}
+} = require('../services/bot-media') as typeof import('../services/bot-media')
 
 const router = createRouter()
 const SIMULATOR_CONTACT = 'sim_admin'
@@ -166,7 +156,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         // La cotización oficial la calcula el servidor con cupos y tarifas
         // reales, centrada en la habitación que el huésped eligió
         const computed = await actions.computeLodgingQuoteReply(
-          business, SIMULATOR_CONTACT, flow.action.quote as unknown as Record<string, unknown>, message,
+          business, SIMULATOR_CONTACT, flow.action.quote, message,
           flow.action.quote.roomTypeId || null,
         )
         // Solo se ofrece solicitar la habitación cuando hubo cotización oficial

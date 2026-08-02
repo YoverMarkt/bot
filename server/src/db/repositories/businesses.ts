@@ -88,11 +88,20 @@ const businessListFields = [
   'notes',
 ].join(',')
 
+// Se anota a mano porque las columnas van en una cadena unida: el SDK no puede
+// leerlas y devuelve un tipo de error en vez de la fila. La conversión vive
+// AQUÍ, en el borde con el driver, y no repartida por quien consume.
+type BusinessWithSecrets = Pick<
+  BusinessRecord,
+  'id' | 'name' | 'active' | 'suspended' | 'whatsapp_provider' | 'whatsapp_number'
+  | 'ycloud_number' | 'ycloud_api_key' | 'ycloud_webhook_endpoint_id' | 'telegram_bot_token'
+>
+
 // Solo para la vigilancia interna de credenciales (`services/credential-monitor.ts`).
 // Trae los secretos porque hay que preguntarle al proveedor si siguen sirviendo.
 // ⚠️ NO exponer por ninguna ruta: lo que va al panel pasa antes por
 // `sanitizeBusinessForAdmin`.
-const getAllBusinessesWithSecrets = async () => {
+const getAllBusinessesWithSecrets = async (): Promise<BusinessWithSecrets[]> => {
   const { data, error } = await db
     .from('businesses')
     .select([
@@ -101,7 +110,7 @@ const getAllBusinessesWithSecrets = async () => {
       'ycloud_api_key', 'ycloud_webhook_endpoint_id', 'telegram_bot_token',
     ].join(','))
   if (error) throw new Error(error.message)
-  return data || []
+  return (data || []) as unknown as BusinessWithSecrets[]
 }
 
 const getAllBusinesses = async () => {

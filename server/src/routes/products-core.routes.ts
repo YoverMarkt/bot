@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
+import type { WriteResult } from '../db/types'
 
 type ProductRecord = Record<string, unknown> & {
   id: string
@@ -9,12 +10,9 @@ type ProductRecord = Record<string, unknown> & {
   video_public_id?: string | null
 }
 
-const db = require('../db') as {
+const db: {
   getProducts(businessId: string): Promise<unknown>
-  createProduct(businessId: string, data: Record<string, unknown>): Promise<{
-    data: ProductRecord
-    error: { message: string } | null
-  }>
+  createProduct(businessId: string, data: Record<string, unknown>): Promise<WriteResult<ProductRecord>>
   getProductById(businessId: string, productId: string): Promise<ProductRecord | null>
   updateProduct(
     businessId: string,
@@ -23,17 +21,17 @@ const db = require('../db') as {
   ): Promise<unknown>
   deleteProduct(businessId: string, productId: string): Promise<unknown>
   getProductsWithoutEmbedding(businessId: string): Promise<ProductRecord[]>
-}
-const bot = require('../services/bot-entry') as {
+} = require('../db') as typeof import('../db')
+const bot: {
   indexProduct(product: ProductRecord): Promise<unknown>
-}
-const cloud = require('../integrations/cloudinary') as {
+} = require('../services/bot-entry') as typeof import('../services/bot-entry')
+const cloud: {
   deleteMedia(publicId: string, resourceType: 'image' | 'video'): Promise<unknown>
-}
-const auth = require('../middleware/auth') as {
+} = require('../integrations/cloudinary') as typeof import('../integrations/cloudinary')
+const auth: {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const canManageCatalog = auth.requirePermission('catalogo')

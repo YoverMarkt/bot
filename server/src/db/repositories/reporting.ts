@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { PendingSession } from '../types'
+import type { ConsultationRow, PendingSession } from '../types'
 
 
 const db: SupabaseClient = require('../client') as typeof import('../client')
@@ -11,14 +11,18 @@ const recordConsultations = async (businessId: string, productIds: unknown[]) =>
   )
 }
 
-const getConsultationsInRange = async (businessId: string, from?: unknown, to?: unknown) => {
+const getConsultationsInRange = async (
+  businessId: string,
+  from?: unknown,
+  to?: unknown,
+): Promise<ConsultationRow[]> => {
   let query = db.from('product_consultations').select('product_id, products(name)')
     .eq('business_id', businessId)
   if (from) query = query.gte('created_at', from)
   if (to) query = query.lte('created_at', to)
   const { data, error } = await query
   if (error) throw new Error(error.message)
-  return data || []
+  return (data || []) as unknown as ConsultationRow[]
 }
 
 const getWritersInRange = async (businessId: string, from?: unknown, to?: unknown) => {

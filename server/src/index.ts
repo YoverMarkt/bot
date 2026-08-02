@@ -71,7 +71,7 @@ type Cors = (options: {
 }) => RequestHandler
 
 const cors = require('cors') as Cors
-const db = require('./db') as StartupDatabase
+const db: StartupDatabase = require('./db') as typeof import('./db')
 const webhookInboxWorker = createWebhookInboxWorker({
   workerId: `botpanel-${crypto.randomUUID()}`,
   processEvent: event => processInboundWebhook(event.payload, {

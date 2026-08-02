@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import type { Request } from 'express'
 import rateLimit from 'express-rate-limit'
 import { createRouter } from '../middleware/async'
+import type { BusinessRecord } from '../db/types'
 import { resolveBusinessChannel } from '../services/channel-resolution'
 import {
   inboundConversationKey,
@@ -15,12 +16,6 @@ import type {
   WhatsAppChannelAddress,
   WhatsAppProvider,
 } from '../types/channels'
-
-interface BusinessRecord {
-  id: string
-  ycloud_webhook_endpoint_id?: string | null
-  ycloud_webhook_secret?: string | null
-}
 
 interface MediaReference {
   id?: string
@@ -71,7 +66,7 @@ interface YCloudWebhookBody {
   whatsappInboundMessage?: InboundMessage
 }
 
-const db = require('../db') as {
+const db: {
   getBusinessByChannel(address: ChannelAddress): Promise<BusinessRecord | null>
   enqueueWebhookEvent(
     businessId: string,
@@ -80,7 +75,7 @@ const db = require('../db') as {
     conversationKey: string,
     payload: InboundWebhookPayload,
   ): Promise<{ data?: boolean | null; error?: { message?: string } | null }>
-}
+} = require('../db') as typeof import('../db')
 
 const router = createRouter()
 type WebhookProvider = WhatsAppProvider
