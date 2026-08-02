@@ -173,18 +173,6 @@ const touchStorefrontSession = async (sessionId: string) => {
     .update({ last_seen_at: new Date().toISOString() })
     .eq('id', sessionId)
 }
-
-/** Al pedir un enlace nuevo, los anteriores de ese cliente dejan de servir. */
-const revokeStorefrontSessions = async (businessId: string, customerId: string) => {
-  const { error } = await db
-    .from('storefront_sessions')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('business_id', businessId)
-    .eq('customer_id', customerId)
-    .is('revoked_at', null)
-  fail(error, 'No se pudieron revocar las sesiones anteriores')
-}
-
 const cleanupStorefrontSessions = async (days = 2) => db.rpc(
   'cleanup_storefront_sessions',
   { p_days: days },
@@ -235,7 +223,6 @@ export = {
   getStorefrontSessionByHash,
   claimStorefrontSession,
   touchStorefrontSession,
-  revokeStorefrontSessions,
   cleanupStorefrontSessions,
   createStorefrontOrder,
   attachStorefrontPaymentProof,

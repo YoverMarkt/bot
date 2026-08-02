@@ -189,51 +189,12 @@ const upsertBankAccount = async (businessId: string, data: Record<string, unknow
     .select()
     .single()
 }
-
-// ── Autoridad del precio ────────────────────────────────────────────────────
-
-/**
- * Resuelve el precio REAL de una variante, comprobando de paso que pertenezca
- * al negocio y al producto indicados. La app manda ids, nunca precios: lo que
- * el cliente vea en pantalla se confronta aquí antes de cobrar nada.
- */
-const getVariantForOrder = async (
-  businessId: string,
-  productId: string,
-  variantId: string,
-) => {
-  const { data, error } = await db
-    .from('product_variants')
-    .select('id,product_id,name,price,price_sale,stock,active')
-    .eq('business_id', businessId)
-    .eq('product_id', productId)
-    .eq('id', variantId)
-    .maybeSingle()
-  fail(error, 'No se pudo verificar la variante')
-  return data
-}
-
-/** Mismo control para los extras: pertenencia y precio salen de la base. */
-const getExtrasForOrder = async (businessId: string, extraIds: string[]) => {
-  const ids = [...new Set(extraIds.filter(Boolean))]
-  if (!ids.length) return []
-  const { data, error } = await db
-    .from('menu_modifiers')
-    .select('id,product_id,category_tag,name,price_delta,active')
-    .eq('business_id', businessId)
-    .in('id', ids)
-  fail(error, 'No se pudieron verificar los extras')
-  return data || []
-}
-
 export = {
   getStorefrontCategories,
   getStorefrontProducts,
   getStorefrontVariants,
   getStorefrontExtras,
   getBusinessBankAccount,
-  getVariantForOrder,
-  getExtrasForOrder,
   // Panel del dueño
   getCategories,
   createCategory,

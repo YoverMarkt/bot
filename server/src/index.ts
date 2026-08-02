@@ -55,6 +55,10 @@ interface StartupDatabase {
   }>
   getLastInboundAt(): Promise<string | null>
   getAllBusinessesWithSecrets(): Promise<MonitorableBusiness[]>
+  cleanupStorefrontSessions(days?: number): Promise<{
+    data?: unknown
+    error?: { message?: string } | null
+  }>
   cleanupPlatformErrors(days?: number): Promise<{
     data: number | null
     error: { message?: string } | null
@@ -372,6 +376,20 @@ async function cleanupErrorLog(): Promise<void> {
   }
 }
 
+// Las sesiones de la mini app tampoco pueden crecer sin fin: cada enlace que
+// manda el bot deja una fila. La RPC de limpieza existía desde el primer día
+// pero NADIE la llamaba — lo destapó el guardián de exports huérfanos
+// (2026-08-02), no un problema en producción, que es como se prefiere.
+async function cleanupStorefrontSessions(): Promise<void> {
+  try {
+    const result = await db.cleanupStorefrontSessions()
+    if (result.error) throw new Error(result.error.message || 'RPC sin detalle')
+    if (result.data) console.log(`🧹 Sesiones de la tienda: ${result.data} purgada(s)`)
+  } catch (error) {
+    console.error('❌ Limpieza de sesiones de la tienda:', errorMessage(error))
+  }
+}
+
 const port = process.env.PORT || 3000
 httpServer = app.listen(port, () => {
   logEnvironment()
@@ -387,6 +405,8 @@ httpServer = app.listen(port, () => {
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
   setTimeout(cleanupErrorLog, 7000)
   setInterval(cleanupErrorLog, 24 * 60 * 60 * 1000)
+  setTimeout(cleanupStorefrontSessions, 9000)
+  setInterval(cleanupStorefrontSessions, 24 * 60 * 60 * 1000)
   // Cada 6 h: suficiente para enterarse el mismo día sin castigar a los
   // proveedores con consultas constantes.
   setTimeout(checkCredentials, 20_000)
