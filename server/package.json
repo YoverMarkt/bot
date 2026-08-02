@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "check": "npm run lint && npm run typecheck && npm test",
     "verify:schema": "bash tests/sql/verificar-en-docker.sh",
-    "evals": "npm run build && node evals/runner.mjs"
+    "evals": "npm run build && node evals/runner.mjs",
+    "verify:drift": "bash tests/sql/comparar-con-produccion.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
