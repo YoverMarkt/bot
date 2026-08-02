@@ -8,3 +8,6 @@ playwright-report/
 test-results/
 blob-report/
 server/dist/
+
+# Informes de cobertura (se regeneran con npm run test:coverage)
+coverage/

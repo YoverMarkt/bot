@@ -18,7 +18,9 @@
     "verify:smoke": "node --env-file=.env tests/humo-produccion.mjs",
     "migrate:status": "node --env-file=.env tests/migraciones.mjs status",
     "migrate:baseline": "node --env-file=.env tests/migraciones.mjs baseline",
-    "migrate": "node --env-file=.env tests/migraciones.mjs apply"
+    "migrate": "node --env-file=.env tests/migraciones.mjs apply",
+    "test:coverage": "vitest run tests/ --coverage",
+    "pretest:coverage": "npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
@@ -42,6 +44,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^1.4.13",
     "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.6.0",
     "globals": "^17.7.0",
     "nodemon": "^3.1.0",

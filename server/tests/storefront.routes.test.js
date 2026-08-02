@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 
@@ -92,5 +92,148 @@ describe('rutas de la mini app', () => {
       layer => !layer.route && String(layer.regexp).includes('store'),
     )
     expect(limitador).toBeTruthy()
+  })
+})
+
+// ── Comportamiento de los manejadores ──────────────────────────────────────
+//
+// Lo de arriba comprueba el CABLEADO: qué rutas existen y qué middleware
+// llevan. Nada de eso ejecuta un manejador, y por eso la cobertura de este
+// archivo estaba en 21%: nadie había hecho nunca un pedido por aquí.
+//
+// Es el camino que usa el cliente final desde su teléfono, así que estas
+// pruebas van a lo que no se puede fallar: que el precio lo ponga el servidor
+// y que un negocio no vea lo de otro.
+
+const db = require('../dist/db')
+
+// Ejecuta un manejador saltándose los middlewares: la sesión ya se comprueba
+// en las pruebas de cableado y en storefront-session.test.js.
+async function ejecutar(path, method, { storefront, body = {}, params = {} } = {}) {
+  const layer = router.stack.find(item => (
+    item.route?.path === path && item.route?.methods?.[method]
+  ))
+  if (!layer) throw new Error(`Ruta no encontrada: ${method.toUpperCase()} ${path}`)
+  const handler = layer.route.stack.at(-1).handle
+  const req = { storefront, body, params, query: {}, headers: {} }
+  const resultado = { status: 200, body: undefined }
+  const res = {
+    status(code) { resultado.status = code; return this },
+    json(value) { resultado.body = value; return this },
+  }
+  await handler(req, res, error => { if (error) throw error })
+  return resultado
+}
+
+const NEGOCIO_ABIERTO = {
+  id: 'negocio-a', slug: 'pizzeria', name: 'Pizzería',
+  takes_orders: true, storefront_enabled: true, active: true, suspended: false,
+}
+
+describe('crear pedido desde la mini app', () => {
+  beforeEach(() => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue(NEGOCIO_ABIERTO)
+    vi.spyOn(db, 'getSchedule').mockResolvedValue([])
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  // Regla inviolable #8: la IA conversa, el CÓDIGO calcula. Aquí ni siquiera
+  // hay IA — hay un teléfono, que es aún menos de fiar. Si un precio enviado
+  // desde la app llegara a la base, cualquiera compraría una pizza a $0.01
+  // abriendo las herramientas del navegador.
+  it('descarta cualquier precio que mande el teléfono', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1', total: 1250 }, error: null,
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        items: [{
+          productId: 'producto-1', quantity: 2,
+          price: 1, unit_price: 1, total: 1, precio: 1,
+        }],
+      },
+    })
+
+    expect(respuesta.status).toBe(201)
+    const enviado = crear.mock.calls[0][0]
+    // Del ítem solo sobreviven identificadores y cantidad.
+    expect(enviado.items).toEqual([{
+      product_id: 'producto-1', variant_id: null, extra_ids: [], quantity: 2, note: null,
+    }])
+    expect(JSON.stringify(enviado)).not.toContain('price')
+    expect(JSON.stringify(enviado)).not.toContain('precio')
+  })
+
+  // El negocio sale de la SESIÓN, nunca del slug de la dirección. Si saliera
+  // del slug, cambiar una palabra en la barra bastaría para pedir en otra
+  // tienda con la sesión propia.
+  it('usa el negocio de la sesión y no el slug de la dirección', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'otra-tienda' },
+      body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(crear.mock.calls[0][0].businessId).toBe('negocio-a')
+  })
+
+  // 42501 lo lanza la RPC cuando el producto es de otro negocio. Devolver 500
+  // lo haría parecer un fallo nuestro y escondería un intento de cruzar la
+  // frontera entre negocios.
+  it('traduce el rechazo por pertenencia a 403, no a error del servidor', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: null, error: { code: '42501', message: 'producto ajeno' },
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'producto-de-otro', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(403)
+  })
+
+  it('rechaza un pedido sin productos antes de tocar la base', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [] },
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(crear).not.toHaveBeenCalled()
+  })
+
+  // El horario del dueño manda también aquí, no solo en el bot.
+  it('no acepta pedidos con el negocio cerrado', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+    vi.spyOn(db, 'getSchedule').mockResolvedValue([
+      { day_of_week: 0, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 1, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 2, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 3, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 4, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 5, open_time: '00:00', close_time: '00:01', is_active: true },
+      { day_of_week: 6, open_time: '00:00', close_time: '00:01', is_active: true },
+    ])
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect(crear).not.toHaveBeenCalled()
   })
 })
