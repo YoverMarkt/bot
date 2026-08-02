@@ -64,6 +64,32 @@ export interface BusinessRecord {
   chat_mode: string
 }
 
+/**
+ * Lo que devuelve una escritura de Supabase: o hay dato y no hay error, o al
+ * revés. Nunca las dos cosas.
+ *
+ * Es una UNIÓN y no `{ data: T | null; error: E | null }` a propósito: así, a
+ * quien ya escribe `if (error) return …` le basta esa línea para que TypeScript
+ * sepa que `data` dejó de ser nulo. Con el objeto suelto haría falta una
+ * segunda comprobación que el código no necesita y que nadie escribiría.
+ */
+export type WriteResult<T> =
+  | { data: T; error: null }
+  | { data: null; error: { message: string } }
+
+/**
+ * Una consulta de producto con el nombre del producto incrustado.
+ *
+ * `products` es UN objeto, no una lista: la consulta va de muchos a uno
+ * (`product_consultations.product_id` → `products`) y PostgREST devuelve el
+ * registro suelto. Se anota a mano porque, sin los tipos generados de la base,
+ * el SDK supone lista para cualquier relación incrustada y se equivoca.
+ */
+export interface ConsultationRow {
+  product_id?: string | null
+  products?: { name?: string | null } | null
+}
+
 export interface PendingSession {
   contact_phone?: string | null
   last_message_at?: string | null

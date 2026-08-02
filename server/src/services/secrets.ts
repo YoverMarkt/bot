@@ -1,3 +1,5 @@
+import type { BusinessRecord } from '../db/types'
+
 // Campos que nunca deben salir completos de la API hacia el navegador.
 export const BUSINESS_SECRET_FIELDS = [
   'ycloud_api_key',
@@ -7,7 +9,7 @@ export const BUSINESS_SECRET_FIELDS = [
 ] as const
 
 export type BusinessSecretField = (typeof BUSINESS_SECRET_FIELDS)[number]
-export type BusinessRecord = Record<string, unknown>
+export type { BusinessRecord } from '../db/types'
 export type CredentialStatus = Record<BusinessSecretField, boolean>
 
 export function sanitizeBusinessForAdmin(

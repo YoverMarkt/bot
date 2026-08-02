@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit'
 import { createRouter } from '../middleware/async'
+import type { ScheduleRecord } from '../db/types'
 import { requireStorefrontSession } from '../middleware/storefront'
 import { hashToken } from '../services/storefront-session'
 import {
@@ -30,7 +31,7 @@ interface StorefrontRouteDatabase {
   getBusinessBySlug(slug: string): Promise<StorefrontBusiness | null>
   getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
   getStorefrontSessionByHash(tokenHash: string): Promise<{ business_id?: string } | null>
-  getSchedule(businessId: string): Promise<unknown[]>
+  getSchedule(businessId: string): Promise<ScheduleRecord[]>
   getStorefrontCategories(businessId: string): Promise<unknown[]>
   getStorefrontProducts(businessId: string): Promise<unknown[]>
   getStorefrontVariants(businessId: string): Promise<unknown[]>
@@ -45,10 +46,10 @@ interface StorefrontRouteDatabase {
   }>
 }
 
-const db = require('../db') as StorefrontRouteDatabase
-const schedule = require('../services/schedule') as {
-  isOutsideHours(schedule: unknown[]): boolean
-}
+const db: StorefrontRouteDatabase = require('../db') as typeof import('../db')
+const schedule: {
+  isOutsideHours(schedule: ScheduleRecord[] | null | undefined, now?: Date): boolean
+} = require('../services/schedule') as typeof import('../services/schedule')
 
 const router = createRouter()
 

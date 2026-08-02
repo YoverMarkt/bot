@@ -224,7 +224,7 @@ async function callAI(
   history: HistoryMessage[],
   userMessage: string,
   businessProvider: string | null = null,
-): Promise<string | null> {
+): Promise<string> {
   try {
     return await callAIProvider(systemPrompt, history, userMessage, businessProvider)
   } catch (error) {
@@ -243,7 +243,7 @@ async function callAIProvider(
   history: HistoryMessage[],
   userMessage: string,
   businessProvider: string | null = null,
-): Promise<string | null> {
+): Promise<string> {
   const provider = businessProvider || await settings.get('ai_provider') || 'claude'
 
   if (provider === 'groq' || provider === 'deepseek' || provider === 'openai') {
@@ -270,7 +270,11 @@ async function callAIProvider(
         { role: 'user', content: userMessage },
       ],
     })
-    return response.choices[0].message.content
+    // `content` es null cuando el modelo no devuelve texto (respuesta vacía o
+    // una llamada a herramienta). Las ramas de Gemini y Claude ya normalizan a
+    // cadena vacía; esta no lo hacía y el null llegaba hasta `rawReply.match()`
+    // del simulador, que reventaba.
+    return response.choices[0].message.content ?? ''
   }
 
   if (provider === 'gemini') {

@@ -80,6 +80,24 @@ describe('servicio multi-proveedor de IA', () => {
     expect(getSetting).not.toHaveBeenCalledWith('ai_provider')
   })
 
+  // OpenAI, Groq y DeepSeek devuelven `content: null` cuando el modelo no
+  // produce texto. Ese null viajaba entero hasta el simulador, que hace
+  // `rawReply.match(...)` y reventaba. Gemini y Claude ya devolvían '' en el
+  // mismo caso: esta prueba fija que las tres ramas se comporten igual.
+  it('devuelve texto vacío, y no null, cuando el modelo no responde nada', async () => {
+    vi.spyOn(settings, 'get').mockImplementation(async key => (
+      key === 'openai_api_key' ? 'openai-test-key' : null
+    ))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: null } }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+
+    await expect(ai.callAI('sistema', [], 'hola', 'openai')).resolves.toBe('')
+  })
+
   it('conserva el contrato de Gemini y normaliza al dueño como model', async () => {
     vi.spyOn(settings, 'get').mockImplementation(async key => (
       key === 'gemini_api_key' ? 'gemini-test-key' : null

@@ -1,10 +1,13 @@
 import type { ProcessMessageInput } from './bot-conversation'
+import type { ScheduleRecord } from '../db/types'
 import {
   normalizeChannelIdentifier,
   type WhatsAppChannelAddress,
 } from '../types/channels'
 
-type EntryBusiness = ProcessMessageInput['business'] & Record<string, unknown>
+// Sin `& Record<string, unknown>`: esa intersección dejaba leer cualquier campo
+// inventado del negocio sin que el compilador dijera nada.
+type EntryBusiness = ProcessMessageInput['business']
 type TimerHandle = ReturnType<typeof setTimeout>
 
 interface EntryDatabase {
@@ -62,8 +65,8 @@ interface EntryPrompt {
 }
 
 interface EntrySchedule {
-  isOutsideHours(schedule: unknown[]): boolean
-  buildScheduleMessage(business: EntryBusiness, schedule: unknown[]): string
+  isOutsideHours(schedule: ScheduleRecord[] | null | undefined, now?: Date): boolean
+  buildScheduleMessage(business: EntryBusiness, schedule: ScheduleRecord[]): string
 }
 
 interface EntryLogger {
@@ -429,13 +432,13 @@ function createBotEntry(dependencies: BotEntryDependencies) {
   }
 }
 
-const database = require('../db') as EntryDatabase
-const conversation = require('./bot-conversation') as EntryConversation
-const ai = require('./ai') as EntryAi
-const whatsapp = require('../integrations/whatsapp') as EntryWhatsApp
-const media = require('./media') as EntryMedia
-const prompt = require('./prompt') as EntryPrompt
-const schedule = require('./schedule') as EntrySchedule
+const database: EntryDatabase = require('../db') as typeof import('../db')
+const conversation: EntryConversation = require('./bot-conversation') as typeof import('./bot-conversation')
+const ai: EntryAi = require('./ai') as typeof import('./ai')
+const whatsapp: EntryWhatsApp = require('../integrations/whatsapp') as typeof import('../integrations/whatsapp')
+const media: EntryMedia = require('./media') as typeof import('./media')
+const prompt: EntryPrompt = require('./prompt') as typeof import('./prompt')
+const schedule: EntrySchedule = require('./schedule') as typeof import('./schedule')
 
 const entry = createBotEntry({ database, conversation, ai, whatsapp, media })
 

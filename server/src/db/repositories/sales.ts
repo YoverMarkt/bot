@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 type SaleData = Record<string, unknown>
-type SaleItemData = Record<string, unknown>
+// Los ítems se reenvían tal cual a la RPC: esta capa no lee sus campos. Es
+// `object` y no `Record<string, unknown>` porque una interfaz declarada NO es
+// asignable a un Record — TypeScript solo le da índice de cadena a los alias—,
+// y quien llama sí tiene su ítem bien tipado.
+type SaleItemData = object
 
 const db: SupabaseClient = require('../client') as typeof import('../client')
 

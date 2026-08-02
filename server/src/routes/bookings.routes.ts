@@ -43,12 +43,12 @@ interface ModuloDb {
     content: string,
   ): Promise<unknown>
 }
-const db = require('../db') as ModuloDb
+const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
-const auth = require('../middleware/auth') as ModuloAuth
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const canManageBookings = auth.requirePermission('citas')

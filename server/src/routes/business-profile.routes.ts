@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
+import type { BusinessRecord } from '../db/types'
 
 const editableBusinessFields = [
   'name',
@@ -14,7 +15,6 @@ const editableBusinessFields = [
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
-type BusinessRecord = Record<string, unknown>
 type DatabaseResult = { error?: { message?: string } | null }
 
 interface ModuloDb {
@@ -27,12 +27,12 @@ interface ModuloDb {
   getPolicies(businessId: string): Promise<unknown>
   upsertPolicies(businessId: string, data: unknown): Promise<DatabaseResult>
 }
-const db = require('../db') as ModuloDb
+const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloAuth {
   authClient: RequestHandler
   requireOwner: RequestHandler
 }
-const auth = require('../middleware/auth') as ModuloAuth
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

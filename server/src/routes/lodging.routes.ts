@@ -17,7 +17,7 @@ interface DatabaseResult {
   error?: { code?: string; message?: string } | null
 }
 
-const db = require('../db') as {
+const db: {
   getLodgingSettings(businessId: string): Promise<DataRecord | null>
   upsertLodgingSettings(businessId: string, data: DataRecord): Promise<DatabaseResult>
   getLodgingRoomTypes(businessId: string, includeInactive?: boolean): Promise<DataRecord[]>
@@ -85,18 +85,18 @@ const db = require('../db') as {
     role: 'owner',
     content: string,
   ): Promise<unknown>
-}
-const notifyService = require('../services/notify') as {
+} = require('../db') as typeof import('../db')
+const notifyService: {
   sendToContact(
     business: BusinessRecord,
     phone: string,
     message: string,
   ): Promise<void>
-}
-const auth = require('../middleware/auth') as {
+} = require('../services/notify') as typeof import('../services/notify')
+const auth: {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
-}
+} = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const canManageLodging = auth.requirePermission('hospedaje')

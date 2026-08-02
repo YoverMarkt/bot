@@ -1,4 +1,8 @@
-export type BusinessRecord = Record<string, unknown>
+// Un solo `BusinessRecord` en todo el proyecto: el de `db/types`, con las
+// columnas reales. Aquí era `Record<string, unknown>` y por eso quien recibía
+// un negocio podía leer cualquier campo inventado sin que nadie se quejara.
+export type { BusinessRecord } from '../db/types'
+import type { BusinessRecord } from '../db/types'
 
 interface TelegramBot {
   telegram: {

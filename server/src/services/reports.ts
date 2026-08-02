@@ -64,7 +64,7 @@ interface ReportsDatabase {
 
 interface OwnerBusiness { id: string; owner_phone?: string | null; lodging_enabled?: boolean | null }
 
-const db = require('../db') as ReportsDatabase
+const db: ReportsDatabase = require('../db') as typeof import('../db')
 
 const money = (n: unknown) => '$' + (Number(n) || 0).toFixed(2)
 
