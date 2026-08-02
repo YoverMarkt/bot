@@ -36,3 +36,28 @@ que aún no ha visto romperse. Varias de estas invierten esa carga.
 > > 🛡️ **Guardián de migraciones (`server/tests/migraciones-guardian.test.js`):** revisa TODOS los `.sql` del proyecto —los de hoy y los que se escriban mañana— contra cinco reglas que fallan el CI: (1) ninguna función usa **pgcrypto** (`digest`, `crypt`, `hmac`, `gen_random_bytes`) con un `search_path` que no incluya `extensions`; (2) toda tabla creada habilita **RLS** en el mismo archivo; (3) ninguna política usa `using (true)`; (4) toda FK a `businesses` lleva `on delete cascade`; (5) tablas e índices se crean con `if not exists`, porque las migraciones se aplican a mano y repetirlas no puede romper nada. Nació del apagón del 26–31 jul 2026: `record_inbound_message_usage()` llamaba a `digest()` fuera de alcance, el trigger reventaba en cada mensaje entrante y el bot estuvo cinco días mudo. **PostgreSQL no valida el cuerpo de una función plpgsql al crearla**, así que el SQL se aplicó "con éxito" y el fallo solo apareció al ejecutarse. El guardián incluye un test que reintroduce ese SQL defectuoso y comprueba que lo detecta: si la regla se rompe, se sabe. ⚠️ Sigue sin haber pruebas contra un PostgreSQL real, así que estas reglas atrapan la familia de errores conocida, no cualquier error posible.
 >
 > ✅ Esquema: `server/schema.sql` está **consolidado y actualizado** (refleja la base real: RLS activado, `bookings` con `booking_date`/`booking_time`/`duration_minutes`, todas las columnas y tablas vivas, y la función RAG `match_products`). `server/migration-integraciones.sql` quedó **OBSOLETO** (marcado como tal, solo historial — no ejecutar). Para el estado del esquema, usa `schema.sql` o consulta la BD.
+
+---
+
+## Guardián de funciones de base de datos sin dueño
+
+**De dónde sale:** una pregunta del dueño del SaaS el 2026-08-02 — «todo lo que se borra o el código viejo, ¿ya no existe en mi sistema? ¿se está verificando?». La respuesta honesta entonces era **«a mano»**. Esto lo automatiza.
+
+`server/tests/funciones-huerfanas.test.js` cubre los dos riesgos reales de tocar funciones en PostgreSQL:
+
+1. **Un permiso que nombra una firma inexistente.** `create or replace function` con un parámetro nuevo **no reemplaza**: crea una SEGUNDA función con el mismo nombre. Ese mismo día, cuatro `grant` se quedaron con la firma vieja y `psql` abortó al aplicar el esquema entero. El test lo caza sin necesidad de levantar PostgreSQL — comprobado reintroduciendo el fallo a propósito.
+2. **Funciones que no llama nadie**: ni el servidor, ni un disparador, ni otra función. Código muerto esperando a que alguien lo invoque por error.
+
+⚠️ Distingue `execute function X()` (un disparador **usándola**) de `create function X(` (declarándola). Confundirlas marcaba como muertas todas las funciones de trigger del proyecto.
+
+**Y en PostgreSQL real** (`verificar-esquema.sql`, que el CI ejecuta en cada PR): **ninguna función del proyecto puede tener dos versiones vivas**. Las sobrecargas de extensiones (pgvector, pgcrypto) se excluyen mirando `pg_depend`: esas sí son legítimas.
+
+### Dos guardianes se acotaron, y por qué
+
+`orders-atomicity` y `sales-atomicity` prohibían `exception when` en **todo** `schema.sql` para impedir escrituras compensatorias. Al incorporar al consolidado la función que activa RLS en tablas nuevas —que **necesita** capturar para no romper donde falte un permiso de superusuario— el guardián saltaba por algo que no era su objetivo. Ahora cada uno mira **solo su función** (`create_order_with_items`, `create_sale_with_items`), que es la garantía que de verdad protegían.
+
+El guardián de migraciones también aprendió a **ignorar los literales de cadena**: una función que filtra eventos DDL por su etiqueta (`command_tag in ('CREATE TABLE AS', …)`) se leía como si estuviera creando una tabla llamada «as».
+
+### La deriva que encontró
+
+Existía en producción un disparador de evento `ensure_rls` con su función `rls_auto_enable` —activa RLS automáticamente en toda tabla nueva de `public`— que **no estaba en `schema.sql`**. Una instalación nueva nacía sin esa red de seguridad. Ya está en el consolidado.

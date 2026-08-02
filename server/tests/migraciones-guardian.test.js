@@ -29,6 +29,10 @@ const archivosSql = readdirSync(serverDir)
 const sinComentarios = sql => sql
   .replace(/--[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+  // Los LITERALES tampoco son SQL ejecutable. Sin esto, una función que filtra
+  // eventos DDL por su etiqueta —`command_tag in ('CREATE TABLE AS', …)`— se
+  // leía como si estuviera creando una tabla llamada «as» (2026-08-02).
+  .replace(/'[^']*'/g, "''")
 
 const leer = name => sinComentarios(readFileSync(`${serverDir}/${name}`, 'utf8'))
 

@@ -643,3 +643,40 @@ begin
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
+-- ═══════════════════════════════════════════════════════════════════════════
+-- `create or replace function` con un parámetro nuevo NO reemplaza: crea una
+-- SEGUNDA función con el mismo nombre. Las dos quedan vivas y cualquier
+-- llamada se vuelve ambigua — el código viejo sigue ahí, invisible.
+--
+-- Las sobrecargas de las extensiones (pgvector, pgcrypto, btree_gist) son
+-- legítimas y se excluyen: solo se miran las funciones del proyecto, que son
+-- las que están declaradas en schema.sql.
+do $$
+declare
+  v_duplicadas text;
+begin
+  select string_agg(format('%s (%s versiones)', proname, veces), ', ')
+  into v_duplicadas
+  from (
+    select p.proname, count(*) as veces
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    left join pg_depend d
+      on d.objid = p.oid and d.deptype = 'e'   -- pertenece a una extensión
+    where n.nspname = 'public'
+      and p.prokind = 'f'
+      and d.objid is null
+    group by p.proname
+    having count(*) > 1
+  ) as repetidas;
+
+  if v_duplicadas is not null then
+    raise exception 'Funciones del proyecto con más de una versión viva: %', v_duplicadas;
+  end if;
+end;
+$$;
+
+select '✅ sin funciones duplicadas' as resultado;

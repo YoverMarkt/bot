@@ -6261,3 +6261,53 @@ grant execute on function public.create_business_onboarding(
 ) to service_role;
 
 commit;
+
+-- ── RED DE SEGURIDAD: RLS AUTOMÁTICA EN TABLAS NUEVAS ──────
+-- Existía en la base de producción pero NO en este archivo, así que una
+-- instalación nueva nacía sin ella: es justo el tipo de deriva que el
+-- detector de funciones huérfanas viene a evitar (encontrada 2026-08-02).
+--
+-- Qué hace: cada vez que se crea una tabla en `public`, le activa RLS sola.
+-- La regla #1 del proyecto es que toda tabla de negocio nazca con RLS, y esto
+-- la cumple aunque a alguien se le olvide escribirlo en su migración.
+--
+-- ⚠️ Crear disparadores de EVENTO exige superusuario. En Supabase y en el CI
+-- se puede; en una base donde no, el bloque se salta sin romper el resto — el
+-- esquema sigue declarando el `enable row level security` de cada tabla.
+do $$
+begin
+  create or replace function public.rls_auto_enable()
+  returns event_trigger
+  language plpgsql
+  security definer
+  set search_path to 'pg_catalog'
+  as $funcion$
+  declare
+    cmd record;
+  begin
+    for cmd in
+      select *
+      from pg_event_trigger_ddl_commands()
+      where command_tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+        and object_type in ('table', 'partitioned table')
+    loop
+      if cmd.schema_name = 'public' then
+        begin
+          execute format('alter table if exists %s enable row level security', cmd.object_identity);
+        exception when others then
+          raise log 'rls_auto_enable: no se pudo activar RLS en %', cmd.object_identity;
+        end;
+      end if;
+    end loop;
+  end;
+  $funcion$;
+
+  if not exists (select 1 from pg_event_trigger where evtname = 'ensure_rls') then
+    create event trigger ensure_rls on ddl_command_end
+      when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      execute function public.rls_auto_enable();
+  end if;
+exception when insufficient_privilege then
+  raise notice 'Sin permisos para el disparador de eventos ensure_rls; se omite.';
+end;
+$$;
