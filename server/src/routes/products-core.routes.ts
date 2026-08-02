@@ -21,6 +21,7 @@ const db: {
   ): Promise<unknown>
   deleteProduct(businessId: string, productId: string): Promise<unknown>
   getProductsWithoutEmbedding(businessId: string): Promise<ProductRecord[]>
+  getCategories(businessId: string): Promise<{ id: string }[]>
 } = require('../db') as typeof import('../db')
 const bot: {
   indexProduct(product: ProductRecord): Promise<unknown>
@@ -35,6 +36,23 @@ const auth: {
 
 const router = createRouter()
 const canManageCatalog = auth.requirePermission('catalogo')
+
+/**
+ * Deja `category_id` solo si la categoría es de este negocio.
+ *
+ * ⚠️ La clave foránea de `products.category_id` apunta a `product_categories`
+ * SIN mirar de quién es, y el cuerpo de la petición entra tal cual. Sin esta
+ * comprobación, mandar el uuid de la categoría de otro negocio guardaría una
+ * referencia cruzada entre inquilinos.
+ *
+ * Una categoría desconocida se limpia a null en vez de rechazar la petición:
+ * el producto es válido, solo queda sin agrupar.
+ */
+async function safeCategoryId(businessId: string, value: unknown): Promise<string | null> {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const propias = await db.getCategories(businessId)
+  return propias.some(categoria => categoria.id === value) ? value : null
+}
 
 router.get('/api/client/products', auth.authClient, async (req, res) => {
   res.json(await db.getProducts(getClientBusinessId(req)))
@@ -54,6 +72,7 @@ router.post('/api/client/products', auth.authClient, canManageCatalog, async (re
   const { data, error } = await db.createProduct(businessId, {
     ...productData,
     price: Number.parseFloat(String(price)),
+    category_id: await safeCategoryId(businessId, productData.category_id),
   })
   if (error) return res.status(500).json({ error: error.message })
 
@@ -68,7 +87,12 @@ router.put('/api/client/products/:id', auth.authClient, canManageCatalog, async 
     return res.status(404).json({ error: 'No encontrado' })
   }
 
-  await db.updateProduct(businessId, req.params.id, req.body)
+  await db.updateProduct(businessId, req.params.id, {
+    ...req.body as Record<string, unknown>,
+    ...('category_id' in (req.body || {})
+      ? { category_id: await safeCategoryId(businessId, req.body.category_id) }
+      : {}),
+  })
   if (previous) {
     if (previous.image_public_id && req.body.image_public_id !== previous.image_public_id) {
       void cloud.deleteMedia(previous.image_public_id, 'image')

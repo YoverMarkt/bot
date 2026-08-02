@@ -29,10 +29,120 @@ export default function Settings() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-foreground">Ajustes</h1>
-        <p className="text-sm text-muted-foreground">Identidad básica de tu negocio</p>
+        <p className="text-sm text-muted-foreground">Identidad de tu negocio y cómo te pagan</p>
       </div>
       <BusinessForm />
+      <BankAccountForm />
     </div>
+  )
+}
+
+// ── Cuenta bancaria para transferencias ──
+//
+// La tienda ya la mostraba al cliente en su pantalla de pago, pero no había
+// forma de cargarla salvo a mano en la base.
+//
+// Estos datos NO son secretos: son con los que le pagan al negocio, y quien
+// gestiona el riesgo es el banco. Aun así solo los ve y los cambia el dueño —
+// un empleado con permiso de catálogo no tiene por qué tocar a qué cuenta
+// entra el dinero.
+type BankAccount = {
+  bank_name: string
+  account_type: 'ahorros' | 'corriente'
+  account_number: string
+  holder_name: string
+  holder_id: string | null
+  instructions: string | null
+}
+
+const CUENTA_VACIA: BankAccount = {
+  bank_name: '', account_type: 'ahorros', account_number: '',
+  holder_name: '', holder_id: '', instructions: '',
+}
+
+export function BankAccountForm() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['bank-account'],
+    queryFn: () => api<BankAccount | null>('/api/client/bank-account'),
+  })
+  const [draft, setDraft] = useState<BankAccount | null>(null)
+  const f = draft ?? data ?? CUENTA_VACIA
+
+  const mSave = useMutation({
+    mutationFn: () => api('/api/client/bank-account', {
+      method: 'PUT',
+      body: JSON.stringify(f),
+    }),
+    onSuccess: () => {
+      toast.success('Guardada — tus clientes ya la ven al pagar')
+      setDraft(null)
+      void qc.invalidateQueries({ queryKey: ['bank-account'] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
+  })
+
+  if (isLoading) return <div className="mt-5"><FormSkeleton fields={5} /></div>
+
+  const set = (k: keyof BankAccount) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setDraft({ ...f, [k]: e.target.value })
+
+  const completa = Boolean(f.bank_name && f.account_number && f.holder_name)
+
+  return (
+    <Card className="p-5 max-w-2xl gap-0 mt-5">
+      <div className="mb-3">
+        <h2 className="font-semibold text-foreground">Cuenta para transferencias</h2>
+        <p className="text-sm text-muted-foreground">
+          Es lo que ve tu cliente en la tienda cuando elige pagar por transferencia.
+          {!completa && ' Sin ella, esa pantalla queda vacía.'}
+        </p>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <Label htmlFor="bank-name">Banco</Label>
+          <Input id="bank-name" value={f.bank_name ?? ''} onChange={set('bank_name')} maxLength={80} placeholder="Ej: Banco Pichincha" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="bank-type">Tipo de cuenta</Label>
+            <select
+              id="bank-type"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              value={f.account_type}
+              onChange={e => setDraft({ ...f, account_type: e.target.value as BankAccount['account_type'] })}
+            >
+              <option value="ahorros">Ahorros</option>
+              <option value="corriente">Corriente</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="bank-number">Número de cuenta</Label>
+            <Input id="bank-number" value={f.account_number ?? ''} onChange={set('account_number')} maxLength={40} placeholder="Ej: 2100123456" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="bank-holder">Titular</Label>
+            <Input id="bank-holder" value={f.holder_name ?? ''} onChange={set('holder_name')} maxLength={120} placeholder="Nombre como figura en el banco" />
+          </div>
+          <div>
+            <Label htmlFor="bank-holder-id">Cédula o RUC</Label>
+            <Input id="bank-holder-id" value={f.holder_id ?? ''} onChange={set('holder_id')} maxLength={20} placeholder="opcional" />
+          </div>
+        </div>
+        <div>
+          <Label htmlFor="bank-instructions">Instrucciones</Label>
+          <Textarea id="bank-instructions" rows={2} maxLength={300} value={f.instructions ?? ''} onChange={set('instructions')} placeholder="Ej: envía el comprobante por WhatsApp para confirmar tu pedido" />
+        </div>
+      </div>
+      <div className="flex justify-end mt-4">
+        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending || !completa}>
+          {mSave.isPending ? 'Guardando…' : 'Guardar cuenta'}
+        </Button>
+      </div>
+    </Card>
   )
 }
 

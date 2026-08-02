@@ -15,6 +15,8 @@ export type Product = {
   image_public_id: string | null
   video_public_id: string | null
   tags: string[] | null
+  // Agrupa el producto en la mini app. Nulo = aparece suelto.
+  category_id: string | null
   external_sku: string | null
   duration_minutes: number | null
 }
@@ -67,6 +69,71 @@ export const updateMenuModifier = (id: string, p: MenuModifierPayload) =>
 
 export const deleteMenuModifier = (id: string) =>
   api(`/api/client/menu-modifiers/${id}`, { method: 'DELETE' })
+
+// ── Variantes (tamaños, presentaciones) ──────────────────────
+// A diferencia de un modificador, una variante SÍ cambia el precio: es la
+// pizza mediana frente a la familiar. Cuelga de un producto concreto.
+export type Variant = {
+  id: string
+  product_id: string
+  name: string
+  price: string | number
+  price_sale: string | number | null
+  stock: 'disponible' | 'agotado'
+  sort: number
+  active: boolean
+}
+
+export type VariantPayload = {
+  product_id: string
+  name: string
+  price: number
+  price_sale?: number | null
+  stock?: 'disponible' | 'agotado'
+  sort?: number
+  active?: boolean
+}
+
+export const getVariants = () => api<Variant[]>('/api/client/variants')
+
+export const createVariant = (p: VariantPayload) =>
+  api<Variant>('/api/client/variants', { method: 'POST', body: JSON.stringify(p) })
+
+export const updateVariant = (id: string, p: Omit<VariantPayload, 'product_id'>) =>
+  api<Variant>(`/api/client/variants/${id}`, { method: 'PUT', body: JSON.stringify(p) })
+
+export const deleteVariant = (id: string) =>
+  api(`/api/client/variants/${id}`, { method: 'DELETE' })
+
+// ── Categorías de la tienda ──────────────────────────────────
+// Agrupan el catálogo en la mini app (entradas / pizzas / bebidas). Sin ellas
+// el cliente ve una lista plana.
+export type Category = {
+  id: string
+  name: string
+  description: string | null
+  image_url: string | null
+  sort: number
+  active: boolean
+}
+
+export type CategoryPayload = {
+  name: string
+  description?: string | null
+  sort?: number
+  active?: boolean
+}
+
+export const getCategories = () => api<Category[]>('/api/client/categories')
+
+export const createCategory = (p: CategoryPayload) =>
+  api<Category>('/api/client/categories', { method: 'POST', body: JSON.stringify(p) })
+
+export const updateCategory = (id: string, p: CategoryPayload) =>
+  api<Category>(`/api/client/categories/${id}`, { method: 'PUT', body: JSON.stringify(p) })
+
+export const deleteCategory = (id: string) =>
+  api(`/api/client/categories/${id}`, { method: 'DELETE' })
 
 // Subida de media a Cloudinary vía backend (multipart — no usa el wrapper JSON).
 // Límites estándar de WhatsApp: imagen 5 MB · video 16 MB (el server también los valida).

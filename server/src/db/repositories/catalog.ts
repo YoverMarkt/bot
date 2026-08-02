@@ -81,6 +81,115 @@ const getBusinessBankAccount = async (businessId: string) => {
   return data
 }
 
+// ── Lo que gestiona el DUEÑO desde su panel ─────────────────────────────────
+//
+// Las tablas de arriba solo se leían. Estas son las escrituras, y viven aquí
+// porque son las mismas tablas: separarlas por dirección obligaría a buscar en
+// dos sitios para entender una.
+//
+// Todas filtran por `business_id`, que en las rutas sale SIEMPRE del JWT.
+
+/** Para el panel: también las inactivas, que el dueño necesita poder reactivar. */
+const getCategories = async (businessId: string) => {
+  const { data, error } = await db
+    .from('product_categories')
+    .select('id,name,description,image_url,image_public_id,sort,active')
+    .eq('business_id', businessId)
+    .order('sort', { ascending: true })
+    .order('name', { ascending: true })
+  fail(error, 'No se pudieron leer las categorías')
+  return data || []
+}
+
+const createCategory = async (businessId: string, data: Record<string, unknown>) => (
+  db.from('product_categories').insert({ ...data, business_id: businessId }).select().single()
+)
+
+const updateCategory = async (
+  businessId: string,
+  categoryId: string,
+  data: Record<string, unknown>,
+) => (
+  db.from('product_categories')
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('id', categoryId)
+)
+
+const deleteCategory = async (businessId: string, categoryId: string) => (
+  db.from('product_categories').delete().eq('business_id', businessId).eq('id', categoryId)
+)
+
+/**
+ * ⚠️ Comprueba que el producto sea del negocio ANTES de tocar sus variantes.
+ *
+ * No es paranoia: `product_variants` lleva `business_id` Y `product_id`, y la
+ * clave foránea de `product_id` apunta a `products` sin mirar de quién es. Sin
+ * esta comprobación, un dueño podría colgarle una variante —con su precio— al
+ * producto de otro negocio mandando un id ajeno en el cuerpo de la petición.
+ */
+const productBelongsToBusiness = async (businessId: string, productId: string) => {
+  const { data, error } = await db
+    .from('products')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('id', productId)
+    .maybeSingle()
+  fail(error, 'No se pudo verificar el producto')
+  return Boolean(data)
+}
+
+/** Para el panel: todas las variantes del negocio, activas o no. */
+const getVariants = async (businessId: string) => {
+  const { data, error } = await db
+    .from('product_variants')
+    .select('id,product_id,name,price,price_sale,stock,sort,active')
+    .eq('business_id', businessId)
+    .order('sort', { ascending: true })
+    .order('name', { ascending: true })
+  fail(error, 'No se pudieron leer las variantes')
+  return data || []
+}
+
+const createVariant = async (businessId: string, data: Record<string, unknown>) => (
+  db.from('product_variants').insert({ ...data, business_id: businessId }).select().single()
+)
+
+const updateVariant = async (
+  businessId: string,
+  variantId: string,
+  data: Record<string, unknown>,
+) => (
+  db.from('product_variants')
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('id', variantId)
+)
+
+const deleteVariant = async (businessId: string, variantId: string) => (
+  db.from('product_variants').delete().eq('business_id', businessId).eq('id', variantId)
+)
+
+/**
+ * La cuenta activa del negocio, para el panel.
+ *
+ * Solo hay una a la vez: guardar una nueva desactiva la anterior en vez de
+ * borrarla, para no perder el rastro de con qué cuenta se cobró un pedido
+ * viejo.
+ */
+const upsertBankAccount = async (businessId: string, data: Record<string, unknown>) => {
+  const { error: desactivar } = await db
+    .from('business_bank_accounts')
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('active', true)
+  if (desactivar) return { error: desactivar }
+  return db.from('business_bank_accounts')
+    .insert({ ...data, business_id: businessId, active: true })
+    .select()
+    .single()
+}
+
 // ── Autoridad del precio ────────────────────────────────────────────────────
 
 /**
@@ -125,4 +234,15 @@ export = {
   getBusinessBankAccount,
   getVariantForOrder,
   getExtrasForOrder,
+  // Panel del dueño
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  productBelongsToBusiness,
+  getVariants,
+  createVariant,
+  updateVariant,
+  deleteVariant,
+  upsertBankAccount,
 }
