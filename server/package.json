@@ -15,7 +15,10 @@
     "verify:schema": "bash tests/sql/verificar-en-docker.sh",
     "evals": "npm run build && node evals/runner.mjs",
     "verify:drift": "bash tests/sql/comparar-con-produccion.sh",
-    "verify:smoke": "node --env-file=.env tests/humo-produccion.mjs"
+    "verify:smoke": "node --env-file=.env tests/humo-produccion.mjs",
+    "migrate:status": "node --env-file=.env tests/migraciones.mjs status",
+    "migrate:baseline": "node --env-file=.env tests/migraciones.mjs baseline",
+    "migrate": "node --env-file=.env tests/migraciones.mjs apply"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
@@ -43,6 +46,7 @@
     "globals": "^17.7.0",
     "nodemon": "^3.1.0",
     "oxlint": "^1.71.0",
+    "pg": "^8.22.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

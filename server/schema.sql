@@ -897,6 +897,19 @@ create table if not exists server_settings (
   updated_at  timestamptz default now()
 );
 
+-- ── Registro de migraciones aplicadas ──────────────────────
+-- NO es por negocio: es el libro de cuentas de la plataforma. Dice qué .sql
+-- se aplicó y cuándo, y guarda su huella para que editar una migración ya
+-- aplicada no pase inadvertido. Lo lleva `npm run migrate -w @botpanel/server`.
+create table if not exists schema_migrations (
+  name        text primary key,
+  checksum    text not null,
+  applied_at  timestamptz not null default now(),
+  source      text not null default 'runner'
+);
+create index if not exists idx_schema_migrations_applied
+  on schema_migrations(applied_at desc);
+
 -- ── TABLA 11: Ventas (cabecera) — registro manual desde el panel ──
 create table if not exists sales (
   id            uuid primary key default gen_random_uuid(),
@@ -3313,6 +3326,7 @@ alter table business_schedule     enable row level security;
 alter table bookings              enable row level security;
 alter table billing               enable row level security;
 alter table server_settings       enable row level security;
+alter table schema_migrations     enable row level security;
 alter table sales                 enable row level security;
 alter table sale_items            enable row level security;
 alter table product_consultations enable row level security;
