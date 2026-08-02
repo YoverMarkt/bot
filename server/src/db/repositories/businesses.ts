@@ -161,6 +161,13 @@ const suspendBusiness = async (id: string, reason: string) => (
   }).eq('id', id)
 )
 
+// Enciende o apaga el bot sin tocar el estado de la cuenta. Suspender también
+// lo apaga, pero no al revés: reanudar el bot de un negocio suspendido no lo
+// devuelve al aire, y por eso el panel no ofrece esa combinación.
+const setBotActive = async (id: string, active: boolean) => (
+  db.from('businesses').update({ bot_active: active }).eq('id', id)
+)
+
 const reactivateBusiness = async (id: string) => (
   db.rpc('reactivate_business_with_billing', { p_business_id: id })
 )
@@ -195,6 +202,7 @@ export = {
   createBusinessOnboarding,
   updateBusiness,
   suspendBusiness,
+  setBotActive,
   reactivateBusiness,
   updateBusinessPlanBilling,
   deleteBusiness,

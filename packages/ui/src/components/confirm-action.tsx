@@ -13,7 +13,15 @@ import {
 } from "./alert-dialog"
 
 type ConfirmActionProps = {
-  trigger: React.ReactElement
+  /**
+   * Elemento que abre el diálogo. Se omite cuando la confirmación la dispara
+   * otra cosa —una opción de menú, por ejemplo—: un menú desplegable se cierra
+   * al elegir y se lleva por delante el diálogo que colgara dentro, así que en
+   * ese caso el estado lo lleva quien llama y se usa `open`/`onOpenChange`.
+   */
+  trigger?: React.ReactElement
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   title: string
   description: string
   confirmLabel?: string
@@ -23,6 +31,8 @@ type ConfirmActionProps = {
 
 function ConfirmAction({
   trigger,
+  open,
+  onOpenChange,
   title,
   description,
   confirmLabel = "Confirmar",
@@ -30,8 +40,8 @@ function ConfirmAction({
   destructive = false,
 }: ConfirmActionProps) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      {trigger ? <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger> : null}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

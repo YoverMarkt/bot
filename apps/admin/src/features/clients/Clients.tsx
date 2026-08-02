@@ -4,7 +4,7 @@ import * as adm from './api'
 import type { BusinessRow } from './api'
 import ClientModal from './ClientModal'
 import { ViewModal, PromptModal } from './ClientTools'
-import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal, TriangleAlert } from 'lucide-react'
+import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal, TriangleAlert, Pause, Play } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
@@ -20,6 +20,9 @@ export default function Clients() {
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [viewing, setViewing] = useState<BusinessRow | null>(null)
   const [prompting, setPrompting] = useState<BusinessRow | null>(null)
+  // Apagar el bot deja al negocio MUDO, así que se confirma. El diálogo vive
+  // aquí y no dentro del menú: el menú se cierra al elegir y se lo llevaría.
+  const [pausing, setPausing] = useState<BusinessRow | null>(null)
   const [vfy, setVfy] = useState<Record<string, string>>({})
   const { data: clients = [], isLoading, isError, refetch } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
   const { data: channel } = useQuery({
@@ -62,6 +65,10 @@ export default function Clients() {
   const mSuspend = useMutation({ mutationFn: (id: string) => adm.suspendClient(id, 'Pago pendiente'), onSettled: refresh })
   const mReactivate = useMutation({ mutationFn: (id: string) => adm.reactivateClient(id), onSettled: refresh })
   const mDelete = useMutation({ mutationFn: (id: string) => adm.deleteClient(id), onSettled: refresh })
+  const mBot = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => adm.setBotActive(id, active),
+    onSettled: refresh,
+  })
 
   // Verificar credenciales GUARDADAS del negocio (igual que la tabla del viejo)
   async function quickVerify(c: BusinessRow) {
@@ -156,6 +163,12 @@ export default function Clients() {
                         <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuItem onSelect={() => quickVerify(c)}><Check /> Verificar conexión</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => setPrompting(c)}><BotIcon /> Configurar bot</DropdownMenuItem>
+                          {/* Un negocio suspendido ya responde el aviso de pago:
+                              encender su bot no cambiaría nada y confundiría. */}
+                          {!c.suspended && (c.bot_active
+                            ? <DropdownMenuItem onSelect={() => setPausing(c)}><Pause /> Pausar bot</DropdownMenuItem>
+                            : <DropdownMenuItem onSelect={() => mBot.mutate({ id: c.id, active: true })}><Play /> Reanudar bot</DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onSelect={() => setViewing(c)}><Eye /> Ver información</DropdownMenuItem>
                         </DropdownMenuContent>
@@ -178,6 +191,18 @@ export default function Clients() {
       )}
       {viewing && <ViewModal c={viewing} onClose={() => setViewing(null)} />}
       {prompting && <PromptModal c={prompting} onClose={() => setPrompting(null)} />}
+      <ConfirmAction
+        open={pausing !== null}
+        onOpenChange={open => { if (!open) setPausing(null) }}
+        title={`Pausar el bot de ${pausing?.name ?? ''}`}
+        description="Sus clientes escribirán por WhatsApp o Telegram y no recibirán NINGUNA respuesta: ni un aviso, ni un horario, nada. No es lo mismo que suspender, que sí responde avisando del pago pendiente. Se reanuda desde este mismo menú."
+        confirmLabel="Pausar bot"
+        destructive
+        onConfirm={() => {
+          if (pausing) mBot.mutate({ id: pausing.id, active: false })
+          setPausing(null)
+        }}
+      />
     </div>
   )
 }

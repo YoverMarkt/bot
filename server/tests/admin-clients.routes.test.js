@@ -67,8 +67,8 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 16 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(16)
+  it('protege sus 17 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(17)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -460,6 +460,50 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response.body.error).toContain('Meta requiere Token y Phone ID')
     expect(updateBusiness).not.toHaveBeenCalled()
     expect(JSON.stringify(response.body)).not.toContain('ycloud-stored')
+  })
+
+  // El interruptor del bot vive en su propia ruta y NO en el PUT del negocio.
+  // El PUT valida el canal entero, así que pausar un bot con credenciales a
+  // medias fallaría pidiendo el Signing Secret de YCloud — justo cuando más
+  // falta hace poder pausarlo. Estas pruebas fijan esa diferencia.
+  it('pausa el bot aunque al negocio le falten credenciales del canal', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', name: 'Pizzería', suspended: false, bot_active: true,
+      whatsapp_provider: 'ycloud', ycloud_api_key: null, ycloud_webhook_secret: null,
+    })
+    const setBotActive = vi.spyOn(db, 'setBotActive').mockResolvedValue({ error: null })
+
+    const response = await dispatch('post', '/api/admin/clients/:id/bot', {
+      auth: authorization(), params: { id: 'business-a' }, body: { active: false },
+    })
+
+    expect(response).toEqual({ status: 200, body: { ok: true, bot_active: false } })
+    expect(setBotActive).toHaveBeenCalledWith('business-a', false)
+  })
+
+  it('no enciende el bot de un negocio suspendido', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a', name: 'Pizzería', suspended: true, bot_active: false,
+    })
+    const setBotActive = vi.spyOn(db, 'setBotActive').mockResolvedValue({ error: null })
+
+    const response = await dispatch('post', '/api/admin/clients/:id/bot', {
+      auth: authorization(), params: { id: 'business-a' }, body: { active: true },
+    })
+
+    expect(response.status).toBe(409)
+    expect(setBotActive).not.toHaveBeenCalled()
+  })
+
+  it('rechaza el interruptor del bot sin un valor booleano', async () => {
+    const setBotActive = vi.spyOn(db, 'setBotActive').mockResolvedValue({ error: null })
+
+    const response = await dispatch('post', '/api/admin/clients/:id/bot', {
+      auth: authorization(), params: { id: 'business-a' }, body: { active: 'si' },
+    })
+
+    expect(response.status).toBe(400)
+    expect(setBotActive).not.toHaveBeenCalled()
   })
 
   it.each([
