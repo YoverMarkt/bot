@@ -32,8 +32,11 @@ jobs:
       - name: Tipos del servidor TypeScript
         run: npm run typecheck -w @botpanel/server
 
-      - name: Tests del servidor
-        run: npm test -w @botpanel/server
+      # Con umbrales de cobertura, así que además de pasar los tests avisa si
+      # una zona del servidor deja de estar probada. El umbral está por DEBAJO
+      # de lo medido: existe para que no retroceda, no para exigir una cifra.
+      - name: Tests del servidor (con cobertura)
+        run: npm run test:coverage -w @botpanel/server
 
   # Aplica el esquema a un PostgreSQL de verdad y EJECUTA sus funciones. Es la
   # única forma de detectar la familia de fallos que tumbó el canal cinco días en
