@@ -1,20 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as salesApi from './api'
-import { api } from '../../api/client'
-import { Lightbulb, Check, X } from 'lucide-react'
-import type { SaleItem } from './api'
-import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
-import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Input } from '@botpanel/ui/components/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
-import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
-import { Label } from '@botpanel/ui/components/label'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 
-const { money, cents } = salesApi
+const { money } = salesApi
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('es-EC', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -23,132 +16,28 @@ export default function Sales() {
   // Prellenado desde Conversaciones (botón "Registrar venta" del chat)
   const [params] = useSearchParams()
   const prefillPhone = params.get('phone') ?? ''
-  const [tab, setTab] = useState<'register' | 'history'>('register')
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
-          <p className="text-sm text-muted-foreground">
-            Ventas ya cobradas. Los pedidos que llegan y hay que atender viven en <a href="#/orders" className="underline underline-offset-2">Pedidos</a>.
-          </p>
-        </div>
-        <div className="max-w-full overflow-x-auto pb-1">
-          <Tabs value={tab} onValueChange={v => setTab(v as typeof tab)}>
-            <TabsList>
-              {([['register', 'Registrar venta'], ['history', 'Por contacto']] as const).map(([v, l]) => (
-                <TabsTrigger key={v} value={v}>{l}</TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
+        <p className="text-sm text-muted-foreground">
+          El historial de lo ya cobrado. Cada venta nace sola al entregar un pedido
+          o atender una cita: no hay que registrar nada a mano.
+        </p>
       </div>
-      {tab === 'register' && <RegisterSale prefillPhone={prefillPhone} />}
-      {tab === 'history' && <SalesByContact />}
+      <SalesByContact prefillPhone={prefillPhone} />
     </div>
   )
 }
 
-// ── Registrar venta manual (con prellenado desde la conversación) ──
-function RegisterSale({ prefillPhone = '' }: { prefillPhone?: string }) {
-  const qc = useQueryClient()
-  const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: salesApi.getProducts })
-  const [phone, setPhone] = useState(prefillPhone)
-  const [name, setName] = useState('')
-  const [items, setItems] = useState<Omit<SaleItem, 'line_total'>[]>([])
-  const [msg, setMsg] = useState('')
-
-  const total = useMemo(() => cents(items.reduce((s, i) => s + cents(i.quantity * i.unit_price), 0)), [items])
-
-  function addItem(productId: string) {
-    const p = products.find(x => x.id === productId)
-    if (!p) return
-    const price = Number(p.price_sale) > 0 ? Number(p.price_sale) : Number(p.price) || 0
-    setItems(prev => [...prev, { product_id: p.id, product_name: p.name, quantity: 1, unit_price: price }])
-  }
-
-  // Al llegar desde el chat: traer la cotización de ese contacto automáticamente
-  useEffect(() => { if (prefillPhone) loadQuote() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function loadQuote() {
-    if (!phone.trim()) return
-    try {
-      const q = await salesApi.getQuote(phone.trim())
-      if (q.contact_name) setName(q.contact_name)
-      if (q.suggested.length) {
-        setItems(q.suggested.map(s => ({ product_id: s.product_id, product_name: s.product_name, quantity: s.quantity, unit_price: s.unit_price })))
-        setMsg(`${q.suggested.length} producto(s) sugeridos desde la conversación`)
-      } else setMsg('Sin sugerencias de la conversación — agrega los productos abajo')
-    } catch { setMsg('No se encontró conversación con ese número') }
-  }
-
-  const mSave = useMutation({
-    mutationFn: async () => {
-      await salesApi.registerSale({ contact_phone: phone.trim() || null, contact_name: name.trim() || null, items })
-      // Si venimos de una conversación, registrarla también la CIERRA (el bot arranca contexto nuevo)
-      if (prefillPhone) await api(`/api/client/sessions/${encodeURIComponent(prefillPhone)}/close`, { method: 'PUT' }).catch(() => {})
-    },
-    onSuccess: () => {
-      setItems([]); setPhone(''); setName(''); setMsg(''); toast.success('Venta registrada — ya cuenta en tus reportes')
-      qc.invalidateQueries({ queryKey: ['orders'] })
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al registrar'),
-  })
-
-
-  return (
-    <Card className="p-5 max-w-2xl gap-0">
-      <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="sale-contact-phone">Teléfono del cliente</Label>
-          <div className="flex gap-2">
-            <Input id="sale-contact-phone" className="flex-1" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+593…" />
-            <Button variant="outline" size="icon" onClick={loadQuote} type="button" title="Traer lo cotizado en la conversación" aria-label="Traer cotización"><Lightbulb /></Button>
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="sale-contact-name">Nombre</Label>
-          <Input id="sale-contact-name" value={name} onChange={e => setName(e.target.value)} placeholder="opcional" />
-        </div>
-      </div>
-
-      <Label htmlFor="sale-product">Agregar producto</Label>
-      <Select value="" onValueChange={addItem}>
-        <SelectTrigger id="sale-product" className="w-full mb-3"><SelectValue placeholder="Elige un producto del catálogo…" /></SelectTrigger>
-        <SelectContent>
-          {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name} — {money(Number(p.price_sale) > 0 ? p.price_sale! : p.price)}</SelectItem>)}
-        </SelectContent>
-      </Select>
-
-      {items.map((it, idx) => (
-        <div key={idx} className="flex items-center gap-2 mb-2 text-sm">
-          <span className="flex-1 truncate text-foreground">{it.product_name}</span>
-          <Input id={`sale-item-${idx}-quantity`} aria-label={`Cantidad de ${it.product_name}`} type="number" min={1} max={99} value={it.quantity}
-            onChange={e => setItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, parseInt(e.target.value) || 1) } : x))}
-            className="w-16 text-center" />
-          <span className="text-muted-foreground">× {money(it.unit_price)}</span>
-          <span className="w-20 text-right font-medium">{money(cents(it.quantity * it.unit_price))}</span>
-          <Button variant="ghost" size="icon" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} aria-label={`Quitar ${it.product_name}`}><X /></Button>
-        </div>
-      ))}
-
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/60">
-        <span className="font-bold text-lg text-foreground">Total: {money(total)}</span>
-        <Button
-          onClick={() => mSave.mutate()} disabled={!items.length || mSave.isPending}>
-          {mSave.isPending ? 'Registrando…' : <span className="inline-flex items-center gap-1.5"><Check className="w-4 h-4" /> Registrar venta</span>}
-        </Button>
-      </div>
-      {msg && <p className="text-sm text-muted-foreground mt-3">{msg}</p>}
-    </Card>
-  )
-}
-
 // ── Ventas por contacto (ver + anular) ──
-function SalesByContact() {
+function SalesByContact({ prefillPhone = '' }: { prefillPhone?: string }) {
   const qc = useQueryClient()
-  const [phone, setPhone] = useState('')
-  const [searched, setSearched] = useState('')
+  const [phone, setPhone] = useState(prefillPhone)
+  // Con teléfono en la URL (desde Conversaciones) se busca solo: quien llega
+  // así ya sabe de quién quiere ver las ventas.
+  const [searched, setSearched] = useState(prefillPhone)
 
   const { data: sales = [], isFetching } = useQuery({
     queryKey: ['sales-by-phone', searched],

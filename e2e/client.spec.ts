@@ -465,7 +465,12 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
   await page.getByText('Cliente reciente').first().click()
   await page.getByRole('button', { name: 'Devolver al bot' }).click()
   await expect(page.getByText('¿Cerraste una venta con este cliente?')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Registrar venta' })).toBeVisible()
+  // El recordatorio lleva a Pedidos: desde que se retiró el alta manual, una
+  // venta solo nace de un pedido o de una cita. Se busca DENTRO del aviso,
+  // porque la propia conversación tiene ya su botón con el mismo nombre.
+  await expect(
+    page.getByLabel('Notifications alt+T').getByRole('button', { name: 'Registrar pedido' }),
+  ).toBeVisible()
 })
 
 test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {

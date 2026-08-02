@@ -8,18 +8,6 @@ type SaleData = Record<string, unknown>
 type SaleItemData = object
 
 const db: SupabaseClient = require('../client') as typeof import('../client')
-
-const createSaleWithItems = async (sale: SaleData, items: SaleItemData[]) => db.rpc(
-  'create_sale_with_items',
-  {
-    p_business_id: sale.business_id,
-    p_contact_phone: sale.contact_phone,
-    p_contact_name: sale.contact_name,
-    p_created_by: sale.created_by,
-    p_items: items,
-  },
-)
-
 const getSaleById = async (businessId: string, id: string) => {
   const { data } = await db.from('sales').select('*, sale_items(*)')
     .eq('business_id', businessId).eq('id', id).single()
@@ -67,7 +55,6 @@ const getSalesWithItems = async (
 }
 
 export = {
-  createSaleWithItems,
   getSaleById,
   getSalesByContact,
   getSaleCustomers,
