@@ -12,6 +12,82 @@
 
 \set ON_ERROR_STOP on
 
+-- ── 0. Dar de alta un cliente: la función que hace ganar dinero ────────────
+--
+-- Va PRIMERO y aparte porque es la más importante del sistema: sin ella no
+-- entra ningún cliente nuevo. No estaba verificada, y el 2 de agosto de 2026
+-- se descubrió que llevaba rota desde la migración de planes — el disparador
+-- de la cuota mensual era BEFORE y su clave foránea apuntaba a una fila de
+-- `billing` que aún no existía. El panel decía «No se pudo crear el cliente»
+-- y el registro de errores no mostraba nada.
+do $$
+declare
+  v_alta jsonb;
+  v_nuevo uuid;
+  v_cuotas integer;
+begin
+  v_alta := public.create_business_onboarding(
+    jsonb_build_object(
+      'name', 'Alta de verificación',
+      'slug', 'alta-verificacion',
+      'whatsapp_number', '+593900000900',
+      'whatsapp_provider', 'ycloud',
+      'ycloud_number', '+593900000900',
+      'takes_orders', true,
+      'plan', 'micro',
+      'monthly_contact_limit', 50,
+      'monthly_outbound_message_limit', 250
+    ),
+    'verificacion@ejemplo.com',
+    '$2a$10$hashdepruebaquenoesunaclavereal00000000',
+    25
+  );
+
+  v_nuevo := (v_alta ->> 'id')::uuid;
+  if v_nuevo is null then
+    raise exception 'create_business_onboarding no devolvió el negocio creado';
+  end if;
+
+  -- El alta es atómica: negocio, dueño, políticas y primera cuota o nada.
+  if (select count(*) from client_users where business_id = v_nuevo) <> 1 then
+    raise exception 'El alta no creó el usuario dueño';
+  end if;
+  if (select count(*) from bot_policies where business_id = v_nuevo) <> 1 then
+    raise exception 'El alta no creó las políticas del negocio';
+  end if;
+  select count(*) into v_cuotas from billing where business_id = v_nuevo;
+  if v_cuotas <> 1 then
+    raise exception 'El alta debía dejar exactamente una cuota, dejó %', v_cuotas;
+  end if;
+
+  -- La cuota queda reclamada para su mes, y apuntando a la factura real: es
+  -- justo la clave foránea que estaba rota.
+  if not exists (
+    select 1 from billing_month_claims c
+    join billing b on b.id = c.billing_id
+    where c.business_id = v_nuevo
+  ) then
+    raise exception 'La cuota del mes no quedó enlazada con su factura';
+  end if;
+
+  -- Un negocio no puede tener dos cuotas del mismo mes.
+  begin
+    insert into billing (business_id, amount, currency, status, period_start, period_end)
+    values (
+      v_nuevo, 25, 'USD', 'pending',
+      date_trunc('month', current_date)::date,
+      (date_trunc('month', current_date) + interval '1 month - 1 day')::date
+    );
+    raise exception 'La base aceptó dos cuotas del mismo mes para el mismo negocio';
+  exception when sqlstate '23505' then
+    null;
+  end;
+
+  delete from businesses where id = v_nuevo;
+  raise notice 'ALTA DE CLIENTES: verificada';
+end;
+$$;
+
 do $$
 declare
   v_business uuid;
