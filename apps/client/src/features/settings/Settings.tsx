@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
+import { MEDIA_LIMITS, fmtMB, uploadMedia } from '../catalog/api'
 import { Crown, Lock, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
@@ -17,7 +18,7 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
-  delivery_fee: number | null; brand_color: string | null; takes_orders?: boolean
+  delivery_fee: number | null; brand_color: string | null; logo_url: string | null; takes_orders?: boolean
 }
 type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
@@ -184,7 +185,30 @@ export function BusinessForm() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
   const [draft, setDraft] = useState<Partial<BusinessData> | null>(null)
+  const [subiendoLogo, setSubiendoLogo] = useState(false)
+  const logoInput = useRef<HTMLInputElement>(null)
   const f = draft ?? data
+
+  // Se reutiliza la subida del catálogo: mismo endpoint, que ya valida tipo y
+  // tamaño y sube a Cloudinary bajo el business_id del JWT. Aquí solo se guarda
+  // la URL que devuelve; el negocio nunca ve credenciales.
+  const subirLogo = async (archivo: File | undefined) => {
+    if (!archivo || !f) return
+    setSubiendoLogo(true)
+    try {
+      if (archivo.size > MEDIA_LIMITS.image) {
+        toast.error(`El logo supera ${fmtMB(MEDIA_LIMITS.image)}`)
+        return
+      }
+      const subida = await uploadMedia(archivo)
+      setDraft({ ...f, logo_url: subida.url })
+      toast.success('Logo listo — pulsa Guardar para aplicarlo')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo subir el logo')
+    } finally {
+      setSubiendoLogo(false)
+    }
+  }
 
   const mSave = useMutation({
     mutationFn: () => api('/api/client/business', {
@@ -196,6 +220,7 @@ export function BusinessForm() {
         payment_methods: f?.payment_methods,
         delivery_fee: Number(f?.delivery_fee) || 0,
         brand_color: f?.brand_color || null,
+        logo_url: f?.logo_url || null,
       }),
     }),
     onSuccess: () => {
@@ -234,6 +259,38 @@ export function BusinessForm() {
             <p className="text-[11px] text-muted-foreground/80 mt-1">
               Se suma solo a los pedidos a domicilio. Quien retira en el local no lo paga.
               Déjalo en 0 si no cobras envío.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="business-logo">Logo de tu empresa</Label>
+            <div className="flex items-center gap-3">
+              <div className="size-14 shrink-0 overflow-hidden rounded-xl border bg-muted">
+                {f.logo_url
+                  ? <img src={f.logo_url} alt="Logo de tu empresa" className="size-full object-cover" />
+                  : <div className="flex size-full items-center justify-center text-[10px] text-muted-foreground">Sin logo</div>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id="business-logo"
+                  ref={logoInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => void subirLogo(e.target.files?.[0])}
+                />
+                <Button variant="outline" size="sm" disabled={subiendoLogo} onClick={() => logoInput.current?.click()}>
+                  {subiendoLogo ? 'Subiendo…' : f.logo_url ? 'Cambiar logo' : 'Subir logo'}
+                </Button>
+                {f.logo_url && (
+                  <Button variant="outline" size="sm" onClick={() => setDraft({ ...f, logo_url: null })}>
+                    Quitar
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              Se ve en la cabecera de tu mini app. Cuadrado se ve mejor. Recuerda guardar los cambios.
             </p>
           </div>
 

@@ -3030,7 +3030,8 @@ alter table public.orders
   add column if not exists payment_proof_url text;
 alter table public.businesses
   add column if not exists delivery_fee numeric(10,2) not null default 0,
-  add column if not exists brand_color text;
+  add column if not exists brand_color text,
+  add column if not exists logo_url text;
 
 do $$
 begin
@@ -3052,6 +3053,15 @@ begin
     alter table public.businesses add constraint businesses_tienda_check check (
       delivery_fee >= 0 and delivery_fee <= 999
       and (brand_color is null or brand_color ~ '^#[0-9a-fA-F]{6}$')
+    );
+  end if;
+  -- El logo acaba en un <img> de una app pública: solo https.
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.businesses'::regclass and conname = 'businesses_logo_check'
+  ) then
+    alter table public.businesses add constraint businesses_logo_check check (
+      logo_url is null or logo_url ~ '^https://'
     );
   end if;
 end;

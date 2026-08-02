@@ -14,6 +14,7 @@ const editableBusinessFields = [
   'payment_methods',
   'delivery_fee',
   'brand_color',
+  'logo_url',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -75,6 +76,7 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     // vuelve a calcular la base al crear el pedido; esto es la configuración.
     delivery_fee: Number(business.delivery_fee) || 0,
     brand_color: business.brand_color ?? null,
+    logo_url: business.logo_url ?? null,
     suspended: business.suspended,
     bot_active: business.bot_active,
   })
@@ -102,6 +104,15 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
     }
     // Vacío = volver al color de la plataforma.
     data.brand_color = color ? color.toUpperCase() : null
+  }
+  if ('logo_url' in data) {
+    // La sube el propio panel a Cloudinary; aquí solo se acepta el resultado.
+    // Vacío = quitar el logo.
+    const url = typeof data.logo_url === 'string' ? data.logo_url.trim() : ''
+    if (url && !/^https:\/\//.test(url)) {
+      return res.status(400).json({ error: 'El logo debe ser una imagen subida desde el panel' })
+    }
+    data.logo_url = url || null
   }
 
   try {

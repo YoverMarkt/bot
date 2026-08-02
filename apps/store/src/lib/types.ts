@@ -20,6 +20,8 @@ export interface Business {
   capabilities: Capabilities
   /** Color del negocio. Nulo = el de la plataforma. */
   brandColor: string | null
+  /** Logo del negocio, ya subido a Cloudinary. Nulo = solo el nombre. */
+  logoUrl: string | null
   /** Costo fijo de envío a domicilio. Informativo: el oficial lo calcula la base. */
   deliveryFee: number
 }

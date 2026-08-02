@@ -27,6 +27,7 @@ export interface StorefrontBusiness {
   lodging_enabled?: boolean | null
   delivery_fee?: number | string | null
   brand_color?: string | null
+  logo_url?: string | null
 }
 
 // El color lo escribe el dueño en su panel y acaba pintando la mini app, así
@@ -257,6 +258,10 @@ export function publicBusiness(business: StorefrontBusiness) {
     capabilities: storefrontCapabilities(business),
     // El color con el que se pinta la tienda. Nulo = el de la plataforma.
     brandColor: safeBrandColor(business.brand_color),
+    // Solo https: acaba en un <img> de una app pública.
+    logoUrl: typeof business.logo_url === 'string' && business.logo_url.startsWith('https://')
+      ? business.logo_url
+      : null,
     // Informativo: el importe oficial lo vuelve a calcular la base al pedir.
     deliveryFee: Math.max(0, Number(business.delivery_fee) || 0),
   }

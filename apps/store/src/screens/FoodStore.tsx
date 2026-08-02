@@ -131,6 +131,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               <ChevronLeft size={22} />
             </button>
           )}
+          {/* El logo manda si lo hay: es lo que el cliente reconoce de un
+              vistazo. Si no, el nombre solo, sin dejar un hueco vacío. */}
+          {business.logoUrl && (
+            <img
+              src={business.logoUrl}
+              alt=""
+              className="size-11 shrink-0 rounded-2xl bg-white/10 object-cover"
+            />
+          )}
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[24px] leading-none font-extrabold tracking-tight">
               {business.name}

@@ -205,6 +205,7 @@ describe('la tienda del negocio', () => {
         phone: '+593991716574',
         capabilities: { orders: true, lodging: false },
         brandColor: null,
+        logoUrl: null,
         deliveryFee: 0,
       })
     })
@@ -218,6 +219,14 @@ describe('la tienda del negocio', () => {
       expect(
         publicBusiness(negocio({ brand_color: 'red;background:url(x)' })).brandColor,
       ).toBeNull()
+    })
+
+    // El logo acaba en un <img> de una app pública: nada de http ni javascript:.
+    it('solo publica un logo servido por https', () => {
+      expect(publicBusiness(negocio({ logo_url: 'https://res.cloudinary.com/x/logo.png' })).logoUrl)
+        .toBe('https://res.cloudinary.com/x/logo.png')
+      expect(publicBusiness(negocio({ logo_url: 'http://inseguro.test/logo.png' })).logoUrl).toBeNull()
+      expect(publicBusiness(negocio({ logo_url: 'javascript:alert(1)' })).logoUrl).toBeNull()
     })
 
     it('publica el costo de envío como número, nunca negativo', () => {
