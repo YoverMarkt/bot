@@ -316,9 +316,10 @@ const { Telegraf, Markup } = require('telegraf') as {
   Telegraf: new (token: string) => TelegramBot
   Markup: TelegramMarkup
 }
-const axios = require('axios') as {
+interface ModuloAxios {
   get(url: string, options: Record<string, unknown>): Promise<DownloadResponse>
 }
+const axios: ModuloAxios = require('axios') as typeof import('axios')
 
 const integration = createTelegramIntegration({
   database: require('../db') as TelegramDatabase,

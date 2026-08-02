@@ -1,23 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PlatformErrorRow } from '../types'
 
 // Errores de plataforma agrupados por huella. Los escribe
 // `services/error-log.ts` (ya saneados) y los lee el panel del superadmin.
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 // Sin `export`: el repositorio se expone con `export =` y no admite mezclar.
 // El router declara su propia forma del registro.
-interface PlatformErrorRow {
-  id: string
-  business_id: string | null
-  category: string
-  code: string | null
-  message: string
-  context: Record<string, unknown>
-  occurrences: number
-  first_seen_at: string
-  last_seen_at: string
-}
 
 const recordPlatformError = async (input: {
   businessId: string | null

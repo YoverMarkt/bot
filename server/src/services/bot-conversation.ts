@@ -1044,17 +1044,19 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 // sigue siendo puro y las pruebas lo montan con lo que necesiten.
 // Se tipa con las firmas REALES del módulo (no con las que espera la
 // conversación) para que el compilador compare las dos y avise si divergen.
-const storefrontLinkService = require('./storefront-link') as {
+interface ModuloStorefrontLinkService {
   issueStorefrontLink: ConversationStorefrontLink['issueLink']
   storefrontInvite: ConversationStorefrontLink['storefrontInvite']
 }
-const priceGuardService = require('./price-guard') as {
+const storefrontLinkService: ModuloStorefrontLinkService = require('./storefront-link') as typeof import('./storefront-link')
+interface ModuloPriceGuardService {
   checkQuotedPrices(input: {
     text: unknown
     allowedAmounts: Array<number | string | null | undefined>
   }): { ok: boolean; invented: number[]; quoted: number[] }
   priceGuardMode(): 'observar' | 'bloquear'
 }
+const priceGuardService: ModuloPriceGuardService = require('./price-guard') as typeof import('./price-guard')
 const { recordError } = require('./error-log') as {
   recordError(input: {
     businessId?: string | null

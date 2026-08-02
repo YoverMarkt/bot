@@ -1,11 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { TagData } from '../types'
 
-interface TagData {
-  name: string
-  color?: unknown
-}
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const getTags = async (businessId: string) => {
   const { data } = await db

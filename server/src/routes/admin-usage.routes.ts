@@ -1,12 +1,14 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 
-const auth = require('../middleware/auth') as {
+interface ModuloAuth {
   authAdmin: RequestHandler
 }
-const db = require('../db') as {
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
+interface ModuloDb {
   getAdminMonthlyUsage(month?: string | null): Promise<unknown[]>
 }
+const db: ModuloDb = require('../db') as typeof import('../db')
 
 const router = createRouter()
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/

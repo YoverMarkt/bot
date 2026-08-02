@@ -432,7 +432,7 @@ export function createLodgingService(database: LodgingDatabase) {
   return { quoteLodging, requestLodging }
 }
 
-const database = require('../db') as LodgingDatabase
+const database: LodgingDatabase = require('../db') as typeof import('../db')
 const lodgingService = createLodgingService(database)
 
 export const quoteLodging = lodgingService.quoteLodging

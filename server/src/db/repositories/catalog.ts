@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // explícitas y nunca `select('*')`: el embedding del producto pesa 1536 números
 // y no tiene ningún sentido enviarlo al teléfono de un cliente.
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const fail = (error: { message?: string } | null, context: string): void => {
   if (error) throw new Error(`${context}: ${error.message || 'sin detalle'}`)

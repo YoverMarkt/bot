@@ -138,7 +138,7 @@ export function createActiveClientGuard(
   }
 }
 
-const database = require('../db') as SessionDatabase
+const database: SessionDatabase = require('../db') as typeof import('../db')
 export const activeClientGuard = createActiveClientGuard({ database })
 
 export function requirePermission(section: string): RequestHandler {

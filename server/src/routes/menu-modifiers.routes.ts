@@ -9,17 +9,19 @@ interface DatabaseResult {
   error?: { code?: string; message?: string } | null
 }
 
-const db = require('../db') as {
+interface ModuloDb {
   getAllMenuModifiers(businessId: string): Promise<DataRecord[]>
   getMenuModifierById(businessId: string, id: string): Promise<DataRecord | null>
   createMenuModifier(businessId: string, data: DataRecord): Promise<DatabaseResult>
   updateMenuModifier(businessId: string, id: string, data: DataRecord): Promise<DatabaseResult>
   deleteMenuModifier(businessId: string, id: string): Promise<DatabaseResult>
 }
-const auth = require('../middleware/auth') as {
+const db: ModuloDb = require('../db') as typeof import('../db')
+interface ModuloAuth {
   authClient: RequestHandler
   requirePermission(section: string): RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 const canManageCatalog = auth.requirePermission('catalogo')

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 type OrderData = Record<string, unknown>
 type OrderItemData = Record<string, unknown>
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const createOrder = async (order: OrderData, items: OrderItemData[]) => db.rpc(
   'create_order_with_items',

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { BusinessRecord } from '../db/types'
 import type { RequestHandler } from 'express'
 import { metaGraphUrl } from '../config/meta-graph'
 import { createRouter } from '../middleware/async'
@@ -22,17 +23,6 @@ interface VerifyProviderPayload {
   verified_with_saved?: boolean
 }
 
-interface BusinessRecord {
-  whatsapp_provider?: unknown
-  ycloud_api_key?: unknown
-  ycloud_number?: unknown
-  ycloud_webhook_secret?: unknown
-  ycloud_webhook_endpoint_id?: unknown
-  meta_token?: unknown
-  meta_phone_id?: unknown
-  telegram_bot_token?: unknown
-}
-
 interface YCloudNumber {
   phoneNumber?: string
   displayName?: string
@@ -44,12 +34,14 @@ interface VerificationResult {
   info: string
 }
 
-const db = require('../db') as {
+interface ModuloDb {
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
 }
-const auth = require('../middleware/auth') as {
+const db: ModuloDb = require('../db') as typeof import('../db')
+interface ModuloAuth {
   authAdmin: RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

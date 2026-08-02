@@ -161,7 +161,7 @@ export function createStorefrontLinkService(dependencies: {
   return { issueLink, shouldSend }
 }
 
-const database = require('../db') as LinkDatabase
+const database: LinkDatabase = require('../db') as typeof import('../db')
 const service = createStorefrontLinkService({ database })
 
 export const issueStorefrontLink = service.issueLink

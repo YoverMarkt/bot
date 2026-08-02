@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // Todo filtra por business_id salvo `customers`, que es identidad global (una
 // persona, un teléfono) y a la que solo se llega por teléfono, nunca listando.
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const fail = (error: { message?: string } | null, context: string): void => {
   if (error) throw new Error(`${context}: ${error.message || 'sin detalle'}`)

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 type UserData = Record<string, unknown>
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 // El email es único globalmente y esta búsqueda se usa únicamente durante login.
 const getClientByEmail = async (email: string) => {

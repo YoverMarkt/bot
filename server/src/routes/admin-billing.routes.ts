@@ -27,7 +27,7 @@ const validationFailure = (res: Parameters<RequestHandler>[1], message: string) 
   res.status(400).json({ error: message })
 )
 
-const db = require('../db') as {
+interface ModuloDb {
   getBilling(): Promise<unknown[]>
   updateBillingStatus(
     billingId: string,
@@ -35,9 +35,11 @@ const db = require('../db') as {
     paidAt: unknown,
   ): Promise<DatabaseResult>
 }
-const auth = require('../middleware/auth') as {
+const db: ModuloDb = require('../db') as typeof import('../db')
+interface ModuloAuth {
   authAdmin: RequestHandler
 }
+const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
 

@@ -1,4 +1,5 @@
 import type { Router } from 'express'
+import type { BusinessRecord } from '../db/types'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { JWT } from '../middleware/auth'
@@ -18,24 +19,15 @@ interface ClientUser {
   permissions?: unknown
 }
 
-interface BusinessRecord {
-  id: string
-  name: unknown
-  type: unknown
-  active?: unknown
-  suspended?: unknown
-  bot_active?: unknown
-  takes_bookings?: unknown
-  lodging_enabled?: unknown
-}
-
-const bcrypt = require('bcryptjs') as {
+interface ModuloBcrypt {
   compare(value: string, hash: string): Promise<boolean>
 }
-const db = require('../db') as {
+const bcrypt: ModuloBcrypt = require('bcryptjs') as typeof import('bcryptjs')
+interface ModuloDb {
   getClientByEmail(email: string): Promise<ClientUser | null>
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
 }
+const db: ModuloDb = require('../db') as typeof import('../db')
 
 const LOGIN_RATE_LIMIT_OPTIONS = {
   windowMs: 15 * 60 * 1000,

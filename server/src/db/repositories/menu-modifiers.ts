@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 type DataRecord = Record<string, unknown>
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 // Nunca se aceptan estas columnas desde el cliente: las pone el servidor.
 function tenantPayload(data: DataRecord): DataRecord {

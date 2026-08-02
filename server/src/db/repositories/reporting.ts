@@ -1,11 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PendingSession } from '../types'
 
-interface PendingSession {
-  contact_phone?: string | null
-  last_message_at?: string | null
-}
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const recordConsultations = async (businessId: string, productIds: unknown[]) => {
   if (!Array.isArray(productIds) || !productIds.length) return undefined

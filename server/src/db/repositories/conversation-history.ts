@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 type MessageRole = 'user' | 'assistant' | 'owner'
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const getConversations = async (businessId: string, limit = 100) => {
   const { data } = await db

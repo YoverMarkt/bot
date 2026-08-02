@@ -1,21 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { BusinessRecord } from '../types'
 import {
   normalizeChannelIdentifier,
   type ChannelAddress,
 } from '../../types/channels'
 
+// Para ESCRITURAS: crear y actualizar reciben un subconjunto de columnas, y la
+// lista blanca de la ruta ya filtra cuáles se aceptan. Aquí flexible es lo
+// correcto; lo que importa es que las LECTURAS estén tipadas.
 type BusinessData = Record<string, unknown>
 
-interface BusinessRecord extends BusinessData {
-  id?: string
-}
 
 interface ChannelRouteRecord {
   business_id?: string | null
   businesses?: BusinessRecord | BusinessRecord[] | null
 }
 
-const db = require('../client') as SupabaseClient
+const db: SupabaseClient = require('../client') as typeof import('../client')
 
 const getBusinessById = async (id: string) => {
   const { data } = await db.from('businesses').select('*').eq('id', id).single()

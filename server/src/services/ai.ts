@@ -44,8 +44,8 @@ interface TranscriptionKeys {
   openai: string | null
 }
 
-const settings = require('./settings') as SettingsService
-const db = require('../db') as DatabaseService
+const settings: SettingsService = require('./settings') as typeof import('./settings')
+const db: DatabaseService = require('../db') as typeof import('../db')
 
 function selectTranscriptionEngine(
   provider: string | null,

@@ -35,13 +35,14 @@ export const sendToContact = createContactNotifier({
     return require('../integrations/telegram').getBotInstance() as TelegramBot | null | undefined
   },
   async sendWhatsAppMessage(business, phone, message) {
-    const bot = require('./bot-entry') as {
+    interface ModuloBot {
       sendWhatsAppMessage(
         currentBusiness: BusinessRecord,
         currentPhone: string,
         currentMessage: string,
       ): Promise<unknown>
     }
+    const bot: ModuloBot = require('./bot-entry') as typeof import('./bot-entry')
     await bot.sendWhatsAppMessage(business, phone, message)
   },
 })
