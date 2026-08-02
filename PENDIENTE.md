@@ -27,3 +27,56 @@ Movido de `CLAUDE.md` **sin cambiar una frase**.
 
 > **Escalabilidad (nota de arquitectura, a futuro):** hoy es un **monolito** (un solo servidor Node + Express). Es lo **correcto para la etapa actual** (primeros clientes) — simple, barato, fácil de operar. NO refactorizar de forma especulativa. Cuando haya **demanda real de escala** (muchos negocios/mensajes concurrentes), recién ahí evaluar: **Realtime/WebSockets** (empujar cambios al panel en vez de que pregunte cada X segundos — ataca de raíz el egress del polling), **caché (Redis)** (datos muy leídos en memoria, sin golpear la base), **colas** (procesar mensajes/IA sin bloquear), **workers** separados (envíos, embeddings, reportes pesados, transcodificar media), varias instancias + balanceador, réplicas de lectura, y quizás separar el bot del panel. Antes de todo eso, el paso barato es **Supabase Pro ($25/mes)** para subir los límites. Es un "problema de éxito": se aborda cuando el volumen lo justifique, no antes.
 
+---
+
+## EN CURSO — Pedidos como sección propia (decidido 2026-08-02)
+
+**No es especulativo: sale de un cliente real** (Monster Pizza, creado hoy) y del diagrama
+de flujo que trajo el dueño del SaaS.
+
+### El diagnóstico
+
+Medido en el código, no supuesto:
+
+- **La alarma existe pero es sorda a los pedidos.** `components/AlarmSystem.tsx` suena y
+  notifica por modo manual, reservas y hospedaje. `orders` NO está en la lista.
+  Lo alimenta `hooks/useAttention.ts`, que tampoco los trae.
+- **Los pedidos viven en el sitio equivocado:** `features/sales/Sales.tsx`, pestaña
+  «Pedidos del bot», con recarga cada 15 s.
+
+Son dos momentos distintos del negocio y por eso duele: un **pedido** llega y hay que
+atenderlo ya, lo inicia el cliente; una **venta** se registra cuando ya se cobró, la cierra
+el negocio. Meter el pedido dentro de Ventas obliga al dueño a entrar a «registrar una
+venta» para ver algo que todavía no vendió — y por eso nadie conectó nunca la alarma ahí.
+
+### El orden acordado
+
+1. **Que la alarma oiga los pedidos.** Lo más pequeño y lo que más duele: sin esto se
+   pierden pedidos. Tocar `useAttention.ts` + `AlarmSystem.tsx`.
+2. **Sección Pedidos propia**, como bandeja de entrada, fuera de Ventas.
+3. **El puente a la cooperativa de reparto**, cuando el pedido pasa a «en camino».
+
+### La decisión que NO puede esperar
+
+Hoy `orders.status` acepta `pendiente · confirmado · completado · cancelado · expirado`.
+Al flujo real de una pizzería le faltan **`preparacion`** y **`en_camino`** — y ese último
+es donde engancha la cooperativa.
+
+⚠️ **Añadir esos estados ahora, con cero pedidos reales, es gratis. Dentro de un mes
+significa migrar datos de un cliente que ya está operando.** Es el motivo de que esto esté
+escrito antes de empezar a construir.
+
+### Lo que ya está resuelto y no hay que rehacer
+
+- Cuenta bancaria del negocio: panel + `/api/store/:slug/payment-info` (PR #132).
+- Tamaños, categorías y sabores: cargados y funcionando.
+- El total lo calcula el servidor y el pedido NO viaja como mensaje de WhatsApp editable.
+
+### Lo que sigue faltando del diagrama del dueño
+
+| Paso | Estado |
+|---|---|
+| Selector de método de pago | ❌ no hay columna `payment_method` |
+| Subir comprobante de transferencia | ❌ |
+| Coste de envío | ❌ `orders` solo tiene subtotal, discount, total |
+| Tarjeta de crédito | descartado a propósito |
