@@ -62,6 +62,7 @@ const db: {
   updateBusiness(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
+  setBotActive(businessId: string, active: boolean): Promise<DatabaseResult>
   reactivateBusiness(businessId: string): Promise<DatabaseResult>
   updateBusinessPlanBilling(
     businessId: string,
@@ -535,6 +536,33 @@ router.post('/api/admin/clients/:id/suspend', auth.authAdmin, async (req, res) =
     res.json({ ok: true })
   } catch (error) {
     safeFailure(res, 'suspender el cliente', error)
+  }
+})
+
+// Interruptor operativo del bot, aparte de la edición del negocio.
+//
+// Va por su propia ruta y no por el PUT a propósito: ese valida el canal
+// ENTERO antes de guardar, así que pausar el bot de un negocio con
+// credenciales incompletas fallaría pidiendo el Signing Secret de YCloud —
+// justo cuando más falta hace poder pausarlo. Mismo motivo por el que
+// suspender y reactivar tienen las suyas.
+router.post('/api/admin/clients/:id/bot', auth.authAdmin, async (req, res) => {
+  const { active } = req.body as { active?: unknown }
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ error: 'active debe ser true o false' })
+  }
+  try {
+    const business = await db.getBusinessById(req.params.id)
+    if (!business) return res.status(404).json({ error: 'No encontrado' })
+    // Un negocio suspendido responde el aviso de pago y nunca llega al bot:
+    // encenderlo aquí dejaría el panel diciendo una cosa y la realidad otra.
+    if (active && business.suspended) {
+      return res.status(409).json({ error: 'Reactiva el negocio antes de encender su bot' })
+    }
+    assertDatabaseResult(await db.setBotActive(req.params.id, active), 'cambiar estado del bot')
+    res.json({ ok: true, bot_active: active })
+  } catch (error) {
+    safeFailure(res, 'cambiar el estado del bot', error)
   }
 })
 

@@ -101,6 +101,20 @@ export const suspendClient = (id: string, reason?: string) =>
 export const reactivateClient = (id: string) =>
   api(`/api/admin/clients/${id}/reactivate`, { method: 'POST' })
 
+/**
+ * Enciende o apaga el bot de un negocio SIN tocar su cuenta.
+ *
+ * No es lo mismo que suspender: un negocio suspendido responde avisando del
+ * pago pendiente, mientras que con el bot apagado el cliente escribe y no
+ * recibe absolutamente nada. Sirve para pausar mientras se cambia el número o
+ * se arregla el canal, no para cobrar.
+ */
+export const setBotActive = (id: string, active: boolean) =>
+  api(`/api/admin/clients/${id}/bot`, {
+    method: 'POST',
+    body: JSON.stringify({ active }),
+  })
+
 
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
 export type BusinessDetail = BusinessRow & {
