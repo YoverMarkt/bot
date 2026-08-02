@@ -115,6 +115,7 @@ export type BusinessDetail = BusinessRow & {
   takes_bookings: boolean | null
   takes_orders: boolean | null
   lodging_enabled: boolean | null
+  storefront_enabled: boolean | null
   chat_mode: 'menu' | 'ai' | null
   monthly_rate: number | null
   client_email: string

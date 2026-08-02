@@ -91,6 +91,20 @@ export function recommendedLodgingForBusinessType(type: string): boolean {
   return isLodgingBusinessType(type)
 }
 
+// ¿A este negocio le sirve una mini app?
+//
+// La regla no es el tamaño del negocio sino cuánto TARDA el cliente en decidir.
+// Comida y hospedaje se eligen con calma, mirando fotos y comparando: ahí una
+// tienda vende más que una conversación. Una barbería se resuelve en dos
+// mensajes ("¿mañana a las 4?") y montarle una app sería peor experiencia.
+//
+// Como el resto, esto solo PROPONE al crear: `storefront_enabled` persistido
+// manda siempre y jamás se le sobrescribe a un negocio existente.
+export function recommendedStorefrontForBusinessType(type: string): boolean {
+  if (isLodgingBusinessType(type)) return true
+  return recommendedSalesForBusinessType(type) === 'vende'
+}
+
 export type BusinessChatMode = 'menu' | 'ai'
 
 // Negocios donde el cliente NO explora un catálogo, sino que pregunta o manda
