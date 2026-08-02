@@ -8,6 +8,28 @@
 --
 -- INSTRUCCIONES:
 --   Supabase → tu proyecto → SQL Editor → New query → pega TODO → RUN
+--
+-- ⚠️ CÓMO LEER ESTE ARCHIVO — importante, y no es obvio:
+--
+-- Este archivo es la SUMA de todas las migraciones, en el orden en que se
+-- aplicaron. Cada una se copia literalmente (hay guardianes que lo verifican),
+-- así que una función puede aparecer definida VARIAS VECES: cada migración que
+-- la tocó dejó su versión.
+--
+-- **Manda siempre la ÚLTIMA definición del archivo**, porque `create or replace`
+-- pisa a la anterior. Las de más arriba se aplican y se descartan.
+--
+-- Si vienes a entender cómo funciona algo, busca la ÚLTIMA aparición:
+--
+--     grep -n "function public.nombre_de_la_funcion" server/schema.sql
+--
+-- Hoy le pasa a `create_business_onboarding` (3 veces: la migración inicial, la
+-- de hospedaje y la de planes; manda la tercera). Se intentó dejar solo una y
+-- se revirtió: borrar las anteriores rompe la garantía de que una instalación
+-- nueva acabe igual que una base existente, que es justo lo que evita la deriva.
+--
+-- Para comprobar que este archivo y la base real coinciden:
+--     npm run verify:drift -w @botpanel/server
 -- ============================================================
 
 -- Extensión para búsqueda semántica (RAG)
