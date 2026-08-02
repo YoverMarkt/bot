@@ -238,6 +238,26 @@ begin
     if (select status from orders where id = v_reparto) <> 'completado' then
       raise exception 'set_order_status no pudo cerrar el pedido entregado';
     end if;
+
+    -- ENTREGADO = VENDIDO. Los reportes leen `sales`: sin esto el negocio
+    -- vendía y sus números decían que no.
+    if not exists (select 1 from sales where order_id = v_reparto) then
+      raise exception 'un pedido entregado no generó su venta';
+    end if;
+    if (select total from sales where order_id = v_reparto) <> 21.00 then
+      raise exception 'la venta no heredó el total del pedido';
+    end if;
+
+    -- Reintentar no puede duplicar el dinero del reporte.
+    perform public.set_order_status(v_business, v_reparto, 'completado');
+    if (select count(*) from sales where order_id = v_reparto) <> 1 then
+      raise exception 'marcar entregado dos veces duplicó la venta';
+    end if;
+
+    -- Otro negocio no puede convertir en venta un pedido ajeno.
+    if public.crear_venta_desde_pedido(gen_random_uuid(), v_reparto) is not null then
+      raise exception 'FUGA: otro negocio convirtió en venta un pedido ajeno';
+    end if;
   end;
 
   -- Lo que el cliente RETIRA en el local no puede salir a la calle. Lo impide
