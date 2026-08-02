@@ -61,3 +61,19 @@ El guardián de migraciones también aprendió a **ignorar los literales de cade
 ### La deriva que encontró
 
 Existía en producción un disparador de evento `ensure_rls` con su función `rls_auto_enable` —activa RLS automáticamente en toda tabla nueva de `public`— que **no estaba en `schema.sql`**. Una instalación nueva nacía sin esa red de seguridad. Ya está en el consolidado.
+
+## Detector de código muerto (knip)
+
+Corre dentro de `npm run check`, así que el CI lo ejecuta en cada PR. Encuentra **archivos que no importa nadie**, **dependencias declaradas que ya no se usan** y **dependencias que se usan sin declarar**. Comprobado que muerde: un archivo huérfano de prueba lo hace fallar.
+
+Su primer hallazgo real fue `express-serve-static-core`, que `middleware/async.ts` importaba **sin declararlo** — llegaba de rebote a través de `@types/express`. Si ese árbol de dependencias cambiaba, el import se rompía sin que nadie hubiera tocado nada. Ya está declarado.
+
+### ⚠️ Lo que NO detecta, y por qué
+
+**Exports muertos del servidor.** Está apagado a propósito (`"exports": "off"`), no por comodidad: el servidor importa con `require('...')` tipado —el patrón CommonJS deliberado del proyecto— y knip no rastrea esas importaciones. En la primera pasada marcó **71 exports como muertos**, y el primero que se comprobó, `authClient`, tenía **66 usos reales**.
+
+Un guardián que reporta 71 falsos positivos es peor que no tenerlo: se aprende a ignorarlo y el día que acierte, nadie mirará. Por eso solo queda encendido lo que este proyecto puede verificar con certeza.
+
+Para el riesgo grave —código viejo que **sí se ejecuta**— está el guardián de funciones de base de datos, que es donde una versión olvidada puede correr sola. Una función TypeScript que nadie importa es peso muerto, pero no se ejecuta.
+
+`ignoreDependencies` cubre las que usa `packages/ui` y las apps declaran para el hoisting de los workspaces (`clsx`, `tailwind-merge`, `radix-ui`, `class-variance-authority`), y `apps/*/public/theme-boot.js`, que lo carga el HTML y no un import.

@@ -13,7 +13,7 @@
     "start": "npm start -w @botpanel/server",
     "dev": "npm run dev -w @botpanel/server",
     "build": "npm run build -w @botpanel/server && npm run build -w @botpanel/client && npm run build -w @botpanel/admin && npm run build -w @botpanel/store",
-    "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin && npm run lint -w @botpanel/store",
+    "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin && npm run lint -w @botpanel/store && npx knip --no-progress",
     "test": "npm test -w @botpanel/server && npm test -w @botpanel/store",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium"
@@ -22,6 +22,7 @@
     "node": ">=22.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
+    "@playwright/test": "^1.61.1",
+    "knip": "^6.31.0"
   }
 }
