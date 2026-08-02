@@ -30,9 +30,6 @@ const enc = encodeURIComponent
 export const setMode = (phone: string, manual: boolean) =>
   api(`/api/client/sessions/${enc(phone)}/mode`, { method: 'PUT', body: JSON.stringify({ manual }) })
 
-// "Venta realizada": devuelve el chat al bot + corte de historial (conversación nueva)
-export const closeSale = (phone: string) =>
-  api(`/api/client/sessions/${enc(phone)}/close`, { method: 'PUT' })
 
 export const markRead = (phone: string) =>
   api(`/api/client/sessions/${enc(phone)}/read`, { method: 'PUT' })

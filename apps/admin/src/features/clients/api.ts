@@ -101,8 +101,6 @@ export const suspendClient = (id: string, reason?: string) =>
 export const reactivateClient = (id: string) =>
   api(`/api/admin/clients/${id}/reactivate`, { method: 'POST' })
 
-export const setBotActive = (id: string, bot_active: boolean) =>
-  api(`/api/admin/clients/${id}`, { method: 'PUT', body: JSON.stringify({ bot_active }) })
 
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
 export type BusinessDetail = BusinessRow & {
