@@ -284,7 +284,8 @@ describe('migración de la capa de datos', () => {
 
   it('migra ventas y datos de reportes conservando el contrato público', () => {
     for (const method of [
-      'createSaleWithItems',
+      // `createSaleWithItems` se retiró con el alta manual (2026-08-02): toda
+      // venta nace ahora de un pedido o de una cita.
       'getSaleById',
       'getSalesByContact',
       'getSaleCustomers',
@@ -303,12 +304,13 @@ describe('migración de la capa de datos', () => {
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
-    expect(facadeSource).not.toMatch(/const createSaleWithItems\s*=/)
+    expect(db.createSaleWithItems).toBeUndefined()
     expect(facadeSource).not.toMatch(/const getPendingOrders\s*=/)
   })
 
-  it('conserva la RPC de ventas y filtra todos los reportes por business_id', () => {
-    expect(salesSource).toContain("'create_sale_with_items'")
+  it('ya no crea ventas por su cuenta y filtra todos los reportes por business_id', () => {
+    // El alta manual se retiró: si vuelve, que sea una decisión consciente.
+    expect(salesSource).not.toContain("'create_sale_with_items'")
     expect(salesSource.match(/\.eq\('business_id', businessId\)/g)?.length)
       .toBeGreaterThanOrEqual(6)
     expect(reportingSource.match(/business_id/g)?.length).toBeGreaterThanOrEqual(10)

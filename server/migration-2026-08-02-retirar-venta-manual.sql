@@ -1,0 +1,29 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SE RETIRA EL ALTA MANUAL DE VENTAS
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Último paso del estándar. Desde hoy TODA venta nace de un flujo real:
+--
+--   Pedido entregado    → venta
+--   Pedido de mostrador → venta
+--   Cita atendida       → venta
+--
+-- El botón «Registrar venta» era el cuarto camino, el único donde alguien
+-- escribía dinero a mano sin que hubiera un pedido o una cita detrás. Mientras
+-- existió, el reporte podía cuadrar por dos vías distintas y había que
+-- mantener las dos.
+--
+-- ⚠️ Esto RETIRA una función. No borra ni una fila: las ventas ya registradas
+-- —las de esta función incluidas— siguen intactas en `sales` y en los
+-- reportes. Lo único que desaparece es la forma de crear ventas nuevas sin
+-- pedido ni cita.
+--
+-- Si algún día hace falta volver a registrar a mano, la función está en el
+-- historial de git; pero hoy no la llama nadie, y una función viva que nadie
+-- llama es justo lo que el guardián de funciones huérfanas vino a evitar.
+--
+-- Idempotente. Aplicar con `npm run migrate`.
+
+-- La firma se comprobó contra la base real antes de escribir esto, para no
+-- dejar un `drop` que no acierta y una función viva creyendo que se retiró.
+drop function if exists public.create_sale_with_items(uuid, text, text, uuid, jsonb);

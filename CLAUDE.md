@@ -140,6 +140,7 @@ bot/
 │   ├── migration-2026-08-02-pedido-de-mostrador.sql # La venta en persona entra por el mismo camino que el resto
 │   ├── migration-2026-08-02-cita-atendida-es-venta.sql # Servicios: la cita lleva precio y al atenderla se registra la venta
 │   ├── migration-2026-08-02-modo-miniapp.sql # Tercer modo de atención: el enlace pertenece solo al modo mini app
+│   ├── migration-2026-08-02-retirar-venta-manual.sql # Se retira el alta manual: toda venta nace de un pedido o una cita
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

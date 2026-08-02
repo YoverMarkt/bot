@@ -71,8 +71,8 @@ export default function Conversations() {
         toast('¿Cerraste una venta con este cliente?', {
           description: 'Regístrala para que tus reportes queden al día.',
           action: {
-            label: 'Registrar venta',
-            onClick: () => navigate(`/sales?phone=${encodeURIComponent(v.phone)}`),
+            label: 'Registrar pedido',
+            onClick: () => navigate('/orders'),
           },
           duration: 10_000,
         })
@@ -203,10 +203,11 @@ export default function Conversations() {
               </div>
 
               <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-                {/* Venta realizada (abre el modal de venta, como el viejo) */}
+                {/* Lo vendido se registra como pedido: un solo camino hasta el
+                    reporte, en vez de dos formas distintas de anotar dinero. */}
                 {canVentas && (
-                  <Button size="sm" onClick={() => navigate(`/sales?phone=${encodeURIComponent(sess.contact_phone)}`)}>
-                    <span className="inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Venta realizada</span>
+                  <Button size="sm" onClick={() => navigate('/orders')}>
+                    <span className="inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Registrar pedido</span>
                   </Button>
                 )}
 

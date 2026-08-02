@@ -155,7 +155,13 @@ Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta,
 - **Una cita sin precio se atiende igual y no genera venta** — una consulta gratuita es un caso legítimo, no un error.
 - **Una cita cerrada no se reabre**, igual que los pedidos: se agenda otra.
 
-⚠️ **«Registrar venta» ya puede retirarse**: el mostrador cubre a quien vende productos y las citas a quien vende servicios. Es el siguiente paso, junto con unificar hospedaje.
+**«Registrar venta» se retiró el 2026-08-02.** Era el cuarto camino: el único donde alguien escribía dinero a mano sin un pedido ni una cita detrás. Mientras existió, el reporte podía cuadrar por dos vías distintas y había que mantener las dos.
+
+Con él se fueron su ruta (`POST /api/client/sales`), su cotización (`/sessions/:phone/quote`), el wrapper del repositorio y la RPC `create_sale_with_items`, retirada de la base con su migración. ⚠️ **No se borró ni una fila**: las ventas registradas así siguen intactas en `sales` y en los reportes; lo único que desaparece es la forma de crear ventas nuevas sin origen.
+
+Lo que queda en Ventas es el **historial** por contacto y la **anulación**, que sigue haciendo falta: un pedido puede entregarse y luego devolverse.
+
+El guardián de esa zona (`sales-atomicity`) no se borró: **se mudó a las dos funciones que ahora crean ventas**, porque la garantía que protegía —cabecera y detalles en una transacción, aislados por negocio, sin escrituras compensatorias— sigue siendo la misma. Y el test de rutas comprueba ahora que las retiradas **no reaparezcan**.
 
 ---
 
