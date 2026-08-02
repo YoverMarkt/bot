@@ -14,7 +14,8 @@
     "check": "npm run lint && npm run typecheck && npm test",
     "verify:schema": "bash tests/sql/verificar-en-docker.sh",
     "evals": "npm run build && node evals/runner.mjs",
-    "verify:drift": "bash tests/sql/comparar-con-produccion.sh"
+    "verify:drift": "bash tests/sql/comparar-con-produccion.sh",
+    "verify:smoke": "node --env-file=.env tests/humo-produccion.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
