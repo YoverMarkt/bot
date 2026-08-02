@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 import { MEDIA_LIMITS, fmtMB, uploadMedia } from '../catalog/api'
-import { Crown, Lock, Bot as BotIcon, TriangleAlert, Truck, Undo2, Tag, Pin } from 'lucide-react'
+import { Crown, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -20,7 +20,6 @@ type BusinessData = {
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; takes_orders?: boolean
 }
-type Policies = { bot_prompt?: string | null; shipping?: string | null; returns?: string | null; discounts?: string | null; bot_instructions?: string | null }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
 
@@ -330,44 +329,6 @@ export function BusinessForm() {
         </Button>
       </div>
       <p className="text-[11px] text-muted-foreground/80 mt-3">Para cambiar tu correo o contraseña de acceso, contacta al administrador.</p>
-    </Card>
-  )
-}
-
-// ── Bot: prompt (personalidad) + políticas ──
-export function BotForm() {
-  const { data, isLoading } = useQuery({ queryKey: ['policies'], queryFn: () => api<Policies>('/api/client/policies') })
-  const [draft, setDraft] = useState<Policies | null>(null)
-  const f = draft ?? data
-
-  const mSave = useMutation({
-    mutationFn: () => api('/api/client/policies', { method: 'PUT', body: JSON.stringify(f) }),
-    onSuccess: () => toast.success('Guardado — el bot ya responde con esto'),
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
-  })
-
-  if (isLoading || !f) return <FormSkeleton fields={3} />
-  const set = (k: keyof Policies) => (e: React.ChangeEvent<HTMLTextAreaElement>) => setDraft({ ...f, [k]: e.target.value })
-
-  return (
-    <Card className="p-5 max-w-2xl gap-0 space-y-4">
-      <div>
-        <Label htmlFor="bot-settings-prompt"><BotIcon className="w-3.5 h-3.5" /> Prompt del bot (su personalidad y forma de atender)</Label>
-        <Textarea id="bot-settings-prompt" className="font-mono text-xs" rows={14} value={f.bot_prompt ?? ''} onChange={set('bot_prompt')}
-          placeholder="Eres el asistente virtual de…" />
-        <p className="text-[11px] text-muted-foreground/80 mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; los precios, totales y descuentos SIEMPRE los calcula el sistema (regla de dinero).</p>
-      </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div><Label htmlFor="bot-settings-shipping"><Truck className="w-3.5 h-3.5" /> Envíos</Label><Textarea id="bot-settings-shipping" rows={2} value={f.shipping ?? ''} onChange={set('shipping')} /></div>
-        <div><Label htmlFor="bot-settings-returns"><Undo2 className="w-3.5 h-3.5" /> Devoluciones</Label><Textarea id="bot-settings-returns" rows={2} value={f.returns ?? ''} onChange={set('returns')} /></div>
-        <div><Label htmlFor="bot-settings-discounts"><Tag className="w-3.5 h-3.5" /> Descuentos (informativo)</Label><Textarea id="bot-settings-discounts" rows={2} value={f.discounts ?? ''} onChange={set('discounts')} /></div>
-        <div><Label htmlFor="bot-settings-instructions"><Pin className="w-3.5 h-3.5" /> Instrucciones extra</Label><Textarea id="bot-settings-instructions" rows={2} value={f.bot_instructions ?? ''} onChange={set('bot_instructions')} /></div>
-      </div>
-      <div className="flex justify-end">
-        <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
-          {mSave.isPending ? 'Guardando…' : 'Guardar bot'}
-        </Button>
-      </div>
     </Card>
   )
 }

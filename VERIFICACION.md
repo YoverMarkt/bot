@@ -76,4 +76,10 @@ Un guardián que reporta 71 falsos positivos es peor que no tenerlo: se aprende 
 
 Para el riesgo grave —código viejo que **sí se ejecuta**— está el guardián de funciones de base de datos, que es donde una versión olvidada puede correr sola. Una función TypeScript que nadie importa es peso muerto, pero no se ejecuta.
 
+**Y para los exports del servidor está `exports-huerfanos.test.js`**, que sí entiende el patrón: los módulos terminan en `export = { … }` y quien los usa escribe `modulo.laClave(...)`, así que basta con mirar si alguien nombra esa clave en el código o en las pruebas. Es deliberadamente **conservador** —solo caza lo que nadie nombra en ningún sitio— porque un guardián ruidoso se acaba ignorando.
+
+**Lo que destapó al escribirlo:** cuatro exports muertos, y uno de ellos era un problema de verdad. `cleanupStorefrontSessions` existía desde el primer día de la mini app pero **nadie la llamaba**: la tabla de sesiones crecía sin límite, una fila por cada enlace que manda el bot. No se borró — se **conectó** al mismo ciclo diario que ya limpia el inbox de webhooks y el registro de errores. Los otros tres (`getVariantForOrder`, `getExtrasForOrder`, `revokeStorefrontSessions`) sí eran peso muerto y se retiraron.
+
+**En los paneles la auditoría se corre aparte** (`npx knip -c knip.exports.json`), porque ahí los imports son ESM y knip sí acierta. Encontró dos restos reales: `salesApi.getOrders`, que quedó huérfano al mover Pedidos a su propia sección, y `BotForm`, la versión anterior de la pantalla del prompt que `BotPrompt.tsx` ya había reemplazado.
+
 `ignoreDependencies` cubre las que usa `packages/ui` y las apps declaran para el hoisting de los workspaces (`clsx`, `tailwind-merge`, `radix-ui`, `class-variance-authority`), y `apps/*/public/theme-boot.js`, que lo carga el HTML y no un import.
