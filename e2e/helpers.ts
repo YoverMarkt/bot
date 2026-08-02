@@ -115,6 +115,10 @@ export async function mockClientApi(page: Page) {
       }])
     }
     if (path === '/api/client/tags' || path === '/api/client/bookings' || path === '/api/client/schedule') return json(route, [])
+    // Devuelven LISTA, y eso importa: el respaldo de más abajo contesta `{}` a
+    // lo que no reconozca, y un `{}` donde el panel espera una lista revienta
+    // la pantalla al hacer `.map`. Este mock las descubrió así.
+    if (path === '/api/client/categories' || path === '/api/client/variants') return json(route, [])
     // Los listados de hospedaje siempre son arrays (useAttention los filtra)
     if (path.startsWith('/api/client/lodging')) return json(route, [])
 
