@@ -74,9 +74,26 @@ escrito antes de empezar a construir.
 
 ### Lo que sigue faltando del diagrama del dueño
 
-| Paso | Estado |
-|---|---|
-| Selector de método de pago | ❌ no hay columna `payment_method` |
-| Subir comprobante de transferencia | ❌ |
-| Coste de envío | ❌ `orders` solo tiene subtotal, discount, total |
-| Tarjeta de crédito | descartado a propósito |
+Van DESPUÉS de las tres piezas de arriba, y en este orden. Cada uno lleva la trampa
+que hay que tener presente antes de empezar:
+
+**4. Selector de método de pago** — `orders` no tiene columna `payment_method`. Hoy el
+pedido se crea y el negocio coordina el cobro por WhatsApp sin distinguir transferencia de
+efectivo. Es el más pequeño de los tres y va primero porque **decide qué pantallas ve el
+cliente después**: quien paga en efectivo no debe pasar por datos bancarios ni comprobante.
+
+**5. Coste de envío** — el diagrama muestra `Envío $2.00` y en la base solo hay `subtotal`,
+`discount` y `total`. ⚠️ **Este toca el núcleo de dinero (regla inviolable #8).** El importe
+lo calcula `create_storefront_order` en PostgreSQL, así que el envío tiene que sumarse AHÍ,
+nunca en el teléfono ni en el prompt. Hace falta decidir antes si es fijo por negocio, por
+zona, o gratis a partir de un monto — y eso es una decisión del dueño, no del código.
+
+**6. Subir el comprobante de transferencia** — hoy `OrderDone.tsx` le dice al cliente
+«envía el comprobante por WhatsApp», que es lo que de verdad ocurre. Construirlo son dos
+mitades: la subida desde la mini app (ya hay Cloudinary para media de productos) y verlo
+en el panel junto al pedido. Va el último porque sin el método de pago no se sabe **a quién**
+pedírselo.
+
+**Tarjeta de crédito: descartada a propósito.** El diagrama la marca «próximamente» y así
+se queda — la plataforma no procesa cobros (regla inviolable #6) y meter una pasarela
+cambiaría el modelo de negocio entero, no solo una pantalla.
