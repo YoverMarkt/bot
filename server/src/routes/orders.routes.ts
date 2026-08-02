@@ -12,6 +12,10 @@ const ESTADOS_PEDIDO = [
 const ESTADOS_DESTINO = ESTADOS_PEDIDO.filter(estado => estado !== 'pendiente')
 
 interface ModuloDb {
+  createOrder(
+    order: Record<string, unknown>,
+    items: Record<string, unknown>[],
+  ): Promise<{ data?: unknown; error?: { message?: string; code?: string } | null }>
   getOrders(businessId: string, limit?: number, status?: string | null): Promise<unknown>
   setOrderStatus(
     businessId: string,
@@ -40,6 +44,66 @@ router.get(
       return res.status(400).json({ error: 'Estado de pedido inválido' })
     }
     res.json(await db.getOrders(businessId, 100, status))
+  },
+)
+
+// ── Pedido de mostrador ────────────────────────────────────────────────────
+//
+// Lo que se vende en persona, por el MISMO camino que el resto: nace entregado
+// y la propia función de base de datos le crea la venta. Antes esto era un
+// segundo camino («Registrar venta») y por eso el dinero entraba de dos formas
+// distintas.
+//
+// El precio NO viaja: se mandan ids y cantidades y la RPC resuelve cada
+// importe del catálogo (regla inviolable #8).
+router.post(
+  '/api/client/orders',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const items = Array.isArray(body.items) ? body.items : []
+    if (!items.length) {
+      return res.status(400).json({ error: 'El pedido no tiene productos' })
+    }
+
+    const lineas = items.slice(0, 50).map((raw) => {
+      const item = (raw ?? {}) as Record<string, unknown>
+      return {
+        product_id: String(item.product_id ?? item.productId ?? ''),
+        quantity: Number(item.quantity) || 0,
+      }
+    })
+    if (lineas.some(linea => !linea.product_id || linea.quantity < 1)) {
+      return res.status(400).json({ error: 'Cada línea necesita un producto y una cantidad' })
+    }
+
+    const telefono = String(body.contact_phone ?? '').trim()
+    try {
+      const { data, error } = await db.createOrder(
+        {
+          business_id: getClientBusinessId(req),
+          // Sin teléfono es una venta de paso. El literal lo convierte a nulo
+          // la propia base al crear la venta, para no inventar un cliente.
+          contact_phone: telefono || 'mostrador',
+          contact_name: String(body.contact_name ?? '').trim().slice(0, 120) || null,
+          status: 'completado',
+          currency: 'USD',
+          source: 'manual',
+        },
+        lineas,
+      )
+      if (error) {
+        // 42501 y 40001 son del catálogo (producto ajeno, precio movido): es
+        // un pedido que no debía existir, no un fallo del servidor.
+        const codigo = ['42501', '40001'].includes(String(error.code)) ? 409 : 400
+        return res.status(codigo).json({ error: error.message || 'No se pudo registrar el pedido' })
+      }
+      return res.status(201).json(data)
+    } catch (error) {
+      console.error('❌ pedido de mostrador:', error instanceof Error ? error.message : 'Error')
+      return res.status(500).json({ error: 'No se pudo registrar el pedido' })
+    }
   },
 )
 

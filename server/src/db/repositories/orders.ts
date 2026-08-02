@@ -15,6 +15,9 @@ const createOrder = async (order: OrderData, items: OrderItemData[]) => db.rpc(
     p_discount: order.discount || 0,
     p_currency: order.currency || 'USD',
     p_items: items,
+    // 'manual' = mostrador. Un pedido que nace 'completado' genera su venta
+    // dentro de la misma función, así que aquí no hay un segundo paso.
+    p_source: order.source || 'whatsapp',
   },
 )
 

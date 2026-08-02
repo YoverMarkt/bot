@@ -1227,6 +1227,12 @@ language sql stable as $$
 $$;
 
 -- ── FUNCIÓN ATÓMICA: pedido del bot + detalles ─────────────
+-- La firma cambió al añadir el origen: dejar viva la anterior haría ambigua
+-- cualquier llamada.
+drop function if exists public.create_order_with_items(
+  uuid, text, text, text, numeric, text, jsonb
+);
+
 create or replace function public.create_order_with_items(
   p_business_id uuid,
   p_contact_phone text,
@@ -1234,7 +1240,8 @@ create or replace function public.create_order_with_items(
   p_status text,
   p_discount numeric,
   p_currency text,
-  p_items jsonb
+  p_items jsonb,
+  p_source text default 'whatsapp'
 )
 returns jsonb
 language plpgsql
@@ -1265,6 +1272,9 @@ begin
     'pendiente', 'confirmado', 'completado', 'cancelado', 'expirado'
   ) then
     raise exception using errcode = '22023', message = 'Estado de pedido inválido';
+  end if;
+  if coalesce(p_source, 'whatsapp') not in ('whatsapp', 'storefront', 'marketplace', 'manual') then
+    raise exception using errcode = '22023', message = 'Origen de pedido inválido';
   end if;
   if jsonb_typeof(p_items) is distinct from 'array'
      or jsonb_array_length(p_items) = 0 then
@@ -1326,11 +1336,11 @@ begin
 
   insert into orders (
     business_id, contact_phone, contact_name, status,
-    subtotal, discount, total, currency
+    subtotal, discount, total, currency, source
   ) values (
     p_business_id, btrim(p_contact_phone), nullif(btrim(p_contact_name), ''),
     coalesce(p_status, 'pendiente'), v_subtotal, v_discount, v_total,
-    coalesce(nullif(btrim(p_currency), ''), 'USD')
+    coalesce(nullif(btrim(p_currency), ''), 'USD'), coalesce(p_source, 'whatsapp')
   ) returning * into v_order;
 
   insert into order_items (
@@ -1341,6 +1351,12 @@ begin
     item ->> 'product_name', (item ->> 'quantity')::integer,
     (item ->> 'unit_price')::numeric, (item ->> 'line_total')::numeric
   from jsonb_array_elements(v_normalized_items) as item;
+
+  -- Nace entregado (mostrador): la venta se crea aquí, no en una segunda
+  -- llamada desde Node que podría no ocurrir si algo falla entre medias.
+  if coalesce(p_status, 'pendiente') = 'completado' then
+    perform public.crear_venta_desde_pedido(p_business_id, v_order.id);
+  end if;
 
   return to_jsonb(v_order);
 end;
@@ -1383,15 +1399,20 @@ begin
     return v_sale_id;
   end if;
 
-  -- El total incluye el envío: es el dinero que entró. Los ítems son solo
-  -- productos, así que «lo más vendido» no se ensucia con una línea de envío.
   insert into public.sales (
     business_id, order_id, contact_phone, contact_name,
     total, status, source, sold_at
   ) values (
-    p_business_id, p_order_id, v_order.contact_phone, v_order.contact_name,
+    p_business_id, p_order_id,
+    -- 'mostrador' no es el teléfono de nadie: la venta va sin contacto.
+    nullif(v_order.contact_phone, 'mostrador'),
+    v_order.contact_name,
     v_order.total, 'completada',
-    case when v_order.source = 'storefront' then 'tienda' else 'bot' end,
+    case
+      when v_order.source = 'storefront' then 'tienda'
+      when v_order.source = 'manual' then 'mostrador'
+      else 'bot'
+    end,
     now()
   )
   returning id into v_sale_id;

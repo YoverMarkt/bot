@@ -283,6 +283,33 @@ begin
     end if;
   end;
 
+  -- ── 3d. Pedido de mostrador: nace entregado y ya es venta ────────────────
+  declare
+    v_mostrador jsonb;
+    v_id uuid;
+  begin
+    v_mostrador := public.create_order_with_items(
+      v_business, 'mostrador', 'Cliente de paso', 'completado', 0, 'USD',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto, 'quantity', 1, 'unit_price', 10.50
+      )),
+      'manual'
+    );
+    v_id := (v_mostrador ->> 'id')::uuid;
+
+    if not exists (select 1 from sales where order_id = v_id) then
+      raise exception 'el pedido de mostrador no generó su venta';
+    end if;
+    -- 'mostrador' no es el teléfono de nadie: la venta va sin contacto, o el
+    -- directorio de clientes acabaría con un cliente fantasma.
+    if (select contact_phone from sales where order_id = v_id) is not null then
+      raise exception 'la venta de mostrador guardó el teléfono postizo';
+    end if;
+    if (select source from sales where order_id = v_id) <> 'mostrador' then
+      raise exception 'la venta de mostrador no registró su origen';
+    end if;
+  end;
+
   -- Regla inviolable #8: el precio lo manda el catálogo, no quien pide. Si el
   -- cliente envía otro, la RPC debe rechazarlo en vez de cobrarlo.
   begin
