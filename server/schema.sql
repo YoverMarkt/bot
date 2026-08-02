@@ -2766,6 +2766,56 @@ create index if not exists idx_product_variants_producto
 create unique index if not exists uq_product_variants_nombre
   on public.product_variants (product_id, lower(btrim(name)));
 
+-- ── El catálogo de un negocio no se engancha al de otro ────
+--
+-- `product_variants` lleva business_id Y product_id, y `products` lleva
+-- business_id Y category_id. Con una foránea de una sola columna, el negocio
+-- salía del JWT pero el otro id viajaba en la petición: mandando un uuid ajeno
+-- se colgaba una variante —con su precio— del catálogo de otro negocio.
+--
+-- La foránea COMPUESTA cambia la condición de "este producto existe" a "este
+-- producto existe Y es de este negocio". El destino necesita un índice único
+-- sobre el par para poder ser apuntado.
+create unique index if not exists uq_products_id_business
+  on public.products (id, business_id);
+create unique index if not exists uq_product_categories_id_business
+  on public.product_categories (id, business_id);
+
+do $$
+begin
+  if exists (select 1 from pg_constraint
+    where conname = 'product_variants_product_id_fkey'
+      and conrelid = 'public.product_variants'::regclass) then
+    alter table public.product_variants drop constraint product_variants_product_id_fkey;
+  end if;
+  if not exists (select 1 from pg_constraint
+    where conname = 'fk_product_variants_producto_del_negocio'
+      and conrelid = 'public.product_variants'::regclass) then
+    alter table public.product_variants
+      add constraint fk_product_variants_producto_del_negocio
+      foreign key (product_id, business_id)
+      references public.products (id, business_id) on delete cascade;
+  end if;
+
+  if exists (select 1 from pg_constraint
+    where conname = 'products_category_id_fkey'
+      and conrelid = 'public.products'::regclass) then
+    alter table public.products drop constraint products_category_id_fkey;
+  end if;
+  if not exists (select 1 from pg_constraint
+    where conname = 'fk_products_categoria_del_negocio'
+      and conrelid = 'public.products'::regclass) then
+    -- `set null (category_id)` y no `set null` a secas: sin nombrar la columna
+    -- PostgreSQL anularía también `business_id`, que es NOT NULL, y borrar una
+    -- categoría reventaría. Necesita PostgreSQL 15 o superior.
+    alter table public.products
+      add constraint fk_products_categoria_del_negocio
+      foreign key (category_id, business_id)
+      references public.product_categories (id, business_id)
+      on delete set null (category_id);
+  end if;
+end $$;
+
 -- Los extras extienden menu_modifiers en vez de duplicar el concepto: esa tabla
 -- ya resuelve los sabores del modo menú y el dueño los gestiona en un solo sitio.
 alter table public.menu_modifiers
