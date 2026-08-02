@@ -20,7 +20,15 @@ describe('atomicidad de pedidos del bot', () => {
     )
     expect(migration).toContain('insert into orders')
     expect(migration).toContain('insert into order_items')
-    expect(migration).not.toContain('exception when')
+    // Sin escrituras compensatorias: si algo falla dentro, cae la transacción
+    // entera y no queda medio pedido. Se mira SOLO esta función y no el
+    // esquema completo, porque hay bloques que legítimamente capturan —el que
+    // activa RLS en tablas nuevas necesita seguir si falta un permiso— y
+    // mezclarlos daba un falso positivo que escondía la garantía real.
+    const funcionPedidos = migration.slice(
+      migration.indexOf('create or replace function public.create_order_with_items'),
+    ).split('$$;')[0]
+    expect(funcionPedidos).not.toContain('exception when')
   })
 
   it('recalcula dinero y valida que cada producto pertenezca al negocio', () => {

@@ -22,7 +22,13 @@ describe('atomicidad de ventas manuales', () => {
     expect(migration).toContain('for share;')
     expect(migration).toContain("v_product_stock = 'agotado'")
     expect(migration).not.toContain("v_item ->> 'product_name'")
-    expect(migration).not.toContain('exception when')
+    // Igual que en pedidos: se mira SOLO la función de ventas. El esquema tiene
+    // bloques que capturan a propósito (el que activa RLS en tablas nuevas debe
+    // seguir aunque falte un permiso), y mezclarlos escondía la garantía real.
+    const funcionVentas = migration.slice(
+      migration.indexOf('create or replace function public.create_sale_with_items'),
+    ).split('$$;')[0]
+    expect(funcionVentas).not.toContain('exception when')
   })
 
   it('expone la función solo al backend service_role', () => {
