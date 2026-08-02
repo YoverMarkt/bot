@@ -176,6 +176,95 @@ describe('GET /api/client/orders', () => {
   })
 })
 
+describe('POST /api/client/orders (mostrador)', () => {
+  async function dispatchCrear({ authorization, body = {} } = {}) {
+    const capa = ordersRouter.stack.find(layer => (
+      layer.route?.path === '/api/client/orders' && layer.route?.methods?.post
+    ))
+    const handlers = capa.route.stack.map(layer => layer.handle)
+    const req = { headers: authorization ? { authorization } : {}, body, query: {} }
+    const result = { status: 200, body: undefined }
+    const res = {
+      status(code) { result.status = code; return this },
+      json(payload) { result.body = payload; return this },
+    }
+    async function run(index) {
+      if (index >= handlers.length) return
+      let next = false
+      let fallo
+      await handlers[index](req, res, error => { next = true; fallo = error })
+      if (fallo) throw fallo
+      if (next) await run(index + 1)
+    }
+    await run(0)
+    return result
+  }
+
+  it('rechaza a quien no tiene permiso de ventas', async () => {
+    const createOrder = vi.spyOn(db, 'createOrder')
+    const authorization = `Bearer ${token({
+      role: 'client', businessId: 'business-a', urole: 'employee', perms: ['citas'],
+    })}`
+
+    const response = await dispatchCrear({ authorization, body: { items: [{ product_id: 'p', quantity: 1 }] } })
+
+    expect(response.status).toBe(403)
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  // Nace entregado y con el negocio del JWT: nunca uno del cuerpo.
+  it('crea el pedido ya entregado, con el negocio del token', async () => {
+    const createOrder = vi.spyOn(db, 'createOrder').mockResolvedValue({
+      data: { id: 'order-nuevo', total: 12.5 }, error: null,
+    })
+    const authorization = `Bearer ${token({
+      role: 'client', businessId: 'business-a', urole: 'owner',
+    })}`
+
+    const response = await dispatchCrear({
+      authorization,
+      body: { business_id: 'business-b', items: [{ product_id: 'prod-1', quantity: 2 }] },
+    })
+
+    expect(response.status).toBe(201)
+    const [pedido, lineas] = createOrder.mock.calls[0]
+    expect(pedido.business_id).toBe('business-a')
+    expect(pedido.status).toBe('completado')
+    expect(pedido.source).toBe('manual')
+    expect(pedido.contact_phone).toBe('mostrador')
+    expect(lineas).toEqual([{ product_id: 'prod-1', quantity: 2 }])
+  })
+
+  // El precio JAMÁS viaja desde el navegador: solo ids y cantidades.
+  it('descarta cualquier precio que mande el panel', async () => {
+    const createOrder = vi.spyOn(db, 'createOrder').mockResolvedValue({
+      data: { id: 'order-nuevo' }, error: null,
+    })
+    const authorization = `Bearer ${token({
+      role: 'client', businessId: 'business-a', urole: 'owner',
+    })}`
+
+    await dispatchCrear({
+      authorization,
+      body: { items: [{ product_id: 'prod-1', quantity: 1, unit_price: 0.01, line_total: 0.01 }] },
+    })
+
+    expect(createOrder.mock.calls[0][1]).toEqual([{ product_id: 'prod-1', quantity: 1 }])
+  })
+
+  it('rechaza un pedido sin productos', async () => {
+    const createOrder = vi.spyOn(db, 'createOrder')
+    const authorization = `Bearer ${token({
+      role: 'client', businessId: 'business-a', urole: 'owner',
+    })}`
+
+    const response = await dispatchCrear({ authorization, body: { items: [] } })
+
+    expect(response.status).toBe(400)
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+})
+
 describe('PUT /api/client/orders/:id/status', () => {
   const authorization = () => `Bearer ${token({
     role: 'client', businessId: 'business-a', urole: 'owner',

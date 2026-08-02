@@ -14,12 +14,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Banknote, Bike, Clock, Landmark, MapPin, Receipt, ShoppingBag, Check, X, FileText,
+  Banknote, Bike, Clock, Landmark, MapPin, Receipt, ShoppingBag, Check, X, FileText, Plus,
 } from 'lucide-react'
 import {
   ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, getOrders, money, setOrderStatus, siguientePaso,
   type Order, type OrderStatus,
 } from './api'
+import CounterOrder from './CounterOrder'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -45,6 +46,7 @@ const espera = (iso: string) => {
 export default function Orders() {
   const qc = useQueryClient()
   const [filtro, setFiltro] = useState<'activos' | 'todos'>('activos')
+  const [mostrador, setMostrador] = useState(false)
 
   const { data: pedidos = [], isLoading } = useQuery({
     queryKey: ['orders'],
@@ -104,15 +106,26 @@ export default function Orders() {
             Lo que llega por la tienda y por el bot, de que entra hasta que se entrega
           </p>
         </div>
-        <Tabs value={filtro} onValueChange={v => setFiltro(v as typeof filtro)}>
-          <TabsList>
-            <TabsTrigger value="activos">
-              En curso{activos.length ? ` (${activos.length})` : ''}
-            </TabsTrigger>
-            <TabsTrigger value="todos">Historial</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={filtro} onValueChange={v => setFiltro(v as typeof filtro)}>
+            <TabsList>
+              <TabsTrigger value="activos">
+                En curso{activos.length ? ` (${activos.length})` : ''}
+              </TabsTrigger>
+              <TabsTrigger value="todos">Historial</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {!mostrador && (
+            <Button onClick={() => setMostrador(true)}><Plus /> Nuevo pedido</Button>
+          )}
+        </div>
       </div>
+
+      {mostrador && (
+        <div className="mb-4">
+          <CounterOrder onListo={() => setMostrador(false)} />
+        </div>
+      )}
 
       {/* Resumen del momento: dónde está atascado el trabajo. */}
       {!isLoading && activos.length > 0 && (

@@ -47,6 +47,26 @@ export type Order = {
 
 export const getOrders = () => api<Order[]>('/api/client/orders')
 
+/** Catálogo para el pedido de mostrador. Los precios son informativos: el
+ *  importe oficial lo resuelve la base con los ids que se le manden. */
+export const getProducts = () =>
+  api<{ id: string; name: string; price: string | number; price_sale: string | number | null }[]>(
+    '/api/client/products',
+  )
+
+/**
+ * Pedido de mostrador: nace entregado y la base le crea su venta.
+ * Se mandan ids y cantidades; ningún precio viaja desde el navegador.
+ */
+export const createCounterOrder = (input: {
+  contact_phone?: string | null
+  contact_name?: string | null
+  items: { product_id: string; quantity: number }[]
+}) => api<{ id: string; total: number | string }>('/api/client/orders', {
+  method: 'POST',
+  body: JSON.stringify(input),
+})
+
 export const setOrderStatus = (id: string, status: OrderStatus) =>
   api(`/api/client/orders/${id}/status`, {
     method: 'PUT',

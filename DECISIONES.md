@@ -143,3 +143,7 @@ Cómo está hecho, y por qué así:
 - **La migración recupera el pasado:** al aplicarse, cualquier pedido ya entregado sin venta la genera. Con la base en cero no hace nada; en una base con historial, devuelve al reporte lo que nunca contó.
 
 Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta, entregar sí, entregar dos veces no duplica, un pedido rechazado no aparece, y otro negocio no puede convertir en venta un pedido ajeno.
+
+**El pedido de mostrador** (lo que se vende en persona) entra por el MISMO camino: nace `completado` con `source = 'manual'` y `create_order_with_items` le crea la venta dentro de la propia función. Si fueran dos llamadas desde Node, un fallo entre ellas dejaría un pedido cobrado sin venta. ⚠️ `orders.contact_phone` es NOT NULL pero en un mostrador casi nunca hay teléfono: se guarda el literal `'mostrador'` y la venta lo convierte a nulo con `nullif`. Sin eso, el directorio de clientes acabaría con un cliente fantasma de cientos de compras que arruinaría «frecuentes» y «clientes perdidos».
+
+⚠️ **«Registrar venta» sigue vivo a propósito.** Se elimina cuando las CITAS generen su venta: el mostrador cubre a quien vende productos (restaurante, tienda), pero una barbería no vende productos, agenda servicios. Quitarlo antes dejaría a los negocios de servicios sin ninguna forma de registrar un ingreso.
