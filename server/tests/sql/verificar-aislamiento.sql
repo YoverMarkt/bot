@@ -20,6 +20,9 @@ declare
   v_b uuid;              -- negocio B
   v_producto_a uuid;
   v_producto_b uuid;
+  v_categoria_a uuid;
+  v_categoria_b uuid;
+  v_producto_tmp uuid;
   v_pedidos_b integer;
   v_encolado boolean;
   v_ok boolean;
@@ -142,7 +145,68 @@ begin
     raise exception 'FUGA: la reserva del negocio A bloqueó la agenda de B';
   end if;
 
-  -- ── 6. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
+  -- ── 6. CATÁLOGO: el de A no se engancha al de B ──────────────────────────
+  --
+  -- `product_variants` lleva business_id Y product_id; `products` lleva
+  -- business_id Y category_id. Con una foránea de una sola columna el negocio
+  -- salía del JWT pero el otro id viajaba en la petición, así que la frontera
+  -- se cruzaba mandando un uuid ajeno. Las rutas lo comprueban, pero eso
+  -- dependía de que quien escriba la próxima ruta se acordara. Aquí se exige
+  -- que lo impida la BASE.
+  insert into product_categories (business_id, name)
+  values (v_b, 'Categoría de B')
+  returning id into v_categoria_b;
+
+  begin
+    insert into product_variants (business_id, product_id, name, price)
+    values (v_a, v_producto_b, 'Familiar', 1.00);
+    raise exception 'FUGA: el negocio A pudo colgar una variante del producto de B';
+  exception when foreign_key_violation then
+    null;  -- correcto: la base rechaza la pareja (producto, negocio)
+  end;
+
+  begin
+    update products set category_id = v_categoria_b where id = v_producto_a;
+    raise exception 'FUGA: el negocio A pudo meter su producto en la categoría de B';
+  exception when foreign_key_violation then
+    null;
+  end;
+
+  -- Y el uso legítimo sigue funcionando: una cerradura que también deja fuera
+  -- al dueño no sirve de nada.
+  insert into product_categories (business_id, name)
+  values (v_a, 'Pizzas de A')
+  returning id into v_categoria_a;
+
+  update products set category_id = v_categoria_a where id = v_producto_a;
+
+  insert into product_variants (business_id, product_id, name, price)
+  values (v_a, v_producto_a, 'Familiar', 14.00);
+
+  -- Borrar la categoría deja el producto suelto y NO revienta. Importa porque
+  -- la foránea compuesta anula solo `category_id`: sin nombrar la columna,
+  -- PostgreSQL intentaría anular también `business_id`, que es NOT NULL.
+  delete from product_categories where id = v_categoria_a;
+  select category_id is null into v_ok from products where id = v_producto_a;
+  if v_ok is not true then
+    raise exception 'Borrar una categoría dejó el producto apuntando a la nada';
+  end if;
+
+  -- Borrar un producto se lleva sus variantes. Se usa uno DESECHABLE: el de A
+  -- tiene que seguir vivo para la comprobación de cascada que viene ahora.
+  insert into products (business_id, name, price, stock, active)
+  values (v_a, 'Producto desechable de A', 5.00, 'disponible', true)
+  returning id into v_producto_tmp;
+
+  insert into product_variants (business_id, product_id, name, price)
+  values (v_a, v_producto_tmp, 'Único', 5.00);
+
+  delete from products where id = v_producto_tmp;
+  if exists (select 1 from product_variants where product_id = v_producto_tmp) then
+    raise exception 'Las variantes sobrevivieron al producto que las contenía';
+  end if;
+
+  -- ── 7. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
   select count(*) into v_pedidos_b from orders where business_id = v_b;
   delete from businesses where id = v_a;
 
@@ -167,7 +231,7 @@ begin
     raise exception 'FUGA GRAVE: borrar el negocio A eliminó la reserva de B';
   end if;
 
-  -- ── 7. RLS activa en todas las tablas de negocio ─────────────────────────
+  -- ── 8. RLS activa en todas las tablas de negocio ─────────────────────────
   select bool_and(c.relrowsecurity) into v_ok
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
