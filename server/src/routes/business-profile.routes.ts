@@ -26,6 +26,8 @@ interface ModuloDb {
   ): Promise<DatabaseResult>
   getPolicies(businessId: string): Promise<unknown>
   upsertPolicies(businessId: string, data: unknown): Promise<DatabaseResult>
+  getBusinessBankAccount(businessId: string): Promise<unknown>
+  upsertBankAccount(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
 }
 const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloAuth {
@@ -102,6 +104,55 @@ router.put('/api/client/policies', auth.authClient, auth.requireOwner, async (re
     res.json({ ok: true })
   } catch (error) {
     databaseFailure(res, 'actualizar las políticas', error)
+  }
+})
+
+// ── Cuenta bancaria ─────────────────────────────────────────────────────────
+//
+// La tienda ya la mostraba en `/api/store/:slug/payment-info`, pero no había
+// forma de cargarla salvo a mano en Supabase.
+//
+// El dueño DIJO que estos datos no son secretos: son con los que le pagan, y
+// el banco es quien gestiona el riesgo. Aun así van tras `requireOwner` — un
+// empleado con permiso de catálogo no tiene por qué cambiar a qué cuenta
+// entra el dinero.
+
+class InvalidBankInput extends Error {}
+
+function bankField(value: unknown, name: string, max: number, required = false): string | null {
+  if (value === null || value === undefined || value === '') {
+    if (required) throw new InvalidBankInput(`${name} es obligatorio`)
+    return null
+  }
+  if (typeof value !== 'string') throw new InvalidBankInput(`${name} es inválido`)
+  const clean = value.trim()
+  if ((required && !clean) || clean.length > max) throw new InvalidBankInput(`${name} es inválido`)
+  return clean || null
+}
+
+router.get('/api/client/bank-account', auth.authClient, auth.requireOwner, async (req, res) => {
+  res.json(await db.getBusinessBankAccount(getClientBusinessId(req)) || null)
+})
+
+router.put('/api/client/bank-account', auth.authClient, auth.requireOwner, async (req, res) => {
+  try {
+    const source = (req.body || {}) as Record<string, unknown>
+    const account = {
+      bank_name: bankField(source.bank_name, 'El banco', 80, true),
+      account_type: source.account_type === 'corriente' ? 'corriente' : 'ahorros',
+      account_number: bankField(source.account_number, 'El número de cuenta', 40, true),
+      holder_name: bankField(source.holder_name, 'El titular', 120, true),
+      holder_id: bankField(source.holder_id, 'La cédula o RUC', 20),
+      instructions: bankField(source.instructions, 'Las instrucciones', 300),
+    }
+    assertDatabaseResult(
+      await db.upsertBankAccount(getClientBusinessId(req), account),
+      'guardar la cuenta bancaria',
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    if (error instanceof InvalidBankInput) return res.status(400).json({ error: error.message })
+    databaseFailure(res, 'guardar la cuenta bancaria', error)
   }
 })
 

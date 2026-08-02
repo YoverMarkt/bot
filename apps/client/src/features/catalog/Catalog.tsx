@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Search, Film, Plus, Pencil, Trash2, Package, Camera, UtensilsCrossed } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
-import type { Product, ProductPayload, MenuModifier, MenuModifierPayload } from './api'
+import type { Product, ProductPayload, MenuModifier, MenuModifierPayload, Variant, Category } from './api'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -74,11 +74,21 @@ export default function Catalog() {
       <Tabs defaultValue="productos">
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="tamanos">Tamaños / Presentaciones</TabsTrigger>
           <TabsTrigger value="opciones">Sabores / Opciones</TabsTrigger>
+          <TabsTrigger value="categorias">Categorías</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tamanos" className="mt-4">
+          <VariantsPanel products={products} />
+        </TabsContent>
 
         <TabsContent value="opciones" className="mt-4">
           <ModifiersPanel products={products} />
+        </TabsContent>
+
+        <TabsContent value="categorias" className="mt-4">
+          <CategoriesPanel />
         </TabsContent>
 
         <TabsContent value="productos" className="mt-4">
@@ -160,13 +170,19 @@ export default function Catalog() {
 }
 
 // ── Modal crear/editar producto (con subida de foto y video a Cloudinary) ──
+// Radix no admite un <SelectItem value="">, así que "sin categoría" necesita
+// un valor propio que nunca choque con un uuid real.
+const SIN_CATEGORIA = '__ninguna__'
+
 function ProductModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
+  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: catApi.getCategories })
   const [f, setF] = useState({
     name: product?.name ?? '',
     brand: product?.brand ?? '',
     price: product?.price != null ? String(product.price) : '',
     price_sale: product?.price_sale != null && Number(product.price_sale) > 0 ? String(product.price_sale) : '',
     stock: product?.stock ?? 'disponible',
+    category_id: product?.category_id ?? '',
     description: product?.description ?? '',
     tags: (product?.tags ?? []).join(', '),
     external_sku: product?.external_sku ?? '',
@@ -214,6 +230,8 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
       brand: f.brand.trim() || null,
       price_sale: parseFloat(f.price_sale) > 0 ? parseFloat(f.price_sale) : null,
       stock: f.stock as Product['stock'],
+      // Vacío = sin categoría: en la tienda aparece suelto, no agrupado.
+      category_id: f.category_id || null,
       description: f.description.trim() || null,
       tags: f.tags.split(',').map(t => t.trim()).filter(Boolean),
       external_sku: f.external_sku.trim() || null,
@@ -273,6 +291,21 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
                 <SelectItem value="agotado">Agotado</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-category">Categoría en la tienda</Label>
+            <Select value={f.category_id || SIN_CATEGORIA} onValueChange={v => setF(prev => ({ ...prev, category_id: v === SIN_CATEGORIA ? '' : v }))}>
+              <SelectTrigger id="product-category" className="w-full"><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SIN_CATEGORIA}>Sin categoría</SelectItem>
+                {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              {categories.length === 0
+                ? 'Crea categorías en la pestaña Categorías para agrupar tu catálogo.'
+                : 'Sin categoría el producto aparece suelto, fuera de los grupos.'}
+            </p>
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="product-description">Descripción</Label>
@@ -494,6 +527,390 @@ function ModifierModal({ modifier, prefill, categoryTags, onClose, onSaved }: {
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={save} disabled={!valid || saving}>{saving ? 'Guardando…' : 'Guardar'}</Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Pestaña de Tamaños / Presentaciones (variantes) ──
+//
+// La diferencia con un modificador NO es cosmética y es la que confunde a todo
+// el mundo: un modificador es una opción que NO cambia el precio (el sabor de
+// la pizza), y una variante SÍ lo cambia (mediana $8, familiar $14).
+//
+// Por eso una variante cuelga de UN producto concreto y no de una categoría:
+// el precio de "familiar" no significa lo mismo en una pizza que en una
+// gaseosa. El total lo calcula siempre el servidor con estos precios.
+function VariantsPanel({ products }: { products: Product[] }) {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<Variant | { product_id: string } | null>(null)
+  const { data: variants = [], isLoading, isError, refetch } =
+    useQuery({ queryKey: ['variants'], queryFn: catApi.getVariants })
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['variants'] })
+  const mDelete = useMutation({
+    mutationFn: catApi.deleteVariant,
+    onSuccess: () => { refresh(); toast.success('Tamaño eliminado') },
+    onError: () => toast.error('No se pudo eliminar'),
+  })
+
+  // Agrupadas por producto, que es como el dueño las piensa: abre su pizza y
+  // ve sus tamaños, no una lista de 40 variantes sueltas.
+  const porProducto = useMemo(() => {
+    const map = new Map<string, Variant[]>()
+    for (const v of variants) {
+      if (!map.has(v.product_id)) map.set(v.product_id, [])
+      map.get(v.product_id)!.push(v)
+    }
+    return products
+      .map(p => ({ product: p, items: map.get(p.id) ?? [] }))
+      .filter(g => g.items.length > 0)
+  }, [variants, products])
+
+  const sinVariantes = products.filter(p => !variants.some(v => v.product_id === p.id))
+
+  if (isLoading) return <div className="space-y-3"><Skeleton className="h-10 w-64" /><Skeleton className="h-32 w-full" /></div>
+  if (isError) return <QueryError onRetry={() => { void refetch() }} />
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Presentaciones que <strong>sí cambian el precio</strong> — pizza mediana $8, familiar $14. Cuelgan de un producto concreto. Si un producto no tiene tamaños, se vende a su precio normal.
+        </p>
+        {products.length > 0 && (
+          <Button onClick={() => setEditing({ product_id: products[0].id })}>
+            <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar tamaño</span>
+          </Button>
+        )}
+      </div>
+
+      {products.length === 0 && (
+        <Card className="p-6 text-sm text-muted-foreground">
+          Primero crea un producto en la pestaña <strong>Productos</strong>: los tamaños cuelgan de él.
+        </Card>
+      )}
+
+      {porProducto.map(({ product, items }) => (
+        <Card key={product.id} className="p-4 gap-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="font-semibold text-foreground">{product.name}</h3>
+            <Button variant="outline" size="sm" onClick={() => setEditing({ product_id: product.id })}>
+              <Plus className="w-3.5 h-3.5" /> Agregar
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {items.map(v => (
+              <div key={v.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <span className="font-medium text-sm text-foreground">{v.name}</span>
+                  <span className="text-sm text-muted-foreground">{money(v.price_sale ?? v.price)}</span>
+                  {v.price_sale != null && Number(v.price_sale) > 0 && (
+                    <span className="text-xs text-muted-foreground line-through">{money(v.price)}</span>
+                  )}
+                  {v.stock === 'agotado' && <Badge variant="secondary" className="text-[10px] px-1.5 bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300">agotado</Badge>}
+                  {!v.active && <Badge variant="secondary" className="text-[10px] px-1.5">oculto</Badge>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="outline" size="icon-sm" aria-label={`Editar ${v.name}`} onClick={() => setEditing(v)}><Pencil className="w-3.5 h-3.5" /></Button>
+                  <ConfirmAction
+                    trigger={<Button variant="outline" size="icon-sm" aria-label={`Eliminar ${v.name}`}><Trash2 className="w-3.5 h-3.5" /></Button>}
+                    title={`Eliminar "${v.name}"`}
+                    description="Los clientes dejarán de poder pedir esta presentación. Los pedidos que ya la incluyen no cambian."
+                    confirmLabel="Eliminar"
+                    destructive
+                    onConfirm={() => mDelete.mutate(v.id)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+
+      {sinVariantes.length > 0 && porProducto.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Sin tamaños (se venden a su precio normal): {sinVariantes.map(p => p.name).join(' · ')}
+        </p>
+      )}
+
+      {editing && (
+        <VariantModal
+          variant={editing}
+          products={products}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function VariantModal({ variant, products, onClose, onSaved }: {
+  variant: Variant | { product_id: string }
+  products: Product[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const esNuevo = !('id' in variant)
+  const [form, setForm] = useState({
+    product_id: variant.product_id,
+    name: 'name' in variant ? variant.name : '',
+    price: 'price' in variant ? String(variant.price) : '',
+    price_sale: 'price_sale' in variant && variant.price_sale != null ? String(variant.price_sale) : '',
+    stock: 'stock' in variant ? variant.stock : 'disponible' as const,
+    sort: 'sort' in variant ? String(variant.sort) : '0',
+    active: 'active' in variant ? variant.active : true,
+  })
+  const [guardando, setGuardando] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const price = Number(form.price)
+    if (!form.name.trim()) return toast.error('Ponle un nombre al tamaño')
+    if (!Number.isFinite(price) || price <= 0) return toast.error('El precio debe ser mayor que cero')
+    const priceSale = form.price_sale.trim() ? Number(form.price_sale) : null
+    if (priceSale != null && (!Number.isFinite(priceSale) || priceSale > price)) {
+      return toast.error('El precio de oferta no puede superar al normal')
+    }
+
+    setGuardando(true)
+    try {
+      const payload = {
+        name: form.name.trim(),
+        price,
+        price_sale: priceSale,
+        stock: form.stock,
+        sort: Number(form.sort) || 0,
+        active: form.active,
+      }
+      if (esNuevo) await catApi.createVariant({ ...payload, product_id: form.product_id })
+      else await catApi.updateVariant((variant as Variant).id, payload)
+      toast.success(esNuevo ? 'Tamaño creado' : 'Tamaño actualizado')
+      onSaved()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{esNuevo ? 'Nuevo tamaño' : 'Editar tamaño'}</DialogTitle>
+            <DialogDescription>
+              El precio de la presentación reemplaza al del producto cuando el cliente la elige.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 py-4">
+            {esNuevo && (
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-producto">Producto</Label>
+                <Select value={form.product_id} onValueChange={v => setForm(f => ({ ...f, product_id: v }))}>
+                  <SelectTrigger id="v-producto"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {products.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="grid gap-1.5">
+              <Label htmlFor="v-nombre">Nombre</Label>
+              <Input id="v-nombre" value={form.name} maxLength={60} placeholder="Mediana"
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-precio">Precio</Label>
+                <Input id="v-precio" type="number" step="0.01" min="0" value={form.price}
+                  onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-oferta">Precio oferta</Label>
+                <Input id="v-oferta" type="number" step="0.01" min="0" value={form.price_sale}
+                  placeholder="opcional"
+                  onChange={e => setForm(f => ({ ...f, price_sale: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-stock">Disponibilidad</Label>
+                <Select value={form.stock} onValueChange={v => setForm(f => ({ ...f, stock: v as 'disponible' | 'agotado' }))}>
+                  <SelectTrigger id="v-stock"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="disponible">Disponible</SelectItem>
+                    <SelectItem value="agotado">Agotado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="v-orden">Orden</Label>
+                <Input id="v-orden" type="number" min="0" max="999" value={form.sort}
+                  onChange={e => setForm(f => ({ ...f, sort: e.target.value }))} />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={form.active} onCheckedChange={v => setForm(f => ({ ...f, active: v === true }))} />
+              Visible en la tienda
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Pestaña de Categorías ──
+// Agrupan el catálogo en la mini app. Sin ellas el cliente ve una lista plana.
+function CategoriesPanel() {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<Category | 'new' | null>(null)
+  const { data: categories = [], isLoading, isError, refetch } =
+    useQuery({ queryKey: ['categories'], queryFn: catApi.getCategories })
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['categories'] })
+  const mDelete = useMutation({
+    mutationFn: catApi.deleteCategory,
+    onSuccess: () => { refresh(); toast.success('Categoría eliminada') },
+    onError: () => toast.error('No se pudo eliminar'),
+  })
+
+  if (isLoading) return <div className="space-y-3"><Skeleton className="h-10 w-64" /><Skeleton className="h-32 w-full" /></div>
+  if (isError) return <QueryError onRetry={() => { void refetch() }} />
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Agrupan tu catálogo en la tienda — entradas, pizzas, bebidas. El <strong>orden</strong> decide cómo aparecen; el mismo número las ordena por nombre.
+        </p>
+        <Button onClick={() => setEditing('new')}>
+          <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar categoría</span>
+        </Button>
+      </div>
+
+      {categories.length === 0 && (
+        <Card className="p-6 text-sm text-muted-foreground">
+          Aún no hay categorías. Sin ellas la tienda muestra todos los productos en una sola lista.
+        </Card>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {categories.map(c => (
+          <Card key={c.id} className="flex-row items-center justify-between gap-2 p-3">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <span className="text-xs text-muted-foreground tabular-nums w-6">{c.sort}</span>
+              <span className="font-medium text-sm text-foreground">{c.name}</span>
+              {c.description && <span className="text-xs text-muted-foreground truncate max-w-xs">{c.description}</span>}
+              {!c.active && <Badge variant="secondary" className="text-[10px] px-1.5">oculta</Badge>}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="outline" size="icon-sm" aria-label={`Editar ${c.name}`} onClick={() => setEditing(c)}><Pencil className="w-3.5 h-3.5" /></Button>
+              <ConfirmAction
+                trigger={<Button variant="outline" size="icon-sm" aria-label={`Eliminar ${c.name}`}><Trash2 className="w-3.5 h-3.5" /></Button>}
+                title={`Eliminar "${c.name}"`}
+                description="Los productos NO se borran: dejan de estar agrupados y aparecen sueltos en la tienda."
+                confirmLabel="Eliminar"
+                destructive
+                onConfirm={() => mDelete.mutate(c.id)}
+              />
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {editing && (
+        <CategoryModal
+          category={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CategoryModal({ category, onClose, onSaved }: {
+  category: Category | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState({
+    name: category?.name ?? '',
+    description: category?.description ?? '',
+    sort: String(category?.sort ?? 0),
+    active: category?.active ?? true,
+  })
+  const [guardando, setGuardando] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.name.trim()) return toast.error('Ponle un nombre a la categoría')
+    setGuardando(true)
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        sort: Number(form.sort) || 0,
+        active: form.active,
+      }
+      if (category) await catApi.updateCategory(category.id, payload)
+      else await catApi.createCategory(payload)
+      toast.success(category ? 'Categoría actualizada' : 'Categoría creada')
+      onSaved()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{category ? 'Editar categoría' : 'Nueva categoría'}</DialogTitle>
+            <DialogDescription>Así se agrupa tu catálogo en la tienda.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 py-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-nombre">Nombre</Label>
+              <Input id="c-nombre" value={form.name} maxLength={60} placeholder="Pizzas"
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-desc">Descripción</Label>
+              <Textarea id="c-desc" value={form.description} maxLength={300} rows={2}
+                placeholder="opcional — se muestra bajo el nombre"
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="c-orden">Orden</Label>
+              <Input id="c-orden" type="number" min="0" max="999" value={form.sort}
+                onChange={e => setForm(f => ({ ...f, sort: e.target.value }))} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={form.active} onCheckedChange={v => setForm(f => ({ ...f, active: v === true }))} />
+              Visible en la tienda
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

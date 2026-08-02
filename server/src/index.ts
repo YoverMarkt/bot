@@ -40,6 +40,7 @@ import ordersRouter = require('./routes/orders.routes')
 import webhooksRouter = require('./routes/webhooks.routes')
 import lodgingRouter = require('./routes/lodging.routes')
 import menuModifiersRouter = require('./routes/menu-modifiers.routes')
+import catalogStructureRouter = require('./routes/catalog-structure.routes')
 import storefrontRouter = require('./routes/storefront.routes')
 
 interface StartupDatabase {
@@ -211,6 +212,7 @@ app.use(reportsRouter)
 app.use(bookingsRouter)
 app.use(productsRouter)
 app.use(menuModifiersRouter)
+app.use(catalogStructureRouter)
 // Rutas públicas de la mini app: sin JWT, la credencial es el enlace del bot.
 app.use(storefrontRouter)
 app.use(ordersRouter)

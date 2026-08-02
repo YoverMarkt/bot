@@ -59,7 +59,7 @@ async function dispatch(method, path, { auth, body = {}, query = {} } = {}) {
 }
 
 describe('identidad y políticas del negocio', () => {
-  it('protege seis endpoints y reserva las escrituras para el dueño', async () => {
+  it('protege ocho endpoints y reserva las escrituras para el dueño', async () => {
     const routes = [
       ['get', '/api/client/stats', 2],
       ['get', '/api/client/business', 2],
@@ -67,6 +67,8 @@ describe('identidad y políticas del negocio', () => {
       ['get', '/api/client/policies', 3],
       ['put', '/api/client/policies', 3],
       ['put', '/api/client/bot-prompt', 3],
+      ['get', '/api/client/bank-account', 3],
+      ['put', '/api/client/bank-account', 3],
     ]
     for (const [method, path, handlers] of routes) {
       const layer = profileRouter.stack.find(item => (
@@ -178,6 +180,88 @@ describe('identidad y políticas del negocio', () => {
     expect(upsertPolicies).toHaveBeenNthCalledWith(1, 'business-a', policies)
     expect(upsertPolicies).toHaveBeenNthCalledWith(2, 'business-a', {
       bot_prompt: 'Responde brevemente',
+    })
+  })
+
+  // ── Cuenta bancaria ───────────────────────────────────────────────────────
+  //
+  // El dueño dijo que estos datos NO son secretos: son con los que le pagan.
+  // Aun así son del dueño y no del empleado — a qué cuenta entra el dinero no
+  // es cosa de quien gestiona el catálogo.
+  describe('cuenta bancaria', () => {
+    it('un empleado no la ve ni la cambia', async () => {
+      const employee = authorization({ urole: 'employee', perms: ['catalogo'] })
+      expect((await dispatch('get', '/api/client/bank-account', { auth: employee })).status).toBe(403)
+      expect((await dispatch('put', '/api/client/bank-account', { auth: employee })).status).toBe(403)
+    })
+
+    it('guarda solo los campos saneados y en su propio negocio', async () => {
+      const guardar = vi.spyOn(db, 'upsertBankAccount').mockResolvedValue({ error: null })
+
+      const respuesta = await dispatch('put', '/api/client/bank-account', {
+        auth: authorization(),
+        body: {
+          bank_name: '  Banco Pichincha  ',
+          account_type: 'corriente',
+          account_number: '2100123456',
+          holder_name: 'Yover Rosado',
+          holder_id: '0912345678',
+          instructions: 'Manda el comprobante por WhatsApp',
+          business_id: 'business-b',
+          active: false,
+        },
+      })
+
+      expect(respuesta.status).toBe(200)
+      expect(guardar).toHaveBeenCalledWith('business-a', {
+        bank_name: 'Banco Pichincha',
+        account_type: 'corriente',
+        account_number: '2100123456',
+        holder_name: 'Yover Rosado',
+        holder_id: '0912345678',
+        instructions: 'Manda el comprobante por WhatsApp',
+      })
+    })
+
+    it('un tipo de cuenta inventado cae en ahorros, que es lo que acepta la base', async () => {
+      const guardar = vi.spyOn(db, 'upsertBankAccount').mockResolvedValue({ error: null })
+
+      await dispatch('put', '/api/client/bank-account', {
+        auth: authorization(),
+        body: {
+          bank_name: 'Banco', account_type: 'cripto',
+          account_number: '1', holder_name: 'Alguien',
+        },
+      })
+
+      expect(guardar.mock.calls[0][1].account_type).toBe('ahorros')
+    })
+
+    it('exige banco, número y titular', async () => {
+      const guardar = vi.spyOn(db, 'upsertBankAccount')
+
+      for (const body of [
+        { account_number: '1', holder_name: 'A' },
+        { bank_name: 'B', holder_name: 'A' },
+        { bank_name: 'B', account_number: '1' },
+      ]) {
+        const respuesta = await dispatch('put', '/api/client/bank-account', {
+          auth: authorization(), body,
+        })
+        expect(respuesta.status, JSON.stringify(body)).toBe(400)
+      }
+      expect(guardar).not.toHaveBeenCalled()
+    })
+
+    it('devuelve null cuando el negocio aún no cargó su cuenta', async () => {
+      vi.spyOn(db, 'getBusinessBankAccount').mockResolvedValue(null)
+
+      const respuesta = await dispatch('get', '/api/client/bank-account', {
+        auth: authorization(),
+      })
+
+      expect(respuesta.status).toBe(200)
+      expect(respuesta.body).toBeNull()
     })
   })
 })

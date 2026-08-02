@@ -102,7 +102,10 @@ describe('catálogo TypeScript', () => {
     expect(getProducts).toHaveBeenCalledWith('business-a')
     expect(createProduct).toHaveBeenCalledWith(
       'business-a',
-      { name: 'Producto', price: 12.5 },
+      // `category_id` se normaliza SIEMPRE, aunque no venga en la petición:
+      // así una categoría ajena nunca llega a la base (ver la prueba del
+      // cruce entre negocios en catalog-structure.routes.test.js).
+      { name: 'Producto', price: 12.5, category_id: null },
     )
     expect(indexProduct).toHaveBeenCalledWith(products[0])
   })
