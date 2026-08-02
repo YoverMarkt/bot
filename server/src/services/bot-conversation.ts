@@ -513,13 +513,10 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       }
     }
 
-    // La bienvenida es el momento del enlace: el cliente acaba de llegar y aún
-    // no eligió nada. Va pegado al saludo, no como mensaje aparte, para que no
-    // parezca publicidad suelta.
-    if (flow.isWelcome) {
-      const invite = await storefrontInviteFor(business, phone, session?.contact_name)
-      if (invite) menuReply = `${menuReply}\n\n${invite}`
-    }
+    // ⚠️ En modo MENÚ no va enlace, y no es un olvido: el menú de botones YA
+    // es el sitio donde se pide. Mandar además la mini app ponía dos formas de
+    // hacer lo mismo compitiendo en el mismo chat — el negocio que quiera la
+    // app se pone en modo 'miniapp'.
 
     // El texto propio del menú (bienvenida, listas, confirmaciones) va después
     // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
@@ -996,11 +993,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 
     await humanizedSend(parsedOutput.finalText, send, sendTyping)
 
-    // En modo IA no hay menú de bienvenida donde colgar el enlace, así que va
-    // como mensaje propio DESPUÉS del saludo del asistente — al revés se leería
-    // como publicidad antes de siquiera responderle a la persona. Solo ante un
-    // saludo: quien ya está preguntando algo concreto no quiere un enlace.
-    if (wantsWelcomeMenu(text)) {
+    // El enlace es lo que DEFINE el modo mini app: la IA resuelve dudas y la
+    // app es donde se pide. En modo 'ai' puro no se manda — ese negocio eligió
+    // atender y vender por chat.
+    //
+    // Va como mensaje propio DESPUÉS del saludo del asistente: al revés se
+    // leería como publicidad antes de siquiera responderle a la persona. Y
+    // solo ante un saludo, porque quien ya pregunta algo concreto no lo quiere.
+    if (business.chat_mode === 'miniapp' && wantsWelcomeMenu(text)) {
       const invite = await storefrontInviteFor(business, phone, session?.contact_name)
       if (invite) {
         await send(invite)

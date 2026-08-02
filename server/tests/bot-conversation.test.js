@@ -1285,9 +1285,10 @@ describe('el enlace de la mini app', () => {
     storefront_enabled: true,
   }
 
-  // El enlace va PEGADO al saludo del menú, no como mensaje aparte: suelto se
-  // lee como publicidad y el cliente lo ignora.
-  it('acompaña la bienvenida del modo menú', async () => {
+  // ⚠️ REGRESIÓN REPORTADA: un hostal en modo menú recibía el menú de botones
+  // Y el enlace a la vez — dos formas de hacer lo mismo compitiendo en el
+  // mismo chat. El enlace pertenece SOLO al modo mini app.
+  it('NO acompaña la bienvenida del modo menú', async () => {
     const current = setup({
       menuFlow: {
         advanceMenuFlow: vi.fn().mockReturnValue({
@@ -1307,10 +1308,9 @@ describe('el enlace de la mini app', () => {
     }))
 
     const enviado = current.send.mock.calls.map(call => call[0]).join('\n')
-    expect(enviado).toContain('https://x.com/t/negocio-a?s=tok')
     expect(enviado).toContain('¡Hola! 👋')
-    // Un solo mensaje: saludo, opciones y enlace juntos.
-    expect(current.send).toHaveBeenCalledTimes(1)
+    expect(enviado).not.toContain('http')
+    expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
   })
 
   it('no lo repite en cada paso del menú', async () => {
@@ -1337,7 +1337,7 @@ describe('el enlace de la mini app', () => {
 
   // En modo IA no hay menú donde colgarlo, así que va como mensaje propio —
   // pero DESPUÉS de que el asistente responda, no antes.
-  it('en modo IA se manda tras el saludo del asistente', async () => {
+  it('en modo MINI APP se manda tras el saludo del asistente', async () => {
     const current = setup({
       storefrontLink: {
         issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
@@ -1345,7 +1345,7 @@ describe('el enlace de la mini app', () => {
     })
 
     await current.conversation.processMessage(input(current, {
-      business: conTienda,
+      business: { ...conTienda, chat_mode: 'miniapp' },
       text: 'hola',
     }))
 
@@ -1356,8 +1356,9 @@ describe('el enlace de la mini app', () => {
     expect(indiceEnlace).toBeGreaterThan(indiceRespuesta)
   })
 
-  // Quien ya pregunta algo concreto no quiere un enlace, quiere su respuesta.
-  it('en modo IA no se manda si el cliente pregunta algo concreto', async () => {
+  // Modo IA puro = atender y vender por chat. Quien quiera la app se pone en
+  // modo 'miniapp'; si no, el enlace aparecería sin haberlo pedido.
+  it('en modo IA puro NO se manda el enlace ni al saludar', async () => {
     const current = setup({
       storefrontLink: {
         issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
@@ -1365,7 +1366,24 @@ describe('el enlace de la mini app', () => {
     })
 
     await current.conversation.processMessage(input(current, {
-      business: conTienda,
+      business: { ...conTienda, chat_mode: 'ai' },
+      text: 'hola',
+    }))
+
+    expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
+    expect(current.send.mock.calls.map(c => c[0]).join('')).not.toContain('http')
+  })
+
+  // Quien ya pregunta algo concreto no quiere un enlace, quiere su respuesta.
+  it('en modo mini app no se manda si el cliente pregunta algo concreto', async () => {
+    const current = setup({
+      storefrontLink: {
+        issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
+      },
+    })
+
+    await current.conversation.processMessage(input(current, {
+      business: { ...conTienda, chat_mode: 'miniapp' },
       text: '¿tienen pizza sin gluten?',
     }))
 

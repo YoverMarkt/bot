@@ -24,7 +24,7 @@ export type BusinessRow = {
   created_at: string
   notes: string | null
   // Modo real configurado del negocio: el simulador arranca con este
-  chat_mode?: 'menu' | 'ai' | null
+  chat_mode?: 'menu' | 'ai' | 'miniapp' | null
 }
 
 export type MonthlyUsageRow = {
@@ -128,7 +128,7 @@ export type BusinessDetail = BusinessRow & {
   takes_orders: boolean | null
   lodging_enabled: boolean | null
   storefront_enabled: boolean | null
-  chat_mode: 'menu' | 'ai' | null
+  chat_mode: 'menu' | 'ai' | 'miniapp' | null
   monthly_rate: number | null
   client_email: string
   credential_status: Record<'ycloud_api_key' | 'ycloud_webhook_secret' | 'meta_token' | 'telegram_bot_token', boolean>

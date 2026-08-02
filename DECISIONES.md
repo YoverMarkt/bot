@@ -27,6 +27,7 @@ un módulo concreto, no en cada sesión.
 - [Los estados de un pedido](#los-estados-de-un-pedido)
 - [Envío, pago y color de la tienda](#envío-pago-y-color-de-la-tienda)
 - [Un pedido entregado es una venta](#un-pedido-entregado-es-una-venta)
+- [Los tres modos de atención](#los-tres-modos-de-atención)
 
 ---
 
@@ -155,3 +156,25 @@ Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta,
 - **Una cita cerrada no se reabre**, igual que los pedidos: se agenda otra.
 
 ⚠️ **«Registrar venta» ya puede retirarse**: el mostrador cubre a quien vende productos y las citas a quien vende servicios. Es el siguiente paso, junto con unificar hospedaje.
+
+---
+
+## Los tres modos de atención
+
+**La incoherencia que cerró (2026-08-02):** `chat_mode` solo tenía `'menu'` y `'ai'`, y el enlace de la mini app **se mandaba en los dos**. Un hostal recién creado recibía el menú de botones **y** el enlace a la vez: dos formas de hacer lo mismo compitiendo en el mismo chat. Lo detectó el dueño del SaaS creando negocios nuevos, no un test.
+
+Desde ahora cada negocio atiende de **una** forma, y el enlace **pertenece a un modo concreto**:
+
+| Modo | Quién conduce | Dónde se pide | ¿Enlace? |
+|---|---|---|---|
+| `ai` | La IA, conversando | Por chat (`##PEDIDO##`) | **No** |
+| `menu` | El código, con botones | Por el menú | **No** |
+| `miniapp` | La IA resuelve dudas | En la mini app | **Sí**, al saludar |
+
+- **En modo menú no va enlace, y no es un olvido:** el menú YA es el sitio donde se pide.
+- **En modo IA puro tampoco:** ese negocio eligió atender y vender por chat. Mandarle el enlace sería meterle una app que no pidió.
+- **El enlace es lo que DEFINE el modo mini app.** Va como mensaje propio *después* del saludo del asistente —al revés se lee como publicidad antes de responderle a la persona— y **solo ante un saludo**: quien ya pregunta algo concreto quiere su respuesta, no un enlace.
+
+**El modo se propone según el tipo al dar de alta y se puede cambiar siempre.** Con tienda (restaurante, tienda, hotel) → `miniapp`; barbería o consultorio → `menu`, que es más barato y predecible que la IA para elegir de una lista corta; catálogos enormes y consultoría → `ai`. ⚠️ Como el resto de recomendaciones por tipo, **solo PROPONE al crear**: el `chat_mode` persistido manda siempre y jamás se sobrescribe a un negocio existente. Una pizzería que quiera «solo chat» se queda en `ai` o en `menu` aunque tenga tienda.
+
+La migración pasa a `miniapp` los negocios que ya tenían tienda encendida: son exactamente los que estaban recibiendo menú y enlace a la vez.

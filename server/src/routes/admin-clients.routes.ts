@@ -172,8 +172,11 @@ const ALLOWED_BUSINESS_FIELDS = [
   'chat_mode', 'storefront_enabled',
 ] as const
 
-// Solo estos dos modos existen; cualquier otro valor lo rechaza la base.
-const CHAT_MODES = ['menu', 'ai'] as const
+// Los tres modos de atención. Cualquier otro valor lo rechaza la base.
+//   ai      → conversa con IA, se pide por chat, sin enlace
+//   menu    → botones de código, se pide por el menú, sin enlace
+//   miniapp → la IA resuelve dudas y el enlace es donde se pide
+const CHAT_MODES = ['menu', 'ai', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -376,7 +379,9 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.
       storefront_enabled: body.storefront_enabled === true,
-      chat_mode: body.chat_mode === 'menu' ? 'menu' : 'ai',
+      chat_mode: CHAT_MODES.includes(body.chat_mode as typeof CHAT_MODES[number])
+        ? body.chat_mode as string
+        : 'ai',
       ai_provider: body.ai_provider || null,
       owner_phone: body.owner_phone || null,
       plan: planDefinition.id,

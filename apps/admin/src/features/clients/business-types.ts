@@ -105,7 +105,7 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 
-export type BusinessChatMode = 'menu' | 'ai'
+export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
 
 // Negocios donde el cliente NO explora un catálogo, sino que pregunta o manda
 // su lista: catálogos enormes (farmacia, supermercado), consultoría y
@@ -123,14 +123,22 @@ const AI_FIRST_KEYWORDS = [
 
 // El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
 // manda siempre y nunca se sobrescribe a un negocio existente.
+//
+// La regla de fondo: un negocio que tiene mini app atiende en modo 'miniapp',
+// porque la app YA es donde se pide. Antes esos negocios salían en modo menú y
+// recibían el menú de botones Y el enlace a la vez — dos formas de hacer lo
+// mismo compitiendo en el mismo chat.
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
   const normalized = normalizeBusinessType(type)
   if (!normalized) return 'ai'
+  // Con tienda (restaurante, tienda, hotel) el pedido va por la app y la IA
+  // se queda para resolver dudas.
+  if (recommendedStorefrontForBusinessType(type)) return 'miniapp'
   if (AI_FIRST_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'ai'
-  // Alojamiento, citas y venta con catálogo acotado: el cliente explora → menú
-  if (isLodgingBusinessType(type)) return 'menu'
+  // Barbería, consultorio: no hay mini app, y el cliente elige de una lista
+  // corta. El menú de botones es más barato y más predecible que la IA.
   if (BOOKING_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'menu'
-  return recommendedSalesForBusinessType(type) === 'vende' ? 'menu' : 'ai'
+  return 'ai'
 }
 
 export function businessTypeChoice(type: string): string {
