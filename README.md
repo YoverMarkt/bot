@@ -159,6 +159,40 @@ npm run test:e2e:install  # solo la primera vez
 npm run test:e2e          # Playwright: login, permisos, navegación y móvil
 ```
 
+### Migraciones de base de datos
+
+Las migraciones ya **no** se corren a mano una por una. Hay un libro de cuentas
+(`schema_migrations`) que dice cuáles se aplicaron:
+
+```bash
+npm run migrate:status   -w @botpanel/server   # qué hay aplicado y qué falta
+npm run migrate          -w @botpanel/server   # aplicar lo pendiente
+```
+
+Necesita `DATABASE_URL`, la cadena de conexión **directa** de Postgres
+(Supabase → Configuración → Base de datos → Connection string → URI). **No** es
+`SUPABASE_URL`, que apunta a la API. Es una credencial de herramienta: vive en
+tu `.env` local y **no hace falta en Railway** — el servidor en marcha nunca
+aplica migraciones solo.
+
+**La primera vez en una base que ya existe**, hay que decirle qué estaba puesto
+antes de que existiera el registro:
+
+```bash
+npm run verify:drift    -w @botpanel/server                    # ver el estado real
+npm run migrate:baseline -w @botpanel/server -- --si           # darlas por aplicadas
+```
+
+> ⚠️ El baseline es una **afirmación**, no una comprobación: marca migraciones
+> como aplicadas sin ejecutarlas. Si una nunca se corrió de verdad, queda
+> invisible para siempre. Comprueba antes con `verify:drift` y excluye lo que
+> falte con `--excepto=archivo1.sql,archivo2.sql`.
+
+Cada migración se aplica en su propia transacción, así que una a medias no
+existe: o entra entera o no entra. Si editas un `.sql` ya aplicado, la huella
+deja de cuadrar y el comando se niega a seguir — lo correcto es un archivo
+nuevo con el cambio.
+
 ---
 
 ## 🌐 Despliegue a producción
@@ -167,7 +201,7 @@ En producción **NO se usa el túnel** — se usa un dominio fijo.
 
 1. Usa Node.js 22+ y crea una cuenta en **Railway**
 2. Conecta este repositorio
-3. Antes de desplegar el código, ejecuta las migraciones de la lista anterior en el mismo orden; la última es `server/migration-consumo-planes.sql`
+3. Antes de desplegar el código, aplica las migraciones pendientes con `npm run migrate -w @botpanel/server` (ver «Migraciones de base de datos»). En una base que ya existía, haz primero el `migrate:baseline`
 4. Configura las **variables de entorno** de `server/.env.example`, incluido `NODE_ENV=production`
 5. **Importante:** define `BASE_URL=https://tu-dominio.up.railway.app`
    - Esto **desactiva el túnel** y hace que Telegram use webhook
