@@ -184,6 +184,32 @@ begin
     raise exception 'create_order_with_items calculó un total incorrecto';
   end if;
 
+  -- Cambiar el estado de un pedido: lo pulsa el dueño en su panel cada día.
+  declare
+    v_pedido uuid;
+    v_cambio jsonb;
+  begin
+    select id into v_pedido from orders where business_id = v_business limit 1;
+
+    -- El estado sigue una máquina: pendiente → confirmado → completado. Saltarse
+    -- un paso se rechaza en vez de dar por entregado algo que nadie confirmó.
+    v_cambio := public.set_order_status(v_business, v_pedido, 'completado');
+    if v_cambio ->> 'result' <> 'invalid_transition' then
+      raise exception 'set_order_status aceptó completar un pedido sin confirmar: %', v_cambio;
+    end if;
+
+    perform public.set_order_status(v_business, v_pedido, 'confirmado');
+    v_cambio := public.set_order_status(v_business, v_pedido, 'completado');
+    if (select status from orders where id = v_pedido) <> 'completado' then
+      raise exception 'set_order_status no cambió el estado: %', v_cambio;
+    end if;
+    -- Otro negocio no puede tocar este pedido.
+    v_cambio := public.set_order_status(gen_random_uuid(), v_pedido, 'cancelado');
+    if (select status from orders where id = v_pedido) <> 'completado' then
+      raise exception 'FUGA: otro negocio cambió el estado de este pedido';
+    end if;
+  end;
+
   -- Regla inviolable #8: el precio lo manda el catálogo, no quien pide. Si el
   -- cliente envía otro, la RPC debe rechazarlo en vez de cobrarlo.
   begin
@@ -256,9 +282,135 @@ begin
     raise exception 'create_booking_if_available no creó la reserva';
   end if;
 
-  -- ── 5. Limpiezas programadas ──────────────────────────────────────────────
+  -- ── 5. Facturación del SaaS ───────────────────────────────────────────────
+  -- Corren solas desde el arranque del servidor y desde el panel. Si revientan,
+  -- se descubre el día que toca cobrar, no antes.
+  -- Solo se factura a negocios activos con tarifa: se le pone una.
+  update businesses set monthly_rate = 25, plan = 'micro' where id = v_business;
+  perform public.ensure_current_month_billing();
+  if (select count(*) from billing where business_id = v_business) < 1 then
+    raise exception 'ensure_current_month_billing no generó la cuota del mes';
+  end if;
+  -- Correrla dos veces no puede duplicar el cobro del mismo mes.
+  perform public.ensure_current_month_billing();
+  if (select count(*) from billing where business_id = v_business) <> 1 then
+    raise exception 'ensure_current_month_billing duplicó la cuota del mes';
+  end if;
+
+  perform public.update_business_plan_billing(v_business, 'pro', 99, 400, 2000);
+  if (select plan from businesses where id = v_business) <> 'pro' then
+    raise exception 'update_business_plan_billing no cambió el plan';
+  end if;
+
+  update businesses set suspended = true where id = v_business;
+  perform public.reactivate_business_with_billing(v_business);
+  if (select suspended from businesses where id = v_business) is not false then
+    raise exception 'reactivate_business_with_billing no reactivó el negocio';
+  end if;
+
+  perform public.get_admin_monthly_usage(current_date);
+
+  -- ── 6. Hospedaje: bloqueos y confirmación ────────────────────────────────
+  declare
+    v_room uuid;
+    v_block jsonb;
+    v_sobra jsonb;
+  begin
+    update businesses set lodging_enabled = true where id = v_business;
+    insert into lodging_settings (business_id) values (v_business);
+    insert into lodging_room_types (
+      business_id, name, total_units, base_occupancy, max_guests,
+      pricing_model, base_rate
+    ) values (
+      v_business, 'Habitación de verificación', 2, 2, 3, 'per_unit', 40
+    )
+    returning id into v_room;
+
+    -- Un bloqueo manual (mantenimiento, reserva de otro canal) descuenta cupo.
+    v_block := public.upsert_lodging_block_if_available(
+      v_business, v_room, 'maintenance',
+      (current_date + 10)::date, (current_date + 12)::date, 1, 'Verificación'
+    );
+    if v_block ->> 'result' is distinct from 'created' then
+      raise exception 'upsert_lodging_block_if_available rechazó un bloqueo válido: %', v_block;
+    end if;
+
+    -- No se puede bloquear más unidades de las que existen.
+    v_sobra := public.upsert_lodging_block_if_available(
+      v_business, v_room, 'maintenance',
+      (current_date + 10)::date, (current_date + 12)::date, 99, null
+    );
+    if v_sobra ->> 'result' <> 'unavailable' then
+      raise exception 'La base aceptó bloquear más habitaciones de las que hay: %', v_sobra;
+    end if;
+
+    -- ── La cadena completa de una estadía ─────────────────────────────────
+    -- Cotizar → solicitar → confirmar es lo que vive un huésped de verdad, y
+    -- lo que pulsa el dueño en su panel. Se ejercita entera: si un eslabón
+    -- revienta, la habitación queda en el limbo y nadie se entera.
+    declare
+      v_cotizacion jsonb;
+      v_quote uuid;
+      v_solicitud jsonb;
+      v_request uuid;
+      v_estado jsonb;
+    begin
+      v_cotizacion := public.quote_lodging_options(
+        v_business, '+593900000003', 'Huésped de prueba',
+        (current_date + 20)::date, (current_date + 22)::date, 2, 0, 1, null
+      );
+      if v_cotizacion ->> 'result' is distinct from 'quoted' then
+        raise exception 'quote_lodging_options no cotizó: %', v_cotizacion;
+      end if;
+      v_quote := ((v_cotizacion -> 'quote') ->> 'id')::uuid;
+      if v_quote is null then
+        raise exception 'La cotización no devolvió su identificador: %', v_cotizacion;
+      end if;
+
+      v_solicitud := public.create_lodging_request_if_available(
+        v_business, v_quote, v_room, '+593900000003', 'Huésped de prueba',
+        repeat('d', 64), 'Verificación'
+      );
+      if v_solicitud ->> 'result' is distinct from 'created' then
+        raise exception 'create_lodging_request_if_available no creó el hold: %', v_solicitud;
+      end if;
+      v_request := ((v_solicitud -> 'request') ->> 'id')::uuid;
+
+      -- Nace PENDIENTE del equipo: nunca confirmada sola.
+      if (select status from lodging_requests where id = v_request) <> 'pending_owner' then
+        raise exception 'La solicitud no nació pendiente del dueño';
+      end if;
+
+      v_estado := public.set_lodging_request_status(v_business, v_request, 'confirmed');
+      if (select status from lodging_requests where id = v_request) <> 'confirmed' then
+        raise exception 'set_lodging_request_status no confirmó la solicitud: %', v_estado;
+      end if;
+
+      -- Un negocio no puede tocar la solicitud de otro.
+      v_estado := public.set_lodging_request_status(
+        gen_random_uuid(), v_request, 'cancelled'
+      );
+      if (select status from lodging_requests where id = v_request) <> 'confirmed' then
+        raise exception 'FUGA: otro negocio cambió el estado de esta solicitud';
+      end if;
+
+      -- Los holds vencidos dejan de ocupar cupo por su cuenta.
+      perform public.expire_lodging_holds(v_business);
+
+      -- Y el bloqueo manual se puede levantar.
+      v_estado := public.release_lodging_block(
+        v_business, (v_block -> 'block' ->> 'id')::uuid
+      );
+      if v_estado ->> 'result' is distinct from 'released' then
+        raise exception 'release_lodging_block no liberó el bloqueo: %', v_estado;
+      end if;
+    end;
+  end;
+
+  -- ── 7. Limpiezas programadas ──────────────────────────────────────────────
   perform public.cleanup_webhook_events();
   perform public.cleanup_platform_errors(30);
+  perform public.cleanup_storefront_sessions(2);
 
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   delete from businesses where id = v_business;
