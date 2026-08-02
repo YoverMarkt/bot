@@ -38,6 +38,9 @@ psql_ < "$AQUI/verificar-esquema.sql"
 echo "🔒 Comprobando el aislamiento entre negocios…"
 psql_ < "$AQUI/verificar-aislamiento.sql"
 
+echo "🚧 Buscando fronteras entre negocios sin cerrar…"
+psql_ < "$AQUI/verificar-fronteras.sql"
+
 echo "🔍 Comprobando que la verificación detecta un esquema roto…"
 psql_ -q -c \
   "alter function public.record_inbound_message_usage() set search_path = public, pg_temp;"
