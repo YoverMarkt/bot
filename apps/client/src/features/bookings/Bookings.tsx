@@ -10,6 +10,9 @@ import { Input } from '@botpanel/ui/components/input'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
 import { QueryError } from '@botpanel/ui/components/query-error'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@botpanel/ui/components/dialog'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── RESERVAS (solo negocios de citas) — port fiel del panel viejo:
@@ -22,7 +25,9 @@ type Booking = {
   booking_date: string
   booking_time: string
   duration_minutes: number | null
-  status: 'pending' | 'confirmed' | 'cancelled' | 'no_show'
+  status: 'pending' | 'confirmed' | 'attended' | 'cancelled' | 'no_show'
+  /** Lo que se cobró. Las citas del bot llegan sin precio: se pone al atender. */
+  price?: number | string | null
   notes: string | null
 }
 
@@ -31,6 +36,7 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 const STATUS_BADGE: Record<Booking['status'], { label: string; cls: string }> = {
   pending:   { label: 'Pendiente',  cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
   confirmed: { label: 'Confirmada', cls: 'bg-green-500/10 text-green-700 dark:text-green-300' },
+  attended:  { label: 'Atendida',   cls: 'bg-blue-500/10 text-blue-700 dark:text-blue-300' },
   cancelled: { label: 'Cancelada',  cls: 'bg-muted text-muted-foreground' },
   no_show:   { label: 'No asistió', cls: 'bg-red-50 text-destructive dark:bg-red-500/10' },
 }
@@ -46,8 +52,11 @@ export default function Bookings() {
   })
 
   const mStatus = useMutation({
-    mutationFn: (v: { id: string; status: Booking['status'] }) =>
-      api(`/api/client/bookings/${v.id}/status`, { method: 'PUT', body: JSON.stringify({ status: v.status }) }),
+    mutationFn: (v: { id: string; status: Booking['status']; price?: number | null }) =>
+      api(`/api/client/bookings/${v.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: v.status, price: v.price ?? null }),
+      }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['bookings-all'] })
       qc.invalidateQueries({ queryKey: ['bookings-watch'] })
@@ -83,14 +92,14 @@ export default function Bookings() {
       ) : isError
         ? <QueryError onRetry={() => { void refetch() }} /> :
         tab === 'calendario'
-          ? <Calendar bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />
-          : <Lista bookings={bookings} onStatus={(id, status) => mStatus.mutate({ id, status })} />}
+          ? <Calendar bookings={bookings} onStatus={(id, status, price) => mStatus.mutate({ id, status, price })} />
+          : <Lista bookings={bookings} onStatus={(id, status, price) => mStatus.mutate({ id, status, price })} />}
     </div>
   )
 }
 
 // ── Calendario mensual (igual que el viejo: chips por día + detalle) ──
-function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status']) => void }) {
+function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status'], price?: number | null) => void }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -167,7 +176,7 @@ function Calendar({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: 
 }
 
 // ── Vista de lista (rango de fechas, como la Agenda anterior) ──
-function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status']) => void }) {
+function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: string, s: Booking['status'], price?: number | null) => void }) {
   const iso = (d: Date) => d.toISOString().slice(0, 10)
   const today = new Date()
   const [from, setFrom] = useState(iso(today))
@@ -200,7 +209,55 @@ function Lista({ bookings, onStatus }: { bookings: Booking[]; onStatus: (id: str
   )
 }
 
-function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: string, s: Booking['status']) => void; withDate?: boolean }) {
+/**
+ * Cerrar la cita cobrando. El precio se pide aquí porque las citas que agenda
+ * el BOT llegan sin importe —el bot no negocia precios—, y sin este paso una
+ * barbería tendría que ir a registrar la venta a mano, que es justo lo que
+ * este flujo viene a eliminar.
+ */
+function AtenderCita({ b, onAtender }: { b: Booking; onAtender: (precio: number | null) => void }) {
+  const [abierto, setAbierto] = useState(false)
+  const [precio, setPrecio] = useState(String(b.price ?? ''))
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setAbierto(true)}><Check /> Atendida</Button>
+      <Dialog open={abierto} onOpenChange={setAbierto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar la cita</DialogTitle>
+            <DialogDescription>
+              Se registra la venta con este importe y aparece en tus reportes.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label htmlFor={`precio-${b.id}`}>¿Cuánto se cobró?</Label>
+            <Input
+              id={`precio-${b.id}`}
+              type="number" min="0" step="0.01" inputMode="decimal"
+              value={precio}
+              onChange={e => setPrecio(e.target.value)}
+              placeholder="Ej: 10.00"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground/80">
+              Déjalo vacío si no se cobró (consulta gratuita): la cita se cierra igual, sin venta.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAbierto(false)}>Cancelar</Button>
+            <Button onClick={() => {
+              const valor = precio.trim() === '' ? null : Number(precio)
+              onAtender(Number.isFinite(valor as number) ? (valor as number) : null)
+              setAbierto(false)
+            }}>Cerrar cita</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: string, s: Booking['status'], price?: number | null) => void; withDate?: boolean }) {
   return (
     <Card className="p-4 flex-row items-center gap-4 flex-wrap">
       <div className="text-center shrink-0 bg-muted/50 rounded-lg px-3 py-2">
@@ -227,8 +284,14 @@ function BookingCard({ b, onStatus, withDate }: { b: Booking; onStatus: (id: str
           />
         </div>
       )}
+      {b.status === 'attended' && Number(b.price) > 0 && (
+        <span className="shrink-0 text-sm font-semibold text-foreground tabular-nums">
+          ${Number(b.price).toFixed(2)}
+        </span>
+      )}
       {b.status === 'confirmed' && (
         <div className="flex flex-wrap gap-2 shrink-0">
+          <AtenderCita b={b} onAtender={(precio) => onStatus(b.id, 'attended', precio)} />
           <Button variant="outline" size="sm" onClick={() => onStatus(b.id, 'no_show')}>Marcar no asistió</Button>
           <ConfirmAction
             trigger={<Button variant="outline" size="sm"><X /> Cancelar</Button>}

@@ -146,4 +146,12 @@ Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta,
 
 **El pedido de mostrador** (lo que se vende en persona) entra por el MISMO camino: nace `completado` con `source = 'manual'` y `create_order_with_items` le crea la venta dentro de la propia función. Si fueran dos llamadas desde Node, un fallo entre ellas dejaría un pedido cobrado sin venta. ⚠️ `orders.contact_phone` es NOT NULL pero en un mostrador casi nunca hay teléfono: se guarda el literal `'mostrador'` y la venta lo convierte a nulo con `nullif`. Sin eso, el directorio de clientes acabaría con un cliente fantasma de cientos de compras que arruinaría «frecuentes» y «clientes perdidos».
 
-⚠️ **«Registrar venta» sigue vivo a propósito.** Se elimina cuando las CITAS generen su venta: el mostrador cubre a quien vende productos (restaurante, tienda), pero una barbería no vende productos, agenda servicios. Quitarlo antes dejaría a los negocios de servicios sin ninguna forma de registrar un ingreso.
+**Una CITA atendida también es una venta**, y con eso el estándar llega a servicios (barberías, consultorios). Antes `bookings` no tenía precio y no existía ni un vínculo entre una cita y una venta: el dueño tenía que acordarse de registrarla a mano o esa atención no existía en ningún reporte.
+
+- **«Atendida» es un estado NUEVO, distinto de «confirmada».** Confirmar es decir «te espero»; atender es que la persona vino. Solo lo segundo es dinero, y solo lo segundo genera venta.
+- **El precio se congela.** La cita apunta al servicio del catálogo (`product_id`, con clave foránea COMPUESTA para que no pueda ser el servicio de otro negocio) y guarda su importe. Si mañana el corte sube de $10 a $12, la cita de ayer sigue valiendo $10: es lo que se pactó.
+- **El precio se puede fijar al cerrar la cita**, porque la mayoría las agenda el BOT y el bot no negocia precios. Va en la misma llamada que el estado: si fuera un update aparte, una cita podría quedar atendida con el precio a medio guardar.
+- **Una cita sin precio se atiende igual y no genera venta** — una consulta gratuita es un caso legítimo, no un error.
+- **Una cita cerrada no se reabre**, igual que los pedidos: se agenda otra.
+
+⚠️ **«Registrar venta» ya puede retirarse**: el mostrador cubre a quien vende productos y las citas a quien vende servicios. Es el siguiente paso, junto con unificar hospedaje.
