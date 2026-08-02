@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run tests/",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "size": "node tests/presupuesto-tamano.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",

@@ -163,6 +163,12 @@ jobs:
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/store
 
+      # Esta app la abre el cliente final desde WhatsApp, con datos móviles.
+      # Va sin router y sin cliente de datos a propósito, y eso lo deshace un
+      # `import` distraído que nadie nota revisando un diff.
+      - name: Presupuesto de tamaño
+        run: npm run size -w @botpanel/store
+
   e2e:
     name: Flujos E2E (Chromium)
     runs-on: ubuntu-latest
