@@ -19,8 +19,15 @@ import crypto from 'node:crypto'
 /** Horas de vida del enlace. Suficiente para pedir con calma, inútil mañana. */
 export const SESSION_HOURS = 6
 
-/** Bytes del token. 32 bytes = 256 bits: no se adivina. */
-const TOKEN_BYTES = 32
+/**
+ * Bytes del token. 16 bytes = 128 bits, la misma entropía que un UUID v4: no
+ * se adivina ni probando desde ahora hasta que se apague el sol.
+ *
+ * Eran 32 y se bajó a 16 por una razón muy concreta: el enlace viaja en un
+ * mensaje de WhatsApp, y 43 caracteres de token frente a 22 es la diferencia
+ * entre un enlace que se lee y un muro de letras que da desconfianza.
+ */
+const TOKEN_BYTES = 16
 
 export type SessionRejection =
   | 'no_existe'

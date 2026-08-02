@@ -36,7 +36,16 @@ describe('sesiones de la mini app', () => {
       const a = createSessionToken()
       const b = createSessionToken()
       expect(a.token).not.toBe(b.token)
-      expect(a.token.length).toBeGreaterThan(32)
+      // 128 bits en base64url = 22 caracteres. Es la misma entropía que un
+      // UUID v4 y cabe en un mensaje de WhatsApp sin parecer spam.
+      expect(a.token).toMatch(/^[A-Za-z0-9_-]{22}$/)
+    })
+
+    // Un enlace largo se lee como spam y la gente no lo toca. Este límite es
+    // una decisión de producto, no un detalle: si alguien sube la entropía
+    // "por si acaso", este test le recuerda lo que cuesta.
+    it('el token cabe en un mensaje sin afearlo', () => {
+      expect(createSessionToken().token.length).toBeLessThanOrEqual(24)
     })
 
     // Si alguien lee la base, no puede entrar en la tienda de nadie.

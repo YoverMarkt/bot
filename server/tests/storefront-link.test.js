@@ -74,12 +74,32 @@ describe('el enlace de la tienda', () => {
   })
 
   describe('cómo se arma la URL', () => {
-    it('junta base, slug y token', () => {
+    // Corto a propósito: el slug NO viaja porque el token ya identifica al
+    // negocio, y en un chat cada carácter cuenta.
+    it('es solo la base y el token', () => {
       expect(buildStorefrontUrl({
         baseUrl: 'https://tienda.ejemplo.com',
         slug: 'pizza-roma',
         token: 'abc123',
-      })).toBe('https://tienda.ejemplo.com/t/pizza-roma?s=abc123')
+      })).toBe('https://tienda.ejemplo.com/s/abc123')
+    })
+
+    it('no filtra el slug del negocio en el enlace', () => {
+      const url = buildStorefrontUrl({
+        baseUrl: 'https://x.com', slug: 'hostal-vista-andina-1784175667831', token: 'abc',
+      })
+      expect(url).not.toContain('hostal-vista-andina')
+    })
+
+    // El enlace lo lee una persona en un chat: si mide como un párrafo, no lo
+    // toca. Con un dominio propio queda aún más corto.
+    it('cabe en un mensaje de WhatsApp', () => {
+      const url = buildStorefrontUrl({
+        baseUrl: 'https://web-production-3433c.up.railway.app',
+        slug: 'hostal-vista-andina-1784175667831',
+        token: 'a'.repeat(22),
+      })
+      expect(url.length).toBeLessThan(80)
     })
 
     it('tolera una barra de más al final', () => {
@@ -87,14 +107,14 @@ describe('el enlace de la tienda', () => {
         baseUrl: 'https://tienda.ejemplo.com///',
         slug: 'pizza-roma',
         token: 'abc',
-      })).toBe('https://tienda.ejemplo.com/t/pizza-roma?s=abc')
+      })).toBe('https://tienda.ejemplo.com/s/abc')
     })
 
     it('escapa lo que va en la URL', () => {
       const url = buildStorefrontUrl({
         baseUrl: 'https://x.com', slug: 'a b', token: 'a+b/c=',
       })
-      expect(url).toBe('https://x.com/t/a%20b?s=a%2Bb%2Fc%3D')
+      expect(url).toBe('https://x.com/s/a%2Bb%2Fc%3D')
     })
 
     // Antes de mandar un enlace roto, mejor no mandar ninguno.
@@ -112,10 +132,10 @@ describe('el enlace de la tienda', () => {
   })
 
   describe('el texto que acompaña', () => {
-    it('habla de pedidos en un negocio de comida', () => {
-      const texto = storefrontInvite(negocio(), 'https://x.com/t/y?s=z')
-      expect(texto).toContain('pedido')
-      expect(texto).toContain('https://x.com/t/y?s=z')
+    it('habla de la carta en un negocio de comida', () => {
+      const texto = storefrontInvite(negocio(), 'https://x.com/s/z')
+      expect(texto).toContain('carta')
+      expect(texto).toContain('https://x.com/s/z')
     })
 
     it('habla de habitaciones en un hostal', () => {
@@ -129,7 +149,14 @@ describe('el enlace de la tienda', () => {
     // El cliente tiene que saber que caduca; si no, volverá con un enlace
     // muerto pensando que la tienda se rompió.
     it('avisa de que el enlace caduca', () => {
-      expect(storefrontInvite(negocio(), 'https://x.com')).toMatch(/dura \d+ horas/)
+      expect(storefrontInvite(negocio(), 'https://x.com')).toMatch(/vence en \d+ h/)
+    })
+
+    // En un chat, un bloque de texto con un enlace dentro se lee como
+    // publicidad y el cliente lo pasa de largo.
+    it('no ocupa media pantalla del chat', () => {
+      const texto = storefrontInvite(negocio(), 'https://x.com/s/abcdefghijklmnopqrstuv')
+      expect(texto.split('\n')).toHaveLength(3)
     })
   })
 
@@ -140,7 +167,7 @@ describe('el enlace de la tienda', () => {
         business: negocio(), phone: '593991716574', name: 'Ana',
       })
 
-      expect(url).toMatch(/^https:\/\/tienda\.ejemplo\.com\/t\/pizza-roma\?s=.+/)
+      expect(url).toMatch(/^https:\/\/tienda\.ejemplo\.com\/s\/.+/)
       expect(database.resolveCustomer).toHaveBeenCalledWith({
         businessId: 'negocio-1', phone: '593991716574', name: 'Ana',
       })

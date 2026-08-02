@@ -1,6 +1,7 @@
 import rateLimit from 'express-rate-limit'
 import { createRouter } from '../middleware/async'
 import { requireStorefrontSession } from '../middleware/storefront'
+import { hashToken } from '../services/storefront-session'
 import {
   buildStorefrontCatalog,
   canOrder,
@@ -27,6 +28,8 @@ import {
 
 interface StorefrontRouteDatabase {
   getBusinessBySlug(slug: string): Promise<StorefrontBusiness | null>
+  getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
+  getStorefrontSessionByHash(tokenHash: string): Promise<{ business_id?: string } | null>
   getSchedule(businessId: string): Promise<unknown[]>
   getStorefrontCategories(businessId: string): Promise<unknown[]>
   getStorefrontProducts(businessId: string): Promise<unknown[]>
@@ -69,6 +72,36 @@ const orderLimiter = rateLimit({
 })
 
 router.use('/api/store', storeLimiter)
+router.use('/s', storeLimiter)
+
+// ── Enlace corto: /s/<token> ───────────────────────────────────────────────
+//
+// Lo que el bot manda por WhatsApp. Existe por una razón de producto, no
+// técnica: el enlace completo medía unos 130 caracteres y en un chat eso se
+// lee como spam. Aquí solo viaja el token, que ya identifica al negocio.
+//
+// No devuelve datos NUNCA, solo redirige — por eso no lleva sesión: quien
+// llegue con un token inventado no averigua nada, y quien llegue con el suyo
+// ya lo tenía. La sesión se sigue validando entera al pedir el catálogo.
+router.get('/s/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim()
+  if (code) {
+    const session = await db.getStorefrontSessionByHash(hashToken(code)).catch(() => null)
+    if (session?.business_id) {
+      const business = await db.getBusinessById(session.business_id).catch(() => null)
+      if (business?.slug) {
+        // Se conserva el token en el destino: la tienda lo lee y lo borra de la
+        // barra de direcciones.
+        return res.redirect(
+          302,
+          `/t/${encodeURIComponent(business.slug)}?s=${encodeURIComponent(code)}`,
+        )
+      }
+    }
+  }
+  // Token desconocido: la tienda explicará que hace falta pedir uno propio.
+  return res.redirect(302, '/t/_')
+})
 
 const readStatus = async (business: StorefrontBusiness | null) => {
   if (!business?.id) return { status: storefrontStatus({ business: null, outsideHours: false }) }
