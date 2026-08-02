@@ -1362,10 +1362,10 @@ begin
 end;
 $$;
 
-revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb) from public;
-revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb) from anon;
-revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb) from authenticated;
-grant execute on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb) to service_role;
+revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb, text) from public;
+revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb, text) from anon;
+revoke all on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb, text) from authenticated;
+grant execute on function public.create_order_with_items(uuid, text, text, text, numeric, text, jsonb, text) to service_role;
 
 -- Cambia el ciclo de vida de un pedido de forma atómica. Los estados finales
 -- no pueden reabrirse y repetir el mismo cambio es seguro.
