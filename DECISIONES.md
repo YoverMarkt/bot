@@ -26,6 +26,7 @@ un módulo concreto, no en cada sesión.
 - [El horario del dueño manda sobre todos los modos](#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - [Los estados de un pedido](#los-estados-de-un-pedido)
 - [Envío, pago y color de la tienda](#envío-pago-y-color-de-la-tienda)
+- [Un pedido entregado es una venta](#un-pedido-entregado-es-una-venta)
 
 ---
 
@@ -124,3 +125,21 @@ Verificado ejecutando la migración contra un PostgreSQL real —incluidas la ir
 **El color de marca** (`businesses.brand_color`) lo elige el dueño en su panel; el verde de la plataforma es solo el valor por defecto. Se valida como hex de 6 dígitos en tres capas —CHECK, ruta y cliente— porque acaba dentro de un estilo. ⚠️ El acento se usa **siempre como fondo**, nunca como color de letra sobre blanco, y el texto que va encima **se calcula por luminancia** (`apps/store/src/lib/marca.ts`): así el negocio puede elegir amarillo o azul marino sin que nada quede ilegible. El botón principal es tinta y no el color del negocio, para que la acción que cierra el pedido se lea igual con cualquier marca.
 
 Verificado ejecutando la migración contra un PostgreSQL real: el envío no se multiplica por unidad, un precio mandado por el cliente se ignora, y otro teléfono u otro negocio no pueden adjuntar comprobante a un pedido ajeno.
+
+---
+
+## Un pedido entregado es una venta
+
+**El agujero que cerró (2026-08-02):** TODOS los reportes del dueño —ventas, dashboard, directorio de clientes, productos más vendidos, clientes perdidos— leen la tabla `sales`, y `sales` solo se llenaba con el botón «Registrar venta» del panel. Un pedido de la tienda o del bot se entregaba y **no aparecía en ningún número**. El negocio vendía y sus reportes decían que no. Con hospedaje pasaba algo parecido: su ingreso se calcula aparte, en `computeLodgingIncome`.
+
+**El estándar que se establece:** cada tipo de negocio tiene su bandeja donde atiende —Pedidos hoy; Citas y Hospedaje después— y **todas desembocan en `sales`**. Así los reportes tienen una sola fuente de verdad y no hay que volver a tocarlos cuando se añada un flujo nuevo. Es la decisión que permite vender el producto a una pizzería, una barbería o un hostal sin rehacer los números cada vez.
+
+Cómo está hecho, y por qué así:
+
+- **Cuenta al marcarlo ENTREGADO**, no al aceptarlo: es cuando el dinero está de verdad en el negocio, y un pedido rechazado o cancelado nunca ensucia el reporte.
+- **La conversión vive DENTRO de `set_order_status`, no en un disparador.** En este proyecto un trigger mal colocado ya tumbó el alta de clientes durante meses (2026-08-02); aquí el camino es explícito y se lee de una vez. Al ir en la misma transacción, nunca queda un pedido entregado sin su venta.
+- **`sales.order_id` con índice único parcial.** No es higiene: es lo que impide que marcar «entregado» dos veces —o reintentar tras un fallo de red— duplique el dinero del reporte. La función además comprueba si ya existe antes de insertar.
+- **El total de la venta incluye el envío** (es el dinero que entró), pero los `sale_items` son solo productos: así «lo más vendido» no se ensucia con una línea de envío que nadie pidió. El nombre del ítem congela su variante — «Pizza (Mediana)» es lo que el dueño reconoce tres meses después.
+- **La migración recupera el pasado:** al aplicarse, cualquier pedido ya entregado sin venta la genera. Con la base en cero no hace nada; en una base con historial, devuelve al reporte lo que nunca contó.
+
+Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta, entregar sí, entregar dos veces no duplica, un pedido rechazado no aparece, y otro negocio no puede convertir en venta un pedido ajeno.

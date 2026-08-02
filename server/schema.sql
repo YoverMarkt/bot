@@ -1353,6 +1353,67 @@ grant execute on function public.create_order_with_items(uuid, text, text, text,
 
 -- Cambia el ciclo de vida de un pedido de forma atómica. Los estados finales
 -- no pueden reabrirse y repetir el mismo cambio es seguro.
+-- ── PEDIDO ENTREGADO → VENTA ───────────────────────────────
+-- Vive aparte para que la usen los dos caminos que cierran un pedido: marcarlo
+-- entregado desde la bandeja, y el pedido de mostrador que nace ya entregado.
+create or replace function public.crear_venta_desde_pedido(
+  p_business_id uuid,
+  p_order_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_sale_id uuid;
+begin
+  select * into v_order
+  from public.orders
+  where id = p_order_id and business_id = p_business_id;
+  if not found then
+    return null;
+  end if;
+
+  select id into v_sale_id
+  from public.sales
+  where order_id = p_order_id and business_id = p_business_id;
+  if found then
+    return v_sale_id;
+  end if;
+
+  -- El total incluye el envío: es el dinero que entró. Los ítems son solo
+  -- productos, así que «lo más vendido» no se ensucia con una línea de envío.
+  insert into public.sales (
+    business_id, order_id, contact_phone, contact_name,
+    total, status, source, sold_at
+  ) values (
+    p_business_id, p_order_id, v_order.contact_phone, v_order.contact_name,
+    v_order.total, 'completada',
+    case when v_order.source = 'storefront' then 'tienda' else 'bot' end,
+    now()
+  )
+  returning id into v_sale_id;
+
+  insert into public.sale_items (
+    sale_id, business_id, product_id, product_name, quantity, unit_price, line_total
+  )
+  select
+    v_sale_id, p_business_id, oi.product_id,
+    oi.product_name || coalesce(' (' || oi.variant_name || ')', ''),
+    oi.quantity, oi.unit_price, oi.line_total
+  from public.order_items oi
+  where oi.order_id = p_order_id and oi.business_id = p_business_id;
+
+  return v_sale_id;
+end;
+$$;
+
+revoke all on function public.crear_venta_desde_pedido(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.crear_venta_desde_pedido(uuid, uuid) to service_role;
+
 create or replace function public.set_order_status(
   p_business_id uuid,
   p_order_id uuid,
@@ -1410,6 +1471,12 @@ begin
   set status = p_status, updated_at = now()
   where id = p_order_id and business_id = p_business_id
   returning * into v_order;
+
+  -- Entregado = vendido. Si algo fallara aquí cae la transacción entera: nunca
+  -- queda un pedido entregado sin su venta.
+  if p_status = 'completado' then
+    perform public.crear_venta_desde_pedido(p_business_id, p_order_id);
+  end if;
 
   return jsonb_build_object('result', 'updated', 'order', to_jsonb(v_order));
 end;
@@ -3010,6 +3077,18 @@ end;
 $$;
 create index if not exists idx_orders_cliente
   on public.orders (business_id, customer_id, created_at desc);
+
+-- Un pedido entregado genera su venta: los reportes leen `sales`, así que sin
+-- esto un pedido de la tienda se entregaba y no aparecía en ningún número
+-- (migration-2026-08-02-pedido-entregado-es-venta.sql).
+alter table public.sales
+  add column if not exists order_id uuid references public.orders(id) on delete set null;
+-- Un pedido, una venta como máximo: es lo que impide duplicar el dinero al
+-- marcar «entregado» dos veces o al reintentar tras un fallo de red.
+create unique index if not exists uq_sales_order
+  on public.sales (order_id) where order_id is not null;
+create index if not exists idx_sales_biz_order
+  on public.sales (business_id, order_id);
 
 -- Estados de reparto en instalaciones creadas antes de que existieran
 -- (migration-2026-08-02-estados-pedido.sql). Solo AÑADE valores permitidos:
