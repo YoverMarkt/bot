@@ -1,11 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-type SaleData = Record<string, unknown>
-// Los ítems se reenvían tal cual a la RPC: esta capa no lee sus campos. Es
-// `object` y no `Record<string, unknown>` porque una interfaz declarada NO es
-// asignable a un Record — TypeScript solo le da índice de cadena a los alias—,
-// y quien llama sí tiene su ítem bien tipado.
-type SaleItemData = object
+// `SaleData` y `SaleItemData` vivían aquí para el alta manual de ventas, que
+// se retiró el 2026-08-02: hoy toda venta nace de un pedido, una cita o una
+// estadía, y las crea PostgreSQL.
 
 const db: SupabaseClient = require('../client') as typeof import('../client')
 const getSaleById = async (businessId: string, id: string) => {

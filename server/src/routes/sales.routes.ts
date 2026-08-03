@@ -1,7 +1,12 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
-import type { WriteResult } from '../db/types'
+
+// El alta MANUAL de ventas se retiró el 2026-08-02: hoy toda venta nace de un
+// pedido entregado, una cita atendida o una estadía confirmada, y la crea
+// PostgreSQL. Lo que queda aquí solo LEE. Con ella se fueron `WriteResult`,
+// `SaleInputItem`, `NormalizedSaleItem`, `SaleRecord` y `SaleValidationError`,
+// que describían la escritura y ya no los nombra nadie.
 
 interface ProductRecord {
   id: string
@@ -28,27 +33,9 @@ interface OrderRecord {
   order_items?: OrderItemRecord[]
 }
 
-interface SaleInputItem {
-  product_id?: unknown
-  product_name?: unknown
-  quantity?: unknown
-  unit_price?: unknown
-}
-
-interface NormalizedSaleItem {
-  product_id: string
-  quantity: number
-}
-
-interface SaleRecord extends Record<string, unknown> {
-  id: string
-}
-
 interface DatabaseResult {
   error?: { message?: string } | null
 }
-
-class SaleValidationError extends Error {}
 
 const db: {
   getProducts(businessId: string): Promise<ProductRecord[]>
