@@ -486,6 +486,56 @@ begin
     end if;
   end;
 
+  -- ── 3f. Una estadía confirmada es una venta ──────────────────────────────
+  -- El cuarto camino del dinero. Sin esto, el ingreso de un hostal vivía en un
+  -- reporte aparte y no se juntaba nunca con sus ventas.
+  declare
+    v_estadia uuid;
+    v_confirmacion jsonb;
+  begin
+    insert into lodging_requests (
+      business_id, room_type_id, contact_phone, contact_name,
+      check_in, check_out, check_in_time, check_out_time, nights,
+      adults, children, rooms, subtotal, taxes, total, currency, status
+    )
+    select
+      v_business, rt.id, '+593900000006', 'Huésped',
+      current_date + 1, current_date + 3, '14:00', '12:00', 2,
+      2, 0, 1, 100.00, 12.00, 112.00, 'USD', 'pending_owner'
+    from lodging_room_types rt where rt.business_id = v_business limit 1
+    returning id into v_estadia;
+
+    if v_estadia is null then
+      raise notice 'Sin tipos de habitación: se omite la comprobación de hospedaje';
+    else
+      -- Pendiente no es dinero: mientras no se confirme, no hay venta.
+      if public.crear_venta_desde_estadia(v_business, v_estadia) is not null then
+        raise exception 'una solicitud pendiente generó venta';
+      end if;
+
+      -- La v2 es la que llama el servidor: confirma y registra en la misma
+      -- transacción, sin tocar el anti-sobreventa de la original.
+      v_confirmacion := public.set_lodging_request_status_v2(v_business, v_estadia, 'confirmed');
+      if v_confirmacion ->> 'result' <> 'updated' then
+        raise exception 'set_lodging_request_status_v2 no confirmó la estadía: %', v_confirmacion;
+      end if;
+      if (select total from sales where lodging_request_id = v_estadia) <> 112.00 then
+        raise exception 'la venta de la estadía no heredó su total';
+      end if;
+
+      -- Reintentar no duplica el dinero.
+      perform public.crear_venta_desde_estadia(v_business, v_estadia);
+      if (select count(*) from sales where lodging_request_id = v_estadia) <> 1 then
+        raise exception 'confirmar dos veces duplicó la venta de la estadía';
+      end if;
+
+      -- Otro negocio no puede cobrarse una estadía ajena.
+      if public.crear_venta_desde_estadia(gen_random_uuid(), v_estadia) is not null then
+        raise exception 'FUGA: otro negocio se cobró una estadía ajena';
+      end if;
+    end if;
+  end;
+
   -- ── 4. Reservas: no se puede solapar el mismo hueco ───────────────────────
   -- El alta del negocio ya crea los 7 días (domingo inactivo, sábado corto).
   -- Se activa el día de la prueba para que no dependa de cuándo corra el CI.
@@ -641,71 +691,6 @@ begin
   delete from businesses where id = v_business;
 
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
-end;
-$$;
-
--- ═══════════════════════════════════════════════════════════════════════════
--- UNA ESTADÍA CONFIRMADA ES UNA VENTA
--- ═══════════════════════════════════════════════════════════════════════════
--- El cuarto y último camino del dinero. Sin esto, el ingreso de un hostal
--- vivía en un reporte aparte y no se juntaba nunca con sus ventas.
-do $$
-declare
-  v_negocio uuid;
-  v_estadia uuid;
-begin
-  select id into v_negocio from businesses limit 1;
-  if v_negocio is null then
-    raise exception 'No hay negocio para comprobar el hospedaje';
-  end if;
-
-  insert into lodging_requests (
-    business_id, room_type_id, contact_phone, contact_name,
-    check_in, check_out, check_in_time, check_out_time, nights,
-    adults, children, rooms, subtotal, taxes, total, currency, status, confirmed_at
-  )
-  select
-    v_negocio, rt.id, '+593900000006', 'Huésped',
-    current_date + 1, current_date + 3, '14:00', '12:00', 2,
-    2, 0, 1, 100.00, 12.00, 112.00, 'USD', 'pending_owner', null
-  from lodging_room_types rt where rt.business_id = v_negocio limit 1
-  returning id into v_estadia;
-
-  if v_estadia is null then
-    raise notice 'Sin tipos de habitación: se omite la comprobación de hospedaje';
-  else
-    -- Pendiente no es dinero: mientras no se confirme, no hay venta.
-    if public.crear_venta_desde_estadia(v_negocio, v_estadia) is not null then
-      raise exception 'una solicitud pendiente generó venta';
-    end if;
-
-    -- La v2 confirma y registra la venta en la misma transacción. Es la que
-    -- llama el servidor, así que es la que hay que ejecutar de verdad.
-    declare
-      v_confirmacion jsonb;
-    begin
-      v_confirmacion := public.set_lodging_request_status_v2(v_negocio, v_estadia, 'confirmed');
-      if v_confirmacion ->> 'result' <> 'updated' then
-        raise exception 'set_lodging_request_status_v2 no confirmó la estadía: %', v_confirmacion;
-      end if;
-    end;
-
-    if not exists (select 1 from sales where lodging_request_id = v_estadia) then
-      raise exception 'una estadía confirmada no generó su venta';
-    end if;
-    if (select total from sales where lodging_request_id = v_estadia) <> 112.00 then
-      raise exception 'la venta de la estadía no heredó su total';
-    end if;
-    -- Reintentar no duplica el dinero.
-    perform public.crear_venta_desde_estadia(v_negocio, v_estadia);
-    if (select count(*) from sales where lodging_request_id = v_estadia) <> 1 then
-      raise exception 'confirmar dos veces duplicó la venta de la estadía';
-    end if;
-    -- Otro negocio no puede cobrarse una estadía ajena.
-    if public.crear_venta_desde_estadia(gen_random_uuid(), v_estadia) is not null then
-      raise exception 'FUGA: otro negocio se cobró una estadía ajena';
-    end if;
-  end if;
 end;
 $$;
 
