@@ -23,20 +23,14 @@ export type Sale = {
   items?: SaleItem[]
 }
 
-export type QuoteData = {
-  contact_name: string
-  products: { id: string; name: string; price: number }[]
-  suggested: SaleItem[]
-}
-
-export const getQuote = (phone: string) =>
-  api<QuoteData>(`/api/client/sessions/${encodeURIComponent(phone)}/quote`)
+// `registerSale` (POST /api/client/sales) y `getQuote`
+// (GET /api/client/sessions/:phone/quote) vivían aquí para el alta manual de
+// ventas. Esa alta se retiró el 2026-08-02 junto con sus rutas, pero las dos
+// funciones se quedaron llamando a endpoints que ya no existen —y sin que
+// ninguna pantalla las usara. Las encontró el test de contrato.
 
 export const getSalesByPhone = (phone: string) =>
   api<Sale[]>(`/api/client/sales?phone=${encodeURIComponent(phone)}`)
-
-export const registerSale = (payload: { contact_phone: string | null; contact_name: string | null; items: Omit<SaleItem, 'line_total'>[] }) =>
-  api<Sale>('/api/client/sales', { method: 'POST', body: JSON.stringify(payload) })
 
 export const voidSale = (id: string) =>
   api(`/api/client/sales/${id}/void`, { method: 'POST' })
