@@ -1337,7 +1337,12 @@ describe('el enlace de la mini app', () => {
 
   // En modo IA no hay menú donde colgarlo, así que va como mensaje propio —
   // pero DESPUÉS de que el asistente responda, no antes.
-  it('en modo MINI APP se manda tras el saludo del asistente', async () => {
+  // Este test decía lo contrario hasta el 2026-08-02: el enlace se mandaba
+  // DESPUÉS de que la IA hubiera respondido. Es decir, un negocio que eligió
+  // atender por la app pagaba tokens en cada mensaje. Ahora el modo corta
+  // antes del modelo y el enlace ES la respuesta.
+  // El detalle del modo vive en `miniapp-sin-ia.test.js`.
+  it('en modo MINI APP el enlace es la respuesta, sin pasar por la IA', async () => {
     const current = setup({
       storefrontLink: {
         issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
@@ -1349,11 +1354,10 @@ describe('el enlace de la mini app', () => {
       text: 'hola',
     }))
 
-    const mensajes = current.send.mock.calls.map(call => call[0])
-    const indiceRespuesta = mensajes.findIndex(m => String(m).includes('Respuesta final'))
-    const indiceEnlace = mensajes.findIndex(m => String(m).includes('https://x.com/t/'))
-    expect(indiceRespuesta).toBeGreaterThanOrEqual(0)
-    expect(indiceEnlace).toBeGreaterThan(indiceRespuesta)
+    const mensajes = current.send.mock.calls.map(call => String(call[0]))
+    expect(mensajes.some(m => m.includes('https://x.com/t/'))).toBe(true)
+    expect(mensajes.some(m => m.includes('Respuesta final'))).toBe(false)
+    expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
   // Modo IA puro = atender y vender por chat. Quien quiera la app se pone en
@@ -1374,8 +1378,10 @@ describe('el enlace de la mini app', () => {
     expect(current.send.mock.calls.map(c => c[0]).join('')).not.toContain('http')
   })
 
-  // Quien ya pregunta algo concreto no quiere un enlace, quiere su respuesta.
-  it('en modo mini app no se manda si el cliente pregunta algo concreto', async () => {
+  // Antes, una pregunta concreta en modo mini app se respondía por IA y no se
+  // mandaba enlace. Eso era exactamente lo que había que quitar: el negocio
+  // eligió atender por la app, así que la pregunta tampoco se contesta.
+  it('en modo mini app una pregunta concreta tampoco pasa por la IA', async () => {
     const current = setup({
       storefrontLink: {
         issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
@@ -1387,7 +1393,9 @@ describe('el enlace de la mini app', () => {
       text: '¿tienen pizza sin gluten?',
     }))
 
-    expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
+    expect(current.ai.callAI).not.toHaveBeenCalled()
+    const mensajes = current.send.mock.calls.map(call => String(call[0]))
+    expect(mensajes.some(m => m.includes('Respuesta final'))).toBe(false)
   })
 
   // Sin tienda, sin BASE_URL o con la base caída, issueLink devuelve null: el

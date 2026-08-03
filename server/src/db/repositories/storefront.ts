@@ -214,8 +214,30 @@ const attachStorefrontPaymentProof = async (input: {
   p_url: input.url,
 })
 
+/**
+ * ¿Le toca a este cliente recibir el enlace de la mini app?
+ *
+ * La decisión y la marca van juntas dentro de PostgreSQL: si el cliente manda
+ * tres mensajes seguidos —pasa constantemente— solo uno se lleva el envío.
+ * Hacerlo en dos pasos desde aquí dejaría esa carrera abierta.
+ */
+const claimStorefrontLinkSend = async (
+  businessId: string,
+  customerId: string,
+  cooldownHours = 24,
+): Promise<boolean> => {
+  const { data, error } = await db.rpc('claim_storefront_link_send', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+    p_cooldown_hours: cooldownHours,
+  })
+  fail(error, 'No se pudo comprobar el envío del enlace')
+  return data === true
+}
+
 export = {
   resolveCustomer,
+  claimStorefrontLinkSend,
   getBusinessCustomer,
   getCustomerAddresses,
   createCustomerAddress,

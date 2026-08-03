@@ -90,7 +90,11 @@ create table if not exists businesses (
   -- Quién conduce la conversación: 'menu' = máquina de estados por código
   -- (sin IA, opciones de datos reales) · 'ai' = conversación con IA.
   chat_mode           text not null default 'ai'
-                      check (chat_mode in ('menu','ai')),
+                      -- 'miniapp' se añadió el 2026-08-02 y vivía SOLO en su
+                      -- migración: una base creada desde este archivo no
+                      -- admitía el modo. Lo destapó la migración del enlace de
+                      -- 24 h, que da de alta un negocio en modo mini app.
+                      check (chat_mode in ('menu','ai','miniapp')),
   -- Negocio / facturación
   plan                text default 'basic',
   monthly_rate        numeric(10,2),
@@ -2947,6 +2951,12 @@ create unique index if not exists uq_business_customers
   on public.business_customers (business_id, customer_id);
 create index if not exists idx_business_customers_recientes
   on public.business_customers (business_id, last_order_at desc);
+
+-- ── Modo mini app: cuándo se le mandó el enlace a este cliente ─────────────
+-- Vivía en un `Map` del proceso, así que se perdía al reiniciar y no servía
+-- con dos instancias (migration-2026-08-02-miniapp-enlace-24h.sql).
+alter table public.business_customers
+  add column if not exists storefront_link_sent_at timestamptz;
 
 -- Por negocio a propósito: que una pizzería vea a dónde pidió ese cliente en
 -- otro local sería filtrar datos entre negocios.
@@ -6323,6 +6333,52 @@ create unique index if not exists uq_bookings_id_business
   on public.bookings (id, business_id);
 create unique index if not exists uq_lodging_requests_id_business
   on public.lodging_requests (id, business_id);
+
+create or replace function public.claim_storefront_link_send(
+  p_business_id uuid,
+  p_customer_id uuid,
+  p_cooldown_hours integer default 24
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_reclamado boolean;
+begin
+  if p_business_id is null or p_customer_id is null then
+    return false;
+  end if;
+
+  -- La fila de la relación puede no existir todavía si el cliente nunca pidió
+  -- nada: se crea aquí para poder anotar el envío.
+  insert into public.business_customers (business_id, customer_id)
+  values (p_business_id, p_customer_id)
+  on conflict (business_id, customer_id) do nothing;
+
+  -- `for update` serializa a los mensajes que lleguen a la vez del mismo
+  -- cliente. Sin esto, tres «hola» seguidos mandan tres enlaces.
+  update public.business_customers
+  set storefront_link_sent_at = now(),
+      updated_at = now()
+  where business_id = p_business_id
+    and customer_id = p_customer_id
+    and (
+      storefront_link_sent_at is null
+      or storefront_link_sent_at
+         < now() - make_interval(hours => greatest(coalesce(p_cooldown_hours, 24), 0))
+    )
+  returning true into v_reclamado;
+
+  return coalesce(v_reclamado, false);
+end;
+$$;
+
+revoke all on function public.claim_storefront_link_send(uuid, uuid, integer)
+  from public, anon, authenticated;
+grant execute on function public.claim_storefront_link_send(uuid, uuid, integer)
+  to service_role;
 
 -- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
 --
