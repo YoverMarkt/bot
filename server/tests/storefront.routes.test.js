@@ -19,13 +19,17 @@ const rutas = router.stack
     handlers: layer.route.stack.length,
   }))
 
-// Dos rutas viven sin sesión, y cada una por su motivo:
+// Tres rutas viven sin `requireStorefrontSession`, y cada una por su motivo:
 //  · la portada, que es lo que ve quien no tiene enlace;
 //  · el enlace corto, que NO devuelve datos — solo redirige. Con un token
-//    inventado no se averigua nada, y quien llega con el suyo ya lo tenía.
+//    inventado no se averigua nada, y quien llega con el suyo ya lo tenía;
+//  · la verificación del número, que no PUEDE llevar el middleware: rechaza
+//    justo el estado en el que se llega a ella ('necesita_telefono'). Es la
+//    puerta, no una habitación.
 const PUBLICA = '/api/store/:slug'
 const ENLACE_CORTO = '/s/:code'
-const SIN_SESION = [PUBLICA, ENLACE_CORTO]
+const VERIFICACION = '/api/store/:slug/session/verify'
+const SIN_SESION = [PUBLICA, ENLACE_CORTO, VERIFICACION]
 
 describe('rutas de la mini app', () => {
   it('expone las rutas esperadas y ninguna más', () => {
@@ -37,6 +41,7 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/orders',
       '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
+      '/api/store/:slug/session/verify',
       '/api/store/:slug/stay/quote',
       '/api/store/:slug/stay/request',
       '/s/:code',
@@ -51,12 +56,28 @@ describe('rutas de la mini app', () => {
     expect(sinProteger).toEqual([])
   })
 
-  it('solo la portada y el enlace corto viven sin sesión', () => {
-    for (const path of SIN_SESION) {
+  it('las rutas sin sesión son exactamente esas tres, y no más', () => {
+    for (const path of [PUBLICA, ENLACE_CORTO]) {
       const ruta = rutas.find(r => r.path === path)
       expect(ruta, path).toBeTruthy()
       expect(ruta.handlers, path).toBe(1)
     }
+  })
+
+  // La verificación no lleva sesión, pero SÍ tiene que llevar freno: es donde
+  // se adivinarían números de teléfono a lo bruto. Sin esto pasaría el
+  // guardián de arriba por tener dos handlers, sin que el segundo protegiera
+  // nada — un verde por accidente.
+  it('la verificación del número va con rate limit propio', () => {
+    const ruta = rutas.find(r => r.path === VERIFICACION)
+    expect(ruta).toBeTruthy()
+    expect(ruta.handlers).toBe(2)
+    const fuente = fs.readFileSync('dist/routes/storefront.routes.js', 'utf8')
+    expect(fuente).toContain('verifyLimiter')
+    // Ocho por minuto: suficiente para quien se equivoca escribiendo, inútil
+    // para quien prueba números en serie.
+    const bloque = fuente.slice(fuente.indexOf('verifyLimiter'))
+    expect(bloque).toMatch(/max:\s*8/)
   })
 
   // El enlace corto es la puerta que se manda por WhatsApp: si algún día

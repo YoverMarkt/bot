@@ -16,9 +16,11 @@ const MENSAJES: Record<string, { titulo: string; detalle: string }> = {
     titulo: 'Este enlace es de otra persona',
     detalle: 'Cada enlace se abre en un solo teléfono, para que nadie pida a nombre de otro. Escríbele al negocio y te enviamos el tuyo al instante.',
   },
+  // Los enlaces nuevos ya no caducan (2026-08-02). Este mensaje solo lo ven
+  // los que quedaban vivos de antes, hasta que la limpieza se los lleve.
   caducada: {
     titulo: 'Tu enlace expiró',
-    detalle: 'Por seguridad los enlaces duran unas horas. Escríbele al negocio y recibes uno nuevo en el momento.',
+    detalle: 'Era de los antiguos, que duraban unas horas. Escríbele al negocio y recibes uno nuevo — ese ya no vence.',
   },
   revocada: {
     titulo: 'Este enlace ya no está activo',

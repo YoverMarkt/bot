@@ -54,7 +54,7 @@ export function Hoja({ abierta, onCerrar, children, titulo }: {
         onClick={onCerrar}
         className="absolute inset-0 bg-black/50"
       />
-      <div className="animar-hoja superficie relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[1.75rem] sm:mb-6 sm:rounded-[1.75rem]">
+      <div className="animar-hoja superficie relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.75rem] sm:mb-6 sm:rounded-[1.75rem]">
         <div className="superficie sticky top-0 z-10 flex items-center justify-between border-b borde-tema px-5 py-4">
           <h2 className="truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
           <button

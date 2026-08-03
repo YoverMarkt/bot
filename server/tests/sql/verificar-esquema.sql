@@ -775,6 +775,61 @@ begin
     end if;
   end;
 
+  -- ── 7 bis. Modo mini app: el enlace se manda una vez cada 24 h ───────────
+  --
+  -- Es lo que decide si el bot manda el enlace o solo recuerda que lo usen.
+  -- Vivía en un `Map` del proceso, que se perdía al reiniciar y no servía con
+  -- dos instancias; ahora lo reclama la base, de forma atómica, porque tres
+  -- «hola» seguidos son lo normal y no pueden mandar tres enlaces.
+  declare
+    v_cliente uuid;
+    v_toca boolean;
+  begin
+    insert into public.customers (phone) values ('593900000707')
+    returning id into v_cliente;
+
+    v_toca := public.claim_storefront_link_send(v_business, v_cliente, 24);
+    if v_toca is not true then
+      raise exception 'la primera vez debía reclamar el envío del enlace';
+    end if;
+
+    v_toca := public.claim_storefront_link_send(v_business, v_cliente, 24);
+    if v_toca is not false then
+      raise exception 'dentro de la ventana de 24 h NO debía reenviar';
+    end if;
+
+    update public.business_customers
+    set storefront_link_sent_at = now() - interval '25 hours'
+    where business_id = v_business and customer_id = v_cliente;
+
+    v_toca := public.claim_storefront_link_send(v_business, v_cliente, 24);
+    if v_toca is not true then
+      raise exception 'pasadas 24 h debía volver a mandar el enlace';
+    end if;
+
+    -- El mismo cliente en OTRO negocio lleva su propia cuenta: que un local le
+    -- haya mandado su enlace no puede dejar sin enlace al de al lado.
+    declare
+      v_otro uuid;
+    begin
+      insert into businesses (
+        slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+        takes_orders
+      ) values (
+        'verificacion-enlace-b', 'Vecino', 'tienda', 'ycloud',
+        '+593900000708', '+593900000708', true
+      ) returning id into v_otro;
+
+      if public.claim_storefront_link_send(v_otro, v_cliente, 24) is not true then
+        raise exception 'el envío de un negocio bloqueó el de otro';
+      end if;
+
+      delete from businesses where id = v_otro;
+    end;
+
+    delete from public.customers where id = v_cliente;
+  end;
+
   -- ── 8. Limpiezas programadas ──────────────────────────────────────────────
   perform public.cleanup_webhook_events();
   perform public.cleanup_platform_errors(30);

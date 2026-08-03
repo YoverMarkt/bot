@@ -5,6 +5,8 @@ import {
 } from './schedule'
 
 export interface BusinessPromptContext {
+  /** 'miniapp' activa la regla de respaldo: el negocio atiende por su app. */
+  chat_mode?: string | null
   name: string
   type?: string | null
   takes_bookings?: boolean | null
@@ -52,6 +54,18 @@ function buildPrompt(
   preFiltered = false,
   postSale = false,
 ): string {
+  // RESPALDO del modo mini app. La interrupción de verdad está en el backend
+  // (`bot-conversation.ts` corta antes de llamar al modelo), así que este
+  // texto no debería llegar a usarse nunca: si el prompt se está construyendo
+  // es que algo se saltó el corte. Está para que ese fallo no acabe en el bot
+  // vendiendo por chat en un negocio que eligió vender por la app.
+  const miniappRule = business.chat_mode === 'miniapp'
+    ? '\n⚠️ MODO MINI APP: este negocio atiende por su mini app, no por chat. '
+      + 'NO respondas preguntas comerciales, NO des información del catálogo ni '
+      + 'de precios, NO recomiendes productos y NO crees pedidos. Responde solo '
+      + 'que use el enlace de la mini app que ya recibió.\n'
+    : ''
+
   const allProducts = products || []
   let productsToShow: ProductPromptRecord[]
   if (preFiltered) {
@@ -204,7 +218,7 @@ Devoluciones: ${policies?.returns || 'Consultar directamente.'}
 Descuentos: ${policies?.discounts || 'Consultar directamente.'}
 ${policies?.bot_instructions ? `\nINSTRUCCIONES ADICIONALES DEL DUEÑO:\n${policies.bot_instructions}` : ''}
 
-${outsideHoursNote}${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${lodgingRule}${technicalRules}${customPrompt ? '' : defaultStyle}`
+${miniappRule}${outsideHoursNote}${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${lodgingRule}${technicalRules}${customPrompt ? '' : defaultStyle}`
 }
 
 export { buildPrompt }

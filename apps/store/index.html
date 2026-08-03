@@ -14,7 +14,10 @@
       :root { --f:#fafafa; --s:#ffffff; --h:#e8e8e8; }
       @media (prefers-color-scheme: dark) { :root { --f:#282828; --s:#353535; --h:#404040; } }
       html, body { margin:0; background:var(--f); }
-      .vz-boot { padding:16px; }
+      /* Mismo respeto por la barra de estado que la cabecera de React: este
+         esqueleto es lo PRIMERO que se ve, y si arranca bajo el notch la app
+         parece rota antes siquiera de cargar. */
+      .vz-boot { padding:16px; padding-top:calc(env(safe-area-inset-top) + 16px); }
       .vz-h { background:var(--h); border-radius:10px; animation:vz 1.5s ease-in-out infinite; }
       .vz-hero { height:132px; border-radius:14px; margin-bottom:16px; }
       .vz-chips { display:flex; gap:8px; margin-bottom:18px; }

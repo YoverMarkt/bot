@@ -6,7 +6,7 @@ import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadMedia } from '../integrations/cloudinary'
 import { requireStorefrontSession } from '../middleware/storefront'
-import { hashToken } from '../services/storefront-session'
+import { checkSession, deviceFingerprint, hashToken, phoneMatchesSession } from '../services/storefront-session'
 import {
   buildStorefrontCatalog,
   canOrder,
@@ -31,10 +31,24 @@ import {
 // El precio JAMÁS llega del cliente: la app manda ids y cantidades, y la RPC
 // resuelve cada importe desde la base (regla inviolable #8).
 
+/** La fila de sesión, con lo que necesitan la redirección y la verificación. */
+interface StorefrontSessionRow {
+  id: string
+  business_id: string
+  customer_id: string
+  contact_phone: string
+  device_hash: string | null
+  claimed_at: string | null
+  expires_at: string | null
+  revoked_at: string | null
+  verified_at?: string | null
+}
+
 interface StorefrontRouteDatabase {
   getBusinessBySlug(slug: string): Promise<StorefrontBusiness | null>
   getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
-  getStorefrontSessionByHash(tokenHash: string): Promise<{ business_id?: string } | null>
+  getStorefrontSessionByHash(tokenHash: string): Promise<StorefrontSessionRow | null>
+  bindStorefrontSession(sessionId: string, deviceHash: string): Promise<boolean>
   getSchedule(businessId: string): Promise<ScheduleRecord[]>
   getStorefrontCategories(businessId: string): Promise<unknown[]>
   getStorefrontProducts(businessId: string): Promise<unknown[]>
@@ -133,6 +147,76 @@ router.get('/api/store/:slug', async (req, res) => {
     status,
     canOrder: canOrder(status),
   })
+})
+
+// ── Confirmar el número: la puerta del enlace ──────────────────────────────
+//
+// El enlace ya no caduca, así que lo que lo protege es esto: para usarlo hay
+// que saber a qué número de WhatsApp se emitió.
+//
+// Antes bastaba con abrirlo primero. Quien reenviaba el enlace ANTES de
+// abrirlo se lo regalaba al primero que hiciera clic, y el cliente legítimo se
+// quedaba fuera de su propia tienda.
+//
+// NO lleva `requireStorefrontSession` a propósito: ese middleware rechaza
+// justo el estado en el que se llega aquí (`necesita_telefono`).
+const verifyLimiter = rateLimit({
+  // Mucho más estrecho que el resto de la tienda: aquí se adivinan teléfonos.
+  // Ocho intentos por minuto bastan para quien se equivoca escribiendo y no
+  // para quien prueba números en serie.
+  windowMs: 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos, espera un momento' },
+})
+
+router.post('/api/store/:slug/session/verify', verifyLimiter, async (req, res) => {
+  const token = String(
+    req.headers['x-storefront-token']
+    || (req.body as { token?: unknown } | null)?.token
+    || '',
+  ).trim()
+  const telefono = String((req.body as { phone?: unknown } | null)?.phone || '').trim()
+  if (!token || !telefono) {
+    return res.status(400).json({ error: 'Falta el número' })
+  }
+
+  const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
+  if (!business?.id) return res.status(404).json({ error: 'Esta tienda no está disponible' })
+
+  const session = await db.getStorefrontSessionByHash(hashToken(token))
+  const veredicto = checkSession({
+    session: session as never,
+    deviceHash: '',
+    expectedBusinessId: business.id,
+  })
+  // Solo se sigue si lo único que falta es el número. Una sesión revocada, de
+  // otro negocio o inexistente se rechaza igual que en el resto de la tienda.
+  if (!veredicto.session || (veredicto.reason && veredicto.reason !== 'necesita_telefono')) {
+    return res.status(401).json({ error: 'Este enlace no es válido', reason: veredicto.reason })
+  }
+
+  if (!phoneMatchesSession(veredicto.session.contact_phone, telefono)) {
+    // Mismo texto para "no coincide" que para "no existe": quien prueba
+    // números no debe poder distinguir un fallo de otro.
+    return res.status(401).json({
+      error: 'Ese número no coincide con este enlace',
+      reason: 'necesita_telefono',
+    })
+  }
+
+  const deviceHash = deviceFingerprint({
+    clientId: typeof req.headers['x-storefront-device'] === 'string'
+      ? req.headers['x-storefront-device']
+      : '',
+    userAgent: req.headers['user-agent'] || '',
+    acceptLanguage: req.headers['accept-language'] || '',
+  })
+  const atada = await db.bindStorefrontSession(veredicto.session.id, deviceHash)
+  if (!atada) return res.status(500).json({ error: 'No pudimos confirmar tu número' })
+
+  return res.json({ ok: true })
 })
 
 // ── De aquí en adelante hace falta el enlace ───────────────────────────────

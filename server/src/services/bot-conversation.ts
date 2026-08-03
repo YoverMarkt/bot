@@ -79,6 +79,13 @@ interface ConversationDatabase {
     contactPhone: string,
   ): Promise<{ order_items?: Record<string, unknown>[] } | null>
   recordConsultations(businessId: string, productIds: string[]): Promise<unknown>
+  // Modo mini app: quién es el cliente y si toca mandarle el enlace.
+  resolveCustomer(input: {
+    businessId: string
+    phone: string
+    name?: string | null
+  }): Promise<{ id: string }>
+  claimStorefrontLinkSend(businessId: string, customerId: string): Promise<boolean>
 }
 
 interface ConversationReports {
@@ -192,12 +199,21 @@ interface ConversationStorefrontLink {
       takes_orders?: boolean | null; lodging_enabled?: boolean | null }
     phone: string
     name?: string | null
+    /** Salta el cooldown en memoria: en modo mini app decide la base. */
+    force?: boolean
   }): Promise<string | null>
   storefrontInvite(
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
   ): string
 }
+
+/**
+ * Lo que se responde cuando el cliente sigue escribiendo dentro de la ventana
+ * de 24 h. Corto a propósito: no es una conversación, es una señal.
+ */
+export const MINIAPP_RECORDATORIO =
+  'Usa el enlace que te envié para ver los productos y hacer tu pedido 🛍️'
 
 export interface BotConversationDependencies {
   database: ConversationDatabase
@@ -338,16 +354,73 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     business: ConversationBusiness,
     phone: string,
     name?: string | null,
+    /** En modo mini app la ventana de 24 h ya la decidió la base, así que el
+        cooldown en memoria de `issueLink` no debe volver a filtrar y dejar al
+        cliente sin enlace. */
+    force = false,
   ): Promise<string> {
     if (!storefrontLink) return ''
     try {
-      const url = await storefrontLink.issueLink({ business, phone, name })
+      const url = await storefrontLink.issueLink({ business, phone, name, force })
       if (!url) return ''
       logger.log(`🛍️ [${business.name}] enlace de tienda enviado a ${phone}`)
       return storefrontLink.storefrontInvite(business, url)
     } catch {
       return ''
     }
+  }
+
+  /**
+   * MODO MINI APP: WhatsApp es la puerta de la app, no un canal de atención.
+   *
+   * Ni una llamada al modelo. El negocio que elige este modo dijo que atiende
+   * por la app; contestarle dudas por chat sería cobrarle tokens por un
+   * servicio que no pidió, y además le partiría la atención en dos sitios.
+   *
+   * La decisión de mandar el enlace o solo recordarlo la toma la BASE, con un
+   * reclamo atómico de 24 h. Antes vivía en un `Map` del proceso: se perdía al
+   * reiniciar y con dos instancias cada una llevaba su cuenta.
+   */
+  async function runMiniappMode(input: {
+    business: ConversationBusiness
+    phone: string
+    text: string
+    session: ConversationSession | null
+    send: (text: string) => Promise<unknown>
+  }): Promise<void> {
+    const { business, phone, text, session, send } = input
+
+    // El mensaje del cliente se guarda igual: el dueño tiene que poder leer en
+    // su panel qué le escribieron, aunque el bot no le haya contestado nada.
+    await database.saveMessage(business.id, phone, 'user', text)
+
+    let toca = true
+    try {
+      const customer = await database.resolveCustomer({
+        businessId: business.id,
+        phone,
+        name: session?.contact_name || null,
+      })
+      toca = await database.claimStorefrontLinkSend(business.id, customer.id)
+    } catch {
+      // Si la base no responde se prefiere mandar el enlace: quedarse callado
+      // deja al cliente sin forma de pedir.
+      toca = true
+    }
+
+    const invite = toca
+      ? await storefrontInviteFor(business, phone, session?.contact_name, true)
+      : ''
+
+    // `invite` puede venir vacío si el negocio no tiene tienda utilizable —sin
+    // catálogo no hay nada que enseñar—. Ahí se recuerda igual, con el
+    // teléfono del local, en vez de dejar el mensaje sin respuesta.
+    const respuesta = invite || MINIAPP_RECORDATORIO
+    await send(respuesta)
+    await database.saveMessage(business.id, phone, 'assistant', respuesta)
+    logger.log(
+      `🛍️ [${business.name}] modo mini app — ${toca ? 'enlace enviado' : 'recordatorio'} a ${phone} (sin IA)`,
+    )
   }
 
   async function runMenuMode(input: {
@@ -653,6 +726,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         business, phone, text, session, send, sendImage, sendTyping, sendVideo,
         sendOptions: input.sendOptions,
       })
+      return
+    }
+
+    // MODO MINI APP: WhatsApp es SOLO la puerta de la app, no un canal de
+    // atención. Se manda el enlace (o se recuerda que lo use) y se termina.
+    //
+    // Va aquí, antes de leer políticas, historial y catálogo y antes de
+    // cualquier llamada al modelo, y ese orden es el punto entero: un negocio
+    // en este modo no puede generar coste de OpenAI. Antes el enlace se
+    // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
+    if (business.chat_mode === 'miniapp') {
+      await runMiniappMode({ business, phone, text, session, send })
       return
     }
 

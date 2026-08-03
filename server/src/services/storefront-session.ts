@@ -16,8 +16,20 @@ import crypto from 'node:crypto'
 //
 // Todo aquí es cálculo puro. La persistencia vive en el repositorio.
 
-/** Horas de vida del enlace. Suficiente para pedir con calma, inútil mañana. */
-export const SESSION_HOURS = 6
+/**
+ * El enlace NO caduca.
+ *
+ * Caducaba en 6 h, y la idea era buena: un enlace viejo no abre nada. Pero en
+ * la práctica el cliente guardaba el enlace, volvía dos días después y se
+ * encontraba una pantalla de error — y el negocio perdía el pedido. Peor aún,
+ * el token vivía en `sessionStorage`, así que cerrar el webview de WhatsApp ya
+ * lo perdía: las 6 h ni siquiera eran el límite real.
+ *
+ * Lo que protege el enlace ahora no es el reloj, es el TELÉFONO: para usarlo
+ * hay que confirmar el número de WhatsApp al que se emitió. Un enlace
+ * reenviado no sirve por muy fresco que esté, y el propio sirve para siempre.
+ */
+export const SESSION_NEVER_EXPIRES = null
 
 /**
  * Bytes del token. 16 bytes = 128 bits, la misma entropía que un UUID v4: no
@@ -35,6 +47,8 @@ export type SessionRejection =
   | 'revocada'
   | 'otro_dispositivo'
   | 'otro_negocio'
+  /** Hay que confirmar el número de WhatsApp antes de entrar. */
+  | 'necesita_telefono'
 
 export interface StorefrontSessionRecord {
   id: string
@@ -43,8 +57,10 @@ export interface StorefrontSessionRecord {
   contact_phone: string
   device_hash: string | null
   claimed_at: string | null
-  expires_at: string
+  /** Nulo = no caduca. */
+  expires_at: string | null
   revoked_at: string | null
+  verified_at?: string | null
 }
 
 export interface SessionCheck {
@@ -85,9 +101,33 @@ export function deviceFingerprint(input: {
   ].join('|'))
 }
 
-/** Momento en que caduca una sesión creada ahora. */
-export function sessionExpiry(now: Date = new Date()): Date {
-  return new Date(now.getTime() + SESSION_HOURS * 60 * 60 * 1000)
+/**
+ * ¿El número que escribe quien abre el enlace es al que se emitió?
+ *
+ * Se comparan solo los dígitos: la gente escribe su número con espacios,
+ * guiones, con y sin el código de país. Exigir el formato exacto convertiría
+ * una comprobación de seguridad en una trampa de usabilidad, y el cliente
+ * legítimo acabaría fuera.
+ *
+ * Se acepta que uno de los dos venga sin código de país comparando por el
+ * final: `0999111222` y `593999111222` son la misma persona en Ecuador.
+ */
+export function phoneMatchesSession(
+  sessionPhone: string | null | undefined,
+  entered: string | null | undefined,
+): boolean {
+  const limpio = (valor: string | null | undefined) => String(valor || '').replace(/\D/g, '')
+  const esperado = limpio(sessionPhone)
+  const recibido = limpio(entered)
+  // Menos de 8 dígitos no es un teléfono: se rechaza en vez de dejar que un
+  // '1' coincida por el final con cualquier cosa.
+  if (esperado.length < 8 || recibido.length < 8) return false
+  if (esperado === recibido) return true
+  const corto = esperado.length < recibido.length ? esperado : recibido
+  const largo = esperado.length < recibido.length ? recibido : esperado
+  // El 0 inicial de los móviles se pierde al anteponer el código de país.
+  const sinCero = corto.replace(/^0+/, '')
+  return sinCero.length >= 8 && largo.endsWith(sinCero)
 }
 
 /**
@@ -114,17 +154,26 @@ export function checkSession(input: {
   }
 
   if (session.revoked_at) return { ok: false, reason: 'revocada' }
-  if (new Date(session.expires_at).getTime() <= now.getTime()) {
+  // `expires_at` nulo = no caduca. Es el caso normal desde el 2026-08-02; las
+  // sesiones viejas con fecha siguen respetándola hasta que se limpien.
+  if (session.expires_at
+    && new Date(session.expires_at).getTime() <= now.getTime()) {
     return { ok: false, reason: 'caducada' }
   }
 
-  // Nadie la ha reclamado todavía: este dispositivo se queda con ella.
-  if (!session.device_hash) return { ok: true, session, claims: true }
-
-  if (session.device_hash !== deviceHash) {
-    return { ok: false, reason: 'otro_dispositivo', session }
+  // Este dispositivo ya demostró el número: pasa.
+  if (session.device_hash && session.device_hash === deviceHash) {
+    return { ok: true, session, claims: false }
   }
-  return { ok: true, session, claims: false }
+
+  // Y si no, hay que confirmar el número. Vale tanto para la sesión que nadie
+  // ha abierto como para la que abrió otro.
+  //
+  // Antes, la primera apertura se la quedaba sin preguntar nada. Ese era el
+  // agujero: quien reenviaba el enlace ANTES de abrirlo se lo regalaba al
+  // primero que hiciera clic, y el cliente legítimo se encontraba «ya lo está
+  // usando otra persona» sobre un enlace suyo.
+  return { ok: false, reason: 'necesita_telefono', session }
 }
 
 /** Qué contarle a quien no puede entrar. Nunca revela datos del dueño. */
@@ -136,6 +185,9 @@ export function rejectionMessage(reason: SessionRejection): string {
       return 'Este enlace no es válido. Escríbele al negocio por WhatsApp para hacer tu pedido.'
     case 'otro_dispositivo':
       return 'Este enlace es personal y ya lo está usando otra persona. Escríbele al negocio por WhatsApp y te enviará el tuyo.'
+    // No es un rechazo: es un paso más. El texto lo pinta la app.
+    case 'necesita_telefono':
+      return 'Confirma tu número de WhatsApp para entrar.'
     case 'caducada':
       return 'Este enlace ya venció. Escríbele al negocio por WhatsApp y te enviará uno nuevo.'
     case 'revocada':

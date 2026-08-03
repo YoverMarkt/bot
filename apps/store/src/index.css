@@ -76,6 +76,17 @@ body {
 /* La barra inferior no puede quedar debajo del gesto de inicio del iPhone. */
 @utility pb-seguro { padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
 
+/* Y la cabecera no puede quedar debajo de la barra de estado ni del notch.
+   El `viewport-fit=cover` del index.html —que hace falta para que el fondo
+   llegue a los bordes— arranca la página en el borde FÍSICO de la pantalla,
+   así que sin este relleno el nombre del negocio se mete bajo la hora y la
+   batería. Existía `pb-seguro` desde el principio y esta nunca se escribió.
+
+   El `env()` vale 0 en escritorio y en Android sin notch, así que el `1rem` es
+   exactamente el aire que tenía la cabecera antes (`pt-4`): sin muesca no
+   cambia nada, y con muesca baja lo que haga falta. */
+@utility pt-seguro { padding-top: calc(env(safe-area-inset-top) + 1rem); }
+
 /* Carrusel de categorías: se desliza, pero sin barra a la vista. */
 @utility sin-barra {
   scrollbar-width: none;

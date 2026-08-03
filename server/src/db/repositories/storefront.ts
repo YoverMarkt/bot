@@ -123,7 +123,7 @@ const createStorefrontSession = async (input: {
   customerId: string
   tokenHash: string
   contactPhone: string
-  expiresAt: string
+  expiresAt: string | null
 }) => {
   const { data, error } = await db
     .from('storefront_sessions')
@@ -144,7 +144,7 @@ const createStorefrontSession = async (input: {
 const getStorefrontSessionByHash = async (tokenHash: string) => {
   const { data, error } = await db
     .from('storefront_sessions')
-    .select('id,business_id,customer_id,contact_phone,device_hash,claimed_at,expires_at,revoked_at')
+    .select('id,business_id,customer_id,contact_phone,device_hash,claimed_at,expires_at,revoked_at,verified_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   fail(error, 'No se pudo leer la sesión')
@@ -214,8 +214,50 @@ const attachStorefrontPaymentProof = async (input: {
   p_url: input.url,
 })
 
+/**
+ * ¿Le toca a este cliente recibir el enlace de la mini app?
+ *
+ * La decisión y la marca van juntas dentro de PostgreSQL: si el cliente manda
+ * tres mensajes seguidos —pasa constantemente— solo uno se lleva el envío.
+ * Hacerlo en dos pasos desde aquí dejaría esa carrera abierta.
+ */
+const claimStorefrontLinkSend = async (
+  businessId: string,
+  customerId: string,
+  cooldownHours = 24,
+): Promise<boolean> => {
+  const { data, error } = await db.rpc('claim_storefront_link_send', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+    p_cooldown_hours: cooldownHours,
+  })
+  fail(error, 'No se pudo comprobar el envío del enlace')
+  return data === true
+}
+
+/**
+ * Ata la sesión a ESTE dispositivo tras confirmar el número.
+ *
+ * A diferencia de `claimStorefrontSession`, no exige que el dispositivo esté
+ * libre: es justo lo que permite que el cliente vuelva a entrar desde un móvil
+ * nuevo, o recupere su enlace si alguien lo abrió antes que él. Quien no sepa
+ * el número no llega hasta aquí.
+ */
+const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
+  const ahora = new Date().toISOString()
+  const { data, error } = await db
+    .from('storefront_sessions')
+    .update({ device_hash: deviceHash, claimed_at: ahora, verified_at: ahora })
+    .eq('id', sessionId)
+    .select('id')
+  fail(error, 'No se pudo confirmar la sesión')
+  return (data || []).length === 1
+}
+
 export = {
   resolveCustomer,
+  claimStorefrontLinkSend,
+  bindStorefrontSession,
   getBusinessCustomer,
   getCustomerAddresses,
   createCustomerAddress,
