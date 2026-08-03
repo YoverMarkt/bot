@@ -9,6 +9,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Ejecución a mano desde `gh workflow run CI --ref <rama>`. Existe para las
+  # auditorías: `verify:schema` necesita Docker y en la máquina del dueño no
+  # está, así que la única forma de correr el esquema contra PostgreSQL real es
+  # aquí. Sin esto había que abrir un PR de mentira para lanzar el CI.
+  workflow_dispatch:
 
 jobs:
   verificar:
