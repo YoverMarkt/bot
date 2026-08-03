@@ -387,8 +387,22 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     text: string
     session: ConversationSession | null
     send: (text: string) => Promise<unknown>
+    sendTyping?: () => Promise<unknown>
   }): Promise<void> {
     const { business, phone, text, session, send } = input
+
+    // El doble check azul. `sendTyping` no solo pinta «escribiendo…»: en
+    // WhatsApp marca el mensaje como LEÍDO, y ambas cosas van juntas en
+    // `integrations/whatsapp.ts`.
+    //
+    // Se quedó fuera al escribir este modo, y el efecto era visible desde el
+    // teléfono: el cliente escribía y su mensaje se quedaba en dos checks
+    // grises para siempre, como si nadie lo hubiera visto. En un negocio que
+    // atiende por la app eso es justo lo contrario de lo que se quiere
+    // transmitir. No cuesta ninguna llamada al modelo: es la API del canal.
+    if (input.sendTyping) {
+      try { await input.sendTyping() } catch { /* best-effort, como en el resto */ }
+    }
 
     // El mensaje del cliente se guarda igual: el dueño tiene que poder leer en
     // su panel qué le escribieron, aunque el bot no le haya contestado nada.
@@ -737,7 +751,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // en este modo no puede generar coste de OpenAI. Antes el enlace se
     // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
     if (business.chat_mode === 'miniapp') {
-      await runMiniappMode({ business, phone, text, session, send })
+      await runMiniappMode({ business, phone, text, session, send, sendTyping })
       return
     }
 
