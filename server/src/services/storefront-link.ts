@@ -7,14 +7,16 @@
 //     una URL acabaría inventando tokens y mandando a la gente a una pantalla
 //     de error. Aquí no hay margen: la URL se construye con el slug real y un
 //     token recién creado.
-//  2. **Cada enlace es nuevo.** El token solo se guarda hasheado, así que un
-//     enlace ya enviado no se puede reconstruir ni reenviar. Pedirlo otra vez
-//     genera otro, y el anterior sigue vivo hasta que caduque — no se revoca a
-//     propósito, para no romperle el pedido a quien lo tenga abierto.
+//  2. **Cada enlace es nuevo, y ninguno caduca.** El token solo se guarda
+//     hasheado, así que un enlace ya enviado no se puede reconstruir. Pedirlo
+//     otra vez genera otro y el anterior sigue vivo: no se revoca a propósito,
+//     para no romperle el pedido a quien lo tenga abierto. Lo que impide que
+//     un enlace reenviado sirva no es el reloj, es tener que confirmar el
+//     número de WhatsApp al que se emitió.
 //  3. **Con cooldown.** Sin él, cada "hola" crearía una sesión y llenaría la
 //     tabla; y el cliente vería el mismo enlace repetido, que parece un bot roto.
 
-import { createSessionToken, SESSION_HOURS } from './storefront-session'
+import { createSessionToken } from './storefront-session'
 
 export interface LinkBusiness {
   id: string
@@ -36,7 +38,8 @@ interface LinkDatabase {
     customerId: string
     tokenHash: string
     contactPhone: string
-    expiresAt: string
+    /** Nulo = el enlace no caduca. */
+    expiresAt: string | null
   }): Promise<unknown>
 }
 
@@ -87,7 +90,10 @@ export function storefrontInvite(business: LinkBusiness, url: string): string {
     : '🛍️ Mira la carta y pide aquí:'
   // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
   // dentro se lee como publicidad y el cliente lo pasa de largo.
-  return `${compra}\n${url}\n_Tu enlace personal · vence en ${SESSION_HOURS} h_`
+  // Ya no se anuncia caducidad porque no la hay. Sí se avisa de que es
+  // personal: es lo que evita que el cliente lo reenvíe pensando que hace un
+  // favor y acabe mandando a su amigo a una pantalla de "pide el tuyo".
+  return `${compra}\n${url}\n_Tu enlace personal · guárdalo, no vence_`
 }
 
 export function createStorefrontLinkService(dependencies: {
@@ -143,7 +149,8 @@ export function createStorefrontLinkService(dependencies: {
         customerId: customer.id,
         tokenHash,
         contactPhone: phone,
-        expiresAt: new Date(now() + SESSION_HOURS * 3600 * 1000).toISOString(),
+        // Sin caducidad: lo que protege el enlace es el teléfono, no el reloj.
+        expiresAt: null,
       })
       const url = buildStorefrontUrl({
         baseUrl: readBaseUrl(),

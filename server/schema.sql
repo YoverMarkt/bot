@@ -2995,7 +2995,11 @@ create table if not exists public.storefront_sessions (
   contact_phone text not null,
   device_hash   text,
   claimed_at    timestamptz,
-  expires_at    timestamptz not null,
+  -- Nulo = no caduca. Es el caso normal desde el 2026-08-02
+  -- (migration-2026-08-02-enlace-permanente.sql).
+  expires_at    timestamptz,
+  -- Cuándo se confirmó el número de WhatsApp desde este dispositivo.
+  verified_at   timestamptz,
   last_seen_at  timestamptz,
   revoked_at    timestamptz,
   created_at    timestamptz not null default now(),
@@ -3304,7 +3308,10 @@ declare
 begin
   with deleted as (
     delete from public.storefront_sessions as target
-    where target.expires_at < now() - make_interval(days => v_days)
+    -- `is not null` primero: comparar null con una fecha da null, no false,
+    -- y el borrado dejaría de funcionar del todo sin avisar.
+    where target.expires_at is not null
+      and target.expires_at < now() - make_interval(days => v_days)
     returning 1
   )
   select count(*)::integer into v_deleted from deleted;

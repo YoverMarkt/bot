@@ -3,13 +3,11 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const {
-  SESSION_HOURS,
   checkSession,
   createSessionToken,
   deviceFingerprint,
   hashToken,
   rejectionMessage,
-  sessionExpiry,
 } = require('../dist/services/storefront-session')
 
 const ahora = new Date('2026-08-01T12:00:00.000Z')
@@ -56,10 +54,20 @@ describe('sesiones de la mini app', () => {
       expect(hashToken(token)).toBe(tokenHash)
     })
 
-    it('caduca en 6 horas', () => {
-      expect(SESSION_HOURS).toBe(6)
-      const vence = sessionExpiry(ahora)
-      expect(vence.toISOString()).toBe(enHoras(6))
+    // Caducaba en 6 h hasta el 2026-08-02. Se quitó porque el cliente guardaba
+    // el enlace, volvía dos días después y se encontraba un error — y el
+    // negocio perdía el pedido. Lo que protege el enlace ahora es el teléfono,
+    // no el reloj (ver `enlace-permanente.test.js`).
+    it('ya no caduca: una sesión sin fecha sigue valiendo años después', () => {
+      const resultado = checkSession({
+        session: sesion({
+          device_hash: MOVIL_CLIENTE, claimed_at: ahora.toISOString(),
+          expires_at: null,
+        }),
+        deviceHash: MOVIL_CLIENTE,
+        now: new Date('2030-01-01T00:00:00.000Z'),
+      })
+      expect(resultado.ok).toBe(true)
     })
   })
 
@@ -78,10 +86,16 @@ describe('sesiones de la mini app', () => {
   })
 
   describe('quién puede comprar', () => {
-    it('la primera apertura reclama la sesión', () => {
+    // ESTE test decía lo contrario, y ahí estaba el agujero: la primera
+    // apertura se quedaba la sesión sin preguntar nada, así que quien reenviaba
+    // el enlace ANTES de abrirlo se lo regalaba al primero que hiciera clic.
+    // Ahora hay que confirmar el número de WhatsApp al que se emitió.
+    it('la primera apertura ya NO reclama: pide confirmar el número', () => {
       const resultado = checkSession({ session: sesion(), deviceHash: MOVIL_CLIENTE, now: ahora })
-      expect(resultado.ok).toBe(true)
-      expect(resultado.claims).toBe(true)
+      expect(resultado.ok).toBe(false)
+      expect(resultado.reason).toBe('necesita_telefono')
+      // La sesión se devuelve igual: la app la necesita para pedir el número.
+      expect(resultado.session).toBeTruthy()
     })
 
     it('el mismo dispositivo puede volver a entrar', () => {
@@ -95,14 +109,16 @@ describe('sesiones de la mini app', () => {
     })
 
     // El caso que pidió el usuario: el enlace reenviado NO compra.
-    it('otro dispositivo con el mismo enlace queda fuera', () => {
+    it('otro dispositivo con el mismo enlace no entra sin confirmar el número', () => {
       const resultado = checkSession({
         session: sesion({ device_hash: MOVIL_CLIENTE, claimed_at: ahora.toISOString() }),
         deviceHash: MOVIL_AMIGO,
         now: ahora,
       })
       expect(resultado.ok).toBe(false)
-      expect(resultado.reason).toBe('otro_dispositivo')
+      // Ya no es un portazo seco: el amigo pondrá su número y no coincidirá,
+      // pero el cliente que cambió de teléfono sí puede volver a entrar.
+      expect(resultado.reason).toBe('necesita_telefono')
     })
 
     it('rechaza un enlace vencido', () => {
@@ -145,8 +161,14 @@ describe('sesiones de la mini app', () => {
     })
 
     it('el token sí sirve en su propio negocio', () => {
+      // Con el dispositivo ya confirmado: lo que se comprueba aquí es que el
+      // negocio correcto NO rechaza, no el camino de la confirmación.
       const resultado = checkSession({
-        session: sesion({ business_id: 'biz-1' }),
+        session: sesion({
+          business_id: 'biz-1',
+          device_hash: MOVIL_CLIENTE,
+          claimed_at: ahora.toISOString(),
+        }),
         deviceHash: MOVIL_CLIENTE,
         expectedBusinessId: 'biz-1',
         now: ahora,

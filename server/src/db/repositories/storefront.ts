@@ -123,7 +123,7 @@ const createStorefrontSession = async (input: {
   customerId: string
   tokenHash: string
   contactPhone: string
-  expiresAt: string
+  expiresAt: string | null
 }) => {
   const { data, error } = await db
     .from('storefront_sessions')
@@ -144,7 +144,7 @@ const createStorefrontSession = async (input: {
 const getStorefrontSessionByHash = async (tokenHash: string) => {
   const { data, error } = await db
     .from('storefront_sessions')
-    .select('id,business_id,customer_id,contact_phone,device_hash,claimed_at,expires_at,revoked_at')
+    .select('id,business_id,customer_id,contact_phone,device_hash,claimed_at,expires_at,revoked_at,verified_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   fail(error, 'No se pudo leer la sesión')

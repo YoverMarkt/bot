@@ -148,8 +148,15 @@ describe('el enlace de la tienda', () => {
 
     // El cliente tiene que saber que caduca; si no, volverá con un enlace
     // muerto pensando que la tienda se rompió.
-    it('avisa de que el enlace caduca', () => {
-      expect(storefrontInvite(negocio(), 'https://x.com')).toMatch(/vence en \d+ h/)
+    // Antes decía "vence en 6 h". Ya no vence: lo que protege el enlace es
+    // tener que confirmar el número de WhatsApp, no el reloj. Sí se avisa de
+    // que es personal, que es lo que evita que el cliente lo reenvíe pensando
+    // que hace un favor y mande a su amigo a una pantalla de "pide el tuyo".
+    it('avisa de que el enlace es personal y no vence', () => {
+      const texto = storefrontInvite({ takes_orders: true }, 'https://x.com/s/tok')
+      expect(texto).toContain('personal')
+      expect(texto).toContain('no vence')
+      expect(texto).not.toMatch(/vence en \d+ ?h/)
     })
 
     // En un chat, un bloque de texto con un enlace dentro se lee como
