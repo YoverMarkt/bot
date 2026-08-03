@@ -37,6 +37,8 @@ export interface InboundWebhookPayload {
 }
 
 interface InboundBusiness {
+  /** 'miniapp' = no se procesa media: la respuesta es siempre el enlace. */
+  chat_mode?: string | null
   id: string
   meta_token?: string | null
   ycloud_api_key?: string | null
@@ -346,6 +348,27 @@ export function createInboundWebhookProcessor(
       await dependencies.bot.handleMessage(
         payload.from,
         payload.content.text,
+        businessIdentifier,
+        options,
+      )
+      return
+    }
+
+    // MODO MINI APP: ni se descarga la media, ni se transcribe, ni se mira.
+    //
+    // Este negocio atiende por su app, así que la respuesta va a ser la misma
+    // mandes lo que mandes: el enlace o el recordatorio. Bajar la foto y
+    // pasarla por visión —o el audio por Whisper— para luego no usar el
+    // resultado es pagar dos veces por nada: el tráfico y la llamada al
+    // modelo. Y son las dos llamadas más caras del sistema.
+    //
+    // El corte de `bot-conversation` llega DESPUÉS de esto, así que no basta
+    // con el que ya hay: aquí el gasto ya se habría hecho.
+    if (business.chat_mode === 'miniapp') {
+      logger.log(`🛍️  [${payload.provider}] media en modo mini app: no se procesa`)
+      await dependencies.bot.handleMessage(
+        payload.from,
+        payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]',
         businessIdentifier,
         options,
       )

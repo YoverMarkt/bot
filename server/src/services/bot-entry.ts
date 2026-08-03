@@ -354,12 +354,34 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     businessPhone?: string | null,
     options: BotEntryOptions = {},
   ): Promise<unknown> {
-    const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`
+    // MODO MINI APP: la visión no se llega a pedir.
+    //
+    // `identifyImage` es una llamada a OpenAI, y en este modo su resultado no
+    // se usa para nada: la respuesta va a ser el enlace o el recordatorio
+    // mandes lo que mandes. El corte de `bot-conversation` llega DESPUÉS, así
+    // que sin esto el gasto ya estaría hecho.
+    //
+    // Se resuelve el negocio antes de mirar la foto, y no al revés como
+    // estaba: preguntar a quién pertenece el mensaje cuesta una consulta;
+    // describir una imagen cuesta dinero.
+    const negocioDeLaFoto = options.channel === 'telegram'
+      ? await database.getBusinessBySlug(options.slug).catch(() => null)
+      : await resolveWhatsAppBusiness(options).catch(() => null)
+    const enMiniapp = negocioDeLaFoto?.chat_mode === 'miniapp'
+
     let identified = 'NO_IDENTIFICADO'
-    try {
-      identified = await ai.identifyImage(dataUrl)
-    } catch (error) {
-      logger.error('❌ visión:', error instanceof Error ? error.message : error)
+    if (enMiniapp) {
+      // Se salta la visión y ya está: el flujo sigue igual y `processMessage`
+      // corta más abajo mandando el enlace. Cambiar aquí el camino entero
+      // obligaría a duplicar los `send` de cada canal para no ganar nada.
+      logger.log('🛍️  foto en modo mini app: no se pasa por visión')
+    } else {
+      const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`
+      try {
+        identified = await ai.identifyImage(dataUrl)
+      } catch (error) {
+        logger.error('❌ visión:', error instanceof Error ? error.message : error)
+      }
     }
     const wasIdentified = !/NO_IDENTIFICADO/i.test(identified)
     logger.log(`🖼️  imagen procesada: ${wasIdentified ? 'identificada' : 'no identificada'}`)

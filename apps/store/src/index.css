@@ -38,18 +38,16 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --acento-suave: color-mix(in oklab, var(--acento) 18%, black);
-    --tinta: oklch(0.24 0 0);
-    --fondo: oklch(0.14 0 0);
-    --superficie: oklch(0.19 0 0);
-    --texto: oklch(0.97 0 0);
-    --tenue: oklch(0.68 0 0);
-    --linea: oklch(0.27 0 0);
-    color-scheme: dark;
-  }
-}
+/* ⚠️ SIN MODO OSCURO, y es una decisión, no un olvido.
+   La tienda tenía un `prefers-color-scheme: dark` que le daba la vuelta a
+   todo: el fondo pasaba de casi blanco a casi negro, las tarjetas de blancas
+   a gris oscuro, y —lo peor— la TINTA dejaba de ser negra (0.24 en vez de
+   #0B0B0C), así que la cabecera perdía justo el contraste que la define.
+   El resultado no se parecía en nada al diseño, y el dueño lo veía distinto
+   según cómo tuviera el teléfono.
+   Esta app es un escaparate: el negocio elige su color de acento y la comida
+   entra por los ojos sobre blanco. `color-scheme: light` fijo arriba le dice
+   al navegador que no invente los suyos en los controles. */
 
 /* Utilidades del par acento/tinta, para no repetir var() por toda la app. */
 @utility acento { background-color: var(--acento); color: var(--acento-texto); }

@@ -261,7 +261,7 @@ export default function StayStore({ slug, business, status, onVolver, onFalloEnl
                       {opcion.amenities.slice(0, 4).map(comodidad => (
                         <span
                           key={comodidad}
-                          className="rounded-full bg-black/5 px-2.5 py-1 text-[11.5px] font-medium dark:bg-white/10"
+                          className="rounded-full bg-black/5 px-2.5 py-1 text-[11.5px] font-medium"
                         >
                           {comodidad}
                         </span>

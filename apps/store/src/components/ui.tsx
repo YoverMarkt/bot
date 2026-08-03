@@ -60,7 +60,7 @@ export function Hoja({ abierta, onCerrar, children, titulo }: {
           <button
             onClick={onCerrar}
             aria-label="Cerrar"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5 dark:bg-white/10"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5"
           >
             <X size={18} />
           </button>
@@ -84,7 +84,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.max(minimo, valor - 1))}
         disabled={valor <= minimo}
         aria-label="Quitar uno"
-        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30 dark:active:bg-white/10"
+        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
       >
         −
       </button>
@@ -93,7 +93,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.min(maximo, valor + 1))}
         disabled={valor >= maximo}
         aria-label="Agregar uno"
-        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30 dark:active:bg-white/10"
+        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
       >
         +
       </button>
@@ -105,7 +105,7 @@ export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; c
   // El aviso informativo va sobre el acento del negocio, con su texto legible
   // calculado; el de alerta se queda ámbar siempre, porque «ojo» no es marca.
   const estilo = tono === 'alerta'
-    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+    ? 'bg-amber-500/15 text-amber-700'
     : 'acento'
   return (
     <div className={`rounded-2xl px-4 py-3 text-[13.5px] font-semibold ${estilo}`}>
@@ -118,7 +118,7 @@ export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; c
 export function Foto({ url, alto, nombre }: { url: string | null; alto: string; nombre: string }) {
   if (!url) {
     return (
-      <div className={`flex ${alto} items-center justify-center bg-black/5 dark:bg-white/5`}>
+      <div className={`flex ${alto} items-center justify-center bg-black/5`}>
         <span className="px-2 text-center text-[11px] font-semibold texto-tenue line-clamp-2">
           {nombre}
         </span>

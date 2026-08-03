@@ -36,7 +36,7 @@ export default function DesktopGate({ business }: { business: Business | null })
         y toca el enlace desde ahí.
       </p>
 
-      <div className="mt-6 rounded-xl bg-black/5 px-4 py-3.5 text-[13px] leading-relaxed texto-tenue dark:bg-white/5">
+      <div className="mt-6 rounded-xl bg-black/5 px-4 py-3.5 text-[13px] leading-relaxed texto-tenue">
         Tu enlace sigue intacto: abrirlo aquí no lo gastó.
       </div>
 

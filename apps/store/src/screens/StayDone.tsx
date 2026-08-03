@@ -37,7 +37,7 @@ export default function StayDone({ business, request }: {
   return (
     <div className="animar-entrada mx-auto min-h-full max-w-md px-5 py-10">
       <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-amber-500/12">
-        <Clock size={26} className="text-amber-600 dark:text-amber-400" />
+        <Clock size={26} className="text-amber-600" />
       </div>
 
       <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">

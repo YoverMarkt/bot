@@ -79,7 +79,7 @@ export default function Gate({ business, motivo }: {
             </div>
           )
         : (
-            <p className="mt-8 rounded-xl bg-black/5 px-4 py-3 text-[13px] texto-tenue dark:bg-white/5">
+            <p className="mt-8 rounded-xl bg-black/5 px-4 py-3 text-[13px] texto-tenue">
               Contacta al negocio para recibir tu enlace.
             </p>
           )}
