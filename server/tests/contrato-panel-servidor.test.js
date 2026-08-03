@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createRequire } from 'node:module'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import express from 'express'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTRATO ENTRE LOS PANELES Y EL SERVIDOR
@@ -25,8 +23,10 @@ import express from 'express'
 //
 // No es una lista mantenida a mano —eso sería otra sensación de cobertura—:
 // los dos lados se LEEN. Las llamadas salen de `api<Tipo>('/ruta')` en los
-// paneles; las rutas salen de montar los routers REALES en un Express REAL y
-// recorrer su stack.
+// paneles; las rutas, de lo que declaran los routers del servidor. Se comprobó
+// que esa lectura devuelve EXACTAMENTE lo mismo que montar los routers en un
+// Express real —125 rutas y 125, sin diferencias— antes de confiar en ella.
+// El porqué de no importarlos está más abajo, donde se leen.
 //
 // Lo que este test NO comprueba, a propósito: los campos de cada respuesta.
 // Casi todas las rutas devuelven lo que les da `db` tal cual, así que
@@ -35,43 +35,42 @@ import express from 'express'
 
 const serverDir = fileURLToPath(new URL('..', import.meta.url))
 const raiz = path.resolve(serverDir, '..')
-const require = createRequire(import.meta.url)
-
-// ── Lado servidor: los routers REALES sobre un Express REAL ────────────────
-//
-// Se montan igual que en `src/index.ts`: en la raíz, porque cada router
-// declara rutas absolutas. No se usa `index.ts` mismo porque abre el puerto y
-// se conecta a Supabase; aquí solo hace falta el árbol de rutas.
-const ROUTERS = [
-  'auth.routes', 'admin.routes', 'business.routes', 'sessions.routes',
-  'sales.routes', 'reports.routes', 'bookings.routes', 'products.routes',
-  'orders.routes', 'webhooks.routes', 'lodging.routes', 'menu-modifiers.routes',
-  'catalog-structure.routes', 'storefront.routes',
-]
-
-const app = express()
-for (const nombre of ROUTERS) {
-  app.use(require(path.join(serverDir, 'dist/routes', nombre)))
-}
 
 /** `:id`, `:slug`… se vuelven `:_`: lo que importa es la FORMA de la ruta. */
 const canonica = ruta => ruta.replace(/:[^/]+/g, ':_').replace(/\/+$/, '') || '/'
 
-/** Recorre el stack de Express y devuelve `METODO /ruta` de cada capa. */
-function rutasDelServidor(capas, prefijo = '') {
-  return capas.flatMap((capa) => {
-    if (capa.route) {
-      const ruta = canonica(prefijo + capa.route.path)
-      return Object.keys(capa.route.methods)
-        .filter(m => m !== '_all')
-        .map(m => `${m.toUpperCase()} ${ruta}`)
-    }
-    if (capa.handle?.stack) return rutasDelServidor(capa.handle.stack, prefijo)
-    return []
-  })
+// ── Lado servidor: las rutas que declaran los routers ──────────────────────
+//
+// Se LEEN de `src/routes/*.ts` en vez de importar los módulos compilados, y no
+// es por comodidad: cargar un router dentro de un test hunde la cobertura
+// medida. Comprobado aislando la causa —requerir solo `admin.routes` en un
+// archivo de prueba nuevo baja los statements del 70,11 % al 68,17 % sin que
+// nadie deje de probar nada— porque al fusionar los perfiles de v8 entre
+// workers, un módulo cargado en varios sitios no se une, se pisa.
+//
+// Leer el código fuente da la misma lista sin ese efecto. Funciona aquí
+// porque TODOS los routers declaran rutas absolutas y se montan en la raíz
+// (`app.use(ordersRouter)` en `src/index.ts`), así que no hay prefijos que
+// resolver en tiempo de ejecución. Si algún día se montara con prefijo, el
+// umbral mínimo de este test y su ruta conocida lo delatarían.
+const METODOS = 'get|post|put|patch|delete'
+
+const rutasDeArchivo = (contenido) => {
+  const patron = new RegExp(
+    String.raw`\brouter\.(${METODOS})\(\s*['"\`]([^'"\`]+)['"\`]`,
+    'g',
+  )
+  return [...contenido.matchAll(patron)]
+    .map(([, metodo, ruta]) => `${metodo.toUpperCase()} ${canonica(ruta)}`)
 }
 
-const DEL_SERVIDOR = new Set(rutasDelServidor(app._router?.stack || app.router.stack))
+const DEL_SERVIDOR = new Set(
+  readdirSync(path.join(serverDir, 'src/routes'))
+    .filter(nombre => nombre.endsWith('.routes.ts'))
+    .flatMap(nombre => rutasDeArchivo(
+      readFileSync(path.join(serverDir, 'src/routes', nombre), 'utf8'),
+    )),
+)
 
 // ── Lado panel: lo que los paneles llaman de verdad ────────────────────────
 
@@ -128,11 +127,17 @@ const LLAMADAS = ['apps/client/src', 'apps/admin/src'].flatMap((relativo) => {
 
 describe('contrato entre los paneles y el servidor', () => {
   it('encuentra rutas en el servidor y llamadas en los paneles (si no, no probaría nada)', () => {
-    // Si un día los routers dejan de montarse o el patrón deja de casar, este
-    // test se quedaría en verde comparando dos listas vacías.
-    expect(DEL_SERVIDOR.size).toBeGreaterThan(60)
+    // Sin esto el test podría quedarse verde para siempre comparando dos
+    // listas vacías, que es la forma más silenciosa de dejar de proteger.
+    //
+    // El 100 sale de las 125 rutas medidas el 2026-08-02, cuando se comprobó
+    // que este parseo devuelve EXACTAMENTE las mismas que montar los routers
+    // en un Express real: 125 y 125, sin diferencias en ninguno de los dos
+    // sentidos. El margen deja sitio a retirar alguna sin tocar el test.
+    expect(DEL_SERVIDOR.size).toBeGreaterThan(100)
     expect(LLAMADAS.length).toBeGreaterThan(50)
     expect([...DEL_SERVIDOR]).toContain('GET /api/client/orders')
+    expect([...DEL_SERVIDOR]).toContain('PUT /api/client/orders/:_/status')
   })
 
   it('toda ruta que un panel llama existe en el servidor', () => {
