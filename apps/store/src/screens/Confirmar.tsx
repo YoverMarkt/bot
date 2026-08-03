@@ -90,7 +90,7 @@ export default function Confirmar({ business, onConfirmar }: {
         />
 
         {error && (
-          <p className="mt-3 text-[14px] font-medium text-amber-700 dark:text-amber-400">
+          <p className="mt-3 text-[14px] font-medium text-amber-700">
             {error}
           </p>
         )}

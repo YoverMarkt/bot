@@ -234,7 +234,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
                       {money(producto.priceFrom)}
                     </span>
                     {!producto.available && (
-                      <span className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-bold texto-tenue dark:bg-white/10">
+                      <span className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-bold texto-tenue">
                         Agotado
                       </span>
                     )}

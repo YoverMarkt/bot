@@ -83,7 +83,7 @@ export default function OrderDone({ slug, business, order, resumen, paymentMetho
   return (
     <div className="animar-entrada mx-auto min-h-full max-w-md px-5 py-10">
       <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-emerald-500/12">
-        <CheckCircle2 size={26} className="text-emerald-600 dark:text-emerald-400" />
+        <CheckCircle2 size={26} className="text-emerald-600" />
       </div>
 
       <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">

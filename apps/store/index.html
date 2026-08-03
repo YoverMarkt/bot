@@ -4,15 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#292929" media="(prefers-color-scheme: dark)" />
+    <!-- Un solo tema: la tienda es clara siempre (ver index.css). -->
+    <meta name="theme-color" content="#0B0B0C" />
     <title>Tienda</title>
     <style>
       /* Esqueleto de arranque: se abre con datos móviles, así que la pantalla
          no puede quedarse en blanco mientras baja el JavaScript. React lo
          reemplaza al montar. */
       :root { --f:#fafafa; --s:#ffffff; --h:#e8e8e8; }
-      @media (prefers-color-scheme: dark) { :root { --f:#282828; --s:#353535; --h:#404040; } }
       html, body { margin:0; background:var(--f); }
       /* Mismo respeto por la barra de estado que la cabecera de React: este
          esqueleto es lo PRIMERO que se ve, y si arranca bajo el notch la app
