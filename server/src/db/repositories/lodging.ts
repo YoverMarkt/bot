@@ -260,7 +260,10 @@ const setLodgingRequestStatus = async (
   businessId: string,
   requestId: string,
   status: string,
-) => db.rpc('set_lodging_request_status', {
+// La v2 envuelve a la original: confirma igual y, si queda confirmada,
+// registra la venta en la MISMA transacción. Se envolvió en vez de reescribir
+// para no tocar ni una línea del anti-sobreventa.
+) => db.rpc('set_lodging_request_status_v2', {
   p_business_id: businessId,
   p_request_id: requestId,
   p_status: status,
