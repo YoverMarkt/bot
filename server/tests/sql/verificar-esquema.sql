@@ -184,6 +184,45 @@ begin
     raise exception 'create_order_with_items calculó un total incorrecto';
   end if;
 
+  -- ── El payload EXACTO del pedido de mostrador ────────────────────────────
+  --
+  -- El panel manda solo ids y cantidades a propósito («el precio NO viaja»),
+  -- y eso hacía saltar el control de precio: `null is distinct from 10.50` es
+  -- cierto, así que el mostrador fallaba SIEMPRE con 40001. Un camino del
+  -- dinero entero que nunca funcionó desde que se publicó, y que ninguna
+  -- prueba veía porque todas mandaban `unit_price`.
+  --
+  -- Por eso este bloque manda lo que manda la ruta, no lo que es cómodo.
+  declare
+    v_sin_precio jsonb;
+  begin
+    v_sin_precio := public.create_order_with_items(
+      v_business, 'mostrador', 'Cliente en local', 'completado', 0, 'USD',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto, 'quantity', 3
+      )),
+      'manual'
+    );
+    if (v_sin_precio ->> 'total')::numeric <> 31.50 then
+      raise exception 'sin unit_price el total salió %, esperaba 31.50',
+        v_sin_precio ->> 'total';
+    end if;
+
+    -- Y mandar un precio EQUIVOCADO se sigue rechazando: lo que se relaja es
+    -- la ausencia, no el control.
+    begin
+      perform public.create_order_with_items(
+        v_business, '+593900000002', 'Listillo', 'pendiente', 0, 'USD',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_producto, 'quantity', 1, 'unit_price', 0.01
+        ))
+      );
+      raise exception 'create_order_with_items aceptó un precio falso';
+    exception when sqlstate '40001' then
+      null;  -- rechazado como debe
+    end;
+  end;
+
   -- Cambiar el estado de un pedido: lo pulsa el dueño en su panel cada día.
   declare
     v_pedido uuid;

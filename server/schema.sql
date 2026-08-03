@@ -1317,7 +1317,18 @@ begin
     if not (v_unit_price > 0) then
       raise exception using errcode = '22023', message = 'El producto no tiene un precio válido';
     end if;
-    if v_requested_price is distinct from v_unit_price then
+    -- El precio que manda quien llama es una OPINIÓN que hay que confirmar,
+    -- no un dato que se acepte: si no coincide con el catálogo, el pedido se
+    -- rehace. Así el bot no puede cobrar un precio que ya cambió mientras el
+    -- cliente decidía.
+    --
+    -- Pero ausente NO es lo mismo que distinto: significa «no tengo opinión,
+    -- usa tu catálogo». Sin esta distinción, `null is distinct from 2.75` daba
+    -- cierto y el pedido de MOSTRADOR —que a propósito manda solo ids y
+    -- cantidades— fallaba SIEMPRE con 40001. Nunca funcionó desde que se
+    -- publicó (2026-08-02), y ninguna prueba lo veía porque todas mandaban
+    -- precio. El precio sigue saliendo solo del catálogo en los dos casos.
+    if v_requested_price is not null and v_requested_price is distinct from v_unit_price then
       raise exception using errcode = '40001', message = 'El precio cambió; vuelve a calcular el pedido';
     end if;
     v_line_total := round(v_quantity * v_unit_price, 2);
