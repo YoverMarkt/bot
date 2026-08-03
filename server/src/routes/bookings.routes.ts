@@ -72,7 +72,18 @@ router.get('/api/client/schedule', auth.authClient, canManageBookings, async (re
 })
 
 router.put('/api/client/schedule', auth.authClient, canManageBookings, async (req, res) => {
-  const { error } = await db.upsertSchedule(getClientBusinessId(req), req.body.days)
+  // `req.body.days` llegaba directo a `upsertSchedule`, que hace `.map()` sobre
+  // él. Un cuerpo sin `days` reventaba con «Cannot read properties of undefined»
+  // y devolvía 500: un fallo del cliente contado como fallo del servidor, que
+  // además ensucia el registro de errores y tapa los de verdad.
+  const { days } = (req.body ?? {}) as { days?: unknown }
+  if (!Array.isArray(days) || days.length === 0) {
+    return res.status(400).json({ error: 'Falta el horario' })
+  }
+  if (days.length > 7 || days.some(dia => !dia || typeof dia !== 'object')) {
+    return res.status(400).json({ error: 'El horario no es válido' })
+  }
+  const { error } = await db.upsertSchedule(getClientBusinessId(req), days as never)
   if (error) {
     console.error('❌ actualizar horarios:', error.message || 'Error desconocido')
     return res.status(500).json({ error: 'No se pudieron actualizar los horarios' })
