@@ -238,10 +238,21 @@ begin
     v_negocio_venta uuid;
   begin
     -- Pedido entregado → venta → borrar el pedido.
+    --
+    -- ⚠️ El estado NO es decorativo: `crear_venta_desde_pedido` solo cobra lo
+    -- que está 'completado', y su hermana solo lo 'attended'. Con otro estado
+    -- devuelven null, no habría venta que borrar, y esta comprobación pasaría
+    -- sin comprobar nada. Por eso abajo se exige que la venta exista ANTES de
+    -- borrar: si un día cambia la guardia de estado, salta aquí y se ve el
+    -- porqué, en vez de fallar más adelante con un `business_id` nulo que no
+    -- explica nada.
     insert into orders (business_id, contact_phone, status, total)
     values (v_b, '+593900007777', 'completado', 40.00)
     returning id into v_pedido_venta;
     v_venta := public.crear_venta_desde_pedido(v_b, v_pedido_venta);
+    if v_venta is null then
+      raise exception 'El pedido completado no generó venta: no hay nada que borrar';
+    end if;
 
     delete from orders where id = v_pedido_venta;
 
@@ -251,13 +262,17 @@ begin
         'Borrar el pedido dejó la venta sin negocio (business_id = %)', v_negocio_venta;
     end if;
 
-    -- Cita atendida → venta → borrar la cita.
+    -- Cita ATENDIDA → venta → borrar la cita. 'attended', no 'confirmed':
+    -- una cita confirmada todavía no es dinero.
     insert into bookings (
       business_id, contact_phone, service, price, booking_date, booking_time, status
     ) values (
-      v_b, '+593900007777', 'Servicio', 15.00, current_date + 2, '09:00', 'confirmed'
+      v_b, '+593900007777', 'Servicio', 15.00, current_date + 2, '09:00', 'attended'
     ) returning id into v_cita_venta;
     v_venta := public.crear_venta_desde_cita(v_b, v_cita_venta);
+    if v_venta is null then
+      raise exception 'La cita atendida no generó venta: no hay nada que borrar';
+    end if;
 
     delete from bookings where id = v_cita_venta;
 
