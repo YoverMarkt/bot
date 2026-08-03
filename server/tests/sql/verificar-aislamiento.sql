@@ -219,7 +219,61 @@ begin
     raise exception 'Las variantes sobrevivieron al producto que las contenía';
   end if;
 
-  -- ── 7. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
+  -- ── 7. BORRAR EL ORIGEN DE UNA VENTA NO PUEDE REVENTAR ───────────────────
+  --
+  -- Las tres foráneas de `sales` hacia pedido, cita y estadía son compuestas
+  -- sobre (id, business_id) para que nadie se cobre lo del vecino. Pero una
+  -- foránea compuesta CORRECTA puede tener una acción de borrado ROTA: con
+  -- `on delete set null` a secas PostgreSQL anula todas las columnas de la
+  -- pareja, incluida `business_id`, que es NOT NULL. Así estuvieron las tres
+  -- hasta el 2026-08-02, y borrar un pedido entregado fallaba con 23502.
+  --
+  -- `verificar-fronteras.sql` no lo veía: mira la FORMA de la foránea, y la
+  -- forma era correcta. Por eso aquí se BORRA de verdad.
+  declare
+    v_pedido_venta uuid;
+    v_cita_venta uuid;
+    v_estadia uuid;
+    v_venta uuid;
+    v_negocio_venta uuid;
+  begin
+    -- Pedido entregado → venta → borrar el pedido.
+    insert into orders (business_id, contact_phone, status, total)
+    values (v_b, '+593900007777', 'completado', 40.00)
+    returning id into v_pedido_venta;
+    v_venta := public.crear_venta_desde_pedido(v_b, v_pedido_venta);
+
+    delete from orders where id = v_pedido_venta;
+
+    select business_id into v_negocio_venta from sales where id = v_venta;
+    if v_negocio_venta is distinct from v_b then
+      raise exception
+        'Borrar el pedido dejó la venta sin negocio (business_id = %)', v_negocio_venta;
+    end if;
+
+    -- Cita atendida → venta → borrar la cita.
+    insert into bookings (
+      business_id, contact_phone, service, price, booking_date, booking_time, status
+    ) values (
+      v_b, '+593900007777', 'Servicio', 15.00, current_date + 2, '09:00', 'confirmed'
+    ) returning id into v_cita_venta;
+    v_venta := public.crear_venta_desde_cita(v_b, v_cita_venta);
+
+    delete from bookings where id = v_cita_venta;
+
+    select business_id into v_negocio_venta from sales where id = v_venta;
+    if v_negocio_venta is distinct from v_b then
+      raise exception
+        'Borrar la cita dejó la venta sin negocio (business_id = %)', v_negocio_venta;
+    end if;
+
+    -- La estadía se comprueba en `verificar-esquema.sql`, sobre el escenario
+    -- real de hospedaje que ya existe allí: `lodging_requests` exige una
+    -- cotización y un tipo de habitación de verdad, y montarlos aquí sería
+    -- duplicar ese escenario entero para probar exactamente lo mismo.
+  end;
+
+  -- ── 8. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
   select count(*) into v_pedidos_b from orders where business_id = v_b;
   delete from businesses where id = v_a;
 
@@ -244,7 +298,7 @@ begin
     raise exception 'FUGA GRAVE: borrar el negocio A eliminó la reserva de B';
   end if;
 
-  -- ── 8. RLS activa en todas las tablas de negocio ─────────────────────────
+  -- ── 9. RLS activa en todas las tablas de negocio ─────────────────────────
   select bool_and(c.relrowsecurity) into v_ok
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace

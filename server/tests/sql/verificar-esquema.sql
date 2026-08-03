@@ -657,6 +657,34 @@ begin
       if v_estado ->> 'result' is distinct from 'released' then
         raise exception 'release_lodging_block no liberó el bloqueo: %', v_estado;
       end if;
+
+      -- ── Borrar la estadía no puede reventar por su propia venta ─────────
+      -- Va al final a propósito: se lleva por delante la solicitud, así que
+      -- nada de lo anterior podría seguir usándola.
+      --
+      -- La foránea de `sales` hacia `lodging_requests` es compuesta sobre
+      -- (id, business_id) para que nadie se cobre lo del vecino. Pero con
+      -- `on delete set null` a secas PostgreSQL anulaba TAMBIÉN `business_id`,
+      -- que es NOT NULL, y el borrado moría con 23502 (2026-08-02).
+      -- `verificar-fronteras.sql` no lo veía: vigila la FORMA de la foránea,
+      -- y la forma era correcta; lo roto era la ACCIÓN de borrado.
+      declare
+        v_venta_estadia uuid;
+        v_negocio_venta uuid;
+      begin
+        select id into v_venta_estadia
+        from sales where lodging_request_id = v_request;
+
+        delete from lodging_requests where id = v_request;
+
+        select business_id into v_negocio_venta
+        from sales where id = v_venta_estadia;
+        if v_negocio_venta is distinct from v_business then
+          raise exception
+            'Borrar la estadía dejó su venta sin negocio (business_id = %)',
+            v_negocio_venta;
+        end if;
+      end;
     end;
   end;
 
