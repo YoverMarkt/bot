@@ -606,9 +606,37 @@ begin
         raise exception 'La solicitud no nació pendiente del dueño';
       end if;
 
-      v_estado := public.set_lodging_request_status(v_business, v_request, 'confirmed');
+      -- Pendiente NO es dinero: mientras no se confirme, no hay venta.
+      if public.crear_venta_desde_estadia(v_business, v_request) is not null then
+        raise exception 'una solicitud pendiente generó venta';
+      end if;
+
+      -- La v2 es la que llama el servidor: confirma y registra la venta en la
+      -- misma transacción, sin tocar el anti-sobreventa de la original.
+      v_estado := public.set_lodging_request_status_v2(v_business, v_request, 'confirmed');
       if (select status from lodging_requests where id = v_request) <> 'confirmed' then
-        raise exception 'set_lodging_request_status no confirmó la solicitud: %', v_estado;
+        raise exception 'set_lodging_request_status_v2 no confirmó la solicitud: %', v_estado;
+      end if;
+
+      -- CONFIRMADA = VENDIDA. Sin esto, el ingreso de un hostal vivía en un
+      -- reporte aparte y no se juntaba nunca con sus ventas.
+      if not exists (select 1 from sales where lodging_request_id = v_request) then
+        raise exception 'una estadía confirmada no generó su venta';
+      end if;
+      if (select s.total from sales s where s.lodging_request_id = v_request)
+         <> (select r.total from lodging_requests r where r.id = v_request) then
+        raise exception 'la venta de la estadía no heredó su total';
+      end if;
+
+      -- Reintentar no duplica el dinero.
+      perform public.crear_venta_desde_estadia(v_business, v_request);
+      if (select count(*) from sales where lodging_request_id = v_request) <> 1 then
+        raise exception 'confirmar dos veces duplicó la venta de la estadía';
+      end if;
+
+      -- Otro negocio no puede cobrarse una estadía ajena.
+      if public.crear_venta_desde_estadia(gen_random_uuid(), v_request) is not null then
+        raise exception 'FUGA: otro negocio se cobró una estadía ajena';
       end if;
 
       -- Un negocio no puede tocar la solicitud de otro.

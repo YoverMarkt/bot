@@ -133,7 +133,7 @@ Verificado ejecutando la migración contra un PostgreSQL real: el envío no se m
 
 **El agujero que cerró (2026-08-02):** TODOS los reportes del dueño —ventas, dashboard, directorio de clientes, productos más vendidos, clientes perdidos— leen la tabla `sales`, y `sales` solo se llenaba con el botón «Registrar venta» del panel. Un pedido de la tienda o del bot se entregaba y **no aparecía en ningún número**. El negocio vendía y sus reportes decían que no. Con hospedaje pasaba algo parecido: su ingreso se calcula aparte, en `computeLodgingIncome`.
 
-**El estándar que se establece:** cada tipo de negocio tiene su bandeja donde atiende —Pedidos hoy; Citas y Hospedaje después— y **todas desembocan en `sales`**. Así los reportes tienen una sola fuente de verdad y no hay que volver a tocarlos cuando se añada un flujo nuevo. Es la decisión que permite vender el producto a una pizzería, una barbería o un hostal sin rehacer los números cada vez.
+**El estándar que se establece:** cada tipo de negocio tiene su bandeja donde atiende —Pedidos, Citas, Hospedaje— y **todas desembocan en `sales`**. Así los reportes tienen una sola fuente de verdad y no hay que volver a tocarlos cuando se añada un flujo nuevo. Es la decisión que permite vender el producto a una pizzería, una barbería o un hostal sin rehacer los números cada vez.
 
 Cómo está hecho, y por qué así:
 
@@ -184,3 +184,25 @@ Desde ahora cada negocio atiende de **una** forma, y el enlace **pertenece a un 
 **El modo se propone según el tipo al dar de alta y se puede cambiar siempre.** Con tienda (restaurante, tienda, hotel) → `miniapp`; barbería o consultorio → `menu`, que es más barato y predecible que la IA para elegir de una lista corta; catálogos enormes y consultoría → `ai`. ⚠️ Como el resto de recomendaciones por tipo, **solo PROPONE al crear**: el `chat_mode` persistido manda siempre y jamás se sobrescribe a un negocio existente. Una pizzería que quiera «solo chat» se queda en `ai` o en `menu` aunque tenga tienda.
 
 La migración pasa a `miniapp` los negocios que ya tenían tienda encendida: son exactamente los que estaban recibiendo menú y enlace a la vez.
+
+---
+
+## El cuarto camino: hospedaje
+
+**Completado el estándar (2026-08-02).** El ingreso por hospedaje se calculaba **aparte**, en `reports.computeLodgingIncome`, sumando estadías confirmadas. Funcionaba, pero dejaba al dueño de un hostal con **dos números que no se juntaban**: sus ventas por un lado y sus estadías por otro. Ahora los cuatro caminos terminan en el mismo sitio:
+
+```
+Pedido entregado    → venta
+Pedido de mostrador → venta
+Cita atendida       → venta
+Estadía confirmada  → venta
+```
+
+- **Cuenta al CONFIRMAR**, no al terminar la estadía. Confirmar es cuando el hostal se compromete y retiene el cupo, y es exactamente lo que ya contaba el reporte de ingresos: cambiarlo a la salida movería los números históricos del negocio sin que nadie lo hubiera pedido.
+- **La conversión se ENVOLVIÓ, no se reescribió.** `set_lodging_request_status_v2` llama a la original y, si quedó confirmada, registra la venta. Así no se toca ni una línea del anti-sobreventa, que es lo delicado de este módulo (locks, trigger de capacidad, holds con vencimiento).
+- **El ítem de la venta no lleva `product_id`**: una habitación vive en el inventario de hospedaje, no en el catálogo de productos. Inventarle uno ensuciaría «lo más vendido» con algo que no es un producto. El nombre describe la estadía como la leería el dueño meses después: «Estadía 3 noches (2026-08-10 → 2026-08-13)».
+- **La migración recupera el pasado**: las estadías ya confirmadas generan su venta al aplicarse, para que un hostal en marcha no vea sus ingresos empezar de cero.
+
+### Un agujero que destapó
+
+Al añadir la v2, el guardián de cobertura de RPCs **no la exigía probada**: su extractor buscaba `[a-z_]` y el nombre lleva un dígito. **Cualquier función con número en el nombre se le escapaba.** Corregido a `[a-z0-9_]`, y con eso el guardián reclamó de inmediato que la v2 se ejecutara contra PostgreSQL real, que es justo su trabajo.
