@@ -6283,6 +6283,63 @@ revoke all on function public.set_lodging_request_status_v2(uuid, uuid, text)
   from public, anon, authenticated;
 grant execute on function public.set_lodging_request_status_v2(uuid, uuid, text) to service_role;
 
+-- ── FRONTERAS DE LAS VENTAS ────────────────────────────────
+-- Las claves foráneas de `sales` hacia pedidos, citas y estadías son
+-- COMPUESTAS sobre (id, business_id): una simple solo comprueba que la fila
+-- exista, no de quién es, y dejaba que una venta apuntara a algo de otro
+-- negocio (migration-2026-08-02-fronteras-de-las-ventas.sql).
+-- ── 1. Los destinos necesitan su índice único (id, business_id) ───────────
+create unique index if not exists uq_orders_id_business
+  on public.orders (id, business_id);
+create unique index if not exists uq_bookings_id_business
+  on public.bookings (id, business_id);
+create unique index if not exists uq_lodging_requests_id_business
+  on public.lodging_requests (id, business_id);
+
+-- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
+do $$
+begin
+  -- La foránea simple se retira: dejarla viva permitiría el cruce igual.
+  alter table public.sales drop constraint if exists sales_order_id_fkey;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.sales'::regclass and conname = 'fk_sales_pedido_del_negocio'
+  ) then
+    alter table public.sales
+      add constraint fk_sales_pedido_del_negocio
+      foreign key (order_id, business_id)
+      references public.orders (id, business_id) on delete set null;
+  end if;
+
+  alter table public.sales drop constraint if exists sales_booking_id_fkey;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.sales'::regclass and conname = 'fk_sales_cita_del_negocio'
+  ) then
+    alter table public.sales
+      add constraint fk_sales_cita_del_negocio
+      foreign key (booking_id, business_id)
+      references public.bookings (id, business_id) on delete set null;
+  end if;
+
+  alter table public.sales drop constraint if exists sales_lodging_request_id_fkey;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.sales'::regclass and conname = 'fk_sales_estadia_del_negocio'
+  ) then
+    alter table public.sales
+      add constraint fk_sales_estadia_del_negocio
+      foreign key (lodging_request_id, business_id)
+      references public.lodging_requests (id, business_id) on delete set null;
+  end if;
+end;
+$$;
+
+-- ── 3. La cita ya tenía su foránea compuesta, pero la simple seguía viva ──
+-- `add column ... references products(id)` la creó sola, y mientras exista el
+-- cruce sigue siendo posible por ella.
+alter table public.bookings drop constraint if exists bookings_product_id_fkey;
+
 -- ── RED DE SEGURIDAD: RLS AUTOMÁTICA EN TABLAS NUEVAS ──────
 -- Existía en la base de producción pero NO en este archivo, así que una
 -- instalación nueva nacía sin ella: es justo el tipo de deriva que el
