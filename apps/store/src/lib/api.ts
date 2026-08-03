@@ -51,7 +51,13 @@ const request = async <T>(
   if (!response.ok) {
     // Un 401 quiere decir que el token guardado ya no vale para nada. Se borra
     // para que un reintento no lo vuelva a mandar.
-    if (response.status === 401) clearToken()
+    //
+    // Salvo 'necesita_telefono': ahí el token está PERFECTO, solo falta que
+    // esta persona demuestre que el número es suyo. Borrarlo dejaba al cliente
+    // legítimo sin enlace justo cuando iba a confirmarlo — entraba el número
+    // correcto y aun así acababa en «Necesitas tu propio enlace».
+    const soloFaltaElNumero = payload.reason === 'necesita_telefono'
+    if (response.status === 401 && !soloFaltaElNumero) clearToken()
     throw new ApiError(
       response.status,
       String(payload.error || 'No pudimos completar la operación'),
@@ -138,3 +144,39 @@ export const quoteStay = (slug: string, input: {
 export const requestStay = (slug: string, input: {
   roomTypeId: string; name: string; notes?: string
 }) => request<StayRequest>(`/${slug}/stay/request`, { method: 'POST', body: input })
+
+/**
+ * Confirma el número de WhatsApp y ata la sesión a ESTE teléfono.
+ *
+ * Devuelve null si entró, o el texto a mostrar si no. No lanza: un número que
+ * no coincide es lo esperado aquí —le pasa a todo el que reciba el enlace de
+ * otra persona— y tratarlo como una excepción llenaría el registro de errores
+ * de ruido.
+ */
+export async function confirmarTelefono(
+  slug: string,
+  telefono: string,
+): Promise<string | null> {
+  try {
+    const respuesta = await fetch(`/api/store/${encodeURIComponent(slug)}/session/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-storefront-token': readToken(),
+        'x-storefront-device': deviceId(),
+      },
+      body: JSON.stringify({ phone: telefono }),
+    })
+    if (respuesta.ok) return null
+    const cuerpo = await respuesta.json().catch(() => ({}))
+    if (respuesta.status === 429) {
+      return 'Demasiados intentos. Espera un minuto y vuelve a probar.'
+    }
+    return String(
+      (cuerpo as { error?: unknown }).error
+      || 'Ese número no coincide con este enlace.',
+    )
+  } catch {
+    return 'No pudimos comprobarlo. Revisa tu conexión e inténtalo otra vez.'
+  }
+}

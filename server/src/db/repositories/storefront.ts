@@ -235,9 +235,29 @@ const claimStorefrontLinkSend = async (
   return data === true
 }
 
+/**
+ * Ata la sesión a ESTE dispositivo tras confirmar el número.
+ *
+ * A diferencia de `claimStorefrontSession`, no exige que el dispositivo esté
+ * libre: es justo lo que permite que el cliente vuelva a entrar desde un móvil
+ * nuevo, o recupere su enlace si alguien lo abrió antes que él. Quien no sepa
+ * el número no llega hasta aquí.
+ */
+const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
+  const ahora = new Date().toISOString()
+  const { data, error } = await db
+    .from('storefront_sessions')
+    .update({ device_hash: deviceHash, claimed_at: ahora, verified_at: ahora })
+    .eq('id', sessionId)
+    .select('id')
+  fail(error, 'No se pudo confirmar la sesión')
+  return (data || []).length === 1
+}
+
 export = {
   resolveCustomer,
   claimStorefrontLinkSend,
+  bindStorefrontSession,
   getBusinessCustomer,
   getCustomerAddresses,
   createCustomerAddress,

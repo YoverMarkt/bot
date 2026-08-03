@@ -58,6 +58,18 @@ let memoriaDevice = ''
 /**
  * Toma el token del enlace, lo guarda y limpia la URL.
  * Si se vuelve a abrir la app sin `?s=`, sirve el que ya estaba guardado.
+ *
+ * ⚠️ `localStorage`, no `sessionStorage`. Estuvo en sessionStorage hasta el
+ * 2026-08-02 y ese era el límite REAL del enlace, no las 6 horas que decía el
+ * mensaje: sessionStorage se vacía al cerrar la pestaña, y el webview de
+ * WhatsApp se cierra cada vez que el cliente vuelve al chat. Volver al día
+ * siguiente —o al minuto siguiente, tras mirar el chat— mostraba «Necesitas tu
+ * propio enlace» aunque el enlace estuviera perfectamente vivo en el servidor.
+ *
+ * El token se sigue quitando de la barra de direcciones: una captura de
+ * pantalla compartida en un grupo no puede regalar la sesión. Y como ahora se
+ * guarda de verdad, quitarlo de la URL ya no cuesta nada — el enlace en
+ * favoritos funciona igual porque el token vive en el teléfono.
  */
 export function readToken(): string {
   let token = ''
@@ -70,7 +82,10 @@ export function readToken(): string {
 
   if (token) {
     try {
-      sessionStorage.setItem(TOKEN_KEY, token)
+      localStorage.setItem(TOKEN_KEY, token)
+      // Restos de la época de sessionStorage: si no se limpia, un token viejo
+      // de esa sesión podría ganarle al nuevo al leer.
+      sessionStorage.removeItem(TOKEN_KEY)
     } catch { /* sin almacenamiento: se usa el de memoria */ }
     // Fuera de la barra de direcciones: ya está guardado.
     try {
@@ -80,7 +95,11 @@ export function readToken(): string {
   }
 
   try {
-    return sessionStorage.getItem(TOKEN_KEY) || ''
+    // Se mira también el almacén viejo para no echar a la calle a quien tenga
+    // la app abierta justo durante el despliegue.
+    return localStorage.getItem(TOKEN_KEY)
+      || sessionStorage.getItem(TOKEN_KEY)
+      || ''
   } catch {
     return ''
   }
@@ -89,6 +108,7 @@ export function readToken(): string {
 /** Se llama cuando el servidor rechaza la sesión: guardarla ya no sirve. */
 export function clearToken(): void {
   try {
+    localStorage.removeItem(TOKEN_KEY)
     sessionStorage.removeItem(TOKEN_KEY)
   } catch { /* nada que limpiar */ }
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError, getStore, isLinkProblem } from './lib/api'
+import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
 import { readSlug, readToken } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
+import Confirmar from './screens/Confirmar'
 import Gate from './screens/Gate'
 import DesktopGate from './screens/DesktopGate'
 import FoodStore from './screens/FoodStore'
@@ -22,6 +23,8 @@ type Estado =
   | { fase: 'no_disponible' }
   | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
+  // Falta confirmar el número de WhatsApp: no es un error, es la puerta.
+  | { fase: 'confirmar'; business: Business | null }
   | { fase: 'lista'; business: Business; status: StoreStatus }
 
 export default function App() {
@@ -73,6 +76,12 @@ export default function App() {
     try {
       business = (await getStore(slug)).business
     } catch { business = null }
+    // 'necesita_telefono' no es un portazo: es que aún no ha demostrado quién
+    // es. Se le pide el número en vez de mandarlo a pedir otro enlace.
+    if (motivo === 'necesita_telefono') {
+      setEstado({ fase: 'confirmar', business })
+      return true
+    }
     setEstado({ fase: 'bloqueada', business, motivo })
     return true
   }, [slug])
@@ -96,6 +105,21 @@ export default function App() {
 
   if (estado.fase === 'bloqueada') {
     return <Gate business={estado.business} motivo={estado.motivo} />
+  }
+
+  if (estado.fase === 'confirmar') {
+    return (
+      <Confirmar
+        business={estado.business}
+        onConfirmar={async (telefono) => {
+          const fallo = await confirmarTelefono(slug, telefono)
+          // Al entrar se recarga la tienda: la sesión ya está atada a este
+          // teléfono y el catálogo puede pedirse con normalidad.
+          if (!fallo) await cargar()
+          return fallo
+        }}
+      />
+    )
   }
 
   const { business, status } = estado
