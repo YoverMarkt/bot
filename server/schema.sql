@@ -6297,6 +6297,32 @@ create unique index if not exists uq_lodging_requests_id_business
   on public.lodging_requests (id, business_id);
 
 -- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
+--
+-- Las tres nacieron con `on delete set null` a secas y eso anulaba también
+-- `business_id`, que es NOT NULL: borrar un pedido entregado o una cita
+-- atendida reventaba con 23502. En una base que ya las tiene mal, el
+-- `if not exists` de abajo no las arreglaría, así que primero se retiran las
+-- que sigan en la forma rota (migration-2026-08-02-borrado-de-ventas.sql).
+do $$
+declare
+  v_rota text;
+begin
+  for v_rota in
+    select conname from pg_constraint
+    where conrelid = 'public.sales'::regclass
+      and contype = 'f'
+      and conname in (
+        'fk_sales_pedido_del_negocio',
+        'fk_sales_cita_del_negocio',
+        'fk_sales_estadia_del_negocio'
+      )
+      and pg_get_constraintdef(oid) !~ 'ON DELETE SET NULL \('
+  loop
+    execute format('alter table public.sales drop constraint %I', v_rota);
+  end loop;
+end;
+$$;
+
 do $$
 begin
   -- La foránea simple se retira: dejarla viva permitiría el cruce igual.
@@ -6305,10 +6331,14 @@ begin
     select 1 from pg_constraint
     where conrelid = 'public.sales'::regclass and conname = 'fk_sales_pedido_del_negocio'
   ) then
+    -- `set null (order_id)` y no `set null` a secas: sin nombrar la columna
+    -- PostgreSQL anularía también `business_id`, que es NOT NULL, y borrar un
+    -- pedido entregado reventaría (migration-2026-08-02-borrado-de-ventas.sql).
     alter table public.sales
       add constraint fk_sales_pedido_del_negocio
       foreign key (order_id, business_id)
-      references public.orders (id, business_id) on delete set null;
+      references public.orders (id, business_id)
+      on delete set null (order_id);
   end if;
 
   alter table public.sales drop constraint if exists sales_booking_id_fkey;
@@ -6319,7 +6349,8 @@ begin
     alter table public.sales
       add constraint fk_sales_cita_del_negocio
       foreign key (booking_id, business_id)
-      references public.bookings (id, business_id) on delete set null;
+      references public.bookings (id, business_id)
+      on delete set null (booking_id);
   end if;
 
   alter table public.sales drop constraint if exists sales_lodging_request_id_fkey;
@@ -6330,7 +6361,8 @@ begin
     alter table public.sales
       add constraint fk_sales_estadia_del_negocio
       foreign key (lodging_request_id, business_id)
-      references public.lodging_requests (id, business_id) on delete set null;
+      references public.lodging_requests (id, business_id)
+      on delete set null (lodging_request_id);
   end if;
 end;
 $$;
