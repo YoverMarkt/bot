@@ -43,6 +43,34 @@ jobs:
       - name: Tests del servidor (con cobertura)
         run: npm run test:coverage -w @botpanel/server
 
+      # Código muerto en todo el monorepo. Vivía SOLO en `npm run check` de la
+      # raíz, que el CI nunca llama — el mismo agujero que tuvo
+      # `verificar-fronteras.sql` hasta el 2026-08-02: un guardián que funciona
+      # pero que depende de que alguien se acuerde de correrlo no es un
+      # guardián. No hay hooks de git, así que nada lo lanzaba solo.
+      #
+      # Acotado a lo que knip puede ver de verdad: los exports del servidor los
+      # vigila `exports-huerfanos.test.js`, porque el patrón `require()` tipado
+      # de este proyecto no lo rastrea ninguna herramienta genérica (en su
+      # primera pasada marcó 71 falsos positivos).
+      - name: Código muerto (knip)
+        run: npx knip --no-progress
+
+      # Que knip corra no significa que knip vea. Se planta un archivo huérfano
+      # y se exige que lo cace, igual que se hace con el esquema roto.
+      - name: Comprobar que knip detecta código muerto
+        run: |
+          cat > server/src/services/comprobacion-knip.ts <<'FIN'
+          export const nadieMeLlama = (): string => 'huérfano'
+          FIN
+          if npx knip --no-progress > /dev/null 2>&1; then
+            rm -f server/src/services/comprobacion-knip.ts
+            echo "❌ knip pasó con un archivo huérfano: ya no detecta nada"
+            exit 1
+          fi
+          rm -f server/src/services/comprobacion-knip.ts
+          echo "✅ knip detecta correctamente el código muerto"
+
   # Aplica el esquema a un PostgreSQL de verdad y EJECUTA sus funciones. Es la
   # única forma de detectar la familia de fallos que tumbó el canal cinco días en
   # julio de 2026: PostgreSQL no valida el cuerpo de una función plpgsql al
