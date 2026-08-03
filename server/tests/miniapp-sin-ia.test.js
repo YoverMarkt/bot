@@ -30,6 +30,7 @@ function montar(overrides = {}) {
   }
   const enviados = []
   const guardados = []
+  const sendTyping = vi.fn(async () => ({}))
   const database = {
     getSession: async () => ({ manual_mode: false, contact_name: 'Ana' }),
     saveMessage: async (businessId, phone, role, content) => {
@@ -77,7 +78,7 @@ function montar(overrides = {}) {
     sleep: async () => {},
     ...overrides.deps,
   })
-  return { conversation, ai, database, storefrontLink, enviados, guardados }
+  return { conversation, ai, database, storefrontLink, enviados, guardados, sendTyping }
 }
 
 const procesar = async (m, texto, business = negocioMiniapp) => {
@@ -85,6 +86,7 @@ const procesar = async (m, texto, business = negocioMiniapp) => {
   await m.conversation.processMessage({
     business, phone: '593999111222', text: texto,
     send: async t => { enviados.push(t); return {} },
+    sendTyping: m.sendTyping,
   })
   return enviados
 }
@@ -135,6 +137,24 @@ describe('modo mini app: ni un token de OpenAI', () => {
       expect(m.ai.callAI, `"${pregunta}" no debe llegar al modelo`).not.toHaveBeenCalled()
       expect(enviados).toEqual([MINIAPP_RECORDATORIO])
     }
+  })
+
+  it('marca el mensaje como LEÍDO (el doble check azul)', async () => {
+    // `sendTyping` no solo pinta «escribiendo…»: en WhatsApp marca como leído.
+    // Se quedó fuera al escribir este modo y el cliente veía sus mensajes en
+    // dos checks grises para siempre, como si nadie los mirara.
+    const m = montar()
+    await procesar(m, 'hola')
+    expect(m.sendTyping).toHaveBeenCalledTimes(1)
+    // Y no cuesta modelo: es la API del canal.
+    expect(m.ai.callAI).not.toHaveBeenCalled()
+  })
+
+  it('si el canal no puede marcar leído, se responde igual', async () => {
+    const m = montar()
+    m.sendTyping.mockRejectedValue(new Error('YCloud 401'))
+    const enviados = await procesar(m, 'hola')
+    expect(enviados).toHaveLength(1)
   })
 
   it('guarda el mensaje del cliente aunque no le conteste', async () => {
