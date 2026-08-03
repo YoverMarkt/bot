@@ -125,7 +125,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       {/* Bloque de tinta con el nombre grande: es lo primero que confirma al
           cliente que abrió el sitio correcto. */}
       <header className="tinta sticky top-0 z-30 rounded-b-[1.75rem]">
-        <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+        <div className="flex items-center gap-3 px-5 pt-seguro pb-3">
           {onVolver && (
             <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
               <ChevronLeft size={22} />

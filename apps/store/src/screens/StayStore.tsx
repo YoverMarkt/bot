@@ -119,7 +119,7 @@ export default function StayStore({ slug, business, status, onVolver, onFalloEnl
   return (
     <div className="mx-auto min-h-full max-w-lg pb-10">
       <header className="superficie sticky top-0 z-30 border-b borde-tema">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-4 pt-seguro pb-3">
           {onVolver && (
             <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
               <ChevronLeft size={22} />
