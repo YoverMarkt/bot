@@ -83,3 +83,25 @@ Para el riesgo grave —código viejo que **sí se ejecuta**— está el guardi�
 **En los paneles la auditoría se corre aparte** (`npx knip -c knip.exports.json`), porque ahí los imports son ESM y knip sí acierta. Encontró dos restos reales: `salesApi.getOrders`, que quedó huérfano al mover Pedidos a su propia sección, y `BotForm`, la versión anterior de la pantalla del prompt que `BotPrompt.tsx` ya había reemplazado.
 
 `ignoreDependencies` cubre las que usa `packages/ui` y las apps declaran para el hoisting de los workspaces (`clsx`, `tailwind-merge`, `radix-ui`, `class-variance-authority`), y `apps/*/public/theme-boot.js`, que lo carga el HTML y no un import.
+
+## El guardián de fronteras ahora corre en el CI
+
+**Encontrado el 2026-08-02, y es el fallo más instructivo de esa sesión.**
+`verificar-fronteras.sql` busca claves foráneas que apuntan a otra tabla **sin
+comprobar de quién es la fila**: una simple garantiza que exista, no que sea de
+tu negocio. Pero solo se ejecutaba desde `npm run verify:schema`, que **necesita
+Docker y corre en local**.
+
+Resultado: el CI estuvo **verde todo el día** mientras se abrían cuatro
+fronteras nuevas —`sales(order_id)`, `sales(booking_id)`,
+`sales(lodging_request_id)` y `bookings(product_id)`—, todas creadas ese mismo
+día al construir el estándar de ventas. Las funciones `crear_venta_desde_*` ya
+impedían el cruce, pero eso depende de que nadie escriba nunca por otro camino,
+y **la regla #1 dice que lo impida la base**.
+
+Se cerraron con claves foráneas **compuestas** sobre `(id, business_id)` —el
+mismo patrón de `product_variants`— y el guardián se añadió al CI.
+
+**La lección, que vale más que el arreglo:** un guardián que depende de que
+alguien se acuerde de correrlo no es un guardián. Si una verificación existe,
+tiene que estar en el camino automático.

@@ -88,6 +88,14 @@ jobs:
         # Se prueba con DOS negocios reales conviviendo en la misma base.
         run: $PSQL -f server/tests/sql/verificar-aislamiento.sql
 
+      - name: Buscar fronteras entre negocios sin cerrar
+        # Este guardián SOLO corría en local con Docker (`npm run verify:schema`)
+        # y por eso el CI estuvo verde el 2026-08-02 mientras se abrían cuatro
+        # fronteras: las foráneas de `sales` hacia pedidos, citas y estadías
+        # comprobaban que la fila existiera, no de quién era. Un guardián que
+        # depende de que alguien se acuerde de correrlo no es un guardián.
+        run: $PSQL -f server/tests/sql/verificar-fronteras.sql
+
       - name: Comprobar que la verificación detecta un esquema roto
         # Sin esto, la verificación podría quedarse en verde para siempre aunque
         # dejara de comprobar nada. Se reintroduce el fallo real de julio de 2026
