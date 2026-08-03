@@ -135,8 +135,13 @@ describe('rutas de horarios y reservas', () => {
       error: { message: 'detalle interno PostgreSQL' },
     })
 
+    // El horario tiene que ser VÁLIDO para que la petición llegue a Supabase:
+    // lo que se prueba aquí es que su error no se filtre, no la validación de
+    // entrada (eso vive en `entrada-sin-validar.test.js`). Antes bastaba con
+    // `days: []` porque la ruta no comprobaba nada y todo acababa en la base.
     const response = await dispatch('put', '/api/client/schedule', {
-      auth: authorization(), body: { days: [] },
+      auth: authorization(),
+      body: { days: [{ day_of_week: 1, is_active: true, open_time: '09:00', close_time: '18:00' }] },
     })
 
     expect(response).toEqual({

@@ -130,10 +130,30 @@ router.get('/api/client/policies', auth.authClient, auth.requireOwner, async (re
   res.json(await db.getPolicies(getClientBusinessId(req)) || {})
 })
 
+// Las únicas columnas de `bot_policies` que edita el dueño desde su panel.
+//
+// Antes se pasaba `req.body` ENTERO a la base: cualquier clave del cuerpo se
+// convertía en una columna a escribir, y una que no existiera devolvía 500
+// («Could not find the 'x' column of 'bot_policies'»). No era un agujero
+// multi-tenant —`business_id` se fija después desde el JWT y siempre gana—,
+// pero sí una entrada sin filtrar llegando a la base, y un fallo del cliente
+// contado como fallo del servidor.
+const CAMPOS_DE_POLITICAS = [
+  'bot_prompt', 'shipping', 'returns', 'discounts', 'bot_instructions',
+] as const
+
 router.put('/api/client/policies', auth.authClient, auth.requireOwner, async (req, res) => {
+  const cuerpo = (req.body ?? {}) as Record<string, unknown>
+  const datos: Record<string, unknown> = {}
+  for (const campo of CAMPOS_DE_POLITICAS) {
+    if (campo in cuerpo) datos[campo] = cuerpo[campo]
+  }
+  if (Object.keys(datos).length === 0) {
+    return res.status(400).json({ error: 'No hay nada que guardar' })
+  }
   try {
     assertDatabaseResult(
-      await db.upsertPolicies(getClientBusinessId(req), req.body),
+      await db.upsertPolicies(getClientBusinessId(req), datos),
       'actualizar las políticas',
     )
     res.json({ ok: true })
