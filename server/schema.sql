@@ -1399,6 +1399,15 @@ begin
     return v_sale_id;
   end if;
 
+  -- Solo cuenta lo entregado. Un pedido pendiente o cancelado no es dinero.
+  -- Hoy quien decide es `set_order_status`, que solo llama aquí al pasar a
+  -- 'completado' — pero esta función es SECURITY DEFINER y está concedida a
+  -- service_role, así que un `db.rpc()` distraído facturaría un pedido
+  -- cancelado. La misma guardia que ya tenía `crear_venta_desde_estadia`.
+  if v_order.status is distinct from 'completado' then
+    return null;
+  end if;
+
   insert into public.sales (
     business_id, order_id, contact_phone, contact_name,
     total, status, source, sold_at
@@ -3082,6 +3091,14 @@ begin
   where booking_id = p_booking_id and business_id = p_business_id;
   if found then
     return v_sale_id;
+  end if;
+
+  -- Solo cuenta lo atendido. Una cita pendiente, cancelada o a la que no vino
+  -- nadie no es dinero. Igual que en pedidos y estadías: hoy quien decide es
+  -- `set_booking_status`, pero esta función está concedida a service_role y no
+  -- puede depender solo de su llamador.
+  if v_booking.status is distinct from 'attended' then
+    return null;
   end if;
 
   -- Sin precio no hay venta que registrar, y no es un error: una cita puede

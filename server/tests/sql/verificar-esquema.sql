@@ -607,6 +607,9 @@ begin
       end if;
 
       -- Pendiente NO es dinero: mientras no se confirme, no hay venta.
+      -- Sus dos hermanas, `crear_venta_desde_pedido` y `crear_venta_desde_cita`,
+      -- no comprobaban esto hasta el 2026-08-02: cobraban un pedido cancelado.
+      -- La comprobación de las tres está en el bloque 7.
       if public.crear_venta_desde_estadia(v_business, v_request) is not null then
         raise exception 'una solicitud pendiente generó venta';
       end if;
@@ -660,7 +663,52 @@ begin
     end;
   end;
 
-  -- ── 7. Limpiezas programadas ──────────────────────────────────────────────
+  -- ── 7. El dinero solo nace en el estado correcto ──────────────────────────
+  --
+  -- Las tres funciones que crean ventas comprobaban el negocio y la
+  -- idempotencia, pero dos de ellas no miraban el ESTADO del origen. Medido
+  -- contra PostgreSQL real el 2026-08-02:
+  --
+  --   ⚠️ crear_venta_desde_pedido cobró un pedido en estado "cancelado"
+  --
+  -- Estaban protegidas solo por sus llamadores (`set_order_status` y
+  -- `set_booking_status`), y eso basta hasta que alguien las llame directo:
+  -- son SECURITY DEFINER y están concedidas a `service_role`, que es el rol
+  -- con el que el servidor habla con Supabase.
+  declare
+    v_pedido_cancelado uuid;
+    v_cita_cancelada uuid;
+  begin
+    insert into orders (business_id, contact_phone, status, total)
+    values (v_business, '+593900000404', 'cancelado', 20.00)
+    returning id into v_pedido_cancelado;
+    if public.crear_venta_desde_pedido(v_business, v_pedido_cancelado) is not null then
+      raise exception 'un pedido cancelado generó venta';
+    end if;
+
+    insert into bookings (
+      business_id, contact_phone, service, price, booking_date, booking_time, status
+    ) values (
+      v_business, '+593900000404', 'Corte', 20.00, current_date + 5, '16:00', 'cancelled'
+    ) returning id into v_cita_cancelada;
+    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is not null then
+      raise exception 'una cita cancelada generó venta';
+    end if;
+
+    -- Y el camino legítimo sigue funcionando: una cerradura que también deja
+    -- fuera al dueño no sirve de nada.
+    update orders set status = 'completado' where id = v_pedido_cancelado;
+    if public.crear_venta_desde_pedido(v_business, v_pedido_cancelado) is null then
+      raise exception 'un pedido completado no generó su venta';
+    end if;
+
+    update bookings set status = 'attended' where id = v_cita_cancelada;
+    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is null then
+      raise exception 'una cita atendida no generó su venta';
+    end if;
+  end;
+
+  -- ── 8. Limpiezas programadas ──────────────────────────────────────────────
   perform public.cleanup_webhook_events();
   perform public.cleanup_platform_errors(30);
   perform public.cleanup_storefront_sessions(2);
