@@ -39,6 +39,45 @@ Si aparece alguna señal: reduce el alcance, o pregunta antes de seguir.
 - **No cambies el stack ni agregues dependencias** sin pedido explícito.
 - Si encuentras un bug aparte mientras trabajas, **anótalo y avisa**, no lo arregles en el mismo cambio.
 
+## Cortar un flujo: el inventario de lo que hacía de paso
+
+Un **corte** es meter un `return` temprano: un modo nuevo, un atajo, una
+condición que evita trabajo. Es de los cambios más rentables y de los que más
+rompen, porque el camino viejo casi nunca hacía solo lo que dice su nombre.
+
+**El fallo del 2026-08-03 (el check azul).** En modo mini app se cortó el flujo
+antes de la IA. Se verificó lo que se quitó (OpenAI) y lo que se puso (enlace,
+recordatorio, 24 h). Nueve pruebas, todas en verde. Pero nadie comprobó **lo
+que el camino viejo hacía de paso**: `sendTyping` no solo pinta «escribiendo…»,
+también llama a `markAsRead`. Al no pasarlo, los mensajes del cliente se
+quedaban en dos checks grises para siempre. Lo vio el dueño desde su teléfono,
+no el CI.
+
+### Antes de escribir el corte
+
+Lista **qué HACE** el camino que vas a saltar, no qué responde. En este
+proyecto el inventario típico es:
+
+- [ ] ¿Marca el mensaje como leído? (`sendTyping` lo hace, y no se llama así)
+- [ ] ¿Guarda el mensaje entrante en el historial?
+- [ ] ¿Actualiza la sesión o el contacto?
+- [ ] ¿Registra consumo, métricas o errores?
+- [ ] ¿Notifica al dueño?
+- [ ] ¿Libera algo — un lock, un hold, una reserva?
+
+El corte debe conservar **todo lo que no sea "pensar"**. Lo caro es el modelo;
+lo demás normalmente hay que seguir haciéndolo.
+
+### Y una prueba de lo que NO debe perderse
+
+No basta con probar la respuesta nueva. Añade al menos una prueba por cada
+efecto de la lista que el corte conserva — que se marcó como leído, que se
+guardó el mensaje. Sin eso, el punto ciego es exactamente el mismo: se verifica
+el camino nuevo y nadie mira lo que dejó de ocurrir.
+
+> Una función que hace dos cosas y se llama por una de ellas es una trampa.
+> Ábrela y léela antes de decidir que tu atajo no la necesita.
+
 ## Al terminar — reporta
 - Qué archivos cambiaron y por qué.
 - Qué se verificó (ver **tester-saas**).
