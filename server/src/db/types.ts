@@ -159,3 +159,51 @@ export interface TemplateCategory {
 export interface BusinessTemplate {
   categorias: TemplateCategory[]
 }
+
+// Las columnas viajan en una cadena unida, así que el SDK no puede deducirlas y
+// devuelve un tipo de error en vez de la fila. La conversión vive AQUÍ, en el
+// borde con el driver, y no repartida por quien consume — que fue el agujero de
+// los 115 casts del 2026-08-03.
+export interface OptionGroupRow {
+  id: string
+  product_id: string | null
+  category_id: string | null
+  name: string
+  description: string | null
+  selection_type: string
+  required: boolean
+  min_selectable: number
+  max_selectable: number
+  max_total_quantity: number | null
+  pricing_strategy: string
+  free_selections: number
+  option_template_id: string | null
+  sort: number
+  active: boolean
+}
+
+export interface OptionRow {
+  id: string
+  option_group_id: string
+  name: string
+  description: string | null
+  image_url: string | null
+  image_public_id: string | null
+  price_adjustment: string | number
+  references_product_id: string | null
+  default_selected: boolean
+  stock: string
+  sort: number
+  active: boolean
+}
+
+export interface OptionTemplateRow {
+  id: string
+  name: string
+  description: string | null
+  active: boolean
+}
+
+export interface OptionTemplateItemRow extends Omit<OptionRow, 'option_group_id'> {
+  option_template_id: string
+}

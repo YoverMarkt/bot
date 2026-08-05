@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Search, Film, Plus, Pencil, Trash2, Package, Camera, UtensilsCrossed } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
+import OptionsManager from './OptionsManager'
 import type { Product, ProductPayload, MenuModifier, MenuModifierPayload, Variant, Category } from './api'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
@@ -41,6 +42,9 @@ export default function Catalog() {
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: products = [], isLoading, isError, refetch } = useQuery({ queryKey: ['products'], queryFn: catApi.getProducts })
+  // Las categorías hacen falta aquí porque un grupo de opciones puede colgar
+  // de una entera: así 19 sabores sirven para todas las pizzas.
+  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: catApi.getCategories })
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -75,12 +79,20 @@ export default function Catalog() {
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="productos">Productos</TabsTrigger>
           <TabsTrigger value="tamanos">Tamaños / Presentaciones</TabsTrigger>
+          <TabsTrigger value="personalizacion">Personalización</TabsTrigger>
           <TabsTrigger value="opciones">Sabores / Opciones</TabsTrigger>
           <TabsTrigger value="categorias">Categorías</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tamanos" className="mt-4">
           <VariantsPanel products={products} />
+        </TabsContent>
+
+        {/* El motor de opciones: lo que de verdad ve el cliente en la mini app.
+            La pestaña «Sabores / Opciones» de al lado es el modelo viejo, que
+            sigue alimentando el modo menú del bot hasta que también migre. */}
+        <TabsContent value="personalizacion" className="mt-4">
+          <OptionsManager productos={products} categorias={categories} />
         </TabsContent>
 
         <TabsContent value="opciones" className="mt-4">

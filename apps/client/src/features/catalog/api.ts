@@ -152,3 +152,113 @@ export async function uploadMedia(file: File): Promise<{ url: string; public_id:
   if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error || 'No se pudo subir el archivo')
   return data as { url: string; public_id: string; resource_type: string }
 }
+
+// ── Motor de opciones ────────────────────────────────────────────────
+// Lo que convierte el catálogo en configuración: grupos obligatorios,
+// mínimos y máximos, contadores y estrategias de precio. Sustituye a los
+// modificadores de arriba, que quedan para el modo menú del bot.
+
+export type SelectionType = 'single' | 'multiple' | 'quantity'
+
+export type PricingStrategy =
+  | 'sum' | 'fixed' | 'highest_selected' | 'lowest_selected'
+  | 'average' | 'included' | 'included_up_to_limit' | 'extra_after_limit'
+
+export type OptionGroup = {
+  id: string
+  /** Cuelga de un producto O de una categoría, nunca de ambos. */
+  product_id: string | null
+  category_id: string | null
+  name: string
+  description: string | null
+  selection_type: SelectionType
+  required: boolean
+  min_selectable: number
+  max_selectable: number
+  max_total_quantity: number | null
+  pricing_strategy: PricingStrategy
+  free_selections: number
+  option_template_id: string | null
+  sort: number
+  active: boolean
+}
+
+export type OptionGroupPayload = Omit<OptionGroup, 'id'>
+
+export type ProductOption = {
+  id: string
+  option_group_id: string
+  name: string
+  description: string | null
+  image_url: string | null
+  image_public_id: string | null
+  /** Admite NEGATIVOS: «sin sopa −0.50». */
+  price_adjustment: string | number
+  references_product_id: string | null
+  default_selected: boolean
+  stock: 'disponible' | 'agotado'
+  sort: number
+  active: boolean
+}
+
+export type ProductOptionPayload = Omit<ProductOption, 'id'>
+
+export type OptionTemplate = {
+  id: string
+  name: string
+  description: string | null
+  active: boolean
+  /** Cuántos grupos se sirven de ella. El panel avisa antes de borrar. */
+  used_by_groups: number
+}
+
+export type OptionTemplateItem = Omit<ProductOption, 'option_group_id'> & {
+  option_template_id: string
+}
+
+export const getOptionGroups = () => api<OptionGroup[]>('/api/client/option-groups')
+
+export const createOptionGroup = (g: OptionGroupPayload) =>
+  api<OptionGroup>('/api/client/option-groups', { method: 'POST', body: JSON.stringify(g) })
+
+export const updateOptionGroup = (id: string, g: OptionGroupPayload) =>
+  api(`/api/client/option-groups/${id}`, { method: 'PUT', body: JSON.stringify(g) })
+
+export const deleteOptionGroup = (id: string) =>
+  api(`/api/client/option-groups/${id}`, { method: 'DELETE' })
+
+export const getOptions = () => api<ProductOption[]>('/api/client/options')
+
+export const createOption = (o: ProductOptionPayload) =>
+  api<ProductOption>('/api/client/options', { method: 'POST', body: JSON.stringify(o) })
+
+export const updateOption = (id: string, o: ProductOptionPayload) =>
+  api(`/api/client/options/${id}`, { method: 'PUT', body: JSON.stringify(o) })
+
+export const deleteOption = (id: string) =>
+  api(`/api/client/options/${id}`, { method: 'DELETE' })
+
+export const getOptionTemplates = () => api<OptionTemplate[]>('/api/client/option-templates')
+
+export const createOptionTemplate = (t: { name: string; description: string | null }) =>
+  api<OptionTemplate>('/api/client/option-templates', { method: 'POST', body: JSON.stringify(t) })
+
+export const updateOptionTemplate = (id: string, t: { name: string; description: string | null }) =>
+  api(`/api/client/option-templates/${id}`, { method: 'PUT', body: JSON.stringify(t) })
+
+export const deleteOptionTemplate = (id: string) =>
+  api(`/api/client/option-templates/${id}`, { method: 'DELETE' })
+
+export const getOptionTemplateItems = () =>
+  api<OptionTemplateItem[]>('/api/client/option-template-items')
+
+export const createOptionTemplateItem = (i: Omit<OptionTemplateItem, 'id'>) =>
+  api<OptionTemplateItem>('/api/client/option-template-items', {
+    method: 'POST', body: JSON.stringify(i),
+  })
+
+export const updateOptionTemplateItem = (id: string, i: Omit<OptionTemplateItem, 'id'>) =>
+  api(`/api/client/option-template-items/${id}`, { method: 'PUT', body: JSON.stringify(i) })
+
+export const deleteOptionTemplateItem = (id: string) =>
+  api(`/api/client/option-template-items/${id}`, { method: 'DELETE' })
