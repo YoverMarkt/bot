@@ -80,7 +80,7 @@ const getStorefrontExtras = async (businessId: string) => {
 const getStorefrontOptionGroups = async (businessId: string) => {
   const { data, error } = await db
     .from('option_groups')
-    .select('id,product_id,category_id,name,description,selection_type,required,min_selectable,max_selectable,sort')
+    .select('id,product_id,category_id,name,description,selection_type,required,min_selectable,max_selectable,pricing_strategy,free_selections,sort')
     .eq('business_id', businessId)
     .eq('active', true)
     .order('sort', { ascending: true })

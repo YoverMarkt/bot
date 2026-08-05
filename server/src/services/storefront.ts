@@ -97,8 +97,14 @@ export interface CatalogOptionGroup {
   required?: boolean | null
   min_selectable?: number | null
   max_selectable?: number | null
+  pricing_strategy?: string | null
+  free_selections?: number | null
   sort?: number
 }
+
+export type PricingStrategy =
+  | 'sum' | 'fixed' | 'highest_selected' | 'lowest_selected'
+  | 'average' | 'included' | 'included_up_to_limit' | 'extra_after_limit'
 
 export interface CatalogOption {
   id: string
@@ -280,6 +286,10 @@ export function buildStorefrontCatalog(input: {
           name: grupo.name,
           description: grupo.description || null,
           selectionType: (grupo.selection_type || 'single') as 'single' | 'multiple' | 'quantity',
+          // Cómo cobra el grupo. La app pinta con esto y la base cobra con lo
+          // mismo, así que el cliente ve el número que va a pagar.
+          pricingStrategy: (grupo.pricing_strategy || 'sum') as PricingStrategy,
+          freeSelections: Math.max(0, grupo.free_selections ?? 0),
           required: grupo.required === true,
           // Un mínimo mayor que las opciones que quedan vivas sería imposible
           // de cumplir: se recorta a lo que de verdad se puede elegir.

@@ -649,6 +649,102 @@ begin
       raise exception 'las opciones no llegaron a extras_names: el dueño no vería qué pidieron';
     end if;
 
+    -- ── Las ocho estrategias de precio ─────────────────────────────────────
+    --
+    -- El caso que las justifica: media Suprema ($10) y media Hawaiana ($9) con
+    -- `sum` costarían $19 —el doble de una pizza—. Aquí se comprueba que cada
+    -- estrategia cobre lo que dice, con el MISMO grupo y las MISMAS opciones.
+    declare
+      v_grupo_precio uuid;
+      v_barata uuid;
+      v_cara uuid;
+      v_media uuid;
+      v_estrategia text;
+      v_esperado numeric;
+      v_pedido_e jsonb;
+    begin
+      -- Grupo de tres opciones: 1.00, 2.00 y 4.00 sobre un plato de 3.00.
+      insert into option_groups (
+        business_id, product_id, name, selection_type, max_selectable, pricing_strategy
+      ) values (v_business, v_producto_op, 'Precios', 'multiple', 3, 'sum')
+      returning id into v_grupo_precio;
+      insert into options (business_id, option_group_id, name, price_adjustment)
+      values (v_business, v_grupo_precio, 'Barata', 1.00) returning id into v_barata;
+      insert into options (business_id, option_group_id, name, price_adjustment)
+      values (v_business, v_grupo_precio, 'Media', 2.00) returning id into v_media;
+      insert into options (business_id, option_group_id, name, price_adjustment)
+      values (v_business, v_grupo_precio, 'Cara', 4.00) returning id into v_cara;
+
+      foreach v_estrategia in array array[
+        'sum', 'fixed', 'included', 'highest_selected', 'lowest_selected',
+        'average', 'included_up_to_limit', 'extra_after_limit'
+      ]
+      loop
+        update option_groups
+        set pricing_strategy = v_estrategia, free_selections =
+          case when v_estrategia in ('included_up_to_limit', 'extra_after_limit')
+            then 1 else 0 end
+        where id = v_grupo_precio;
+
+        -- Base 3.00 + las tres opciones (1, 2 y 4), y el grupo obligatorio.
+        v_pedido_e := public.create_storefront_order(
+          v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+          jsonb_build_array(jsonb_build_object(
+            'product_id', v_producto_op, 'quantity', 1,
+            'options', jsonb_build_array(
+              jsonb_build_object('option_id', v_op_normal, 'quantity', 1),
+              jsonb_build_object('option_id', v_barata, 'quantity', 1),
+              jsonb_build_object('option_id', v_media, 'quantity', 1),
+              jsonb_build_object('option_id', v_cara, 'quantity', 1)
+            )
+          ))
+        );
+
+        v_esperado := 3.00 + case v_estrategia
+          when 'sum' then 7.00                  -- 1 + 2 + 4
+          when 'fixed' then 0.00                -- no altera el precio
+          when 'included' then 0.00
+          when 'highest_selected' then 4.00     -- la mitad y mitad
+          when 'lowest_selected' then 1.00
+          when 'average' then 2.33              -- (1+2+4)/3, redondeado
+          when 'included_up_to_limit' then 3.00 -- la de 4.00 va incluida
+          when 'extra_after_limit' then 3.00    -- una porción incluida, la cara
+        end;
+
+        if (v_pedido_e ->> 'total')::numeric <> v_esperado then
+          raise exception 'La estrategia % cobró % y debía cobrar %',
+            v_estrategia, v_pedido_e ->> 'total', v_esperado;
+        end if;
+        delete from orders where id = (v_pedido_e ->> 'id')::uuid;
+      end loop;
+
+      -- Y el caso del contador: `extra_after_limit` gasta el cupo en PORCIONES,
+      -- así que una misma opción puede quedar a medias.
+      update option_groups
+      set selection_type = 'quantity', pricing_strategy = 'extra_after_limit',
+          free_selections = 2, max_selectable = 5
+      where id = v_grupo_precio;
+
+      v_pedido_e := public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_producto_op, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_op_normal, 'quantity', 1),
+            jsonb_build_object('option_id', v_cara, 'quantity', 3)
+          )
+        ))
+      );
+      -- 3 porciones a 4.00, dos incluidas: se cobra una → 3.00 + 4.00
+      if (v_pedido_e ->> 'total')::numeric <> 7.00 then
+        raise exception 'El cupo por porciones cobró %, y debía cobrar 7.00',
+          v_pedido_e ->> 'total';
+      end if;
+      delete from orders where id = (v_pedido_e ->> 'id')::uuid;
+
+      delete from option_groups where id = v_grupo_precio;
+    end;
+
     -- Limpieza para no contaminar lo que viene después.
     delete from orders where id = (v_pedido_op ->> 'id')::uuid;
     delete from option_groups where business_id = v_business;
