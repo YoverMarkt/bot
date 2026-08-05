@@ -484,6 +484,178 @@ begin
     null;
   end;
 
+  -- ── 3d bis. Las opciones entran al pedido ────────────────────────────────
+  --
+  -- El motor de opciones estuvo tres migraciones en la base sin que nadie lo
+  -- leyera. Esto ejercita lo que decide el DINERO: que el recargo salga de la
+  -- base, que los obligatorios se exijan aquí y no en el navegador, y que
+  -- `order_item_options` quede escrita.
+  declare
+    v_categoria_op uuid;
+    v_producto_op uuid;
+    v_grupo_obligatorio uuid;
+    v_grupo_contador uuid;
+    v_op_normal uuid;
+    v_op_negativa uuid;
+    v_op_contador uuid;
+    v_grupo_ajeno uuid;
+    v_op_ajena uuid;
+    v_producto_ajeno uuid;
+    v_pedido_op jsonb;
+    v_item_op uuid;
+  begin
+    insert into product_categories (business_id, name)
+    values (v_business, 'Almuerzos') returning id into v_categoria_op;
+    insert into products (business_id, name, price, stock, active, category_id)
+    values (v_business, 'Almuerzo del día', 3.00, 'disponible', true, v_categoria_op)
+    returning id into v_producto_op;
+    insert into products (business_id, name, price, stock, active)
+    values (v_business, 'Producto sin grupos', 5.00, 'disponible', true)
+    returning id into v_producto_ajeno;
+
+    -- Un grupo OBLIGATORIO que cuelga de la categoría.
+    insert into option_groups (
+      business_id, category_id, name, selection_type, required, min_selectable, max_selectable
+    ) values (v_business, v_categoria_op, 'Sopa', 'single', true, 1, 1)
+    returning id into v_grupo_obligatorio;
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_obligatorio, 'Sopa del día', 0)
+    returning id into v_op_normal;
+    -- El recargo NEGATIVO, que es la razón de que la columna lo admita.
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_obligatorio, 'Sin sopa', -0.50)
+    returning id into v_op_negativa;
+
+    -- Un contador: 3 porciones repartidas entre cortes.
+    insert into option_groups (
+      business_id, product_id, name, selection_type, required, min_selectable, max_selectable
+    ) values (v_business, v_producto_op, 'Cortes', 'quantity', false, 0, 3)
+    returning id into v_grupo_contador;
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_contador, 'Lomo', 1.00)
+    returning id into v_op_contador;
+
+    -- Y un grupo que NO aplica a este producto, para probar la frontera.
+    insert into option_groups (business_id, product_id, name)
+    values (v_business, v_producto_ajeno, 'Ajeno') returning id into v_grupo_ajeno;
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_ajeno, 'Opción de otro plato', -2.00)
+    returning id into v_op_ajena;
+
+    -- OBLIGATORIO: sin elegir sopa, el pedido no se crea.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object('product_id', v_producto_op, 'quantity', 1))
+      );
+      raise exception 'create_storefront_order aceptó un pedido sin el grupo obligatorio';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- FRONTERA: una opción de otro producto no puede abaratar este.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_producto_op, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_op_normal, 'quantity', 1),
+            jsonb_build_object('option_id', v_op_ajena, 'quantity', 1)
+          )
+        ))
+      );
+      raise exception 'FUGA: una opción de otro producto entró al pedido';
+    exception when sqlstate '42501' then null;
+    end;
+
+    -- Repetir la misma opción multiplicaría su recargo por la puerta de atrás.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_producto_op, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_op_negativa, 'quantity', 1),
+            jsonb_build_object('option_id', v_op_negativa, 'quantity', 1)
+          )
+        ))
+      );
+      raise exception 'create_storefront_order aceptó la misma opción repetida';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- Y pedir por cantidad en un grupo que no es contador, tampoco.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_producto_op, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_op_negativa, 'quantity', 6)
+          )
+        ))
+      );
+      raise exception 'create_storefront_order multiplicó una opción que no es contador';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- El caso legítimo: 3.00 − 0.50 de «sin sopa» + 2 porciones de lomo a 1.00.
+    v_pedido_op := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_producto_op, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_op_negativa, 'quantity', 1),
+          jsonb_build_object('option_id', v_op_contador, 'quantity', 2)
+        )
+      ))
+    );
+    if (v_pedido_op ->> 'total')::numeric <> 4.50 then
+      raise exception 'el recargo de las opciones no se calculó en la base: %', v_pedido_op;
+    end if;
+
+    select oi.id into v_item_op
+    from order_items oi
+    where oi.order_id = (v_pedido_op ->> 'id')::uuid;
+
+    -- La fotografía de lo elegido, congelada con su precio.
+    if (select count(*) from order_item_options where order_item_id = v_item_op) <> 2 then
+      raise exception 'order_item_options no guardó lo que eligió el cliente';
+    end if;
+    if not exists (
+      select 1 from order_item_options
+      where order_item_id = v_item_op and option_name = 'Lomo'
+        and quantity = 2 and unit_price_adjustment = 1.00
+        and total_price_adjustment = 2.00
+    ) then
+      raise exception 'order_item_options no congeló bien la cantidad y su importe';
+    end if;
+    if not exists (
+      select 1 from order_item_options
+      where order_item_id = v_item_op and option_name = 'Sin sopa'
+        and total_price_adjustment = -0.50
+    ) then
+      raise exception 'order_item_options perdió el signo de un recargo negativo';
+    end if;
+
+    -- Y lo que el DUEÑO ve en su panel sigue diciendo qué se pidió: si las
+    -- opciones solo fueran a la tabla nueva, el pedido se vería vacío.
+    if not exists (
+      select 1 from order_items
+      where id = v_item_op
+        and 'Sin sopa' = any(extras_names)
+        and 'Lomo x2' = any(extras_names)
+    ) then
+      raise exception 'las opciones no llegaron a extras_names: el dueño no vería qué pidieron';
+    end if;
+
+    -- Limpieza para no contaminar lo que viene después.
+    delete from orders where id = (v_pedido_op ->> 'id')::uuid;
+    delete from option_groups where business_id = v_business;
+    delete from products where id in (v_producto_op, v_producto_ajeno);
+    delete from product_categories where id = v_categoria_op;
+  end;
+
   -- ── 3e. Una cita atendida es una venta ───────────────────────────────────
   -- El caso de la barbería: sin esto, atender a alguien no aparecía en ningún
   -- reporte salvo que el dueño se acordara de registrarlo a mano.

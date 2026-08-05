@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addLine, cartCount, cartTotal, groupExtras, lineKey, lineTotal, setQuantity, unitPrice,
+  addLine, cartCount, cartTotal, chosenCount, groupExtras, lineKey, lineTotal,
+  missingRequirement, setQuantity, unitPrice,
 } from '../src/lib/cart'
-import type { CartLine, Extra, Product, Variant } from '../src/lib/types'
+import type {
+  CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
+} from '../src/lib/types'
 
 // El carrito es lo único de la app con lógica de verdad, y es lo que el cliente
 // mira antes de decidir. Un error aquí no rompe nada: hace que la pantalla diga
@@ -21,6 +24,7 @@ const producto = (extra: Partial<Product> = {}): Product => ({
   hasVariants: false,
   variants: [],
   extras: [],
+  optionGroups: [],
   ...extra,
 })
 
@@ -33,11 +37,34 @@ const adicional = (extra: Partial<Extra> = {}): Extra => ({
   description: null, price: 1.5, maxSelectable: 2, ...extra,
 })
 
+const grupo = (extra: Partial<OptionGroup> = {}): OptionGroup => ({
+  id: 'g1',
+  name: 'Término',
+  description: null,
+  selectionType: 'single',
+  required: false,
+  minSelectable: 0,
+  maxSelectable: 1,
+  options: [],
+  ...extra,
+})
+
+const elegida = (extra: Partial<ChosenOption> = {}): ChosenOption => ({
+  groupId: 'g1',
+  groupName: 'Término',
+  optionId: 'o1',
+  name: 'Bien cocida',
+  price: 0,
+  quantity: 1,
+  ...extra,
+})
+
 const linea = (extra: Partial<CartLine> = {}): CartLine => ({
   key: 'k1',
   product: producto(),
   variant: null,
   extras: [],
+  options: [],
   quantity: 1,
   note: '',
   unitPrice: 12,
@@ -182,6 +209,132 @@ describe('el carrito de la tienda', () => {
     it('los que no traen grupo caen en Extras', () => {
       const grupos = groupExtras([adicional({ group: '' })])
       expect(grupos[0].group).toBe('Extras')
+    })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GRUPOS DE OPCIONES
+//
+// Lo que decide si un plato se puede pedir. La base lo vuelve a comprobar y es
+// la que manda, pero si aquí falla el cliente arma un pedido entero y se lo
+// rechazan al confirmarlo, que es el peor momento para enterarse.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('opciones del producto', () => {
+  describe('lo que falta para poder agregar', () => {
+    it('un grupo opcional no bloquea nada', () => {
+      expect(missingRequirement([grupo()], [])).toBeNull()
+    })
+
+    it('un grupo obligatorio sin elegir bloquea y dice cuál', () => {
+      const falta = missingRequirement([grupo({ required: true, minSelectable: 1 })], [])
+      expect(falta?.message).toBe('Elige término')
+    })
+
+    it('elegir lo obligatorio desbloquea', () => {
+      expect(missingRequirement(
+        [grupo({ required: true, minSelectable: 1 })],
+        [elegida()],
+      )).toBeNull()
+    })
+
+    it('con mínimo mayor que uno lo dice con su número', () => {
+      const falta = missingRequirement(
+        [grupo({ id: 'g2', name: 'Frutas', minSelectable: 3, maxSelectable: 3, selectionType: 'multiple' })],
+        [elegida({ groupId: 'g2' })],
+      )
+      expect(falta?.message).toBe('Elige 3 en Frutas')
+    })
+
+    it('en un contador cuentan las porciones, no cuántas casillas se tocaron', () => {
+      // Una parrillada de 3 se cumple con UN corte pedido 3 veces.
+      const parrillada = grupo({
+        id: 'g3', name: 'Cortes', selectionType: 'quantity',
+        required: true, minSelectable: 3, maxSelectable: 3,
+      })
+      expect(missingRequirement([parrillada], [
+        elegida({ groupId: 'g3', optionId: 'lomo', quantity: 3 }),
+      ])).toBeNull()
+      expect(missingRequirement([parrillada], [
+        elegida({ groupId: 'g3', optionId: 'lomo', quantity: 2 }),
+      ])?.group.id).toBe('g3')
+    })
+
+    it('devuelve el PRIMER grupo que falta, para no marear al cliente', () => {
+      const falta = missingRequirement([
+        grupo({ id: 'ga', name: 'Sopa', required: true, minSelectable: 1 }),
+        grupo({ id: 'gb', name: 'Segundo', required: true, minSelectable: 1 }),
+      ], [])
+      expect(falta?.group.id).toBe('ga')
+    })
+
+    it('lo elegido en OTRO grupo no cuenta para este', () => {
+      const falta = missingRequirement(
+        [grupo({ id: 'gx', name: 'Sopa', required: true, minSelectable: 1 })],
+        [elegida({ groupId: 'otro' })],
+      )
+      expect(falta?.group.id).toBe('gx')
+    })
+  })
+
+  describe('precio con opciones', () => {
+    it('suma el recargo de cada opción', () => {
+      expect(unitPrice(producto(), null, [], [elegida({ price: 1.5 })])).toBe(13.5)
+    })
+
+    it('un recargo NEGATIVO resta («sin sopa −0.50»)', () => {
+      expect(unitPrice(producto(), null, [], [elegida({ price: -0.5 })])).toBe(11.5)
+    })
+
+    it('en un contador el recargo se multiplica por las porciones', () => {
+      expect(unitPrice(producto(), null, [], [elegida({ price: 1, quantity: 3 })])).toBe(15)
+    })
+
+    it('nunca baja de cero por acumular descuentos', () => {
+      expect(unitPrice(producto({ priceFrom: 1 }), null, [], [
+        elegida({ optionId: 'a', price: -5 }),
+      ])).toBe(0)
+    })
+  })
+
+  describe('identidad de la línea', () => {
+    it('mismas opciones repartidas distinto son líneas distintas', () => {
+      // «2 lomo + 1 pollo» y «1 lomo + 2 pollo» son dos platos, y sumarlos en
+      // una sola línea perdería lo que se pidió.
+      const a = lineKey(producto(), null, [], '', [
+        elegida({ optionId: 'lomo', quantity: 2 }),
+        elegida({ optionId: 'pollo', quantity: 1 }),
+      ])
+      const b = lineKey(producto(), null, [], '', [
+        elegida({ optionId: 'lomo', quantity: 1 }),
+        elegida({ optionId: 'pollo', quantity: 2 }),
+      ])
+      expect(a).not.toBe(b)
+    })
+
+    it('el orden en que se eligen no crea otra línea', () => {
+      const a = lineKey(producto(), null, [], '', [
+        elegida({ optionId: 'x' }), elegida({ optionId: 'y' }),
+      ])
+      const b = lineKey(producto(), null, [], '', [
+        elegida({ optionId: 'y' }), elegida({ optionId: 'x' }),
+      ])
+      expect(a).toBe(b)
+    })
+  })
+
+  describe('cuánto se lleva elegido', () => {
+    it('cuenta opciones marcadas fuera de los contadores', () => {
+      expect(chosenCount(grupo({ selectionType: 'multiple', maxSelectable: 3 }), [
+        elegida({ optionId: 'a' }), elegida({ optionId: 'b' }),
+      ])).toBe(2)
+    })
+
+    it('cuenta porciones en los contadores', () => {
+      expect(chosenCount(grupo({ selectionType: 'quantity', maxSelectable: 5 }), [
+        elegida({ optionId: 'a', quantity: 2 }), elegida({ optionId: 'b', quantity: 3 }),
+      ])).toBe(5)
     })
   })
 })

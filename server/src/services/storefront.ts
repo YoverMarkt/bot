@@ -81,6 +81,38 @@ export interface CatalogExtra {
   sort?: number
 }
 
+/**
+ * Un grupo de opciones tal y como sale de la base. Cuelga de un producto o de
+ * una categoría —nunca de ambos— y es lo que sustituye a `CatalogExtra` en la
+ * mini app: aquí la obligatoriedad y los mínimos existen de verdad, y sin ellos
+ * no se puede armar un almuerzo ni una parrillada.
+ */
+export interface CatalogOptionGroup {
+  id: string
+  product_id?: string | null
+  category_id?: string | null
+  name: string
+  description?: string | null
+  selection_type?: string | null
+  required?: boolean | null
+  min_selectable?: number | null
+  max_selectable?: number | null
+  sort?: number
+}
+
+export interface CatalogOption {
+  id: string
+  option_group_id: string
+  name: string
+  description?: string | null
+  image_url?: string | null
+  price_adjustment: string | number
+  references_product_id?: string | null
+  default_selected?: boolean | null
+  stock?: string | null
+  sort?: number
+}
+
 export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 
 /**
@@ -147,12 +179,36 @@ export function buildStorefrontCatalog(input: {
   products: CatalogProduct[]
   variants: CatalogVariant[]
   extras: CatalogExtra[]
+  optionGroups?: CatalogOptionGroup[]
+  options?: CatalogOption[]
 }) {
   const variantesPorProducto = new Map<string, CatalogVariant[]>()
   for (const variante of input.variants) {
     const lista = variantesPorProducto.get(variante.product_id) || []
     lista.push(variante)
     variantesPorProducto.set(variante.product_id, lista)
+  }
+
+  // ── Los grupos de opciones, por sus dos destinos ────────────────────────
+  const opcionesPorGrupo = new Map<string, CatalogOption[]>()
+  for (const opcion of input.options || []) {
+    const lista = opcionesPorGrupo.get(opcion.option_group_id) || []
+    lista.push(opcion)
+    opcionesPorGrupo.set(opcion.option_group_id, lista)
+  }
+
+  const gruposPorProducto = new Map<string, CatalogOptionGroup[]>()
+  const gruposPorCategoria = new Map<string, CatalogOptionGroup[]>()
+  for (const grupo of input.optionGroups || []) {
+    if (grupo.product_id) {
+      const lista = gruposPorProducto.get(grupo.product_id) || []
+      lista.push(grupo)
+      gruposPorProducto.set(grupo.product_id, lista)
+    } else if (grupo.category_id) {
+      const lista = gruposPorCategoria.get(grupo.category_id) || []
+      lista.push(grupo)
+      gruposPorCategoria.set(grupo.category_id, lista)
+    }
   }
 
   const extrasPorProducto = new Map<string, CatalogExtra[]>()
@@ -193,6 +249,47 @@ export function buildStorefrontCatalog(input: {
       ? Math.min(...variantes.map(v => v.priceSale ?? v.price))
       : (precioOferta && precioOferta > 0 ? precioOferta : precioBase)
 
+    // Los grupos del producto y los de su categoría. Los del producto van
+    // primero: son los específicos, y el cliente los espera arriba.
+    //
+    // Una opción AGOTADA se cae de la lista, pero su grupo sigue existiendo: si
+    // se quedara sin ninguna y fuese obligatorio, el producto no se podría
+    // pedir, así que en ese caso se retira el grupo entero y el plato se sigue
+    // vendiendo con lo que quede.
+    const gruposDelProducto = [
+      ...gruposPorProducto.get(producto.id) || [],
+      ...(producto.category_id ? gruposPorCategoria.get(producto.category_id) || [] : []),
+    ]
+    const optionGroups = gruposDelProducto
+      .map((grupo) => {
+        const opciones = (opcionesPorGrupo.get(grupo.id) || [])
+          .filter(opcion => disponible(opcion.stock))
+          .map(opcion => ({
+            id: opcion.id,
+            name: opcion.name,
+            description: opcion.description || null,
+            imageUrl: opcion.image_url || null,
+            price: money(opcion.price_adjustment) ?? 0,
+            referencesProductId: opcion.references_product_id || null,
+            defaultSelected: opcion.default_selected === true,
+          }))
+        const maximo = Math.max(1, grupo.max_selectable ?? 1)
+        const minimo = Math.max(0, grupo.min_selectable ?? 0)
+        return {
+          id: grupo.id,
+          name: grupo.name,
+          description: grupo.description || null,
+          selectionType: (grupo.selection_type || 'single') as 'single' | 'multiple' | 'quantity',
+          required: grupo.required === true,
+          // Un mínimo mayor que las opciones que quedan vivas sería imposible
+          // de cumplir: se recorta a lo que de verdad se puede elegir.
+          minSelectable: Math.min(minimo, opciones.length),
+          maxSelectable: maximo,
+          options: opciones,
+        }
+      })
+      .filter(grupo => grupo.options.length > 0)
+
     return {
       id: producto.id,
       name: producto.name,
@@ -205,6 +302,7 @@ export function buildStorefrontCatalog(input: {
       priceFrom: desde,
       hasVariants: variantes.length > 0,
       variants: variantes,
+      optionGroups,
       extras: extras
         .filter((extra) => {
           if (vistos.has(extra.id)) return false

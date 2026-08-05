@@ -67,6 +67,38 @@ const getStorefrontExtras = async (businessId: string) => {
   return data || []
 }
 
+/**
+ * Los grupos de opciones y sus opciones: el motor con el que se arma un plato.
+ *
+ * Un grupo cuelga de un producto («término de la carne» solo en hamburguesas) o
+ * de una categoría entera, que es como 19 sabores los comparten todas las
+ * pizzas sin repetirlos en cada una.
+ *
+ * Es el sustituto de `menu_modifiers` en la mini app. La tabla vieja sigue viva
+ * para el modo menú del bot y el panel del dueño, que aún no han migrado.
+ */
+const getStorefrontOptionGroups = async (businessId: string) => {
+  const { data, error } = await db
+    .from('option_groups')
+    .select('id,product_id,category_id,name,description,selection_type,required,min_selectable,max_selectable,sort')
+    .eq('business_id', businessId)
+    .eq('active', true)
+    .order('sort', { ascending: true })
+  fail(error, 'No se pudieron leer los grupos de opciones')
+  return data || []
+}
+
+const getStorefrontOptions = async (businessId: string) => {
+  const { data, error } = await db
+    .from('options')
+    .select('id,option_group_id,name,description,image_url,price_adjustment,references_product_id,default_selected,stock,sort')
+    .eq('business_id', businessId)
+    .eq('active', true)
+    .order('sort', { ascending: true })
+  fail(error, 'No se pudieron leer las opciones')
+  return data || []
+}
+
 /** La cuenta que se le muestra al cliente para transferir. */
 const getBusinessBankAccount = async (businessId: string) => {
   const { data, error } = await db
@@ -194,6 +226,8 @@ export = {
   getStorefrontProducts,
   getStorefrontVariants,
   getStorefrontExtras,
+  getStorefrontOptionGroups,
+  getStorefrontOptions,
   getBusinessBankAccount,
   // Panel del dueño
   getCategories,

@@ -1,14 +1,42 @@
 import { useMemo, useState } from 'react'
 import { Boton, Contador, Foto, Hoja } from './ui'
 import { money } from '../lib/format'
-import { groupExtras, lineKey, unitPrice } from '../lib/cart'
-import type { CartLine, Extra, Product, Variant } from '../lib/types'
+import {
+  chosenCount,
+  groupExtras,
+  lineKey,
+  missingRequirement,
+  unitPrice,
+} from '../lib/cart'
+import type {
+  CartLine,
+  ChosenOption,
+  Extra,
+  OptionGroup,
+  Product,
+  Variant,
+} from '../lib/types'
 
-// Detalle del producto: variantes, extras, nota y cantidad.
+// Detalle del producto: variantes, grupos de opciones, extras, nota y cantidad.
 //
-// La regla del límite de extras se aplica AQUÍ y también en el servidor. Aquí
-// para que se entienda —el grupo se bloquea solo cuando llegas al máximo—, y
-// allá porque es lo único que de verdad manda.
+// Los límites y los obligatorios se aplican AQUÍ y también en el servidor. Aquí
+// para que se entienda —el grupo se bloquea al llegar al máximo y el botón dice
+// qué falta—, y allá porque es lo único que de verdad manda.
+
+/** Opciones que vienen marcadas de fábrica al abrir el producto. */
+const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.flatMap(
+  group => group.options
+    .filter(opcion => opcion.defaultSelected)
+    .slice(0, group.selectionType === 'single' ? 1 : group.maxSelectable)
+    .map(opcion => ({
+      groupId: group.id,
+      groupName: group.name,
+      optionId: opcion.id,
+      name: opcion.name,
+      price: opcion.price,
+      quantity: 1,
+    })),
+)
 
 export default function ProductSheet({ product, abierto, onCerrar, onAgregar, puedePedir }: {
   product: Product | null
@@ -19,6 +47,7 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
 }) {
   const [variante, setVariante] = useState<Variant | null>(null)
   const [extras, setExtras] = useState<Extra[]>([])
+  const [opciones, setOpciones] = useState<ChosenOption[]>([])
   const [nota, setNota] = useState('')
   const [cantidad, setCantidad] = useState(1)
 
@@ -29,14 +58,56 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
     setUltimoId(idActual)
     setVariante(product?.variants[0] || null)
     setExtras([])
+    setOpciones(opcionesPorDefecto(product?.optionGroups || []))
     setNota('')
     setCantidad(1)
   }
 
   const grupos = useMemo(() => groupExtras(product?.extras || []), [product])
-  const precio = product ? unitPrice(product, variante, extras) : 0
+  const gruposOpciones = product?.optionGroups || []
+  const precio = product ? unitPrice(product, variante, extras, opciones) : 0
+  const falta = missingRequirement(gruposOpciones, opciones)
 
   if (!product) return null
+
+  // ── Los tres selectores ───────────────────────────────────────────────────
+
+  /** `single`: un radio. Elegir sustituye lo que hubiera en el grupo. */
+  const elegirUnica = (group: OptionGroup, opcion: ChosenOption) => {
+    setOpciones([...opciones.filter(item => item.groupId !== group.id), opcion])
+  }
+
+  /** `multiple`: casillas. Se bloquea al llegar al tope del grupo. */
+  const alternarOpcion = (group: OptionGroup, opcion: ChosenOption) => {
+    const yaEsta = opciones.some(item => item.optionId === opcion.optionId)
+    if (yaEsta) {
+      return setOpciones(opciones.filter(item => item.optionId !== opcion.optionId))
+    }
+    if (chosenCount(group, opciones) >= group.maxSelectable) return
+    setOpciones([...opciones, opcion])
+  }
+
+  /**
+   * `quantity`: un contador por opción. El tope es del GRUPO y se cuenta en
+   * porciones: en una parrillada de 4, subir el chorizo a 3 solo deja 1 para
+   * repartir entre el resto.
+   */
+  const cambiarCantidadOpcion = (
+    group: OptionGroup,
+    opcion: ChosenOption,
+    siguiente: number,
+  ) => {
+    const resto = opciones.filter(item => item.optionId !== opcion.optionId)
+    if (siguiente <= 0) return setOpciones(resto)
+
+    const usadoPorOtras = resto
+      .filter(item => item.groupId === group.id)
+      .reduce((suma, item) => suma + item.quantity, 0)
+    const permitido = Math.max(0, group.maxSelectable - usadoPorOtras)
+    if (permitido <= 0) return
+
+    setOpciones([...resto, { ...opcion, quantity: Math.min(siguiente, permitido) }])
+  }
 
   const alternarExtra = (extra: Extra) => {
     const elegido = extras.some(item => item.id === extra.id)
@@ -50,11 +121,16 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
   }
 
   const agregar = () => {
+    // Cinturón además del botón deshabilitado: si un obligatorio quedara sin
+    // cumplir, el servidor rechazaría el pedido entero al confirmarlo, y el
+    // cliente lo descubriría al final en vez de aquí.
+    if (falta) return
     onAgregar({
-      key: lineKey(product, variante, extras, nota),
+      key: lineKey(product, variante, extras, nota, opciones),
       product,
       variant: variante,
       extras,
+      options: opciones,
       quantity: cantidad,
       note: nota.trim(),
       unitPrice: precio,
@@ -63,6 +139,13 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
   }
 
   const faltaVariante = product.hasVariants && !variante
+
+  const textoDelBoton = () => {
+    if (!product.available) return 'Agotado'
+    if (faltaVariante) return 'Elige una opción'
+    if (falta) return falta.message
+    return `Agregar · ${money(precio * cantidad)}`
+  }
 
   return (
     <Hoja abierta={abierto} onCerrar={onCerrar} titulo={product.name}>
@@ -105,6 +188,127 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
             </div>
           </section>
         )}
+
+        {gruposOpciones.map((group) => {
+          const elegidas = opciones.filter(item => item.groupId === group.id)
+          const usado = chosenCount(group, opciones)
+          const minimo = Math.max(group.required ? 1 : 0, group.minSelectable)
+          const cumplido = usado >= minimo
+          const lleno = usado >= group.maxSelectable
+
+          return (
+            <section key={group.id}>
+              <h3 className="mb-2.5 flex items-baseline justify-between gap-3 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+                <span className="min-w-0 truncate">{group.name}</span>
+                {minimo > 0
+                  ? (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold normal-case ${
+                        cumplido ? 'bg-marca-suave text-marca' : 'bg-marca text-white'
+                      }`}
+                      >
+                        {cumplido ? '✓ Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}
+                      </span>
+                    )
+                  : group.maxSelectable > 1 && (
+                    <span className="shrink-0 text-[11px] normal-case">
+                      Hasta {group.maxSelectable}
+                    </span>
+                  )}
+              </h3>
+              {group.description && (
+                <p className="mb-2 text-[12px] texto-tenue">{group.description}</p>
+              )}
+
+              <div className="space-y-2">
+                {group.options.map((opcion) => {
+                  const elegida = elegidas.find(item => item.optionId === opcion.id)
+                  const seleccion: ChosenOption = {
+                    groupId: group.id,
+                    groupName: group.name,
+                    optionId: opcion.id,
+                    name: opcion.name,
+                    price: opcion.price,
+                    quantity: 1,
+                  }
+                  const activa = Boolean(elegida)
+                  const bloqueada = !activa && lleno && group.selectionType !== 'single'
+
+                  return (
+                    <div
+                      key={opcion.id}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                        activa ? 'border-marca bg-marca-suave' : 'borde-tema'
+                      } ${bloqueada ? 'opacity-40' : ''}`}
+                    >
+                      {group.selectionType === 'quantity'
+                        ? (
+                            <>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[14px] font-semibold">
+                                  {opcion.name}
+                                </span>
+                                {opcion.description && (
+                                  <span className="block truncate text-[12px] texto-tenue">
+                                    {opcion.description}
+                                  </span>
+                                )}
+                              </span>
+                              {opcion.price !== 0 && (
+                                <span className="shrink-0 text-[13px] font-bold">
+                                  {opcion.price > 0 ? '+' : '−'}
+                                  {money(Math.abs(opcion.price))}
+                                </span>
+                              )}
+                              <Contador
+                                valor={elegida?.quantity || 0}
+                                onCambiar={valor => cambiarCantidadOpcion(group, seleccion, valor)}
+                              />
+                            </>
+                          )
+                        : (
+                            <button
+                              type="button"
+                              onClick={() => (group.selectionType === 'single'
+                                ? elegirUnica(group, seleccion)
+                                : alternarOpcion(group, seleccion))}
+                              disabled={bloqueada}
+                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                            >
+                              <span className={`flex size-5 shrink-0 items-center justify-center border-2 ${
+                                // El radio se distingue del checkbox por la forma,
+                                // que es como se entiende «uno solo» sin leer nada.
+                                group.selectionType === 'single' ? 'rounded-full' : 'rounded-md'
+                              } ${activa ? 'border-marca bg-marca text-white' : 'borde-tema'}`}
+                              >
+                                {activa && (
+                                  <span className="text-[11px] leading-none font-black">✓</span>
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[14px] font-semibold">
+                                  {opcion.name}
+                                </span>
+                                {opcion.description && (
+                                  <span className="block truncate text-[12px] texto-tenue">
+                                    {opcion.description}
+                                  </span>
+                                )}
+                              </span>
+                              {opcion.price !== 0 && (
+                                <span className="shrink-0 text-[14px] font-bold">
+                                  {opcion.price > 0 ? '+' : '−'}
+                                  {money(Math.abs(opcion.price))}
+                                </span>
+                              )}
+                            </button>
+                          )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )
+        })}
 
         {grupos.map(({ group, items }) => {
           const maximo = items[0]?.maxSelectable || null
@@ -168,12 +372,11 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
       <div className="superficie sticky bottom-0 flex items-center gap-3 border-t borde-tema px-4 pt-3 pb-seguro">
         <Contador valor={cantidad} onCambiar={setCantidad} />
         <div className="flex-1">
-          <Boton onClick={agregar} disabled={!puedePedir || faltaVariante || !product.available}>
-            {!product.available
-              ? 'Agotado'
-              : faltaVariante
-                ? 'Elige una opción'
-                : `Agregar · ${money(precio * cantidad)}`}
+          <Boton
+            onClick={agregar}
+            disabled={!puedePedir || faltaVariante || !product.available || Boolean(falta)}
+          >
+            {textoDelBoton()}
           </Boton>
         </div>
       </div>

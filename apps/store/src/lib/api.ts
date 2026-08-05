@@ -103,6 +103,12 @@ export const createOrder = (slug: string, input: {
       productId: linea.product.id,
       variantId: linea.variant?.id || null,
       extraIds: linea.extras.map(extra => extra.id),
+      // Solo id y cantidad: el recargo lo recalcula la base contra su propio
+      // catálogo, nunca se envía desde aquí (regla inviolable #8).
+      options: linea.options.map(opcion => ({
+        optionId: opcion.optionId,
+        quantity: opcion.quantity,
+      })),
       quantity: linea.quantity,
       note: linea.note || null,
     })),

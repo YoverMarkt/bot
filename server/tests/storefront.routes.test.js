@@ -175,18 +175,27 @@ describe('crear pedido desde la mini app', () => {
         items: [{
           productId: 'producto-1', quantity: 2,
           price: 1, unit_price: 1, total: 1, precio: 1,
+          // Las opciones son la puerta nueva por la que podría colarse un
+          // importe: llevan su propio recargo en el catálogo.
+          options: [{ optionId: 'opcion-1', quantity: 3, price: 0.01, recargo: -99 }],
         }],
       },
     })
 
     expect(respuesta.status).toBe(201)
     const enviado = crear.mock.calls[0][0]
-    // Del ítem solo sobreviven identificadores y cantidad.
+    // Del ítem solo sobreviven identificadores y cantidades.
     expect(enviado.items).toEqual([{
-      product_id: 'producto-1', variant_id: null, extra_ids: [], quantity: 2, note: null,
+      product_id: 'producto-1',
+      variant_id: null,
+      extra_ids: [],
+      options: [{ option_id: 'opcion-1', quantity: 3 }],
+      quantity: 2,
+      note: null,
     }])
     expect(JSON.stringify(enviado)).not.toContain('price')
     expect(JSON.stringify(enviado)).not.toContain('precio')
+    expect(JSON.stringify(enviado)).not.toContain('recargo')
   })
 
   // El negocio sale de la SESIÓN, nunca del slug de la dirección. Si saliera
