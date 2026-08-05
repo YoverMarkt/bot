@@ -30,6 +30,14 @@ declare global {
       user?: ClientUserClaims | AdminUserClaims
       rawBody?: Buffer
       storefront?: StorefrontSession
+      /**
+       * El negocio de la URL, ya resuelto por su slug, en las rutas PÚBLICAS
+       * de la tienda (el catálogo). Va aparte de `storefront` a propósito: si
+       * un negocio sin sesión llegara dentro de `storefront`, una ruta que lea
+       * `storefront.customerId` recibiría un objeto a medias y crearía un
+       * pedido sin cliente. Aquí solo hay negocio, y no puede confundirse.
+       */
+      storeBusinessId?: string
     }
   }
 }

@@ -29,7 +29,12 @@ const rutas = router.stack
 const PUBLICA = '/api/store/:slug'
 const ENLACE_CORTO = '/s/:code'
 const VERIFICACION = '/api/store/:slug/session/verify'
+const CATALOGO = '/api/store/:slug/catalog'
 const SIN_SESION = [PUBLICA, ENLACE_CORTO, VERIFICACION]
+// El catálogo es público: se ve sin enlace. Va aparte de `SIN_SESION` porque sí
+// lleva middleware —`readStorefrontSession`, que reclama el dispositivo cuando
+// el enlace SÍ viene— y contarlo con los demás lo daría por protegido.
+const PUBLICAS = [...SIN_SESION, CATALOGO]
 
 describe('rutas de la mini app', () => {
   it('expone las rutas esperadas y ninguna más', () => {
@@ -49,11 +54,57 @@ describe('rutas de la mini app', () => {
   })
 
   // Si alguien añade una ruta y olvida el middleware, este test lo caza.
-  it('toda ruta salvo la portada exige sesión del enlace', () => {
+  it('toda ruta salvo las públicas exige sesión del enlace', () => {
     const sinProteger = rutas
-      .filter(ruta => !SIN_SESION.includes(ruta.path) && ruta.handlers < 2)
+      .filter(ruta => !PUBLICAS.includes(ruta.path) && ruta.handlers < 2)
       .map(ruta => ruta.path)
     expect(sinProteger).toEqual([])
+  })
+
+  // Contar middlewares no basta: `readStorefrontSession` también cuenta como
+  // uno, y el catálogo pasaría por protegido sin estarlo. Aquí se mira CUÁL
+  // lleva cada ruta, que es lo que de verdad decide quién entra.
+  //
+  // La distinción es la que sostiene el catálogo público: mirar la carta no
+  // pide enlace; crear un pedido, ver direcciones o el perfil, sí.
+  it('cada ruta lleva el middleware que le toca, no uno cualquiera', () => {
+    const fuente = fs.readFileSync('dist/routes/storefront.routes.js', 'utf8')
+    const middlewareDe = (path) => {
+      const desde = fuente.indexOf(`'${path}'`)
+      expect(desde, `no se encontró la ruta ${path}`).toBeGreaterThan(-1)
+      const linea = fuente.slice(desde, fuente.indexOf('\n', desde))
+      if (linea.includes('requireStorefrontSession')) return 'exige'
+      if (linea.includes('readStorefrontSession')) return 'opcional'
+      return 'ninguno'
+    }
+
+    // El catálogo se ve sin enlace.
+    expect(middlewareDe(CATALOGO)).toBe('opcional')
+
+    // Todo lo que escribe o devuelve datos de una PERSONA lo sigue exigiendo.
+    for (const path of [
+      '/api/store/:slug/me',
+      '/api/store/:slug/addresses',
+      '/api/store/:slug/orders',
+      '/api/store/:slug/orders/:id/proof',
+      '/api/store/:slug/payment-info',
+      '/api/store/:slug/stay/quote',
+      '/api/store/:slug/stay/request',
+    ]) {
+      expect(middlewareDe(path), path).toBe('exige')
+    }
+  })
+
+  // La garantía que hace que abrir el catálogo no abra nada más: el middletware
+  // opcional deja el negocio en `storeBusinessId` y el cliente SOLO en
+  // `storefront`. Si el negocio sin sesión entrara en `storefront`, una ruta
+  // que lea `storefront.customerId` crearía un pedido sin cliente.
+  it('el catálogo público no puede dejar una sesión a medias', () => {
+    const fuente = fs.readFileSync('dist/middleware/storefront.js', 'utf8')
+    const bloque = fuente.slice(fuente.indexOf('readStorefrontSession'))
+    expect(bloque).toContain('storeBusinessId')
+    // Solo se asigna `storefront` cuando hay sesión completa.
+    expect(bloque).toMatch(/if \(session\)\s*req\.storefront = session/)
   })
 
   it('las rutas sin sesión son exactamente esas tres, y no más', () => {
