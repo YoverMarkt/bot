@@ -54,6 +54,44 @@ export interface Extra {
   maxSelectable: number | null
 }
 
+/** Una opción concreta dentro de un grupo. El recargo puede ser NEGATIVO. */
+export interface OptionChoice {
+  id: string
+  name: string
+  description: string | null
+  imageUrl: string | null
+  price: number
+  referencesProductId: string | null
+  defaultSelected: boolean
+}
+
+/**
+ * Cómo se arma un plato. Los tres tipos son los tres selectores reales:
+ *   single   → un radio. Tamaño de pizza, término de la carne.
+ *   multiple → casillas con tope. Ingredientes, salsas.
+ *   quantity → cada opción con su contador. Cortes de una parrillada.
+ */
+export interface OptionGroup {
+  id: string
+  name: string
+  description: string | null
+  selectionType: 'single' | 'multiple' | 'quantity'
+  required: boolean
+  minSelectable: number
+  maxSelectable: number
+  options: OptionChoice[]
+}
+
+/** Lo que el cliente eligió de un grupo. `quantity` es 1 salvo en los contadores. */
+export interface ChosenOption {
+  groupId: string
+  groupName: string
+  optionId: string
+  name: string
+  price: number
+  quantity: number
+}
+
 export interface Product {
   id: string
   name: string
@@ -68,6 +106,7 @@ export interface Product {
   hasVariants: boolean
   variants: Variant[]
   extras: Extra[]
+  optionGroups: OptionGroup[]
 }
 
 export interface Catalog {
@@ -100,6 +139,7 @@ export interface CartLine {
   product: Product
   variant: Variant | null
   extras: Extra[]
+  options: ChosenOption[]
   quantity: number
   note: string
   /** Solo para pintar. El importe que se cobra lo calcula el servidor. */

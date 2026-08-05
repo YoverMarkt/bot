@@ -54,6 +54,8 @@ interface StorefrontRouteDatabase {
   getStorefrontProducts(businessId: string): Promise<unknown[]>
   getStorefrontVariants(businessId: string): Promise<unknown[]>
   getStorefrontExtras(businessId: string): Promise<unknown[]>
+  getStorefrontOptionGroups(businessId: string): Promise<unknown[]>
+  getStorefrontOptions(businessId: string): Promise<unknown[]>
   getBusinessBankAccount(businessId: string): Promise<unknown>
   getCustomerAddresses(businessId: string, customerId: string): Promise<unknown[]>
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
@@ -226,11 +228,13 @@ router.get('/api/store/:slug/catalog', requireStorefrontSession, async (req, res
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
   const { status } = await readStatus(business)
 
-  const [categories, products, variants, extras] = await Promise.all([
+  const [categories, products, variants, extras, optionGroups, options] = await Promise.all([
     db.getStorefrontCategories(businessId),
     db.getStorefrontProducts(businessId),
     db.getStorefrontVariants(businessId),
     db.getStorefrontExtras(businessId),
+    db.getStorefrontOptionGroups(businessId),
+    db.getStorefrontOptions(businessId),
   ])
 
   return res.json({
@@ -242,6 +246,8 @@ router.get('/api/store/:slug/catalog', requireStorefrontSession, async (req, res
       products: products as never,
       variants: variants as never,
       extras: extras as never,
+      optionGroups: optionGroups as never,
+      options: options as never,
     }),
   })
 })
@@ -311,6 +317,18 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
       extra_ids: (Array.isArray(item.extraIds) ? item.extraIds : [])
         .slice(0, 20)
         .map(id => String(id)),
+      // Del motor de opciones solo pasa el id y cuántas porciones. El recargo,
+      // el nombre y la validación de obligatorios salen de la base.
+      options: (Array.isArray(item.options) ? item.options : [])
+        .slice(0, 30)
+        .map((raw) => {
+          const opcion = (raw || {}) as Record<string, unknown>
+          return {
+            option_id: String(opcion.optionId || opcion.option_id || ''),
+            quantity: Math.min(100, Math.max(1, Number(opcion.quantity) || 1)),
+          }
+        })
+        .filter(opcion => opcion.option_id),
       quantity: Number(item.quantity) || 0,
       note: String(item.note || '').slice(0, 200) || null,
     }

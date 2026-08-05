@@ -3392,6 +3392,19 @@ declare
   v_extra_ids uuid[];
   v_extras_total numeric(10,2);
   v_extras_names text[];
+  -- Lo elegido de los grupos de opciones, ya validado y con su precio de la
+  -- base. Se acumula EN MEMORIA y por línea: una tabla auxiliar la pisarían
+  -- dos pedidos simultáneos del mismo negocio.
+  v_chosen jsonb;
+  v_option jsonb;
+  v_option_row record;
+  v_options_total numeric(10,2);
+  v_options_names text[];
+  v_option_qty integer;
+  v_group record;
+  v_group_count integer;
+  v_product_category uuid;
+  v_order_item_id uuid;
   v_unit_price numeric(10,2);
   v_line_total numeric(10,2);
   v_subtotal numeric(10,2) := 0;
@@ -3469,7 +3482,7 @@ begin
       raise exception using errcode = '22023', message = 'La cantidad debe estar entre 1 y 99';
     end if;
 
-    select id, name, price, price_sale, stock
+    select id, name, price, price_sale, stock, category_id
     into v_product
     from public.products
     where id = v_product_id
@@ -3552,10 +3565,140 @@ begin
       end if;
     end if;
 
-    v_unit_price := round(v_unit_price + coalesce(v_extras_total, 0), 2);
+    -- ── Grupos de opciones: el motor con el que se arma un plato ──────────
+    --
+    -- Aquí se decide el dinero de verdad. La app manda id y cantidad; el
+    -- recargo, el nombre y el derecho a estar en este producto salen de la
+    -- base (regla inviolable #8).
+    v_options_total := 0;
+    v_options_names := '{}'::text[];
+    v_chosen := '[]'::jsonb;
+    v_product_category := v_product.category_id;
+
+    if jsonb_typeof(v_item -> 'options') = 'array' then
+      if jsonb_array_length(v_item -> 'options') > 30 then
+        raise exception using errcode = '22023', message = 'Demasiadas opciones en un producto';
+      end if;
+
+      for v_option in select * from jsonb_array_elements(v_item -> 'options')
+      loop
+        v_option_qty := greatest(1, least(100, coalesce((v_option ->> 'quantity')::integer, 1)));
+
+        -- La opción tiene que ser de este negocio Y de un grupo que aplique a
+        -- ESTE producto: del producto, o de su categoría. Sin esto se podría
+        -- abaratar una pizza mandando el id de una opción de otro plato.
+        select o.id, o.name, o.price_adjustment, o.stock,
+               og.id as group_id, og.name as group_name, og.selection_type
+        into v_option_row
+        from public.options o
+        join public.option_groups og on og.id = o.option_group_id
+        where o.id = nullif(v_option ->> 'option_id', '')::uuid
+          and o.business_id = p_business_id
+          and o.active = true
+          and og.business_id = p_business_id
+          and og.active = true
+          and (
+            og.product_id = v_product_id
+            or (og.category_id is not null and og.category_id = v_product_category)
+          );
+        if not found then
+          raise exception using errcode = '42501',
+            message = format('Una opcion no corresponde a %s', v_product.name);
+        end if;
+        if v_option_row.stock = 'agotado' then
+          raise exception using errcode = '22023',
+            message = format('%s ya no esta disponible', v_option_row.name);
+        end if;
+
+        -- Fuera de los contadores, pedir tres veces la misma opción no
+        -- significa nada y multiplicaría su recargo.
+        if v_option_row.selection_type <> 'quantity' and v_option_qty <> 1 then
+          raise exception using errcode = '22023',
+            message = format('%s no se elige por cantidad', v_option_row.group_name);
+        end if;
+        -- Ni mandarla dos veces, que sería el mismo truco por otra puerta.
+        if exists (
+          select 1 from jsonb_array_elements(v_chosen) e
+          where (e ->> 'option_id')::uuid = v_option_row.id
+        ) then
+          raise exception using errcode = '22023',
+            message = format('%s viene repetida', v_option_row.name);
+        end if;
+
+        v_options_total := v_options_total
+          + round(v_option_row.price_adjustment * v_option_qty, 2);
+        v_options_names := v_options_names || (
+          case when v_option_qty > 1
+            then format('%s x%s', v_option_row.name, v_option_qty)
+            else v_option_row.name
+          end
+        );
+        v_chosen := v_chosen || jsonb_build_object(
+          'option_id', v_option_row.id,
+          'option_group_id', v_option_row.group_id,
+          'option_group_name', v_option_row.group_name,
+          'option_name', v_option_row.name,
+          'quantity', v_option_qty,
+          'unit_price_adjustment', v_option_row.price_adjustment
+        );
+      end loop;
+    end if;
+
+    -- ── Lo OBLIGATORIO se comprueba aquí, no en el navegador ──────────────
+    --
+    -- Un pedido sin el término de la carne llega a la cocina sin poder
+    -- prepararse. La app ya lo impide, pero la app se puede saltar: esto es
+    -- lo único que de verdad manda.
+    for v_group in
+      select og.id, og.name, og.selection_type, og.required,
+             og.min_selectable, og.max_selectable
+      from public.option_groups og
+      where og.business_id = p_business_id
+        and og.active = true
+        and (
+          og.product_id = v_product_id
+          or (og.category_id is not null and og.category_id = v_product_category)
+        )
+    loop
+      -- En los contadores cuentan las PORCIONES; en el resto, cuántas se
+      -- marcaron. Una parrillada de 4 se cumple con un corte pedido 4 veces.
+      select coalesce(sum(
+        case when v_group.selection_type = 'quantity'
+          then (e ->> 'quantity')::integer else 1 end
+      ), 0)
+      into v_group_count
+      from jsonb_array_elements(v_chosen) e
+      where (e ->> 'option_group_id')::uuid = v_group.id;
+
+      if v_group_count < greatest(
+        case when v_group.required then 1 else 0 end,
+        coalesce(v_group.min_selectable, 0)
+      ) then
+        raise exception using errcode = '22023',
+          message = format('Falta elegir %s en %s', v_group.name, v_product.name);
+      end if;
+      if v_group_count > coalesce(v_group.max_selectable, 1) then
+        raise exception using errcode = '22023',
+          message = format('Demasiadas opciones en %s', v_group.name);
+      end if;
+    end loop;
+
+    -- Los recargos pueden ser NEGATIVOS («sin sopa −0.50»). Acumulados podrían
+    -- dejar la línea en cero o por debajo, que es un plato regalado.
+    v_unit_price := round(
+      v_unit_price + coalesce(v_extras_total, 0) + coalesce(v_options_total, 0), 2
+    );
+    if not (v_unit_price > 0) then
+      raise exception using errcode = '22023',
+        message = format('%s quedaria sin precio valido con esas opciones', v_product.name);
+    end if;
+
     v_line_total := round(v_unit_price * v_quantity, 2);
     v_subtotal := v_subtotal + v_line_total;
 
+    -- `extras_names` es lo que el DUEÑO ve en su panel de pedidos. Las opciones
+    -- entran ahí ADEMÁS de en `order_item_options`: si solo fueran a la tabla
+    -- nueva, el pedido se vería sin lo que el cliente pidió.
     insert into public.order_items (
       order_id, business_id, product_id, product_name,
       variant_id, variant_name, extras_names, item_note,
@@ -3563,9 +3706,25 @@ begin
     ) values (
       v_order_id, p_business_id, v_product.id, v_product.name,
       v_variant_ref, v_variant_label,
-      coalesce(v_extras_names, '{}'), v_note,
+      coalesce(v_extras_names, '{}') || coalesce(v_options_names, '{}'), v_note,
       v_quantity, v_unit_price, v_line_total
-    );
+    )
+    returning id into v_order_item_id;
+
+    -- La fotografía inmutable de lo elegido, con su precio congelado: si
+    -- mañana cambia el recargo, el pedido de ayer sigue diciendo lo que costó.
+    insert into public.order_item_options (
+      business_id, order_item_id, option_group_id, option_id,
+      option_group_name, option_name, quantity,
+      unit_price_adjustment, total_price_adjustment
+    )
+    select p_business_id, v_order_item_id,
+           (e ->> 'option_group_id')::uuid, (e ->> 'option_id')::uuid,
+           e ->> 'option_group_name', e ->> 'option_name',
+           (e ->> 'quantity')::integer,
+           (e ->> 'unit_price_adjustment')::numeric,
+           round((e ->> 'unit_price_adjustment')::numeric * (e ->> 'quantity')::integer, 2)
+    from jsonb_array_elements(v_chosen) e;
   end loop;
 
   -- ── El envío: fijo del negocio, y SOLO si se lleva a domicilio ───────────

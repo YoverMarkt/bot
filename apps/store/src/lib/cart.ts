@@ -1,4 +1,11 @@
-import type { CartLine, Extra, Product, Variant } from './types'
+import type {
+  CartLine,
+  ChosenOption,
+  Extra,
+  OptionGroup,
+  Product,
+  Variant,
+} from './types'
 
 // Carrito.
 //
@@ -16,24 +23,84 @@ export const lineKey = (
   variant: Variant | null,
   extras: Extra[],
   note: string,
+  options: ChosenOption[] = [],
 ): string => [
   product.id,
   variant?.id || '',
   extras.map(extra => extra.id).sort().join(','),
+  // La cantidad entra en la identidad: dos parrilladas con los mismos cortes
+  // pero repartidos distinto («2 lomo + 1 pollo» vs «1 lomo + 2 pollo») son dos
+  // platos distintos, y sumarlas en una sola línea perdería lo que se pidió.
+  options.map(opcion => `${opcion.optionId}x${opcion.quantity}`).sort().join(','),
   note.trim().toLowerCase(),
 ].join('|')
 
-/** Precio unitario mostrado: base (o variante) más los extras elegidos. */
+/**
+ * Precio unitario mostrado: base (o variante), más los extras, más las opciones
+ * elegidas por su cantidad. Los recargos pueden ser NEGATIVOS —«sin sopa
+ * −0.50»—, así que el resultado se protege de bajar de cero: un plato gratis
+ * por acumular descuentos sería un agujero, y el servidor lo rechazaría igual.
+ */
 export const unitPrice = (
   product: Product,
   variant: Variant | null,
   extras: Extra[],
+  options: ChosenOption[] = [],
 ): number => {
   const base = variant
     ? (variant.priceSale ?? variant.price)
     : (product.priceFrom ?? 0)
   const suma = extras.reduce((total, extra) => total + (extra.price || 0), 0)
-  return Math.round((base + suma) * 100) / 100
+  const opciones = options.reduce(
+    (total, opcion) => total + (opcion.price || 0) * (opcion.quantity || 1),
+    0,
+  )
+  return Math.max(0, Math.round((base + suma + opciones) * 100) / 100)
+}
+
+/**
+ * ¿Se puede agregar ya, o falta algo obligatorio?
+ *
+ * Devuelve el PRIMER grupo que falta, con el texto que va en el botón. Decir
+ * «Elige el término» lleva al cliente al sitio; «Completa las opciones» lo deja
+ * buscando cuál de seis bloques es.
+ *
+ * Es la mitad visible de la regla: la otra la aplica la base al crear el pedido,
+ * que es la que de verdad manda.
+ */
+export function missingRequirement(
+  groups: OptionGroup[],
+  options: ChosenOption[],
+): { group: OptionGroup; message: string } | null {
+  for (const group of groups) {
+    if (!group.required && group.minSelectable <= 0) continue
+
+    const elegidas = options.filter(opcion => opcion.groupId === group.id)
+    // En los contadores lo que cuenta son las porciones, no cuántas casillas
+    // se tocaron: una parrillada de 4 se cumple con un solo corte por 4.
+    const total = group.selectionType === 'quantity'
+      ? elegidas.reduce((suma, opcion) => suma + opcion.quantity, 0)
+      : elegidas.length
+
+    const minimo = Math.max(group.required ? 1 : 0, group.minSelectable)
+    if (total >= minimo) continue
+
+    return {
+      group,
+      message: minimo > 1
+        ? `Elige ${minimo} en ${group.name}`
+        : `Elige ${group.name.toLowerCase()}`,
+    }
+  }
+  return null
+}
+
+/** Cuánto se lleva elegido de un grupo, contando porciones en los contadores. */
+export function chosenCount(group: OptionGroup, options: ChosenOption[]): number {
+  const elegidas = options.filter(opcion => opcion.groupId === group.id)
+  return group.selectionType === 'quantity'
+    ? elegidas.reduce((suma, opcion) => suma + opcion.quantity, 0)
+    : elegidas.length
 }
 
 export const lineTotal = (line: CartLine): number =>
