@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { BusinessRecord } from '../types'
+import type { BusinessRecord, BusinessTemplate } from '../types'
 import {
   normalizeChannelIdentifier,
   type ChannelAddress,
@@ -191,6 +191,21 @@ const deleteBusiness = async (id: string) => (
   db.from('businesses').delete().eq('id', id)
 )
 
+/**
+ * Deja cargadas las categorías y los grupos de opciones típicos del tipo de
+ * negocio recién creado. La RPC la aplica entera o no la aplica.
+ *
+ * Devuelve `aplicada: false` sin tocar nada si el negocio ya tiene catálogo, y
+ * eso NO es un error: el tipo solo recomienda al crear y jamás pisa decisiones
+ * ya tomadas, así que quien llame debe tratarlo como un resultado normal.
+ */
+const applyBusinessTemplate = async (businessId: string, template: BusinessTemplate) => (
+  db.rpc('apply_business_template', {
+    p_business_id: businessId,
+    p_template: template,
+  })
+)
+
 export = {
   getBusinessById,
   getBusinessBySlug,
@@ -206,4 +221,5 @@ export = {
   reactivateBusiness,
   updateBusinessPlanBilling,
   deleteBusiness,
+  applyBusinessTemplate,
 }

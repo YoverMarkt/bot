@@ -843,6 +843,95 @@ end;
 $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- LA PLANTILLA DEL TIPO DE NEGOCIO
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Va en su propio bloque porque necesita negocios RECIÉN creados: el de arriba
+-- ya tiene catálogo, y el portón de la función —que es justo lo que hay que
+-- comprobar— lo rechazaría por el motivo correcto, dando un falso verde.
+do $plantillas$
+declare
+  v_limpio uuid; v_ocupado uuid;
+  v_resultado jsonb;
+  v_plantilla jsonb := jsonb_build_object('categorias', jsonb_build_array(
+    jsonb_build_object(
+      'nombre', 'Hamburguesas', 'orden', 0,
+      'grupos', jsonb_build_array(
+        jsonb_build_object(
+          'nombre', 'Término de la carne', 'tipo', 'single',
+          'obligatorio', true, 'min', 1, 'max', 1,
+          'opciones', jsonb_build_array(
+            jsonb_build_object('nombre', 'Tres cuartos'),
+            jsonb_build_object('nombre', 'Bien cocida')
+          )
+        ),
+        jsonb_build_object(
+          'nombre', 'Extras', 'tipo', 'multiple', 'max', 6,
+          'opciones', jsonb_build_array(
+            jsonb_build_object('nombre', 'Tocino', 'recargo', 1)
+          )
+        )
+      )
+    ),
+    jsonb_build_object('nombre', 'Bebidas', 'orden', 1)
+  ));
+begin
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-plantilla-limpio', 'Limpio', 'hamburguesería', 'ycloud',
+    '+593900888001', '+593900888001', true)
+  returning id into v_limpio;
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-plantilla-ocupado', 'Ocupado', 'hamburguesería', 'ycloud',
+    '+593900888002', '+593900888002', true)
+  returning id into v_ocupado;
+
+  v_resultado := public.apply_business_template(v_limpio, v_plantilla);
+  if (v_resultado->>'aplicada')::boolean is not true
+     or (v_resultado->>'categorias')::integer <> 2
+     or (v_resultado->>'grupos')::integer <> 2
+     or (v_resultado->>'opciones')::integer <> 3 then
+    raise exception 'apply_business_template no cargó la plantilla: %', v_resultado;
+  end if;
+
+  -- Lo que hace útil a la plantilla: el grupo existe SIN productos todavía, y
+  -- conserva su obligatoriedad y su recargo.
+  if not exists (
+    select 1 from option_groups
+    where business_id = v_limpio and product_id is null and category_id is not null
+      and name = 'Término de la carne' and required and min_selectable = 1
+  ) then
+    raise exception 'el grupo obligatorio de la plantilla no quedó bien colgado';
+  end if;
+  if not exists (
+    select 1 from options o
+    join option_groups og on og.id = o.option_group_id
+    where og.business_id = v_limpio and o.name = 'Tocino' and o.price_adjustment = 1
+  ) then
+    raise exception 'la plantilla perdió el recargo de una opción';
+  end if;
+
+  -- El portón: sobre un negocio con catálogo no toca nada.
+  insert into product_categories (business_id, name) values (v_ocupado, 'Ya existía');
+  v_resultado := public.apply_business_template(v_ocupado, v_plantilla);
+  if (v_resultado->>'aplicada')::boolean is not false
+     or (select count(*) from product_categories where business_id = v_ocupado) <> 1 then
+    raise exception 'apply_business_template pisó un negocio con catálogo: %', v_resultado;
+  end if;
+
+  -- Y un negocio inexistente se rechaza en vez de sembrar filas sueltas.
+  begin
+    perform public.apply_business_template(gen_random_uuid(), v_plantilla);
+    raise exception 'apply_business_template aceptó un negocio inexistente';
+  exception when insufficient_privilege then null;
+  end;
+
+  delete from businesses where id in (v_limpio, v_ocupado);
+  raise notice 'PLANTILLAS DE NEGOCIO: carga, portón y negocio inexistente comprobados';
+end;
+$plantillas$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- `create or replace function` con un parámetro nuevo NO reemplaza: crea una

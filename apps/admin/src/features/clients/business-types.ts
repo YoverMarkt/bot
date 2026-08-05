@@ -8,6 +8,32 @@ export const BUSINESS_TYPE_OPTIONS = [
   { value: 'pizzería', label: 'Pizzería', mode: 'normal', sales: 'vende' },
   { value: 'restaurante', label: 'Restaurante', mode: 'normal', sales: 'vende' },
   { value: 'cafetería', label: 'Cafetería', mode: 'normal', sales: 'vende' },
+  // ── Comida ────────────────────────────────────────────────────────────────
+  // Es el grueso del mercado real y hasta ahora solo cabían en «restaurante».
+  // Cada uno trae su plantilla de categorías y grupos en el servidor
+  // (`services/business-templates.ts`), así que el tipo elegido aquí decide
+  // con qué catálogo NACE el negocio.
+  { value: 'hamburguesería', label: 'Hamburguesería', mode: 'normal', sales: 'vende' },
+  { value: 'comida rápida', label: 'Comida rápida', mode: 'normal', sales: 'vende' },
+  { value: 'almuerzos', label: 'Almuerzos', mode: 'normal', sales: 'vende' },
+  { value: 'menú ejecutivo', label: 'Menú ejecutivo', mode: 'normal', sales: 'vende' },
+  { value: 'comida típica', label: 'Comida típica', mode: 'normal', sales: 'vende' },
+  { value: 'desayunos', label: 'Desayunos', mode: 'normal', sales: 'vende' },
+  { value: 'asadero', label: 'Asadero', mode: 'normal', sales: 'vende' },
+  { value: 'parrillada', label: 'Parrillada', mode: 'normal', sales: 'vende' },
+  { value: 'pollo asado', label: 'Pollo asado / broaster', mode: 'normal', sales: 'vende' },
+  { value: 'marisquería', label: 'Marisquería / cevichería', mode: 'normal', sales: 'vende' },
+  { value: 'sushi', label: 'Sushi / comida japonesa', mode: 'normal', sales: 'vende' },
+  { value: 'comida mexicana', label: 'Comida mexicana', mode: 'normal', sales: 'vende' },
+  { value: 'comida china', label: 'Comida china', mode: 'normal', sales: 'vende' },
+  { value: 'comida saludable', label: 'Comida saludable', mode: 'normal', sales: 'vende' },
+  { value: 'heladería', label: 'Heladería', mode: 'normal', sales: 'vende' },
+  { value: 'pastelería', label: 'Pastelería', mode: 'normal', sales: 'vende' },
+  { value: 'postres', label: 'Postres', mode: 'normal', sales: 'vende' },
+  { value: 'batidos', label: 'Batidos / smoothies', mode: 'normal', sales: 'vende' },
+  { value: 'jugos', label: 'Jugos naturales', mode: 'normal', sales: 'vende' },
+  { value: 'carnicería', label: 'Carnicería / preparados', mode: 'normal', sales: 'vende' },
+  { value: 'emprendimiento de comida', label: 'Emprendimiento de comida', mode: 'normal', sales: 'vende' },
   { value: 'tienda', label: 'Tienda', mode: 'normal', sales: 'vende' },
   { value: 'perfumería', label: 'Perfumería', mode: 'normal', sales: 'vende' },
   { value: 'farmacia', label: 'Farmacia', mode: 'normal', sales: 'vende' },

@@ -125,3 +125,37 @@ export interface TagData {
   name: string
   color?: unknown
 }
+
+/**
+ * Plantilla de arranque de un tipo de negocio: las categorías con las que nace
+ * su catálogo y los grupos de opciones típicos de cada una.
+ *
+ * Los grupos cuelgan de la CATEGORÍA, no de un producto, porque al crear el
+ * negocio todavía no existe ninguno. Los importes van en `recargo` y admiten
+ * negativos («sin sopa −0.50»).
+ */
+export interface TemplateOption {
+  nombre: string
+  recargo?: number
+  orden?: number
+}
+
+export interface TemplateGroup {
+  nombre: string
+  tipo?: 'single' | 'multiple' | 'quantity'
+  obligatorio?: boolean
+  min?: number
+  max?: number
+  orden?: number
+  opciones?: TemplateOption[]
+}
+
+export interface TemplateCategory {
+  nombre: string
+  orden?: number
+  grupos?: TemplateGroup[]
+}
+
+export interface BusinessTemplate {
+  categorias: TemplateCategory[]
+}
