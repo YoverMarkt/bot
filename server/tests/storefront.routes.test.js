@@ -34,7 +34,8 @@ const SIN_SESION = [PUBLICA, ENLACE_CORTO, VERIFICACION]
 // El catálogo es público: se ve sin enlace. Va aparte de `SIN_SESION` porque sí
 // lleva middleware —`readStorefrontSession`, que reclama el dispositivo cuando
 // el enlace SÍ viene— y contarlo con los demás lo daría por protegido.
-const PUBLICAS = [...SIN_SESION, CATALOGO]
+const COTIZAR = '/api/store/:slug/quote'
+const PUBLICAS = [...SIN_SESION, CATALOGO, COTIZAR]
 
 describe('rutas de la mini app', () => {
   it('expone las rutas esperadas y ninguna más', () => {
@@ -46,6 +47,7 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/orders',
       '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
+      '/api/store/:slug/quote',
       '/api/store/:slug/session/verify',
       '/api/store/:slug/stay/quote',
       '/api/store/:slug/stay/request',
@@ -78,8 +80,10 @@ describe('rutas de la mini app', () => {
       return 'ninguno'
     }
 
-    // El catálogo se ve sin enlace.
+    // El catálogo se ve sin enlace, y cotizar tampoco lo pide: no crea nada,
+    // solo dice cuánto costaría. Crear el pedido sí.
     expect(middlewareDe(CATALOGO)).toBe('opcional')
+    expect(middlewareDe(COTIZAR)).toBe('opcional')
 
     // Todo lo que escribe o devuelve datos de una PERSONA lo sigue exigiendo.
     for (const path of [

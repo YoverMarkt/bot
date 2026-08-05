@@ -98,6 +98,7 @@ bot/
 │   ├── src/services/bot-entry.ts # Debounce, resolución de negocio y adaptadores WA/TG tipados
 │   ├── src/services/business-templates.ts # Con qué catálogo nace cada tipo de negocio (solo recomienda al crear)
 │   ├── src/services/pricing.ts # Las 8 estrategias de cobro por grupo (copia en TS de lo que cobra la base)
+│   │                            # y `quoteCart` en storefront.ts: el total exacto antes de confirmar, sin crear el pedido
 │   ├── src/services/money.ts   # Resolución estricta, centavos, totales y resumen oficial
 │   ├── src/services/lodging.ts # Contratos y normalización del núcleo de hospedaje
 │   ├── src/services/channel-health.ts # Vigilancia del canal de entrada: silencio por negocio y fallos del webhook

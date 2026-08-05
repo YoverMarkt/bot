@@ -10,6 +10,11 @@
 //     Lo que se pinte en pantalla es informativo; lo que se cobra lo decide el
 //     servidor (regla inviolable #8).
 
+// El tipo vive con el motor que lo usa, y se reexporta para que quien arma el
+// catálogo no tenga que saber de dónde sale.
+import { calculateProductPrice, type PricingStrategy } from './pricing'
+export type { PricingStrategy }
+
 export interface StorefrontBusiness {
   id: string
   name?: string | null
@@ -101,10 +106,6 @@ export interface CatalogOptionGroup {
   free_selections?: number | null
   sort?: number
 }
-
-export type PricingStrategy =
-  | 'sum' | 'fixed' | 'highest_selected' | 'lowest_selected'
-  | 'average' | 'included' | 'included_up_to_limit' | 'extra_after_limit'
 
 export interface CatalogOption {
   id: string
@@ -373,4 +374,155 @@ export function publicBusiness(business: StorefrontBusiness) {
     // Informativo: el importe oficial lo vuelve a calcular la base al pedir.
     deliveryFee: Math.max(0, Number(business.delivery_fee) || 0),
   }
+}
+
+// ── Cotizar un carrito sin crear el pedido ──────────────────────────────────
+//
+// El total EXACTO que se va a cobrar, con su desglose, resuelto contra el
+// catálogo del negocio. Lo pide el checkout justo antes de confirmar: la app
+// calcula mientras el cliente elige —para que la pantalla responda al
+// instante— pero el número que se enseña antes de pagar sale de aquí.
+//
+// Aplica el MISMO `pricing.ts` cuya lógica replica `create_storefront_order`.
+// Si la cotización y el cobro difirieran, el cliente vería un número al
+// confirmar y otro en el pedido.
+//
+// ⚠️ No es la autoridad: sigue siéndolo la RPC (regla inviolable #8). Esto no
+// escribe ni reserva nada, así que un desajuste aquí se nota antes de cobrar.
+
+export interface QuoteItemInput {
+  productId?: unknown
+  variantId?: unknown
+  quantity?: unknown
+  options?: unknown
+}
+
+export interface QuoteLine {
+  productId: string
+  name: string
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  options: { name: string; groupName: string; quantity: number; price: number }[]
+}
+
+export interface CartQuote {
+  error?: string
+  lines: QuoteLine[]
+  subtotal: number
+  shipping: number
+  total: number
+}
+
+const vacia = (error: string): CartQuote => ({ error, lines: [], subtotal: 0, shipping: 0, total: 0 })
+
+export function quoteCart(input: {
+  items: QuoteItemInput[]
+  products: CatalogProduct[]
+  variants: CatalogVariant[]
+  optionGroups: CatalogOptionGroup[]
+  options: CatalogOption[]
+  deliveryFee: number
+  fulfillment: string
+}): CartQuote {
+  const porProducto = new Map(input.products.map(producto => [producto.id, producto]))
+  const porVariante = new Map(input.variants.map(variante => [variante.id, variante]))
+  const porGrupo = new Map(input.optionGroups.map(grupo => [grupo.id, grupo]))
+  const porOpcion = new Map(input.options.map(opcion => [opcion.id, opcion]))
+
+  const lines: QuoteLine[] = []
+  let subtotal = 0
+
+  for (const bruto of input.items) {
+    const producto = porProducto.get(String(bruto.productId || ''))
+    if (!producto) return vacia('Uno de los productos ya no está disponible')
+    if (!disponible(producto.stock)) return vacia(`${producto.name} está agotado`)
+
+    const cantidad = Math.trunc(Number(bruto.quantity) || 0)
+    if (cantidad < 1 || cantidad > 99) return vacia('La cantidad no es válida')
+
+    // El precio base sale de la variante si la hay; si no, del producto.
+    let base = money(producto.price_sale) || money(producto.price) || 0
+    const variante = bruto.variantId ? porVariante.get(String(bruto.variantId)) : null
+    if (bruto.variantId && !variante) return vacia('Esa presentación ya no existe')
+    if (variante) {
+      if (variante.product_id !== producto.id) return vacia('Esa presentación no es de este producto')
+      base = money(variante.price_sale) || money(variante.price) || 0
+    }
+
+    // Lo elegido, agrupado: cada grupo cobra con SU estrategia y para eso hay
+    // que verlo entero, no opción por opción.
+    const elegidasPorGrupo = new Map<string, { price: number; quantity: number }[]>()
+    const detalle: QuoteLine['options'] = []
+
+    for (const cruda of Array.isArray(bruto.options) ? bruto.options.slice(0, 30) : []) {
+      const dato = (cruda || {}) as Record<string, unknown>
+      const opcion = porOpcion.get(String(dato.optionId || dato.option_id || ''))
+      if (!opcion) return vacia('Una de las opciones ya no está disponible')
+      const grupo = porGrupo.get(opcion.option_group_id)
+      if (!grupo) return vacia('Una de las opciones ya no está disponible')
+      // La opción tiene que ser de un grupo de ESTE producto: suyo o de su
+      // categoría. Es la misma frontera que aplica la RPC.
+      const aplica = grupo.product_id === producto.id
+        || (Boolean(grupo.category_id) && grupo.category_id === producto.category_id)
+      if (!aplica) return vacia(`Una opción no corresponde a ${producto.name}`)
+      if (!disponible(opcion.stock)) return vacia(`${opcion.name} ya no está disponible`)
+
+      const porciones = Math.min(100, Math.max(1, Math.trunc(Number(dato.quantity) || 1)))
+      const precio = money(opcion.price_adjustment) ?? 0
+      elegidasPorGrupo.set(grupo.id, [
+        ...elegidasPorGrupo.get(grupo.id) || [],
+        { price: precio, quantity: porciones },
+      ])
+      detalle.push({
+        name: opcion.name,
+        groupName: grupo.name,
+        quantity: porciones,
+        price: precio,
+      })
+    }
+
+    // Los obligatorios se exigen aquí también: cotizar algo que la RPC va a
+    // rechazar dejaría al cliente pagando una pantalla que no existe.
+    for (const grupo of input.optionGroups) {
+      const aplica = grupo.product_id === producto.id
+        || (Boolean(grupo.category_id) && grupo.category_id === producto.category_id)
+      if (!aplica) continue
+      const elegidas = elegidasPorGrupo.get(grupo.id) || []
+      const cuenta = grupo.selection_type === 'quantity'
+        ? elegidas.reduce((suma, opcion) => suma + opcion.quantity, 0)
+        : elegidas.length
+      const minimo = Math.max(grupo.required ? 1 : 0, grupo.min_selectable ?? 0)
+      if (cuenta < minimo) return vacia(`Falta elegir ${grupo.name} en ${producto.name}`)
+    }
+
+    const unitPrice = calculateProductPrice({
+      basePrice: base,
+      groups: [...elegidasPorGrupo.entries()].map(([groupId, selections]) => ({
+        strategy: (porGrupo.get(groupId)?.pricing_strategy || 'sum') as PricingStrategy,
+        freeSelections: porGrupo.get(groupId)?.free_selections ?? 0,
+        selections,
+      })),
+    })
+    if (!(unitPrice > 0)) return vacia(`${producto.name} quedaría sin precio válido`)
+
+    const lineTotal = Math.round(unitPrice * cantidad * 100) / 100
+    subtotal += lineTotal
+    lines.push({
+      productId: producto.id,
+      name: producto.name,
+      quantity: cantidad,
+      unitPrice,
+      lineTotal,
+      options: detalle,
+    })
+  }
+
+  // Quien retira en el local no paga envío, igual que en la RPC.
+  const shipping = input.fulfillment === 'delivery'
+    ? Math.max(0, Math.round(input.deliveryFee * 100) / 100)
+    : 0
+  subtotal = Math.round(subtotal * 100) / 100
+
+  return { lines, subtotal, shipping, total: Math.round((subtotal + shipping) * 100) / 100 }
 }
