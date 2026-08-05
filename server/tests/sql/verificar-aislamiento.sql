@@ -383,6 +383,61 @@ begin
         raise exception 'Borrar una categoría se llevó el grupo de un producto';
       end if;
     end;
+
+    -- ── Plantillas de opciones: tres puertas más ──────────────────────────
+    -- Una plantilla se referencia desde varios grupos a la vez, así que un
+    -- descuido aquí no filtra una opción: filtra la lista entera de otro
+    -- negocio a todos los productos que la usen.
+    declare
+      v_plantilla_a uuid;
+      v_plantilla_b uuid;
+    begin
+      insert into option_templates (business_id, name)
+      values (v_a, 'Sabores de A') returning id into v_plantilla_a;
+      insert into option_templates (business_id, name)
+      values (v_b, 'Sabores de B') returning id into v_plantilla_b;
+
+      -- A no puede meter opciones en la plantilla de B.
+      begin
+        insert into option_template_items (business_id, option_template_id, name)
+        values (v_a, v_plantilla_b, 'Hawaiana');
+        raise exception 'FUGA: el negocio A metió una opción en la plantilla de B';
+      exception when foreign_key_violation then null;
+      end;
+
+      -- Ni apuntar desde su plantilla a un producto de B.
+      begin
+        insert into option_template_items (
+          business_id, option_template_id, name, references_product_id
+        ) values (v_a, v_plantilla_a, 'La pizza del vecino', v_producto_b);
+        raise exception 'FUGA: la plantilla de A referenció un producto de B';
+      exception when foreign_key_violation then null;
+      end;
+
+      -- Ni servir uno de sus grupos con la plantilla de B.
+      begin
+        insert into option_groups (business_id, product_id, name, option_template_id)
+        values (v_a, v_producto_a, 'Sabor prestado', v_plantilla_b);
+        raise exception 'FUGA: el grupo de A se sirvió de la plantilla de B';
+      exception when foreign_key_violation then null;
+      end;
+
+      -- El uso legítimo funciona, y borrar la plantilla no revienta el grupo:
+      -- se queda sin ella y el producto se sigue pudiendo pedir.
+      insert into option_template_items (
+        business_id, option_template_id, name, references_product_id
+      ) values (v_a, v_plantilla_a, 'La pizza propia', v_producto_a);
+      insert into option_groups (business_id, product_id, name, option_template_id)
+      values (v_a, v_producto_a, 'Sabor', v_plantilla_a);
+
+      delete from option_templates where id = v_plantilla_a;
+      if not exists (
+        select 1 from option_groups
+        where business_id = v_a and name = 'Sabor' and option_template_id is null
+      ) then
+        raise exception 'Borrar una plantilla dejó su grupo en mal estado';
+      end if;
+    end;
   end;
 
   -- ── 8. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────

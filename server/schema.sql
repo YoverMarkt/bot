@@ -6670,6 +6670,218 @@ end $$;
 create index if not exists idx_option_groups_categoria
   on public.option_groups (business_id, category_id, sort);
 
+-- ════════════════════════════════════════════════════════════════════════
+-- MOTOR UNIVERSAL DE PRODUCTOS
+-- Tipos de producto, estrategias de precio y plantillas reutilizables. Es lo
+-- que permite que la misma app sirva a una pizzería, una heladería y un local
+-- de almuerzos sin tocar código: la diferencia sale de la CONFIGURACIÓN
+-- (migration-2026-08-05-motor-de-productos.sql).
+-- ════════════════════════════════════════════════════════════════════════
+
+-- ── 1. La clase de producto ─────────────────────────────────────────────────
+alter table public.products
+  add column if not exists product_type text not null default 'simple';
+alter table public.products
+  add column if not exists preparation_time integer;
+alter table public.products
+  add column if not exists featured boolean not null default false;
+alter table public.products
+  add column if not exists popular boolean not null default false;
+alter table public.products
+  add column if not exists sort integer not null default 0;
+-- Stock por unidades, para quien lo lleve. `stock` (texto) sigue mandando
+-- cuando esto está apagado: no se toca lo que ya funciona.
+alter table public.products
+  add column if not exists stock_control_enabled boolean not null default false;
+alter table public.products
+  add column if not exists stock_quantity integer;
+alter table public.products
+  add column if not exists min_quantity integer not null default 1;
+alter table public.products
+  add column if not exists max_quantity integer not null default 99;
+-- Disponibilidad por día y hora: el almuerzo del día, el desayuno hasta las 11.
+alter table public.products
+  add column if not exists available_days smallint[];
+alter table public.products
+  add column if not exists available_from time;
+alter table public.products
+  add column if not exists available_until time;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.products'::regclass and conname = 'products_motor_check'
+  ) then
+    alter table public.products add constraint products_motor_check check (
+      product_type in ('simple', 'configurable', 'combo', 'daily_menu', 'weighted')
+      and (preparation_time is null or preparation_time between 0 and 1440)
+      and (stock_quantity is null or stock_quantity >= 0)
+      and min_quantity between 1 and 99
+      and max_quantity between 1 and 99
+      and min_quantity <= max_quantity
+      and sort between 0 and 9999
+      -- Un día fuera de 0..6 no lo entiende nadie, y dejaría el producto
+      -- invisible sin decir por qué.
+      and (available_days is null or (
+        array_length(available_days, 1) between 1 and 7
+        and available_days <@ array[0,1,2,3,4,5,6]::smallint[]
+      ))
+    );
+  end if;
+end $$;
+
+create index if not exists idx_products_tipo
+  on public.products (business_id, product_type) where active;
+
+-- ── 2. Cómo se cobra un grupo ───────────────────────────────────────────────
+alter table public.option_groups
+  add column if not exists pricing_strategy text not null default 'sum';
+-- Cuántas selecciones van sin recargo antes de empezar a cobrar.
+alter table public.option_groups
+  add column if not exists free_selections integer not null default 0;
+-- Tope de porciones del grupo entero en los contadores, cuando el tope por
+-- opción no basta: «4 porciones» repartidas como se quiera.
+alter table public.option_groups
+  add column if not exists max_total_quantity integer;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_groups'::regclass
+      and conname = 'option_groups_precio_check'
+  ) then
+    alter table public.option_groups add constraint option_groups_precio_check check (
+      pricing_strategy in (
+        'sum', 'fixed', 'highest_selected', 'lowest_selected', 'average',
+        'included', 'included_up_to_limit', 'extra_after_limit'
+      )
+      and free_selections between 0 and 100
+      and (max_total_quantity is null or max_total_quantity between 1 and 100)
+      -- Las dos estrategias con límite necesitan saber cuál es. Sin esto, un
+      -- «las primeras N gratis» con N=0 cobraría todo y nadie sabría por qué.
+      and (
+        pricing_strategy not in ('included_up_to_limit', 'extra_after_limit')
+        or free_selections >= 1
+      )
+    );
+  end if;
+end $$;
+
+-- ── 3. Plantillas de opciones reutilizables ─────────────────────────────────
+create table if not exists public.option_templates (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  name        text not null,
+  description text,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  constraint option_templates_datos_check check (
+    char_length(btrim(name)) between 1 and 120
+    and char_length(coalesce(description, '')) <= 300
+  )
+);
+
+create index if not exists idx_option_templates_negocio
+  on public.option_templates (business_id, name);
+-- El único (id, business_id) va ANTES que cualquier foránea compuesta que lo
+-- use como destino: PostgreSQL exige un único que case con la pareja.
+create unique index if not exists uq_option_templates_id_business
+  on public.option_templates (id, business_id);
+create unique index if not exists uq_option_templates_nombre
+  on public.option_templates (business_id, lower(btrim(name)));
+
+create table if not exists public.option_template_items (
+  id                    uuid primary key default gen_random_uuid(),
+  business_id           uuid not null references public.businesses(id) on delete cascade,
+  option_template_id    uuid not null,
+  name                  text not null,
+  description           text,
+  image_url             text,
+  image_public_id       text,
+  price_adjustment      numeric(10,2) not null default 0,
+  references_product_id uuid,
+  default_selected      boolean not null default false,
+  stock                 text not null default 'disponible',
+  sort                  integer not null default 0,
+  active                boolean not null default true,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint option_template_items_datos_check check (
+    char_length(btrim(name)) between 1 and 120
+    and char_length(coalesce(description, '')) <= 300
+    and price_adjustment >= -100000 and price_adjustment <= 100000
+    and stock in ('disponible', 'agotado')
+    and sort between 0 and 999
+    and (image_url is null or image_url ~ '^https://')
+  )
+);
+
+-- Las dos foráneas van por PAREJA (id, business_id). Una de una sola columna
+-- comprueba «esa fila existe», no «esa fila es de este negocio», y ahí es por
+-- donde se cruzó la frontera con `product_variants` el 2026-08-02.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_template_items'::regclass
+      and conname = 'fk_option_template_items_plantilla_del_negocio'
+  ) then
+    alter table public.option_template_items
+      add constraint fk_option_template_items_plantilla_del_negocio
+      foreign key (option_template_id, business_id)
+      references public.option_templates (id, business_id) on delete cascade;
+  end if;
+
+  -- Una plantilla de «sabores» puede apuntar a productos reales del catálogo:
+  -- así los combos eligen pizzas de verdad. `set null` con la columna NOMBRADA,
+  -- porque sin nombrarla PostgreSQL anularía también `business_id`, que es NOT
+  -- NULL, y borrar un producto reventaría. Es el fallo del 2026-08-02.
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_template_items'::regclass
+      and conname = 'fk_option_template_items_producto_del_negocio'
+  ) then
+    alter table public.option_template_items
+      add constraint fk_option_template_items_producto_del_negocio
+      foreign key (references_product_id, business_id)
+      references public.products (id, business_id)
+      on delete set null (references_product_id);
+  end if;
+end $$;
+
+create index if not exists idx_option_template_items_plantilla
+  on public.option_template_items (business_id, option_template_id, sort);
+
+-- El grupo que se sirve de una plantilla en vez de tener opciones propias.
+alter table public.option_groups
+  add column if not exists option_template_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_groups'::regclass
+      and conname = 'fk_option_groups_plantilla_del_negocio'
+  ) then
+    alter table public.option_groups
+      add constraint fk_option_groups_plantilla_del_negocio
+      foreign key (option_template_id, business_id)
+      references public.option_templates (id, business_id)
+      on delete set null (option_template_id);
+  end if;
+end $$;
+
+-- ── 4. RLS ──────────────────────────────────────────────────────────────────
+alter table public.option_templates enable row level security;
+alter table public.option_template_items enable row level security;
+revoke all on table public.option_templates from public, anon, authenticated;
+revoke all on table public.option_template_items from public, anon, authenticated;
+grant select, insert, update, delete on table public.option_templates to service_role;
+grant select, insert, update, delete on table public.option_template_items to service_role;
+
 -- ── 2. Las opciones ─────────────────────────────────────────────────────────
 create table if not exists public.options (
   id                    uuid primary key default gen_random_uuid(),
