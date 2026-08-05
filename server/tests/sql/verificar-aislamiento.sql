@@ -327,6 +327,62 @@ begin
     -- El uso legítimo sigue funcionando.
     insert into options (business_id, option_group_id, name, price_adjustment)
     values (v_a, v_grupo_a, 'Familiar', 9.00);
+
+    -- ── El grupo también puede colgar de una CATEGORÍA ────────────────────
+    -- Es como 19 sabores los comparten todas las pizzas sin repetirlos, y como
+    -- una plantilla deja grupos cargados antes de que exista un producto. Son
+    -- dos destinos, así que son dos fronteras que cerrar, no una.
+    declare
+      v_categoria_propia uuid;
+      v_grupo_categoria uuid;
+    begin
+      begin
+        insert into option_groups (business_id, category_id, name)
+        values (v_a, v_categoria_b, 'Sabor');
+        raise exception 'FUGA: el negocio A colgó un grupo de la categoría de B';
+      exception when foreign_key_violation then null;
+      end;
+
+      -- Y el destino es exactamente uno: ni ninguno…
+      begin
+        insert into option_groups (business_id, name) values (v_a, 'Huérfano');
+        raise exception 'Se admitió un grupo que no cuelga de nada';
+      exception when check_violation then null;
+      end;
+
+      insert into product_categories (business_id, name)
+      values (v_a, 'Sabores de A')
+      returning id into v_categoria_propia;
+
+      -- …ni los dos a la vez.
+      begin
+        insert into option_groups (business_id, category_id, product_id, name)
+        values (v_a, v_categoria_propia, v_producto_a, 'Ambos');
+        raise exception 'Se admitió un grupo colgado de producto Y categoría';
+      exception when check_violation then null;
+      end;
+
+      insert into option_groups (business_id, category_id, name)
+      values (v_a, v_categoria_propia, 'Sabor')
+      returning id into v_grupo_categoria;
+      insert into options (business_id, option_group_id, name)
+      values (v_a, v_grupo_categoria, 'Hawaiana');
+
+      -- Borrar la categoría se lleva su grupo y las opciones de dentro. Va en
+      -- cascade y no en `set null` porque anular el destino dejaría el grupo
+      -- violando el check, y borrar una categoría reventaría.
+      delete from product_categories where id = v_categoria_propia;
+      if exists (select 1 from option_groups where id = v_grupo_categoria) then
+        raise exception 'Borrar la categoría dejó su grupo de opciones huérfano';
+      end if;
+      if exists (select 1 from options where option_group_id = v_grupo_categoria) then
+        raise exception 'Borrar la categoría dejó opciones huérfanas';
+      end if;
+      -- Y no se llevó por delante el grupo del producto, que no era suyo.
+      if not exists (select 1 from option_groups where id = v_grupo_a) then
+        raise exception 'Borrar una categoría se llevó el grupo de un producto';
+      end if;
+    end;
   end;
 
   -- ── 8. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────

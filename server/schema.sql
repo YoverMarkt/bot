@@ -6399,7 +6399,13 @@ grant execute on function public.claim_storefront_link_send(uuid, uuid, integer)
 create table if not exists public.option_groups (
   id               uuid primary key default gen_random_uuid(),
   business_id      uuid not null references public.businesses(id) on delete cascade,
-  product_id       uuid not null,
+  -- El grupo cuelga de UN producto o de UNA categoría, nunca de ambos ni de
+  -- ninguno (`option_groups_destino_check`, más abajo). Por categoría es como
+  -- 19 sabores los comparten todas las pizzas sin repetirlos en cada una, y
+  -- como una plantilla deja grupos cargados antes de que exista un solo
+  -- producto (migration-2026-08-05-grupos-por-categoria.sql).
+  product_id       uuid,
+  category_id      uuid,
   name             text not null,
   description      text,
   -- Qué se puede hacer dentro del grupo. Son los tres selectores reales:
@@ -6457,6 +6463,53 @@ create index if not exists idx_option_groups_producto
 -- que lo usa como destino: PostgreSQL exige un único que case con la pareja.
 create unique index if not exists uq_option_groups_id_business
   on public.option_groups (id, business_id);
+
+-- ── 1 bis. El grupo también puede colgar de una categoría ───────────────────
+-- Sobre una base creada con la versión anterior de esta tabla, `product_id`
+-- sigue siendo NOT NULL y no existe `category_id`: estas tres sentencias la
+-- ponen al día sin tocar los grupos que ya cuelgan de un producto.
+alter table public.option_groups
+  add column if not exists category_id uuid;
+alter table public.option_groups
+  alter column product_id drop not null;
+
+-- Un grupo colgado de nada es invisible y vive igual; colgado de las dos cosas
+-- obliga a la app a decidir cuál manda. Exactamente uno.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_groups'::regclass
+      and conname = 'option_groups_destino_check'
+  ) then
+    alter table public.option_groups
+      add constraint option_groups_destino_check
+      check (num_nonnulls(product_id, category_id) = 1);
+  end if;
+end $$;
+
+-- La categoría se referencia por PAREJA, como el producto. Va en CASCADE y no
+-- en `set null` porque el check de arriba lo exige: anular `category_id`
+-- dejaría el grupo sin destino y borrar una categoría reventaría.
+--
+-- El único (id, business_id) que esta foránea necesita como destino ya lo crea
+-- `product_categories` mucho más arriba, así que aquí no se repite.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_groups'::regclass
+      and conname = 'fk_option_groups_categoria_del_negocio'
+  ) then
+    alter table public.option_groups
+      add constraint fk_option_groups_categoria_del_negocio
+      foreign key (category_id, business_id)
+      references public.product_categories (id, business_id) on delete cascade;
+  end if;
+end $$;
+
+create index if not exists idx_option_groups_categoria
+  on public.option_groups (business_id, category_id, sort);
 
 -- ── 2. Las opciones ─────────────────────────────────────────────────────────
 create table if not exists public.options (
