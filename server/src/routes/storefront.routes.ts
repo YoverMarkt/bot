@@ -5,7 +5,7 @@ import { createRouter } from '../middleware/async'
 import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadMedia } from '../integrations/cloudinary'
-import { requireStorefrontSession } from '../middleware/storefront'
+import { readStorefrontSession, requireStorefrontSession } from '../middleware/storefront'
 import { checkSession, deviceFingerprint, hashToken, phoneMatchesSession } from '../services/storefront-session'
 import {
   buildStorefrontCatalog,
@@ -223,8 +223,16 @@ router.post('/api/store/:slug/session/verify', verifyLimiter, async (req, res) =
 
 // ── De aquí en adelante hace falta el enlace ───────────────────────────────
 
-router.get('/api/store/:slug/catalog', requireStorefrontSession, async (req, res) => {
-  const { businessId } = req.storefront!
+// ── El catálogo es PÚBLICO ─────────────────────────────────────────────────
+// Un enlace de comida se reenvía, se pega en una historia y se busca: quien
+// llegue tiene que poder ver la carta y los precios sin identificarse, como en
+// cualquier tienda. Pedir sigue exigiendo el enlace del bot.
+//
+// Solo salen columnas ya elegidas a mano en `db/repositories/catalog.ts` — sin
+// embeddings, sin SKU, sin nada interno—, y el negocio pasa por
+// `publicBusiness`, que es el mismo saneo que ya usaba la portada.
+router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) => {
+  const businessId = req.storeBusinessId!
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
   const { status } = await readStatus(business)
 

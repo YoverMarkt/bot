@@ -59,8 +59,65 @@ const reject = (res: Response, reason: SessionRejection): Response => res
   .json({ error: rejectionMessage(reason), reason })
 
 /**
+ * El trabajo común: resolver el negocio del slug y, si viene token, la sesión.
+ *
+ * Devuelve el negocio SIEMPRE que exista, y la sesión solo si es válida para
+ * ESE negocio. Quien llama decide si la sesión es obligatoria — así los dos
+ * middlewares no pueden divergir en lo que comprueban, que es donde aparecen
+ * los agujeros.
+ */
+const resolveStorefront = async (req: Request): Promise<{
+  businessId?: string
+  session?: Express.StorefrontSession
+  reason?: SessionRejection
+}> => {
+  const slug = String(req.params.slug || '').trim()
+  if (!slug) return { reason: 'no_existe' }
+
+  const business = await db.getBusinessBySlug(slug)
+  if (!business?.id) return { reason: 'no_existe' }
+
+  const token = readToken(req)
+  if (!token) return { businessId: business.id, reason: 'no_existe' }
+
+  const session = await db.getStorefrontSessionByHash(hashToken(token))
+  const deviceHash = readDevice(req)
+  const verdict = checkSession({
+    session,
+    deviceHash,
+    // Sin esto, una sesión de otro negocio abriría esta tienda.
+    expectedBusinessId: business.id,
+  })
+  if (!verdict.ok || !verdict.session) {
+    return { businessId: business.id, reason: verdict.reason || 'no_existe' }
+  }
+
+  // La primera apertura se queda con la sesión. Si dos dispositivos abren el
+  // mismo enlace a la vez, el UPDATE atómico decide y el otro se queda fuera.
+  if (verdict.claims) {
+    const claimed = await db.claimStorefrontSession(verdict.session.id, deviceHash)
+    if (!claimed) return { businessId: business.id, reason: 'otro_dispositivo' }
+  }
+
+  void db.touchStorefrontSession(verdict.session.id).catch(() => {})
+
+  return {
+    businessId: business.id,
+    session: {
+      businessId: business.id,
+      customerId: verdict.session.customer_id,
+      contactPhone: verdict.session.contact_phone,
+      sessionId: verdict.session.id,
+    },
+  }
+}
+
+/**
  * Exige una sesión válida para el negocio de la URL. Deja en `req.storefront`
  * el negocio y el cliente ya resueltos, para que las rutas no vuelvan a mirarlo.
+ *
+ * Lo llevan todas las rutas que ESCRIBEN o que devuelven datos de una persona:
+ * el pedido, las direcciones, el perfil.
  */
 export const requireStorefrontSession: RequestHandler = async (
   req: Request,
@@ -68,42 +125,50 @@ export const requireStorefrontSession: RequestHandler = async (
   next: NextFunction,
 ) => {
   try {
-    const token = readToken(req)
-    if (!token) return reject(res, 'no_existe')
+    // Sin token se rechaza ANTES de tocar la base. Resolver el negocio para
+    // alguien que no trae credencial es trabajo regalado, y a ritmo de
+    // peticiones es una consulta gratis por cada intento.
+    if (!readToken(req)) return reject(res, 'no_existe')
 
-    const slug = String(req.params.slug || '').trim()
-    if (!slug) return reject(res, 'no_existe')
+    const { session, reason } = await resolveStorefront(req)
+    if (!session) return reject(res, reason || 'no_existe')
+    req.storefront = session
+    return next()
+  } catch (error) {
+    return next(error)
+  }
+}
 
-    const business = await db.getBusinessBySlug(slug)
-    if (!business?.id) return reject(res, 'no_existe')
-
-    const session = await db.getStorefrontSessionByHash(hashToken(token))
-    const deviceHash = readDevice(req)
-    const verdict = checkSession({
-      session,
-      deviceHash,
-      // Sin esto, una sesión de otro negocio abriría esta tienda.
-      expectedBusinessId: business.id,
-    })
-    if (!verdict.ok || !verdict.session) {
-      return reject(res, verdict.reason || 'no_existe')
-    }
-
-    // La primera apertura se queda con la sesión. Si dos dispositivos abren el
-    // mismo enlace a la vez, el UPDATE atómico decide y el otro se queda fuera.
-    if (verdict.claims) {
-      const claimed = await db.claimStorefrontSession(verdict.session.id, deviceHash)
-      if (!claimed) return reject(res, 'otro_dispositivo')
-    }
-
-    void db.touchStorefrontSession(verdict.session.id).catch(() => {})
-
-    req.storefront = {
-      businessId: business.id,
-      customerId: verdict.session.customer_id,
-      contactPhone: verdict.session.contact_phone,
-      sessionId: verdict.session.id,
-    }
+/**
+ * Deja pasar con sesión y sin ella. Es la puerta del CATÁLOGO, que es público:
+ * el enlace de un negocio se reenvía, se pega en una historia o se busca, y
+ * quien llegue tiene que poder ver la carta y los precios — como en cualquier
+ * tienda de comida.
+ *
+ * Dos garantías que hacen que abrirlo no abra nada más:
+ *
+ *   · `req.storefront` se puebla SOLO con una sesión completa y válida para
+ *     este negocio. Nunca a medias. Las rutas que crean pedidos siguen
+ *     exigiendo `requireStorefrontSession` y no notan la diferencia.
+ *   · Cuando SÍ viene un enlace válido hace lo mismo que antes: refresca
+ *     `last_seen_at`, que pasaba por aquí y sin lo cual un cliente que solo
+ *     mira la carta parecería inactivo. Confirmar el número sigue siendo cosa
+ *     de `/session/verify`, que no se ha tocado.
+ *
+ * Un token inválido, revocado o de otro negocio no rompe la visita: se ve el
+ * catálogo como cualquier visitante, sin sesión. Lo que no ocurre jamás es que
+ * ese token acabe identificando a un cliente.
+ */
+export const readStorefrontSession: RequestHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { businessId, session } = await resolveStorefront(req)
+    if (!businessId) return res.status(404).json({ error: 'Esta tienda no está disponible' })
+    req.storeBusinessId = businessId
+    if (session) req.storefront = session
     return next()
   } catch (error) {
     return next(error)

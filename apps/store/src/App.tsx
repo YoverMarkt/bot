@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
-import { readSlug, readToken } from './lib/session'
+import { readSlug } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
 import Confirmar from './screens/Confirmar'
 import Gate from './screens/Gate'
@@ -47,10 +47,10 @@ export default function App() {
       // catálogo: así nadie ve el verde por defecto y luego un salto de color.
       aplicarColorDeMarca(datos.business?.brandColor)
       if (!enMovil) return setEstado({ fase: 'escritorio', business: datos.business })
-      // Sin enlace no hay tienda: se explica en vez de mostrar una pantalla vacía.
-      if (!readToken()) {
-        return setEstado({ fase: 'bloqueada', business: datos.business, motivo: 'no_existe' })
-      }
+      // La carta se ve sin enlace: un enlace de comida se reenvía, se pega en
+      // una historia y se busca, y quien llegue tiene que poder mirar antes de
+      // dar su número. Pedir sí lo exige, y el 401 de esa petición es lo que
+      // lleva a `Gate` o a confirmar el teléfono — ver `alFallarEnlace`.
       setEstado({ fase: 'lista', business: datos.business, status: datos.status })
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
