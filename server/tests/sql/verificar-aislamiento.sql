@@ -288,6 +288,47 @@ begin
     -- duplicar ese escenario entero para probar exactamente lo mismo.
   end;
 
+  -- ── 7 bis. MOTOR DE OPCIONES: los grupos y combos no cruzan negocios ─────
+  --
+  -- Un grupo cuelga de un producto y una opción puede APUNTAR a otro producto
+  -- (así se arman los combos). Son dos sitios más donde un uuid ajeno viajando
+  -- en la petición cruzaría la frontera, y la base tiene que impedirlo sin
+  -- depender de que la ruta se acuerde.
+  declare
+    v_grupo_a uuid;
+  begin
+    begin
+      insert into option_groups (business_id, product_id, name)
+      values (v_a, v_producto_b, 'Tamaño');
+      raise exception 'FUGA: el negocio A colgó un grupo del producto de B';
+    exception when foreign_key_violation then null;
+    end;
+
+    insert into option_groups (
+      business_id, product_id, name, selection_type, required, min_selectable, max_selectable
+    ) values (v_a, v_producto_a, 'Tamaño', 'single', true, 1, 1)
+    returning id into v_grupo_a;
+
+    begin
+      insert into options (business_id, option_group_id, name, references_product_id)
+      values (v_a, v_grupo_a, 'La pizza del vecino', v_producto_b);
+      raise exception 'FUGA: un combo de A incluyó un producto de B';
+    exception when foreign_key_violation then null;
+    end;
+
+    -- Y un grupo de B no se puede colgar de un grupo de A.
+    begin
+      insert into options (business_id, option_group_id, name)
+      values (v_b, v_grupo_a, 'Opción ajena');
+      raise exception 'FUGA: el negocio B metió una opción en el grupo de A';
+    exception when foreign_key_violation then null;
+    end;
+
+    -- El uso legítimo sigue funcionando.
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_a, v_grupo_a, 'Familiar', 9.00);
+  end;
+
   -- ── 8. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
   select count(*) into v_pedidos_b from orders where business_id = v_b;
   delete from businesses where id = v_a;

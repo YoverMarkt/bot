@@ -6387,6 +6387,208 @@ revoke all on function public.claim_storefront_link_send(uuid, uuid, integer)
 grant execute on function public.claim_storefront_link_send(uuid, uuid, integer)
   to service_role;
 
+-- ════════════════════════════════════════════════════════════════════════
+-- MOTOR DE GRUPOS DE OPCIONES
+-- Convierte el catálogo en configuración: obligatoriedad, mínimos, selección
+-- por cantidad y opciones que SON productos (los combos). Sin esto no existen
+-- los almuerzos, las parrilladas ni los batidos
+-- (migration-2026-08-04-motor-de-opciones.sql).
+-- ════════════════════════════════════════════════════════════════════════
+
+-- ── 1. Los grupos ───────────────────────────────────────────────────────────
+create table if not exists public.option_groups (
+  id               uuid primary key default gen_random_uuid(),
+  business_id      uuid not null references public.businesses(id) on delete cascade,
+  product_id       uuid not null,
+  name             text not null,
+  description      text,
+  -- Qué se puede hacer dentro del grupo. Son los tres selectores reales:
+  --   single   → un radio. Tamaño de pizza, término de la carne.
+  --   multiple → casillas con tope. Ingredientes, salsas.
+  --   quantity → cada opción con su contador. Cortes de una parrillada.
+  selection_type   text not null default 'single',
+  required         boolean not null default false,
+  min_selectable   integer not null default 0,
+  max_selectable   integer not null default 1,
+  sort             integer not null default 0,
+  active           boolean not null default true,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint option_groups_datos_check check (
+    char_length(btrim(name)) between 1 and 120
+    and char_length(coalesce(description, '')) <= 300
+    and selection_type in ('single', 'multiple', 'quantity')
+    and min_selectable >= 0 and min_selectable <= 100
+    and max_selectable >= 1 and max_selectable <= 100
+    and min_selectable <= max_selectable
+    -- Un grupo obligatorio sin mínimo no obliga a nada: sería un botón de
+    -- «obligatorio» que no impide seguir, que es peor que no ponerlo.
+    and (required = false or min_selectable >= 1)
+    -- `single` es exactamente uno. Sin esto se podría guardar un radio con
+    -- max 5, y la app tendría que decidir a quién cree.
+    and (selection_type <> 'single' or max_selectable = 1)
+    and sort between 0 and 999
+  )
+);
+
+-- El producto se referencia por PAREJA (id, business_id), no solo por id.
+-- Una foránea de una sola columna comprueba «esa fila existe», no «esa fila es
+-- de este negocio», y como el negocio sale del JWT mientras el otro id viaja
+-- en la petición, ahí se cruza la frontera mandando un uuid ajeno. Fue lo que
+-- pasó con `product_variants` y `products.category_id` el 2026-08-02.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.option_groups'::regclass
+      and conname = 'fk_option_groups_producto_del_negocio'
+  ) then
+    alter table public.option_groups
+      add constraint fk_option_groups_producto_del_negocio
+      foreign key (product_id, business_id)
+      references public.products (id, business_id) on delete cascade;
+  end if;
+end $$;
+
+create index if not exists idx_option_groups_producto
+  on public.option_groups (business_id, product_id, sort);
+
+-- El único (id, business_id) tiene que existir ANTES que la foránea compuesta
+-- que lo usa como destino: PostgreSQL exige un único que case con la pareja.
+create unique index if not exists uq_option_groups_id_business
+  on public.option_groups (id, business_id);
+
+-- ── 2. Las opciones ─────────────────────────────────────────────────────────
+create table if not exists public.options (
+  id                    uuid primary key default gen_random_uuid(),
+  business_id           uuid not null references public.businesses(id) on delete cascade,
+  option_group_id       uuid not null,
+  name                  text not null,
+  description           text,
+  image_url             text,
+  image_public_id       text,
+  -- Puede ser NEGATIVO: «sin sopa −$0.50» en un almuerzo es un caso real.
+  -- Por eso el importe final lo calcula PostgreSQL y nunca el navegador.
+  price_adjustment      numeric(10,2) not null default 0,
+  -- Aquí viven los COMBOS: una opción que ES un producto del catálogo.
+  -- «Elige tu 1era pizza» son opciones que apuntan a pizzas reales, en vez de
+  -- columnas fijas tipo pizza_1, pizza_2.
+  references_product_id uuid,
+  default_selected      boolean not null default false,
+  stock                 text not null default 'disponible',
+  sort                  integer not null default 0,
+  active                boolean not null default true,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint options_datos_check check (
+    char_length(btrim(name)) between 1 and 120
+    and char_length(coalesce(description, '')) <= 300
+    and price_adjustment >= -100000 and price_adjustment <= 100000
+    and stock in ('disponible', 'agotado')
+    and sort between 0 and 999
+    and (image_url is null or image_url ~ '^https://')
+  )
+);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.options'::regclass
+      and conname = 'fk_options_grupo_del_negocio'
+  ) then
+    alter table public.options
+      add constraint fk_options_grupo_del_negocio
+      foreign key (option_group_id, business_id)
+      references public.option_groups (id, business_id) on delete cascade;
+  end if;
+
+  -- El producto referenciado también tiene que ser de ESTE negocio: si no, un
+  -- combo podría incluir la pizza del local de al lado.
+  --
+  -- `on delete set null (references_product_id)` con la columna NOMBRADA: sin
+  -- nombrarla PostgreSQL anularía también `business_id`, que es NOT NULL, y
+  -- borrar un producto reventaría. Es exactamente el fallo del 2026-08-02.
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.options'::regclass
+      and conname = 'fk_options_producto_del_negocio'
+  ) then
+    alter table public.options
+      add constraint fk_options_producto_del_negocio
+      foreign key (references_product_id, business_id)
+      references public.products (id, business_id)
+      on delete set null (references_product_id);
+  end if;
+end $$;
+
+create index if not exists idx_options_grupo
+  on public.options (business_id, option_group_id, sort);
+
+-- ── 3. Qué eligió el cliente, guardado con el pedido ────────────────────────
+-- Fotografía inmutable: si mañana cambia el nombre o el recargo de la opción,
+-- el pedido de ayer tiene que seguir diciendo lo que se pidió y lo que costó.
+create table if not exists public.order_item_options (
+  id                     uuid primary key default gen_random_uuid(),
+  business_id            uuid not null references public.businesses(id) on delete cascade,
+  order_item_id          uuid not null references public.order_items(id) on delete cascade,
+  option_group_id        uuid,
+  option_id              uuid,
+  option_group_name      text not null,
+  option_name            text not null,
+  quantity               integer not null default 1,
+  unit_price_adjustment  numeric(10,2) not null default 0,
+  total_price_adjustment numeric(10,2) not null default 0,
+  created_at             timestamptz not null default now(),
+  constraint order_item_options_datos_check check (
+    char_length(btrim(option_group_name)) between 1 and 120
+    and char_length(btrim(option_name)) between 1 and 120
+    and quantity between 1 and 100
+  )
+);
+
+create index if not exists idx_order_item_options_item
+  on public.order_item_options (business_id, order_item_id);
+
+-- `order_item_options` apunta al ítem del pedido, y ambos llevan business_id:
+-- con una foránea de una sola columna se podría colgar el detalle de lo que
+-- eligió un cliente sobre el ítem de OTRO negocio. Lo cazó
+-- `verificar-fronteras.sql` al escribir esta migración, que es justo para lo
+-- que se construyó.
+create unique index if not exists uq_order_items_id_business
+  on public.order_items (id, business_id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.order_item_options'::regclass
+      and conname = 'fk_order_item_options_item_del_negocio'
+  ) then
+    alter table public.order_item_options
+      drop constraint if exists order_item_options_order_item_id_fkey;
+    alter table public.order_item_options
+      add constraint fk_order_item_options_item_del_negocio
+      foreign key (order_item_id, business_id)
+      references public.order_items (id, business_id) on delete cascade;
+  end if;
+end $$;
+
+
+-- ── 4. RLS ──────────────────────────────────────────────────────────────────
+-- El frontend nunca habla con Supabase: la anon key queda bloqueada y el
+-- aislamiento real lo refuerza el filtrado por business_id en server/src/db.
+alter table public.option_groups enable row level security;
+alter table public.options enable row level security;
+alter table public.order_item_options enable row level security;
+
+revoke all on table public.option_groups from public, anon, authenticated;
+revoke all on table public.options from public, anon, authenticated;
+revoke all on table public.order_item_options from public, anon, authenticated;
+grant select, insert, update, delete on table public.option_groups to service_role;
+grant select, insert, update, delete on table public.options to service_role;
+grant select, insert, update, delete on table public.order_item_options to service_role;
+
 -- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
 --
 -- Las tres nacieron con `on delete set null` a secas y eso anulaba también
