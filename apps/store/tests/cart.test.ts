@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addLine, cartCount, cartTotal, chosenCount, groupExtras, lineKey, lineTotal,
-  missingRequirement, setQuantity, unitPrice,
+  addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice, lineKey,
+  lineTotal, missingRequirement, setQuantity, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -42,6 +42,8 @@ const grupo = (extra: Partial<OptionGroup> = {}): OptionGroup => ({
   name: 'Término',
   description: null,
   selectionType: 'single',
+  pricingStrategy: 'sum',
+  freeSelections: 0,
   required: false,
   minSelectable: 0,
   maxSelectable: 1,
@@ -336,5 +338,85 @@ describe('opciones del producto', () => {
         elegida({ optionId: 'a', quantity: 2 }), elegida({ optionId: 'b', quantity: 3 }),
       ])).toBe(5)
     })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTRATEGIAS DE PRECIO
+//
+// Los MISMOS ocho casos que ejercitan `server/tests/pricing.test.js` y
+// `verificar-esquema.sql` contra PostgreSQL. Son tres motores calculando lo
+// mismo —el teléfono, el servidor y la base— y solo la base cobra; si divergen,
+// el cliente ve un número y paga otro.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('cuánto suma un grupo según cómo se cobre', () => {
+  // Las tres opciones del caso compartido: 1.00, 2.00 y 4.00.
+  const tres = [
+    elegida({ optionId: 'a', price: 1 }),
+    elegida({ optionId: 'b', price: 2 }),
+    elegida({ optionId: 'c', price: 4 }),
+  ]
+
+  it.each([
+    ['sum', 0, 7],
+    ['fixed', 0, 0],
+    ['included', 0, 0],
+    ['highest_selected', 0, 4],
+    ['lowest_selected', 0, 1],
+    ['average', 0, 2.33],
+    ['included_up_to_limit', 1, 3],
+    ['extra_after_limit', 1, 3],
+  ] as const)('%s cobra %s', (estrategia, libres, esperado) => {
+    expect(groupPrice(estrategia, libres, tres)).toBe(esperado)
+  })
+
+  it('un grupo sin nada elegido no suma', () => {
+    expect(groupPrice('highest_selected', 0, [])).toBe(0)
+  })
+
+  it('descuenta las MÁS caras, no las primeras que se tocaron', () => {
+    expect(groupPrice('included_up_to_limit', 1, [...tres].reverse()))
+      .toBe(groupPrice('included_up_to_limit', 1, tres))
+  })
+
+  it('por opciones y por porciones se diferencian en los contadores', () => {
+    const tresBolas = [elegida({ optionId: 'x', price: 4, quantity: 3 })]
+    expect(groupPrice('included_up_to_limit', 2, tresBolas)).toBe(0)
+    expect(groupPrice('extra_after_limit', 2, tresBolas)).toBe(4)
+  })
+})
+
+describe('la pizza mitad y mitad en la pantalla', () => {
+  // Sin esto el cliente vería $19 al elegir y $10 al confirmar.
+  const mitades = grupo({
+    id: 'mitades', name: 'Mitades', selectionType: 'multiple',
+    maxSelectable: 2, pricingStrategy: 'highest_selected',
+    options: [],
+  })
+  const pizza = producto({ priceFrom: 0, optionGroups: [mitades] })
+  const elegidas = [
+    elegida({ groupId: 'mitades', optionId: 'suprema', price: 10 }),
+    elegida({ groupId: 'mitades', optionId: 'hawaiana', price: 9 }),
+  ]
+
+  it('se pinta la más cara, no la suma', () => {
+    expect(unitPrice(pizza, null, [], elegidas)).toBe(10)
+  })
+
+  it('cada grupo aplica LO SUYO, no una regla común', () => {
+    // Mitades por la más cara ($10) + extras que sí suman ($1.50).
+    const extras = grupo({ id: 'extras', selectionType: 'multiple', maxSelectable: 3, options: [] })
+    const conExtras = producto({ priceFrom: 0, optionGroups: [mitades, extras] })
+    expect(unitPrice(conExtras, null, [], [
+      ...elegidas,
+      elegida({ groupId: 'extras', optionId: 'queso', price: 1.5 }),
+    ])).toBe(11.5)
+  })
+
+  it('un grupo que ya no está en el catálogo se cobra sumando, como antes', () => {
+    expect(unitPrice(producto({ priceFrom: 5, optionGroups: [] }), null, [], [
+      elegida({ groupId: 'fantasma', optionId: 'a', price: 1 }),
+    ])).toBe(6)
   })
 })

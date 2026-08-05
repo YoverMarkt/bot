@@ -3403,6 +3403,7 @@ declare
   v_option_qty integer;
   v_group record;
   v_group_count integer;
+  v_grupo_total numeric(10,2);
   v_product_category uuid;
   v_order_item_id uuid;
   v_unit_price numeric(10,2);
@@ -3625,8 +3626,8 @@ begin
             message = format('%s viene repetida', v_option_row.name);
         end if;
 
-        v_options_total := v_options_total
-          + round(v_option_row.price_adjustment * v_option_qty, 2);
+        -- El importe ya NO se suma aquí: cada grupo se cobra según SU
+        -- estrategia, y para eso hace falta ver todo lo elegido junto.
         v_options_names := v_options_names || (
           case when v_option_qty > 1
             then format('%s x%s', v_option_row.name, v_option_qty)
@@ -3651,7 +3652,8 @@ begin
     -- lo único que de verdad manda.
     for v_group in
       select og.id, og.name, og.selection_type, og.required,
-             og.min_selectable, og.max_selectable
+             og.min_selectable, og.max_selectable,
+             og.pricing_strategy, og.free_selections
       from public.option_groups og
       where og.business_id = p_business_id
         and og.active = true
@@ -3669,6 +3671,79 @@ begin
       into v_group_count
       from jsonb_array_elements(v_chosen) e
       where (e ->> 'option_group_id')::uuid = v_group.id;
+
+      -- ── Lo que suma ESTE grupo, según cómo lo cobre el negocio ────────
+      --
+      -- Aquí vive la pizza mitad y mitad. Con `sum`, media Suprema ($10) y
+      -- media Hawaiana ($9) costarían $19 —el doble de una pizza—; con
+      -- `highest_selected` se cobra $10, que es como lo cobra el negocio.
+      --
+      -- Las estrategias con límite descuentan siempre las opciones MÁS CARAS,
+      -- y nunca por orden de llegada: el mismo carrito tiene que costar lo
+      -- mismo aunque se arme al revés.
+      v_grupo_total := 0;
+      if v_group_count > 0 then
+        case coalesce(v_group.pricing_strategy, 'sum')
+          when 'fixed' then v_grupo_total := 0;
+          when 'included' then v_grupo_total := 0;
+          when 'highest_selected' then
+            -- El precio UNITARIO, sin multiplicar: dos medias pizzas son una.
+            select max((e ->> 'unit_price_adjustment')::numeric) into v_grupo_total
+            from jsonb_array_elements(v_chosen) e
+            where (e ->> 'option_group_id')::uuid = v_group.id;
+          when 'lowest_selected' then
+            select min((e ->> 'unit_price_adjustment')::numeric) into v_grupo_total
+            from jsonb_array_elements(v_chosen) e
+            where (e ->> 'option_group_id')::uuid = v_group.id;
+          when 'average' then
+            select avg((e ->> 'unit_price_adjustment')::numeric) into v_grupo_total
+            from jsonb_array_elements(v_chosen) e
+            where (e ->> 'option_group_id')::uuid = v_group.id;
+          when 'included_up_to_limit' then
+            -- Las N más caras van incluidas; el resto suma entero.
+            select coalesce(sum(precio * cantidad), 0) into v_grupo_total
+            from (
+              select (e ->> 'unit_price_adjustment')::numeric as precio,
+                     (e ->> 'quantity')::integer as cantidad,
+                     row_number() over (
+                       order by (e ->> 'unit_price_adjustment')::numeric desc
+                     ) as puesto
+              from jsonb_array_elements(v_chosen) e
+              where (e ->> 'option_group_id')::uuid = v_group.id
+            ) ordenadas
+            where puesto > coalesce(v_group.free_selections, 0);
+          when 'extra_after_limit' then
+            -- Igual, pero el cupo se gasta en PORCIONES: una opción puede
+            -- quedar a medias —dos bolas incluidas y la tercera cobrada—.
+            select coalesce(sum(precio * greatest(0, cantidad - gratis)), 0)
+            into v_grupo_total
+            from (
+              select precio, cantidad,
+                     greatest(0, least(
+                       cantidad,
+                       coalesce(v_group.free_selections, 0) - coalesce(previas, 0)
+                     )) as gratis
+              from (
+                select (e ->> 'unit_price_adjustment')::numeric as precio,
+                       (e ->> 'quantity')::integer as cantidad,
+                       sum((e ->> 'quantity')::integer) over (
+                         order by (e ->> 'unit_price_adjustment')::numeric desc
+                         rows between unbounded preceding and 1 preceding
+                       ) as previas
+                from jsonb_array_elements(v_chosen) e
+                where (e ->> 'option_group_id')::uuid = v_group.id
+              ) con_previas
+            ) repartido;
+          else
+            -- `sum`: cada opción suma su recargo por sus porciones.
+            select coalesce(sum(
+              (e ->> 'unit_price_adjustment')::numeric * (e ->> 'quantity')::integer
+            ), 0) into v_grupo_total
+            from jsonb_array_elements(v_chosen) e
+            where (e ->> 'option_group_id')::uuid = v_group.id;
+        end case;
+        v_options_total := v_options_total + round(coalesce(v_grupo_total, 0), 2);
+      end if;
 
       if v_group_count < greatest(
         case when v_group.required then 1 else 0 end,

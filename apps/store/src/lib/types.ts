@@ -71,11 +71,19 @@ export interface OptionChoice {
  *   multiple → casillas con tope. Ingredientes, salsas.
  *   quantity → cada opción con su contador. Cortes de una parrillada.
  */
+/** Cómo cobra el grupo. La base calcula igual: ver `services/pricing.ts`. */
+export type PricingStrategy =
+  | 'sum' | 'fixed' | 'highest_selected' | 'lowest_selected'
+  | 'average' | 'included' | 'included_up_to_limit' | 'extra_after_limit'
+
 export interface OptionGroup {
   id: string
   name: string
   description: string | null
   selectionType: 'single' | 'multiple' | 'quantity'
+  pricingStrategy: PricingStrategy
+  /** Cuántas van sin recargo en las dos estrategias con límite. */
+  freeSelections: number
   required: boolean
   minSelectable: number
   maxSelectable: number

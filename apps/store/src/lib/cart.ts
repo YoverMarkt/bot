@@ -3,6 +3,7 @@ import type {
   ChosenOption,
   Extra,
   OptionGroup,
+  PricingStrategy,
   Product,
   Variant,
 } from './types'
@@ -36,10 +37,67 @@ export const lineKey = (
 ].join('|')
 
 /**
- * Precio unitario mostrado: base (o variante), más los extras, más las opciones
- * elegidas por su cantidad. Los recargos pueden ser NEGATIVOS —«sin sopa
- * −0.50»—, así que el resultado se protege de bajar de cero: un plato gratis
- * por acumular descuentos sería un agujero, y el servidor lo rechazaría igual.
+ * Lo que suma UN grupo, según cómo lo cobre el negocio.
+ *
+ * Es la copia en el teléfono de `server/src/services/pricing.ts`, y existe por
+ * un motivo concreto: sin ella, media Suprema ($10) y media Hawaiana ($9) se
+ * pintarían como $19 —el doble de una pizza— y al confirmar el pedido el
+ * cliente vería $10. Enterarse del precio real al final es la peor forma de
+ * enterarse.
+ *
+ * Las dos reglas que no son obvias, iguales que en la base:
+ *   · `highest_selected` mira el precio UNITARIO: dos medias pizzas son una.
+ *   · las estrategias con límite descuentan las MÁS CARAS, nunca por orden de
+ *     clic, o el mismo carrito costaría distinto según cómo se armara.
+ */
+export function groupPrice(
+  strategy: PricingStrategy,
+  freeSelections: number,
+  options: ChosenOption[],
+): number {
+  const elegidas = options.filter(opcion => (opcion.quantity || 1) > 0)
+  if (!elegidas.length) return 0
+  const centavos = (valor: number) => Math.round(valor * 100) / 100
+  const precios = elegidas.map(opcion => opcion.price || 0)
+
+  if (strategy === 'fixed' || strategy === 'included') return 0
+  if (strategy === 'highest_selected') return centavos(Math.max(...precios))
+  if (strategy === 'lowest_selected') return centavos(Math.min(...precios))
+  if (strategy === 'average') {
+    return centavos(precios.reduce((t, p) => t + p, 0) / precios.length)
+  }
+
+  if (strategy === 'included_up_to_limit' || strategy === 'extra_after_limit') {
+    if (freeSelections <= 0) {
+      return centavos(elegidas.reduce((t, o) => t + (o.price || 0) * (o.quantity || 1), 0))
+    }
+    const ordenadas = [...elegidas].sort((a, b) => (b.price || 0) - (a.price || 0))
+    if (strategy === 'included_up_to_limit') {
+      return centavos(ordenadas
+        .slice(freeSelections)
+        .reduce((t, o) => t + (o.price || 0) * (o.quantity || 1), 0))
+    }
+    // Por porciones: una opción puede quedar a medias.
+    let restantes = freeSelections
+    let total = 0
+    for (const opcion of ordenadas) {
+      const cantidad = opcion.quantity || 1
+      const gratis = Math.min(restantes, cantidad)
+      restantes -= gratis
+      total += (opcion.price || 0) * (cantidad - gratis)
+    }
+    return centavos(total)
+  }
+
+  return centavos(elegidas.reduce((t, o) => t + (o.price || 0) * (o.quantity || 1), 0))
+}
+
+/**
+ * Precio unitario mostrado: base (o variante), más los extras, más lo que
+ * aporte cada grupo con SU estrategia. Los recargos pueden ser NEGATIVOS
+ * —«sin sopa −0.50»—, así que el resultado se protege de bajar de cero: un
+ * plato gratis por acumular descuentos sería un agujero, y el servidor lo
+ * rechazaría igual.
  */
 export const unitPrice = (
   product: Product,
@@ -51,10 +109,24 @@ export const unitPrice = (
     ? (variant.priceSale ?? variant.price)
     : (product.priceFrom ?? 0)
   const suma = extras.reduce((total, extra) => total + (extra.price || 0), 0)
-  const opciones = options.reduce(
-    (total, opcion) => total + (opcion.price || 0) * (opcion.quantity || 1),
-    0,
-  )
+
+  // Cada grupo con lo suyo: sumarlo todo a bulto sería el error de la mitad y
+  // mitad. Un grupo que ya no está en el catálogo se cobra como `sum`, que es
+  // lo que hacía antes.
+  const porGrupo = new Map<string, ChosenOption[]>()
+  for (const opcion of options) {
+    porGrupo.set(opcion.groupId, [...porGrupo.get(opcion.groupId) || [], opcion])
+  }
+  let opciones = 0
+  for (const [groupId, elegidas] of porGrupo) {
+    const grupo = product.optionGroups.find(g => g.id === groupId)
+    opciones += groupPrice(
+      grupo?.pricingStrategy || 'sum',
+      grupo?.freeSelections || 0,
+      elegidas,
+    )
+  }
+
   return Math.max(0, Math.round((base + suma + opciones) * 100) / 100)
 }
 
