@@ -6642,6 +6642,114 @@ grant select, insert, update, delete on table public.option_groups to service_ro
 grant select, insert, update, delete on table public.options to service_role;
 grant select, insert, update, delete on table public.order_item_options to service_role;
 
+-- ── 5. La plantilla del tipo de negocio ─────────────────────────────────────
+-- Deja cargadas las categorías y los grupos típicos de un negocio recién
+-- creado: lo que convierte «dar de alta una hamburguesería» en cargar datos.
+-- No sobrescribe (si ya hay catálogo no toca nada), es todo o nada, y sus
+-- grupos cuelgan de la CATEGORÍA, que es lo que permite cargarlos cuando el
+-- negocio todavía no tiene ni un producto
+-- (migration-2026-08-05-plantillas-de-negocio.sql).
+create or replace function public.apply_business_template(
+  p_business_id uuid,
+  p_template jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_categoria jsonb;
+  v_grupo jsonb;
+  v_opcion jsonb;
+  v_categoria_id uuid;
+  v_grupo_id uuid;
+  v_categorias integer := 0;
+  v_grupos integer := 0;
+  v_opciones integer := 0;
+begin
+  if p_business_id is null then
+    raise exception 'Falta el negocio' using errcode = '22023';
+  end if;
+
+  if not exists (select 1 from businesses where id = p_business_id) then
+    raise exception 'El negocio no existe' using errcode = '42501';
+  end if;
+
+  -- El portón: un negocio con catálogo ya es un negocio con decisiones
+  -- tomadas, y una plantilla encima las pisaría.
+  if exists (select 1 from product_categories where business_id = p_business_id)
+     or exists (select 1 from products where business_id = p_business_id) then
+    return jsonb_build_object(
+      'aplicada', false,
+      'motivo', 'El negocio ya tiene catálogo',
+      'categorias', 0, 'grupos', 0, 'opciones', 0
+    );
+  end if;
+
+  for v_categoria in
+    select * from jsonb_array_elements(coalesce(p_template->'categorias', '[]'::jsonb))
+  loop
+    insert into product_categories (business_id, name, sort)
+    values (
+      p_business_id,
+      v_categoria->>'nombre',
+      coalesce((v_categoria->>'orden')::integer, 0)
+    )
+    returning id into v_categoria_id;
+    v_categorias := v_categorias + 1;
+
+    for v_grupo in
+      select * from jsonb_array_elements(coalesce(v_categoria->'grupos', '[]'::jsonb))
+    loop
+      insert into option_groups (
+        business_id, category_id, product_id, name, selection_type,
+        required, min_selectable, max_selectable, sort
+      ) values (
+        p_business_id,
+        v_categoria_id,
+        null,
+        v_grupo->>'nombre',
+        coalesce(v_grupo->>'tipo', 'single'),
+        coalesce((v_grupo->>'obligatorio')::boolean, false),
+        coalesce((v_grupo->>'min')::integer, 0),
+        coalesce((v_grupo->>'max')::integer, 1),
+        coalesce((v_grupo->>'orden')::integer, 0)
+      )
+      returning id into v_grupo_id;
+      v_grupos := v_grupos + 1;
+
+      for v_opcion in
+        select * from jsonb_array_elements(coalesce(v_grupo->'opciones', '[]'::jsonb))
+      loop
+        insert into options (
+          business_id, option_group_id, name, price_adjustment, sort
+        ) values (
+          p_business_id,
+          v_grupo_id,
+          v_opcion->>'nombre',
+          coalesce((v_opcion->>'recargo')::numeric, 0),
+          coalesce((v_opcion->>'orden')::integer, 0)
+        );
+        v_opciones := v_opciones + 1;
+      end loop;
+    end loop;
+  end loop;
+
+  return jsonb_build_object(
+    'aplicada', true,
+    'categorias', v_categorias,
+    'grupos', v_grupos,
+    'opciones', v_opciones
+  );
+end;
+$$;
+
+revoke all on function public.apply_business_template(uuid, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.apply_business_template(uuid, jsonb)
+  to service_role;
+
 -- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
 --
 -- Las tres nacieron con `on delete set null` a secas y eso anulaba también

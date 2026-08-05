@@ -1,6 +1,15 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
-import type { WriteResult } from '../db/types'
+import type { BusinessTemplate, WriteResult } from '../db/types'
+
+/** Lo que devuelve `apply_business_template`: qué dejó cargado, o por qué no. */
+interface TemplateSummary {
+  aplicada: boolean
+  motivo?: string
+  categorias: number
+  grupos: number
+  opciones: number
+}
 import {
   getPlanDefinition,
   normalizePlanId,
@@ -25,6 +34,7 @@ interface PlatformErrorRow {
   last_seen_at: string
 }
 import { recordError } from '../services/error-log'
+import { templateForBusinessType } from '../services/business-templates'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -59,6 +69,10 @@ const db: {
     passwordHash: string | null,
     monthlyRate: number | null,
   ): Promise<WriteResult<CreatedBusiness>>
+  applyBusinessTemplate(
+    businessId: string,
+    template: BusinessTemplate,
+  ): Promise<WriteResult<TemplateSummary>>
   updateBusiness(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
@@ -201,6 +215,49 @@ function safeFailure(res: Response, context: string, error: unknown) {
     message: errorMessage(error),
   })
   return res.status(500).json({ error: `No se pudo ${context}` })
+}
+
+/**
+ * Deja el catálogo de arranque del tipo de negocio: sus categorías y los grupos
+ * de opciones típicos de cada una.
+ *
+ * Va DESPUÉS del alta y no puede tumbarla. Cuando se llega aquí el negocio, su
+ * dueño, sus políticas y su cuota mensual ya existen y son transaccionales; una
+ * plantilla que falle no puede deshacer nada de eso ni devolver un 500 por un
+ * cliente que en realidad SÍ se creó. Por eso se traga el error y lo manda al
+ * registro, que es donde se mira cuando algo no cuadra.
+ *
+ * Que no haya plantilla es lo normal —una ferretería no trae carta— y no se
+ * registra como error.
+ */
+const seedBusinessCatalog = async (
+  businessId: string,
+  type: string,
+  name: string,
+): Promise<void> => {
+  const template = templateForBusinessType(type)
+  if (!template) return
+
+  try {
+    const seeded = await db.applyBusinessTemplate(businessId, template)
+    assertDatabaseResult(seeded, 'aplicar la plantilla del tipo')
+    const summary = seeded.data
+    if (summary?.aplicada) {
+      console.log(
+        `🛒 Catálogo inicial de ${name} (${type}) — ${summary.categorias} categorías, `
+        + `${summary.grupos} grupos de opciones`,
+      )
+    }
+  } catch (error) {
+    console.error('❌ aplicar la plantilla del tipo:', errorMessage(error))
+    void recordError({
+      businessId,
+      category: 'servidor',
+      code: 'plantilla-tipo-negocio',
+      message: errorMessage(error),
+      context: { type },
+    })
+  }
 }
 
 // El modo se valida aquí además de en la base: así el panel recibe un mensaje
@@ -406,6 +463,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     if (!business) throw new Error('crear onboarding: respuesta vacía')
     Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
     console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
+    await seedBusinessCatalog(business.id, businessPayload.type as string, name)
     res.status(201).json(sanitizeBusinessForAdmin(business))
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)
