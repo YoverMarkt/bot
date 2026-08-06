@@ -335,22 +335,107 @@ describe('crear pedido desde la mini app', () => {
   })
 
   // El horario del dueño manda también aquí, no solo en el bot.
+  //
+  // ⚠️ La hora se FIJA. Antes el horario de prueba era 00:00–00:01 todos los
+  // días, así que el test fallaba si se corría dentro de ese minuto — y pasó,
+  // justo a las 00:00. Un test que depende del reloj real es una alarma que
+  // suena sola una vez al día.
   it('no acepta pedidos con el negocio cerrado', async () => {
+    // Un lunes a las 22:00 de Ecuador, con el local cerrado desde las 18:00.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-11T03:00:00Z'))
+
     const crear = vi.spyOn(db, 'createStorefrontOrder')
-    vi.spyOn(db, 'getSchedule').mockResolvedValue([
-      { day_of_week: 0, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 1, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 2, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 3, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 4, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 5, open_time: '00:00', close_time: '00:01', is_active: true },
-      { day_of_week: 6, open_time: '00:00', close_time: '00:01', is_active: true },
-    ])
+    vi.spyOn(db, 'getSchedule').mockResolvedValue(
+      [1, 2, 3, 4, 5].map(day => ({
+        day_of_week: day, open_time: '09:00', close_time: '18:00', is_active: true,
+      })),
+    )
 
     const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
       storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
       params: { slug: 'pizzeria' },
       body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect(crear).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  // …pero SÍ acepta uno programado, y ese es todo el sentido de programar: a
+  // las once de la noche es cuando alguien decide qué va a comer mañana.
+  it('con el negocio cerrado SÍ acepta un pedido programado', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-11T03:00:00Z'))  // lunes 22:00 en Ecuador
+
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+      .mockResolvedValue({ data: { id: 'pedido-1' }, error: null })
+    vi.spyOn(db, 'getSchedule').mockResolvedValue(
+      [1, 2, 3, 4, 5].map(day => ({
+        day_of_week: day, open_time: '09:00', close_time: '18:00', is_active: true,
+      })),
+    )
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        // Martes a las 13:00 de Ecuador: el local está abierto entonces.
+        scheduledFor: '2026-08-11T18:00:00Z',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(crear.mock.calls[0][0].scheduledFor).toBe('2026-08-11T18:00:00.000Z')
+    vi.useRealTimers()
+  })
+
+  // La lista de franjas es una comodidad para elegir, no una autorización:
+  // quien mande una hora a mano no puede colarse.
+  it('rechaza una hora programada a la que el local está cerrado', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-11T03:00:00Z'))
+
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+    vi.spyOn(db, 'getSchedule').mockResolvedValue(
+      [1, 2, 3, 4, 5].map(day => ({
+        day_of_week: day, open_time: '09:00', close_time: '18:00', is_active: true,
+      })),
+    )
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        scheduledFor: '2026-08-12T08:00:00Z',  // las 03:00 de la madrugada
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(respuesta.body.error).toMatch(/no está disponible/)
+    expect(crear).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  // Un negocio SUSPENDIDO no recibe pedidos ni programando: `cerrada` es
+  // temporal, `suspendida` significa que esta tienda no vende.
+  it('un negocio suspendido no acepta ni programados', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({
+      id: 'negocio-a', active: true, suspended: true,
+      storefront_enabled: true, takes_orders: true,
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        scheduledFor: '2026-08-11T18:00:00Z',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
     })
 
     expect(respuesta.status).toBe(409)

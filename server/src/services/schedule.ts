@@ -61,3 +61,117 @@ function isOutsideHours(
 }
 
 export { scheduleToText, buildScheduleMessage, isOutsideHours }
+
+// ── PEDIDOS PROGRAMADOS ─────────────────────────────────────────────────────
+//
+// «Quiero mi almuerzo a la 1». Hasta ahora la tienda solo aceptaba pedidos
+// inmediatos, así que fuera de horario no se podía pedir nada — y ese es justo
+// el momento en que alguien decide qué va a comer.
+//
+// Las franjas se calculan CONTRA EL HORARIO REAL del negocio, en hora de
+// Ecuador. Ofrecer una hora a la que el local está cerrado es peor que no
+// ofrecer nada: el cliente programa, espera, y no llega su comida.
+
+/** El reloj del negocio, no el del teléfono del cliente. */
+const localEcuador = (date: Date): Date =>
+  new Date(date.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+
+export interface SlotOptions {
+  /** Cuánto tarda el negocio en tener el pedido listo. */
+  preparationMinutes?: number
+  /** Cada cuánto se ofrece una hora. */
+  stepMinutes?: number
+  /** Cuántos días hacia adelante se puede programar. */
+  daysAhead?: number
+  /** Tope de franjas devueltas, para no mandar una lista infinita al teléfono. */
+  limit?: number
+}
+
+/**
+ * Las horas a las que este negocio puede tener un pedido listo.
+ *
+ * Tres reglas que evitan una promesa que no se puede cumplir:
+ *
+ * · No se ofrece nada antes de `ahora + preparación`. Programar para dentro de
+ *   cinco minutos una pizza que tarda treinta es prometer lo imposible.
+ * · Solo horas dentro del horario del día, y **no la de cierre exacta**: a las
+ *   22:00 en punto el local ya cerró.
+ * · Sin horario configurado no se devuelve nada. Es mejor no ofrecer programar
+ *   que ofrecer las 24 horas de un negocio que abre seis.
+ */
+export function scheduleSlots(
+  schedule: ScheduleRecord[] | null | undefined,
+  options: SlotOptions = {},
+  now = new Date(),
+): string[] {
+  const active = activeDays(schedule)
+  if (!active.length) return []
+
+  const preparacion = Math.max(0, options.preparationMinutes ?? 30)
+  const paso = Math.max(5, options.stepMinutes ?? 30)
+  const dias = Math.min(14, Math.max(1, options.daysAhead ?? 7))
+  const tope = Math.min(200, Math.max(1, options.limit ?? 48))
+
+  const local = localEcuador(now)
+  // El primer momento posible: ya con el tiempo de preparación por delante.
+  const desde = new Date(local.getTime() + preparacion * 60_000)
+
+  const franjas: string[] = []
+  for (let dia = 0; dia < dias && franjas.length < tope; dia += 1) {
+    const fecha = new Date(local)
+    fecha.setDate(fecha.getDate() + dia)
+    const config = active.find(item => item.day_of_week === fecha.getDay())
+    if (!config) continue
+
+    const [abreHora, abreMinuto] = String(config.open_time).split(':').map(Number)
+    const [cierraHora, cierraMinuto] = String(config.close_time).split(':').map(Number)
+    const abre = abreHora * 60 + abreMinuto
+    const cierra = cierraHora * 60 + cierraMinuto
+    if (!(cierra > abre)) continue
+
+    // Se empieza en la apertura y se redondea al siguiente paso, para que las
+    // horas salgan en punto y no a las 13:07.
+    for (let minuto = abre; minuto < cierra && franjas.length < tope; minuto += paso) {
+      const momento = new Date(fecha)
+      momento.setHours(Math.floor(minuto / 60), minuto % 60, 0, 0)
+      if (momento.getTime() < desde.getTime()) continue
+      franjas.push(momento.toISOString())
+    }
+  }
+  return franjas
+}
+
+/**
+ * ¿Se puede programar un pedido para este momento?
+ *
+ * Lo comprueba el SERVIDOR, no la app: la lista de franjas es una comodidad
+ * para elegir, y quien manda una hora a mano no puede colarse.
+ */
+export function isValidSlot(
+  schedule: ScheduleRecord[] | null | undefined,
+  when: Date,
+  options: SlotOptions = {},
+  now = new Date(),
+): boolean {
+  if (Number.isNaN(when.getTime())) return false
+  const preparacion = Math.max(0, options.preparationMinutes ?? 30)
+  // Un minuto de margen: entre que la app pinta la franja y el cliente
+  // confirma pasa tiempo, y rechazar por segundos sería absurdo.
+  if (when.getTime() < now.getTime() + (preparacion - 1) * 60_000) return false
+
+  const dias = Math.min(14, Math.max(1, options.daysAhead ?? 7))
+  if (when.getTime() > now.getTime() + dias * 24 * 60 * 60_000) return false
+
+  const active = activeDays(schedule)
+  if (!active.length) return false
+
+  const local = localEcuador(when)
+  const config = active.find(item => item.day_of_week === local.getDay())
+  if (!config) return false
+
+  const minutos = local.getHours() * 60 + local.getMinutes()
+  const [abreHora, abreMinuto] = String(config.open_time).split(':').map(Number)
+  const [cierraHora, cierraMinuto] = String(config.close_time).split(':').map(Number)
+  return minutos >= (abreHora * 60 + abreMinuto)
+    && minutos < (cierraHora * 60 + cierraMinuto)
+}

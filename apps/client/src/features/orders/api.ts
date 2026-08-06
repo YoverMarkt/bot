@@ -49,6 +49,8 @@ export type Order = {
   currency?: string
   payment_method?: 'transferencia' | 'efectivo' | null
   payment_proof_url?: string | null
+  /** Para cuándo lo quiere el cliente. Nulo = lo antes posible. */
+  scheduled_for?: string | null
   created_at: string
   order_items: OrderItem[]
   /** Incrustada por el servidor desde `address_id`. */
