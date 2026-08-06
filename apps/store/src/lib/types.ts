@@ -144,6 +144,8 @@ export interface Catalog {
   business: Business | null
   status: StoreStatus
   canOrder: boolean
+  /** Horas a las que el negocio puede tener el pedido listo, ya en ISO. */
+  scheduleSlots?: string[]
   categories: Category[]
   products: Product[]
   uncategorized: number

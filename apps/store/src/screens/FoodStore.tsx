@@ -104,6 +104,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     addressId: string | null
     name: string
     paymentMethod: PaymentMethod
+    scheduledFor: string | null
   }) => {
     setEnviando(true)
     setError(null)
@@ -337,6 +338,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         enviando={enviando}
         error={error}
         deliveryFee={business.deliveryFee}
+        franjas={catalogo?.scheduleSlots || []}
         onConfirmar={confirmar}
         onNuevaDireccion={nuevaDireccion}
       />

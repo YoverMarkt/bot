@@ -245,6 +245,20 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
         <Badge variant="secondary" className={ESTADO_COLOR[pedido.status]}>
           {ESTADO_TEXTO[pedido.status]}
         </Badge>
+        {/* Un pedido programado no se prepara ahora. Si esto no se ve, la
+            cocina lo saca cuatro horas antes de tiempo. */}
+        {pedido.scheduled_for && (
+          <Badge
+            variant="secondary"
+            className="bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300"
+          >
+            <Clock className="mr-1 h-3 w-3" />
+            Para {new Date(pedido.scheduled_for).toLocaleString('es-EC', {
+              timeZone: 'America/Guayaquil',
+              weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+            })}
+          </Badge>
+        )}
       </div>
 
       {/* Qué pidió */}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Banknote, Bike, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
-import { money } from '../lib/format'
+import { money, etiquetaFranja } from '../lib/format'
 import { cartTotal, lineTotal } from '../lib/cart'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
 
@@ -13,7 +13,7 @@ import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/t
 
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  onConfirmar, onNuevaDireccion,
+  franjas = [], onConfirmar, onNuevaDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -24,11 +24,14 @@ export default function CartSheet({
   enviando: boolean
   error: string | null
   deliveryFee: number
+  /** Horas a las que el negocio puede tenerlo listo. Vacío = solo inmediato. */
+  franjas?: string[]
   onConfirmar: (datos: {
     fulfillment: Fulfillment
     addressId: string | null
     name: string
     paymentMethod: PaymentMethod
+    scheduledFor: string | null
   }) => void
   onNuevaDireccion: (datos: { label: string; address: string; reference: string }) => Promise<void>
 }) {
@@ -39,6 +42,8 @@ export default function CartSheet({
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
   const [nueva, setNueva] = useState({ label: 'Casa', address: '', reference: '' })
   const [guardando, setGuardando] = useState(false)
+  // Nulo = lo antes posible, que es lo que quiere casi todo el mundo.
+  const [cuando, setCuando] = useState<string | null>(null)
 
   const direcciones: Address[] = me?.addresses || []
   const elegida = direccionId || direcciones.find(item => item.is_default)?.id || direcciones[0]?.id || null
@@ -275,6 +280,42 @@ export default function CartSheet({
               {entrega === 'pickup' ? 'Retiras en el local' : envio > 0 ? money(envio) : 'Gratis'}
             </span>
           </div>
+          {/* ── ¿Para cuándo? ─────────────────────────────────────────
+              Con el local cerrado esto es lo ÚNICO que permite pedir: a las
+              once de la noche es cuando alguien decide qué va a comer mañana.
+              Sin franjas —el negocio no tiene horario cargado— no se enseña,
+              porque ofrecer horas inventadas es peor que no ofrecer. */}
+          {Boolean(franjas.length) && (
+            <div className="border-t borde-tema pt-3">
+              <span className="mb-2 block text-[13px] font-bold tracking-wide uppercase texto-tenue">
+                ¿Para cuándo?
+              </span>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setCuando(null)}
+                  className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition ${
+                    cuando === null ? 'border-marca bg-marca-suave' : 'borde-tema'
+                  }`}
+                >
+                  {puedePedir ? 'Lo antes posible' : 'Programar'}
+                </button>
+                {franjas.slice(0, 24).map(franja => (
+                  <button
+                    key={franja}
+                    type="button"
+                    onClick={() => setCuando(franja)}
+                    className={`shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition ${
+                      cuando === franja ? 'border-marca bg-marca-suave' : 'borde-tema'
+                    }`}
+                  >
+                    {etiquetaFranja(franja)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-baseline justify-between border-t borde-tema pt-2">
             <span className="text-[14px] font-bold">Total</span>
             <span className="text-[24px] font-extrabold tracking-tight tabular-nums">{money(total)}</span>
@@ -282,7 +323,8 @@ export default function CartSheet({
         </div>
         <Boton
           onClick={() => onConfirmar({
-            fulfillment: entrega, addressId: elegida, name: nombreFinal, paymentMethod: pago,
+            fulfillment: entrega, addressId: elegida, name: nombreFinal,
+            paymentMethod: pago, scheduledFor: cuando,
           })}
           disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
         >

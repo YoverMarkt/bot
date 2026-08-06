@@ -42,6 +42,36 @@ function buildScheduleMessage(
   return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
 }
 
+/** Los minutos desde medianoche de un «HH:MM» del panel. */
+const minutosDe = (hora: string): number => {
+  const [h, m] = String(hora).split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+/**
+ * ¿Está el negocio abierto a esta hora, según la fila de ese día?
+ *
+ * ⚠️ El horario puede CRUZAR LA MEDIANOCHE. «09:00 a 01:00» significa que la
+ * pizzería abre por la mañana y cierra a la una de la madrugada siguiente —es
+ * el horario normal de media hostelería—, y comparando `abre <= ahora < cierra`
+ * a secas ese negocio salía CERRADO LAS 24 HORAS: la condición no se cumple
+ * nunca cuando el cierre es un número menor que la apertura.
+ *
+ * Se descubrió con un horario real de 09:00–01:00 a las 00:14: la tienda decía
+ * estar cerrada y no dejaba pedir a nadie.
+ */
+const dentroDelTramo = (config: ScheduleRecord, minutos: number): boolean => {
+  const abre = minutosDe(config.open_time)
+  const cierra = minutosDe(config.close_time)
+  // Cierre ANTERIOR a la apertura = el tramo salta al día siguiente.
+  //
+  // Estrictamente menor, no «menor o igual»: «00:00 a 00:00» es un tramo de
+  // duración cero —ese día no se abre—, y tratarlo como cruce lo volvería un
+  // negocio abierto 24 horas. Lo cazó una prueba del prompt del bot.
+  if (cierra < abre) return minutos >= abre || minutos < cierra
+  return minutos >= abre && minutos < cierra
+}
+
 // Evalúa la hora local de Ecuador. Sin horario activo no bloquea la atención.
 function isOutsideHours(
   schedule: ScheduleRecord[] | null | undefined,
@@ -50,14 +80,166 @@ function isOutsideHours(
   const active = activeDays(schedule)
   if (!active.length) return false
   const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
-  const dayOfWeek = local.getDay()
   const minutes = local.getHours() * 60 + local.getMinutes()
-  const config = active.find(day => day.day_of_week === dayOfWeek)
-  if (!config) return true
-  const [openHour, openMinute] = String(config.open_time).split(':').map(Number)
-  const [closeHour, closeMinute] = String(config.close_time).split(':').map(Number)
-  return minutes < (openHour * 60 + openMinute)
-    || minutes >= (closeHour * 60 + closeMinute)
+
+  // El tramo de HOY, y también el de AYER si se alargaba pasada la medianoche:
+  // a las 00:30 de un jueves, quien sigue abierto es el turno del miércoles.
+  const hoy = active.find(day => day.day_of_week === local.getDay())
+  if (hoy && dentroDelTramo(hoy, minutes)) return false
+
+  const ayer = active.find(day => day.day_of_week === (local.getDay() + 6) % 7)
+  if (ayer && minutosDe(ayer.close_time) < minutosDe(ayer.open_time)
+    && minutes < minutosDe(ayer.close_time)) {
+    return false
+  }
+  return true
 }
 
 export { scheduleToText, buildScheduleMessage, isOutsideHours }
+
+// ── PEDIDOS PROGRAMADOS ─────────────────────────────────────────────────────
+//
+// «Quiero mi almuerzo a la 1». Hasta ahora la tienda solo aceptaba pedidos
+// inmediatos, así que fuera de horario no se podía pedir nada — y ese es justo
+// el momento en que alguien decide qué va a comer.
+//
+// Las franjas se calculan CONTRA EL HORARIO REAL del negocio, en hora de
+// Ecuador. Ofrecer una hora a la que el local está cerrado es peor que no
+// ofrecer nada: el cliente programa, espera, y no llega su comida.
+
+/**
+ * El reloj del negocio, no el del servidor ni el del teléfono del cliente.
+ *
+ * Devuelve una fecha cuyos COMPONENTES (día, hora, minuto) son los de Ecuador.
+ * Sirve para leerlos; no para convertirla de vuelta a un instante, porque el
+ * objeto resultante está en la zona de quien lo ejecuta.
+ */
+const localEcuador = (date: Date): Date =>
+  new Date(date.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+
+/**
+ * Cuántos minutos hay que sumar a una hora de Ecuador para obtener el instante
+ * UTC que le corresponde.
+ *
+ * Se calcula en vez de fijarlo en 5 horas: si algún día el país cambiara de
+ * huso, o el negocio se mudara de zona, el número dejaría de ser cierto y las
+ * franjas saldrían desplazadas sin que nada avisara.
+ */
+const desfaseEcuador = (date: Date): number => {
+  const enUtc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
+  return (enUtc.getTime() - localEcuador(date).getTime()) / 60_000
+}
+
+export interface SlotOptions {
+  /** Cuánto tarda el negocio en tener el pedido listo. */
+  preparationMinutes?: number
+  /** Cada cuánto se ofrece una hora. */
+  stepMinutes?: number
+  /** Cuántos días hacia adelante se puede programar. */
+  daysAhead?: number
+  /** Tope de franjas devueltas, para no mandar una lista infinita al teléfono. */
+  limit?: number
+}
+
+/**
+ * Las horas a las que este negocio puede tener un pedido listo.
+ *
+ * Tres reglas que evitan una promesa que no se puede cumplir:
+ *
+ * · No se ofrece nada antes de `ahora + preparación`. Programar para dentro de
+ *   cinco minutos una pizza que tarda treinta es prometer lo imposible.
+ * · Solo horas dentro del horario del día, y **no la de cierre exacta**: a las
+ *   22:00 en punto el local ya cerró.
+ * · Sin horario configurado no se devuelve nada. Es mejor no ofrecer programar
+ *   que ofrecer las 24 horas de un negocio que abre seis.
+ */
+export function scheduleSlots(
+  schedule: ScheduleRecord[] | null | undefined,
+  options: SlotOptions = {},
+  now = new Date(),
+): string[] {
+  const active = activeDays(schedule)
+  if (!active.length) return []
+
+  const preparacion = Math.max(0, options.preparationMinutes ?? 30)
+  const paso = Math.max(5, options.stepMinutes ?? 30)
+  const dias = Math.min(14, Math.max(1, options.daysAhead ?? 7))
+  const tope = Math.min(200, Math.max(1, options.limit ?? 48))
+
+  const local = localEcuador(now)
+  // El primer momento posible, en tiempo REAL: `local` solo sirve para leer
+  // día y hora de Ecuador, y su `getTime()` no es un instante de verdad.
+  // Compararlo con las franjas mezclaba dos relojes distintos.
+  const desde = now.getTime() + preparacion * 60_000
+
+  // El desfase se calcula UNA vez: el instante que se devuelve tiene que ser
+  // el mismo lo ejecute un servidor en Quito o uno en UTC. Construir la fecha
+  // con `setHours` sobre la zona del proceso desplazaba todas las franjas —lo
+  // cazó el CI, que corre en UTC, cuando en local pasaba.
+  const desfase = desfaseEcuador(now)
+  const franjas: string[] = []
+
+  for (let dia = 0; dia < dias && franjas.length < tope; dia += 1) {
+    const fecha = new Date(local)
+    fecha.setDate(fecha.getDate() + dia)
+    const config = active.find(item => item.day_of_week === fecha.getDay())
+    if (!config) continue
+
+    const abre = minutosDe(config.open_time)
+    const cierraCrudo = minutosDe(config.close_time)
+    // Un cierre pasada la medianoche se cuenta como minutos del día siguiente:
+    // «09:00 a 01:00» son 540 a 1500, no 540 a 60.
+    const cierra = cierraCrudo < abre ? cierraCrudo + 24 * 60 : cierraCrudo
+    if (cierra <= abre) continue
+
+    // Se empieza en la apertura, para que las horas salgan en punto y no a
+    // las 13:07.
+    for (let minuto = abre; minuto < cierra && franjas.length < tope; minuto += paso) {
+      const momento = new Date(Date.UTC(
+        fecha.getFullYear(), fecha.getMonth(), fecha.getDate(),
+        Math.floor(minuto / 60), minuto % 60, 0, 0,
+      ) + desfase * 60_000)
+      if (momento.getTime() < desde) continue
+      franjas.push(momento.toISOString())
+    }
+  }
+  return franjas
+}
+
+/**
+ * ¿Se puede programar un pedido para este momento?
+ *
+ * Lo comprueba el SERVIDOR, no la app: la lista de franjas es una comodidad
+ * para elegir, y quien manda una hora a mano no puede colarse.
+ */
+export function isValidSlot(
+  schedule: ScheduleRecord[] | null | undefined,
+  when: Date,
+  options: SlotOptions = {},
+  now = new Date(),
+): boolean {
+  if (Number.isNaN(when.getTime())) return false
+  const preparacion = Math.max(0, options.preparationMinutes ?? 30)
+  // Un minuto de margen: entre que la app pinta la franja y el cliente
+  // confirma pasa tiempo, y rechazar por segundos sería absurdo.
+  if (when.getTime() < now.getTime() + (preparacion - 1) * 60_000) return false
+
+  const dias = Math.min(14, Math.max(1, options.daysAhead ?? 7))
+  if (when.getTime() > now.getTime() + dias * 24 * 60 * 60_000) return false
+
+  const active = activeDays(schedule)
+  if (!active.length) return false
+
+  const local = localEcuador(when)
+  const config = active.find(item => item.day_of_week === local.getDay())
+  if (!config) return false
+
+  const minutos = local.getHours() * 60 + local.getMinutes()
+  if (dentroDelTramo(config, minutos)) return true
+
+  // Y el turno de la víspera, si se alargaba pasada la medianoche.
+  const vispera = active.find(item => item.day_of_week === (local.getDay() + 6) % 7)
+  return Boolean(vispera)
+    && minutosDe(vispera!.close_time) < minutosDe(vispera!.open_time)
+    && minutos < minutosDe(vispera!.close_time)
+}
