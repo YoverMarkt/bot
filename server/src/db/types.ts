@@ -207,3 +207,14 @@ export interface OptionTemplateRow {
 export interface OptionTemplateItemRow extends Omit<OptionRow, 'option_group_id'> {
   option_template_id: string
 }
+
+/** Qué se ofrece «además», y desde dónde. Ambos orígenes nulos = del negocio. */
+export interface RecommendationRow {
+  id: string
+  source_product_id: string | null
+  source_category_id: string | null
+  recommended_product_id: string
+  section: string
+  sort: number
+  active: boolean
+}

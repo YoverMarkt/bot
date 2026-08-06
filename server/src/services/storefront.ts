@@ -124,6 +124,19 @@ export interface CatalogOption {
   sort?: number
 }
 
+/**
+ * Qué se ofrece «además» y desde dónde. Ambos orígenes nulos = de todo el
+ * negocio, que es el caso del carrito.
+ */
+export interface CatalogRecommendation {
+  id: string
+  source_product_id?: string | null
+  source_category_id?: string | null
+  recommended_product_id: string
+  section?: string | null
+  sort?: number
+}
+
 export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 
 /**
@@ -192,6 +205,7 @@ export function buildStorefrontCatalog(input: {
   extras: CatalogExtra[]
   optionGroups?: CatalogOptionGroup[]
   options?: CatalogOption[]
+  recommendations?: CatalogRecommendation[]
 }) {
   const variantesPorProducto = new Map<string, CatalogVariant[]>()
   for (const variante of input.variants) {
@@ -241,6 +255,24 @@ export function buildStorefrontCatalog(input: {
   // que la opción herede su foto y su descripción cuando no tenga las suyas —
   // el dueño no debería subir dos veces la misma imagen de la Hawaiana.
   const productosPorId = new Map(input.products.map(producto => [producto.id, producto]))
+
+  // ── «Agrega algo más» ───────────────────────────────────────────────────
+  const recoPorProducto = new Map<string, CatalogRecommendation[]>()
+  const recoPorCategoria = new Map<string, CatalogRecommendation[]>()
+  const recoGlobales: CatalogRecommendation[] = []
+  for (const reco of input.recommendations || []) {
+    if (reco.source_product_id) {
+      recoPorProducto.set(reco.source_product_id, [
+        ...recoPorProducto.get(reco.source_product_id) || [], reco,
+      ])
+    } else if (reco.source_category_id) {
+      recoPorCategoria.set(reco.source_category_id, [
+        ...recoPorCategoria.get(reco.source_category_id) || [], reco,
+      ])
+    } else {
+      recoGlobales.push(reco)
+    }
+  }
 
   const productos = input.products.map((producto) => {
     const variantes = (variantesPorProducto.get(producto.id) || [])
@@ -316,6 +348,33 @@ export function buildStorefrontCatalog(input: {
       })
       .filter(grupo => grupo.options.length > 0)
 
+    // Lo que se ofrece con ESTE producto: lo suyo primero, después lo de su
+    // categoría. Se resuelve aquí contra el catálogo para que la app no tenga
+    // que cruzar nada, y se cae lo agotado: ofrecer lo que no hay es peor que
+    // no ofrecer.
+    const suyas = [
+      ...recoPorProducto.get(producto.id) || [],
+      ...(producto.category_id ? recoPorCategoria.get(producto.category_id) || [] : []),
+    ]
+    const vistosReco = new Set<string>()
+    const recommendations = suyas
+      .map((reco) => {
+        const ofrecido = productosPorId.get(reco.recommended_product_id)
+        if (!ofrecido || ofrecido.id === producto.id) return null
+        if (!disponible(ofrecido.stock)) return null
+        if (vistosReco.has(ofrecido.id)) return null
+        vistosReco.add(ofrecido.id)
+        return {
+          section: reco.section || 'Agrega algo más',
+          productId: ofrecido.id,
+          name: ofrecido.name,
+          description: ofrecido.description || null,
+          imageUrl: ofrecido.image_url || null,
+          price: money(ofrecido.price_sale) || money(ofrecido.price) || 0,
+        }
+      })
+      .filter(Boolean)
+
     return {
       id: producto.id,
       name: producto.name,
@@ -332,6 +391,7 @@ export function buildStorefrontCatalog(input: {
       hasVariants: variantes.length > 0,
       variants: variantes,
       optionGroups,
+      recommendations,
       extras: extras
         .filter((extra) => {
           if (vistos.has(extra.id)) return false

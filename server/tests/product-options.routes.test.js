@@ -73,6 +73,8 @@ describe('rutas de opciones del panel', () => {
       '/api/client/option-templates/:id',
       '/api/client/options',
       '/api/client/options/:id',
+      '/api/client/recommendations',
+      '/api/client/recommendations/:id',
     ])
   })
 
@@ -293,5 +295,105 @@ describe('plantillas', () => {
       { id: 'p1', name: 'Sabores', used_by_groups: 3 },
       { id: 'p2', name: 'Salsas', used_by_groups: 0 },
     ])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADICIONALES: «AGREGA ALGO MÁS»
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// La diferencia que decide el modelo: un adicional NO es una opción del plato,
+// es OTRO producto que entra al carrito como línea propia. Si acabara dentro,
+// el dueño vería «Pizza (con pan de ajo)» en vez de dos cosas que preparar.
+
+const OFRECIDO = '55555555-5555-4555-8555-555555555555'
+const ORIGEN = '66666666-6666-4666-8666-666666666666'
+
+describe('adicionales', () => {
+  const crear = (body) => ejecutar('/api/client/recommendations', 'post', { body })
+
+  it('acepta las tres formas: por producto, por categoría y global', async () => {
+    const guardar = vi.spyOn(db, 'createRecommendation')
+      .mockResolvedValue({ data: { id: 'r1' }, error: null })
+
+    for (const origen of [
+      { source_product_id: ORIGEN },
+      { source_category_id: ORIGEN },
+      {},  // de todo el negocio: el caso del carrito
+    ]) {
+      const r = await crear({ ...origen, recommended_product_id: OFRECIDO })
+      expect(r.status, JSON.stringify(origen)).toBe(201)
+    }
+    expect(guardar).toHaveBeenCalledTimes(3)
+  })
+
+  it('rechaza colgarlo de un producto Y una categoría a la vez', async () => {
+    const r = await crear({
+      source_product_id: ORIGEN,
+      source_category_id: OFRECIDO,
+      recommended_product_id: OFRECIDO,
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/no las dos cosas/)
+  })
+
+  it('exige decir QUÉ se ofrece', async () => {
+    const r = await crear({ source_product_id: ORIGEN })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/producto que se va a ofrecer/)
+  })
+
+  // Ofrecerse a sí mismo no tiene sentido y confunde al cliente.
+  it('rechaza que un producto se recomiende a sí mismo', async () => {
+    const r = await crear({
+      source_product_id: ORIGEN, recommended_product_id: ORIGEN,
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/a sí mismo/)
+  })
+
+  it('pone un título por defecto si no se da ninguno', async () => {
+    const guardar = vi.spyOn(db, 'createRecommendation')
+      .mockResolvedValue({ data: { id: 'r1' }, error: null })
+    await crear({ recommended_product_id: OFRECIDO })
+    expect(guardar.mock.calls[0][1].section).toBe('Agrega algo más')
+  })
+
+  it('el business_id sale del JWT, nunca del cuerpo', async () => {
+    const guardar = vi.spyOn(db, 'createRecommendation')
+      .mockResolvedValue({ data: { id: 'r1' }, error: null })
+
+    await ejecutar('/api/client/recommendations', 'post', {
+      businessId: 'negocio-a',
+      body: { recommended_product_id: OFRECIDO, business_id: 'negocio-de-otro' },
+    })
+
+    expect(guardar).toHaveBeenCalledWith('negocio-a', expect.any(Object))
+    expect(guardar.mock.calls[0][1]).not.toHaveProperty('business_id')
+  })
+
+  it('editar comprueba primero que el adicional sea SUYO', async () => {
+    vi.spyOn(db, 'getRecommendationById').mockResolvedValue(null)
+    const actualizar = vi.spyOn(db, 'updateRecommendation')
+
+    const r = await ejecutar('/api/client/recommendations/:id', 'put', {
+      params: { id: 'de-otro' },
+      body: { recommended_product_id: OFRECIDO },
+    })
+
+    expect(r.status).toBe(404)
+    expect(actualizar).not.toHaveBeenCalled()
+  })
+
+  it('borrar comprueba primero que el adicional sea SUYO', async () => {
+    vi.spyOn(db, 'getRecommendationById').mockResolvedValue(null)
+    const borrar = vi.spyOn(db, 'deleteRecommendation')
+
+    const r = await ejecutar('/api/client/recommendations/:id', 'delete', {
+      params: { id: 'de-otro' },
+    })
+
+    expect(r.status).toBe(404)
+    expect(borrar).not.toHaveBeenCalled()
   })
 })

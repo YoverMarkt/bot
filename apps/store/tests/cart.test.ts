@@ -26,6 +26,7 @@ const producto = (extra: Partial<Product> = {}): Product => ({
   variants: [],
   extras: [],
   optionGroups: [],
+  recommendations: [],
   ...extra,
 })
 
@@ -419,5 +420,55 @@ describe('la pizza mitad y mitad en la pantalla', () => {
     expect(unitPrice(producto({ priceFrom: 5, optionGroups: [] }), null, [], [
       elegida({ groupId: 'fantasma', optionId: 'a', price: 1 }),
     ])).toBe(6)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADICIONALES vs COMPLEMENTOS INCLUIDOS
+//
+// La distinción que decide el modelo entero:
+//   · la bebida de un combo va DENTRO de la línea del combo;
+//   · el pan de ajo que se suma al final es OTRA línea del carrito.
+//
+// Si acabaran juntos, el dueño vería «Pizza (con pan de ajo)» en vez de dos
+// cosas que preparar, y el reporte contaría una unidad donde hay dos.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('un adicional es una línea propia', () => {
+  const pan = producto({ id: 'pan', name: 'Pan de ajo', priceFrom: 3 })
+
+  it('no se mezcla con el plato: son dos líneas', () => {
+    const carrito = addLine(
+      addLine([], linea({ key: lineKey(producto(), null, [], ''), product: producto() })),
+      linea({ key: lineKey(pan, null, [], ''), product: pan, unitPrice: 3 }),
+    )
+    expect(carrito).toHaveLength(2)
+    expect(cartCount(carrito)).toBe(2)
+  })
+
+  it('el mismo adicional dos veces suma cantidad, no crea otra línea', () => {
+    const clave = lineKey(pan, null, [], '')
+    const carrito = addLine(
+      addLine([], linea({ key: clave, product: pan, unitPrice: 3 })),
+      linea({ key: clave, product: pan, unitPrice: 3 }),
+    )
+    expect(carrito).toHaveLength(1)
+    expect(carrito[0].quantity).toBe(2)
+  })
+
+  // Un complemento INCLUIDO sí va dentro: es lo que distingue los dos caminos.
+  it('un complemento incluido NO crea línea: viaja dentro del plato', () => {
+    const combo = producto({
+      id: 'combo',
+      optionGroups: [grupo({ id: 'beb', name: 'Bebida', pricingStrategy: 'included' })],
+    })
+    const carrito = addLine([], linea({
+      key: lineKey(combo, null, [], '', [elegida({ groupId: 'beb', optionId: 'cola' })]),
+      product: combo,
+      options: [elegida({ groupId: 'beb', optionId: 'cola', name: 'Coca Cola' })],
+    }))
+
+    expect(carrito).toHaveLength(1)
+    expect(carrito[0].options[0].name).toBe('Coca Cola')
   })
 })

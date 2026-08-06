@@ -7151,6 +7151,101 @@ end $$;
 create index if not exists idx_options_grupo
   on public.options (business_id, option_group_id, sort);
 
+-- ── «Agrega algo más»: los adicionales independientes ───────────────────
+-- Un adicional NO es un complemento incluido: la bebida de un combo vive
+-- dentro de su línea, y el pan de ajo que se suma al final es OTRO producto
+-- con su propia línea del carrito. Si acabaran juntos, el dueño vería «Pizza
+-- (con Coca Cola)» en vez de dos cosas que preparar
+-- (migration-2026-08-05-adicionales.sql).
+-- Las tres foráneas necesitan que existan los únicos (id, business_id) de sus
+-- destinos. En `schema.sql` este bloque va ANTES de donde se crean, así que se
+-- aseguran aquí: PostgreSQL exige un único que case con la pareja.
+create unique index if not exists uq_products_id_business
+  on public.products (id, business_id);
+create unique index if not exists uq_product_categories_id_business
+  on public.product_categories (id, business_id);
+
+create table if not exists public.product_recommendations (
+  id                     uuid primary key default gen_random_uuid(),
+  business_id            uuid not null references public.businesses(id) on delete cascade,
+  -- De dónde sale la sugerencia. Ambos nulos = de todo el negocio.
+  source_product_id      uuid,
+  source_category_id     uuid,
+  -- Qué se ofrece. Es un producto de verdad del catálogo.
+  recommended_product_id uuid not null,
+  -- El título de la sección: «Agrega bebidas», «También te puede gustar».
+  section                text not null default 'Agrega algo más',
+  sort                   integer not null default 0,
+  active                 boolean not null default true,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  constraint product_recommendations_datos_check check (
+    char_length(btrim(section)) between 1 and 60
+    and sort between 0 and 999
+    and num_nonnulls(source_product_id, source_category_id) <= 1
+  )
+);
+
+-- Las tres foráneas van por PAREJA (id, business_id). Sin el negocio dentro,
+-- una recomendación podría ofrecer el producto de OTRO local — y ese sí que
+-- acabaría en el carrito, porque un adicional es una línea de verdad.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.product_recommendations'::regclass
+      and conname = 'fk_recomendaciones_producto_origen'
+  ) then
+    alter table public.product_recommendations
+      add constraint fk_recomendaciones_producto_origen
+      foreign key (source_product_id, business_id)
+      references public.products (id, business_id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.product_recommendations'::regclass
+      and conname = 'fk_recomendaciones_categoria_origen'
+  ) then
+    alter table public.product_recommendations
+      add constraint fk_recomendaciones_categoria_origen
+      foreign key (source_category_id, business_id)
+      references public.product_categories (id, business_id) on delete cascade;
+  end if;
+
+  -- Si el producto ofrecido desaparece, la recomendación se va con él: dejarla
+  -- viva ofrecería algo que ya no se puede pedir.
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.product_recommendations'::regclass
+      and conname = 'fk_recomendaciones_producto_ofrecido'
+  ) then
+    alter table public.product_recommendations
+      add constraint fk_recomendaciones_producto_ofrecido
+      foreign key (recommended_product_id, business_id)
+      references public.products (id, business_id) on delete cascade;
+  end if;
+end $$;
+
+create index if not exists idx_recomendaciones_origen
+  on public.product_recommendations (business_id, source_product_id, sort);
+create index if not exists idx_recomendaciones_categoria
+  on public.product_recommendations (business_id, source_category_id, sort);
+
+-- Ofrecer dos veces lo mismo en el mismo sitio es un descuido, no una
+-- intención: el cliente vería el pan de ajo repetido.
+create unique index if not exists uq_recomendaciones_sin_repetir
+  on public.product_recommendations (
+    business_id,
+    coalesce(source_product_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    coalesce(source_category_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    recommended_product_id
+  );
+
+alter table public.product_recommendations enable row level security;
+revoke all on table public.product_recommendations from public, anon, authenticated;
+grant select, insert, update, delete on table public.product_recommendations to service_role;
+
 -- ── 3. Qué eligió el cliente, guardado con el pedido ────────────────────────
 -- Fotografía inmutable: si mañana cambia el nombre o el recargo de la opción,
 -- el pedido de ayer tiene que seguir diciendo lo que se pidió y lo que costó.

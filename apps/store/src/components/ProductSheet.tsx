@@ -14,6 +14,7 @@ import type {
   Extra,
   OptionGroup,
   Product,
+  Recommendation,
   Variant,
 } from '../lib/types'
 
@@ -38,11 +39,19 @@ const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.fla
     })),
 )
 
-export default function ProductSheet({ product, abierto, onCerrar, onAgregar, puedePedir }: {
+export default function ProductSheet({
+  product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir,
+}: {
   product: Product | null
   abierto: boolean
   onCerrar: () => void
   onAgregar: (linea: CartLine) => void
+  /**
+   * Un adicional entra al carrito como LÍNEA PROPIA, no dentro de este plato.
+   * Por eso va por otro camino que `onAgregar`: si acabara dentro, el dueño
+   * vería «Pizza (con pan de ajo)» en vez de dos cosas que preparar.
+   */
+  onAgregarSuelto: (productId: string) => void
   puedePedir: boolean
 }) {
   const [variante, setVariante] = useState<Variant | null>(null)
@@ -70,6 +79,15 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
   const esCombo = product?.productType === 'combo' && gruposOpciones.length > 1
   const precio = product ? unitPrice(product, variante, extras, opciones) : 0
   const falta = missingRequirement(gruposOpciones, opciones)
+
+  // Los adicionales, por la sección que les puso el dueño y en su orden.
+  const agrupadas = useMemo(() => {
+    const mapa = new Map<string, Recommendation[]>()
+    for (const reco of product?.recommendations || []) {
+      mapa.set(reco.section, [...mapa.get(reco.section) || [], reco])
+    }
+    return [...mapa.entries()].map(([section, items]) => ({ section, items }))
+  }, [product])
 
   if (!product) return null
 
@@ -386,6 +404,53 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
             </section>
           )
         })}
+
+        {/* ── Agrega algo más ──────────────────────────────────────────
+            Los adicionales van agrupados por la sección que puso el dueño
+            («Agrega bebidas», «También te puede gustar»). Cada uno entra al
+            carrito por su cuenta: no forman parte de este plato. */}
+        {agrupadas.map(({ section, items }) => (
+          <section key={section}>
+            <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+              {section}
+            </h3>
+            <div className="space-y-2">
+              {items.map(reco => (
+                <div
+                  key={reco.productId}
+                  className="flex items-center gap-3 rounded-xl border borde-tema px-4 py-3"
+                >
+                  {reco.imageUrl && (
+                    <img
+                      src={reco.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      className="size-11 shrink-0 rounded-lg object-cover"
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-semibold">{reco.name}</span>
+                    {reco.description && (
+                      <span className="block truncate text-[12px] texto-tenue">
+                        {reco.description}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-[14px] font-bold">{money(reco.price)}</span>
+                  <button
+                    type="button"
+                    onClick={() => onAgregarSuelto(reco.productId)}
+                    disabled={!puedePedir}
+                    aria-label={`Agregar ${reco.name}`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full bg-marca text-[18px] leading-none font-black text-white disabled:opacity-40"
+                  >
+                    +
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
 
         <section>
           <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">

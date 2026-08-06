@@ -100,6 +100,24 @@ const getStorefrontOptions = async (businessId: string) => {
   return data || []
 }
 
+/**
+ * «Agrega algo más»: los adicionales que se ofrecen junto a un producto.
+ *
+ * No son opciones del plato — son OTROS productos que van como línea propia
+ * del carrito. Aquí solo se lee qué ofrecer y dónde; el precio y el stock
+ * salen del producto ofrecido, como cualquier otro.
+ */
+const getStorefrontRecommendations = async (businessId: string) => {
+  const { data, error } = await db
+    .from('product_recommendations')
+    .select('id,source_product_id,source_category_id,recommended_product_id,section,sort')
+    .eq('business_id', businessId)
+    .eq('active', true)
+    .order('sort', { ascending: true })
+  fail(error, 'No se pudieron leer las recomendaciones')
+  return data || []
+}
+
 /** La cuenta que se le muestra al cliente para transferir. */
 const getBusinessBankAccount = async (businessId: string) => {
   const { data, error } = await db
@@ -229,6 +247,7 @@ export = {
   getStorefrontExtras,
   getStorefrontOptionGroups,
   getStorefrontOptions,
+  getStorefrontRecommendations,
   getBusinessBankAccount,
   // Panel del dueño
   getCategories,

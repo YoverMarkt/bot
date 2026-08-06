@@ -107,6 +107,20 @@ export interface ChosenOption {
  */
 export type ProductType = 'simple' | 'configurable' | 'combo' | 'daily_menu' | 'weighted'
 
+/**
+ * Un adicional: OTRO producto que se ofrece junto a este. No es una opción del
+ * plato — al elegirlo entra al carrito como su propia línea, porque es algo
+ * más que preparar y algo más que contar en el reporte de ventas.
+ */
+export interface Recommendation {
+  section: string
+  productId: string
+  name: string
+  description: string | null
+  imageUrl: string | null
+  price: number
+}
+
 export interface Product {
   id: string
   name: string
@@ -123,6 +137,7 @@ export interface Product {
   variants: Variant[]
   extras: Extra[]
   optionGroups: OptionGroup[]
+  recommendations: Recommendation[]
 }
 
 export interface Catalog {
