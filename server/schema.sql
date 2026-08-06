@@ -3349,7 +3349,11 @@ alter table public.orders add constraint orders_status_check check (
 alter table public.orders
   add column if not exists shipping numeric(10,2) not null default 0,
   add column if not exists payment_method text,
-  add column if not exists payment_proof_url text;
+  add column if not exists payment_proof_url text,
+  -- Sin el identificador no se puede firmar el acceso temporal, y el
+  -- comprobante volvería a ser público para siempre
+  -- (migration-2026-08-05-comprobantes-privados.sql).
+  add column if not exists payment_proof_public_id text;
 alter table public.businesses
   add column if not exists delivery_fee numeric(10,2) not null default 0,
   add column if not exists brand_color text,
@@ -3962,11 +3966,16 @@ revoke all on function public.create_storefront_order(
 -- enlace. Por eso la pertenencia se comprueba con las tres cosas a la vez
 -- —negocio, pedido y teléfono de la sesión—: sin esto, cualquiera con un id de
 -- pedido ajeno podría colgarle una imagen.
+-- La firma cambió al añadir el identificador de Cloudinary: dejar viva la
+-- anterior haría ambigua cualquier llamada.
+drop function if exists public.attach_storefront_payment_proof(uuid, uuid, text, text);
+
 create or replace function public.attach_storefront_payment_proof(
   p_business_id uuid,
   p_order_id uuid,
   p_contact_phone text,
-  p_url text
+  p_url text,
+  p_public_id text default null
 )
 returns jsonb
 language plpgsql
@@ -3996,17 +4005,37 @@ begin
     return jsonb_build_object('result', 'invalid_state', 'status', v_order.status);
   end if;
 
+  -- Se guarda el identificador ADEMÁS de la URL: sin él no se puede firmar el
+  -- acceso temporal, y el comprobante volvería a ser público para siempre.
+  --
+  -- Y el pedido pasa a REVISIÓN. Antes se quedaba en «pendiente» con una
+  -- imagen colgada y nada que avisara al dueño de que había un pago esperando
+  -- a que alguien lo mirara. Solo se mueve desde los estados en los que aún se
+  -- está esperando el pago: si el dueño ya lo confirmó a mano, mandar otro
+  -- comprobante no puede echarlo atrás.
   update public.orders
-  set payment_proof_url = p_url, updated_at = now()
+  set payment_proof_url = p_url,
+      payment_proof_public_id = p_public_id,
+      status = case
+        when v_order.status in ('pendiente', 'esperando_pago') then 'pago_en_revision'
+        else v_order.status
+      end,
+      updated_at = now()
   where id = p_order_id and business_id = p_business_id;
+
+  if v_order.status in ('pendiente', 'esperando_pago') then
+    insert into public.order_events (business_id, order_id, from_status, to_status, note)
+    values (p_business_id, p_order_id, v_order.status, 'pago_en_revision',
+            'El cliente subió su comprobante');
+  end if;
 
   return jsonb_build_object('result', 'updated');
 end;
 $$;
 
-revoke all on function public.attach_storefront_payment_proof(uuid, uuid, text, text)
+revoke all on function public.attach_storefront_payment_proof(uuid, uuid, text, text, text)
   from public, anon, authenticated;
-grant execute on function public.attach_storefront_payment_proof(uuid, uuid, text, text)
+grant execute on function public.attach_storefront_payment_proof(uuid, uuid, text, text, text)
   to service_role;
 
 -- ── REGISTRO DE ERRORES DE PLATAFORMA ──────────────────────

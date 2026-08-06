@@ -4,7 +4,7 @@ import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
-import { isConfigured, uploadMedia } from '../integrations/cloudinary'
+import { isConfigured, uploadPrivateMedia } from '../integrations/cloudinary'
 import { readStorefrontSession, requireStorefrontSession } from '../middleware/storefront'
 import { checkSession, deviceFingerprint, hashToken, phoneMatchesSession } from '../services/storefront-session'
 import {
@@ -425,12 +425,16 @@ router.post(
     }
 
     try {
-      const subida = await uploadMedia(req.file.buffer, businessId)
+      // PRIVADO: un comprobante bancario no puede vivir en una URL pública y
+      // permanente. Se sube como `authenticated` y solo se ve con una firma
+      // temporal que genera el servidor.
+      const subida = await uploadPrivateMedia(req.file.buffer, businessId)
       const { data, error } = await db.attachStorefrontPaymentProof({
         businessId,
         orderId: String(req.params.id || ''),
         contactPhone,
         url: subida.url,
+        publicId: subida.public_id,
       })
       if (error) {
         console.error('❌ comprobante:', error.message || 'Error desconocido')
@@ -443,7 +447,7 @@ router.post(
       if (resultado.result === 'invalid_state') {
         return res.status(409).json({ error: 'Ese pedido ya está cerrado' })
       }
-      return res.json({ ok: true, url: subida.url })
+      return res.json({ ok: true })
     } catch (error) {
       console.error('❌ comprobante:', (error as Error).message)
       return res.status(500).json({ error: 'No pudimos subir tu comprobante' })
