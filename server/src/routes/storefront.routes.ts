@@ -361,6 +361,9 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     fulfillment,
     paymentMethod,
     items: safeItems,
+    // La app la genera al abrir el checkout y la repite si reintenta. Sin
+    // clave el comportamiento es el de siempre: cada envío, un pedido.
+    idempotencyKey: String(body.idempotencyKey || '').trim().slice(0, 100) || null,
   })
 
   if (result.error) {

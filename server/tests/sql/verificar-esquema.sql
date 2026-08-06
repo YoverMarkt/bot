@@ -752,6 +752,83 @@ begin
     delete from product_categories where id = v_categoria_op;
   end;
 
+  -- ── 3d ter. Un doble toque NO crea dos pedidos ───────────────────────────
+  --
+  -- Es el fallo más caro de una tienda: dos comandas en la cocina y un cliente
+  -- que paga dos veces. La app manda una clave por intento de compra.
+  declare
+    v_uno jsonb;
+    v_dos jsonb;
+    v_sin_clave jsonb;
+    v_pedido_idem uuid;
+  begin
+    v_uno := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
+      null, null, 'clave-del-cliente'
+    );
+    v_dos := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
+      null, null, 'clave-del-cliente'
+    );
+
+    if (v_uno ->> 'id') <> (v_dos ->> 'id') then
+      raise exception 'La misma clave creó DOS pedidos';
+    end if;
+    if (v_dos ->> 'repetido')::boolean is not true then
+      raise exception 'El segundo intento no se avisó como repetido';
+    end if;
+
+    -- Sin clave se siguen creando pedidos distintos: el bot no la manda, y
+    -- dos personas pidiendo lo mismo son dos pedidos.
+    v_sin_clave := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+    );
+    if (v_sin_clave ->> 'id') = (v_uno ->> 'id') then
+      raise exception 'Sin clave se reutilizó un pedido anterior';
+    end if;
+
+    -- ── El historial de estados ────────────────────────────────────────────
+    v_pedido_idem := (v_uno ->> 'id')::uuid;
+    perform public.set_order_status(v_business, v_pedido_idem, 'confirmado');
+    perform public.set_order_status(v_business, v_pedido_idem, 'preparacion');
+
+    if (select count(*) from order_events where order_id = v_pedido_idem) <> 2 then
+      raise exception 'El historial no registró los dos cambios de estado';
+    end if;
+    -- De dónde venía, no solo a dónde fue: sin el origen no se puede auditar.
+    if not exists (
+      select 1 from order_events
+      where order_id = v_pedido_idem
+        and from_status = 'confirmado' and to_status = 'preparacion'
+    ) then
+      raise exception 'El historial no guardó de qué estado venía el pedido';
+    end if;
+
+    -- ── Los estados nuevos y sus límites ───────────────────────────────────
+    -- Un pedido de retiro no sale a reparto…
+    if (public.set_order_status(v_business, v_pedido_idem, 'en_camino') ->> 'result')
+       <> 'not_deliverable' then
+      raise exception 'Un pedido de retiro salió a reparto';
+    end if;
+    -- …pero sí puede quedar listo para retirar.
+    if (public.set_order_status(v_business, v_pedido_idem, 'listo_para_retiro') ->> 'result')
+       <> 'updated' then
+      raise exception 'Un pedido de retiro no pudo quedar listo para retirar';
+    end if;
+
+    -- Y de un estado FINAL no se vuelve atrás.
+    perform public.set_order_status(v_business, v_pedido_idem, 'cancelado');
+    if (public.set_order_status(v_business, v_pedido_idem, 'preparacion') ->> 'result')
+       <> 'invalid_transition' then
+      raise exception 'Un pedido cancelado volvió a preparación';
+    end if;
+
+    delete from orders where id in (v_pedido_idem, (v_sin_clave ->> 'id')::uuid);
+  end;
+
   -- ── 3e. Una cita atendida es una venta ───────────────────────────────────
   -- El caso de la barbería: sin esto, atender a alguien no aparecía en ningún
   -- reporte salvo que el dueño se acordara de registrarlo a mano.

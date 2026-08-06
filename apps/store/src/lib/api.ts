@@ -85,6 +85,11 @@ export const createAddress = (slug: string, body: {
 /**
  * Manda SOLO ids y cantidades. Ningún importe viaja desde el teléfono: el
  * total lo calcula la base contra su propio catálogo (regla inviolable #8).
+ *
+ * `idempotencyKey` la genera quien llama al abrir el checkout y la REPITE si
+ * hay que reintentar. Sin ella, un doble toque en «Confirmar» —o un reintento
+ * tras un corte de red— creaba dos comandas en la cocina y un cliente pagando
+ * dos veces.
  */
 export const createOrder = (slug: string, input: {
   lines: CartLine[]
@@ -92,12 +97,14 @@ export const createOrder = (slug: string, input: {
   addressId?: string | null
   fulfillment: Fulfillment
   paymentMethod?: PaymentMethod | null
+  idempotencyKey?: string
 }) => request<OrderResult>(`/${slug}/orders`, {
   method: 'POST',
   body: {
     name: input.name,
     addressId: input.addressId,
     fulfillment: input.fulfillment,
+    idempotencyKey: input.idempotencyKey,
     paymentMethod: input.paymentMethod || null,
     items: input.lines.map(linea => ({
       productId: linea.product.id,

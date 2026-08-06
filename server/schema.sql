@@ -971,8 +971,9 @@ create table if not exists orders (
   -- completado (o cancelado desde cualquiera). Lo hace cumplir set_order_status.
   status           text not null default 'pendiente'
                    constraint orders_status_check check (status in (
-                     'pendiente','confirmado','preparacion','en_camino',
-                     'completado','cancelado','expirado'
+                     'pendiente','esperando_pago','pago_en_revision','confirmado',
+                     'aceptado','preparacion','listo_para_retiro','en_camino',
+                     'completado','cancelado','rechazado','expirado'
                    )),
   subtotal         numeric(10,2) not null default 0,
   discount         numeric(10,2) not null default 0,  -- solo por código/panel, jamás la IA
@@ -981,6 +982,65 @@ create table if not exists orders (
   created_at       timestamptz default now(),
   updated_at       timestamptz default now()
 );
+
+-- ── El mismo pedido dos veces es UN pedido ──────────────────────────────
+-- Un doble toque en «Confirmar», o la app reintentando tras un corte de red,
+-- creaban dos comandas en la cocina y un cliente pagando dos veces. La app
+-- manda una clave por intento de compra
+-- (migration-2026-08-05-pedidos-sin-duplicados.sql).
+alter table public.orders
+  add column if not exists idempotency_key text;
+alter table public.orders
+  add column if not exists scheduled_for timestamptz;
+
+-- Único POR NEGOCIO y solo cuando hay clave: los pedidos del bot no la traen y
+-- no pueden chocar entre sí por ser todos nulos.
+create unique index if not exists uq_orders_idempotencia
+  on public.orders (business_id, idempotency_key)
+  where idempotency_key is not null;
+
+-- El pedido como destino de foránea compuesta: sin el business_id dentro se
+-- podría colgar el historial de un negocio sobre el pedido de otro.
+create unique index if not exists uq_orders_id_business
+  on public.orders (id, business_id);
+
+-- ── El historial de estados ─────────────────────────────────────────────
+-- Sin esto, «¿cuándo se confirmó?» solo se responde mirando `updated_at`, que
+-- se pisa con cada cambio.
+create table if not exists public.order_events (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  order_id    uuid not null,
+  from_status text,
+  to_status   text not null,
+  note        text,
+  created_at  timestamptz not null default now(),
+  constraint order_events_datos_check check (
+    char_length(btrim(to_status)) between 1 and 40
+    and char_length(coalesce(note, '')) <= 300
+  )
+);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.order_events'::regclass
+      and conname = 'fk_order_events_pedido_del_negocio'
+  ) then
+    alter table public.order_events
+      add constraint fk_order_events_pedido_del_negocio
+      foreign key (order_id, business_id)
+      references public.orders (id, business_id) on delete cascade;
+  end if;
+end $$;
+
+create index if not exists idx_order_events_pedido
+  on public.order_events (business_id, order_id, created_at);
+
+alter table public.order_events enable row level security;
+revoke all on table public.order_events from public, anon, authenticated;
+grant select, insert, update, delete on table public.order_events to service_role;
 
 -- ── TABLA 16: Ítems del pedido (precio congelado al momento del pedido) ──
 create table if not exists order_items (
@@ -1471,9 +1531,12 @@ set search_path = public, pg_temp
 as $$
 declare
   v_order public.orders%rowtype;
+  v_anterior text;
 begin
   if p_status not in (
-    'confirmado', 'preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'
+    'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado', 'aceptado',
+    'preparacion', 'listo_para_retiro', 'en_camino', 'completado',
+    'cancelado', 'rechazado', 'expirado'
   ) then
     raise exception using errcode = '22023', message = 'Estado de pedido inválido';
   end if;
@@ -1490,6 +1553,7 @@ begin
   if v_order.status = p_status then
     return jsonb_build_object('result', 'updated', 'order', to_jsonb(v_order));
   end if;
+  v_anterior := v_order.status;
 
   -- Un pedido que el cliente retira en el local (o consume en sitio) no puede
   -- salir a reparto. Los pedidos del bot no traen `fulfillment`: se asumen a
@@ -1499,13 +1563,36 @@ begin
     return jsonb_build_object('result', 'not_deliverable', 'order', to_jsonb(v_order));
   end if;
 
+  -- Y al revés: un pedido a domicilio no se queda «listo para retirar».
+  if p_status = 'listo_para_retiro'
+     and coalesce(v_order.fulfillment, 'delivery') = 'delivery' then
+    return jsonb_build_object('result', 'not_pickable', 'order', to_jsonb(v_order));
+  end if;
+
+  -- El pedido avanza; nunca retrocede. `completado`, `cancelado`, `rechazado`
+  -- y `expirado` son finales: de ahí no sale a ningún sitio, así que
+  -- «cancelado → preparacion» o «completado → preparacion» quedan fuera por no
+  -- estar listados, no por una regla aparte.
   if not (
     (v_order.status = 'pendiente'
-      and p_status in ('confirmado', 'preparacion', 'cancelado', 'expirado'))
+      and p_status in ('esperando_pago', 'pago_en_revision', 'confirmado', 'aceptado',
+                       'preparacion', 'cancelado', 'rechazado', 'expirado'))
+    or (v_order.status = 'esperando_pago'
+      and p_status in ('pago_en_revision', 'confirmado', 'cancelado', 'expirado'))
+    -- El comprobante está subido y el dueño lo revisa: de aquí sale aceptado o
+    -- rechazado, nunca directo a la cocina.
+    or (v_order.status = 'pago_en_revision'
+      and p_status in ('confirmado', 'aceptado', 'rechazado', 'cancelado', 'expirado'))
     or (v_order.status = 'confirmado'
-      and p_status in ('preparacion', 'en_camino', 'completado', 'cancelado', 'expirado'))
+      and p_status in ('aceptado', 'preparacion', 'listo_para_retiro', 'en_camino',
+                       'completado', 'cancelado', 'expirado'))
+    or (v_order.status = 'aceptado'
+      and p_status in ('preparacion', 'listo_para_retiro', 'en_camino', 'completado',
+                       'cancelado'))
     or (v_order.status = 'preparacion'
-      and p_status in ('en_camino', 'completado', 'cancelado'))
+      and p_status in ('listo_para_retiro', 'en_camino', 'completado', 'cancelado'))
+    or (v_order.status = 'listo_para_retiro'
+      and p_status in ('completado', 'cancelado'))
     or (v_order.status = 'en_camino'
       and p_status in ('completado', 'cancelado'))
   ) then
@@ -1516,6 +1603,11 @@ begin
   set status = p_status, updated_at = now()
   where id = p_order_id and business_id = p_business_id
   returning * into v_order;
+
+  -- El historial. Sin esto, «¿cuándo se confirmó?» solo se puede responder
+  -- mirando `updated_at`, que se pisa con cada cambio.
+  insert into public.order_events (business_id, order_id, from_status, to_status)
+  values (p_business_id, p_order_id, v_anterior, p_status);
 
   -- Entregado = vendido. Si algo fallara aquí cae la transacción entera: nunca
   -- queda un pedido entregado sin su venta.
@@ -3236,14 +3328,19 @@ create unique index if not exists uq_sales_order
 create index if not exists idx_sales_biz_order
   on public.sales (business_id, order_id);
 
--- Estados de reparto en instalaciones creadas antes de que existieran
--- (migration-2026-08-02-estados-pedido.sql). Solo AÑADE valores permitidos:
--- ninguna fila existente puede quedar fuera del CHECK nuevo.
+-- Estados de reparto y de pago en instalaciones creadas antes de que
+-- existieran (migration-2026-08-02-estados-pedido.sql y
+-- migration-2026-08-05-pedidos-sin-duplicados.sql). Solo AÑADE valores
+-- permitidos: ninguna fila existente puede quedar fuera del CHECK nuevo.
+--
+-- ⚠️ Esta es la definición que MANDA: va después de la del `create table`, así
+-- que añadir un estado allí y olvidarlo aquí lo deja fuera igualmente.
 alter table public.orders drop constraint if exists orders_status_check;
 alter table public.orders add constraint orders_status_check check (
   status in (
-    'pendiente', 'confirmado', 'preparacion', 'en_camino',
-    'completado', 'cancelado', 'expirado'
+    'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado', 'aceptado',
+    'preparacion', 'listo_para_retiro', 'en_camino', 'completado',
+    'cancelado', 'rechazado', 'expirado'
   )
 );
 
@@ -3369,7 +3466,9 @@ create or replace function public.create_storefront_order(
   p_fulfillment text,
   p_items jsonb,
   p_notes text default null,
-  p_payment_method text default null
+  p_payment_method text default null,
+  p_idempotency_key text default null,
+  p_scheduled_for timestamptz default null
 )
 returns jsonb
 language plpgsql
@@ -3411,6 +3510,8 @@ declare
   v_subtotal numeric(10,2) := 0;
   v_shipping numeric(10,2) := 0;
   v_count integer := 0;
+  v_clave text;
+  v_existente public.orders%rowtype;
 begin
   -- ── El negocio debe poder recibir pedidos por la tienda ──────────────────
   select id, active, suspended, storefront_enabled, takes_orders, delivery_fee
@@ -3429,6 +3530,32 @@ begin
   end if;
   if v_business.takes_orders is not true then
     raise exception using errcode = '42501', message = 'Este negocio no recibe pedidos';
+  end if;
+
+  -- ── El mismo pedido dos veces es UN pedido ──────────────────────────────
+  --
+  -- Un doble toque en «Confirmar», o la app reintentando tras un corte de red,
+  -- creaban dos pedidos idénticos: dos comandas en la cocina y un cliente que
+  -- paga dos veces. La app manda una clave por intento de compra; si ya existe
+  -- un pedido con ella, se DEVUELVE ese en vez de crear otro.
+  v_clave := nullif(btrim(coalesce(p_idempotency_key, '')), '');
+  if v_clave is not null then
+    if char_length(v_clave) > 100 then
+      raise exception using errcode = '22023', message = 'Clave de pedido invalida';
+    end if;
+    select * into v_existente
+    from public.orders
+    where business_id = p_business_id and idempotency_key = v_clave;
+    if found then
+      return jsonb_build_object(
+        'id', v_existente.id,
+        'subtotal', v_existente.subtotal,
+        'shipping', v_existente.shipping,
+        'total', v_existente.total,
+        'items', (select count(*) from public.order_items oi where oi.order_id = v_existente.id),
+        'repetido', true
+      );
+    end if;
   end if;
 
   if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items) = 0 then
@@ -3462,11 +3589,11 @@ begin
   insert into public.orders (
     business_id, customer_id, contact_phone, contact_name,
     subtotal, discount, total, status, source, address_id, fulfillment,
-    payment_method
+    payment_method, idempotency_key, scheduled_for
   ) values (
     p_business_id, p_customer_id, btrim(p_contact_phone), nullif(btrim(coalesce(p_contact_name, '')), ''),
     0, 0, 0, 'pendiente', 'storefront', p_address_id, p_fulfillment,
-    p_payment_method
+    p_payment_method, v_clave, p_scheduled_for
   )
   returning id into v_order_id;
 
@@ -3827,7 +3954,7 @@ end;
 $$;
 
 revoke all on function public.create_storefront_order(
-  uuid, uuid, text, text, uuid, text, jsonb, text, text
+  uuid, uuid, text, text, uuid, text, jsonb, text, text, text, timestamptz
 ) from public, anon, authenticated;
 
 -- ── COMPROBANTE DE TRANSFERENCIA DE LA TIENDA ──────────────
