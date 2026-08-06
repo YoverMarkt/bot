@@ -190,3 +190,94 @@ describe('catálogo TypeScript', () => {
     expect(reindex.body).toMatchObject({ ok: true, pending: 2 })
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL TIPO DE PRODUCTO, Y EL FALLO QUE DESTAPÓ
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `product_type` dice si el producto se ARMA eligiendo otros —un combo—, no de
+// qué comida es. Al añadirlo salió a la luz algo peor: editar un producto NO
+// miraba si la base había aceptado el cambio, así que un dato inválido
+// devolvía «guardado» y el dueño se quedaba creyendo que estaba puesto.
+//
+// La causa estaba en el tipo: la interfaz declaraba `Promise<unknown>`, o sea
+// «aquí no hay error que mirar».
+
+describe('tipo de producto', () => {
+  it('acepta los cinco tipos del motor', async () => {
+    const crear = vi.spyOn(db, 'createProduct')
+      .mockResolvedValue({ data: { id: 'p1' }, error: null })
+    vi.spyOn(db, 'getCategories').mockResolvedValue([])
+    vi.spyOn(bot, 'indexProduct').mockResolvedValue(undefined)
+
+    for (const tipo of ['simple', 'configurable', 'combo', 'daily_menu', 'weighted']) {
+      const r = await dispatch('post', '/api/client/products', {
+        auth: authorization(),
+        body: { name: 'X', price: 5, product_type: tipo },
+      })
+      expect(r.status, tipo).toBe(201)
+    }
+    expect(crear).toHaveBeenCalledTimes(5)
+  })
+
+  it('rechaza un tipo inventado con un motivo que se entiende', async () => {
+    const crear = vi.spyOn(db, 'createProduct')
+
+    const r = await dispatch('post', '/api/client/products', {
+      auth: authorization(),
+      body: { name: 'X', price: 5, product_type: 'pizza_gigante' },
+    })
+
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/simple, configurable, combo/)
+    // Y no llega a la base: el CHECK de PostgreSQL responde con jerga.
+    expect(crear).not.toHaveBeenCalled()
+  })
+
+  it('al editar también se rechaza antes de escribir', async () => {
+    vi.spyOn(db, 'getProductById').mockResolvedValue({ id: 'p1', business_id: 'business-a' })
+    const actualizar = vi.spyOn(db, 'updateProduct')
+
+    const r = await dispatch('put', '/api/client/products/:id', {
+      auth: authorization(), params: { id: 'p1' },
+      body: { product_type: 'lo_que_sea' },
+    })
+
+    expect(r.status).toBe(400)
+    expect(actualizar).not.toHaveBeenCalled()
+  })
+})
+
+describe('editar un producto no puede mentir', () => {
+  // El fallo real: decía «ok» aunque la base hubiera rechazado el cambio.
+  it('si la base rechaza la edición, NO se responde ok', async () => {
+    vi.spyOn(db, 'getProductById').mockResolvedValue({ id: 'p1', business_id: 'business-a' })
+    vi.spyOn(db, 'updateProduct').mockResolvedValue({
+      error: { message: 'violates check constraint "products_motor_check"' },
+    })
+
+    const r = await dispatch('put', '/api/client/products/:id', {
+      auth: authorization(), params: { id: 'p1' },
+      body: { name: 'Nuevo nombre' },
+    })
+
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/No se pudo guardar/)
+    // El error crudo de PostgreSQL no sale al panel: filtraría nombres de
+    // restricciones y tablas.
+    expect(JSON.stringify(r.body)).not.toContain('products_motor_check')
+  })
+
+  it('una edición que la base acepta sí responde ok', async () => {
+    vi.spyOn(db, 'getProductById').mockResolvedValue({ id: 'p1', business_id: 'business-a' })
+    vi.spyOn(db, 'updateProduct').mockResolvedValue({ error: null })
+
+    const r = await dispatch('put', '/api/client/products/:id', {
+      auth: authorization(), params: { id: 'p1' },
+      body: { name: 'Nuevo nombre' },
+    })
+
+    expect(r.status).toBe(200)
+    expect(r.body).toEqual({ ok: true })
+  })
+})

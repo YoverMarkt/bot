@@ -195,6 +195,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     price_sale: product?.price_sale != null && Number(product.price_sale) > 0 ? String(product.price_sale) : '',
     stock: product?.stock ?? 'disponible',
     category_id: product?.category_id ?? '',
+    product_type: product?.product_type ?? 'simple',
     description: product?.description ?? '',
     tags: (product?.tags ?? []).join(', '),
     external_sku: product?.external_sku ?? '',
@@ -244,6 +245,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
       stock: f.stock as Product['stock'],
       // Vacío = sin categoría: en la tienda aparece suelto, no agrupado.
       category_id: f.category_id || null,
+      product_type: f.product_type as Product['product_type'],
       description: f.description.trim() || null,
       tags: f.tags.split(',').map(t => t.trim()).filter(Boolean),
       external_sku: f.external_sku.trim() || null,
@@ -303,6 +305,26 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
                 <SelectItem value="agotado">Agotado</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-type">Tipo de producto</Label>
+            <Select
+              value={f.product_type}
+              onValueChange={v => setF(prev => ({ ...prev, product_type: v as Product['product_type'] }))}
+            >
+              <SelectTrigger id="product-type" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="simple">Normal — se pide tal cual</SelectItem>
+                <SelectItem value="configurable">Se personaliza — con grupos de opciones</SelectItem>
+                <SelectItem value="combo">Combo — se arma eligiendo otros productos</SelectItem>
+                <SelectItem value="daily_menu">Del día — solo ciertos días u horas</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              {f.product_type === 'combo'
+                ? 'En la mini app se pinta por pasos numerados: «1 Elige tu pizza», «2 Elige tu bebida». Arma los pasos en la pestaña Personalización.'
+                : 'El tipo no cambia lo que vendes: cambia cómo lo elige el cliente.'}
+            </p>
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="product-category">Categoría en la tienda</Label>

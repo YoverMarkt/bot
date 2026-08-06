@@ -65,6 +65,9 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
 
   const grupos = useMemo(() => groupExtras(product?.extras || []), [product])
   const gruposOpciones = product?.optionGroups || []
+  // Un combo se arma eligiendo otros productos, así que sus grupos se pintan
+  // como pasos. No se mira el tipo de comida: se mira si el producto se compone.
+  const esCombo = product?.productType === 'combo' && gruposOpciones.length > 1
   const precio = product ? unitPrice(product, variante, extras, opciones) : 0
   const falta = missingRequirement(gruposOpciones, opciones)
 
@@ -189,7 +192,7 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
           </section>
         )}
 
-        {gruposOpciones.map((group) => {
+        {gruposOpciones.map((group, indice) => {
           const elegidas = opciones.filter(item => item.groupId === group.id)
           const usado = chosenCount(group, opciones)
           const minimo = Math.max(group.required ? 1 : 0, group.minSelectable)
@@ -199,7 +202,17 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
           return (
             <section key={group.id}>
               <h3 className="mb-2.5 flex items-baseline justify-between gap-3 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-                <span className="min-w-0 truncate">{group.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  {/* En un combo cada grupo es un PASO: «1 Elige tu primera
+                      pizza», «2 Elige tu bebida». Sin el número, cinco bloques
+                      seguidos parecen la misma lista repetida. */}
+                  {esCombo && (
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-marca text-[11px] leading-none font-black text-white">
+                      {indice + 1}
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate">{group.name}</span>
+                </span>
                 {minimo > 0
                   ? (
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold normal-case ${
@@ -243,6 +256,14 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
                       {group.selectionType === 'quantity'
                         ? (
                             <>
+                              {opcion.imageUrl && (
+                                <img
+                                  src={opcion.imageUrl}
+                                  alt=""
+                                  loading="lazy"
+                                  className="size-11 shrink-0 rounded-lg object-cover"
+                                />
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-semibold">
                                   {opcion.name}
@@ -284,6 +305,17 @@ export default function ProductSheet({ product, abierto, onCerrar, onAgregar, pu
                                   <span className="text-[11px] leading-none font-black">✓</span>
                                 )}
                               </span>
+                              {/* Una opción que ES un producto trae su foto:
+                                  eligiendo entre tres pizzas, el nombre solo no
+                                  basta para decidir. */}
+                              {opcion.imageUrl && (
+                                <img
+                                  src={opcion.imageUrl}
+                                  alt=""
+                                  loading="lazy"
+                                  className="size-11 shrink-0 rounded-lg object-cover"
+                                />
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-semibold">
                                   {opcion.name}
