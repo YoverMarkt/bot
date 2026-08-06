@@ -205,3 +205,101 @@ describe('las franjas no dependen del reloj del servidor', () => {
     }
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HORARIOS QUE CRUZAN LA MEDIANOCHE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// «09:00 a 01:00» es el horario normal de media hostelería: se abre por la
+// mañana y se cierra a la una de la madrugada siguiente.
+//
+// Comparando `abre <= ahora < cierra` a secas, esos negocios salían CERRADOS
+// LAS 24 HORAS —la condición no se cumple nunca cuando el cierre es un número
+// menor que la apertura—. Se descubrió con un horario real de 09:00–01:00 a
+// las 00:14: la tienda decía estar cerrada y no dejaba pedir a nadie.
+
+const { isOutsideHours } = require('../dist/services/schedule')
+
+/** Una pizzería: todos los días de 09:00 a 01:00 de la madrugada. */
+const NOCTURNO = [0, 1, 2, 3, 4, 5, 6].map(day => ({
+  day_of_week: day, open_time: '09:00', close_time: '01:00', is_active: true,
+}))
+
+describe('un negocio que cierra pasada la medianoche', () => {
+  // Jueves 2026-08-06. Las horas van en UTC; Ecuador es UTC-5.
+  const enEcuador = (hora, minuto = 0) =>
+    new Date(Date.UTC(2026, 7, 6, hora + 5, minuto))
+
+  it('está ABIERTO a media tarde', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(15))).toBe(false)
+  })
+
+  it('está ABIERTO a las 00:14, que es cuando se descubrió el fallo', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(0, 14))).toBe(false)
+  })
+
+  it('está ABIERTO justo antes de cerrar', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(0, 59))).toBe(false)
+  })
+
+  it('está CERRADO a la hora de cierre exacta', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(1, 0))).toBe(true)
+  })
+
+  it('está CERRADO entre el cierre y la apertura', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(5))).toBe(true)
+    expect(isOutsideHours(NOCTURNO, enEcuador(8, 59))).toBe(true)
+  })
+
+  it('está ABIERTO justo al abrir', () => {
+    expect(isOutsideHours(NOCTURNO, enEcuador(9, 0))).toBe(false)
+  })
+
+  // El turno que sigue abierto a las 00:30 de un jueves es el del MIÉRCOLES.
+  it('si solo abre el miércoles, el jueves de madrugada sigue abierto', () => {
+    const soloMiercoles = [{
+      day_of_week: 3, open_time: '09:00', close_time: '01:00', is_active: true,
+    }]
+    expect(isOutsideHours(soloMiercoles, enEcuador(0, 30))).toBe(false)
+    // Pero a las 2 de la madrugada del jueves ya cerró.
+    expect(isOutsideHours(soloMiercoles, enEcuador(2))).toBe(true)
+  })
+
+  it('un horario normal sigue comportándose igual que siempre', () => {
+    expect(isOutsideHours(LABORAL, new Date('2026-08-10T18:00:00Z'))).toBe(false)  // lunes 13:00
+    expect(isOutsideHours(LABORAL, new Date('2026-08-11T03:00:00Z'))).toBe(true)   // lunes 22:00
+  })
+
+  it('las franjas de un horario nocturno llegan hasta la madrugada', () => {
+    const franjas = scheduleSlots(NOCTURNO, { preparationMinutes: 30 }, enEcuador(22))
+    expect(franjas.length).toBeGreaterThan(0)
+    // La primera es a las 22:30, no a las 09:00 del día siguiente.
+    expect(horaEcuador(franjas[0])).toBe('22:30')
+  })
+
+  it('se puede programar para la madrugada de un horario nocturno', () => {
+    expect(isValidSlot(NOCTURNO, enEcuador(24, 30), {}, enEcuador(22))).toBe(true)
+  })
+})
+
+describe('el caso ambiguo: apertura igual al cierre', () => {
+  // «00:00 a 00:00» es un tramo de duración CERO: ese día no se abre. Tratarlo
+  // como cruce de medianoche convertía al negocio en uno abierto 24 horas, y
+  // lo cazó una prueba del prompt del bot que daba por cerrado ese horario.
+  const CERO = Array.from({ length: 7 }, (_, day) => ({
+    day_of_week: day, open_time: '00:00:00', close_time: '00:00:00', is_active: true,
+  }))
+
+  it('significa cerrado, no abierto todo el día', () => {
+    for (const hora of [0, 6, 12, 18, 23]) {
+      expect(
+        isOutsideHours(CERO, new Date(Date.UTC(2026, 7, 6, hora + 5))),
+        `a las ${hora}:00 debería estar cerrado`,
+      ).toBe(true)
+    }
+  })
+
+  it('tampoco ofrece franjas para programar', () => {
+    expect(scheduleSlots(CERO, {}, new Date('2026-08-06T15:00:00Z'))).toEqual([])
+  })
+})

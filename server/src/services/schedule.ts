@@ -42,6 +42,36 @@ function buildScheduleMessage(
   return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
 }
 
+/** Los minutos desde medianoche de un «HH:MM» del panel. */
+const minutosDe = (hora: string): number => {
+  const [h, m] = String(hora).split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+/**
+ * ¿Está el negocio abierto a esta hora, según la fila de ese día?
+ *
+ * ⚠️ El horario puede CRUZAR LA MEDIANOCHE. «09:00 a 01:00» significa que la
+ * pizzería abre por la mañana y cierra a la una de la madrugada siguiente —es
+ * el horario normal de media hostelería—, y comparando `abre <= ahora < cierra`
+ * a secas ese negocio salía CERRADO LAS 24 HORAS: la condición no se cumple
+ * nunca cuando el cierre es un número menor que la apertura.
+ *
+ * Se descubrió con un horario real de 09:00–01:00 a las 00:14: la tienda decía
+ * estar cerrada y no dejaba pedir a nadie.
+ */
+const dentroDelTramo = (config: ScheduleRecord, minutos: number): boolean => {
+  const abre = minutosDe(config.open_time)
+  const cierra = minutosDe(config.close_time)
+  // Cierre ANTERIOR a la apertura = el tramo salta al día siguiente.
+  //
+  // Estrictamente menor, no «menor o igual»: «00:00 a 00:00» es un tramo de
+  // duración cero —ese día no se abre—, y tratarlo como cruce lo volvería un
+  // negocio abierto 24 horas. Lo cazó una prueba del prompt del bot.
+  if (cierra < abre) return minutos >= abre || minutos < cierra
+  return minutos >= abre && minutos < cierra
+}
+
 // Evalúa la hora local de Ecuador. Sin horario activo no bloquea la atención.
 function isOutsideHours(
   schedule: ScheduleRecord[] | null | undefined,
@@ -50,14 +80,19 @@ function isOutsideHours(
   const active = activeDays(schedule)
   if (!active.length) return false
   const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
-  const dayOfWeek = local.getDay()
   const minutes = local.getHours() * 60 + local.getMinutes()
-  const config = active.find(day => day.day_of_week === dayOfWeek)
-  if (!config) return true
-  const [openHour, openMinute] = String(config.open_time).split(':').map(Number)
-  const [closeHour, closeMinute] = String(config.close_time).split(':').map(Number)
-  return minutes < (openHour * 60 + openMinute)
-    || minutes >= (closeHour * 60 + closeMinute)
+
+  // El tramo de HOY, y también el de AYER si se alargaba pasada la medianoche:
+  // a las 00:30 de un jueves, quien sigue abierto es el turno del miércoles.
+  const hoy = active.find(day => day.day_of_week === local.getDay())
+  if (hoy && dentroDelTramo(hoy, minutes)) return false
+
+  const ayer = active.find(day => day.day_of_week === (local.getDay() + 6) % 7)
+  if (ayer && minutosDe(ayer.close_time) < minutosDe(ayer.open_time)
+    && minutes < minutosDe(ayer.close_time)) {
+    return false
+  }
+  return true
 }
 
 export { scheduleToText, buildScheduleMessage, isOutsideHours }
@@ -150,11 +185,12 @@ export function scheduleSlots(
     const config = active.find(item => item.day_of_week === fecha.getDay())
     if (!config) continue
 
-    const [abreHora, abreMinuto] = String(config.open_time).split(':').map(Number)
-    const [cierraHora, cierraMinuto] = String(config.close_time).split(':').map(Number)
-    const abre = abreHora * 60 + abreMinuto
-    const cierra = cierraHora * 60 + cierraMinuto
-    if (!(cierra > abre)) continue
+    const abre = minutosDe(config.open_time)
+    const cierraCrudo = minutosDe(config.close_time)
+    // Un cierre pasada la medianoche se cuenta como minutos del día siguiente:
+    // «09:00 a 01:00» son 540 a 1500, no 540 a 60.
+    const cierra = cierraCrudo < abre ? cierraCrudo + 24 * 60 : cierraCrudo
+    if (cierra <= abre) continue
 
     // Se empieza en la apertura, para que las horas salgan en punto y no a
     // las 13:07.
@@ -199,8 +235,11 @@ export function isValidSlot(
   if (!config) return false
 
   const minutos = local.getHours() * 60 + local.getMinutes()
-  const [abreHora, abreMinuto] = String(config.open_time).split(':').map(Number)
-  const [cierraHora, cierraMinuto] = String(config.close_time).split(':').map(Number)
-  return minutos >= (abreHora * 60 + abreMinuto)
-    && minutos < (cierraHora * 60 + cierraMinuto)
+  if (dentroDelTramo(config, minutos)) return true
+
+  // Y el turno de la víspera, si se alargaba pasada la medianoche.
+  const vispera = active.find(item => item.day_of_week === (local.getDay() + 6) % 7)
+  return Boolean(vispera)
+    && minutosDe(vispera!.close_time) < minutosDe(vispera!.open_time)
+    && minutos < minutosDe(vispera!.close_time)
 }
