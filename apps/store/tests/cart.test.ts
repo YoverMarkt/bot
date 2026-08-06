@@ -20,6 +20,7 @@ const producto = (extra: Partial<Product> = {}): Product => ({
   categoryId: 'c1',
   tags: [],
   available: true,
+  productType: 'simple',
   priceFrom: 12,
   hasVariants: false,
   variants: [],

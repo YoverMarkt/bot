@@ -62,7 +62,11 @@ export interface CatalogProduct {
   video_url?: string | null
   tags?: string[] | null
   category_id?: string | null
+  /** simple · configurable · combo · daily_menu · weighted. */
+  product_type?: string | null
 }
+
+export type ProductType = 'simple' | 'configurable' | 'combo' | 'daily_menu' | 'weighted'
 
 export interface CatalogVariant {
   id: string
@@ -233,6 +237,11 @@ export function buildStorefrontCatalog(input: {
     }
   }
 
+  // Los combos: una opción puede SER un producto del catálogo. Se indexan para
+  // que la opción herede su foto y su descripción cuando no tenga las suyas —
+  // el dueño no debería subir dos veces la misma imagen de la Hawaiana.
+  const productosPorId = new Map(input.products.map(producto => [producto.id, producto]))
+
   const productos = input.products.map((producto) => {
     const variantes = (variantesPorProducto.get(producto.id) || [])
       .filter(variante => disponible(variante.stock))
@@ -271,15 +280,21 @@ export function buildStorefrontCatalog(input: {
       .map((grupo) => {
         const opciones = (opcionesPorGrupo.get(grupo.id) || [])
           .filter(opcion => disponible(opcion.stock))
-          .map(opcion => ({
-            id: opcion.id,
-            name: opcion.name,
-            description: opcion.description || null,
-            imageUrl: opcion.image_url || null,
-            price: money(opcion.price_adjustment) ?? 0,
-            referencesProductId: opcion.references_product_id || null,
-            defaultSelected: opcion.default_selected === true,
-          }))
+          .map((opcion) => {
+            // Si la opción ES un producto, hereda lo que no tenga propio.
+            const referido = opcion.references_product_id
+              ? productosPorId.get(opcion.references_product_id)
+              : undefined
+            return {
+              id: opcion.id,
+              name: opcion.name,
+              description: opcion.description || referido?.description || null,
+              imageUrl: opcion.image_url || referido?.image_url || null,
+              price: money(opcion.price_adjustment) ?? 0,
+              referencesProductId: opcion.references_product_id || null,
+              defaultSelected: opcion.default_selected === true,
+            }
+          })
         const maximo = Math.max(1, grupo.max_selectable ?? 1)
         const minimo = Math.max(0, grupo.min_selectable ?? 0)
         return {
@@ -310,6 +325,9 @@ export function buildStorefrontCatalog(input: {
       categoryId: producto.category_id || null,
       tags: producto.tags || [],
       available: disponible(producto.stock),
+      // La app no pregunta «¿es pizza?»: pregunta si este producto se arma
+      // eligiendo otros. Un combo se pinta por pasos; el resto, de corrido.
+      productType: (producto.product_type || 'simple') as ProductType,
       priceFrom: desde,
       hasVariants: variantes.length > 0,
       variants: variantes,

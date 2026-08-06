@@ -14,11 +14,13 @@ const db: {
   getProducts(businessId: string): Promise<unknown>
   createProduct(businessId: string, data: Record<string, unknown>): Promise<WriteResult<ProductRecord>>
   getProductById(businessId: string, productId: string): Promise<ProductRecord | null>
+  // `Promise<unknown>` era lo que escondía el fallo: nadie podía mirar el
+  // error porque el tipo decía que no había ninguno que mirar.
   updateProduct(
     businessId: string,
     productId: string,
     data: Record<string, unknown>,
-  ): Promise<unknown>
+  ): Promise<WriteResult<unknown>>
   deleteProduct(businessId: string, productId: string): Promise<unknown>
   getProductsWithoutEmbedding(businessId: string): Promise<ProductRecord[]>
   getCategories(businessId: string): Promise<{ id: string }[]>
@@ -54,6 +56,20 @@ async function safeCategoryId(businessId: string, value: unknown): Promise<strin
   return propias.some(categoria => categoria.id === value) ? value : null
 }
 
+const PRODUCT_TYPES = ['simple', 'configurable', 'combo', 'daily_menu', 'weighted'] as const
+
+/**
+ * El tipo dice si el producto se ARMA eligiendo otros, no de qué comida es.
+ * Se valida aquí además de en la base para que el dueño lea un motivo en vez
+ * de un error de restricción de PostgreSQL.
+ */
+function checkProductType(body: Record<string, unknown>): string | null {
+  if (!('product_type' in body)) return null
+  const valor = String(body.product_type || '').trim()
+  if (!valor || PRODUCT_TYPES.includes(valor as typeof PRODUCT_TYPES[number])) return null
+  return `El tipo de producto debe ser uno de: ${PRODUCT_TYPES.join(', ')}`
+}
+
 router.get('/api/client/products', auth.authClient, async (req, res) => {
   res.json(await db.getProducts(getClientBusinessId(req)))
 })
@@ -66,6 +82,8 @@ router.post('/api/client/products', auth.authClient, canManageCatalog, async (re
 
   const businessId = getClientBusinessId(req)
   const productData = { ...req.body } as Record<string, unknown>
+  const tipoInvalido = checkProductType(productData)
+  if (tipoInvalido) return res.status(400).json({ error: tipoInvalido })
   delete productData.id
   delete productData.business_id
   delete productData.created_at
@@ -87,12 +105,23 @@ router.put('/api/client/products/:id', auth.authClient, canManageCatalog, async 
     return res.status(404).json({ error: 'No encontrado' })
   }
 
-  await db.updateProduct(businessId, req.params.id, {
-    ...req.body as Record<string, unknown>,
-    ...('category_id' in (req.body || {})
-      ? { category_id: await safeCategoryId(businessId, req.body.category_id) }
+  const cuerpo = (req.body || {}) as Record<string, unknown>
+  const tipoInvalido = checkProductType(cuerpo)
+  if (tipoInvalido) return res.status(400).json({ error: tipoInvalido })
+
+  // ⚠️ El resultado se COMPRUEBA. Antes se ignoraba, así que una edición que
+  // la base rechazaba —un tipo inventado, un precio fuera de rango— devolvía
+  // «guardado» y el dueño se quedaba creyendo que su cambio estaba puesto.
+  const escritura = await db.updateProduct(businessId, req.params.id, {
+    ...cuerpo,
+    ...('category_id' in cuerpo
+      ? { category_id: await safeCategoryId(businessId, cuerpo.category_id) }
       : {}),
   })
+  if (escritura?.error) {
+    console.error('❌ actualizar el producto:', escritura.error.message)
+    return res.status(400).json({ error: 'No se pudo guardar: revisa los datos del producto' })
+  }
   if (previous) {
     if (previous.image_public_id && req.body.image_public_id !== previous.image_public_id) {
       void cloud.deleteMedia(previous.image_public_id, 'image')

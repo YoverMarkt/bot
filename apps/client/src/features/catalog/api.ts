@@ -19,6 +19,8 @@ export type Product = {
   category_id: string | null
   external_sku: string | null
   duration_minutes: number | null
+  /** Cómo se elige, no de qué comida es: un combo se arma con otros productos. */
+  product_type: 'simple' | 'configurable' | 'combo' | 'daily_menu' | 'weighted'
 }
 
 export type ProductPayload = Partial<Omit<Product, 'id'>> & { name: string; price: number }

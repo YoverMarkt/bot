@@ -16,6 +16,7 @@ const fail = (error: { message?: string } | null, context: string): void => {
 const CAMPOS_PRODUCTO = [
   'id', 'name', 'description', 'brand', 'price', 'price_sale',
   'stock', 'image_url', 'video_url', 'tags', 'category_id', 'duration_minutes',
+  'product_type',
 ].join(',')
 
 const getStorefrontCategories = async (businessId: string) => {

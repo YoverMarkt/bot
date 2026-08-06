@@ -100,6 +100,13 @@ export interface ChosenOption {
   quantity: number
 }
 
+/**
+ * Qué CLASE de producto es. No es un `if` por tipo de comida: dice si el
+ * producto se arma eligiendo otros. Un combo de hamburguesas y uno de pizzas
+ * recorren el mismo camino.
+ */
+export type ProductType = 'simple' | 'configurable' | 'combo' | 'daily_menu' | 'weighted'
+
 export interface Product {
   id: string
   name: string
@@ -109,6 +116,7 @@ export interface Product {
   categoryId: string | null
   tags: string[]
   available: boolean
+  productType: ProductType
   /** Con variantes es un "desde"; sin ellas, el precio final. */
   priceFrom: number | null
   hasVariants: boolean
