@@ -1,13 +1,20 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
+import { signedMediaUrl } from '../integrations/cloudinary'
 
 // Estados que hoy acepta orders.status. El GET puede filtrar por cualquiera
 // (la vigilancia del panel consulta «pendiente»); el PUT no acepta volver a
 // «pendiente» porque es el estado inicial, nunca un destino.
+//
+// ⚠️ Esta lista es el TERCER sitio donde viven los estados, además del CHECK de
+// `orders` y del tipo del panel. Quedarse corta aquí es especialmente traidor:
+// el botón existe en el panel, el dueño lo toca, y esta ruta lo rechaza con un
+// «estado no válido» que no explica nada. Lo vigila `estados-pedido.test.js`.
 const ESTADOS_PEDIDO = [
-  'pendiente', 'confirmado', 'preparacion', 'en_camino',
-  'completado', 'cancelado', 'expirado',
+  'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado', 'aceptado',
+  'preparacion', 'listo_para_retiro', 'en_camino', 'completado',
+  'cancelado', 'rechazado', 'expirado',
 ] as const
 const ESTADOS_DESTINO = ESTADOS_PEDIDO.filter(estado => estado !== 'pendiente')
 
@@ -17,6 +24,10 @@ interface ModuloDb {
     items: Record<string, unknown>[],
   ): Promise<{ data?: unknown; error?: { message?: string; code?: string } | null }>
   getOrders(businessId: string, limit?: number, status?: string | null): Promise<unknown>
+  getOrderProof(businessId: string, orderId: string): Promise<{
+    payment_proof_url?: string | null
+    payment_proof_public_id?: string | null
+  } | null>
   setOrderStatus(
     businessId: string,
     orderId: string,
@@ -31,6 +42,38 @@ interface ModuloAuth {
 const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
+
+// ── Ver el comprobante de una transferencia ────────────────────────────────
+//
+// El comprobante ya NO vive en una URL pública: es un movimiento bancario de
+// un cliente real, con su nombre y su cuenta. Aquí se firma un acceso temporal
+// —diez minutos— y solo para el dueño del negocio al que pertenece el pedido.
+//
+// Si la captura del panel acaba en un chat, el enlace ya no sirve.
+router.get(
+  '/api/client/orders/:id/proof',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    const pedido = await db.getOrderProof(businessId, String(req.params.id || ''))
+    if (!pedido) return res.status(404).json({ error: 'Ese pedido no existe' })
+    if (!pedido.payment_proof_url) {
+      return res.status(404).json({ error: 'Ese pedido no tiene comprobante' })
+    }
+
+    // Los comprobantes subidos ANTES de esto no tienen identificador: siguen
+    // siendo públicos y se devuelven tal cual. Romperles el acceso escondería
+    // el pago de un pedido en curso, que es peor que la fuga que ya ocurrió.
+    if (!pedido.payment_proof_public_id) {
+      return res.json({ url: pedido.payment_proof_url, firmada: false })
+    }
+
+    const url = await signedMediaUrl(pedido.payment_proof_public_id)
+    if (!url) return res.status(503).json({ error: 'No se pudo abrir el comprobante ahora mismo' })
+    return res.json({ url, firmada: true })
+  },
+)
 
 router.get(
   '/api/client/orders',

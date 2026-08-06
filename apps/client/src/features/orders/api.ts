@@ -77,6 +77,15 @@ export const createCounterOrder = (input: {
   body: JSON.stringify(input),
 })
 
+/**
+ * El comprobante ya no vive en una URL pública: es un movimiento bancario de
+ * un cliente real. El servidor firma un acceso temporal —diez minutos— cada
+ * vez que el dueño quiere verlo, así que se pide justo al tocar el enlace y
+ * nunca se guarda en la pantalla.
+ */
+export const getOrderProof = (id: string) =>
+  api<{ url: string; firmada: boolean }>(`/api/client/orders/${id}/proof`)
+
 export const setOrderStatus = (id: string, status: OrderStatus) =>
   api(`/api/client/orders/${id}/status`, {
     method: 'PUT',

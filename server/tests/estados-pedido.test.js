@@ -27,6 +27,19 @@ const panel = readFileSync(
   path.join(serverDir, '..', 'apps', 'client', 'src', 'features', 'orders', 'api.ts'),
   'utf8',
 )
+// El TERCER sitio, y el más traidor: si esta lista se queda corta, el botón
+// existe en el panel, el dueño lo toca, y la ruta lo rechaza con un «estado no
+// válido» que no explica nada.
+const rutaPedidos = readFileSync(
+  path.join(serverDir, 'src', 'routes', 'orders.routes.ts'),
+  'utf8',
+)
+
+const estadosDeLaRuta = () => {
+  const inicio = rutaPedidos.indexOf('const ESTADOS_PEDIDO = [')
+  const fin = rutaPedidos.indexOf(']', inicio)
+  return [...rutaPedidos.slice(inicio, fin).matchAll(/'([a-z_]+)'/g)].map(([, valor]) => valor)
+}
 
 /** Los estados de un bloque `status in ( ... )`, en orden de aparición. */
 const estadosDe = (texto, desde = 0) => {
@@ -80,6 +93,25 @@ describe('los estados del pedido', () => {
 
   it('la función acepta los mismos estados que el CHECK', () => {
     expect(estadosDeLaFuncion().sort()).toEqual([...checksDelEsquema()[0]].sort())
+  })
+
+  // Este se saltó al guardián la primera vez: el panel ya tenía los doce
+  // estados y la ruta que los recibe seguía con siete, así que los botones
+  // nuevos habrían muerto en un 400.
+  it('la ruta que cambia el estado acepta los mismos que el CHECK', () => {
+    const enLaBase = checksDelEsquema()[0]
+    const enLaRuta = estadosDeLaRuta()
+    const faltan = enLaBase.filter(estado => !enLaRuta.includes(estado))
+
+    expect(
+      faltan,
+      faltan.length
+        ? 'La base guarda estos estados y `orders.routes.ts` los rechaza:\n'
+          + `${faltan.map(e => `  · ${e}`).join('\n')}\n\n`
+          + 'El botón existirá en el panel y el dueño recibirá «estado no\n'
+          + 'válido» al tocarlo. Añádelos a ESTADOS_PEDIDO.'
+        : '',
+    ).toEqual([])
   })
 
   // Un estado que la base guarda y el panel no conoce deja al dueño con un

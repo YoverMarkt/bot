@@ -210,11 +210,14 @@ const attachStorefrontPaymentProof = async (input: {
   orderId: string
   contactPhone: string
   url: string
+  /** Sin él no se puede firmar el acceso temporal al comprobante. */
+  publicId?: string | null
 }) => db.rpc('attach_storefront_payment_proof', {
   p_business_id: input.businessId,
   p_order_id: input.orderId,
   p_contact_phone: input.contactPhone,
   p_url: input.url,
+  p_public_id: input.publicId || null,
 })
 
 /**

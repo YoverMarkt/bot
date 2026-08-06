@@ -84,7 +84,27 @@ const setOrderStatus = async (businessId: string, id: string, status: string) =>
   },
 )
 
+/**
+ * Lo justo para abrir un comprobante: su URL y su identificador de Cloudinary.
+ *
+ * Se pide por negocio Y por pedido, nunca solo por pedido: el id viaja en la
+ * dirección y sin el negocio se estaría dando el comprobante de otro local.
+ */
+const getOrderProof = async (businessId: string, orderId: string) => {
+  const { data } = await db
+    .from('orders')
+    .select('payment_proof_url,payment_proof_public_id')
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .maybeSingle()
+  return (data || null) as unknown as {
+    payment_proof_url?: string | null
+    payment_proof_public_id?: string | null
+  } | null
+}
+
 export = {
+  getOrderProof,
   createOrder,
   getOrders,
   getLastOrderForContact,

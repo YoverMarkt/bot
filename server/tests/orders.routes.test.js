@@ -5,6 +5,7 @@ import ordersRouter from '../dist/routes/orders.routes.js'
 
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
+const cloud = require('../dist/integrations/cloudinary')
 const JWT_SECRET = 'orders-route-test-secret'
 
 let originalJwtSecret
@@ -330,5 +331,106 @@ describe('PUT /api/client/orders/:id/status', () => {
     expect(response.body).toEqual({
       error: 'Este pedido es para retirar en el local: no puede salir a reparto',
     })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL COMPROBANTE DE UNA TRANSFERENCIA
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Es el movimiento bancario de un cliente real, con su nombre y su cuenta.
+// Hasta hoy vivía en una URL pública y permanente de Cloudinary: quien la
+// adivinara —o la recibiera reenviada— lo veía. Ahora se firma un acceso
+// temporal y solo para el dueño del negocio al que pertenece el pedido.
+
+async function pedirComprobante({ authorization, id = 'pedido-1' } = {}) {
+  const routeLayer = ordersRouter.stack.find(layer => (
+    layer.route?.path === '/api/client/orders/:id/proof' && layer.route?.methods?.get
+  ))
+  const handlers = routeLayer.route.stack.map(layer => layer.handle)
+  const req = { headers: authorization ? { authorization } : {}, params: { id }, query: {} }
+  const salida = { status: 200, body: undefined }
+  const res = {
+    status(code) { salida.status = code; return this },
+    json(cuerpo) { salida.body = cuerpo; return this },
+  }
+  for (const handler of handlers) {
+    let siguio = false
+    await handler(req, res, (error) => { if (error) throw error; siguio = true })
+    if (!siguio) break
+  }
+  return salida
+}
+
+describe('ver el comprobante', () => {
+  const cliente = () => `Bearer ${token({
+    role: 'client', businessId: 'negocio-a', urole: 'owner',
+  })}`
+
+  it('el pedido se busca por NEGOCIO e id, nunca solo por id', async () => {
+    const buscar = vi.spyOn(db, 'getOrderProof').mockResolvedValue(null)
+
+    const r = await pedirComprobante({ authorization: cliente(), id: 'de-otro-local' })
+
+    expect(r.status).toBe(404)
+    // Sin el negocio se estaría dando el comprobante de otro local.
+    expect(buscar).toHaveBeenCalledWith('negocio-a', 'de-otro-local')
+  })
+
+  it('un pedido sin comprobante da 404, no una URL vacía', async () => {
+    vi.spyOn(db, 'getOrderProof').mockResolvedValue({
+      payment_proof_url: null, payment_proof_public_id: null,
+    })
+    const r = await pedirComprobante({ authorization: cliente() })
+    expect(r.status).toBe(404)
+    expect(r.body.error).toMatch(/no tiene comprobante/)
+  })
+
+  it('devuelve una URL FIRMADA, no la de Cloudinary en crudo', async () => {
+    vi.spyOn(db, 'getOrderProof').mockResolvedValue({
+      payment_proof_url: 'https://res.cloudinary.com/demo/crudo.jpg',
+      payment_proof_public_id: 'botpanel/negocio-a/comprobantes/abc',
+    })
+    const firmar = vi.spyOn(cloud, 'signedMediaUrl')
+      .mockResolvedValue('https://res.cloudinary.com/demo/firmada.jpg?sig=xyz')
+
+    const r = await pedirComprobante({ authorization: cliente() })
+
+    expect(r.status).toBe(200)
+    expect(r.body.firmada).toBe(true)
+    expect(r.body.url).toContain('sig=')
+    expect(firmar).toHaveBeenCalledWith('botpanel/negocio-a/comprobantes/abc')
+    // La URL permanente no sale nunca: es la que se reenvía y no caduca.
+    expect(r.body.url).not.toBe('https://res.cloudinary.com/demo/crudo.jpg')
+  })
+
+  // Los subidos ANTES de esto no tienen identificador. Romperles el acceso
+  // escondería el pago de un pedido en curso, que es peor que la fuga que ya
+  // ocurrió y que no se puede deshacer.
+  it('los comprobantes viejos se siguen viendo, avisando que no van firmados', async () => {
+    vi.spyOn(db, 'getOrderProof').mockResolvedValue({
+      payment_proof_url: 'https://res.cloudinary.com/demo/viejo.jpg',
+      payment_proof_public_id: null,
+    })
+    const firmar = vi.spyOn(cloud, 'signedMediaUrl')
+
+    const r = await pedirComprobante({ authorization: cliente() })
+
+    expect(r.status).toBe(200)
+    expect(r.body.firmada).toBe(false)
+    expect(firmar).not.toHaveBeenCalled()
+  })
+
+  it('si no se puede firmar, no se cae de vuelta a la URL pública', async () => {
+    vi.spyOn(db, 'getOrderProof').mockResolvedValue({
+      payment_proof_url: 'https://res.cloudinary.com/demo/crudo.jpg',
+      payment_proof_public_id: 'botpanel/negocio-a/comprobantes/abc',
+    })
+    vi.spyOn(cloud, 'signedMediaUrl').mockResolvedValue(null)
+
+    const r = await pedirComprobante({ authorization: cliente() })
+
+    expect(r.status).toBe(503)
+    expect(JSON.stringify(r.body)).not.toContain('cloudinary.com/demo/crudo')
   })
 })

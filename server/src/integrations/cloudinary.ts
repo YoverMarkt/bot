@@ -90,6 +90,71 @@ export async function uploadMedia(
   })
 }
 
+/**
+ * Sube algo que NO puede ser público: el comprobante de una transferencia.
+ *
+ * Con `type: 'authenticated'` la URL deja de servir por sí sola — hace falta
+ * una firma con caducidad, que solo genera el servidor y solo para quien tiene
+ * derecho a verla. Un comprobante bancario colgado en una URL adivinable es
+ * una fuga de datos de un cliente real, no un descuido estético.
+ *
+ * Va a una carpeta aparte para que no se mezcle con las fotos del catálogo,
+ * que sí son públicas a propósito.
+ */
+export async function uploadPrivateMedia(
+  buffer: Buffer,
+  businessId: string,
+): Promise<MediaUploadResult> {
+  if (!(await configure())) throw new Error('Cloudinary no está configurado')
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: `botpanel/${businessId}/comprobantes`,
+        resource_type: 'image',
+        type: 'authenticated',
+      },
+      (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
+        if (error) return reject(error)
+        const uploaded = result as UploadApiResponse
+        resolve({
+          url: uploaded.secure_url,
+          public_id: uploaded.public_id,
+          resource_type: uploaded.resource_type,
+        })
+      },
+    )
+    stream.end(buffer)
+  })
+}
+
+/**
+ * Una URL temporal para ver un comprobante privado.
+ *
+ * Caduca sola: si la captura de pantalla del panel acaba en un chat, deja de
+ * servir. Diez minutos bastan para mirarla y son pocos para reenviarla.
+ */
+export async function signedMediaUrl(
+  publicId: string,
+  seconds = 600,
+): Promise<string | null> {
+  if (!publicId) return null
+  if (!(await configure())) return null
+
+  try {
+    return cloudinary.url(publicId, {
+      type: 'authenticated',
+      resource_type: 'image',
+      sign_url: true,
+      secure: true,
+      expires_at: Math.floor(Date.now() / 1000) + seconds,
+    })
+  } catch (error) {
+    console.error('❌ Cloudinary firma:', (error as Error).message)
+    return null
+  }
+}
+
 export async function deleteMedia(
   publicId: string,
   resourceType: 'image' | 'video' = 'image',

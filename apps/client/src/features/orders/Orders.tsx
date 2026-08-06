@@ -17,7 +17,8 @@ import {
   Banknote, Bike, Clock, Landmark, MapPin, Receipt, ShoppingBag, Check, X, FileText, Plus,
 } from 'lucide-react'
 import {
-  ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, getOrders, money, setOrderStatus, siguientePaso,
+  ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, getOrderProof, getOrders, money,
+  setOrderStatus, siguientePaso,
   type Order, type OrderStatus,
 } from './api'
 import CounterOrder from './CounterOrder'
@@ -208,6 +209,24 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
   const domicilio = !pedido.fulfillment || pedido.fulfillment === 'delivery'
   const direccion = pedido.customer_addresses
   const enCurso = ACTIVOS.includes(pedido.status)
+  const [abriendo, setAbriendo] = useState(false)
+
+  /**
+   * Se pide la URL firmada AL TOCAR, no al pintar la lista: firmarla antes
+   * sería repartir accesos a comprobantes que nadie va a mirar, y cada uno
+   * caduca desde que se emite.
+   */
+  const abrirComprobante = async () => {
+    setAbriendo(true)
+    try {
+      const { url } = await getOrderProof(pedido.id)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.error('No pudimos abrir el comprobante')
+    } finally {
+      setAbriendo(false)
+    }
+  }
 
   return (
     <Card className={`p-4 gap-0 ${enCurso ? '' : 'opacity-70'}`}>
@@ -300,14 +319,15 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
             {pedido.payment_method === 'transferencia' && (
               pedido.payment_proof_url
                 ? (
-                    <a
-                      href={pedido.payment_proof_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-2"
+                    <button
+                      type="button"
+                      onClick={abrirComprobante}
+                      disabled={abriendo}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-2 disabled:opacity-50"
                     >
-                      <FileText className="h-3 w-3" /> Ver comprobante
-                    </a>
+                      <FileText className="h-3 w-3" />
+                      {abriendo ? 'Abriendo…' : 'Ver comprobante'}
+                    </button>
                   )
                 : (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
