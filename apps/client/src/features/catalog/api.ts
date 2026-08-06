@@ -264,3 +264,28 @@ export const updateOptionTemplateItem = (id: string, i: Omit<OptionTemplateItem,
 
 export const deleteOptionTemplateItem = (id: string) =>
   api(`/api/client/option-template-items/${id}`, { method: 'DELETE' })
+
+// ── Adicionales: «agrega algo más» ───────────────────────────────────
+// Otro producto que se ofrece junto a este y entra al carrito como LÍNEA
+// propia, no como opción del plato.
+
+export type Recommendation = {
+  id: string
+  /** De un producto, de una categoría, o de nada (todo el negocio). */
+  source_product_id: string | null
+  source_category_id: string | null
+  recommended_product_id: string
+  section: string
+  sort: number
+  active: boolean
+}
+
+export type RecommendationPayload = Omit<Recommendation, 'id'>
+
+export const getRecommendations = () => api<Recommendation[]>('/api/client/recommendations')
+
+export const createRecommendation = (r: RecommendationPayload) =>
+  api<Recommendation>('/api/client/recommendations', { method: 'POST', body: JSON.stringify(r) })
+
+export const deleteRecommendation = (id: string) =>
+  api(`/api/client/recommendations/${id}`, { method: 'DELETE' })

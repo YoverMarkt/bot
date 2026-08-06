@@ -60,11 +60,16 @@ export default function Orders() {
     onSuccess: (_data, variables) => {
       const textos: Record<OrderStatus, string> = {
         confirmado: 'Pedido aceptado.',
+        aceptado: 'Pedido aceptado.',
         preparacion: 'Pedido en preparación.',
+        listo_para_retiro: 'Listo. Avísale al cliente que ya puede venir.',
         en_camino: 'En camino. Avísale al cliente que ya salió.',
         completado: 'Pedido entregado.',
-        cancelado: 'Pedido rechazado.',
+        cancelado: 'Pedido cancelado.',
+        rechazado: 'Pedido rechazado.',
         pendiente: 'Pedido actualizado.',
+        esperando_pago: 'A la espera del pago.',
+        pago_en_revision: 'Comprobante en revisión.',
         expirado: 'Pedido expirado.',
       }
       toast.success(textos[variables.status])
@@ -96,6 +101,20 @@ export default function Orders() {
   }, [pedidos, activos, filtro])
 
   const cuenta = (estado: OrderStatus) => activos.filter(p => p.status === estado).length
+
+  /**
+   * Los cuatro estados que más trabajo tienen parado ahora mismo.
+   *
+   * `pago_en_revision` va SIEMPRE que tenga algo: es un comprobante esperando
+   * a que una persona lo mire, y mientras tanto el cliente no sabe si su
+   * pedido existe.
+   */
+  const resumen = useMemo(() => {
+    const conPedidos = ACTIVOS.filter(estado => cuenta(estado) > 0)
+    const urgentes = conPedidos.filter(estado => estado === 'pago_en_revision')
+    const resto = conPedidos.filter(estado => estado !== 'pago_en_revision')
+    return [...urgentes, ...resto].slice(0, 4)
+  }, [activos])
 
   return (
     <div>
@@ -130,7 +149,10 @@ export default function Orders() {
       {/* Resumen del momento: dónde está atascado el trabajo. */}
       {!isLoading && activos.length > 0 && (
         <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {(['pendiente', 'confirmado', 'preparacion', 'en_camino'] as OrderStatus[]).map(estado => (
+          {/* Se enseñan los cuatro estados con más pedidos parados: con doce,
+              una rejilla fija dejaría cuadros en cero ocupando la pantalla y
+              escondería justo el que hay que atender. */}
+          {resumen.map(estado => (
             <Card key={estado} className="p-3 gap-0">
               <span className="text-xs text-muted-foreground">{ESTADO_TEXTO[estado]}</span>
               <span className="text-xl font-bold text-foreground tabular-nums">{cuenta(estado)}</span>
@@ -332,6 +354,24 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
                 description="El pedido queda cerrado como entregado."
                 confirmLabel="Marcar entregado"
                 onConfirm={() => onCambiar('completado')}
+              />
+            )}
+            {/* Rechazar el COMPROBANTE no es cancelar el pedido: son cosas
+                distintas y el cliente merece saber cuál pasó. `rechazado`
+                significa «el pago no cuadra», y deja la puerta abierta a que
+                mande otro; `cancelado` cierra el pedido. */}
+            {pedido.status === 'pago_en_revision' && (
+              <ConfirmAction
+                trigger={
+                  <Button variant="outline" size="sm" disabled={ocupado}>
+                    <X /> Rechazar el pago
+                  </Button>
+                }
+                title="Rechazar el comprobante"
+                description="El comprobante no cuadra. Avísale al cliente por WhatsApp para que mande otro."
+                confirmLabel="Rechazar el pago"
+                destructive
+                onConfirm={() => onCambiar('rechazado')}
               />
             )}
             <ConfirmAction

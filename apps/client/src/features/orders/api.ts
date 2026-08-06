@@ -8,11 +8,21 @@
 import { api } from '../../api/client'
 
 export type OrderStatus =
-  | 'pendiente' | 'confirmado' | 'preparacion' | 'en_camino'
-  | 'completado' | 'cancelado' | 'expirado'
+  | 'pendiente' | 'esperando_pago' | 'pago_en_revision' | 'confirmado'
+  | 'aceptado' | 'preparacion' | 'listo_para_retiro' | 'en_camino'
+  | 'completado' | 'cancelado' | 'rechazado' | 'expirado'
 
-/** Estados en los que el pedido todavía pide algo del negocio. */
-export const ACTIVOS: OrderStatus[] = ['pendiente', 'confirmado', 'preparacion', 'en_camino']
+/**
+ * Estados en los que el pedido todavía pide algo del negocio.
+ *
+ * `pago_en_revision` entra porque es lo que MÁS pide: hay un comprobante
+ * esperando a que alguien lo mire, y mientras tanto el cliente no sabe si su
+ * pedido existe.
+ */
+export const ACTIVOS: OrderStatus[] = [
+  'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado',
+  'aceptado', 'preparacion', 'listo_para_retiro', 'en_camino',
+]
 
 export type OrderItem = {
   product_id: string | null
@@ -77,21 +87,33 @@ export const money = (n: number | string) => `$${(Number(n) || 0).toFixed(2)}`
 
 export const ESTADO_TEXTO: Record<OrderStatus, string> = {
   pendiente: 'Nuevo',
+  esperando_pago: 'Esperando pago',
+  pago_en_revision: 'Comprobante por revisar',
   confirmado: 'Confirmado',
+  aceptado: 'Aceptado',
   preparacion: 'En preparación',
+  listo_para_retiro: 'Listo para retirar',
   en_camino: 'En camino',
   completado: 'Entregado',
-  cancelado: 'Rechazado',
+  cancelado: 'Cancelado',
+  rechazado: 'Rechazado',
   expirado: 'Expirado',
 }
 
 export const ESTADO_COLOR: Record<OrderStatus, string> = {
   pendiente: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+  // El comprobante por revisar va en rojo a propósito: es lo único que frena
+  // un pedido esperando a que una persona lo mire.
+  esperando_pago: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+  pago_en_revision: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
   confirmado: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
+  aceptado: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
   preparacion: 'bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300',
+  listo_para_retiro: 'bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300',
   en_camino: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300',
   completado: 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300',
   cancelado: 'bg-muted text-muted-foreground',
+  rechazado: 'bg-muted text-muted-foreground',
   expirado: 'bg-muted text-muted-foreground',
 }
 
@@ -107,12 +129,19 @@ export const siguientePaso = (pedido: Order): {
   status: OrderStatus; etiqueta: string; descripcion: string
 } | null => {
   const reparte = !pedido.fulfillment || pedido.fulfillment === 'delivery'
-  if (pedido.status === 'pendiente') return {
+  if (pedido.status === 'pendiente' || pedido.status === 'esperando_pago') return {
     status: 'confirmado',
     etiqueta: 'Aceptar pedido',
     descripcion: 'Queda aceptado y entra en la cola de preparación.',
   }
-  if (pedido.status === 'confirmado') return {
+  // El comprobante ya está subido y alguien lo miró: aceptarlo confirma el
+  // pedido. Rechazarlo es la otra salida, y va por el botón de cancelar.
+  if (pedido.status === 'pago_en_revision') return {
+    status: 'confirmado',
+    etiqueta: 'Aceptar el pago',
+    descripcion: 'El comprobante cuadra: el pedido queda confirmado.',
+  }
+  if (pedido.status === 'confirmado' || pedido.status === 'aceptado') return {
     status: 'preparacion',
     etiqueta: 'Poner en preparación',
     descripcion: 'Se marca como que ya se está preparando.',
@@ -121,6 +150,18 @@ export const siguientePaso = (pedido: Order): {
     status: 'en_camino',
     etiqueta: 'Marcar en camino',
     descripcion: 'El pedido sale a entregarse.',
+  }
+  // Quien retira en el local no pasa por «en camino»: pasa por «listo». Sin
+  // este paso, el cliente no sabe cuándo ir a buscarlo.
+  if (pedido.status === 'preparacion' && !reparte) return {
+    status: 'listo_para_retiro',
+    etiqueta: 'Marcar listo para retirar',
+    descripcion: 'Avísale al cliente que ya puede venir a recogerlo.',
+  }
+  if (pedido.status === 'listo_para_retiro') return {
+    status: 'completado',
+    etiqueta: 'Marcar entregado',
+    descripcion: 'El cliente ya lo retiró.',
   }
   if (pedido.status === 'en_camino') return {
     status: 'completado',
