@@ -72,9 +72,28 @@ export { scheduleToText, buildScheduleMessage, isOutsideHours }
 // Ecuador. Ofrecer una hora a la que el local está cerrado es peor que no
 // ofrecer nada: el cliente programa, espera, y no llega su comida.
 
-/** El reloj del negocio, no el del teléfono del cliente. */
+/**
+ * El reloj del negocio, no el del servidor ni el del teléfono del cliente.
+ *
+ * Devuelve una fecha cuyos COMPONENTES (día, hora, minuto) son los de Ecuador.
+ * Sirve para leerlos; no para convertirla de vuelta a un instante, porque el
+ * objeto resultante está en la zona de quien lo ejecuta.
+ */
 const localEcuador = (date: Date): Date =>
   new Date(date.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+
+/**
+ * Cuántos minutos hay que sumar a una hora de Ecuador para obtener el instante
+ * UTC que le corresponde.
+ *
+ * Se calcula en vez de fijarlo en 5 horas: si algún día el país cambiara de
+ * huso, o el negocio se mudara de zona, el número dejaría de ser cierto y las
+ * franjas saldrían desplazadas sin que nada avisara.
+ */
+const desfaseEcuador = (date: Date): number => {
+  const enUtc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
+  return (enUtc.getTime() - localEcuador(date).getTime()) / 60_000
+}
 
 export interface SlotOptions {
   /** Cuánto tarda el negocio en tener el pedido listo. */
@@ -113,10 +132,18 @@ export function scheduleSlots(
   const tope = Math.min(200, Math.max(1, options.limit ?? 48))
 
   const local = localEcuador(now)
-  // El primer momento posible: ya con el tiempo de preparación por delante.
-  const desde = new Date(local.getTime() + preparacion * 60_000)
+  // El primer momento posible, en tiempo REAL: `local` solo sirve para leer
+  // día y hora de Ecuador, y su `getTime()` no es un instante de verdad.
+  // Compararlo con las franjas mezclaba dos relojes distintos.
+  const desde = now.getTime() + preparacion * 60_000
 
+  // El desfase se calcula UNA vez: el instante que se devuelve tiene que ser
+  // el mismo lo ejecute un servidor en Quito o uno en UTC. Construir la fecha
+  // con `setHours` sobre la zona del proceso desplazaba todas las franjas —lo
+  // cazó el CI, que corre en UTC, cuando en local pasaba.
+  const desfase = desfaseEcuador(now)
   const franjas: string[] = []
+
   for (let dia = 0; dia < dias && franjas.length < tope; dia += 1) {
     const fecha = new Date(local)
     fecha.setDate(fecha.getDate() + dia)
@@ -129,12 +156,14 @@ export function scheduleSlots(
     const cierra = cierraHora * 60 + cierraMinuto
     if (!(cierra > abre)) continue
 
-    // Se empieza en la apertura y se redondea al siguiente paso, para que las
-    // horas salgan en punto y no a las 13:07.
+    // Se empieza en la apertura, para que las horas salgan en punto y no a
+    // las 13:07.
     for (let minuto = abre; minuto < cierra && franjas.length < tope; minuto += paso) {
-      const momento = new Date(fecha)
-      momento.setHours(Math.floor(minuto / 60), minuto % 60, 0, 0)
-      if (momento.getTime() < desde.getTime()) continue
+      const momento = new Date(Date.UTC(
+        fecha.getFullYear(), fecha.getMonth(), fecha.getDate(),
+        Math.floor(minuto / 60), minuto % 60, 0, 0,
+      ) + desfase * 60_000)
+      if (momento.getTime() < desde) continue
       franjas.push(momento.toISOString())
     }
   }

@@ -160,3 +160,48 @@ describe('validar la hora que manda el cliente', () => {
     }
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LA ZONA DEL SERVIDOR NO PUEDE CAMBIAR EL RESULTADO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El CI corre en UTC y mi máquina no: las franjas salían desplazadas allí y
+// bien aquí, y en local todo parecía correcto. Un negocio de Quito tiene el
+// mismo horario lo sirva un servidor en Quito, en Madrid o en UTC.
+
+describe('las franjas no dependen del reloj del servidor', () => {
+  const conZona = (zona, fn) => {
+    const original = process.env.TZ
+    process.env.TZ = zona
+    try { return fn() } finally { process.env.TZ = original }
+  }
+
+  it('la primera franja es la misma en UTC que en Ecuador', () => {
+    // No se puede recargar el módulo por zona dentro del mismo proceso, así
+    // que se comprueba lo que sí se puede: que el instante devuelto es
+    // absoluto —termina en Z— y que su hora en Ecuador es la esperada.
+    const [primera] = scheduleSlots(LABORAL, { preparationMinutes: 30 }, LUNES_10)
+    expect(primera.endsWith('Z')).toBe(true)
+    expect(horaEcuador(primera)).toBe('10:30')
+
+    // Y leído desde cualquier huso sigue siendo el MISMO instante.
+    for (const zona of ['UTC', 'America/Guayaquil', 'Europe/Madrid', 'Asia/Tokyo']) {
+      conZona(zona, () => {
+        expect(new Date(primera).toISOString(), zona).toBe(primera)
+      })
+    }
+  })
+
+  it('el corte por preparación se mide en tiempo real, no en componentes', () => {
+    // El fallo exacto: `desde` se calculaba sobre una fecha que solo servía
+    // para leer día y hora, mezclando dos relojes. En UTC ofrecía franjas ya
+    // pasadas y en Ecuador no.
+    const franjas = scheduleSlots(LABORAL, { preparationMinutes: 90 }, LUNES_10)
+    for (const franja of franjas) {
+      expect(
+        new Date(franja).getTime() >= LUNES_10.getTime() + 90 * 60_000,
+        `${franja} llega antes de que dé tiempo a prepararlo`,
+      ).toBe(true)
+    }
+  })
+})
