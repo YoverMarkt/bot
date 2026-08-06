@@ -253,6 +253,40 @@ describe('crear pedido desde la mini app', () => {
     expect(JSON.stringify(enviado)).not.toContain('recargo')
   })
 
+  // Un doble toque en «Confirmar» creaba dos comandas en la cocina y un
+  // cliente pagando dos veces. La app manda una clave por carrito; la base
+  // devuelve el mismo pedido si ya existe uno con ella.
+  it('pasa la clave del pedido tal cual, para que no se dupliquen', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        idempotencyKey: 'clave-del-carrito',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+
+    expect(crear.mock.calls[0][0].idempotencyKey).toBe('clave-del-carrito')
+  })
+
+  it('sin clave se sigue creando un pedido por envío, como el bot', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(crear.mock.calls[0][0].idempotencyKey).toBeNull()
+  })
+
   // El negocio sale de la SESIÓN, nunca del slug de la dirección. Si saliera
   // del slug, cambiar una palabra en la barra bastaría para pedir en otra
   // tienda con la sesión propia.

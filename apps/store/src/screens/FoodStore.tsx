@@ -34,6 +34,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   >(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const secciones = useRef<Record<string, HTMLElement | null>>({})
+  // La clave del pedido en curso. Vive en un ref porque no pinta nada: si
+  // estuviera en el estado, cambiarla repintaría la tienda entera.
+  const claveDelPedido = useRef<string | null>(null)
 
   useEffect(() => {
     Promise.all([getCatalog(slug), getMe(slug).catch(() => null)])
@@ -76,11 +79,19 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     setEnviando(true)
     setError(null)
     try {
-      const pedido = await createOrder(slug, { lines: lineas, ...datos })
+      // Una clave POR CARRITO, no por intento: si el envío falla y se reintenta
+      // —o el cliente toca «Confirmar» dos veces— el servidor devuelve el mismo
+      // pedido en vez de crear dos comandas. Se renueva al vaciar el carrito,
+      // porque ese ya es otro pedido.
+      if (!claveDelPedido.current) claveDelPedido.current = crypto.randomUUID()
+      const pedido = await createOrder(slug, {
+        lines: lineas, ...datos, idempotencyKey: claveDelPedido.current,
+      })
       // El total oficial llega en la respuesta (incluye el envío que calculó
       // la base); el del carrito solo sirve de respaldo si no viniera.
       setHecho({ order: pedido, total: Number(pedido.total ?? cartTotal(lineas)), pago: datos.paymentMethod })
       setLineas([])
+      claveDelPedido.current = null
       setCarritoAbierto(false)
     } catch (error) {
       if (await onFalloEnlace(error)) return

@@ -189,6 +189,8 @@ const createStorefrontOrder = async (input: {
   fulfillment?: string | null
   paymentMethod?: string | null
   items: unknown[]
+  /** Clave del intento de compra: dos envíos con la misma son UN pedido. */
+  idempotencyKey?: string | null
 }) => db.rpc('create_storefront_order', {
   p_business_id: input.businessId,
   p_customer_id: input.customerId,
@@ -197,6 +199,7 @@ const createStorefrontOrder = async (input: {
   p_address_id: input.addressId || null,
   p_fulfillment: input.fulfillment || null,
   p_items: input.items,
+  p_idempotency_key: input.idempotencyKey || null,
   p_payment_method: input.paymentMethod || null,
 })
 
