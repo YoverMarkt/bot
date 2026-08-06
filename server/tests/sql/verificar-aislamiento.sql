@@ -440,6 +440,68 @@ begin
     end;
   end;
 
+  -- ── 7 ter. ADICIONALES: lo que se ofrece «además» ────────────────────────
+  --
+  -- Un adicional acaba en el carrito como LÍNEA propia, no como opción dentro
+  -- de un plato. Por eso una fuga aquí es más grave que en las opciones: el
+  -- cliente pediría —y pagaría— el producto de otro negocio.
+  declare
+    v_reco_categoria uuid;
+    v_pan uuid;
+  begin
+    insert into products (business_id, name, price, stock, active)
+    values (v_a, 'Pan de ajo', 3, 'disponible', true)
+    returning id into v_pan;
+    insert into product_categories (business_id, name)
+    values (v_a, 'Para acompañar')
+    returning id into v_reco_categoria;
+
+    -- No se puede recomendar DESDE el producto de B…
+    begin
+      insert into product_recommendations (
+        business_id, source_product_id, recommended_product_id
+      ) values (v_a, v_producto_b, v_pan);
+      raise exception 'FUGA: A colgó una recomendación del producto de B';
+    exception when foreign_key_violation then null;
+    end;
+
+    -- …ni OFRECER el producto de B, que es la fuga que llegaría al carrito.
+    begin
+      insert into product_recommendations (
+        business_id, source_product_id, recommended_product_id
+      ) values (v_a, v_producto_a, v_producto_b);
+      raise exception 'FUGA GRAVE: A ofreció el producto de B como adicional';
+    exception when foreign_key_violation then null;
+    end;
+
+    -- …ni desde la categoría de B.
+    begin
+      insert into product_recommendations (
+        business_id, source_category_id, recommended_product_id
+      ) values (v_a, v_categoria_b, v_pan);
+      raise exception 'FUGA: A recomendó desde la categoría de B';
+    exception when foreign_key_violation then null;
+    end;
+
+    -- El uso legítimo funciona en sus tres formas.
+    insert into product_recommendations (
+      business_id, source_product_id, recommended_product_id, section
+    ) values (v_a, v_producto_a, v_pan, 'Agrega algo más');
+    insert into product_recommendations (
+      business_id, source_category_id, recommended_product_id, section
+    ) values (v_a, v_reco_categoria, v_pan, 'Con tu pedido');
+    insert into product_recommendations (
+      business_id, recommended_product_id, section
+    ) values (v_a, v_pan, 'También te puede gustar');
+
+    -- Y si el producto ofrecido desaparece, la recomendación se va con él: no
+    -- puede quedar ofreciéndose algo que ya no se sirve.
+    delete from products where id = v_pan;
+    if exists (select 1 from product_recommendations where business_id = v_a) then
+      raise exception 'Borrar el producto dejó recomendaciones vivas';
+    end if;
+  end;
+
   -- ── 8. BORRADO EN CASCADA: se lleva lo suyo y solo lo suyo ───────────────
   select count(*) into v_pedidos_b from orders where business_id = v_b;
   delete from businesses where id = v_a;

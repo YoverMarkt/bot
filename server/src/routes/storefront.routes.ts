@@ -57,6 +57,7 @@ interface StorefrontRouteDatabase {
   getStorefrontExtras(businessId: string): Promise<unknown[]>
   getStorefrontOptionGroups(businessId: string): Promise<unknown[]>
   getStorefrontOptions(businessId: string): Promise<unknown[]>
+  getStorefrontRecommendations(businessId: string): Promise<unknown[]>
   getBusinessBankAccount(businessId: string): Promise<unknown>
   getCustomerAddresses(businessId: string, customerId: string): Promise<unknown[]>
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
@@ -237,13 +238,16 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
   const { status } = await readStatus(business)
 
-  const [categories, products, variants, extras, optionGroups, options] = await Promise.all([
+  const [
+    categories, products, variants, extras, optionGroups, options, recommendations,
+  ] = await Promise.all([
     db.getStorefrontCategories(businessId),
     db.getStorefrontProducts(businessId),
     db.getStorefrontVariants(businessId),
     db.getStorefrontExtras(businessId),
     db.getStorefrontOptionGroups(businessId),
     db.getStorefrontOptions(businessId),
+    db.getStorefrontRecommendations(businessId),
   ])
 
   return res.json({
@@ -257,6 +261,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
       extras: extras as never,
       optionGroups: optionGroups as never,
       options: options as never,
+      recommendations: recommendations as never,
     }),
   })
 })

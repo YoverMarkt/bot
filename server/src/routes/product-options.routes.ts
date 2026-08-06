@@ -1,5 +1,6 @@
 import type { RequestHandler, Response } from 'express'
 import type {
+  RecommendationRow,
   OptionGroupRow,
   OptionRow,
   OptionTemplateItemRow,
@@ -53,6 +54,11 @@ interface ModuloDb {
     businessId: string, id: string, data: DataRecord,
   ): Promise<DatabaseResult>
   deleteOptionTemplateItem(businessId: string, id: string): Promise<DatabaseResult>
+  getRecommendations(businessId: string): Promise<RecommendationRow[]>
+  getRecommendationById(businessId: string, id: string): Promise<RecommendationRow | null>
+  createRecommendation(businessId: string, data: DataRecord): Promise<DatabaseResult>
+  updateRecommendation(businessId: string, id: string, data: DataRecord): Promise<DatabaseResult>
+  deleteRecommendation(businessId: string, id: string): Promise<DatabaseResult>
 }
 const db: ModuloDb = require('../db') as typeof import('../db')
 
@@ -503,6 +509,93 @@ router.delete('/api/client/option-template-items/:id', ...guards, async (req, re
     res.json({ ok: true })
   } catch (error) {
     fail(res, 'eliminar la opción de la plantilla', error)
+  }
+})
+
+// ── Adicionales: «agrega algo más» ──────────────────────────────────────────
+//
+// Ojo con la diferencia, que es la que decide todo: un adicional NO es una
+// opción del plato. Es OTRO producto que entra al carrito como línea propia,
+// así que aquí solo se dice qué ofrecer y dónde — el precio sale del producto.
+
+/**
+ * Un adicional cuelga de un producto, de una categoría, o de nada (todo el
+ * negocio). A diferencia de los grupos de opciones, aquí «de nada» es legítimo:
+ * son las recomendaciones generales del carrito.
+ */
+function sanitizeRecommendation(body: unknown): DataRecord {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new InvalidInput('Datos inválidos')
+  }
+  const source = body as DataRecord
+
+  const productId = uuid(source.source_product_id, 'El producto')
+  const categoryId = uuid(source.source_category_id, 'La categoría')
+  if (productId && categoryId) {
+    throw new InvalidInput('Elige un producto o una categoría, no las dos cosas')
+  }
+
+  const ofrecido = uuid(source.recommended_product_id, 'El producto que se ofrece')
+  if (!ofrecido) throw new InvalidInput('Falta el producto que se va a ofrecer')
+  // Ofrecerse a sí mismo no tiene sentido y confunde al cliente.
+  if (ofrecido === productId) {
+    throw new InvalidInput('Un producto no puede recomendarse a sí mismo')
+  }
+
+  return {
+    source_product_id: productId,
+    source_category_id: categoryId,
+    recommended_product_id: ofrecido,
+    section: text(source.section, 'El título', 60) || 'Agrega algo más',
+    sort: integer(source.sort, 'El orden', 0, 999, 0),
+    active: flag(source.active, true),
+  }
+}
+
+router.get('/api/client/recommendations', auth.authClient, async (req, res) => {
+  res.json(await db.getRecommendations(getClientBusinessId(req)))
+})
+
+router.post('/api/client/recommendations', ...guards, async (req, res) => {
+  const businessId = getClientBusinessId(req)
+  try {
+    const result = await db.createRecommendation(businessId, sanitizeRecommendation(req.body))
+    assertWrite(result, 'crear el adicional')
+    res.status(201).json(result.data)
+  } catch (error) {
+    fail(res, 'crear el adicional', error)
+  }
+})
+
+router.put('/api/client/recommendations/:id', ...guards, async (req, res) => {
+  const businessId = getClientBusinessId(req)
+  try {
+    const existente = await db.getRecommendationById(businessId, String(req.params.id))
+    if (!existente) return res.status(404).json({ error: 'Ese adicional no existe' })
+    assertWrite(
+      await db.updateRecommendation(
+        businessId, String(req.params.id), sanitizeRecommendation(req.body),
+      ),
+      'actualizar el adicional',
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    fail(res, 'actualizar el adicional', error)
+  }
+})
+
+router.delete('/api/client/recommendations/:id', ...guards, async (req, res) => {
+  const businessId = getClientBusinessId(req)
+  try {
+    const existente = await db.getRecommendationById(businessId, String(req.params.id))
+    if (!existente) return res.status(404).json({ error: 'Ese adicional no existe' })
+    assertWrite(
+      await db.deleteRecommendation(businessId, String(req.params.id)),
+      'eliminar el adicional',
+    )
+    res.json({ ok: true })
+  } catch (error) {
+    fail(res, 'eliminar el adicional', error)
   }
 })
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Clock, ShoppingCart } from 'lucide-react'
 import { createAddress, createOrder, getCatalog, getMe } from '../lib/api'
-import { addLine, cartCount, cartTotal, setQuantity } from '../lib/cart'
+import { addLine, cartCount, cartTotal, lineKey, setQuantity, unitPrice } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
 import { money } from '../lib/format'
 import ProductSheet from '../components/ProductSheet'
@@ -63,6 +63,35 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     return sueltos.length
       ? [...porCategoria, { id: 'otros', nombre: 'Más productos', imagen: null, productos: sueltos }]
       : porCategoria
+  }, [catalogo])
+
+  /**
+   * Un adicional entra al carrito como LÍNEA PROPIA. Se resuelve contra el
+   * catálogo —no contra lo que venga en la recomendación— porque el precio y
+   * la disponibilidad mandan desde el producto, igual que si se pidiera solo.
+   *
+   * Si el producto trae obligatorios no se puede agregar de un toque: se abre
+   * su ficha para completarlos, que es lo que la base va a exigir igual.
+   */
+  const agregarAdicional = useCallback((productId: string) => {
+    const producto = catalogo?.products.find(item => item.id === productId)
+    if (!producto || !producto.available) return
+
+    const obligatorios = producto.optionGroups.some(
+      grupo => grupo.required || grupo.minSelectable > 0,
+    )
+    if (obligatorios || producto.hasVariants) return setElegido(producto)
+
+    setLineas(actuales => addLine(actuales, {
+      key: lineKey(producto, null, [], '', []),
+      product: producto,
+      variant: null,
+      extras: [],
+      options: [],
+      quantity: 1,
+      note: '',
+      unitPrice: unitPrice(producto, null, [], []),
+    }))
   }, [catalogo])
 
   const irACategoria = (id: string) => {
@@ -294,6 +323,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         abierto={Boolean(elegido)}
         onCerrar={() => setElegido(null)}
         onAgregar={linea => setLineas(actuales => addLine(actuales, linea))}
+        onAgregarSuelto={agregarAdicional}
         puedePedir={puedePedir}
       />
 

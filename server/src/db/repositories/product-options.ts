@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
+  RecommendationRow,
   OptionGroupRow,
   OptionRow,
   OptionTemplateItemRow,
@@ -229,7 +230,57 @@ const deleteOptionTemplateItem = async (businessId: string, id: string) => (
   db.from('option_template_items').delete().eq('business_id', businessId).eq('id', id)
 )
 
+// ── Adicionales que el dueño ofrece «además» ───────────────────────────────
+
+const CAMPOS_RECOMENDACION = [
+  'id', 'source_product_id', 'source_category_id', 'recommended_product_id',
+  'section', 'sort', 'active',
+].join(',')
+
+const getRecommendations = async (businessId: string) => {
+  const { data, error } = await db
+    .from('product_recommendations')
+    .select(CAMPOS_RECOMENDACION)
+    .eq('business_id', businessId)
+    .order('sort', { ascending: true })
+  fail(error, 'No se pudieron leer los adicionales')
+  return (data || []) as unknown as RecommendationRow[]
+}
+
+const getRecommendationById = async (businessId: string, id: string) => {
+  const { data } = await db
+    .from('product_recommendations')
+    .select(CAMPOS_RECOMENDACION)
+    .eq('business_id', businessId)
+    .eq('id', id)
+    .maybeSingle()
+  return (data || null) as unknown as RecommendationRow | null
+}
+
+const createRecommendation = async (businessId: string, data: Record<string, unknown>) => (
+  db.from('product_recommendations')
+    .insert({ ...data, business_id: businessId }).select().single()
+)
+
+const updateRecommendation = async (
+  businessId: string, id: string, data: Record<string, unknown>,
+) => (
+  db.from('product_recommendations')
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('id', id)
+)
+
+const deleteRecommendation = async (businessId: string, id: string) => (
+  db.from('product_recommendations').delete().eq('business_id', businessId).eq('id', id)
+)
+
 export = {
+  getRecommendations,
+  getRecommendationById,
+  createRecommendation,
+  updateRecommendation,
+  deleteRecommendation,
   getOptionGroups,
   getOptionGroupById,
   createOptionGroup,
