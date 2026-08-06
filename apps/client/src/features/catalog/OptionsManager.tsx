@@ -21,7 +21,7 @@ import {
 import * as catApi from './api'
 import type {
   Category, OptionGroup, OptionGroupPayload, OptionTemplate, PricingStrategy,
-  Product, ProductOption, SelectionType,
+  Product, ProductOption, RecommendationPayload, SelectionType,
 } from './api'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -69,6 +69,15 @@ const grupoNuevo = (): OptionGroupPayload => ({
   pricing_strategy: 'sum',
   free_selections: 0,
   option_template_id: null,
+  sort: 0,
+  active: true,
+})
+
+const adicionalVacio = (): RecommendationPayload => ({
+  source_product_id: null,
+  source_category_id: null,
+  recommended_product_id: '',
+  section: 'Agrega algo más',
   sort: 0,
   active: true,
 })
@@ -122,15 +131,18 @@ export default function OptionsManager({
     { opcion: Omit<ProductOption, 'id'>; id: string | null } | null
   >(null)
   const [plantillaNueva, setPlantillaNueva] = useState<{ name: string } | null>(null)
+  const [adicionalNuevo, setAdicionalNuevo] = useState<RecommendationPayload | null>(null)
 
   const grupos = useQuery({ queryKey: ['option-groups'], queryFn: catApi.getOptionGroups })
   const opciones = useQuery({ queryKey: ['options'], queryFn: catApi.getOptions })
   const plantillas = useQuery({ queryKey: ['option-templates'], queryFn: catApi.getOptionTemplates })
+  const adicionales = useQuery({ queryKey: ['recommendations'], queryFn: catApi.getRecommendations })
 
   const refrescar = () => {
     void qc.invalidateQueries({ queryKey: ['option-groups'] })
     void qc.invalidateQueries({ queryKey: ['options'] })
     void qc.invalidateQueries({ queryKey: ['option-templates'] })
+    void qc.invalidateQueries({ queryKey: ['recommendations'] })
   }
 
   const alFallar = (error: unknown) => {
@@ -182,6 +194,18 @@ export default function OptionsManager({
   const borrarPlantilla = useMutation({
     mutationFn: catApi.deleteOptionTemplate,
     onSuccess: () => { toast.success('Plantilla eliminada'); refrescar() },
+    onError: alFallar,
+  })
+
+  const crearAdicional = useMutation({
+    mutationFn: catApi.createRecommendation,
+    onSuccess: () => { toast.success('Adicional guardado'); setAdicionalNuevo(null); refrescar() },
+    onError: alFallar,
+  })
+
+  const borrarAdicional = useMutation({
+    mutationFn: catApi.deleteRecommendation,
+    onSuccess: () => { toast.success('Adicional eliminado'); refrescar() },
     onError: alFallar,
   })
 
@@ -390,6 +414,139 @@ export default function OptionsManager({
           )}
         </div>
       </div>
+
+      {/* ── Adicionales ──────────────────────────────────────────────── */}
+      <div className="border-t pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Agrega algo más</h3>
+            <p className="text-sm text-muted-foreground">
+              Otros productos que se ofrecen junto a este. <strong>No</strong> son opciones del
+              plato: entran al carrito por su cuenta, como algo más que preparar.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setAdicionalNuevo(adicionalVacio())}>
+            <Plus className="mr-1.5 size-4" /> Nuevo adicional
+          </Button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {(adicionales.data || []).map((reco) => {
+            const ofrecido = productos.find(p => p.id === reco.recommended_product_id)
+            const desde = reco.source_product_id
+              ? productos.find(p => p.id === reco.source_product_id)?.name
+              : reco.source_category_id
+                ? `la categoría ${categorias.find(c => c.id === reco.source_category_id)?.name || '—'}`
+                : 'todo el catálogo'
+            return (
+              <Card key={reco.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                <span className="min-w-0">
+                  <span className="font-medium">{ofrecido?.name || 'Producto eliminado'}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    en «{reco.section}», desde {desde}
+                  </span>
+                </span>
+                <ConfirmAction
+                  title="¿Quitar este adicional?"
+                  description="Deja de ofrecerse. El producto sigue en tu catálogo."
+                  destructive
+                  onConfirm={() => borrarAdicional.mutate(reco.id)}
+                  trigger={<Button variant="ghost" size="sm"><Trash2 className="size-4" /></Button>}
+                />
+              </Card>
+            )
+          })}
+          {!(adicionales.data || []).length && (
+            <p className="text-sm text-muted-foreground">Todavía no ofreces nada además.</p>
+          )}
+        </div>
+      </div>
+
+      <Dialog
+        open={Boolean(adicionalNuevo)}
+        onOpenChange={abierta => !abierta && setAdicionalNuevo(null)}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nuevo adicional</DialogTitle>
+            <DialogDescription>
+              Aparece en la ficha del producto con un «+». Al tocarlo, entra al carrito
+              como una línea aparte.
+            </DialogDescription>
+          </DialogHeader>
+
+          {adicionalNuevo && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>¿Qué se ofrece?</Label>
+                <Select
+                  value={adicionalNuevo.recommended_product_id}
+                  onValueChange={v => setAdicionalNuevo({
+                    ...adicionalNuevo, recommended_product_id: v,
+                  })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Elige un producto" /></SelectTrigger>
+                  <SelectContent>
+                    {productos.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>¿Dónde se ofrece?</Label>
+                <Select
+                  value={adicionalNuevo.source_product_id
+                    ? `p:${adicionalNuevo.source_product_id}`
+                    : adicionalNuevo.source_category_id
+                      ? `c:${adicionalNuevo.source_category_id}`
+                      : 'todo'}
+                  onValueChange={(valor) => {
+                    const [tipo, id] = valor.split(':')
+                    setAdicionalNuevo({
+                      ...adicionalNuevo,
+                      source_product_id: tipo === 'p' ? id : null,
+                      source_category_id: tipo === 'c' ? id : null,
+                    })
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">En todo el catálogo</SelectItem>
+                    {categorias.map(c => (
+                      <SelectItem key={`c:${c.id}`} value={`c:${c.id}`}>
+                        En la categoría {c.name}
+                      </SelectItem>
+                    ))}
+                    {productos.map(p => (
+                      <SelectItem key={`p:${p.id}`} value={`p:${p.id}`}>Solo con {p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reco-seccion">Título de la sección</Label>
+                <Input
+                  id="reco-seccion"
+                  value={adicionalNuevo.section}
+                  onChange={e => setAdicionalNuevo({ ...adicionalNuevo, section: e.target.value })}
+                  placeholder="Agrega bebidas"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdicionalNuevo(null)}>Cancelar</Button>
+            <Button
+              disabled={!adicionalNuevo?.recommended_product_id || crearAdicional.isPending}
+              onClick={() => adicionalNuevo && crearAdicional.mutate(adicionalNuevo)}
+            >
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <GrupoDialog
         estado={editandoGrupo}
