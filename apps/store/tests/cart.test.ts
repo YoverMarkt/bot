@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
-  lineKey, lineTotal, missingRequirement, needsAddress, orderTotal, setQuantity, singleChoice,
-  unitPrice,
+  lineKey, lineTotal, missingRequirement, needsAddress, optionPriceLabel, orderTotal, pillLayout,
+  setQuantity, singleChoice, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -516,6 +516,78 @@ describe('un adicional es una línea propia', () => {
     // Un contador nunca es un radio: se eligen porciones, no una opción.
     expect(singleChoice(grupo({ selectionType: 'quantity', maxSelectable: 1 }))).toBe(false)
     expect(singleChoice(grupo({ selectionType: 'quantity', maxSelectable: 4 }))).toBe(false)
+  })
+
+  // ── Lo que se escribe donde iría el precio ──────────────────────────────
+
+  it('un complemento del combo dice «Incluida», no «$0.00»', () => {
+    const combo = grupo({ pricingStrategy: 'included' })
+    expect(optionPriceLabel(combo, 0)).toEqual({ incluida: true })
+    // Y la mejora del MISMO grupo sigue mostrando su recargo.
+    expect(optionPriceLabel(combo, 1.5)).toEqual({ incluida: false, amount: 1.5 })
+  })
+
+  it('un cero en un grupo normal NO dice «Incluida»', () => {
+    // «Sin borde $0.00» no viene incluido en nada: simplemente no añade.
+    expect(optionPriceLabel(grupo({ pricingStrategy: 'sum' }), 0)).toBe(null)
+  })
+
+  it('un recargo negativo se conserva con su signo', () => {
+    // «Sin sopa −$0.50» es un caso real de los almuerzos.
+    expect(optionPriceLabel(grupo(), -0.5)).toEqual({ incluida: false, amount: -0.5 })
+  })
+
+  // ── Píldoras o lista ────────────────────────────────────────────────────
+
+  const opcionesDe = (...nombres: string[]) => nombres.map((name, i) => ({
+    id: `o${i}`, name, description: null, imageUrl: null,
+    price: 0, referencesProductId: null, defaultSelected: false,
+  }))
+
+  it('un grupo corto de elección única se pinta en píldoras', () => {
+    expect(pillLayout(grupo({
+      selectionType: 'single', maxSelectable: 1,
+      options: opcionesDe('Tradicional', 'Delgada', 'Pan Pizza'),
+    }))).toBe(true)
+  })
+
+  it('19 sabores NUNCA caben en píldoras', () => {
+    // El caso que motivó los topes: una fila con 19 no se puede leer.
+    expect(pillLayout(grupo({
+      selectionType: 'multiple', maxSelectable: 1,
+      options: opcionesDe(...Array.from({ length: 19 }, (_, i) => `S${i}`)),
+    }))).toBe(false)
+  })
+
+  it('un grupo INCLUIDO no va en píldoras: la palabra «Incluida» no cabe', () => {
+    // Se descubrió probándolo: la bebida del combo entraba en píldoras y
+    // perdía el «Incluida», así que parecía una opción que quizá te cobran.
+    expect(pillLayout(grupo({
+      selectionType: 'single', maxSelectable: 1, pricingStrategy: 'included',
+      options: opcionesDe('Cola 1L', 'Cola 2L'),
+    }))).toBe(false)
+    expect(pillLayout(grupo({
+      selectionType: 'single', maxSelectable: 1, pricingStrategy: 'included_up_to_limit',
+      options: opcionesDe('Cola 1L', 'Cola 2L'),
+    }))).toBe(false)
+  })
+
+  it('no usa píldoras si el nombre es largo, o si hay foto o descripción', () => {
+    const base = { selectionType: 'single' as const, maxSelectable: 1 }
+    expect(pillLayout(grupo({ ...base, options: opcionesDe('Pizza cuatro quesos artesanal') }))).toBe(false)
+    // En un combo la foto es justo lo que ayuda a elegir: no cabe en píldora.
+    expect(pillLayout(grupo({
+      ...base,
+      options: [{ ...opcionesDe('Pepsi')[0], imageUrl: 'https://cdn/p.jpg' }],
+    }))).toBe(false)
+    expect(pillLayout(grupo({
+      ...base,
+      options: [{ ...opcionesDe('Pepsi')[0], description: '1 litro' }],
+    }))).toBe(false)
+    // Y un grupo que admite varias tampoco.
+    expect(pillLayout(grupo({
+      selectionType: 'multiple', maxSelectable: 3, options: opcionesDe('A', 'B'),
+    }))).toBe(false)
   })
 
   // Un complemento INCLUIDO sí va dentro: es lo que distingue los dos caminos.

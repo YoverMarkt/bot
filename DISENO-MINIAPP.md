@@ -132,7 +132,18 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
   pierde nada.
 - Las opciones que **son productos** (los combos) llevan su foto.
 - **Píldoras** para las opciones cortas de un grupo `single` corto (Tradicional
-  · Delgada · Pan Pizza), en lugar de una lista vertical.
+  · Delgada · Pan Pizza), en lugar de una lista vertical. Lo decide
+  `pillLayout()` (`lib/cart.ts`), y sus topes no son estéticos: **elección
+  única** (varias marcadas en fila no se distinguen), **hasta 4 opciones** (con
+  19 sabores la fila es ilegible), **nombres de 14 caracteres o menos**, **sin
+  foto ni descripción** (en un combo la foto es lo que ayuda a elegir) y **nada
+  incluido** — la píldora no tiene sitio para la palabra `Incluida`, y sin ella
+  la bebida del combo parece algo que quizá te cobran. Lo último salió al
+  probarlo, no al escribirlo.
+- **Contador de avance** (`3 de 7 seleccionados`) solo en grupos que admiten más
+  de una: con tope de 1 el radio ya lo dice.
+- **Precio actual** encima del botón, solo en productos con grupos de opciones
+  —donde el número cambia mientras eliges—. En uno simple repetiría el botón.
 - Al llegar al máximo, las opciones no elegidas bajan de opacidad y no
   responden; las ya elegidas se pueden desmarcar.
 - **Complementos incluidos**: se ven como cualquier grupo, con la palabra
