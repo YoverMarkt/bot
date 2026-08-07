@@ -168,6 +168,23 @@ export function missingRequirement(
   return null
 }
 
+/**
+ * ¿Este grupo admite UNA sola opción?
+ *
+ * No basta con mirar `selectionType`. Un grupo guardado como `multiple` con
+ * `maxSelectable: 1` es funcionalmente una elección única —la base solo deja
+ * elegir una—, pero se pintaba con casillas: el cliente veía checkboxes,
+ * marcaba uno y no entendía por qué no podía marcar otro. Pasó de verdad con
+ * los 19 sabores de pizza.
+ *
+ * Se decide aquí, y no en el componente, para que la FORMA del control y el
+ * COMPORTAMIENTO al tocarlo salgan de la misma respuesta. Separarlos daba un
+ * radio que se podía desmarcar, o una casilla que sustituía a la anterior.
+ */
+export const singleChoice = (group: OptionGroup): boolean =>
+  group.selectionType === 'single'
+  || (group.selectionType === 'multiple' && group.maxSelectable === 1)
+
 /** Cuánto se lleva elegido de un grupo, contando porciones en los contadores. */
 export function chosenCount(group: OptionGroup, options: ChosenOption[]): number {
   const elegidas = options.filter(opcion => opcion.groupId === group.id)

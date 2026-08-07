@@ -80,8 +80,6 @@ const schedule: {
     now?: Date,
   ): { open: string; close: string } | null
 } = require('../services/schedule') as typeof import('../services/schedule')
-const { scheduleSlots, isValidSlot } = require('../services/schedule') as
-  typeof import('../services/schedule')
 
 const router = createRouter()
 
@@ -134,25 +132,6 @@ router.get('/s/:code', async (req, res) => {
   }
   // Token desconocido: la tienda explicará que hace falta pedir uno propio.
   return res.redirect(302, '/t/_')
-})
-
-/**
- * Cuánto tarda ESTE negocio en tener el pedido listo.
- *
- * Existe como función y no como número suelto porque el dato se usa en DOS
- * sitios que tienen que decir lo mismo: la lista de franjas que se ofrece y la
- * comprobación de la hora al crear el pedido. Estaba fijo en 30 minutos en los
- * dos, y separarlos no rompe de golpe: la lista ofrecería las horas buenas y
- * la validación aceptaría además las que el negocio no puede cumplir.
- *
- * `delivery_extra_minutes` NO entra aquí a propósito: la franja es la hora en
- * que el pedido está LISTO, no en que llega a la puerta.
- */
-const prepOptions = (business: StorefrontBusiness | null) => ({
-  preparationMinutes: Math.max(
-    1,
-    Number((business as { prep_time_minutes?: unknown } | null)?.prep_time_minutes) || 25,
-  ),
 })
 
 const readStatus = async (business: StorefrontBusiness | null) => {
@@ -284,20 +263,11 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
     db.getStorefrontRecommendations(businessId),
   ])
 
-  // Las horas a las que se puede programar. Van con el catálogo porque la app
-  // las necesita justo al abrir el checkout, y pedirlas aparte sería un viaje
-  // más con datos móviles.
-  const franjas = scheduleSlots(
-    await db.getSchedule(businessId).catch(() => []),
-    prepOptions(business),
-  )
-
   return res.json({
     business: business ? publicBusiness(business) : null,
     status,
     canOrder: canOrder(status),
     todaysHours: hours,
-    scheduleSlots: franjas,
     ...buildStorefrontCatalog({
       categories: categories as never,
       products: products as never,
@@ -351,17 +321,13 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
 
   const body = (req.body || {}) as Record<string, unknown>
 
-  // ── Cerrado: se puede mirar, y PROGRAMAR ────────────────────────────────
+  // ── Cerrado: se puede mirar, no pedir ───────────────────────────────────
   //
-  // Un pedido inmediato fuera de horario no se acepta: nadie lo va a hacer.
-  // Pero uno programado sí, y es justo lo que da sentido a programar — a las
-  // once de la noche es cuando alguien decide qué va a comer mañana.
-  //
-  // La distinción importa: `cerrada` es temporal y se salta con una hora
-  // válida; `suspendida` o `no_disponible` significan que este negocio no
-  // recibe pedidos en absoluto, y ahí no se pasa ni programando.
-  const programado = Boolean(body.scheduledFor)
-  if (!canOrder(status) && !(programado && status === 'cerrada')) {
+  // La tienda solo acepta pedidos inmediatos. Los programados se retiraron el
+  // 2026-08-07 por decisión del dueño: no están en el diagrama de referencia.
+  // Con esto vuelve el comportamiento anterior — con el local cerrado no entra
+  // ningún pedido, ni siquiera para más tarde.
+  if (!canOrder(status)) {
     return res.status(409).json({
       error: status === 'cerrada'
         ? 'El negocio está cerrado ahora mismo'
@@ -402,21 +368,6 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     }
   })
 
-  // La hora programada se COMPRUEBA contra el horario real. La lista de
-  // franjas es una comodidad para elegir; quien mande una hora a mano no
-  // puede colarse, ni programar para un momento en que el local está cerrado.
-  let scheduledFor: string | null = null
-  if (body.scheduledFor) {
-    const cuando = new Date(String(body.scheduledFor))
-    const horario = await db.getSchedule(businessId).catch(() => [])
-    if (!isValidSlot(horario, cuando, prepOptions(business))) {
-      return res.status(400).json({
-        error: 'Esa hora no está disponible. Elige otra de la lista.',
-      })
-    }
-    scheduledFor = cuando.toISOString()
-  }
-
   const fulfillment = ['delivery', 'pickup', 'onsite'].includes(String(body.fulfillment))
     ? String(body.fulfillment)
     : null
@@ -438,7 +389,10 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     // La app la genera al abrir el checkout y la repite si reintenta. Sin
     // clave el comportamiento es el de siempre: cada envío, un pedido.
     idempotencyKey: String(body.idempotencyKey || '').trim().slice(0, 100) || null,
-    scheduledFor,
+    // La tienda ya no programa (retirado el 2026-08-07). La RPC conserva el
+    // parámetro y la columna `scheduled_for` sigue en la base: quitarlos
+    // exigiría recrear la función del dinero por un campo que nadie llena.
+    scheduledFor: null,
   })
 
   if (result.error) {

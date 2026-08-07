@@ -114,6 +114,22 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
   - `single` → círculo (radio). Tamaño, masa, término.
   - `multiple` → cuadrado (casilla) con tope.
   - `quantity` → contador `− n +` por opción.
+
+  ⚠️ **Lo decide `singleChoice()` (`lib/cart.ts`), no `selectionType` a secas.**
+  Un grupo guardado como `multiple` con máximo 1 es funcionalmente una elección
+  única, y pintarlo con casillas confunde: el cliente marca una, no puede
+  marcar otra y no entiende por qué. Pasó con los 19 sabores de pizza. La FORMA
+  del control y el COMPORTAMIENTO al tocarlo salen de la misma respuesta, o
+  aparece un radio que se puede desmarcar.
+
+- ⚠️ **Un grupo no puede salir dos veces.** Los `extras` vienen de
+  `menu_modifiers` (la tabla vieja, que el bot sigue usando) y los grupos de
+  opciones del motor nuevo. Al construir el motor se copiaron los
+  modificadores sin retirar los originales, así que un negocio con las dos
+  cosas mandaba lo mismo por los dos campos y la ficha lo pintaba repetido.
+  `buildStorefrontCatalog` descarta el extra cuyo grupo ya sirve el motor,
+  comparando el nombre normalizado. Un negocio que solo tenga la tabla vieja no
+  pierde nada.
 - Las opciones que **son productos** (los combos) llevan su foto.
 - **Píldoras** para las opciones cortas de un grupo `single` corto (Tradicional
   · Delgada · Pan Pizza), en lugar de una lista vertical.
@@ -135,8 +151,13 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
 - Líneas con foto pequeña, nombre, lo elegido en texto tenue, contador y
   precio.
 - **Desglose**: subtotal, envío, total. El envío solo aparece en entrega.
-- **¿Para cuándo?**: `Lo antes posible` y las franjas horarias, en fila
-  desplazable. Con el local cerrado, el primer botón dice `Programar`.
+- ~~**¿Para cuándo?**~~ **RETIRADO el 2026-08-07.** No está en el diagrama y el
+  dueño pidió quitarlo. Se fue entero: la sección, `scheduleSlots`,
+  `isValidSlot` y sus pruebas. ⚠️ Con ello se fue también lo que hacía de paso:
+  **con el local cerrado ya no se puede pedir**. Antes era lo único que lo
+  permitía —a las once de la noche es cuando alguien decide qué va a comer
+  mañana—, y el dueño aceptó esa consecuencia sabiéndola. `prep_time_minutes`
+  sigue existiendo, pero ahora solo se MUESTRA: ya no decide ninguna hora.
 - **Información de entrega**: dirección, referencia, teléfono, instrucciones.
   En retiro, esos campos desaparecen.
 - **Método de pago**: Efectivo · Transferencia · Pago al retirar. En

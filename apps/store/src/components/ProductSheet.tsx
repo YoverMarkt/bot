@@ -6,6 +6,7 @@ import {
   groupExtras,
   lineKey,
   missingRequirement,
+  singleChoice,
   unitPrice,
 } from '../lib/cart'
 import type {
@@ -28,7 +29,7 @@ import type {
 const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.flatMap(
   group => group.options
     .filter(opcion => opcion.defaultSelected)
-    .slice(0, group.selectionType === 'single' ? 1 : group.maxSelectable)
+    .slice(0, singleChoice(group) ? 1 : group.maxSelectable)
     .map(opcion => ({
       groupId: group.id,
       groupName: group.name,
@@ -262,7 +263,7 @@ export default function ProductSheet({
                     quantity: 1,
                   }
                   const activa = Boolean(elegida)
-                  const bloqueada = !activa && lleno && group.selectionType !== 'single'
+                  const bloqueada = !activa && lleno && !singleChoice(group)
 
                   return (
                     <div
@@ -307,7 +308,7 @@ export default function ProductSheet({
                         : (
                             <button
                               type="button"
-                              onClick={() => (group.selectionType === 'single'
+                              onClick={() => (singleChoice(group)
                                 ? elegirUnica(group, seleccion)
                                 : alternarOpcion(group, seleccion))}
                               disabled={bloqueada}
@@ -316,7 +317,7 @@ export default function ProductSheet({
                               <span className={`flex size-5 shrink-0 items-center justify-center border-2 ${
                                 // El radio se distingue del checkbox por la forma,
                                 // que es como se entiende «uno solo» sin leer nada.
-                                group.selectionType === 'single' ? 'rounded-full' : 'rounded-md'
+                                singleChoice(group) ? 'rounded-full' : 'rounded-md'
                               } ${activa ? 'border-marca bg-marca text-white' : 'borde-tema'}`}
                               >
                                 {activa && (
