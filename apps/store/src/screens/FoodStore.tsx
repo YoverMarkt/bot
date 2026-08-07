@@ -5,7 +5,7 @@ import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
-import { money } from '../lib/format'
+import { money, rangoDeEspera } from '../lib/format'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
 import OrderDone from './OrderDone'
@@ -342,6 +342,16 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               {horario.open} – {horario.close}
             </span>
           )}
+          {/* El tiempo del modo elegido: quien retira no espera lo que tarda
+              el repartidor, y decirle lo mismo a los dos miente a uno. */}
+          <span className="opacity-70 tabular-nums">
+            ·
+            {' '}
+            {rangoDeEspera(
+              business.prepTimeMinutes
+              + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
+            )}
+          </span>
         </div>
 
         {/* ── Cómo lo recibe ── */}

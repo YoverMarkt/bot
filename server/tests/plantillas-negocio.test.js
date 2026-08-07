@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
+  PREP_TIME_POR_DEFECTO,
+  businessTypesWithPrepTime,
   businessTypesWithTemplate,
+  prepTimeForBusinessType,
   templateForBusinessType,
 } from '../dist/services/business-templates.js'
 
@@ -138,5 +141,52 @@ describe('plantillas por tipo de negocio', () => {
     }
 
     expect(problemas, problemas.join('\n')).toEqual([])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIEMPO DE PREPARACIÓN POR TIPO
+//
+// Mismo riesgo que las plantillas, y una consecuencia peor: este número no
+// solo se muestra, decide desde qué hora se puede PROGRAMAR un pedido. Una
+// clave que no exista en el desplegable deja al negocio con los 25 minutos
+// por defecto sin que nada avise, y un asadero prometiendo lo que no cumple.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('tiempo de preparación por tipo de negocio', () => {
+  it('cada tipo con tiempo propio existe en el desplegable del panel', () => {
+    const delPanel = panelTypes()
+    const huerfanos = businessTypesWithPrepTime().filter(tipo => !delPanel.includes(tipo))
+    expect(
+      huerfanos,
+      `Tipos con tiempo que el panel no ofrece: ${huerfanos.join(', ')}`,
+    ).toEqual([])
+  })
+
+  it('devuelve los minutos del tipo, y el defecto cuando no lo conoce', () => {
+    expect(prepTimeForBusinessType('heladería')).toBe(10)
+    expect(prepTimeForBusinessType('pizzería')).toBe(25)
+    expect(prepTimeForBusinessType('asadero')).toBe(40)
+    // Sin tipo, con un tipo desconocido o con una barbería —que no usa esto—
+    // se cae al defecto en vez de inventar.
+    expect(prepTimeForBusinessType('barbería')).toBe(PREP_TIME_POR_DEFECTO)
+    expect(prepTimeForBusinessType('')).toBe(PREP_TIME_POR_DEFECTO)
+    expect(prepTimeForBusinessType(null)).toBe(PREP_TIME_POR_DEFECTO)
+  })
+
+  it('un tipo escrito a mano hereda el de su familia, y gana el más largo', () => {
+    // Igual que las plantillas: «heladería artesanal» es una heladería.
+    expect(prepTimeForBusinessType('heladería artesanal')).toBe(10)
+    // «comida rápida» no puede perder contra un hipotético «comida».
+    expect(prepTimeForBusinessType('comida rápida del centro')).toBe(20)
+  })
+
+  it('ningún tipo promete un tiempo que la base rechazaría', () => {
+    // El CHECK de businesses_tiempos_check exige entre 1 y 480: un valor fuera
+    // de rango reventaría el alta entera del negocio, no solo su tiempo.
+    const malos = businessTypesWithPrepTime()
+      .map(tipo => [tipo, prepTimeForBusinessType(tipo)])
+      .filter(([, minutos]) => !Number.isInteger(minutos) || minutos < 1 || minutos > 480)
+    expect(malos, `Tipos fuera del rango de la base: ${JSON.stringify(malos)}`).toEqual([])
   })
 })

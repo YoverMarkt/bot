@@ -33,6 +33,10 @@ export interface StorefrontBusiness {
   delivery_fee?: number | string | null
   brand_color?: string | null
   logo_url?: string | null
+  /** Minutos hasta tenerlo listo. Manda también en las franjas programables. */
+  prep_time_minutes?: number | string | null
+  /** Minutos que suma llevarlo a domicilio. Solo se muestra. */
+  delivery_extra_minutes?: number | string | null
 }
 
 // El color lo escribe el dueño en su panel y acaba pintando la mini app, así
@@ -451,6 +455,11 @@ export function publicBusiness(business: StorefrontBusiness) {
       : null,
     // Informativo: el importe oficial lo vuelve a calcular la base al pedir.
     deliveryFee: Math.max(0, Number(business.delivery_fee) || 0),
+    // Los dos tiempos que ve el cliente en la portada. `prepTimeMinutes` es
+    // además el que decide las franjas programables, así que sale del mismo
+    // sitio que usa el servidor para calcularlas: uno solo puede mentir.
+    prepTimeMinutes: Math.max(1, Number(business.prep_time_minutes) || 25),
+    deliveryExtraMinutes: Math.max(0, Number(business.delivery_extra_minutes) || 0),
   }
 }
 

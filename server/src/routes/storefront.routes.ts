@@ -136,6 +136,25 @@ router.get('/s/:code', async (req, res) => {
   return res.redirect(302, '/t/_')
 })
 
+/**
+ * Cuánto tarda ESTE negocio en tener el pedido listo.
+ *
+ * Existe como función y no como número suelto porque el dato se usa en DOS
+ * sitios que tienen que decir lo mismo: la lista de franjas que se ofrece y la
+ * comprobación de la hora al crear el pedido. Estaba fijo en 30 minutos en los
+ * dos, y separarlos no rompe de golpe: la lista ofrecería las horas buenas y
+ * la validación aceptaría además las que el negocio no puede cumplir.
+ *
+ * `delivery_extra_minutes` NO entra aquí a propósito: la franja es la hora en
+ * que el pedido está LISTO, no en que llega a la puerta.
+ */
+const prepOptions = (business: StorefrontBusiness | null) => ({
+  preparationMinutes: Math.max(
+    1,
+    Number((business as { prep_time_minutes?: unknown } | null)?.prep_time_minutes) || 25,
+  ),
+})
+
 const readStatus = async (business: StorefrontBusiness | null) => {
   if (!business?.id) {
     return { status: storefrontStatus({ business: null, outsideHours: false }), hours: null }
@@ -270,7 +289,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
   // más con datos móviles.
   const franjas = scheduleSlots(
     await db.getSchedule(businessId).catch(() => []),
-    { preparationMinutes: 30 },
+    prepOptions(business),
   )
 
   return res.json({
@@ -390,7 +409,7 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
   if (body.scheduledFor) {
     const cuando = new Date(String(body.scheduledFor))
     const horario = await db.getSchedule(businessId).catch(() => [])
-    if (!isValidSlot(horario, cuando, { preparationMinutes: 30 })) {
+    if (!isValidSlot(horario, cuando, prepOptions(business))) {
       return res.status(400).json({
         error: 'Esa hora no está disponible. Elige otra de la lista.',
       })

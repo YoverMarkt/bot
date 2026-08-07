@@ -34,7 +34,7 @@ interface PlatformErrorRow {
   last_seen_at: string
 }
 import { recordError } from '../services/error-log'
-import { templateForBusinessType } from '../services/business-templates'
+import { prepTimeForBusinessType, templateForBusinessType } from '../services/business-templates'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -421,6 +421,12 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       slug,
       name,
       type: body.type || 'negocio',
+      // Nace con el tiempo de su tipo —una heladería en 10, un asadero en
+      // 40— y desde ahí manda el dueño. Solo RECOMIENDA al crear, igual que
+      // la plantilla de catálogo y las capacidades.
+      prep_time_minutes: prepTimeForBusinessType(
+        typeof body.type === 'string' ? body.type : null,
+      ),
       whatsapp_number: whatsappNumber,
       whatsapp_provider: whatsappProvider,
       ycloud_api_key: body.ycloud_api_key,

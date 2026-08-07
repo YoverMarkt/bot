@@ -9,6 +9,20 @@ export const money = (value: number | null | undefined, currency = 'USD'): strin
 }
 
 /**
+ * El tiempo que se promete al cliente, siempre como RANGO: «25 – 35 min».
+ *
+ * El dueño configura UN número —«mi pizza tarda 25»—, que es como piensa en su
+ * cocina; preguntarle dos sería el doble de fricción para el mismo dato. La
+ * ventana de 10 minutos la pone la app, igual que hacen las apps de delivery:
+ * un número exacto se lee como una promesa al minuto, y el primer pedido que
+ * llegue en 27 la incumple.
+ */
+export const rangoDeEspera = (minutos: number): string => {
+  const desde = Math.max(1, Math.round(minutos))
+  return `${desde} – ${desde + 10} min`
+}
+
+/**
  * Una franja horaria en las palabras del cliente: «Hoy 13:30», «Mañana 09:00»
  * o «mié 15 · 12:00».
  *

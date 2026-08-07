@@ -19,6 +19,7 @@ type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; takes_orders?: boolean
+  prep_time_minutes: number | null; delivery_extra_minutes: number | null
 }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
@@ -220,6 +221,10 @@ export function BusinessForm() {
         delivery_fee: Number(f?.delivery_fee) || 0,
         brand_color: f?.brand_color || null,
         logo_url: f?.logo_url || null,
+        prep_time_minutes: Number(f?.prep_time_minutes) || 25,
+        // Cero es legítimo aquí —entrego en mi cuadra—, así que no se puede
+        // usar `||`: convertiría un 0 guardado a propósito en 10.
+        delivery_extra_minutes: Number(f?.delivery_extra_minutes ?? 10),
       }),
     }),
     onSuccess: () => {
@@ -259,6 +264,41 @@ export function BusinessForm() {
               Se suma solo a los pedidos a domicilio. Quien retira en el local no lo paga.
               Déjalo en 0 si no cobras envío.
             </p>
+          </div>
+
+          {/* ── Cuánto tardas ──
+              No es solo un texto: el tiempo de preparación decide desde qué
+              hora se puede programar un pedido. Si dice menos de lo que tarda
+              la cocina, la tienda ofrece horas que el negocio no cumple. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="business-prep-time">Tiempo de preparación (minutos)</Label>
+              <Input
+                id="business-prep-time"
+                type="number" min="1" max="480" step="1" inputMode="numeric"
+                value={f.prep_time_minutes ?? 25}
+                onChange={set('prep_time_minutes')}
+                placeholder="Ej: 25"
+              />
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Cuánto tardas en tenerlo listo. Decide desde qué hora tus clientes
+                pueden programar un pedido, así que conviene que sea realista.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="business-delivery-time">Tiempo de entrega extra (minutos)</Label>
+              <Input
+                id="business-delivery-time"
+                type="number" min="0" max="240" step="1" inputMode="numeric"
+                value={f.delivery_extra_minutes ?? 10}
+                onChange={set('delivery_extra_minutes')}
+                placeholder="Ej: 10"
+              />
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Lo que suma llevarlo a domicilio. Quien retira en el local no lo espera.
+              </p>
+            </div>
           </div>
 
           <div>

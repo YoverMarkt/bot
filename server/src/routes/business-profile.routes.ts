@@ -15,6 +15,10 @@ const editableBusinessFields = [
   'delivery_fee',
   'brand_color',
   'logo_url',
+  // El dueño conoce su cocina mejor que nosotros: el tipo de negocio solo
+  // pone el valor de arranque, y a partir de ahí manda él.
+  'prep_time_minutes',
+  'delivery_extra_minutes',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -77,6 +81,10 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     delivery_fee: Number(business.delivery_fee) || 0,
     brand_color: business.brand_color ?? null,
     logo_url: business.logo_url ?? null,
+    // Cuánto tarda en tenerlo listo y cuánto suma llevarlo. El primero decide
+    // además las franjas que se ofrecen para programar.
+    prep_time_minutes: Number(business.prep_time_minutes) || 25,
+    delivery_extra_minutes: Number(business.delivery_extra_minutes) || 0,
     suspended: business.suspended,
     bot_active: business.bot_active,
   })
@@ -105,6 +113,21 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
     // Vacío = volver al color de la plataforma.
     data.brand_color = color ? color.toUpperCase() : null
   }
+  // Los dos tiempos replican aquí el CHECK de la base a propósito: el dueño
+  // lee «entre 1 y 480 minutos» en vez de un error de restricción de
+  // PostgreSQL. Es el mismo criterio del motor de opciones.
+  for (const [campo, minimo, maximo, texto] of [
+    ['prep_time_minutes', 1, 480, 'El tiempo de preparación debe estar entre 1 y 480 minutos'],
+    ['delivery_extra_minutes', 0, 240, 'El tiempo de entrega debe estar entre 0 y 240 minutos'],
+  ] as const) {
+    if (!(campo in data)) continue
+    const minutos = Number(data[campo])
+    if (!Number.isInteger(minutos) || minutos < minimo || minutos > maximo) {
+      return res.status(400).json({ error: texto })
+    }
+    data[campo] = minutos
+  }
+
   if ('logo_url' in data) {
     // La sube el propio panel a Cloudinary; aquí solo se acepta el resultado.
     // Vacío = quitar el logo.

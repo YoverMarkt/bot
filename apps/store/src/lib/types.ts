@@ -24,6 +24,10 @@ export interface Business {
   logoUrl: string | null
   /** Costo fijo de envío a domicilio. Informativo: el oficial lo calcula la base. */
   deliveryFee: number
+  /** Minutos hasta tener el pedido listo. Lo pone el dueño en su panel. */
+  prepTimeMinutes: number
+  /** Minutos que suma llevarlo a domicilio. Cero = entrega en su cuadra. */
+  deliveryExtraMinutes: number
 }
 
 /** Cómo dice el cliente que va a pagar. La plataforma NO cobra (regla #6). */
