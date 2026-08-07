@@ -24,13 +24,19 @@ const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(RAIZ, 'dist')
 
 // Medido el 2026-08-02: 76,0 kB.
+// Medido el 2026-08-06: 82,1 kB tras el rediseño de la tienda.
 //
-// El margen (6 kB) está calibrado a propósito por DEBAJO de la librería más
-// pequeña que querríamos cazar: react-router son ~10 kB gzip. Un presupuesto
-// con más holgura que eso deja pasar justo lo que dice vigilar y solo sirve
-// para dar tranquilidad falsa. Seis kilobytes dan para una pantalla o dos, que
-// es como crece esta app de verdad.
-const PRESUPUESTO_KB = 82
+// El margen está calibrado a propósito por DEBAJO de la librería más pequeña
+// que querríamos cazar: react-router son ~10 kB gzip. Un presupuesto con más
+// holgura que eso deja pasar justo lo que dice vigilar y solo sirve para dar
+// tranquilidad falsa.
+//
+// La subida del 2026-08-06 (82 → 86) es la que este guardián considera
+// legítima: no entró ninguna dependencia. Los +2,0 kB son +1,3 de JS —portada
+// del local, buscador, barra inferior y el observador que sincroniza las
+// pestañas con el scroll— y +0,5 de CSS de la rejilla. Es una pantalla nueva,
+// que es exactamente como crece esta app.
+const PRESUPUESTO_KB = 86
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)

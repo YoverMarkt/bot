@@ -48,17 +48,30 @@ El diagrama recorre el viaje entero, de WhatsApp a la entrega:
 De arriba abajo:
 
 - **Portada** a sangre completa, con el **logo** del negocio superpuesto.
+  ⚠️ **No construida:** no existe columna `cover_url`. Hoy la cabecera es un
+  bloque de tinta con el logo y el nombre. Requiere migración.
 - **Nombre** del negocio en grande, y debajo el **estado**: una píldora verde
   `Abierto` o gris `Cerrado`, con el horario del día al lado
-  (`10:00 a.m. – 11:00 p.m.`).
+  (`09:00 – 01:00`). El horario sale de `todaysHours` (ver más abajo).
 - **Línea de servicio**: `Entrega 25–35 min · Pedido mínimo $10.00`.
-- **Dos botones de modo**, uno junto al otro: `Entrega $1.50` y `Retiro gratis`.
-  El activo va con el color de marca; el otro, con borde.
+  ⚠️ **No construida:** no existen `prep_time` ni `min_order`. El tiempo de
+  preparación está hoy **fijo en 30 minutos para todos los negocios**
+  (`storefront.routes.ts`, al calcular las franjas), y el pedido mínimo no
+  existe en ninguna parte — pintarlo obligaría además a que el checkout
+  rechazara los carritos por debajo, que es lógica de dinero.
+- **Dos botones de modo**, uno junto al otro: `Entrega $2.00` y `Retiro gratis`.
+  El activo va con el color de marca; el otro, con borde. La decisión es **la
+  misma** que la del carrito: se elige aquí o allí y las dos pantallas la
+  reflejan (`ENTREGA_POR_DEFECTO`, `needsAddress` y `orderTotal` en
+  `apps/store/src/lib/cart.ts`, probadas una por una).
 - **Buscador** de ancho completo, con lupa a la izquierda.
 - **Categorías en círculos** con su imagen, en fila horizontal desplazable:
   «Para ti», «Pizzas», «Combos», «Bebidas».
-- **Barra inferior fija** de cinco destinos: Inicio · Buscar · Carrito ·
-  Pedido · Cuenta. El carrito lleva su contador en un punto.
+- **Barra inferior fija**. El diagrama pide cinco destinos (Inicio · Buscar ·
+  Carrito · Pedido · Cuenta) y hoy hay **tres**: Inicio, Buscar y Carrito, con
+  su contador. «Pedido» y «Cuenta» no se pintan porque **no tienen a dónde ir**
+  —no existe pantalla de seguimiento ni de cuenta del cliente—, y una pestaña
+  que no lleva a ninguna parte se siente rota. Entran aquí cuando existan.
 
 ## 2. Catálogo
 
@@ -67,11 +80,24 @@ De arriba abajo:
   desplazar cambia la pestaña, al tocar una pestaña salta a su sección.
 - **Bandas grises** separando secciones, para que el ojo encuentre el corte sin
   leer.
-- **Tarjetas de producto** con foto a un lado, y al otro: nombre, descripción
-  en dos líneas como máximo, precio, y un botón `+` circular. El precio
-  promocional va junto al tachado.
-- Una o dos columnas según el ancho.
-- **Agotado**: la tarjeta baja de opacidad y el `+` desaparece.
+- **Tarjetas de producto en rejilla de DOS COLUMNAS**, con la **foto arriba a
+  sangre** (proporción 4:3) y debajo nombre, descripción en dos líneas como
+  máximo y precio. El botón `+` circular va **sobre la foto**, abajo a la
+  derecha. El precio promocional va junto al tachado.
+- **Agotado**: la tarjeta baja de opacidad, lleva su etiqueta sobre la foto y
+  el `+` desaparece.
+
+> ⚠️ **Esto se aparta del diagrama a propósito** (decidido 2026-08-06). La
+> pantalla 3 del diagrama dibuja una lista de UNA columna con la foto pequeña a
+> un lado, y este documento la describía así hasta esa fecha. El dueño eligió
+> la rejilla de dos columnas con la foto arriba, que es el formato que más
+> depende de la fotografía — y por tanto el que más gana cuando existan las
+> fotos y el que peor se ve mientras no existan. Si algún día se revierte, lo
+> que manda es la imagen.
+
+El `+` **no agrega a ciegas**: si el producto tiene grupos obligatorios o
+variantes, abre su ficha para completarlos. Es la misma regla que ya seguían
+los adicionales, y la que la base va a exigir igual al crear el pedido.
 
 ## 3. Ficha del producto
 
@@ -133,6 +159,23 @@ De arriba abajo:
 
 ---
 
+## El horario de la portada
+
+`todaysHours` (en `server/src/services/schedule.ts`) devuelve el horario
+**vigente** en `HH:MM`, y viaja en `GET /api/store/:slug` y
+`GET /api/store/:slug/catalog` junto al `status`. Nulo = ese día no se abre, y
+la portada calla en vez de inventar.
+
+⚠️ No es «el tramo de hoy». A las 00:30 de un jueves, con el miércoles de 09:00
+a 01:00, quien sigue abierto es el turno del **miércoles**: enseñar el del
+jueves diría «abre a las 09:00» junto a una píldora verde de `Abierto`, y las
+dos cosas no pueden ser ciertas a la vez. Es el mismo cruce de medianoche que
+ya resolvía `isOutsideHours`, y las dos funciones tienen que contar la misma
+historia — hay una prueba que lo exige. El horario real de Monster Pizza es
+justamente `09:00 – 01:00`, así que este caso no es teórico.
+
+---
+
 ## Detalles técnicos que el diseño exige
 
 - `100dvh`, `safe-area-inset-top` y `safe-area-inset-bottom`. La barra inferior
@@ -159,11 +202,19 @@ identidad propia.
 
 ## El tapón
 
-**0 de 17 productos tienen `image_url`.** En este diseño la foto ocupa media
-tarjeta y la mitad superior de la ficha. Ninguna mejora de CSS acercará la app
-a la referencia hasta que se carguen: el resultado será una rejilla de
-marcadores grises.
+**0 de 17 productos tienen `image_url`, las 5 categorías tampoco, y el negocio
+no tiene logo** (verificado contra la base el 2026-08-06). En este diseño la
+foto ocupa la mitad superior de cada tarjeta, el círculo de cada categoría y la
+cabecera de la ficha. Ninguna mejora de CSS acercará la app a la referencia
+hasta que se carguen.
+
+El rediseño se construyó igual, por decisión del dueño, tratando la ausencia de
+foto como el estado **normal** y no como un error: el marcador (`@utility
+marcador` en `index.css` + `Foto` en `components/ui.tsx`) pinta la inicial
+grande sobre un tinte del color del negocio, reservando el mismo tamaño que
+ocupará la imagen para que la lista no salte al cargar. Se ve intencional en
+vez de roto, pero **no se parece a la referencia** — y no puede.
 
 El flujo de subida funciona y está verificado (Cloudinary, `Catálogo → editar
-producto`). Cargar cinco o seis fotos antes de empezar el rediseño cambia por
-completo el resultado.
+producto`). Cargar cinco o seis fotos es lo único que falta para que este
+diseño sea el del diagrama.

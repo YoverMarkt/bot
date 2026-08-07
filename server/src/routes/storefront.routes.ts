@@ -75,6 +75,10 @@ interface StorefrontRouteDatabase {
 const db: StorefrontRouteDatabase = require('../db') as typeof import('../db')
 const schedule: {
   isOutsideHours(schedule: ScheduleRecord[] | null | undefined, now?: Date): boolean
+  todaysHours(
+    schedule: ScheduleRecord[] | null | undefined,
+    now?: Date,
+  ): { open: string; close: string } | null
 } = require('../services/schedule') as typeof import('../services/schedule')
 const { scheduleSlots, isValidSlot } = require('../services/schedule') as
   typeof import('../services/schedule')
@@ -133,10 +137,18 @@ router.get('/s/:code', async (req, res) => {
 })
 
 const readStatus = async (business: StorefrontBusiness | null) => {
-  if (!business?.id) return { status: storefrontStatus({ business: null, outsideHours: false }) }
+  if (!business?.id) {
+    return { status: storefrontStatus({ business: null, outsideHours: false }), hours: null }
+  }
   const businessSchedule = await db.getSchedule(business.id).catch(() => [])
   const outsideHours = schedule.isOutsideHours(businessSchedule || [])
-  return { status: storefrontStatus({ business, outsideHours }), outsideHours }
+  return {
+    status: storefrontStatus({ business, outsideHours }),
+    outsideHours,
+    // El horario vigente, para la píldora de la portada. Va junto al estado y
+    // no dentro del negocio porque depende de QUÉ HORA ES, no de quién es.
+    hours: schedule.todaysHours(businessSchedule || []),
+  }
 }
 
 // ── Portada: lo único que se ve sin enlace ─────────────────────────────────
@@ -144,7 +156,7 @@ const readStatus = async (business: StorefrontBusiness | null) => {
 // WhatsApp para pedir el suyo. Nada más: ni catálogo, ni precios, ni clientes.
 router.get('/api/store/:slug', async (req, res) => {
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
-  const { status } = await readStatus(business)
+  const { status, hours } = await readStatus(business)
   if (!business?.id || status === 'no_disponible') {
     return res.status(404).json({ error: 'Esta tienda no está disponible' })
   }
@@ -152,6 +164,7 @@ router.get('/api/store/:slug', async (req, res) => {
     business: publicBusiness(business),
     status,
     canOrder: canOrder(status),
+    todaysHours: hours,
   })
 })
 
@@ -238,7 +251,7 @@ router.post('/api/store/:slug/session/verify', verifyLimiter, async (req, res) =
 router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) => {
   const businessId = req.storeBusinessId!
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
-  const { status } = await readStatus(business)
+  const { status, hours } = await readStatus(business)
 
   const [
     categories, products, variants, extras, optionGroups, options, recommendations,
@@ -264,6 +277,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
     business: business ? publicBusiness(business) : null,
     status,
     canOrder: canOrder(status),
+    todaysHours: hours,
     scheduleSlots: franjas,
     ...buildStorefrontCatalog({
       categories: categories as never,

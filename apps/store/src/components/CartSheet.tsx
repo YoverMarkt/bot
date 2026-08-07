@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Banknote, Bike, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money, etiquetaFranja } from '../lib/format'
-import { cartTotal, lineTotal } from '../lib/cart'
+import { cartTotal, lineTotal, needsAddress, orderTotal } from '../lib/cart'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
 
 // El carrito y el cierre del pedido, en una sola hoja.
@@ -13,7 +13,7 @@ import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/t
 
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  franjas = [], onConfirmar, onNuevaDireccion,
+  entrega, onEntrega, franjas = [], onConfirmar, onNuevaDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -24,6 +24,14 @@ export default function CartSheet({
   enviando: boolean
   error: string | null
   deliveryFee: number
+  /**
+   * Cómo lo recibe. Llega de fuera porque también se elige en la portada, y
+   * las dos pantallas tienen que reflejar la MISMA decisión: con un estado
+   * aquí dentro, elegir «Retiro» arriba y abrir el carrito volvía a «Entrega»
+   * y el cliente pagaba un envío que había rechazado.
+   */
+  entrega: Fulfillment
+  onEntrega: (entrega: Fulfillment) => void
   /** Horas a las que el negocio puede tenerlo listo. Vacío = solo inmediato. */
   franjas?: string[]
   onConfirmar: (datos: {
@@ -35,7 +43,6 @@ export default function CartSheet({
   }) => void
   onNuevaDireccion: (datos: { label: string; address: string; reference: string }) => Promise<void>
 }) {
-  const [entrega, setEntrega] = useState<Fulfillment>('delivery')
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
   const [nombre, setNombre] = useState('')
@@ -48,7 +55,7 @@ export default function CartSheet({
   const direcciones: Address[] = me?.addresses || []
   const elegida = direccionId || direcciones.find(item => item.is_default)?.id || direcciones[0]?.id || null
   const nombreFinal = (nombre || me?.name || '').trim()
-  const faltaDireccion = entrega === 'delivery' && !elegida
+  const faltaDireccion = needsAddress(entrega) && !elegida
   const faltaNombre = nombreFinal.length < 2
 
   const guardarDireccion = async () => {
@@ -86,8 +93,8 @@ export default function CartSheet({
   // Vista previa del envío. El importe que manda es el que calcula el servidor
   // al crear el pedido: aquí solo se anticipa para que nadie se lleve sorpresas.
   const subtotal = cartTotal(lines)
-  const envio = entrega === 'delivery' ? deliveryFee : 0
-  const total = subtotal + envio
+  const envio = needsAddress(entrega) ? deliveryFee : 0
+  const total = orderTotal(lines, entrega, deliveryFee)
 
   return (
     <Hoja abierta={abierta} onCerrar={onCerrar} titulo="Tu pedido">
@@ -140,7 +147,7 @@ export default function CartSheet({
             {opcionesEntrega.map(({ id, icono: Icono, texto }) => (
               <button
                 key={id}
-                onClick={() => setEntrega(id)}
+                onClick={() => onEntrega(id)}
                 className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-[14px] font-semibold transition ${
                   entrega === id ? 'border-marca bg-marca-suave text-marca' : 'borde-tema'
                 }`}
@@ -153,7 +160,7 @@ export default function CartSheet({
         </section>
 
         {/* ── A dónde ── */}
-        {entrega === 'delivery' && (
+        {needsAddress(entrega) && (
           <section>
             <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
               Dirección

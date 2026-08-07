@@ -2,6 +2,7 @@ import type {
   CartLine,
   ChosenOption,
   Extra,
+  Fulfillment,
   OptionGroup,
   PricingStrategy,
   Product,
@@ -197,6 +198,37 @@ export function addLine(lines: CartLine[], nueva: CartLine): CartLine[] {
 export function setQuantity(lines: CartLine[], key: string, quantity: number): CartLine[] {
   if (quantity <= 0) return lines.filter(line => line.key !== key)
   return lines.map(line => line.key === key ? { ...line, quantity } : line)
+}
+
+// ── Cómo lo recibe ─────────────────────────────────────────────────────────
+//
+// Se elige en DOS pantallas —la portada y el carrito— y decide dos cosas que
+// el cliente ve: cuánto paga y qué datos le pedimos. Vive aquí, fuera de los
+// componentes, para que las dos pantallas cuenten lo mismo y para que se pueda
+// comprobar de verdad: cuando esto vivía dentro del carrito, elegir «Retiro»
+// arriba y abrir el carrito lo devolvía a «Entrega» sin avisar.
+
+/** A domicilio, que es lo que quiere casi todo el mundo. */
+export const ENTREGA_POR_DEFECTO: Fulfillment = 'delivery'
+
+/** Solo a domicilio hace falta saber a dónde. En retiro no se piden datos. */
+export const needsAddress = (fulfillment: Fulfillment): boolean =>
+  fulfillment === 'delivery'
+
+/**
+ * El total que se PINTA, con el envío incluido solo si se lo llevan a casa.
+ *
+ * Quien retira en el local no paga envío, y cobrárselo en la pantalla —aunque
+ * el servidor luego no lo cobre— es prometer un número y cumplir otro. El
+ * importe que manda sigue siendo el que devuelve la base al crear el pedido.
+ */
+export const orderTotal = (
+  lines: CartLine[],
+  fulfillment: Fulfillment,
+  deliveryFee: number,
+): number => {
+  const envio = needsAddress(fulfillment) ? Math.max(0, deliveryFee || 0) : 0
+  return Math.round((cartTotal(lines) + envio) * 100) / 100
 }
 
 /** Agrupa los extras por su título para pintarlos en bloques. */

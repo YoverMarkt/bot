@@ -114,13 +114,23 @@ export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; c
   )
 }
 
-/** Imagen del catálogo. Si el negocio no cargó foto, no se deja un hueco roto. */
+/**
+ * Imagen del catálogo. Si el negocio no cargó foto, no se deja un hueco roto.
+ *
+ * El caso sin foto es HOY el normal —ningún producto tiene imagen todavía—, así
+ * que el marcador no es un error que tapar: lleva la inicial grande sobre un
+ * tinte del color del negocio y sostiene la rejilla mientras tanto. El tamaño
+ * se reserva igual en los dos casos para que la lista no salte al cargar.
+ */
 export function Foto({ url, alto, nombre }: { url: string | null; alto: string; nombre: string }) {
   if (!url) {
     return (
-      <div className={`flex ${alto} items-center justify-center bg-black/5`}>
-        <span className="px-2 text-center text-[11px] font-semibold texto-tenue line-clamp-2">
-          {nombre}
+      <div className={`marcador flex ${alto} w-full items-center justify-center overflow-hidden`}>
+        <span
+          aria-hidden
+          className="text-[2.75rem] leading-none font-black tracking-tight opacity-30 select-none"
+        >
+          {nombre.trim().charAt(0).toUpperCase()}
         </span>
       </div>
     )
