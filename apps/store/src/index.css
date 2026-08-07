@@ -91,6 +91,23 @@ body {
   &::-webkit-scrollbar { display: none; }
 }
 
+/* La banda que separa una sección de otra. El ojo encuentra el corte sin leer:
+   con las secciones pegadas, diecisiete productos seguidos parecen una sola
+   lista larga y la pestaña de arriba deja de explicar dónde estás. */
+@utility banda { background-color: var(--fondo); }
+
+/* Marcador de producto SIN FOTO.
+   Hoy no hay ninguna cargada, así que este es el estado NORMAL de la rejilla,
+   no la excepción. Un gris vacío repetido dieciséis veces parece la app rota;
+   con la inicial y un tinte del color del negocio parece una decisión. Cuando
+   se carguen las fotos, esto desaparece solo. */
+@utility marcador {
+  background:
+    linear-gradient(150deg,
+      color-mix(in oklab, var(--acento) 26%, white) 0%,
+      color-mix(in oklab, var(--acento) 10%, white) 100%);
+}
+
 @keyframes entrar {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }

@@ -273,6 +273,42 @@ describe('crear pedido desde la mini app', () => {
     expect(crear.mock.calls[0][0].idempotencyKey).toBe('clave-del-carrito')
   })
 
+  // Elegir «entrega» o «retiro» pasó a hacerse también en la portada de la
+  // tienda, no solo en el carrito. Lo que llegue aquí decide si el pedido sale
+  // con dirección y si se cobra envío, así que se comprueba que viaja entero
+  // hasta la base y que un valor inventado no se cuela.
+  it('el modo de entrega elegido viaja hasta la base', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    for (const modo of ['delivery', 'pickup', 'onsite']) {
+      crear.mockClear()
+      await ejecutar('/api/store/:slug/orders', 'post', {
+        storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+        params: { slug: 'pizzeria' },
+        body: { fulfillment: modo, items: [{ productId: 'producto-1', quantity: 1 }] },
+      })
+      expect(crear.mock.calls[0][0].fulfillment).toBe(modo)
+    }
+  })
+
+  it('un modo de entrega inventado no llega a la base', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    // Nulo, no el texto tal cual: la base decide entonces su propio defecto en
+    // vez de guardar «gratis_para_mi» en la columna del modo de entrega.
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { fulfillment: 'gratis_para_mi', items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(crear.mock.calls[0][0].fulfillment).toBeNull()
+  })
+
   it('sin clave se sigue creando un pedido por envío, como el bot', async () => {
     const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
       data: { id: 'pedido-1' }, error: null,

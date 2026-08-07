@@ -140,10 +140,18 @@ export interface Product {
   recommendations: Recommendation[]
 }
 
+/** El horario vigente en «HH:MM». Nulo = hoy no se abre, y la portada calla. */
+export interface TodaysHours {
+  open: string
+  close: string
+}
+
 export interface Catalog {
   business: Business | null
   status: StoreStatus
   canOrder: boolean
+  /** El horario que se enseña en la portada, junto a la píldora de estado. */
+  todaysHours?: TodaysHours | null
   /** Horas a las que el negocio puede tener el pedido listo, ya en ISO. */
   scheduleSlots?: string[]
   categories: Category[]

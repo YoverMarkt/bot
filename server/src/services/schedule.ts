@@ -95,7 +95,41 @@ function isOutsideHours(
   return true
 }
 
-export { scheduleToText, buildScheduleMessage, isOutsideHours }
+/**
+ * El horario VIGENTE, para enseñarlo en la portada de la tienda: «10:00 – 23:00».
+ *
+ * No es lo mismo que «el tramo de hoy». A las 00:30 de un jueves, con el
+ * miércoles configurado de 09:00 a 01:00, quien sigue abierto es el turno del
+ * miércoles: enseñar el del jueves diría «abre a las 09:00» junto a una píldora
+ * verde de «Abierto», y las dos cosas no pueden ser ciertas a la vez.
+ *
+ * Devuelve null cuando ese día no se abre, y la portada calla en vez de
+ * inventar un horario.
+ */
+function todaysHours(
+  schedule: ScheduleRecord[] | null | undefined,
+  now = new Date(),
+): { open: string; close: string } | null {
+  const active = activeDays(schedule)
+  if (!active.length) return null
+
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+  const minutos = local.getHours() * 60 + local.getMinutes()
+
+  // Primero la víspera, y solo si de verdad sigue viva: es la que manda en la
+  // madrugada. Si no alcanza, el tramo de hoy.
+  const vispera = active.find(day => day.day_of_week === (local.getDay() + 6) % 7)
+  if (vispera
+    && minutosDe(vispera.close_time) < minutosDe(vispera.open_time)
+    && minutos < minutosDe(vispera.close_time)) {
+    return { open: vispera.open_time.slice(0, 5), close: vispera.close_time.slice(0, 5) }
+  }
+
+  const hoy = active.find(day => day.day_of_week === local.getDay())
+  return hoy ? { open: hoy.open_time.slice(0, 5), close: hoy.close_time.slice(0, 5) } : null
+}
+
+export { scheduleToText, buildScheduleMessage, isOutsideHours, todaysHours }
 
 // ── PEDIDOS PROGRAMADOS ─────────────────────────────────────────────────────
 //

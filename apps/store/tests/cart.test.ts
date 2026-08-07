@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice, lineKey,
-  lineTotal, missingRequirement, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
+  lineKey, lineTotal, missingRequirement, needsAddress, orderTotal, setQuantity, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -454,6 +454,48 @@ describe('un adicional es una línea propia', () => {
     )
     expect(carrito).toHaveLength(1)
     expect(carrito[0].quantity).toBe(2)
+  })
+
+  // ── Cómo lo recibe ──────────────────────────────────────────────────────
+  //
+  // Elegir entrega o retiro pasó de vivir dentro del carrito a decidirse
+  // también en la portada. Estas cuatro pruebas son el inventario de lo que
+  // esa decisión HACÍA DE PASO cuando estaba escondida en el componente: se
+  // conservan los cuatro efectos, y cada uno tiene la suya.
+
+  it('el envío se suma SOLO a domicilio', () => {
+    const carrito = [linea({ unitPrice: 7.5 })]
+    expect(orderTotal(carrito, 'delivery', 2)).toBe(9.5)
+    expect(orderTotal(carrito, 'pickup', 2)).toBe(7.5)
+    // Quien come en el local tampoco paga por llevárselo a ningún sitio.
+    expect(orderTotal(carrito, 'onsite', 2)).toBe(7.5)
+  })
+
+  it('un envío ausente o negativo no descuenta del total', () => {
+    const carrito = [linea({ unitPrice: 10 })]
+    expect(orderTotal(carrito, 'delivery', 0)).toBe(10)
+    // Un valor corrupto en la base no puede abaratar el pedido en pantalla.
+    expect(orderTotal(carrito, 'delivery', -5)).toBe(10)
+  })
+
+  it('solo a domicilio se piden datos de dirección', () => {
+    expect(needsAddress('delivery')).toBe(true)
+    expect(needsAddress('pickup')).toBe(false)
+    expect(needsAddress('onsite')).toBe(false)
+  })
+
+  it('arranca a domicilio, que es lo que quiere casi todo el mundo', () => {
+    expect(ENTREGA_POR_DEFECTO).toBe('delivery')
+    // Y el defecto tiene que ser uno de los modos que piden dirección, o el
+    // checkout arrancaría sin pedirla y el pedido saldría sin a dónde ir.
+    expect(needsAddress(ENTREGA_POR_DEFECTO)).toBe(true)
+  })
+
+  it('el total con envío redondea a centavos, sin arrastrar decimales', () => {
+    // 0.1 + 0.2 en coma flotante da 0.30000000000000004: pintado son «$0.30»,
+    // pero comparado con el importe del servidor sería otro número.
+    const carrito = [linea({ unitPrice: 0.1 })]
+    expect(orderTotal(carrito, 'delivery', 0.2)).toBe(0.3)
   })
 
   // Un complemento INCLUIDO sí va dentro: es lo que distingue los dos caminos.
