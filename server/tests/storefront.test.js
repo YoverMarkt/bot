@@ -207,7 +207,24 @@ describe('la tienda del negocio', () => {
         brandColor: null,
         logoUrl: null,
         deliveryFee: 0,
+        // Sin valor en la base se cae al defecto en vez de publicar `null`:
+        // la portada tiene que poder decir un tiempo siempre.
+        prepTimeMinutes: 25,
+        deliveryExtraMinutes: 0,
       })
+    })
+
+    // Este número no solo se pinta: es el mismo con el que el servidor calcula
+    // las franjas programables. Si la portada dijera 15 y las franjas usaran
+    // 40, el cliente elegiría una hora que su propio pedido va a rechazar.
+    it('publica el tiempo del negocio, saneado', () => {
+      expect(publicBusiness(negocio({ prep_time_minutes: 40 })).prepTimeMinutes).toBe(40)
+      expect(publicBusiness(negocio({ delivery_extra_minutes: 15 })).deliveryExtraMinutes).toBe(15)
+      // Un cero de preparación prometería el pedido en el acto.
+      expect(publicBusiness(negocio({ prep_time_minutes: 0 })).prepTimeMinutes).toBe(25)
+      expect(publicBusiness(negocio({ prep_time_minutes: -5 })).prepTimeMinutes).toBe(1)
+      // El del envío SÍ puede ser cero: hay quien entrega en su cuadra.
+      expect(publicBusiness(negocio({ delivery_extra_minutes: 0 })).deliveryExtraMinutes).toBe(0)
     })
 
     // El color acaba dentro de un estilo de la mini app: solo sale de aquí si

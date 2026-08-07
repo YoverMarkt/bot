@@ -46,6 +46,10 @@ export interface BusinessRecord {
   delivery_fee?: number | string | null
   brand_color?: string | null
   logo_url?: string | null
+  // Cuánto tarda en tener el pedido listo y cuánto suma llevarlo. El primero
+  // manda además en las franjas programables; el segundo solo se muestra.
+  prep_time_minutes?: number | string | null
+  delivery_extra_minutes?: number | string | null
   owner_phone?: string | null
   notes?: string | null
   plan?: string | null

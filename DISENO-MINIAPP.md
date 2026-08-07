@@ -53,12 +53,13 @@ De arriba abajo:
 - **Nombre** del negocio en grande, y debajo el **estado**: una píldora verde
   `Abierto` o gris `Cerrado`, con el horario del día al lado
   (`09:00 – 01:00`). El horario sale de `todaysHours` (ver más abajo).
-- **Línea de servicio**: `Entrega 25–35 min · Pedido mínimo $10.00`.
-  ⚠️ **No construida:** no existen `prep_time` ni `min_order`. El tiempo de
-  preparación está hoy **fijo en 30 minutos para todos los negocios**
-  (`storefront.routes.ts`, al calcular las franjas), y el pedido mínimo no
-  existe en ninguna parte — pintarlo obligaría además a que el checkout
-  rechazara los carritos por debajo, que es lógica de dinero.
+- **Línea de servicio**: el **tiempo** está construido desde el 2026-08-06 y se
+  muestra como rango (`25 – 35 min`) junto al horario, cambiando según el modo:
+  quien retira no espera lo que tarda el repartidor. Sale de dos columnas que
+  pone el dueño (ver «Cuánto tarda el negocio», más abajo).
+  ⚠️ El **pedido mínimo** sigue sin construirse: no existe `min_order`, y
+  pintarlo obligaría además a que el checkout rechazara los carritos por
+  debajo, que es lógica de dinero y no de portada.
 - **Dos botones de modo**, uno junto al otro: `Entrega $2.00` y `Retiro gratis`.
   El activo va con el color de marca; el otro, con borde. La decisión es **la
   misma** que la del carrito: se elige aquí o allí y las dos pantallas la
@@ -173,6 +174,42 @@ dos cosas no pueden ser ciertas a la vez. Es el mismo cruce de medianoche que
 ya resolvía `isOutsideHours`, y las dos funciones tienen que contar la misma
 historia — hay una prueba que lo exige. El horario real de Monster Pizza es
 justamente `09:00 – 01:00`, así que este caso no es teórico.
+
+---
+
+## Cuánto tarda el negocio
+
+Dos columnas de `businesses`, porque son dos cosas y mezclarlas miente en una:
+
+| Columna | Qué es | Dónde pesa |
+|---|---|---|
+| `prep_time_minutes` | Cuánto tarda en estar **listo** | Decide las **franjas programables** y lo que ve quien retira |
+| `delivery_extra_minutes` | Cuánto suma **llevarlo** | Solo se muestra; no entra en las franjas |
+
+**El tipo recomienda al crear, el dueño manda después.** Un negocio nace con
+los minutos de su tipo (`prepTimeForBusinessType` en
+`services/business-templates.ts`: heladería 10, pizzería 25, asadero 40) y a
+partir de ahí solo lo cambia su dueño desde `Ajustes → Tu tienda`. Es la misma
+regla de las plantillas de catálogo y de las capacidades: **jamás pisa a un
+negocio existente**.
+
+**El dueño configura UN número y la app pinta un rango.** `rangoDeEspera`
+(`apps/store/src/lib/format.ts`) añade una ventana de 10 minutos: el dueño
+piensa «mi pizza tarda 25», que es como se piensa una cocina, y preguntarle dos
+números sería el doble de fricción para el mismo dato. Un número exacto se lee
+como promesa al minuto y el primer pedido que llegue en 27 la incumple.
+
+⚠️ **No es decoración: `prep_time_minutes` decide desde qué hora se puede
+programar.** Estaba fijo en 30 minutos para todos los negocios, en DOS sitios
+de `storefront.routes.ts` —la lista de franjas y su validación—. Separarlos no
+rompe de golpe: la lista ofrecería las horas buenas y la validación aceptaría
+además las que el negocio no puede cumplir. Por eso hoy los dos salen de
+`prepOptions()`, una sola función.
+
+**Las barberías no usan nada de esto.** Los negocios de citas ya tenían su
+tiempo, y por otro camino: `products.duration_minutes` (cuánto dura ese
+servicio), `business_schedule.slot_duration` (cada cuánto se ofrece cita) y
+`bookings.duration_minutes` (cuánto duró). No se tocó.
 
 ---
 
