@@ -164,6 +164,45 @@ describe('la tienda del negocio', () => {
       expect(pizza.extras.map(e => e.name).sort()).toEqual(['Orégano', 'Queso extra'])
     })
 
+    // ── El mismo grupo NO puede salir dos veces ──────────────────────────
+    //
+    // Los extras vienen de `menu_modifiers` (la tabla vieja, que el bot sigue
+    // usando) y los grupos de opciones del motor nuevo. Al construir el motor
+    // se COPIARON los modificadores sin retirar los originales, así que un
+    // negocio con las dos cosas mandaba las mismas opciones por los dos campos
+    // y la ficha las pintaba DOS VECES: pasó con los 19 sabores de pizza.
+    it('un grupo que ya sirve el motor de opciones no se repite como extra', () => {
+      const conAmbos = {
+        ...entrada,
+        extras: [
+          ...entrada.extras,
+          { id: 'e-3', product_id: null, category_tag: 'pizzas', group_label: 'Sabor', name: 'Hawaiana', price_delta: '0' },
+          { id: 'e-4', product_id: null, category_tag: 'pizzas', group_label: 'Sabor', name: 'Mexicana', price_delta: '0' },
+        ],
+        optionGroups: [
+          { id: 'g-1', name: 'Sabor', category_id: 'cat-1', selection_type: 'multiple', max_selectable: 1 },
+        ],
+        options: [
+          { id: 'o-1', option_group_id: 'g-1', name: 'Hawaiana', stock: 'disponible' },
+          { id: 'o-2', option_group_id: 'g-1', name: 'Mexicana', stock: 'disponible' },
+        ],
+      }
+      const pizza = buildStorefrontCatalog(conAmbos).products.find(p => p.id === 'prod-1')
+
+      // El sabor sale UNA vez, y por el motor nuevo: es el que sabe de
+      // obligatorios, mínimos y estrategias de precio.
+      expect(pizza.optionGroups.map(g => g.name)).toEqual(['Sabor'])
+      expect(pizza.extras.map(e => e.group)).not.toContain('Sabor')
+      // Y los extras que NO chocan con ningún grupo siguen saliendo.
+      expect(pizza.extras.map(e => e.name).sort()).toEqual(['Orégano', 'Queso extra'])
+    })
+
+    // Un negocio que solo tenga la tabla vieja no puede perder sus extras.
+    it('sin grupos del motor, los extras salen tal cual', () => {
+      const pizza = buildStorefrontCatalog(entrada).products.find(p => p.id === 'prod-1')
+      expect(pizza.extras.map(e => e.name).sort()).toEqual(['Orégano', 'Queso extra'])
+    })
+
     it('marca como no disponible el producto agotado', () => {
       const gaseosa = buildStorefrontCatalog(entrada).products.find(p => p.id === 'prod-2')
       expect(gaseosa.available).toBe(false)

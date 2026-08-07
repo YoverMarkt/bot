@@ -199,6 +199,18 @@ export function storefrontStatus(input: {
 export const canOrder = (status: StorefrontStatus): boolean => status === 'abierta'
 
 /**
+ * «Sabor», «sabores» y «SABOR » son el mismo grupo escrito por dos manos
+ * distintas: la pestaña vieja del panel y la nueva. Sin normalizar, el duplicado
+ * se colaría por una tilde.
+ */
+const normalizarGrupo = (valor: string): string => valor
+  .trim()
+  .toLocaleLowerCase('es')
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+  .replace(/s$/, '')
+
+/**
  * Junta catálogo, variantes y extras en la forma que consume la app: cada
  * producto ya trae lo suyo, para que la tienda no tenga que cruzar nada.
  */
@@ -352,6 +364,10 @@ export function buildStorefrontCatalog(input: {
       })
       .filter(grupo => grupo.options.length > 0)
 
+    // Con qué nombres ya responde el motor nuevo para ESTE producto. Sirve para
+    // no repetir abajo un grupo que ya salió arriba.
+    const nombresDeGrupo = new Set(optionGroups.map(grupo => normalizarGrupo(grupo.name)))
+
     // Lo que se ofrece con ESTE producto: lo suyo primero, después lo de su
     // categoría. Se resuelve aquí contra el catálogo para que la app no tenga
     // que cruzar nada, y se cae lo agotado: ofrecer lo que no hay es peor que
@@ -396,11 +412,26 @@ export function buildStorefrontCatalog(input: {
       variants: variantes,
       optionGroups,
       recommendations,
+      // ⚠️ Un grupo NO puede salir dos veces.
+      //
+      // Los extras vienen de `menu_modifiers`, la tabla vieja que el bot sigue
+      // usando; los grupos de opciones son el motor nuevo. Al construir el
+      // motor se COPIARON los modificadores existentes sin retirar los
+      // originales, así que un negocio con las dos cosas mandaba las mismas
+      // opciones por los dos campos y la ficha las pintaba dos veces: los 19
+      // sabores de Monster Pizza salían repetidos, una vez con radio y otra
+      // con casillas.
+      //
+      // Gana el motor nuevo, que es el que sabe de obligatorios, mínimos y
+      // estrategias de precio. Se compara por NOMBRE de grupo normalizado
+      // porque es lo único que comparten las dos tablas. Un negocio que solo
+      // tenga la tabla vieja no pierde nada: sus extras no chocan con ningún
+      // grupo y siguen saliendo igual.
       extras: extras
         .filter((extra) => {
           if (vistos.has(extra.id)) return false
           vistos.add(extra.id)
-          return true
+          return !nombresDeGrupo.has(normalizarGrupo(extra.group_label || 'Extras'))
         })
         .map(extra => ({
           id: extra.id,

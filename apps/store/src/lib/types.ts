@@ -156,8 +156,6 @@ export interface Catalog {
   canOrder: boolean
   /** El horario que se enseña en la portada, junto a la píldora de estado. */
   todaysHours?: TodaysHours | null
-  /** Horas a las que el negocio puede tener el pedido listo, ya en ISO. */
-  scheduleSlots?: string[]
   categories: Category[]
   products: Product[]
   uncategorized: number

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
-  lineKey, lineTotal, missingRequirement, needsAddress, orderTotal, setQuantity, unitPrice,
+  lineKey, lineTotal, missingRequirement, needsAddress, orderTotal, setQuantity, singleChoice,
+  unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -496,6 +497,25 @@ describe('un adicional es una línea propia', () => {
     // pero comparado con el importe del servidor sería otro número.
     const carrito = [linea({ unitPrice: 0.1 })]
     expect(orderTotal(carrito, 'delivery', 0.2)).toBe(0.3)
+  })
+
+  // ── Elegir UNA sola ─────────────────────────────────────────────────────
+  //
+  // Los 19 sabores de pizza estaban guardados como `multiple` con máximo 1:
+  // la base solo dejaba elegir uno, pero la ficha los pintaba con casillas.
+  // El cliente marcaba un sabor y no entendía por qué no podía marcar otro.
+
+  it('un grupo con máximo 1 es elección única, aunque sea «multiple»', () => {
+    expect(singleChoice(grupo({ selectionType: 'single', maxSelectable: 1 }))).toBe(true)
+    // El caso real de los sabores.
+    expect(singleChoice(grupo({ selectionType: 'multiple', maxSelectable: 1 }))).toBe(true)
+  })
+
+  it('un grupo que admite varias NO es elección única', () => {
+    expect(singleChoice(grupo({ selectionType: 'multiple', maxSelectable: 7 }))).toBe(false)
+    // Un contador nunca es un radio: se eligen porciones, no una opción.
+    expect(singleChoice(grupo({ selectionType: 'quantity', maxSelectable: 1 }))).toBe(false)
+    expect(singleChoice(grupo({ selectionType: 'quantity', maxSelectable: 4 }))).toBe(false)
   })
 
   // Un complemento INCLUIDO sí va dentro: es lo que distingue los dos caminos.
