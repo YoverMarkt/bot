@@ -159,6 +159,7 @@ bot/
 │   ├── migration-2026-08-05-motor-de-productos.sql # product_type, estrategias de precio y plantillas reutilizables
 │   ├── migration-2026-08-05-estrategias-de-precio.sql # El pedido cobra cada grupo según su estrategia (la mitad y mitad)
 │   ├── migration-2026-08-06-tiempo-de-preparacion.sql # Cuánto tarda cada negocio: lo pone el dueño, el tipo solo lo recomienda
+│   ├── migration-2026-08-07-portada-negocio.sql # La imagen a sangre de la tienda; mismo CHECK https que el logo
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

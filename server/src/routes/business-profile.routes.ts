@@ -15,6 +15,7 @@ const editableBusinessFields = [
   'delivery_fee',
   'brand_color',
   'logo_url',
+  'cover_url',
   // El dueño conoce su cocina mejor que nosotros: el tipo de negocio solo
   // pone el valor de arranque, y a partir de ahí manda él.
   'prep_time_minutes',
@@ -81,6 +82,7 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     delivery_fee: Number(business.delivery_fee) || 0,
     brand_color: business.brand_color ?? null,
     logo_url: business.logo_url ?? null,
+    cover_url: business.cover_url ?? null,
     // Cuánto tarda en tenerlo listo y cuánto suma llevarlo. El primero decide
     // además las franjas que se ofrecen para programar.
     prep_time_minutes: Number(business.prep_time_minutes) || 25,
@@ -128,14 +130,21 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
     data[campo] = minutos
   }
 
-  if ('logo_url' in data) {
+  // Las dos imágenes del negocio siguen la MISMA regla, y por eso comparten
+  // bucle: acaban las dos en un <img> de una app pública, así que separarlas
+  // sería tener dos criterios para el mismo riesgo.
+  for (const [campo, nombre] of [
+    ['logo_url', 'El logo'],
+    ['cover_url', 'La portada'],
+  ] as const) {
+    if (!(campo in data)) continue
     // La sube el propio panel a Cloudinary; aquí solo se acepta el resultado.
-    // Vacío = quitar el logo.
-    const url = typeof data.logo_url === 'string' ? data.logo_url.trim() : ''
-    if (url && !/^https:\/\//.test(url)) {
-      return res.status(400).json({ error: 'El logo debe ser una imagen subida desde el panel' })
+    // Vacío = quitar la imagen.
+    const url = typeof data[campo] === 'string' ? (data[campo] as string).trim() : ''
+    if (url && !url.startsWith('https://')) {
+      return res.status(400).json({ error: `${nombre} debe ser una imagen subida desde el panel` })
     }
-    data.logo_url = url || null
+    data[campo] = url || null
   }
 
   try {

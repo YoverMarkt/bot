@@ -33,6 +33,7 @@ export interface StorefrontBusiness {
   delivery_fee?: number | string | null
   brand_color?: string | null
   logo_url?: string | null
+  cover_url?: string | null
   /** Minutos hasta tenerlo listo. Manda también en las franjas programables. */
   prep_time_minutes?: number | string | null
   /** Minutos que suma llevarlo a domicilio. Solo se muestra. */
@@ -42,6 +43,10 @@ export interface StorefrontBusiness {
 // El color lo escribe el dueño en su panel y acaba pintando la mini app, así
 // que se vuelve a comprobar aquí: solo un hex de 6 dígitos sale del servidor.
 // Cualquier otra cosa se descarta y la tienda usa su color por defecto.
+/** Una URL de imagen que puede salir a una app pública, o nada. */
+const httpsOnly = (valor?: string | null): string | null =>
+  typeof valor === 'string' && valor.startsWith('https://') ? valor : null
+
 const HEX = /^#[0-9a-fA-F]{6}$/
 export const safeBrandColor = (valor?: string | null) => (
   typeof valor === 'string' && HEX.test(valor.trim()) ? valor.trim().toUpperCase() : null
@@ -480,10 +485,11 @@ export function publicBusiness(business: StorefrontBusiness) {
     capabilities: storefrontCapabilities(business),
     // El color con el que se pinta la tienda. Nulo = el de la plataforma.
     brandColor: safeBrandColor(business.brand_color),
-    // Solo https: acaba en un <img> de una app pública.
-    logoUrl: typeof business.logo_url === 'string' && business.logo_url.startsWith('https://')
-      ? business.logo_url
-      : null,
+    // Solo https: acaban en un <img> de una app pública. Se comprueba aquí
+    // además del CHECK de la base porque este es el último punto antes del
+    // navegador, y una fila vieja podría haber entrado antes del constraint.
+    logoUrl: httpsOnly(business.logo_url),
+    coverUrl: httpsOnly(business.cover_url),
     // Informativo: el importe oficial lo vuelve a calcular la base al pedir.
     deliveryFee: Math.max(0, Number(business.delivery_fee) || 0),
     // Los dos tiempos que ve el cliente en la portada. `prepTimeMinutes` es

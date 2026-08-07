@@ -46,6 +46,8 @@ export interface BusinessRecord {
   delivery_fee?: number | string | null
   brand_color?: string | null
   logo_url?: string | null
+  /** Imagen de portada de la mini app. Solo https, igual que el logo. */
+  cover_url?: string | null
   // Cuánto tarda en tener el pedido listo y cuánto suma llevarlo. El primero
   // manda además en las franjas programables; el segundo solo se muestra.
   prep_time_minutes?: number | string | null
