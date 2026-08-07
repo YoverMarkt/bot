@@ -185,6 +185,56 @@ export const singleChoice = (group: OptionGroup): boolean =>
   group.selectionType === 'single'
   || (group.selectionType === 'multiple' && group.maxSelectable === 1)
 
+/**
+ * ¿Este grupo se pinta como píldoras en fila, en vez de lista vertical?
+ *
+ * «Masa: Tradicional · Delgada · Pan Pizza» ocupa una línea y se entiende de
+ * un vistazo; en lista vertical gasta tres filas para decir lo mismo.
+ *
+ * Los topes NO son estéticos, evitan que se rompa:
+ *   · Elección única — varias marcadas en fila no se distinguen bien.
+ *   · Hasta 4 opciones — con 19 sabores la fila se vuelve ilegible.
+ *   · Nombres cortos — «Pizza cuatro quesos artesanal» no cabe en una píldora.
+ *   · Sin foto ni descripción — una píldora no tiene dónde ponerlas, y en un
+ *     combo la foto es justo lo que ayuda a elegir.
+ *   · Nada INCLUIDO — la píldora no tiene sitio para la palabra «Incluida», y
+ *     esa palabra es lo que le dice al cliente que ya la pagó. Sin ella, la
+ *     bebida del combo parece una opción más que quizá cobren. Se vio al
+ *     probarlo: el grupo entraba en píldoras y la palabra desaparecía.
+ */
+export const pillLayout = (group: OptionGroup): boolean =>
+  singleChoice(group)
+  && group.options.length > 0
+  && group.options.length <= 4
+  && group.pricingStrategy !== 'included'
+  && group.pricingStrategy !== 'included_up_to_limit'
+  && group.options.every(opcion =>
+    opcion.name.length <= 14 && !opcion.imageUrl && !opcion.description)
+
+/**
+ * Qué se escribe donde iría el precio de una opción.
+ *
+ * En un combo la bebida VIENE con el plato, y poner «$0.00» ahí se lee como un
+ * error de precio en vez de como algo que ya pagaste. La palabra «Incluida» lo
+ * dice sin ambigüedad, y las mejoras del mismo grupo siguen con su recargo:
+ * «Pepsi 1L · Incluida» junto a «Pepsi 2L · +$1.50».
+ *
+ * La señal es la ESTRATEGIA del grupo, no el precio a secas: en un grupo normal
+ * un «Sin borde» a cero sí debe verse como `$0.00`, porque no viene incluido en
+ * nada — simplemente no añade.
+ *
+ * Devuelve null cuando no hay nada que escribir.
+ */
+export const optionPriceLabel = (
+  group: OptionGroup,
+  price: number,
+): { incluida: true } | { incluida: false; amount: number } | null => {
+  if (price !== 0) return { incluida: false, amount: price }
+  const vieneIncluido = group.pricingStrategy === 'included'
+    || group.pricingStrategy === 'included_up_to_limit'
+  return vieneIncluido ? { incluida: true } : null
+}
+
 /** Cuánto se lleva elegido de un grupo, contando porciones en los contadores. */
 export function chosenCount(group: OptionGroup, options: ChosenOption[]): number {
   const elegidas = options.filter(opcion => opcion.groupId === group.id)

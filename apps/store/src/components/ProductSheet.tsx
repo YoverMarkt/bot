@@ -6,6 +6,8 @@ import {
   groupExtras,
   lineKey,
   missingRequirement,
+  optionPriceLabel,
+  pillLayout,
   singleChoice,
   unitPrice,
 } from '../lib/cart'
@@ -251,6 +253,53 @@ export default function ProductSheet({
                 <p className="mb-2 text-[12px] texto-tenue">{group.description}</p>
               )}
 
+              {/* Contador de avance: «3 de 7 seleccionados».
+                  Solo donde se puede elegir más de una, que es donde el cliente
+                  pierde la cuenta. Con un tope de 1 sobra: el radio ya lo dice. */}
+              {group.maxSelectable > 1 && (
+                <p className="mb-2 text-[12px] texto-tenue tabular-nums">
+                  {usado} de {group.maxSelectable} seleccionados
+                </p>
+              )}
+
+              {/* Grupo corto de elección única: píldoras en fila. Ocupa una
+                  línea en vez de tres y se lee de un vistazo. Los topes de
+                  `pillLayout` evitan que 19 sabores acaben aquí. */}
+              {pillLayout(group)
+                ? (
+                    <div className="flex flex-wrap gap-2">
+                      {group.options.map((opcion) => {
+                        const activa = elegidas.some(item => item.optionId === opcion.id)
+                        const etiqueta = optionPriceLabel(group, opcion.price)
+                        return (
+                          <button
+                            key={opcion.id}
+                            type="button"
+                            onClick={() => elegirUnica(group, {
+                              groupId: group.id,
+                              groupName: group.name,
+                              optionId: opcion.id,
+                              name: opcion.name,
+                              price: opcion.price,
+                              quantity: 1,
+                            })}
+                            className={`rounded-xl border-2 px-3.5 py-2.5 text-[14px] font-bold transition ${
+                              activa ? 'border-marca bg-marca-suave text-marca' : 'borde-tema'
+                            }`}
+                          >
+                            {opcion.name}
+                            {etiqueta && !etiqueta.incluida && (
+                              <span className="ml-1.5 text-[12px] font-semibold opacity-70">
+                                {etiqueta.amount > 0 ? '+' : '−'}
+                                {money(Math.abs(etiqueta.amount))}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                : (
               <div className="space-y-2">
                 {group.options.map((opcion) => {
                   const elegida = elegidas.find(item => item.optionId === opcion.id)
@@ -293,12 +342,25 @@ export default function ProductSheet({
                                   </span>
                                 )}
                               </span>
-                              {opcion.price !== 0 && (
-                                <span className="shrink-0 text-[13px] font-bold">
-                                  {opcion.price > 0 ? '+' : '−'}
-                                  {money(Math.abs(opcion.price))}
-                                </span>
-                              )}
+                              {(() => {
+                                // «Incluida» en vez de «$0.00» cuando el grupo
+                                // viene con el plato: un cero ahí se lee como
+                                // un error de precio, no como algo ya pagado.
+                                const etiqueta = optionPriceLabel(group, opcion.price)
+                                if (!etiqueta) return null
+                                return etiqueta.incluida
+                                  ? (
+                                      <span className="shrink-0 text-[12px] font-semibold texto-tenue">
+                                        Incluida
+                                      </span>
+                                    )
+                                  : (
+                                      <span className="shrink-0 text-[13px] font-bold">
+                                        {etiqueta.amount > 0 ? '+' : '−'}
+                                        {money(Math.abs(etiqueta.amount))}
+                                      </span>
+                                    )
+                              })()}
                               <Contador
                                 valor={elegida?.quantity || 0}
                                 onCambiar={valor => cambiarCantidadOpcion(group, seleccion, valor)}
@@ -345,18 +407,32 @@ export default function ProductSheet({
                                   </span>
                                 )}
                               </span>
-                              {opcion.price !== 0 && (
-                                <span className="shrink-0 text-[14px] font-bold">
-                                  {opcion.price > 0 ? '+' : '−'}
-                                  {money(Math.abs(opcion.price))}
-                                </span>
-                              )}
+                              {(() => {
+                                // «Incluida» en vez de «$0.00» cuando el grupo
+                                // viene con el plato: un cero ahí se lee como
+                                // un error de precio, no como algo ya pagado.
+                                const etiqueta = optionPriceLabel(group, opcion.price)
+                                if (!etiqueta) return null
+                                return etiqueta.incluida
+                                  ? (
+                                      <span className="shrink-0 text-[12px] font-semibold texto-tenue">
+                                        Incluida
+                                      </span>
+                                    )
+                                  : (
+                                      <span className="shrink-0 text-[14px] font-bold">
+                                        {etiqueta.amount > 0 ? '+' : '−'}
+                                        {money(Math.abs(etiqueta.amount))}
+                                      </span>
+                                    )
+                              })()}
                             </button>
                           )}
                     </div>
                   )
                 })}
               </div>
+                  )}
             </section>
           )
         })}
@@ -467,15 +543,28 @@ export default function ProductSheet({
         </section>
       </div>
 
-      <div className="superficie sticky bottom-0 flex items-center gap-3 border-t borde-tema px-4 pt-3 pb-seguro">
-        <Contador valor={cantidad} onCambiar={setCantidad} />
-        <div className="flex-1">
-          <Boton
-            onClick={agregar}
-            disabled={!puedePedir || faltaVariante || !product.available || Boolean(falta)}
-          >
-            {textoDelBoton()}
-          </Boton>
+      <div className="superficie sticky bottom-0 border-t borde-tema px-4 pt-3 pb-seguro">
+        {/* Precio actual: cómo va quedando según lo que elige.
+            Solo en productos que se arman —donde el número CAMBIA mientras
+            eliges—; en uno simple repetiría lo que ya dice el botón. */}
+        {gruposOpciones.length > 0 && (
+          <div className="mb-2.5 flex items-baseline justify-between">
+            <span className="text-[13px] font-semibold texto-tenue">Precio actual</span>
+            <span className="text-[19px] font-extrabold tracking-tight tabular-nums">
+              {money(precio * cantidad)}
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <Contador valor={cantidad} onCambiar={setCantidad} />
+          <div className="flex-1">
+            <Boton
+              onClick={agregar}
+              disabled={!puedePedir || faltaVariante || !product.available || Boolean(falta)}
+            >
+              {textoDelBoton()}
+            </Boton>
+          </div>
         </div>
       </div>
     </Hoja>
