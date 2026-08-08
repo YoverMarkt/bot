@@ -37,12 +37,16 @@ export default function CartSheet({
     addressId: string | null
     name: string
     paymentMethod: PaymentMethod
+    deliveryNotes: string | null
   }) => void
   onNuevaDireccion: (datos: { label: string; address: string; reference: string }) => Promise<void>
 }) {
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
   const [nombre, setNombre] = useState('')
+  // Lo que cambia de un pedido a otro: «llame al llegar», «timbre roto». La
+  // referencia de la dirección es del SITIO y se queda; esto es de HOY.
+  const [instrucciones, setInstrucciones] = useState('')
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
   const [nueva, setNueva] = useState({ label: 'Casa', address: '', reference: '' })
   const [guardando, setGuardando] = useState(false)
@@ -51,6 +55,11 @@ export default function CartSheet({
   const elegida = direccionId || direcciones.find(item => item.is_default)?.id || direcciones[0]?.id || null
   const nombreFinal = (nombre || me?.name || '').trim()
   const faltaDireccion = needsAddress(entrega) && !elegida
+  // Al pasar de retiro a domicilio, «pago al retirar» deja de tener sentido.
+  // Se DERIVA en vez de corregir el estado durante el render: así no hay un
+  // repintado extra ni un instante en que el método guardado sea imposible.
+  const pagoEfectivo: PaymentMethod =
+    needsAddress(entrega) && pago === 'pago_al_retirar' ? 'efectivo' : pago
   const faltaNombre = nombreFinal.length < 2
 
   const guardarDireccion = async () => {
@@ -70,6 +79,9 @@ export default function CartSheet({
     { id: 'pickup' as const, icono: ShoppingBag, texto: 'Yo lo recojo' },
   ]
 
+  // «Pago al retirar» no es cómo paga, es CUÁNDO: al pasar por el local. Solo
+  // se ofrece en retiro — prometérselo a quien pidió a domicilio es ofrecer
+  // algo que no se puede cumplir. El servidor lo vuelve a comprobar.
   const opcionesPago = [
     {
       id: 'transferencia' as const,
@@ -80,9 +92,17 @@ export default function CartSheet({
     {
       id: 'efectivo' as const,
       icono: Banknote,
-      texto: 'Efectivo al recibir',
-      detalle: 'Pagas cuando llegue tu pedido.',
+      texto: needsAddress(entrega) ? 'Efectivo al recibir' : 'Efectivo',
+      detalle: needsAddress(entrega)
+        ? 'Pagas cuando llegue tu pedido.'
+        : 'Pagas en efectivo en el local.',
     },
+    ...(needsAddress(entrega) ? [] : [{
+      id: 'pago_al_retirar' as const,
+      icono: ShoppingBag,
+      texto: 'Pago al retirar',
+      detalle: 'Pagas cuando pases a recogerlo.',
+    }]),
   ]
 
   // Vista previa del envío. El importe que manda es el que calcula el servidor
@@ -223,6 +243,23 @@ export default function CartSheet({
           </section>
         )}
 
+        {/* ── Instrucciones ──
+            Va tras la dirección y antes del pago, como la pantalla 9. Solo a
+            domicilio: a quien retira no hay nada que indicarle. */}
+        {needsAddress(entrega) && (
+          <section>
+            <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+              Instrucciones <span className="normal-case">(opcional)</span>
+            </h3>
+            <input
+              value={instrucciones}
+              onChange={event => setInstrucciones(event.target.value.slice(0, 300))}
+              placeholder="Ej: llame al llegar, timbre roto…"
+              className="w-full rounded-xl border borde-tema bg-transparent px-3.5 py-3 text-[14px] outline-none focus:border-marca"
+            />
+          </section>
+        )}
+
         {/* ── Cómo paga ── */}
         {/* La tarjeta NO está y no es un olvido: la plataforma no procesa
             cobros (regla inviolable #6). El negocio cobra por fuera. */}
@@ -236,7 +273,7 @@ export default function CartSheet({
                 key={id}
                 onClick={() => setPago(id)}
                 className={`flex w-full items-start gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition ${
-                  pago === id ? 'border-(--acento) bg-(--acento-suave)' : 'borde-tema'
+                  pagoEfectivo === id ? 'border-(--acento) bg-(--acento-suave)' : 'borde-tema'
                 }`}
               >
                 <Icono size={18} className="mt-0.5 shrink-0" />
@@ -290,7 +327,7 @@ export default function CartSheet({
         <Boton
           onClick={() => onConfirmar({
             fulfillment: entrega, addressId: elegida, name: nombreFinal,
-            paymentMethod: pago,
+            paymentMethod: pagoEfectivo, deliveryNotes: instrucciones.trim() || null,
           })}
           disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
         >

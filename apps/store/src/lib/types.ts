@@ -33,7 +33,7 @@ export interface Business {
 }
 
 /** Cómo dice el cliente que va a pagar. La plataforma NO cobra (regla #6). */
-export type PaymentMethod = 'transferencia' | 'efectivo'
+export type PaymentMethod = 'transferencia' | 'efectivo' | 'pago_al_retirar'
 
 export type StoreStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 

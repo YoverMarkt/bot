@@ -98,7 +98,8 @@ export const createOrder = (slug: string, input: {
   fulfillment: Fulfillment
   paymentMethod?: PaymentMethod | null
   idempotencyKey?: string
-  /** Para cuándo lo quiere. Sin esto, lo antes posible. */
+  /** Instrucciones del cliente para ESTE pedido: «llame al llegar». */
+  deliveryNotes?: string | null
 }) => request<OrderResult>(`/${slug}/orders`, {
   method: 'POST',
   body: {
@@ -107,6 +108,7 @@ export const createOrder = (slug: string, input: {
     fulfillment: input.fulfillment,
     idempotencyKey: input.idempotencyKey,
     paymentMethod: input.paymentMethod || null,
+    deliveryNotes: input.deliveryNotes || null,
     items: input.lines.map(linea => ({
       productId: linea.product.id,
       variantId: linea.variant?.id || null,

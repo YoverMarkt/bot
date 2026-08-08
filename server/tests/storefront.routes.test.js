@@ -309,6 +309,67 @@ describe('crear pedido desde la mini app', () => {
     expect(crear.mock.calls[0][0].fulfillment).toBeNull()
   })
 
+  // ── El método de pago y las instrucciones ──────────────────────────────
+
+  it('«pago al retirar» no se acepta en un pedido a domicilio', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    // En retiro sí: es cuando de verdad se puede cumplir.
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        fulfillment: 'pickup', paymentMethod: 'pago_al_retirar',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+    expect(crear.mock.calls[0][0].paymentMethod).toBe('pago_al_retirar')
+
+    // A domicilio no: prometerle al negocio que alguien pasará a recoger un
+    // pedido que va a llevarle el repartidor es prometer lo que no ocurrirá.
+    crear.mockClear()
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        fulfillment: 'delivery', paymentMethod: 'pago_al_retirar',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+    expect(crear.mock.calls[0][0].paymentMethod).toBeNull()
+  })
+
+  it('las instrucciones del cliente viajan, recortadas al tope de la base', async () => {
+    const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        deliveryNotes: '  Llame al llegar, timbre roto  ',
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+    expect(crear.mock.calls[0][0].deliveryNotes).toBe('Llame al llegar, timbre roto')
+
+    // El CHECK de la base corta en 300: recortar aquí evita que un texto largo
+    // reviente el pedido entero en vez de perder solo la cola del mensaje.
+    crear.mockClear()
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: {
+        deliveryNotes: 'x'.repeat(500),
+        items: [{ productId: 'producto-1', quantity: 1 }],
+      },
+    })
+    expect(crear.mock.calls[0][0].deliveryNotes).toHaveLength(300)
+  })
+
   it('sin clave se sigue creando un pedido por envío, como el bot', async () => {
     const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
       data: { id: 'pedido-1' }, error: null,

@@ -183,6 +183,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     addressId: string | null
     name: string
     paymentMethod: PaymentMethod
+    deliveryNotes: string | null
   }) => {
     setEnviando(true)
     setError(null)

@@ -193,6 +193,8 @@ const createStorefrontOrder = async (input: {
   idempotencyKey?: string | null
   /** Para cuándo lo quiere el cliente. Nulo = lo antes posible. */
   scheduledFor?: string | null
+  /** Instrucciones del cliente para ESTE pedido: «llame al llegar». */
+  deliveryNotes?: string | null
 }) => db.rpc('create_storefront_order', {
   p_business_id: input.businessId,
   p_customer_id: input.customerId,
@@ -204,6 +206,7 @@ const createStorefrontOrder = async (input: {
   p_idempotency_key: input.idempotencyKey || null,
   p_scheduled_for: input.scheduledFor || null,
   p_payment_method: input.paymentMethod || null,
+  p_notes: input.deliveryNotes || null,
 })
 
 // El comprobante lo sube el cliente desde la mini app, sin JWT: la RPC
