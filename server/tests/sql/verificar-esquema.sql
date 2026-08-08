@@ -389,6 +389,53 @@ begin
     end if;
   end;
 
+  -- ── 3b-bis. Todo pedido nace NUMERADO ────────────────────────────────────
+  -- La pantalla de confirmación lee `order_number`, y un pedido sin número deja
+  -- al cliente sin nada que reclamar y al dueño con un UUID que no se dicta por
+  -- teléfono. Lo pone un trigger para que valga por TODOS los caminos —bot,
+  -- mostrador, mini app y el Marketplace del futuro—, no solo por el que se
+  -- acordó de hacerlo.
+  declare
+    v_uno jsonb;
+    v_dos jsonb;
+    v_otro_negocio uuid;
+    v_numero_otro integer;
+  begin
+    v_uno := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+    );
+    v_dos := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+    );
+
+    if (v_uno ->> 'order_number') is null then
+      raise exception 'un pedido nació sin número: %', v_uno;
+    end if;
+    -- Correlativo: el siguiente es exactamente el siguiente, sin huecos.
+    if (v_dos ->> 'order_number')::int <> (v_uno ->> 'order_number')::int + 1 then
+      raise exception 'los números no son correlativos: % y %',
+        v_uno ->> 'order_number', v_dos ->> 'order_number';
+    end if;
+
+    -- Y la cuenta es POR NEGOCIO: el primer pedido de otro local empieza en 1,
+    -- no continúa la numeración del vecino.
+    insert into businesses (slug, name, whatsapp_number)
+    values ('numeracion-aparte', 'Otro local', '+593900000777')
+    returning id into v_otro_negocio;
+    insert into products (business_id, name, price)
+    values (v_otro_negocio, 'Algo', 3.00);
+
+    insert into orders (business_id, contact_phone, subtotal, total)
+    values (v_otro_negocio, '+593900000888', 3.00, 3.00)
+    returning order_number into v_numero_otro;
+
+    if v_numero_otro <> 1 then
+      raise exception 'la numeración no es por negocio: el otro local empezó en %', v_numero_otro;
+    end if;
+  end;
+
   -- ── 3c. El envío lo pone la BASE, no el teléfono ─────────────────────────
   -- Si el costo de envío se calculara en la app, cualquiera pediría con envío
   -- $0 tocando el JavaScript. Aquí sale de la ficha del negocio.

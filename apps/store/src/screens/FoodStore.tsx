@@ -36,7 +36,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hecho, setHecho] = useState<
-    { order: OrderResult; total: number; pago: PaymentMethod } | null
+    { order: OrderResult; total: number; pago: PaymentMethod; entrega: Fulfillment } | null
   >(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
@@ -197,7 +197,12 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       })
       // El total oficial llega en la respuesta (incluye el envío que calculó
       // la base); el del carrito solo sirve de respaldo si no viniera.
-      setHecho({ order: pedido, total: Number(pedido.total ?? cartTotal(lineas)), pago: datos.paymentMethod })
+      setHecho({
+        order: pedido,
+        total: Number(pedido.total ?? cartTotal(lineas)),
+        pago: datos.paymentMethod,
+        entrega: datos.fulfillment,
+      })
       setLineas([])
       claveDelPedido.current = null
       setCarritoAbierto(false)
@@ -229,6 +234,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         order={hecho.order}
         resumen={{ titulo: 'Pedido', total: hecho.total }}
         paymentMethod={hecho.pago}
+        fulfillment={hecho.entrega}
+        onVolverAlMenu={() => setHecho(null)}
       />
     )
   }

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
+import { CheckCircle2, Clock, Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
 import { getPaymentInfo, uploadPaymentProof } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
-import { money } from '../lib/format'
-import type { BankAccount, Business, OrderResult, PaymentMethod } from '../lib/types'
+import { money, rangoDeEspera } from '../lib/format'
+import type { BankAccount, Business, Fulfillment, OrderResult, PaymentMethod } from '../lib/types'
 
 // Pedido registrado.
 //
@@ -19,13 +19,19 @@ const lineasBanco = (cuenta: BankAccount) => [
   { etiqueta: 'Cédula / RUC', valor: cuenta.holder_id, copiable: true },
 ].filter(linea => Boolean(linea.valor))
 
-export default function OrderDone({ slug, business, order, resumen, paymentMethod }: {
+export default function OrderDone({
+  slug, business, order, resumen, paymentMethod, fulfillment, onVolverAlMenu,
+}: {
   slug: string
   business: Business
   order: OrderResult
   resumen: { titulo: string; total: number | null }
   /** Nulo en hospedaje, que no pregunta cómo se paga. */
   paymentMethod?: PaymentMethod | null
+  /** Cómo lo recibe: decide si el tiempo estimado incluye el reparto. */
+  fulfillment?: Fulfillment | null
+  /** Volver a la carta. Ausente en hospedaje, que no tiene menú al que volver. */
+  onVolverAlMenu?: () => void
 }) {
   const [cuenta, setCuenta] = useState<BankAccount | null>(null)
   const [copiado, setCopiado] = useState('')
@@ -71,6 +77,13 @@ export default function OrderDone({ slug, business, order, resumen, paymentMetho
   }
 
   const numero = order.order_number ? `#${order.order_number}` : ''
+  // El mismo cálculo que la portada: preparación, más el reparto solo si se lo
+  // llevan. Sin `fulfillment` —hospedaje— no se promete ningún tiempo.
+  const espera = fulfillment
+    ? rangoDeEspera(
+      business.prepTimeMinutes + (fulfillment === 'delivery' ? business.deliveryExtraMinutes : 0),
+    )
+    : null
   const totalOficial = resumen.total != null
     ? resumen.total
     : Number.parseFloat(String(order.total ?? ''))
@@ -82,21 +95,46 @@ export default function OrderDone({ slug, business, order, resumen, paymentMetho
 
   return (
     <div className="animar-entrada mx-auto min-h-full max-w-md px-5 py-10">
-      <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-emerald-500/12">
-        <CheckCircle2 size={26} className="text-emerald-600" />
+      {/* Check verde grande y centrado, como la pantalla 10 del diagrama: es la
+          señal de que la espera terminó, antes incluso de leer nada. */}
+      <div className="mx-auto mb-6 flex size-20 items-center justify-center rounded-full bg-emerald-500/12">
+        <CheckCircle2 size={44} className="text-emerald-600" strokeWidth={2.25} />
       </div>
 
-      <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">
-        {resumen.titulo} enviado {numero}
+      <h1 className="text-center text-[26px] leading-tight font-extrabold tracking-tight">
+        ¡{resumen.titulo} confirmado!
       </h1>
-      <p className="mt-2.5 text-[15px] leading-relaxed texto-tenue">
+      <p className="mt-2.5 text-center text-[15px] leading-relaxed texto-tenue">
         {business.name} lo recibió y te escribe por WhatsApp para confirmarlo.
       </p>
+
+      {/* ── El número del pedido ──
+          Es lo que el cliente dicta por teléfono para reclamar y lo que el
+          dueño canta en la cocina. Va destacado y en el color del negocio, no
+          escondido en el título. */}
+      {numero && (
+        <div className="mt-6 text-center">
+          <p className="text-[13px] font-semibold texto-tenue">Número de pedido</p>
+          <p className="mt-1 text-[30px] leading-none font-black tracking-tight text-marca tabular-nums">
+            {numero}
+          </p>
+        </div>
+      )}
 
       {Number.isFinite(totalOficial) && (
         <div className="superficie mt-6 flex items-baseline justify-between rounded-2xl border borde-tema px-4 py-4">
           <span className="text-[14px] font-semibold texto-tenue">Total</span>
           <span className="text-[26px] font-extrabold tabular-nums">{money(totalOficial)}</span>
+        </div>
+      )}
+
+      {/* Tiempo estimado: lo que el cliente quiere saber justo después de
+          confirmar. Sale del tiempo que puso el dueño, igual que la portada. */}
+      {espera && (
+        <div className="mt-3 flex items-center justify-center gap-2 text-[14px] texto-tenue">
+          <Clock size={16} />
+          Tiempo estimado
+          <span className="font-bold text-(--texto)">{espera}</span>
         </div>
       )}
 
@@ -172,8 +210,12 @@ export default function OrderDone({ slug, business, order, resumen, paymentMetho
         </section>
       )}
 
-      {whatsapp && (
-        <div className="mt-6">
+      {/* Las acciones, en el orden del diagrama: primero hablar con el negocio
+          —que es lo que de verdad resuelve una duda— y después volver a la
+          carta. «Seguir pedido» no está porque la pantalla de seguimiento aún
+          no existe: un botón que no lleva a ninguna parte se siente roto. */}
+      <div className="mt-6 space-y-2.5">
+        {whatsapp && (
           <a href={whatsapp} className="block">
             <Boton variante={cuenta ? 'principal' : 'linea'}>
               <span className="flex items-center justify-center gap-2">
@@ -182,8 +224,13 @@ export default function OrderDone({ slug, business, order, resumen, paymentMetho
               </span>
             </Boton>
           </a>
-        </div>
-      )}
+        )}
+        {onVolverAlMenu && (
+          <Boton variante="linea" onClick={onVolverAlMenu}>
+            Volver al menú
+          </Boton>
+        )}
+      </div>
     </div>
   )
 }
