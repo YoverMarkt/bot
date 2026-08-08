@@ -463,17 +463,39 @@ describe('PUT /api/client/orders/:id/status', () => {
   // segundo toque en «Aceptar y preparar» es indistinguible del primero. El
   // reclamo atómico es lo único que impide el segundo mensaje, y desde el 1 de
   // octubre de 2026 Meta cobra cada uno.
-  it('reclama el aviso antes de mandarlo', async () => {
-    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
-      data: { result: 'updated', order: { id: 'order-a', status: 'preparacion' } },
-      error: null,
-    })
+  it('reclama el aviso POR HITO antes de mandarlo', async () => {
     vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
     const reclamar = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
 
-    await dispatchStatus({ authorization: authorization(), status: 'preparacion' })
+    // Los cuatro hitos que se le cuentan al cliente. El reclamo lleva el
+    // estado: con uno solo, el primer aviso dejaba la marca puesta y los
+    // demás no saldrían nunca — un fallo que no rompe nada, solo deja de
+    // hacer algo.
+    for (const status of ['preparacion', 'en_camino', 'listo_para_retiro', 'completado']) {
+      vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+        data: { result: 'updated', order: { id: 'order-a', status } },
+        error: null,
+      })
+      await dispatchStatus({ authorization: authorization(), status })
+      expect(reclamar, status).toHaveBeenCalledWith('business-a', 'order-a', status)
+    }
+  })
 
-    expect(reclamar).toHaveBeenCalledWith('business-a', 'order-a')
+  // Cada hito es un mensaje que se paga. Los estados intermedios no le dicen
+  // al cliente nada que no sepa: pagar por contárselos sería pagar por ruido.
+  it('los estados intermedios no gastan un mensaje', async () => {
+    vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+    const reclamar = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+
+    for (const status of ['confirmado', 'aceptado', 'cancelado', 'rechazado']) {
+      vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+        data: { result: 'updated', order: { id: 'order-a', status } },
+        error: null,
+      })
+      await dispatchStatus({ authorization: authorization(), status })
+    }
+
+    expect(reclamar).not.toHaveBeenCalled()
   })
 
   it('si el reclamo lo perdió, no redacta ni envía nada', async () => {

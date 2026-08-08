@@ -147,6 +147,54 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
 
   if (!pedido) return null
 
+  // ── El pedido entregado se despide ───────────────────────────────────────
+  //
+  // Reemplaza la pantalla entera, no se añade encima: con el pedido en la
+  // mano, la línea de tiempo ya no informa de nada —todos los puntos en
+  // verde— y el cliente no ha vuelto a abrir esto para consultar un estado,
+  // ha vuelto porque le llegó el aviso. Lo único que queda por hacer es
+  // agradecérselo y devolverle al menú, que es donde puede volver a pedir.
+  //
+  // El texto es el MISMO que el del WhatsApp (`services/order-notify.ts`): el
+  // cliente llega por los dos caminos y no puede leer dos despedidas
+  // distintas del mismo negocio.
+  if (pedido.status === 'completado') {
+    return (
+      <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 pt-seguro pb-10">
+        <div className="mb-6 flex size-16 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <Check size={32} strokeWidth={3} />
+        </div>
+
+        <p className="text-[13px] font-semibold texto-tenue">
+          Pedido #{pedido.order_number} entregado
+        </p>
+        <h1 className="mt-1.5 text-[28px] leading-tight font-extrabold tracking-tight">
+          Gracias por preferirnos 🙌
+        </h1>
+        <p className="mt-3 text-[15px] leading-relaxed texto-tenue">
+          Pronto también estaremos en la app de Umbani.
+        </p>
+
+        <div className="mt-8 space-y-2.5">
+          <Boton onClick={onVolver}>Volver al menú</Boton>
+          {business.phone && (
+            <a
+              href={`https://wa.me/${business.phone.replace(/[^\d]/g, '')}`}
+              className="block"
+            >
+              <Boton variante="linea">
+                <span className="flex items-center justify-center gap-2">
+                  <MessageCircle size={18} />
+                  Escribir por WhatsApp
+                </span>
+              </Boton>
+            </a>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const pasos = hitos(pedido.fulfillment)
   // La hora de cada hito sale del historial: es el único sitio donde queda
   // cuándo pasó cada cosa. `updated_at` se pisa con cada cambio.

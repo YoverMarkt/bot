@@ -94,30 +94,43 @@ const setOrderStatus = async (businessId: string, id: string, status: string) =>
 )
 
 /**
- * Reclama el derecho a avisarle al cliente, y devuelve el pedido si lo gana.
+ * Reclama el derecho a avisarle al cliente DE ESTE HITO, y devuelve el pedido
+ * si lo gana.
  *
- * ⚠️ RECLAMA, no consulta. El `where customer_notified_at is null` va dentro
- * del propio `update`, que es atómico: si dos peticiones llegan a la vez, una
- * sola se lleva la fila y la otra recibe `null`. Comprobar primero y enviar
- * después dejaría una carrera entre las dos operaciones — las dos leerían nulo
- * y las dos mandarían el mensaje.
+ * ⚠️ RECLAMA, no consulta. El `where` va dentro del propio `update`, que es
+ * atómico: si dos peticiones llegan a la vez, una sola se lleva la fila y la
+ * otra recibe `null`. Comprobar primero y enviar después dejaría una carrera
+ * entre las dos operaciones — las dos leerían lo mismo y las dos mandarían el
+ * mensaje.
  *
  * Hace falta porque `set_order_status` devuelve `updated` también cuando el
- * estado ya era ese, así que desde fuera un segundo toque en «Aceptar y
- * preparar» es indistinguible del primero. Y desde el 1 de octubre de 2026
- * Meta cobra cada mensaje de servicio: el doble toque se paga dos veces.
+ * estado ya era ese, así que desde fuera un segundo toque en un botón es
+ * indistinguible del primero. Y desde el 1 de octubre de 2026 Meta cobra cada
+ * mensaje de servicio: el doble toque se paga dos veces.
  *
- * Devuelve el pedido con sus líneas —lo que hace falta para redactar— o `null`
- * si a este cliente ya se le avisó.
+ * ⚠️ Se compara con el ÚLTIMO estado avisado, no con una lista de todos. Vale
+ * porque el pedido nunca retrocede —`set_order_status` lo prohíbe—, así que
+ * los hitos llegan siempre en fila y cada uno es distinto del anterior.
+ *
+ * El `or` cubre el nulo a mano: `neq` en PostgreSQL descarta las filas nulas,
+ * así que un pedido del que no se ha avisado nada no pasaría el filtro y
+ * jamás recibiría su primer mensaje.
  */
-const claimOrderNotification = async (businessId: string, orderId: string) => {
+const claimOrderNotification = async (
+  businessId: string,
+  orderId: string,
+  status: string,
+) => {
   const { data, error } = await db
     .from('orders')
-    .update({ customer_notified_at: new Date().toISOString() })
+    .update({
+      customer_notified_status: status,
+      customer_notified_at: new Date().toISOString(),
+    })
     .eq('business_id', businessId)
     .eq('id', orderId)
-    .is('customer_notified_at', null)
-    .select('id,order_number,contact_phone,contact_name,total,currency,order_items(*)')
+    .or(`customer_notified_status.is.null,customer_notified_status.neq.${status}`)
+    .select('id,order_number,status,fulfillment,contact_phone,contact_name,total,currency,order_items(*)')
     .maybeSingle()
   if (error) throw new Error(error.message)
   return (data || null) as OrderData | null

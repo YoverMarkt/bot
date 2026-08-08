@@ -2,7 +2,9 @@ import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 import { signedMediaUrl } from '../integrations/cloudinary'
-import { notificarPedidoEnPreparacion, type PedidoParaAvisar } from '../services/order-notify'
+import {
+  notificarCambioDePedido, seAvisa, type PedidoParaAvisar,
+} from '../services/order-notify'
 import type { BusinessRecord } from '../db/types'
 
 // Estados que hoy acepta orders.status. El GET puede filtrar por cualquiera
@@ -46,6 +48,7 @@ interface ModuloDb {
   claimOrderNotification(
     businessId: string,
     orderId: string,
+    status: string,
   ): Promise<PedidoParaAvisar | null>
   getBusinessById(id: string): Promise<BusinessRecord | null>
 }
@@ -67,19 +70,23 @@ const router = createRouter()
  * de errores y el dueño recibe su respuesta correcta igualmente. Convertir
  * esto en un 500 le diría que el pedido no arrancó cuando sí arrancó.
  */
-const avisarAlCliente = async (businessId: string, orderId: string): Promise<void> => {
+const avisarAlCliente = async (
+  businessId: string,
+  orderId: string,
+  status: string,
+): Promise<void> => {
   try {
     // Se RECLAMA el aviso antes de redactarlo: el reclamo es atómico y solo lo
     // gana quien de verdad avisa. `set_order_status` responde `updated`
     // también cuando el estado ya era ese, así que sin esto un segundo toque
-    // en «Aceptar y preparar» mandaría un segundo mensaje — y desde octubre,
-    // lo cobraría dos veces.
-    const pedido = await db.claimOrderNotification(businessId, orderId)
+    // en un botón mandaría un segundo mensaje — y desde octubre, lo cobraría
+    // dos veces.
+    const pedido = await db.claimOrderNotification(businessId, orderId, status)
     if (!pedido) return
 
     const negocio = await db.getBusinessById(businessId)
     if (!negocio) return
-    await notificarPedidoEnPreparacion(negocio, pedido)
+    await notificarCambioDePedido(negocio, pedido, status)
   } catch (error) {
     console.error(
       '⚠️  aviso de pedido en preparación:',
@@ -293,28 +300,33 @@ router.put(
         return res.status(500).json({ error: 'La base de datos devolvió una respuesta inválida' })
       }
 
-      // ── Lo que ocurre al ACEPTAR un pedido ──────────────────────────────
+      // ── Lo que ocurre después de mover un pedido ────────────────────────
       //
-      // Las dos cosas van después de responder al dueño en lo que importa: el
-      // estado ya cambió y la cocina tiene su comanda. Ninguna puede
+      // Todo esto va después de responder al dueño en lo que importa: el
+      // estado ya cambió y la cocina tiene su comanda. Nada de aquí puede
       // convertir un cambio que funcionó en un error en pantalla.
+
+      // Aceptar el pedido ES dar el pago por bueno. El dueño que manda algo a
+      // la cocina ya decidió que le van a pagar, así que un segundo toque para
+      // decir lo mismo sobraba. La consulta filtra sola lo que no aplica
+      // (efectivo, ya marcado).
       if (String(status) === 'preparacion') {
-        // 1. Aceptar el pedido ES dar el pago por bueno. El dueño que manda
-        //    algo a la cocina ya decidió que le van a pagar, así que un
-        //    segundo toque para decir lo mismo sobraba. La consulta filtra
-        //    sola lo que no aplica (efectivo, ya marcado).
         await db.confirmOrderPayment(businessId, req.params.id)
           .catch(() => { /* el pedido ya avanzó: la marca es un extra */ })
+      }
 
-        // 2. Y se le avisa al cliente, que hasta ahora no se enteraba de nada
-        //    salvo que tuviera abierta la pantalla de seguimiento.
-        //
-        //    SIN esperar a que termine, a propósito: manda un mensaje por un
-        //    canal externo que puede tardar segundos o colgarse. El dueño toca
-        //    «aceptar» con la cocina esperando; hacerle mirar una pantalla
-        //    quieta hasta que YCloud conteste es cambiar su tiempo por el de
-        //    un aviso que se registra solo si falla.
-        void avisarAlCliente(businessId, req.params.id)
+      // Y se le avisa al cliente en los hitos que le importan: cuando su
+      // pedido arranca, cuando sale —o queda listo para retirar— y cuando se
+      // entrega. Los demás estados no se avisan, y la lista está en el
+      // servicio: es la que decide cuántos mensajes cuesta cada pedido.
+      //
+      // SIN esperar a que termine, a propósito: manda un mensaje por un canal
+      // externo que puede tardar segundos o colgarse. El dueño toca el botón
+      // con la cocina esperando; hacerle mirar una pantalla quieta hasta que
+      // YCloud conteste es cambiar su tiempo por el de un aviso que se
+      // registra solo si falla.
+      if (seAvisa(String(status))) {
+        void avisarAlCliente(businessId, req.params.id, String(status))
       }
 
       res.json(result.order)

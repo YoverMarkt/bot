@@ -4,18 +4,25 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const {
   crearNotificadorDePedidos,
-  textoPedidoEnPreparacion,
+  textoDelAviso,
+  seAvisa,
+  HITOS_QUE_SE_AVISAN,
 } = require('../dist/services/order-notify')
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EL AVISO AL CLIENTE CUANDO SU PEDIDO ARRANCA
+// LOS AVISOS AL CLIENTE MIENTRAS SU PEDIDO AVANZA
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // El cliente que pide por la mini app no se entera de nada si cerró el
-// navegador —y lo normal es cerrarlo—. Este es el ÚNICO mensaje saliente del
-// pedido: desde el 1 de octubre de 2026 Meta cobra cada mensaje de servicio,
-// así que avisar en cada estado triplicaría el costo por pedido para repetir
-// cosas que ya están en la pantalla de seguimiento.
+// navegador —y lo normal es cerrarlo—. Se le avisa en los momentos en que
+// mira el teléfono: cuando su pedido arranca, cuando sale (o queda listo para
+// retirar) y cuando se entrega.
+//
+// ⚠️ Cada hito es un mensaje, y desde el 1 de octubre de 2026 Meta cobra cada
+// mensaje de servicio. Se empezó con uno solo por ese costo; el dueño decidió
+// los tres el 2026-08-08 sabiendo lo que valen. Por eso la lista de hitos
+// tiene su propia prueba: añadir uno multiplica el gasto de todos los
+// negocios del SaaS, y no puede colarse sin que alguien lo decida.
 
 const NEGOCIO = { id: 'negocio-a', name: 'Monster Pizza' }
 
@@ -30,9 +37,33 @@ const PEDIDO = {
   ],
 }
 
-describe('el texto del aviso', () => {
-  it('dice el número, el negocio, qué pidió y cuánto es', () => {
-    const texto = textoPedidoEnPreparacion(NEGOCIO, PEDIDO)
+describe('qué estados se avisan', () => {
+  // Esta lista decide CUÁNTO cuesta cada pedido en mensajes. Añadir un hito
+  // multiplica el gasto de todos los negocios del SaaS, así que el número
+  // está aquí escrito a propósito: que cambiarlo obligue a tocar la prueba.
+  it('son cuatro, y ni uno más sin decidirlo', () => {
+    expect([...HITOS_QUE_SE_AVISAN]).toEqual([
+      'preparacion', 'en_camino', 'listo_para_retiro', 'completado',
+    ])
+  })
+
+  // `aceptado` y `confirmado` no le dicen nada al cliente que no diga «en
+  // preparación»; `esperando_pago` y `pago_en_revision` son cosas que él mismo
+  // acaba de hacer. Pagar por contárselas sería pagar por ruido.
+  it('los estados intermedios no gastan un mensaje', () => {
+    for (const status of [
+      'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado',
+      'aceptado', 'cancelado', 'rechazado', 'expirado',
+    ]) {
+      expect(seAvisa(status), `${status} no debería avisarse`).toBe(false)
+      expect(textoDelAviso(NEGOCIO, PEDIDO, status)).toBeNull()
+    }
+  })
+})
+
+describe('el texto de cada aviso', () => {
+  it('en preparación dice el número, el negocio, qué pidió y cuánto es', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'preparacion')
 
     expect(texto).toContain('#23')
     expect(texto).toContain('Monster Pizza')
@@ -41,10 +72,39 @@ describe('el texto del aviso', () => {
     expect(texto).toContain('$12.50')
   })
 
+  // El detalle va SOLO en el primero. Repetirlo alargaría tres mensajes para
+  // decir lo mismo, y su valor está en ese momento: es cuando el cliente
+  // comprueba que le entendieron bien y todavía se puede corregir.
+  it('el detalle no se repite en los avisos siguientes', () => {
+    for (const status of ['en_camino', 'listo_para_retiro', 'completado']) {
+      const texto = textoDelAviso(NEGOCIO, PEDIDO, status)
+      expect(texto, status).not.toContain('Coca-Cola')
+      expect(texto, status).toContain('#23')
+    }
+  })
+
+  // «En camino» y «listo para retirar» son el MISMO paso contado de dos
+  // maneras: a quien le llevan el pedido le importa que salió; a quien lo
+  // recoge, que ya puede pasar. Decirle «va en camino» a quien tiene que ir
+  // a buscarlo lo deja esperando en casa.
+  it('distingue al que espera en casa del que va a recogerlo', () => {
+    expect(textoDelAviso(NEGOCIO, PEDIDO, 'en_camino')).toContain('camino')
+    const retiro = textoDelAviso(NEGOCIO, PEDIDO, 'listo_para_retiro')
+    expect(retiro).toContain('retirarlo')
+    expect(retiro).toContain('Monster Pizza')
+    expect(retiro).not.toContain('camino')
+  })
+
+  it('el entregado agradece y anuncia Umbani', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'completado')
+    expect(texto).toContain('Gracias por preferirnos')
+    expect(texto).toContain('Umbani')
+  })
+
   // La variante va pegada al nombre porque «Pizza» y «Pizza Familiar» son
   // cosas distintas, y el cliente comprueba aquí que le entendieron bien.
   it('no inventa un paréntesis vacío cuando no hay variante', () => {
-    const texto = textoPedidoEnPreparacion(NEGOCIO, PEDIDO)
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'preparacion')
     expect(texto).toContain('2× Coca-Cola\n')
     expect(texto).not.toContain('()')
   })
@@ -53,12 +113,12 @@ describe('el texto del aviso', () => {
   // solo se le da formato — si este archivo sumara algo, sería un segundo
   // motor de dinero.
   it('formatea el total sin recalcular nada', () => {
-    expect(textoPedidoEnPreparacion(NEGOCIO, { ...PEDIDO, total: 7 })).toContain('$7.00')
-    expect(textoPedidoEnPreparacion(NEGOCIO, { ...PEDIDO, total: '3.5' })).toContain('$3.50')
+    expect(textoDelAviso(NEGOCIO, { ...PEDIDO, total: 7 }, 'preparacion')).toContain('$7.00')
+    expect(textoDelAviso(NEGOCIO, { ...PEDIDO, total: '3.5' }, 'preparacion')).toContain('$3.50')
   })
 
   it('se aguanta sin líneas y sin total', () => {
-    const texto = textoPedidoEnPreparacion(NEGOCIO, { order_number: 9 })
+    const texto = textoDelAviso(NEGOCIO, { order_number: 9 }, 'preparacion')
     expect(texto).toContain('#9')
     expect(texto).toContain('Monster Pizza')
     expect(texto).not.toContain('$')
@@ -75,7 +135,7 @@ describe('a quién se le avisa', () => {
   it('le manda el aviso al teléfono del pedido', async () => {
     const { notificar, envio } = montar()
 
-    await expect(notificar(NEGOCIO, PEDIDO)).resolves.toBe(true)
+    await expect(notificar(NEGOCIO, PEDIDO, 'preparacion')).resolves.toBe(true)
     expect(envio).toHaveBeenCalledWith(NEGOCIO, '593990978367', expect.stringContaining('#23'))
   })
 
@@ -85,7 +145,7 @@ describe('a quién se le avisa', () => {
   it('no le escribe a un pedido de mostrador', async () => {
     const { notificar, envio } = montar()
 
-    await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone: 'mostrador' })).resolves.toBe(false)
+    await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone: 'mostrador' }, 'preparacion')).resolves.toBe(false)
     expect(envio).not.toHaveBeenCalled()
   })
 
@@ -93,7 +153,7 @@ describe('a quién se le avisa', () => {
     const { notificar, envio } = montar()
 
     for (const contact_phone of ['', '   ', '123', null, undefined]) {
-      await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone })).resolves.toBe(false)
+      await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone }, 'preparacion')).resolves.toBe(false)
     }
     expect(envio).not.toHaveBeenCalled()
   })
@@ -101,7 +161,7 @@ describe('a quién se le avisa', () => {
   it('sí le escribe por Telegram, que viaja como tg_<chatId>', async () => {
     const { notificar, envio } = montar()
 
-    await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone: 'tg_12345' })).resolves.toBe(true)
+    await expect(notificar(NEGOCIO, { ...PEDIDO, contact_phone: 'tg_12345' }, 'preparacion')).resolves.toBe(true)
     expect(envio.mock.calls[0][1]).toBe('tg_12345')
   })
 })
@@ -115,7 +175,7 @@ describe('cuando el envío falla', () => {
     const registrarError = vi.fn().mockResolvedValue(undefined)
     const notificar = crearNotificadorDePedidos({ enviar: envio, registrarError })
 
-    await expect(notificar(NEGOCIO, PEDIDO)).resolves.toBe(false)
+    await expect(notificar(NEGOCIO, PEDIDO, 'preparacion')).resolves.toBe(false)
   })
 
   // Pero tampoco se puede perder en silencio: si el dueño cree que su cliente
@@ -125,12 +185,12 @@ describe('cuando el envío falla', () => {
     const registrarError = vi.fn().mockResolvedValue(undefined)
     const notificar = crearNotificadorDePedidos({ enviar: envio, registrarError })
 
-    await notificar(NEGOCIO, PEDIDO)
+    await notificar(NEGOCIO, PEDIDO, 'preparacion')
 
     expect(registrarError).toHaveBeenCalledWith(expect.objectContaining({
       businessId: 'negocio-a',
       category: 'envio',
-      context: expect.objectContaining({ pedido: 23 }),
+      context: expect.objectContaining({ pedido: 23, motivo: 'aviso de pedido: preparacion' }),
     }))
   })
 
@@ -139,6 +199,6 @@ describe('cuando el envío falla', () => {
     const registrarError = vi.fn().mockRejectedValue(new Error('registro caído'))
     const notificar = crearNotificadorDePedidos({ enviar: envio, registrarError })
 
-    await expect(notificar(NEGOCIO, PEDIDO)).resolves.toBe(false)
+    await expect(notificar(NEGOCIO, PEDIDO, 'preparacion')).resolves.toBe(false)
   })
 })

@@ -293,18 +293,34 @@ de sólido, y la confirmación avisa de que nadie ha comprobado nada.
 
 ---
 
-## El aviso al cliente
+## Los avisos al cliente
 
-Cuando el dueño acepta, al cliente le llega **un** mensaje por su canal con el
-número, lo que pidió y el total (`services/order-notify.ts`).
+El cliente recibe un mensaje por su canal en los momentos en que mira el
+teléfono (`services/order-notify.ts`):
 
-⚠️ **Es el ÚNICO mensaje saliente del pedido, y es a propósito.** Desde el
-**1 de octubre de 2026** Meta cobra cada mensaje de servicio —los de texto
-libre dentro de la ventana de 24 h, gratis desde finales de 2024—. Avisar
-también en «en camino» y «entregado» triplicaría el costo por pedido para
-repetir cosas que ya están en la pantalla de seguimiento. El único que vale su
-precio es este, porque cierra la duda que de verdad angustia: «¿le llegó mi
-pago, me van a preparar el pedido?».
+| Hito | Qué dice |
+|---|---|
+| `preparacion` | Confirmado, **qué pidió** y el total |
+| `en_camino` | Ya salió para su dirección |
+| `listo_para_retiro` | Ya puede pasar a recogerlo |
+| `completado` | Entregado, **gracias por preferirnos** y Umbani |
+
+**El detalle de lo pedido va SOLO en el primero.** Repetirlo alargaría los tres
+mensajes para decir lo mismo, y su valor está en ese momento: es cuando el
+cliente comprueba que le entendieron bien y todavía se puede corregir.
+
+⚠️ **`en_camino` y `listo_para_retiro` son el mismo paso contado de dos
+maneras**, igual que en la línea de tiempo. Decirle «va en camino» a quien
+tiene que ir a buscarlo lo deja esperando en casa.
+
+⚠️ **Cada hito es un mensaje que se paga.** Desde el **1 de octubre de 2026**
+Meta cobra cada mensaje de servicio —los de texto libre dentro de la ventana de
+24 h, gratis desde finales de 2024—. Se empezó con **uno solo** por ese costo;
+el dueño decidió los tres el 2026-08-08 sabiendo lo que valen. **Añadir un
+hito más multiplica el gasto de todos los negocios del SaaS**, así que
+`HITOS_QUE_SE_AVISAN` tiene su propia prueba: no puede crecer sin que alguien
+lo decida. Los estados intermedios (`aceptado`, `confirmado`,
+`esperando_pago`…) no se avisan porque no le dicen al cliente nada que no sepa.
 
 ⚠️ **La ventana de 24 h NO desaparece en octubre**; lo que cambia es que deja
 de ser gratis. Fuera de ella sigue haciendo falta una **plantilla aprobada por
@@ -321,15 +337,25 @@ pantalla quieta hasta que conteste un canal externo es cambiar su tiempo por el
 de un aviso, y convertir el fallo en un 500 le diría que el pedido no arrancó
 cuando sí arrancó.
 
-⚠️ **El aviso se RECLAMA, no se consulta** (`orders.customer_notified_at`).
-`set_order_status` devuelve `updated` **también cuando el estado ya era ese**
-—pedir un cambio que ya ocurrió no es un error—, así que desde fuera un segundo
-toque en «Aceptar y preparar» es indistinguible del primero: sin el reclamo, el
-cliente recibiría dos mensajes y desde octubre se pagarían dos. El `where
-customer_notified_at is null` va **dentro del propio `update`**, que es atómico;
+⚠️ **El aviso se RECLAMA, no se consulta, y se reclama POR HITO**
+(`orders.customer_notified_status`). `set_order_status` devuelve `updated`
+**también cuando el estado ya era ese** —pedir un cambio que ya ocurrió no es
+un error—, así que desde fuera un segundo toque en un botón es indistinguible
+del primero: sin el reclamo, el cliente recibiría dos mensajes y desde octubre
+se pagarían dos. El `where` va **dentro del propio `update`**, que es atómico;
 comprobar primero y enviar después deja una carrera en la que dos peticiones
-simultáneas leen nulo las dos. Mismo patrón que `last_order_number`, y
-verificado lanzando dos reclamos a la vez contra la base real: gana uno.
+simultáneas leen lo mismo. Mismo patrón que `last_order_number`, y verificado
+lanzando dos reclamos a la vez contra la base real: gana uno.
+
+⚠️ Con un solo aviso bastaba `customer_notified_at is null`. **Con varios, la
+pregunta cambia**: ya no es «¿se avisó?», es «¿se avisó DE ESTO?». Sin la
+columna del estado, el primer aviso dejaría la fecha puesta y los demás no
+saldrían nunca — un fallo silencioso, que no rompe nada y deja de hacer algo.
+Basta comparar con el ÚLTIMO estado avisado porque el pedido nunca retrocede.
+
+⚠️ El `or(...is.null, ...neq)` **cubre el nulo a mano**: `neq` en PostgreSQL
+descarta las filas nulas, así que un pedido del que no se ha avisado nada no
+pasaría el filtro y jamás recibiría su primer mensaje.
 
 Que el botón desaparezca del panel en cuanto el pedido avanza **no basta**: la
 API es la API, y la defensa va donde está el dato, no donde está el botón.
@@ -354,6 +380,25 @@ relleno pero el estado no lo estaba, así que al borrarlo reaparecía el nombre
 guardado y no había forma de cambiárselo. Y guardarlo en el estado inicial
 tampoco vale — el carrito se monta con la tienda, **antes** de que `me`
 responda.
+
+---
+
+### El pedido entregado se despide
+
+Con `completado`, la pantalla de seguimiento se **reemplaza entera** por una
+despedida: check verde, **«Gracias por preferirnos»**, **«Pronto también
+estaremos en la app de Umbani»** y el botón de volver al menú.
+
+No se añade encima de la línea de tiempo, la sustituye. Con el pedido ya en la
+mano, esa línea no informa de nada —todos los puntos en verde— y el cliente no
+ha vuelto a abrir esto para consultar un estado: ha vuelto porque le llegó el
+aviso. Lo único que queda es agradecérselo y devolverle al menú, que es donde
+puede volver a pedir.
+
+⚠️ **El texto es el MISMO que el del WhatsApp** (`GRACIAS_POR_PREFERIRNOS` y
+`PRONTO_EN_UMBANI` en `services/order-notify.ts`). El cliente llega por los dos
+caminos y no puede leer dos despedidas distintas del mismo negocio; si se
+cambia, se cambia en los dos sitios.
 
 ---
 
