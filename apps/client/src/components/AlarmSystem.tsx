@@ -1,7 +1,8 @@
 // ── ALARMA INSISTENTE (port fiel del panel viejo) ───────────────────
 // Suena mientras haya pendientes SIN ATENDER (estado en BD):
 //  · chats en modo manual con unread_owner  · reservas pendientes
-//  · solicitudes de hospedaje por confirmar  · pedidos pendientes
+//  · solicitudes de hospedaje por confirmar
+//  · pedidos por aceptar Y comprobantes por revisar (ver VIGILADOS)
 // Con: banner fijo, badges, notificación del navegador para reservas,
 // hospedaje y pedidos nuevos, silencio temporal (2 min), tope de 3 min
 // por tanda y parpadeo del título de la pestaña.
@@ -27,7 +28,9 @@ export function AlarmBanner({
   bookings: AttentionBooking[]
   lodgingPending: { id: string }[]
   lodgingRequests: AttentionLodgingRequest[]
-  // Ya llegan filtrados a «pendiente»: la misma lista suena y avisa.
+  // Ya llegan filtrados a los estados de `VIGILADOS`: la misma lista suena y
+  // avisa. Son DOS —un pedido por aceptar y un comprobante por revisar—, así
+  // que aquí no se puede dar por hecho que todos sean lo mismo.
   ordersPending: AttentionOrder[]
   ordersLoaded: boolean
 }) {
