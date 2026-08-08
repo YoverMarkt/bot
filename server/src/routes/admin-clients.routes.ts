@@ -35,6 +35,7 @@ interface PlatformErrorRow {
 }
 import { recordError } from '../services/error-log'
 import { prepTimeForBusinessType, templateForBusinessType } from '../services/business-templates'
+import { slugLibre } from '../lib/slug'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -62,6 +63,7 @@ const db: {
     limit?: number
   }): Promise<PlatformErrorRow[]>
   getBusinessById(businessId: string): Promise<CreatedBusiness | null>
+  getBusinessBySlug(slug: string): Promise<{ id?: string } | null>
   getClientUserByBusiness(businessId: string): Promise<{ email?: string } | null>
   createBusinessOnboarding(
     business: Record<string, unknown>,
@@ -413,10 +415,13 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   const usageLimits = usageLimitsForPlan(planDefinition)
 
   try {
-    const slug = `${name
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '')}-${Date.now()}`
+    // La dirección de su tienda. Sin sufijo salvo que otro negocio ya la use:
+    // el `Date.now()` de antes lo ponía SIEMPRE, y dejaba enlaces del doble de
+    // largos que en un WhatsApp se leen como spam.
+    const slug = await slugLibre(
+      name,
+      async candidato => Boolean(await db.getBusinessBySlug(candidato)),
+    )
     const businessPayload: Record<string, unknown> = {
       slug,
       name,
