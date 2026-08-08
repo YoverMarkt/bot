@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
-import { Check, ChevronLeft, MessageCircle } from 'lucide-react'
-import { getOrder } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronLeft, Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
+import { getOrder, getPaymentInfo, uploadPaymentProof } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
 import { money } from '../lib/format'
-import type { Business, Fulfillment, TrackedOrder } from '../lib/types'
+import type { BankAccount, Business, Fulfillment, TrackedOrder } from '../lib/types'
+
+const lineasBanco = (cuenta: BankAccount) => [
+  { etiqueta: 'Banco', valor: cuenta.bank_name },
+  { etiqueta: 'Tipo', valor: cuenta.account_type },
+  { etiqueta: 'Número', valor: cuenta.account_number, copiable: true },
+  { etiqueta: 'Titular', valor: cuenta.holder_name },
+  { etiqueta: 'Cédula / RUC', valor: cuenta.holder_id, copiable: true },
+].filter(linea => Boolean(linea.valor))
 
 // Seguimiento del pedido: por dónde va, con la hora de cada paso.
 //
@@ -22,8 +30,10 @@ import type { Business, Fulfillment, TrackedOrder } from '../lib/types'
  */
 const hitos = (fulfillment: Fulfillment | null) => [
   { clave: 'recibido', texto: 'Recibido', estados: ['pendiente', 'esperando_pago', 'pago_en_revision'] },
-  { clave: 'confirmado', texto: 'Confirmado', estados: ['confirmado', 'aceptado'] },
-  { clave: 'preparacion', texto: 'En preparación', estados: ['preparacion'] },
+  // «Aceptado» y «en preparación» son un solo hito desde el 2026-08-08: el
+  // dueño acepta y prepara en un toque, así que separarlos dejaba al cliente
+  // mirando un paso que nunca duraba nada.
+  { clave: 'preparacion', texto: 'En preparación', estados: ['confirmado', 'aceptado', 'preparacion'] },
   fulfillment === 'delivery'
     ? { clave: 'camino', texto: 'En camino', estados: ['en_camino'] }
     : { clave: 'listo', texto: 'Listo para retirar', estados: ['listo_para_retiro'] },
@@ -56,6 +66,11 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
 }) {
   const [pedido, setPedido] = useState<TrackedOrder | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cuenta, setCuenta] = useState<BankAccount | null>(null)
+  const [copiado, setCopiado] = useState('')
+  const [comprobante, setComprobante] = useState<'ninguno' | 'subiendo' | 'listo'>('ninguno')
+  const [falloComprobante, setFalloComprobante] = useState<string | null>(null)
+  const archivo = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let vivo = true
@@ -65,12 +80,55 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
         .catch(() => { if (vivo) setError('No pudimos encontrar tu pedido') })
     }
     cargar()
-    // Se refresca solo mientras la pantalla está abierta: el cliente la deja
-    // mirando y quiere ver cómo avanza sin tocar nada. Cada 20 s es suficiente
-    // para una cocina y no castiga los datos móviles.
-    const cada = window.setInterval(cargar, 20_000)
-    return () => { vivo = false; window.clearInterval(cada) }
+    // Se refresca solo mientras la pantalla está abierta.
+    const cada = window.setInterval(cargar, 10_000)
+
+    // ⚠️ Y AL VOLVER A LA PANTALLA, que es lo que de verdad se nota: el
+    // cliente deja el móvil mientras espera su comida y vuelve al rato. Sin
+    // esto veía el estado de hace diez minutos y tenía que recargar a mano.
+    // Los navegadores además frenan los temporizadores en segundo plano, así
+    // que el intervalo por sí solo no basta.
+    const alVolver = () => { if (document.visibilityState === 'visible') cargar() }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => {
+      vivo = false
+      window.clearInterval(cada)
+      document.removeEventListener('visibilitychange', alVolver)
+    }
   }, [slug, orderId])
+
+  // Los datos para transferir, solo si aún hay algo que pagar.
+  const esperandoPago = pedido?.status === 'esperando_pago'
+  useEffect(() => {
+    if (!esperandoPago) return
+    getPaymentInfo(slug).then(setCuenta).catch(() => setCuenta(null))
+  }, [slug, esperandoPago])
+
+  const subir = async (elegido: File | undefined) => {
+    if (!elegido) return
+    setComprobante('subiendo')
+    setFalloComprobante(null)
+    try {
+      await uploadPaymentProof(slug, orderId, elegido)
+      setComprobante('listo')
+      // El pedido pasa a «pago en revisión»: se recarga para que la línea de
+      // tiempo lo refleje sin esperar al siguiente intervalo.
+      getOrder(slug, orderId).then(setPedido).catch(() => {})
+    } catch (error) {
+      setComprobante('ninguno')
+      setFalloComprobante(
+        error instanceof Error ? error.message : 'No pudimos subir tu comprobante',
+      )
+    }
+  }
+
+  const copiar = async (texto: string) => {
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado(texto)
+      setTimeout(() => setCopiado(''), 1800)
+    } catch { /* sin portapapeles: el número está a la vista igual */ }
+  }
 
   if (error) {
     return (
@@ -120,6 +178,63 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
           </p>
         )}
       </div>
+
+      {/* ── Lo que falta para que arranque ──
+          Va ARRIBA de la línea de tiempo a propósito: si el negocio está
+          esperando el comprobante, eso es lo único que importa ahora mismo. */}
+      {pedido.status === 'esperando_pago' && (
+        <section className="mt-5">
+          <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+            <Landmark size={15} />
+            Para transferir
+          </h2>
+          {cuenta && lineasBanco(cuenta).length > 0 && (
+            <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
+              {lineasBanco(cuenta).map(({ etiqueta, valor, copiable }) => (
+                <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-[13px] texto-tenue">{etiqueta}</span>
+                  <span className="flex items-center gap-2 text-right text-[14px] font-semibold">
+                    {String(valor)}
+                    {copiable && (
+                      <button onClick={() => copiar(String(valor))} aria-label={`Copiar ${etiqueta}`}>
+                        <Copy size={14} className={copiado === String(valor) ? 'text-marca' : 'texto-tenue'} />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 space-y-3">
+            <input
+              ref={archivo}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={event => void subir(event.target.files?.[0])}
+            />
+            <Boton
+              disabled={comprobante === 'subiendo'}
+              onClick={() => archivo.current?.click()}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <Upload size={17} />
+                {comprobante === 'subiendo' ? 'Subiendo…' : 'Subir comprobante'}
+              </span>
+            </Boton>
+            <p className="text-center text-[12px] texto-tenue">
+              También puedes enviarlo por WhatsApp si prefieres.
+            </p>
+            {falloComprobante && <Aviso tono="alerta">{falloComprobante}</Aviso>}
+          </div>
+        </section>
+      )}
+
+      {pedido.status === 'pago_en_revision' && (
+        <div className="mt-5">
+          <Aviso>Recibimos tu comprobante. {business.name} lo está revisando.</Aviso>
+        </div>
+      )}
 
       {cortado
         ? (

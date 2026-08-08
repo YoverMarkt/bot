@@ -142,18 +142,31 @@ export const siguientePaso = (pedido: Order): {
   status: OrderStatus; etiqueta: string; descripcion: string
 } | null => {
   const reparte = !pedido.fulfillment || pedido.fulfillment === 'delivery'
+
+  // ── Aceptar y preparar es UN paso ────────────────────────────────────────
+  //
+  // Eran dos: aceptar el pedido y después ponerlo en preparación. Para una
+  // cocina son la misma decisión —quien acepta es quien manda hacerlo—, y el
+  // paso intermedio dejaba al cliente mirando un «aceptado» que no le dice
+  // nada. Un toque menos por pedido, y el cliente ve «en preparación» en
+  // cuanto el dueño se ocupa de él.
+  //
+  // Rechazar sigue siendo la otra salida, por su propio botón.
   if (pedido.status === 'pendiente' || pedido.status === 'esperando_pago') return {
-    status: 'confirmado',
-    etiqueta: 'Aceptar pedido',
-    descripcion: 'Queda aceptado y entra en la cola de preparación.',
+    status: 'preparacion',
+    etiqueta: 'Aceptar y preparar',
+    descripcion: 'El cliente lo ve en preparación al instante.',
   }
-  // El comprobante ya está subido y alguien lo miró: aceptarlo confirma el
-  // pedido. Rechazarlo es la otra salida, y va por el botón de cancelar.
+  // Con el comprobante en revisión, aceptarlo es dar el pago por bueno Y
+  // arrancar. Es lo que de verdad hace el dueño cuando mira la transferencia.
   if (pedido.status === 'pago_en_revision') return {
-    status: 'confirmado',
-    etiqueta: 'Aceptar el pago',
-    descripcion: 'El comprobante cuadra: el pedido queda confirmado.',
+    status: 'preparacion',
+    etiqueta: 'Aceptar el pago y preparar',
+    descripcion: 'El comprobante cuadra: entra en la cocina.',
   }
+  // Los pedidos que ya venían aceptados de antes siguen su camino. No se
+  // crean nuevos en estos estados, pero los que existan tienen que poder
+  // avanzar: nadie se queda encallado por un cambio de flujo.
   if (pedido.status === 'confirmado' || pedido.status === 'aceptado') return {
     status: 'preparacion',
     etiqueta: 'Poner en preparación',
