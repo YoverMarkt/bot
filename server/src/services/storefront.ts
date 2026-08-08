@@ -204,16 +204,29 @@ export function storefrontStatus(input: {
 export const canOrder = (status: StorefrontStatus): boolean => status === 'abierta'
 
 /**
+ * Las formas con las que un nombre de grupo puede estar escrito.
+ *
  * «Sabor», «sabores» y «SABOR » son el mismo grupo escrito por dos manos
- * distintas: la pestaña vieja del panel y la nueva. Sin normalizar, el duplicado
- * se colaría por una tilde.
+ * distintas: la pestaña vieja del panel y la nueva. Sin esto el duplicado se
+ * cuela por una tilde o por un plural.
+ *
+ * ⚠️ NO se reduce a una única forma canónica, y no es por comodidad: en español
+ * no se puede sin diccionario. «sabores» sale de «sabor» (+es) y «bordes» de
+ * «borde» (+s) — las dos acaban en consonante + «es», así que cualquier regla
+ * fija acierta una y rompe la otra. Se probó: quitar «es» daba «bord», y quitar
+ * solo la «s» daba «sabore».
+ *
+ * Se generan las formas posibles y se pregunta si dos nombres comparten alguna.
+ * Es más barato que acertar el singular y no se equivoca en ninguno de los dos.
  */
-const normalizarGrupo = (valor: string): string => valor
-  .trim()
-  .toLocaleLowerCase('es')
-  .normalize('NFD')
-  .replace(/[̀-ͯ]/g, '')
-  .replace(/s$/, '')
+const formasDelNombre = (valor: string): Set<string> => {
+  const base = valor
+    .trim()
+    .toLocaleLowerCase('es')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+  return new Set([base, base.replace(/s$/, ''), base.replace(/es$/, '')])
+}
 
 /**
  * Junta catálogo, variantes y extras en la forma que consume la app: cada
@@ -371,7 +384,9 @@ export function buildStorefrontCatalog(input: {
 
     // Con qué nombres ya responde el motor nuevo para ESTE producto. Sirve para
     // no repetir abajo un grupo que ya salió arriba.
-    const nombresDeGrupo = new Set(optionGroups.map(grupo => normalizarGrupo(grupo.name)))
+    const formasDeGrupo = new Set(
+      optionGroups.flatMap(grupo => [...formasDelNombre(grupo.name)]),
+    )
 
     // Lo que se ofrece con ESTE producto: lo suyo primero, después lo de su
     // categoría. Se resuelve aquí contra el catálogo para que la app no tenga
@@ -436,7 +451,8 @@ export function buildStorefrontCatalog(input: {
         .filter((extra) => {
           if (vistos.has(extra.id)) return false
           vistos.add(extra.id)
-          return !nombresDeGrupo.has(normalizarGrupo(extra.group_label || 'Extras'))
+          return ![...formasDelNombre(extra.group_label || 'Extras')]
+            .some(forma => formasDeGrupo.has(forma))
         })
         .map(extra => ({
           id: extra.id,

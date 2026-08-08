@@ -444,7 +444,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             <span className="flex items-center gap-2">
               <Clock size={15} />
               {status === 'cerrada'
-                ? 'Ahora está cerrado. Puedes ver la carta y programar tu pedido.'
+                ? 'Ahora está cerrado. Puedes ver la carta y volver cuando abra.'
                 : 'La tienda no está recibiendo pedidos en este momento.'}
             </span>
           </Aviso>

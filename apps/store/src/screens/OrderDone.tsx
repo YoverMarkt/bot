@@ -26,7 +26,7 @@ export default function OrderDone({
   business: Business
   order: OrderResult
   resumen: { titulo: string; total: number | null }
-  /** Nulo en hospedaje, que no pregunta cómo se paga. */
+  /** Cómo dijo que iba a pagar. Solo `transferencia` enseña la cuenta. */
   paymentMethod?: PaymentMethod | null
   /** Cómo lo recibe: decide si el tiempo estimado incluye el reparto. */
   fulfillment?: Fulfillment | null
@@ -39,9 +39,16 @@ export default function OrderDone({
   const [falloComprobante, setFalloComprobante] = useState<string | null>(null)
   const archivo = useRef<HTMLInputElement>(null)
 
-  // Solo se piden datos bancarios a quien dijo que iba a transferir. Quien paga
-  // en efectivo no tiene por qué ver una cuenta ni un comprobante.
-  const vaATransferir = paymentMethod !== 'efectivo'
+  // Solo se piden datos bancarios a quien dijo que iba a TRANSFERIR.
+  //
+  // ⚠️ Se comprueba en positivo a propósito. Estaba escrito como
+  // `paymentMethod !== 'efectivo'`, y al añadir «pago al retirar» ese método
+  // pasó a contar como transferencia: al cliente se le enseñaba la cuenta
+  // bancaria y el subidor de comprobante, y si lo subía su pedido se iba a
+  // `pago_en_revision` esperando un pago que nunca iba a llegar por ahí.
+  // Con la lista en positivo, un método nuevo se queda fuera hasta que alguien
+  // decida a mano que va aquí, que es el fallo seguro.
+  const vaATransferir = paymentMethod === 'transferencia'
 
   useEffect(() => {
     if (!vaATransferir) return

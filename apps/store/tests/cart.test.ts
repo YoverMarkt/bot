@@ -537,6 +537,23 @@ describe('un adicional es una línea propia', () => {
     expect(optionPriceLabel(grupo(), -0.5)).toEqual({ incluida: false, amount: -0.5 })
   })
 
+  // ── Lo que se descubrió revisando ───────────────────────────────────────
+
+  it('un grupo OPCIONAL de una sola opción se puede desmarcar', () => {
+    // Regresión encontrada en la revisión: al pasar de casilla a radio, un
+    // «Borde mozzarella +$4.99» opcional se quedaba puesto para siempre. El
+    // comportamiento vive en ProductSheet, pero la regla que lo decide es esta.
+    const opcional = grupo({
+      selectionType: 'multiple', maxSelectable: 1, required: false, minSelectable: 0,
+    })
+    expect(singleChoice(opcional)).toBe(true)
+    expect(opcional.required || opcional.minSelectable > 0).toBe(false)
+
+    // En uno obligatorio no se puede deshacer: quedaría sin cumplir.
+    const obligatorio = grupo({ selectionType: 'single', required: true, minSelectable: 1 })
+    expect(obligatorio.required || obligatorio.minSelectable > 0).toBe(true)
+  })
+
   // ── Píldoras o lista ────────────────────────────────────────────────────
 
   const opcionesDe = (...nombres: string[]) => nombres.map((name, i) => ({
