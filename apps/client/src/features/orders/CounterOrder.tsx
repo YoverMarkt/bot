@@ -10,7 +10,7 @@
 //
 // Aquí no se calcula dinero que valga: el total que se ve mientras se arma el
 // pedido es orientativo, y el oficial lo devuelve el servidor (regla #8).
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Trash2 } from 'lucide-react'
@@ -33,16 +33,20 @@ export default function CounterOrder({ onListo }: { onListo: () => void }) {
 
   const { data: productos = [] } = useQuery({ queryKey: ['products'], queryFn: getProducts })
 
-  const precio = (id: string) => {
+  // `useCallback` para que el linter vea que solo depende de `productos`.
+  // Sin esto se redefinía en cada render y el `useMemo` de abajo la avisaba
+  // como dependencia que falta: el código era correcto —`productos` sí estaba
+  // en su lista— pero el aviso salía en cada compilación.
+  const precio = useCallback((id: string) => {
     const producto = productos.find(item => item.id === id)
     if (!producto) return 0
     const oferta = Number(producto.price_sale)
     return oferta > 0 ? oferta : Number(producto.price) || 0
-  }
+  }, [productos])
 
   const estimado = useMemo(
     () => lineas.reduce((suma, linea) => suma + precio(linea.product_id) * linea.quantity, 0),
-    [lineas, productos],
+    [lineas, precio],
   )
 
   const registrar = useMutation({
