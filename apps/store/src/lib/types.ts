@@ -22,6 +22,8 @@ export interface Business {
   brandColor: string | null
   /** Logo del negocio, ya subido a Cloudinary. Nulo = solo el nombre. */
   logoUrl: string | null
+  /** Portada a sangre de la tienda. Nulo = cabecera de tinta, sin hueco roto. */
+  coverUrl: string | null
   /** Costo fijo de envío a domicilio. Informativo: el oficial lo calcula la base. */
   deliveryFee: number
   /** Minutos hasta tener el pedido listo. Lo pone el dueño en su panel. */

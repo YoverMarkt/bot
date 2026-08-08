@@ -18,7 +18,7 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
-  delivery_fee: number | null; brand_color: string | null; logo_url: string | null; takes_orders?: boolean
+  delivery_fee: number | null; brand_color: string | null; logo_url: string | null; cover_url: string | null; takes_orders?: boolean
   prep_time_minutes: number | null; delivery_extra_minutes: number | null
 }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
@@ -185,28 +185,36 @@ export function BusinessForm() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
   const [draft, setDraft] = useState<Partial<BusinessData> | null>(null)
-  const [subiendoLogo, setSubiendoLogo] = useState(false)
+  const [subiendo, setSubiendo] = useState<'logo_url' | 'cover_url' | null>(null)
   const logoInput = useRef<HTMLInputElement>(null)
+  const portadaInput = useRef<HTMLInputElement>(null)
   const f = draft ?? data
 
   // Se reutiliza la subida del catálogo: mismo endpoint, que ya valida tipo y
   // tamaño y sube a Cloudinary bajo el business_id del JWT. Aquí solo se guarda
   // la URL que devuelve; el negocio nunca ve credenciales.
-  const subirLogo = async (archivo: File | undefined) => {
+  //
+  // Las dos imágenes comparten manejador porque siguen la misma regla: dos
+  // copias de esto se desincronizan en cuanto cambie el límite de tamaño.
+  const subirImagen = async (
+    campo: 'logo_url' | 'cover_url',
+    etiqueta: string,
+    archivo: File | undefined,
+  ) => {
     if (!archivo || !f) return
-    setSubiendoLogo(true)
+    setSubiendo(campo)
     try {
       if (archivo.size > MEDIA_LIMITS.image) {
-        toast.error(`El logo supera ${fmtMB(MEDIA_LIMITS.image)}`)
+        toast.error(`${etiqueta} supera ${fmtMB(MEDIA_LIMITS.image)}`)
         return
       }
       const subida = await uploadMedia(archivo)
-      setDraft({ ...f, logo_url: subida.url })
-      toast.success('Logo listo — pulsa Guardar para aplicarlo')
+      setDraft({ ...f, [campo]: subida.url })
+      toast.success(`${etiqueta} lista — pulsa Guardar para aplicarla`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo subir el logo')
+      toast.error(error instanceof Error ? error.message : `No se pudo subir ${etiqueta.toLowerCase()}`)
     } finally {
-      setSubiendoLogo(false)
+      setSubiendo(null)
     }
   }
 
@@ -221,6 +229,7 @@ export function BusinessForm() {
         delivery_fee: Number(f?.delivery_fee) || 0,
         brand_color: f?.brand_color || null,
         logo_url: f?.logo_url || null,
+        cover_url: f?.cover_url || null,
         prep_time_minutes: Number(f?.prep_time_minutes) || 25,
         // Cero es legítimo aquí —entrego en mi cuadra—, así que no se puede
         // usar `||`: convertiría un 0 guardado a propósito en 10.
@@ -316,10 +325,10 @@ export function BusinessForm() {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={e => void subirLogo(e.target.files?.[0])}
+                  onChange={e => void subirImagen('logo_url', 'El logo', e.target.files?.[0])}
                 />
-                <Button variant="outline" size="sm" disabled={subiendoLogo} onClick={() => logoInput.current?.click()}>
-                  {subiendoLogo ? 'Subiendo…' : f.logo_url ? 'Cambiar logo' : 'Subir logo'}
+                <Button variant="outline" size="sm" disabled={subiendo === 'logo_url'} onClick={() => logoInput.current?.click()}>
+                  {subiendo === 'logo_url' ? 'Subiendo…' : f.logo_url ? 'Cambiar logo' : 'Subir logo'}
                 </Button>
                 {f.logo_url && (
                   <Button variant="outline" size="sm" onClick={() => setDraft({ ...f, logo_url: null })}>
@@ -330,6 +339,39 @@ export function BusinessForm() {
             </div>
             <p className="text-[11px] text-muted-foreground/80 mt-1">
               Se ve en la cabecera de tu mini app. Cuadrado se ve mejor. Recuerda guardar los cambios.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="business-cover">Portada de tu tienda</Label>
+            <div className="flex items-center gap-3">
+              <div className="h-14 w-24 shrink-0 overflow-hidden rounded-xl border bg-muted">
+                {f.cover_url
+                  ? <img src={f.cover_url} alt="Portada de tu tienda" className="size-full object-cover" />
+                  : <div className="flex size-full items-center justify-center text-[10px] text-muted-foreground">Sin portada</div>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  id="business-cover"
+                  ref={portadaInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => void subirImagen('cover_url', 'La portada', e.target.files?.[0])}
+                />
+                <Button variant="outline" size="sm" disabled={subiendo === 'cover_url'} onClick={() => portadaInput.current?.click()}>
+                  {subiendo === 'cover_url' ? 'Subiendo…' : f.cover_url ? 'Cambiar portada' : 'Subir portada'}
+                </Button>
+                {f.cover_url && (
+                  <Button variant="outline" size="sm" onClick={() => setDraft({ ...f, cover_url: null })}>
+                    Quitar
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 mt-1">
+              La foto grande del encabezado, detrás de tu logo. Apaisada se ve mejor.
+              Sin portada, la cabecera queda en negro. Recuerda guardar los cambios.
             </p>
           </div>
 

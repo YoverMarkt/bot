@@ -40,6 +40,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   >(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  // Una portada que no carga se descarta: mejor la cabecera de siempre que el
+  // icono de imagen rota como primera impresión de la tienda.
+  const [portadaRota, setPortadaRota] = useState(false)
   // Cómo lo recibe. Vive AQUÍ y no en el carrito porque ahora se elige en la
   // portada: los dos sitios tienen que enseñar y cambiar lo mismo.
   const [entrega, setEntrega] = useState<Fulfillment>(ENTREGA_POR_DEFECTO)
@@ -238,6 +241,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const total = orderTotal(lineas, entrega, business.deliveryFee)
   const unidades = cartCount(lineas)
   const horario = catalogo.todaysHours
+  const portada = portadaRota ? null : business.coverUrl
   const abierto = status === 'abierta'
 
   // ── La tarjeta de la rejilla ──────────────────────────────────────────────
@@ -301,7 +305,29 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       {/* ── Portada del local ── */}
       {/* Lo primero que confirma al cliente que abrió el sitio correcto: quién
           es, si está abierto y cuánto cuesta que se lo lleven. */}
-      <header className="tinta rounded-b-[1.75rem] px-5 pt-seguro pb-5">
+      <header className="tinta relative overflow-hidden rounded-b-[1.75rem] pt-seguro">
+        {/* La foto del local, a sangre y detrás de todo. Sin portada la
+            cabecera se queda como estaba —bloque de tinta— en vez de dejar un
+            hueco: hoy ningún negocio tiene una cargada. */}
+        {portada && (
+          <>
+            <img
+              src={portada}
+              alt=""
+              // Si la imagen no carga —el dueño la borró de Cloudinary, o la
+              // conexión falla— se retira en vez de dejar el icono de imagen
+              // rota presidiendo la tienda. La cabecera vuelve a ser el bloque
+              // de tinta, que es un estado digno.
+              onError={() => setPortadaRota(true)}
+              className="absolute inset-0 size-full object-cover"
+            />
+            {/* El degradado no es decoración: sin él, una foto clara deja el
+                nombre blanco ilegible, y el negocio no controla qué sube. */}
+            <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/55 to-black/25" />
+          </>
+        )}
+
+        <div className={`relative px-5 pb-5 ${portada ? 'pt-24' : ''}`}>
         <div className="flex items-center gap-3">
           {onVolver && (
             <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
@@ -312,7 +338,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             <img
               src={business.logoUrl}
               alt=""
-              className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover"
+              className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/25"
             />
           )}
           <div className="min-w-0 flex-1">
@@ -380,6 +406,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               <span className={entrega === id ? 'opacity-70' : 'opacity-60'}>{detalle}</span>
             </button>
           ))}
+        </div>
         </div>
       </header>
 

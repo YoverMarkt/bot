@@ -245,6 +245,7 @@ describe('la tienda del negocio', () => {
         capabilities: { orders: true, lodging: false },
         brandColor: null,
         logoUrl: null,
+        coverUrl: null,
         deliveryFee: 0,
         // Sin valor en la base se cae al defecto en vez de publicar `null`:
         // la portada tiene que poder decir un tiempo siempre.
@@ -275,6 +276,17 @@ describe('la tienda del negocio', () => {
       expect(
         publicBusiness(negocio({ brand_color: 'red;background:url(x)' })).brandColor,
       ).toBeNull()
+    })
+
+    // La portada acaba en el mismo <img> público que el logo, así que pasa por
+    // el mismo filtro. Se comprueba aparte porque son dos columnas: arreglar
+    // una y olvidar la otra deja el agujero abierto por el lado nuevo.
+    it('solo publica una portada servida por https', () => {
+      expect(publicBusiness(negocio({ cover_url: 'https://cdn/portada.jpg' })).coverUrl)
+        .toBe('https://cdn/portada.jpg')
+      expect(publicBusiness(negocio({ cover_url: 'http://cdn/portada.jpg' })).coverUrl).toBeNull()
+      expect(publicBusiness(negocio({ cover_url: 'javascript:alert(1)' })).coverUrl).toBeNull()
+      expect(publicBusiness(negocio({ cover_url: '' })).coverUrl).toBeNull()
     })
 
     // El logo acaba en un <img> de una app pública: nada de http ni javascript:.

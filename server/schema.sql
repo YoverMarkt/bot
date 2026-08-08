@@ -7856,3 +7856,30 @@ begin
   return to_jsonb(v_business);
 end;
 $$;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- PORTADA DEL NEGOCIO — la imagen a sangre de su mini app
+--
+-- Va junto a logo_url y brand_color. Mismo CHECK que el logo (solo https): las
+-- dos acaban en un <img> de una app pública, y dos reglas distintas para el
+-- mismo riesgo se desincronizan (migration-2026-08-07-portada-negocio.sql).
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table public.businesses
+  add column if not exists cover_url text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.businesses'::regclass and conname = 'businesses_cover_check'
+  ) then
+    alter table public.businesses add constraint businesses_cover_check check (
+      cover_url is null or cover_url ~ '^https://'
+    );
+  end if;
+end;
+$$;
+
+comment on column public.businesses.cover_url is
+  'Imagen de portada de la mini app, subida a Cloudinary. Solo https.';

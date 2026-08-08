@@ -48,8 +48,17 @@ El diagrama recorre el viaje entero, de WhatsApp a la entrega:
 De arriba abajo:
 
 - **Portada** a sangre completa, con el **logo** del negocio superpuesto.
-  ⚠️ **No construida:** no existe columna `cover_url`. Hoy la cabecera es un
-  bloque de tinta con el logo y el nombre. Requiere migración.
+  Construida el 2026-08-07: `businesses.cover_url`, que el dueño sube desde
+  `Ajustes → Tu tienda` con el mismo camino que el logo (Cloudinary) y el mismo
+  CHECK (**solo https** — acaba en un `<img>` de una app pública, y dos reglas
+  distintas para el mismo riesgo se desincronizan).
+  · **Sin portada la cabecera se queda como estaba**, en bloque de tinta, en vez
+    de dejar un hueco.
+  · El **degradado sobre la foto no es decoración**: sin él, una portada clara
+    deja el nombre blanco ilegible, y el negocio elige qué sube.
+  · Si la imagen **no carga** —el dueño la borró de Cloudinary— se retira sola y
+    vuelve la cabecera de tinta: el icono de imagen rota no puede ser la primera
+    impresión de la tienda. Verificado con una URL inexistente.
 - **Nombre** del negocio en grande, y debajo el **estado**: una píldora verde
   `Abierto` o gris `Cerrado`, con el horario del día al lado
   (`09:00 – 01:00`). El horario sale de `todaysHours` (ver más abajo).
