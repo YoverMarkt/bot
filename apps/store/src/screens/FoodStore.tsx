@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { createAddress, createOrder, getCatalog, getMe } from '../lib/api'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, orderTotal, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, lineKey, orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
 import { money, rangoDeEspera } from '../lib/format'
