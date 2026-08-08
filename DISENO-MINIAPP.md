@@ -188,10 +188,14 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
 
 - **Check verde grande** centrado.
 - `¡Pedido confirmado!` y una línea explicando que el negocio ya lo recibió.
-- **Número de pedido** destacado en el color de marca.
-- Tiempo estimado.
-- Tres acciones, en este orden: `Seguir pedido` (principal), `Compartir por
-  WhatsApp` (verde de WhatsApp, con su icono), `Volver al menú` (secundario).
+- **Número de pedido** destacado en el color de marca. Sale de
+  `orders.order_number` (ver «El número de pedido», más abajo).
+- **Tiempo estimado**, con el mismo cálculo que la portada: preparación más
+  reparto solo si se lo llevan.
+- Acciones: `Escribir por WhatsApp` y `Volver al menú`.
+  ⚠️ **`Seguir pedido` no está** y es a propósito: la pantalla de seguimiento
+  todavía no existe, y un botón que no lleva a ninguna parte se siente roto.
+  Entra cuando exista.
 
 ## 6. Seguimiento
 
@@ -215,6 +219,31 @@ dos cosas no pueden ser ciertas a la vez. Es el mismo cruce de medianoche que
 ya resolvía `isOutsideHours`, y las dos funciones tienen que contar la misma
 historia — hay una prueba que lo exige. El horario real de Monster Pizza es
 justamente `09:00 – 01:00`, así que este caso no es teórico.
+
+---
+
+## El número de pedido
+
+`orders.order_number`, **correlativo por negocio desde 1**. Es lo que el cliente
+dicta por teléfono y lo que el dueño canta en la cocina; un UUID no sirve para
+ninguna de las dos cosas.
+
+Lo asigna un **trigger** (`orders_assign_number`), no cada función que crea
+pedidos: hoy hay dos caminos —bot/mostrador y mini app— y el Marketplace será un
+tercero. Numerar dentro de cada función obliga a acordarse cada vez que aparezca
+una vía nueva, y el día que se olvide, el pedido nace sin número sin que nada
+falle.
+
+⚠️ **El contador vive en `businesses.last_order_number` y se mueve con
+`update … returning`, que es atómico.** `max(order_number)+1` tiene una carrera:
+dos pedidos a la vez leen el mismo máximo y se llevan el mismo número. El índice
+único `(business_id, order_number)` es el cinturón.
+
+**Contra duplicados manda `idempotency_key`, no el número.** El número es para
+las personas; la llave técnica que impide dos comandas por un doble toque sigue
+siendo la clave por carrito, y un pedido repetido devuelve **el mismo número**.
+Es lo que necesita el Marketplace: identificar el pedido sin depender del nombre
+del cliente ni de la hora.
 
 ---
 
