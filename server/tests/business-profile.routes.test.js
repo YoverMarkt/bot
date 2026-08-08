@@ -145,6 +145,45 @@ describe('identidad y políticas del negocio', () => {
     })
   })
 
+  // ── Los tiempos del negocio ──────────────────────────────────────────────
+  //
+  // ⚠️ Una cadena VACÍA no es un cero. `Number('')` vale 0, así que un campo
+  // que llegue vacío guardaba 0 en silencio y el negocio se quedaba prometiendo
+  // la comida sin sumar el reparto sin haberlo pedido nunca. Se descubrió
+  // verificando contra producción: arreglarlo solo en el formulario no bastaba,
+  // porque la API la seguía aceptando.
+  it('un tiempo vacío se rechaza en vez de guardarse como cero', async () => {
+    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+
+    for (const cuerpo of [
+      { delivery_extra_minutes: '' },
+      { delivery_extra_minutes: '   ' },
+      { delivery_extra_minutes: null },
+      { prep_time_minutes: '' },
+    ]) {
+      const response = await dispatch('put', '/api/client/business', {
+        auth: authorization(),
+        body: cuerpo,
+      })
+      expect(response.status, JSON.stringify(cuerpo)).toBe(400)
+    }
+    expect(updateBusiness).not.toHaveBeenCalled()
+  })
+
+  it('un cero escrito a propósito SÍ se guarda en el tiempo de entrega', async () => {
+    // Es legítimo: un negocio que solo atiende su cuadra entrega en lo que
+    // tarda en cruzar la calle. Solo se rechaza lo que no es un número.
+    const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+
+    const response = await dispatch('put', '/api/client/business', {
+      auth: authorization(),
+      body: { delivery_extra_minutes: 0 },
+    })
+
+    expect(response.status).toBe(200)
+    expect(updateBusiness).toHaveBeenCalledWith('business-a', { delivery_extra_minutes: 0 })
+  })
+
   it('no confirma errores de Supabase al actualizar la identidad', async () => {
     const updateBusiness = vi.spyOn(db, 'updateBusiness')
       .mockResolvedValue({ error: { message: 'detalle interno' } })
