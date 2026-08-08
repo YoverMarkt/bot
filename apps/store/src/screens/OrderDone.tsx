@@ -20,7 +20,7 @@ const lineasBanco = (cuenta: BankAccount) => [
 ].filter(linea => Boolean(linea.valor))
 
 export default function OrderDone({
-  slug, business, order, resumen, paymentMethod, fulfillment, onVolverAlMenu,
+  slug, business, order, resumen, paymentMethod, fulfillment, onVolverAlMenu, onSeguirPedido,
 }: {
   slug: string
   business: Business
@@ -32,6 +32,8 @@ export default function OrderDone({
   fulfillment?: Fulfillment | null
   /** Volver a la carta. Ausente en hospedaje, que no tiene menú al que volver. */
   onVolverAlMenu?: () => void
+  /** Abrir el seguimiento. Sin id de pedido no hay nada que seguir. */
+  onSeguirPedido?: () => void
 }) {
   const [cuenta, setCuenta] = useState<BankAccount | null>(null)
   const [copiado, setCopiado] = useState('')
@@ -222,6 +224,9 @@ export default function OrderDone({
           carta. «Seguir pedido» no está porque la pantalla de seguimiento aún
           no existe: un botón que no lleva a ninguna parte se siente roto. */}
       <div className="mt-6 space-y-2.5">
+        {onSeguirPedido && (
+          <Boton onClick={onSeguirPedido}>Seguir pedido</Boton>
+        )}
         {whatsapp && (
           <a href={whatsapp} className="block">
             <Boton variante={cuenta ? 'principal' : 'linea'}>

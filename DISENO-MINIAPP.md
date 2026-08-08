@@ -213,8 +213,30 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
 ## 6. Seguimiento
 
 - **Línea de tiempo vertical** con un punto por estado y la hora al lado.
-- Los cumplidos, en verde y con su hora. Los pendientes, en gris y con `--:--`.
+- Los cumplidos, en verde y con su hora. Los pendientes, en gris y con `--:--`
+  —el hueco vacío se lee como un dato que falta; `--:--` dice «todavía no».
 - El estado actual, destacado.
+
+**Los estados internos son DOCE, y al cliente se le enseñan cinco.** No le
+sirve saber que su pedido está en `aceptado` y no en `confirmado`: le sirve
+saber si su comida está hecha y si viene en camino. Los que solo importan al
+dueño se pliegan sobre el hito que representan.
+
+⚠️ **`en_camino` y `listo_para_retiro` son el MISMO paso** contado de dos
+maneras: a quien le llevan el pedido le importa que salió; a quien lo recoge,
+que ya puede pasar. El cuarto hito cambia con el modo de entrega, en vez de
+enseñar los dos y dejar uno siempre gris.
+
+⚠️ **«Recibido» no sale de `order_events`.** El pedido NACE en `pendiente` y
+solo se anotan los CAMBIOS de estado, así que ese hito no tiene evento: su hora
+es la de creación, que es literalmente cuando se recibió. Sin eso, el primer
+paso salía con `--:--` estando cumplido — justo el que el cliente sabe seguro.
+
+**Quién puede verlo:** exige la sesión del enlace, y el filtro es negocio +
+**teléfono de la sesión** + id del pedido. Nunca el número correlativo: ese es
+#1, #2, #3… y se adivina de corrido. Un pedido ajeno devuelve el MISMO 404 que
+uno inexistente — si distinguiera los dos casos, se podría averiguar qué
+pedidos tiene el vecino.
 
 ---
 

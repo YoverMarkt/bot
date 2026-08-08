@@ -2,6 +2,7 @@ import { clearToken, deviceId, readToken } from './session'
 import type {
   Address, BankAccount, Catalog, Business, CartLine,
   Fulfillment, Me, OrderResult, PaymentMethod, StayQuote, StayRequest, StoreStatus,
+  TrackedOrder,
 } from './types'
 
 /**
@@ -75,6 +76,10 @@ export const getStore = (slug: string) =>
 export const getCatalog = (slug: string) => request<Catalog>(`/${slug}/catalog`)
 
 export const getMe = (slug: string) => request<Me>(`/${slug}/me`)
+
+/** El pedido del cliente con su línea de tiempo. Exige la sesión del enlace. */
+export const getOrder = (slug: string, orderId: string) =>
+  request<TrackedOrder>(`/${slug}/orders/${encodeURIComponent(orderId)}`)
 
 export const getPaymentInfo = (slug: string) => request<BankAccount>(`/${slug}/payment-info`)
 

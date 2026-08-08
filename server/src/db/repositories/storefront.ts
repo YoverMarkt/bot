@@ -266,6 +266,46 @@ const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
   return (data || []).length === 1
 }
 
+/**
+ * El pedido de un cliente, con su línea de tiempo, para la pantalla de
+ * seguimiento.
+ *
+ * ⚠️ Se filtra por NEGOCIO **y por TELÉFONO de la sesión**, no solo por el id
+ * del pedido. Sin el teléfono, cualquiera con una sesión válida de esta tienda
+ * podría leer el pedido de otro cliente —con su nombre y su dirección— probando
+ * identificadores. Es la misma regla del resto de la tienda: el enlace
+ * identifica a UNA persona, y solo ve lo suyo.
+ *
+ * Devuelve lo justo para pintar el seguimiento: ni la dirección completa ni el
+ * comprobante, que no hacen falta para saber por dónde va.
+ */
+const getStorefrontOrder = async (input: {
+  businessId: string
+  contactPhone: string
+  orderId: string
+}) => {
+  const { data, error } = await db
+    .from('orders')
+    .select('id,order_number,status,total,currency,fulfillment,created_at')
+    .eq('business_id', input.businessId)
+    .eq('contact_phone', input.contactPhone)
+    .eq('id', input.orderId)
+    .maybeSingle()
+  if (error) return { data: null, error }
+  if (!data) return { data: null, error: null }
+
+  // El historial que ya se guardaba en cada cambio de estado. Sin él, «¿cuándo
+  // se confirmó?» solo se responde mirando `updated_at`, que se pisa siempre.
+  const eventos = await db
+    .from('order_events')
+    .select('to_status,created_at')
+    .eq('business_id', input.businessId)
+    .eq('order_id', input.orderId)
+    .order('created_at', { ascending: true })
+
+  return { data: { ...data, events: eventos.data || [] }, error: null }
+}
+
 export = {
   resolveCustomer,
   claimStorefrontLinkSend,
@@ -279,5 +319,6 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   createStorefrontOrder,
+  getStorefrontOrder,
   attachStorefrontPaymentProof,
 }
