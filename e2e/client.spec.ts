@@ -332,8 +332,11 @@ test('un pedido recorre confirmación, preparación y reparto sin generar cobros
     await expect.poll(() => statusPayload).toEqual({ status: esperado })
   }
 
-  await avanzar('Aceptar pedido', 'confirmado')
-  await avanzar('Poner en preparación', 'preparacion')
+  // ⚠️ Aceptar y preparar es UN paso desde el 2026-08-08. Eran dos —aceptar y
+  // luego poner en preparación— y para una cocina son la misma decisión: quien
+  // acepta es quien manda hacerlo. El paso intermedio dejaba al cliente
+  // mirando un «aceptado» que no duraba nada.
+  await avanzar('Aceptar y preparar', 'preparacion')
   await avanzar('Marcar en camino', 'en_camino')
   await avanzar('Marcar entregado', 'completado')
 })

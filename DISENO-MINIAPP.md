@@ -197,7 +197,21 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
   simulacros — falla cuando un cliente intenta pedir. Pasó.
 - Botón `Continuar` fijo abajo.
 
-## 5. Confirmación
+## 5. Pedido realizado
+
+⚠️ **La pantalla de confirmación se RETIRÓ el 2026-08-08.** Decía «¡Pedido
+confirmado!» en el instante de crearlo, cuando el estado real era `pendiente` y
+el negocio no lo había mirado: le prometía al cliente un compromiso que nadie
+había dado. Y era **estática** —no consultaba nada—, así que había que recargar
+para enterarse de cualquier cambio.
+
+Ahora el pedido va **directo al seguimiento**, que dice la verdad y se
+actualiza solo. Todo lo que estaba en la confirmación vive allí: el número, el
+tiempo estimado, los datos para transferir y el subidor de comprobante.
+
+### Lo que decía la referencia (conservado como historia)
+
+## 5-bis. Confirmación
 
 - **Check verde grande** centrado.
 - `¡Pedido confirmado!` y una línea explicando que el negocio ya lo recibió.

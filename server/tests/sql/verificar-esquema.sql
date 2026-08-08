@@ -436,6 +436,54 @@ begin
     end if;
   end;
 
+  -- ── 3b-ter. El flujo del pedido, contado como es ─────────────────────────
+  -- Quien va a TRANSFERIR nace esperando el pago, no «pendiente»: el dueño
+  -- tiene que poder distinguir a quien le pagará en la puerta de aquel del que
+  -- aún no ha visto un centavo.
+  declare
+    v_transfer jsonb;
+    v_efectivo jsonb;
+    v_estado text;
+    v_paso jsonb;
+  begin
+    v_transfer := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
+      null, 'transferencia'
+    );
+    select status into v_estado from public.orders where id = (v_transfer ->> 'id')::uuid;
+    if v_estado is distinct from 'esperando_pago' then
+      raise exception 'una transferencia debía nacer esperando el pago, nació en %', v_estado;
+    end if;
+
+    v_efectivo := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
+      null, 'efectivo'
+    );
+    select status into v_estado from public.orders where id = (v_efectivo ->> 'id')::uuid;
+    if v_estado is distinct from 'pendiente' then
+      raise exception 'un pedido en efectivo debía nacer pendiente, nació en %', v_estado;
+    end if;
+
+    -- «Aceptar y preparar» es UN paso: desde el comprobante en revisión se
+    -- puede ir directo a la cocina. Antes estaba prohibido a propósito.
+    v_paso := public.set_order_status(
+      v_business, (v_transfer ->> 'id')::uuid, 'pago_en_revision');
+    v_paso := public.set_order_status(
+      v_business, (v_transfer ->> 'id')::uuid, 'preparacion');
+    if v_paso ->> 'result' is distinct from 'updated' then
+      raise exception '«aceptar y preparar» desde pago_en_revision falló: %', v_paso ->> 'result';
+    end if;
+
+    -- Y lo que sigue prohibido, sigue prohibido: nada retrocede.
+    v_paso := public.set_order_status(
+      v_business, (v_transfer ->> 'id')::uuid, 'pendiente');
+    if v_paso ->> 'result' is distinct from 'invalid_transition' then
+      raise exception 'un pedido en preparación pudo volver a pendiente: %', v_paso ->> 'result';
+    end if;
+  end;
+
   -- ── 3c. El envío lo pone la BASE, no el teléfono ─────────────────────────
   -- Si el costo de envío se calculara en la app, cualquiera pediría con envío
   -- $0 tocando el JavaScript. Aquí sale de la ficha del negocio.
