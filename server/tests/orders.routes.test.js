@@ -145,6 +145,82 @@ describe('GET /api/client/orders', () => {
     }
   })
 
+  // ── La consulta que alimenta la alarma ────────────────────────────────────
+  //
+  // Lo que espera al negocio son DOS estados: un pedido nuevo y un comprobante
+  // por revisar. Mientras esto aceptó uno solo, la alarma vigilaba «pendiente»
+  // y no sonaba con ningún pedido pagado por transferencia — que desde el
+  // 2026-08-08 nacen en `esperando_pago` y pasan a `pago_en_revision`.
+  it('acepta varios estados separados por comas', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({
+      authorization,
+      query: { status: 'pendiente,pago_en_revision' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(getOrders).toHaveBeenCalledWith('business-a', 100, ['pendiente', 'pago_en_revision'])
+  })
+
+  it('rechaza la lista entera si uno de los estados no existe', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({
+      authorization,
+      query: { status: 'pendiente,inventado' },
+    })
+
+    expect(response.status).toBe(400)
+    // Ni siquiera se consulta lo válido: una lista a medias devolvería datos
+    // incompletos que el panel daría por completos.
+    expect(getOrders).not.toHaveBeenCalled()
+  })
+
+  it('no repite un estado que venga varias veces', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({
+      authorization,
+      query: { status: 'pendiente,pendiente,pago_en_revision,pendiente' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(getOrders).toHaveBeenCalledWith('business-a', 100, ['pendiente', 'pago_en_revision'])
+  })
+
+  it('rechaza una lista vacía en vez de traerlo todo', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    // `?status=,` pidió filtrar y no nombró ninguno. Colarlo como «sin filtro»
+    // devolvería los 100 pedidos del negocio a la vigilancia que corre cada
+    // doce segundos.
+    const response = await dispatch({ authorization, query: { status: ',' } })
+
+    expect(response.status).toBe(400)
+    expect(getOrders).not.toHaveBeenCalled()
+  })
+
   it('rechaza un estado desconocido en vez de consultarlo', async () => {
     const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
     const authorization = `Bearer ${token({

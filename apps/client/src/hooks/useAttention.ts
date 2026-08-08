@@ -34,6 +34,21 @@ export type AttentionOrder = {
   created_at: string
 }
 
+/**
+ * Los estados de pedido que hacen sonar la alarma.
+ *
+ * ⚠️ Aquí estaba el fallo del 2026-08-08, y no falló nada al compilar: la
+ * alarma vigilaba solo `pendiente`, pero desde el día anterior quien paga por
+ * transferencia nace en `esperando_pago` y, al subir su comprobante, pasa a
+ * `pago_en_revision`. Ninguno de los dos era `pendiente`, así que el negocio
+ * no se enteraba de un pedido pagado.
+ *
+ * `esperando_pago` NO entra a propósito: el dueño no puede hacer nada mientras
+ * el cliente no pague, y una alarma que suena cuando no hay nada que hacer
+ * enseña a ignorarla. Ese pedido sí se ve en la lista, con su etiqueta.
+ */
+export const VIGILADOS = ['pendiente', 'pago_en_revision'] as const
+
 export function useAttention(opts: {
   watchSessions: boolean
   watchBookings: boolean
@@ -64,7 +79,9 @@ export function useAttention(opts: {
   // filtrado por estado, así que el pago en datos es mínimo.
   const { data: orders = [], isSuccess: ordersLoaded } = useQuery({
     queryKey: ['orders-watch'],
-    queryFn: () => api<AttentionOrder[]>('/api/client/orders?status=pendiente'),
+    queryFn: () => api<AttentionOrder[]>(
+      `/api/client/orders?status=${VIGILADOS.join(',')}`,
+    ),
     refetchInterval: 12_000,
     refetchIntervalInBackground: true,
     enabled: opts.watchOrders === true,
@@ -75,8 +92,12 @@ export function useAttention(opts: {
   const pendingLodging = lodgingRequests.filter(request => request.status === 'pending_owner')
   // La alarma vive en el Layout: si la respuesta no fuera una lista, el dueño
   // perdería el panel entero, no solo los pedidos.
+  //
+  // Se vuelve a filtrar por los MISMOS estados que se pidieron: la consulta ya
+  // llega filtrada, pero una respuesta con otro estado —una versión vieja del
+  // servidor— haría sonar la alarma por algo que no la merece.
   const pendingOrders = Array.isArray(orders)
-    ? orders.filter(order => order.status === 'pendiente')
+    ? orders.filter(order => (VIGILADOS as readonly string[]).includes(order.status))
     : []
 
   // `ordersLoaded` distingue «todavía no cargó» de «cargó y no hay ninguno»:

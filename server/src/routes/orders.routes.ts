@@ -23,7 +23,11 @@ interface ModuloDb {
     order: Record<string, unknown>,
     items: Record<string, unknown>[],
   ): Promise<{ data?: unknown; error?: { message?: string; code?: string } | null }>
-  getOrders(businessId: string, limit?: number, status?: string | null): Promise<unknown>
+  getOrders(
+    businessId: string,
+    limit?: number,
+    status?: string | string[] | null,
+  ): Promise<unknown>
   getOrderProof(businessId: string, orderId: string): Promise<{
     payment_proof_url?: string | null
     payment_proof_public_id?: string | null
@@ -82,11 +86,27 @@ router.get(
   async (req, res) => {
     // authClient garantiza estos claims; nunca se acepta businessId del request.
     const businessId = getClientBusinessId(req)
-    const status = req.query.status === undefined ? null : String(req.query.status)
-    if (status !== null && !ESTADOS_PEDIDO.includes(status as typeof ESTADOS_PEDIDO[number])) {
+    // Se admite una lista separada por comas porque lo que espera al negocio
+    // son DOS estados —un pedido nuevo y un comprobante por revisar—, y la
+    // alarma tiene que verlos de una sola consulta. Con uno solo se quedó
+    // ciega el 2026-08-08.
+    // Se deduplica: pedir doce veces el mismo estado no significa nada, y sin
+    // esto una petición podía llevar cientos de repeticiones a la consulta.
+    // Los estados posibles son doce contados, así que el conjunto es el tope.
+    const crudo = req.query.status === undefined ? null : String(req.query.status)
+    const estados = crudo === null
+      ? null
+      : [...new Set(crudo.split(',').map(estado => estado.trim()).filter(Boolean))]
+    if (estados !== null && (
+      !estados.length
+      || estados.some(estado => !ESTADOS_PEDIDO.includes(estado as typeof ESTADOS_PEDIDO[number]))
+    )) {
       return res.status(400).json({ error: 'Estado de pedido inválido' })
     }
-    res.json(await db.getOrders(businessId, 100, status))
+    // Uno solo sigue viajando como texto: es como se pedía antes de admitir
+    // listas, y el repositorio filtra igual en los dos casos.
+    const filtro = estados === null ? null : estados.length === 1 ? estados[0] : estados
+    res.json(await db.getOrders(businessId, 100, filtro))
   },
 )
 

@@ -21,13 +21,18 @@ const createOrder = async (order: OrderData, items: OrderItemData[]) => db.rpc(
   },
 )
 
-// El filtro por estado lo usa la vigilancia del panel: pedir solo los
-// «pendiente» evita traer 100 pedidos con sus ítems cada pocos segundos.
-// La ruta valida el estado; aquí solo se aplica si viene.
+// El filtro por estado lo usa la vigilancia del panel: pedir solo lo que
+// espera al negocio evita traer 100 pedidos con sus ítems cada pocos segundos.
+// La ruta valida los estados; aquí solo se aplican si vienen.
+//
+// ⚠️ Admite VARIOS a propósito. Con uno solo se quedó corto el 2026-08-08: la
+// alarma vigilaba «pendiente» y, desde que quien transfiere nace en
+// `esperando_pago`, ningún pedido con comprobante volvía a sonar. Lo que pide
+// atención son dos estados distintos, no uno.
 const getOrders = async (
   businessId: string,
   limit = 100,
-  status: string | null = null,
+  status: string | string[] | null = null,
 ) => {
   // La dirección viaja incrustada: sin ella la bandeja de Pedidos no puede
   // decirle al repartidor a dónde va, que es medio trabajo del pedido.
@@ -35,7 +40,11 @@ const getOrders = async (
     .from('orders')
     .select('*, order_items(*), customer_addresses:address_id (label, address, reference)')
     .eq('business_id', businessId)
-  if (status) query = query.eq('status', status)
+  if (Array.isArray(status)) {
+    if (status.length) query = query.in('status', status)
+  } else if (status) {
+    query = query.eq('status', status)
+  }
   const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(limit)
