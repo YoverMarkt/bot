@@ -10,7 +10,7 @@
 // El orden manda: primero lo que espera respuesta, y dentro de eso, lo más
 // viejo arriba. Un pedido que lleva 20 minutos sin aceptar es el problema más
 // urgente de la pantalla, no el que acaba de entrar.
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -101,7 +101,14 @@ export default function Orders() {
     })
   }, [pedidos, activos, filtro])
 
-  const cuenta = (estado: OrderStatus) => activos.filter(p => p.status === estado).length
+  // `useCallback` para que el linter vea que solo depende de `activos`. Sin
+  // esto la función se redefinía en cada render y el `useMemo` de abajo lo
+  // avisaba como dependencia que falta: el código era correcto —`activos` sí
+  // estaba en su lista— pero el aviso salía en cada compilación.
+  const cuenta = useCallback(
+    (estado: OrderStatus) => activos.filter(p => p.status === estado).length,
+    [activos],
+  )
 
   /**
    * Los cuatro estados que más trabajo tienen parado ahora mismo.
@@ -115,7 +122,7 @@ export default function Orders() {
     const urgentes = conPedidos.filter(estado => estado === 'pago_en_revision')
     const resto = conPedidos.filter(estado => estado !== 'pago_en_revision')
     return [...urgentes, ...resto].slice(0, 4)
-  }, [activos])
+  }, [cuenta])
 
   return (
     <div>
