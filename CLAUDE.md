@@ -161,6 +161,8 @@ bot/
 │   ├── migration-2026-08-06-tiempo-de-preparacion.sql # Cuánto tarda cada negocio: lo pone el dueño, el tipo solo lo recomienda
 │   ├── migration-2026-08-07-portada-negocio.sql # La imagen a sangre de la tienda; mismo CHECK https que el logo
 │   ├── migration-2026-08-07-numero-de-pedido.sql # Correlativo por negocio vía trigger: vale para el bot, la tienda y el Marketplace
+│   ├── migration-2026-08-07-checkout.sql # Instrucciones del pedido y el tercer método de pago
+│   ├── migration-2026-08-07-pago-al-retirar-rpc.sql # El método también dentro de la RPC, que valida aparte del CHECK
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales

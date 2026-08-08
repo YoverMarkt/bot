@@ -197,6 +197,37 @@ describe('la tienda del negocio', () => {
       expect(pizza.extras.map(e => e.name).sort()).toEqual(['Orégano', 'Queso extra'])
     })
 
+    // El plural NO se resuelve quitando la «s»: «sabores» daría «sabore», que
+    // no casa con «sabor», y el duplicado volvía a colarse. Y quitar «es»
+    // rompe «bordes» → «bord». Por eso se comparan las formas posibles.
+    it('reconoce el mismo grupo escrito en singular y en plural', () => {
+      for (const [enElMotor, enLaTablaVieja] of [
+        ['Sabor', 'Sabores'],
+        ['Borde', 'Bordes'],
+        ['Ingrediente', 'Ingredientes'],
+        ['Extra', 'Extras'],
+      ]) {
+        const conAmbos = {
+          ...entrada,
+          extras: [{
+            id: 'e-9', product_id: 'prod-1', group_label: enLaTablaVieja,
+            name: 'Uno', price_delta: '0',
+          }],
+          optionGroups: [{
+            id: 'g-9', name: enElMotor, product_id: 'prod-1',
+            selection_type: 'single', max_selectable: 1,
+          }],
+          options: [{ id: 'o-9', option_group_id: 'g-9', name: 'Uno', stock: 'disponible' }],
+        }
+        const pizza = buildStorefrontCatalog(conAmbos).products.find(p => p.id === 'prod-1')
+        expect(pizza.optionGroups.map(g => g.name)).toEqual([enElMotor])
+        expect(
+          pizza.extras.map(e => e.group),
+          `«${enLaTablaVieja}» debería reconocerse como «${enElMotor}»`,
+        ).not.toContain(enLaTablaVieja)
+      }
+    })
+
     // Un negocio que solo tenga la tabla vieja no puede perder sus extras.
     it('sin grupos del motor, los extras salen tal cual', () => {
       const pizza = buildStorefrontCatalog(entrada).products.find(p => p.id === 'prod-1')

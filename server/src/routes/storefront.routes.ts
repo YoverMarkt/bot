@@ -373,9 +373,14 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     : null
 
   // La tarjeta no está: la plataforma no procesa cobros (regla inviolable #6).
-  const paymentMethod = ['transferencia', 'efectivo'].includes(String(body.paymentMethod))
-    ? String(body.paymentMethod)
-    : null
+  // «pago_al_retirar» no es cómo paga, es CUÁNDO: al pasar por el local. La
+  // app solo lo ofrece en modo retiro, y aquí se vuelve a comprobar — una app
+  // vieja, o alguien tocando la petición, no puede prometerle al negocio que
+  // pasará a recoger un pedido que pidió a domicilio.
+  const metodoPedido = String(body.paymentMethod)
+  const metodoValido = ['transferencia', 'efectivo', 'pago_al_retirar'].includes(metodoPedido)
+    && !(metodoPedido === 'pago_al_retirar' && fulfillment === 'delivery')
+  const paymentMethod = metodoValido ? metodoPedido : null
 
   const result = await db.createStorefrontOrder({
     businessId,
@@ -389,6 +394,9 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     // La app la genera al abrir el checkout y la repite si reintenta. Sin
     // clave el comportamiento es el de siempre: cada envío, un pedido.
     idempotencyKey: String(body.idempotencyKey || '').trim().slice(0, 100) || null,
+    // El tope replica el CHECK de la base: un texto larguísimo acabaría en el
+    // panel del dueño y en el reporte.
+    deliveryNotes: String(body.deliveryNotes || '').trim().slice(0, 300) || null,
     // La tienda ya no programa (retirado el 2026-08-07). La RPC conserva el
     // parámetro y la columna `scheduled_for` sigue en la base: quitarlos
     // exigiría recrear la función del dinero por un campo que nadie llena.

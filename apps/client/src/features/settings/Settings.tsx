@@ -39,6 +39,18 @@ export default function Settings() {
   )
 }
 
+/**
+ * Los minutos que escribió el dueño, o el valor de arranque si borró el campo.
+ *
+ * Un `<input type="number">` vacío entrega la cadena vacía, no null ni
+ * undefined: `?? ` no la atrapa y `Number('')` vale 0. Sin esto, borrar el
+ * campo para reescribirlo guardaba un 0 sin avisar.
+ */
+const minutosO = (valor: unknown, porDefecto: number): number => {
+  const minutos = Number(valor)
+  return valor === '' || valor == null || !Number.isFinite(minutos) ? porDefecto : minutos
+}
+
 // ── Cuenta bancaria para transferencias ──
 //
 // La tienda ya la mostraba al cliente en su pantalla de pago, pero no había
@@ -230,10 +242,14 @@ export function BusinessForm() {
         brand_color: f?.brand_color || null,
         logo_url: f?.logo_url || null,
         cover_url: f?.cover_url || null,
-        prep_time_minutes: Number(f?.prep_time_minutes) || 25,
-        // Cero es legítimo aquí —entrego en mi cuadra—, así que no se puede
-        // usar `||`: convertiría un 0 guardado a propósito en 10.
-        delivery_extra_minutes: Number(f?.delivery_extra_minutes ?? 10),
+        // ⚠️ Un campo numérico VACÍO entrega `''`, no null: el `??` no lo
+        // atrapa y `Number('')` es 0. Así, borrar el tiempo de entrega para
+        // reescribirlo guardaba 0 en silencio y la tienda prometía la comida
+        // sin sumar el reparto. Se cae al defecto cuando no hay un número.
+        prep_time_minutes: minutosO(f?.prep_time_minutes, 25),
+        // Cero es legítimo aquí —entrego en mi cuadra—, así que solo se
+        // descarta lo que NO es un número, nunca el cero.
+        delivery_extra_minutes: minutosO(f?.delivery_extra_minutes, 10),
       }),
     }),
     onSuccess: () => {

@@ -47,7 +47,9 @@ export type Order = {
   shipping?: number | string | null
   total: number | string
   currency?: string
-  payment_method?: 'transferencia' | 'efectivo' | null
+  payment_method?: 'transferencia' | 'efectivo' | 'pago_al_retirar' | null
+  /** Lo que el cliente escribió para ESTE pedido: «llame al llegar». */
+  delivery_notes?: string | null
   payment_proof_url?: string | null
   /** Para cuándo lo quiere el cliente. Nulo = lo antes posible. */
   scheduled_for?: string | null

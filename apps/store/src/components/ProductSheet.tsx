@@ -96,9 +96,21 @@ export default function ProductSheet({
 
   // ── Los tres selectores ───────────────────────────────────────────────────
 
-  /** `single`: un radio. Elegir sustituye lo que hubiera en el grupo. */
+  /**
+   * `single`: un radio. Elegir sustituye lo que hubiera en el grupo.
+   *
+   * ⚠️ En un grupo OPCIONAL, volver a tocar lo ya elegido lo quita. Sin esto,
+   * un «Borde mozzarella +$4.99» opcional no se podía deshacer: antes era una
+   * casilla que se desmarcaba, y al pasar a radio el recargo se quedaba puesto
+   * para siempre. En uno obligatorio no se permite —quedaría sin cumplir y el
+   * botón volvería a decir qué falta—, así que ahí el toque no hace nada.
+   */
   const elegirUnica = (group: OptionGroup, opcion: ChosenOption) => {
-    setOpciones([...opciones.filter(item => item.groupId !== group.id), opcion])
+    const resto = opciones.filter(item => item.groupId !== group.id)
+    const yaEstaba = opciones.some(item => item.optionId === opcion.optionId)
+    const obligatorio = group.required || group.minSelectable > 0
+    if (yaEstaba && !obligatorio) return setOpciones(resto)
+    setOpciones([...resto, opcion])
   }
 
   /** `multiple`: casillas. Se bloquea al llegar al tope del grupo. */

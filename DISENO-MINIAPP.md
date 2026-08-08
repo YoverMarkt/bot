@@ -180,8 +180,21 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
   sigue existiendo, pero ahora solo se MUESTRA: ya no decide ninguna hora.
 - **Información de entrega**: dirección, referencia, teléfono, instrucciones.
   En retiro, esos campos desaparecen.
+  · Las **instrucciones** (`orders.delivery_notes`) son de ESTE pedido —«llame
+    al llegar»—, no del sitio: la referencia de la dirección es fija y se queda.
+    Se ven en el panel del dueño junto a la dirección, que es donde las busca
+    quien reparte; sin eso el campo no serviría de nada.
 - **Método de pago**: Efectivo · Transferencia · Pago al retirar. En
   transferencia se muestran los datos bancarios y el subidor de comprobante.
+  ⚠️ **`pago_al_retirar` solo se ofrece en retiro**: no es cómo paga, es CUÁNDO
+  —al pasar por el local—, y prometérselo a quien pidió a domicilio es ofrecer
+  algo que no se puede cumplir. La app lo esconde, el checkout lo deriva a
+  efectivo si se cambia de modo, y la ruta lo vuelve a rechazar.
+  ⚠️ El valor vive en TRES sitios: el CHECK de `orders` (el `alter table` de
+  abajo, no el del `create table`), la lista de la ruta y **la validación
+  interna de `create_storefront_order`**, que se dispara ANTES que el CHECK.
+  Añadirlo en dos y olvidar el tercero no falla al compilar ni en los tests con
+  simulacros — falla cuando un cliente intenta pedir. Pasó.
 - Botón `Continuar` fijo abajo.
 
 ## 5. Confirmación

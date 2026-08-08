@@ -307,6 +307,13 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
                           {direccion.reference && <span className="block">{direccion.reference}</span>}
                         </span>
                       </span>
+                      {/* Lo que el cliente pidió para ESTE pedido. Va aquí, con
+                          la dirección, que es donde lo busca quien reparte. */}
+                      {pedido.delivery_notes && (
+                        <span className="mt-1 block font-medium text-foreground">
+                          «{pedido.delivery_notes}»
+                        </span>
+                      )}
                     </div>
                   )
                 : (
@@ -328,7 +335,9 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
                 ? 'Paga en efectivo'
                 : pedido.payment_method === 'transferencia'
                   ? 'Transferencia'
-                  : 'Pago por coordinar'}
+                  : pedido.payment_method === 'pago_al_retirar'
+                    ? 'Paga al retirar'
+                    : 'Pago por coordinar'}
             </div>
             {pedido.payment_method === 'transferencia' && (
               pedido.payment_proof_url
