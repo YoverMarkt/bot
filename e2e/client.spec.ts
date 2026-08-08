@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { expectConnectedLabels, mockClientApi, seedClientSession } from './helpers'
+import {
+  expectConnectedLabels, mockClientApi, mockOrdersFilteredByStatus, seedClientSession,
+} from './helpers'
 
 const clientUrl = 'http://127.0.0.1:4173/app/'
 
@@ -358,24 +360,7 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
       takes_bookings: false, takes_orders: true,
     }),
   }))
-  // ⚠️ El simulacro RESPETA el filtro `?status=`, como la ruta real.
-  //
-  // Ignorarlo fue lo que dejó pasar el fallo del 2026-08-08: la alarma pedía
-  // `?status=pendiente` y este mock le devolvía los pedidos igual, cualquiera
-  // que fuese su estado. Con eso, la prueba seguía en verde mientras en
-  // producción no sonaba nada. Un simulacro más permisivo que el servidor no
-  // prueba el sistema: prueba el simulacro.
-  await page.route('**/api/client/orders**', route => {
-    const pedidos = new URL(route.request().url()).searchParams.get('status')
-    const filtro = pedidos ? pedidos.split(',') : null
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(
-        filtro ? orders.filter(o => filtro.includes(String(o.status))) : orders,
-      ),
-    })
-  })
+  await mockOrdersFilteredByStatus(page, () => orders)
   await page.goto(clientUrl)
 
   // Un negocio que recibe pedidos tiene su sección propia en el menú: sin ella

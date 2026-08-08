@@ -206,6 +206,36 @@ export async function mockAdminApi(page: Page) {
   })
 }
 
+/**
+ * Simulacro de `GET /api/client/orders` que RESPETA el filtro `?status=`,
+ * igual que la ruta real.
+ *
+ * ⚠️ Ignorar ese filtro fue lo que dejó pasar el fallo del 2026-08-08: el mock
+ * devolvía los pedidos cualquiera que fuese su estado, así que la prueba de la
+ * alarma seguía en verde mientras en producción no sonaba nada. Un simulacro
+ * más permisivo que el servidor no prueba el sistema: prueba el simulacro.
+ *
+ * Vive aquí, y no en cada prueba, porque dos copias de esto acabarían
+ * separándose — que es exactamente la deriva que causó el fallo.
+ */
+export async function mockOrdersFilteredByStatus(
+  page: Page,
+  leerPedidos: () => Record<string, unknown>[],
+) {
+  await page.route('**/api/client/orders**', route => {
+    const pedido = new URL(route.request().url()).searchParams.get('status')
+    const filtro = pedido ? pedido.split(',') : null
+    const pedidos = leerPedidos()
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        filtro ? pedidos.filter(o => filtro.includes(String(o.status))) : pedidos,
+      ),
+    })
+  })
+}
+
 export async function seedClientSession(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
