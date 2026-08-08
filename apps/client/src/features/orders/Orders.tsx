@@ -54,6 +54,9 @@ export default function Orders() {
     queryFn: getOrders,
     // Mismo ritmo que la alarma: si suena, la lista ya tiene el pedido.
     refetchInterval: 12_000,
+    // Y al volver a la pestaña, sin esperar al siguiente intervalo: el dueño
+    // deja el panel abierto en un rincón y vuelve cuando suena la campana.
+    refetchOnWindowFocus: true,
   })
 
   const cambiar = useMutation({

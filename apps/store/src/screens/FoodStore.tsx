@@ -10,10 +10,9 @@ import { Aviso, Foto } from '../components/ui'
 import { money, rangoDeEspera } from '../lib/format'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
-import OrderDone from './OrderDone'
 import OrderTracking from './OrderTracking'
 import type {
-  Business, CartLine, Catalog, Fulfillment, Me, OrderResult, PaymentMethod, Product, StoreStatus,
+  Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
 } from '../lib/types'
 
 // Flujo de comida, bebidas y retail: portada → categorías → producto → carrito.
@@ -38,9 +37,6 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [carritoAbierto, setCarritoAbierto] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hecho, setHecho] = useState<
-    { order: OrderResult; total: number; pago: PaymentMethod; entrega: Fulfillment } | null
-  >(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   // El pedido que se está siguiendo. Se recuerda en el navegador para que
@@ -214,15 +210,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         try { localStorage.setItem(`pedido:${slug}`, String(pedido.id)) } catch { /* modo privado */ }
         setUltimoPedido(String(pedido.id))
       }
-      setHecho({
-        order: pedido,
-        total: Number(pedido.total ?? cartTotal(lineas)),
-        pago: datos.paymentMethod,
-        entrega: datos.fulfillment,
-      })
       setLineas([])
       claveDelPedido.current = null
       setCarritoAbierto(false)
+      // Directo al seguimiento. La pantalla de confirmación decía «¡pedido
+      // confirmado!» cuando el negocio ni lo había mirado, y además era
+      // ESTÁTICA: no consultaba nada, así que el cliente tenía que recargar
+      // para enterarse de cualquier cambio. El seguimiento dice la verdad y
+      // se actualiza solo.
+      if (pedido.id) setSiguiendo(String(pedido.id))
     } catch (error) {
       if (await onFalloEnlace(error)) return
       setError(error instanceof Error ? error.message : 'No pudimos enviar tu pedido')
@@ -250,23 +246,6 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         business={business}
         orderId={siguiendo}
         onVolver={() => setSiguiendo(null)}
-      />
-    )
-  }
-
-  if (hecho) {
-    return (
-      <OrderDone
-        slug={slug}
-        business={business}
-        order={hecho.order}
-        resumen={{ titulo: 'Pedido', total: hecho.total }}
-        paymentMethod={hecho.pago}
-        fulfillment={hecho.entrega}
-        onVolverAlMenu={() => setHecho(null)}
-        onSeguirPedido={hecho.order.id
-          ? () => { setSiguiendo(String(hecho.order.id)); setHecho(null) }
-          : undefined}
       />
     )
   }
