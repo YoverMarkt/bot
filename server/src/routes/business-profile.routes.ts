@@ -123,8 +123,15 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
     ['delivery_extra_minutes', 0, 240, 'El tiempo de entrega debe estar entre 0 y 240 minutos'],
   ] as const) {
     if (!(campo in data)) continue
-    const minutos = Number(data[campo])
-    if (!Number.isInteger(minutos) || minutos < minimo || minutos > maximo) {
+    const crudo = data[campo]
+    // ⚠️ Una cadena VACÍA no es un cero. `Number('')` vale 0, así que un campo
+    // que llegue vacío —un formulario que no lo saneó, otro cliente, una
+    // petición a mano— guardaba 0 en silencio: el negocio se quedaba
+    // prometiendo la comida sin sumar el reparto sin haberlo pedido nunca.
+    // Se rechaza en vez de adivinar qué quiso decir.
+    const vacio = crudo == null || (typeof crudo === 'string' && crudo.trim() === '')
+    const minutos = Number(crudo)
+    if (vacio || !Number.isInteger(minutos) || minutos < minimo || minutos > maximo) {
       return res.status(400).json({ error: texto })
     }
     data[campo] = minutos
