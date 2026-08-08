@@ -10187,3 +10187,48 @@ begin
   );
 end;
 $$;
+
+-- ════════════════════════════════════════════════════════════════════════
+-- EL PAGO QUE LLEGÓ POR FUERA DE LA APP
+-- (migration-2026-08-08-pago-confirmado.sql)
+--
+-- En Ecuador la mayoría transfiere desde la app de su banco y manda la captura
+-- POR WHATSAPP, no por la mini app. A veces ni siquiera es su cuenta: paga un
+-- amigo. Ese pago vale igual, pero no había dónde anotarlo: el cliente veía
+-- «Esperando pago» sin saber si su plata llegó, y el dueño veía «Sin
+-- comprobante» teniendo la captura en el chat.
+--
+-- NO es un estado nuevo: no describe dónde está el pedido, sino algo que le
+-- pasó. Un pedido puede estar cobrado y todavía sin empezar. Lo marca la ruta
+-- —al aceptar y al tocar «Marcar pago recibido»—, nunca las funciones del
+-- dinero: recrearlas por una fecha no compensa el riesgo.
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table public.orders
+  add column if not exists payment_confirmed_at timestamptz;
+
+comment on column public.orders.payment_confirmed_at is
+  'Cuándo el negocio dio el pago por bueno. Nulo = todavía no. Sirve para el '
+  'pago que llegó por WhatsApp, que nunca pasa por payment_proof_url.';
+
+-- ════════════════════════════════════════════════════════════════════════
+-- UN AVISO POR PEDIDO, Y SOLO UNO
+-- (migration-2026-08-08-aviso-al-cliente.sql)
+--
+-- `set_order_status` devuelve `updated` también cuando el estado ya era ese,
+-- así que desde fuera no se distingue de un cambio real: tocar «Aceptar y
+-- preparar» dos veces le mandaría dos mensajes al cliente, y desde el 1 de
+-- octubre de 2026 Meta cobra cada uno.
+--
+-- ⚠️ Se RECLAMA con `update ... where customer_notified_at is null returning`,
+-- que es atómico. Consultar y luego enviar deja una carrera: dos peticiones a
+-- la vez leerían nulo las dos. Mismo patrón que `last_order_number`.
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table public.orders
+  add column if not exists customer_notified_at timestamptz;
+
+comment on column public.orders.customer_notified_at is
+  'Cuándo se le avisó al cliente de que su pedido entró en preparación. Se '
+  'reclama de forma atómica: quien gana el update es quien envía. Nulo = '
+  'todavía no se le ha avisado.';

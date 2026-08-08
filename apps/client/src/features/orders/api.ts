@@ -51,6 +51,8 @@ export type Order = {
   /** Lo que el cliente escribió para ESTE pedido: «llame al llegar». */
   delivery_notes?: string | null
   payment_proof_url?: string | null
+  /** Cuándo el negocio dio el pago por bueno. Nulo = todavía no. */
+  payment_confirmed_at?: string | null
   /** Para cuándo lo quiere el cliente. Nulo = lo antes posible. */
   scheduled_for?: string | null
   created_at: string
@@ -96,6 +98,20 @@ export const setOrderStatus = (id: string, status: OrderStatus) =>
     body: JSON.stringify({ status }),
   })
 
+/**
+ * «Ya me llegó el pago», sin arrancar el pedido.
+ *
+ * Para la transferencia que no pasó por la app: el cliente pagó desde su banco
+ * —o desde la cuenta de un familiar— y mandó la captura por WhatsApp. Aceptar
+ * el pedido también lo marca; esto existe para el rato en que el dueño da el
+ * pago por bueno pero todavía no va a preparar nada.
+ */
+export const confirmOrderPayment = (id: string) =>
+  api<{ id: string; status: OrderStatus; payment_confirmed_at: string }>(
+    `/api/client/orders/${id}/payment-confirmed`,
+    { method: 'PUT' },
+  )
+
 export const money = (n: number | string) => `$${(Number(n) || 0).toFixed(2)}`
 
 export const ESTADO_TEXTO: Record<OrderStatus, string> = {
@@ -139,7 +155,11 @@ export const ESTADO_COLOR: Record<OrderStatus, string> = {
  * fallar es peor que no enseñarlo.
  */
 export const siguientePaso = (pedido: Order): {
-  status: OrderStatus; etiqueta: string; descripcion: string
+  status: OrderStatus
+  etiqueta: string
+  descripcion: string
+  /** El paso avanza sin que nadie haya comprobado el pago: el botón lo dice. */
+  avisa?: boolean
 } | null => {
   const reparte = !pedido.fulfillment || pedido.fulfillment === 'delivery'
 
@@ -152,10 +172,30 @@ export const siguientePaso = (pedido: Order): {
   // cuanto el dueño se ocupa de él.
   //
   // Rechazar sigue siendo la otra salida, por su propio botón.
-  if (pedido.status === 'pendiente' || pedido.status === 'esperando_pago') return {
-    status: 'preparacion',
-    etiqueta: 'Aceptar y preparar',
-    descripcion: 'El cliente lo ve en preparación al instante.',
+  if (pedido.status === 'pendiente' || pedido.status === 'esperando_pago') {
+    // ── Aceptar sin tener el comprobante en la app ─────────────────────────
+    //
+    // NO se bloquea el botón, y es deliberado: en Ecuador la mayoría
+    // transfiere desde su banco y manda la captura por WhatsApp. Un dueño con
+    // el dinero ya en su cuenta y la foto en el chat no puede quedarse
+    // mirando un botón gris. Lo que sí hace falta es que el botón no mienta:
+    // decir «Aceptar y preparar» a secas, igual que cuando el comprobante
+    // está subido, esconde que aquí nadie ha comprobado nada.
+    const sinComprobante = pedido.status === 'esperando_pago'
+      && !pedido.payment_proof_url
+      && !pedido.payment_confirmed_at
+    if (sinComprobante) return {
+      status: 'preparacion',
+      etiqueta: 'Recibí el pago, preparar',
+      descripcion: 'Este pedido no tiene comprobante subido. Confírmalo solo si '
+        + 'ya te llegó la transferencia por otra vía.',
+      avisa: true,
+    }
+    return {
+      status: 'preparacion',
+      etiqueta: 'Aceptar y preparar',
+      descripcion: 'El cliente lo ve en preparación al instante.',
+    }
   }
   // Con el comprobante en revisión, aceptarlo es dar el pago por bueno Y
   // arrancar. Es lo que de verdad hace el dueño cuando mira la transferencia.

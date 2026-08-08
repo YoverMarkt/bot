@@ -94,6 +94,74 @@ const setOrderStatus = async (businessId: string, id: string, status: string) =>
 )
 
 /**
+ * Reclama el derecho a avisarle al cliente, y devuelve el pedido si lo gana.
+ *
+ * ⚠️ RECLAMA, no consulta. El `where customer_notified_at is null` va dentro
+ * del propio `update`, que es atómico: si dos peticiones llegan a la vez, una
+ * sola se lleva la fila y la otra recibe `null`. Comprobar primero y enviar
+ * después dejaría una carrera entre las dos operaciones — las dos leerían nulo
+ * y las dos mandarían el mensaje.
+ *
+ * Hace falta porque `set_order_status` devuelve `updated` también cuando el
+ * estado ya era ese, así que desde fuera un segundo toque en «Aceptar y
+ * preparar» es indistinguible del primero. Y desde el 1 de octubre de 2026
+ * Meta cobra cada mensaje de servicio: el doble toque se paga dos veces.
+ *
+ * Devuelve el pedido con sus líneas —lo que hace falta para redactar— o `null`
+ * si a este cliente ya se le avisó.
+ */
+const claimOrderNotification = async (businessId: string, orderId: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .update({ customer_notified_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .is('customer_notified_at', null)
+    .select('id,order_number,contact_phone,contact_name,total,currency,order_items(*)')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data || null) as OrderData | null
+}
+
+/**
+ * Marca que el negocio dio el pago por bueno.
+ *
+ * Existe para el pago que llegó POR FUERA de la app: la mayoría transfiere
+ * desde su banco y manda la captura por WhatsApp, a veces desde la cuenta de
+ * otra persona. Ese pago es tan válido como el que se sube aquí, pero antes no
+ * había dónde anotarlo — el cliente seguía viendo el número de cuenta y el
+ * dueño, «sin comprobante todavía».
+ *
+ * ⚠️ Las condiciones van en el `where`, no en un `if` de la ruta. Es una sola
+ * operación atómica y no hay forma de colarse por otro camino:
+ *
+ *  · **el negocio**, siempre, o se estaría marcando el pedido de otro local;
+ *  · **transferencia**, porque en efectivo y «pago al retirar» se cobra al
+ *    entregar: marcarlo antes diría que hay un dinero que nadie ha recibido;
+ *  · **estado no final** — dar por pagado un pedido cancelado o expirado no
+ *    significa nada, y en el reporte parecería dinero cobrado;
+ *  · **`payment_confirmed_at is null`**, para que dos toques seguidos no
+ *    muevan la hora y el cliente vea saltar el momento en que le confirmaron.
+ *
+ * Devuelve el pedido si lo marcó, y `null` si no cumplía. Quien llama
+ * distingue los dos casos, que no son el mismo error.
+ */
+const confirmOrderPayment = async (businessId: string, orderId: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .update({ payment_confirmed_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .eq('payment_method', 'transferencia')
+    .is('payment_confirmed_at', null)
+    .not('status', 'in', '("completado","cancelado","rechazado","expirado")')
+    .select('id,status,payment_confirmed_at')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data || null) as { id: string; status: string; payment_confirmed_at: string } | null
+}
+
+/**
  * Lo justo para abrir un comprobante: su URL y su identificador de Cloudinary.
  *
  * Se pide por negocio Y por pedido, nunca solo por pedido: el id viaja en la
@@ -119,4 +187,6 @@ export = {
   getLastOrderForContact,
   updateOrder,
   setOrderStatus,
+  confirmOrderPayment,
+  claimOrderNotification,
 }
