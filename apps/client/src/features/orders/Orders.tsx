@@ -17,7 +17,7 @@ import {
   Banknote, Bike, Clock, Landmark, MapPin, Receipt, ShoppingBag, Check, X, FileText, Plus,
 } from 'lucide-react'
 import {
-  ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, getOrderProof, getOrders, money,
+  ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, confirmOrderPayment, getOrderProof, getOrders, money,
   setOrderStatus, siguientePaso,
   type Order, type OrderStatus,
 } from './api'
@@ -85,6 +85,12 @@ export default function Orders() {
       error instanceof Error ? error.message : 'No se pudo actualizar el pedido',
     ),
   })
+
+  // La alarma mira la misma lista: se refresca para que deje de sonar.
+  const refrescar = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ['orders'] })
+    void qc.invalidateQueries({ queryKey: ['orders-watch'] })
+  }, [qc])
 
   const activos = useMemo(
     () => pedidos.filter(p => ACTIVOS.includes(p.status)),
@@ -203,6 +209,7 @@ export default function Orders() {
             pedido={pedido}
             ocupado={cambiar.isPending}
             onCambiar={(status) => cambiar.mutate({ id: pedido.id, status })}
+            onRefrescar={refrescar}
           />
         ))}
       </div>
@@ -210,16 +217,41 @@ export default function Orders() {
   )
 }
 
-function TarjetaPedido({ pedido, ocupado, onCambiar }: {
+function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   pedido: Order
   ocupado: boolean
   onCambiar: (status: OrderStatus) => void
+  /** Recarga la lista tras un cambio que no pasa por `onCambiar`. */
+  onRefrescar: () => void
 }) {
   const paso = siguientePaso(pedido)
   const domicilio = !pedido.fulfillment || pedido.fulfillment === 'delivery'
   const direccion = pedido.customer_addresses
   const enCurso = ACTIVOS.includes(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+
+  // Solo tiene sentido en transferencia y mientras el pedido siga esperando:
+  // en efectivo se cobra al entregar, y una vez en preparación el pago ya se
+  // dio por bueno al aceptarlo. La ruta lo vuelve a comprobar en el `where`.
+  const puedeConfirmarPago = pedido.payment_method === 'transferencia'
+    && !pedido.payment_confirmed_at
+    && (pedido.status === 'esperando_pago' || pedido.status === 'pago_en_revision')
+
+  const confirmarPago = async () => {
+    setConfirmando(true)
+    try {
+      await confirmOrderPayment(pedido.id)
+      toast.success('Pago confirmado. El cliente ya lo ve en su pedido.')
+      onRefrescar()
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'No se pudo confirmar el pago',
+      )
+    } finally {
+      setConfirmando(false)
+    }
+  }
 
   /**
    * Se pide la URL firmada AL TOCAR, no al pintar la lista: firmarla antes
@@ -350,23 +382,34 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
                     : 'Pago por coordinar'}
             </div>
             {pedido.payment_method === 'transferencia' && (
-              pedido.payment_proof_url
-                ? (
-                    <button
-                      type="button"
-                      onClick={abrirComprobante}
-                      disabled={abriendo}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-2 disabled:opacity-50"
-                    >
-                      <FileText className="h-3 w-3" />
-                      {abriendo ? 'Abriendo…' : 'Ver comprobante'}
-                    </button>
-                  )
-                : (
+              <>
+                {pedido.payment_proof_url
+                  ? (
+                      <button
+                        type="button"
+                        onClick={abrirComprobante}
+                        disabled={abriendo}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-2 disabled:opacity-50"
+                      >
+                        <FileText className="h-3 w-3" />
+                        {abriendo ? 'Abriendo…' : 'Ver comprobante'}
+                      </button>
+                    )
+                  : !pedido.payment_confirmed_at && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
                       Sin comprobante todavía
                     </span>
-                  )
+                  )}
+                {/* El pago dado por bueno se dice UNA vez y con su hora: sin
+                    esto, un pedido cobrado por WhatsApp seguía leyéndose como
+                    «sin comprobante» para siempre. */}
+                {pedido.payment_confirmed_at && (
+                  <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-3 w-3" />
+                    Pago confirmado · {hora(pedido.payment_confirmed_at)}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -388,9 +431,38 @@ function TarjetaPedido({ pedido, ocupado, onCambiar }: {
         {/* Las acciones: avanzar o rechazar. Nunca retroceder. */}
         {paso && (
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {/* ── El pago que llegó por WhatsApp ──
+                Da el pago por bueno SIN arrancar el pedido. Existe para el
+                rato en que el dueño ya vio la transferencia pero todavía no va
+                a encender la cocina —cerrando, o con cola—: sin esto, la única
+                forma de decirle al cliente «tu plata llegó» era mandar su
+                pedido a preparación antes de tiempo. */}
+            {puedeConfirmarPago && (
+              <ConfirmAction
+                trigger={
+                  <Button variant="outline" size="sm" disabled={ocupado || confirmando}>
+                    <Landmark /> {confirmando ? 'Confirmando…' : 'Marcar pago recibido'}
+                  </Button>
+                }
+                title="Marcar el pago como recibido"
+                description={
+                  'El cliente verá «Pago confirmado» y dejará de ver los datos bancarios. '
+                  + 'El pedido no arranca todavía: sigue esperando a que lo aceptes.'
+                }
+                confirmLabel="Ya me llegó el pago"
+                onConfirm={confirmarPago}
+              />
+            )}
             <ConfirmAction
               trigger={
-                <Button size="sm" disabled={ocupado}>
+                <Button
+                  size="sm"
+                  disabled={ocupado}
+                  // Aceptar sin comprobante no se bloquea —el dueño puede tener
+                  // el dinero en su cuenta—, pero tampoco se ofrece con el
+                  // mismo peso que un pago ya comprobado.
+                  variant={paso.avisa ? 'outline' : 'default'}
+                >
                   <Check /> {paso.etiqueta}
                 </Button>
               }

@@ -410,6 +410,82 @@ describe('crear pedido desde la mini app', () => {
     expect(crear.mock.calls[0][0].deliveryNotes).toHaveLength(300)
   })
 
+  // ── El nombre se escribe UNA vez ─────────────────────────────────────────
+  //
+  // La mini app ya precargaba `me.name` en el checkout, pero nadie escribía
+  // nunca `business_customers.display_name`: `ensureCustomer` lo intenta con
+  // un `upsert` que la fila existente ignora —la crea el bot al mandar el
+  // enlace, sin nombre—, y en ese momento el nombre todavía no existe. En la
+  // base real: 25 pedidos del mismo cliente y `display_name` en nulo.
+  it('recuerda el nombre del cliente para el próximo pedido', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+    const recordar = vi.spyOn(db, 'setCustomerDisplayName').mockResolvedValue({ error: null })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { name: '  Yover Rosado  ', items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(recordar).toHaveBeenCalledWith('negocio-a', 'cliente-1', 'Yover Rosado')
+  })
+
+  it('no guarda un nombre que no lo es', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+    const recordar = vi.spyOn(db, 'setCustomerDisplayName').mockResolvedValue({ error: null })
+
+    for (const name of ['', '   ', 'A']) {
+      await ejecutar('/api/store/:slug/orders', 'post', {
+        storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+        params: { slug: 'pizzeria' },
+        body: { name, items: [{ productId: 'producto-1', quantity: 1 }] },
+      })
+    }
+
+    expect(recordar).not.toHaveBeenCalled()
+  })
+
+  // Recordar el nombre es una comodidad. El pedido ya está creado y aceptado
+  // por la base cuando se intenta: que esto falle no puede quitárselo al
+  // cliente ni devolverle un error por algo que sí funcionó.
+  it('un fallo al recordar el nombre no rompe el pedido', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+    vi.spyOn(db, 'setCustomerDisplayName').mockRejectedValue(new Error('base caída'))
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { name: 'Yover', items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(respuesta.body).toEqual({ id: 'pedido-1' })
+  })
+
+  // El nombre pertenece al negocio de la SESIÓN, igual que el pedido. Si
+  // saliera del slug, se escribiría en la ficha del cliente en otra tienda.
+  it('recuerda el nombre en el negocio de la sesión, no en el del slug', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1' }, error: null,
+    })
+    const recordar = vi.spyOn(db, 'setCustomerDisplayName').mockResolvedValue({ error: null })
+
+    await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'otra-tienda' },
+      body: { name: 'Yover', items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(recordar.mock.calls[0][0]).toBe('negocio-a')
+  })
+
   it('sin clave se sigue creando un pedido por envío, como el bot', async () => {
     const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
       data: { id: 'pedido-1' }, error: null,

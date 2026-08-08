@@ -53,6 +53,32 @@ async function dispatch({ authorization, query = {} } = {}) {
   return result
 }
 
+async function dispatchConfirmarPago({ authorization, id = 'order-a' } = {}) {
+  const routeLayer = ordersRouter.stack.find(layer => (
+    layer.route?.path === '/api/client/orders/:id/payment-confirmed'
+    && layer.route?.methods?.put
+  ))
+  const handlers = routeLayer.route.stack.map(layer => layer.handle)
+  const req = { headers: authorization ? { authorization } : {}, params: { id }, body: {} }
+  const result = { status: 200, body: undefined }
+  const res = {
+    status(code) { result.status = code; return this },
+    json(body) { result.body = body; return this },
+  }
+
+  async function run(index) {
+    if (index >= handlers.length) return
+    let nextCalled = false
+    let nextError
+    await handlers[index](req, res, error => { nextCalled = true; nextError = error })
+    if (nextError) throw nextError
+    if (nextCalled) await run(index + 1)
+  }
+
+  await run(0)
+  return result
+}
+
 async function dispatchStatus({ authorization, status, id = 'order-a' } = {}) {
   const routeLayer = ordersRouter.stack.find(layer => (
     layer.route?.path === '/api/client/orders/:id/status' && layer.route?.methods?.put
@@ -342,10 +368,159 @@ describe('POST /api/client/orders (mostrador)', () => {
   })
 })
 
+// ── «Ya me llegó el pago» ───────────────────────────────────────────────────
+//
+// El botón para la transferencia que no pasó por la app: el cliente pagó desde
+// su banco —a veces desde la cuenta de un familiar— y mandó la captura por
+// WhatsApp. Sin esto, el cliente seguía viendo el número de cuenta y el dueño
+// «sin comprobante todavía» sobre un pedido ya cobrado.
+describe('PUT /api/client/orders/:id/payment-confirmed', () => {
+  const authorization = () => `Bearer ${token({
+    role: 'client', businessId: 'business-a', urole: 'owner',
+  })}`
+
+  it('marca el pago con el negocio del JWT, nunca con uno del request', async () => {
+    const confirmar = vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue({
+      id: 'order-a', status: 'esperando_pago', payment_confirmed_at: '2026-08-08T05:00:00.000Z',
+    })
+
+    const response = await dispatchConfirmarPago({ authorization: authorization() })
+
+    expect(response.status).toBe(200)
+    expect(confirmar).toHaveBeenCalledWith('business-a', 'order-a')
+  })
+
+  // La consulta filtra por negocio, método y estado en su propio `where`, así
+  // que un `null` significa «no cumplía». No se dice cuál de las condiciones
+  // falló: distinguirlas confirmaría qué pedidos existen en otros negocios.
+  it('responde 409 sin explicar por qué cuando el pedido no cumple', async () => {
+    vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+
+    const response = await dispatchConfirmarPago({ authorization: authorization() })
+
+    expect(response.status).toBe(409)
+    expect(JSON.stringify(response.body)).not.toMatch(/efectivo|otro negocio|cancelado/i)
+  })
+
+  it('no deja confirmar pagos a un empleado sin permiso de ventas', async () => {
+    const confirmar = vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+    const sinPermiso = `Bearer ${token({
+      role: 'client', businessId: 'business-a', urole: 'employee', perms: ['citas'],
+    })}`
+
+    const response = await dispatchConfirmarPago({ authorization: sinPermiso })
+
+    expect(response.status).toBe(403)
+    expect(confirmar).not.toHaveBeenCalled()
+  })
+
+  it('no deja confirmar pagos sin sesión', async () => {
+    const confirmar = vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+
+    const response = await dispatchConfirmarPago({})
+
+    expect(response.status).toBe(401)
+    expect(confirmar).not.toHaveBeenCalled()
+  })
+})
+
 describe('PUT /api/client/orders/:id/status', () => {
   const authorization = () => `Bearer ${token({
     role: 'client', businessId: 'business-a', urole: 'owner',
   })}`
+
+  // El aviso al cliente sale por un canal externo. Sin acallarlo, cada prueba
+  // que acepta un pedido intentaría hablar con Supabase y con YCloud de
+  // verdad: la primera vez se quedaron cinco segundos colgadas esperando un
+  // `fetch` que nadie iba a contestar.
+  beforeEach(() => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'business-a', name: 'Negocio' })
+    vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+  })
+
+  // Aceptar el pedido ES dar el pago por bueno: el dueño que manda algo a la
+  // cocina ya decidió que le van a pagar. Sin esta marca, el cliente que
+  // transfirió seguiría viendo el número de cuenta con su pedido en marcha.
+  it('aceptar y preparar marca también el pago', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'preparacion' } },
+      error: null,
+    })
+    const confirmar = vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+
+    const response = await dispatchStatus({
+      authorization: authorization(), status: 'preparacion',
+    })
+
+    expect(response.status).toBe(200)
+    expect(confirmar).toHaveBeenCalledWith('business-a', 'order-a')
+  })
+
+  // ── Un aviso por pedido, y solo uno ──────────────────────────────────────
+  //
+  // `set_order_status` responde `updated` TAMBIÉN cuando el estado ya era ese
+  // —pedir un cambio que ya ocurrió no es un error—, así que desde fuera un
+  // segundo toque en «Aceptar y preparar» es indistinguible del primero. El
+  // reclamo atómico es lo único que impide el segundo mensaje, y desde el 1 de
+  // octubre de 2026 Meta cobra cada uno.
+  it('reclama el aviso antes de mandarlo', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'preparacion' } },
+      error: null,
+    })
+    vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+    const reclamar = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+
+    await dispatchStatus({ authorization: authorization(), status: 'preparacion' })
+
+    expect(reclamar).toHaveBeenCalledWith('business-a', 'order-a')
+  })
+
+  it('si el reclamo lo perdió, no redacta ni envía nada', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'preparacion' } },
+      error: null,
+    })
+    vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+    // `null` = a este cliente ya se le avisó.
+    vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+    const negocio = vi.spyOn(db, 'getBusinessById')
+
+    await dispatchStatus({ authorization: authorization(), status: 'preparacion' })
+
+    // Ni siquiera se lee el negocio: sin reclamo no hay nada que redactar.
+    expect(negocio).not.toHaveBeenCalled()
+  })
+
+  it('los demás pasos no tocan el pago', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'en_camino' } },
+      error: null,
+    })
+    const confirmar = vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+
+    await dispatchStatus({ authorization: authorization(), status: 'en_camino' })
+
+    expect(confirmar).not.toHaveBeenCalled()
+  })
+
+  // El estado ya cambió cuando se intenta marcar el pago: la cocina tiene su
+  // pedido. Devolver un error ahí le diría al dueño que no pasó algo que sí
+  // pasó, y volvería a tocar el botón sobre un pedido ya en marcha.
+  it('un fallo al marcar el pago no rompe el cambio de estado', async () => {
+    vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+      data: { result: 'updated', order: { id: 'order-a', status: 'preparacion' } },
+      error: null,
+    })
+    vi.spyOn(db, 'confirmOrderPayment').mockRejectedValue(new Error('base caída'))
+
+    const response = await dispatchStatus({
+      authorization: authorization(), status: 'preparacion',
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual({ id: 'order-a', status: 'preparacion' })
+  })
 
   it('usa la RPC atómica con el negocio del JWT', async () => {
     const setOrderStatus = vi.spyOn(db, 'setOrderStatus').mockResolvedValue({

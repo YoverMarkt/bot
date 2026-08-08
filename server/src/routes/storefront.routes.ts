@@ -62,6 +62,11 @@ interface StorefrontRouteDatabase {
   getCustomerAddresses(businessId: string, customerId: string): Promise<unknown[]>
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
   getBusinessCustomer(businessId: string, customerId: string): Promise<unknown>
+  setCustomerDisplayName(
+    businessId: string,
+    customerId: string,
+    name: string,
+  ): Promise<{ error: unknown }>
   createStorefrontOrder(input: Record<string, unknown>): Promise<{
     data: unknown
     error: { message?: string; code?: string } | null
@@ -386,11 +391,13 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     && !(metodoPedido === 'pago_al_retirar' && fulfillment === 'delivery')
   const paymentMethod = metodoValido ? metodoPedido : null
 
+  const contactName = String(body.name || '').slice(0, 120) || null
+
   const result = await db.createStorefrontOrder({
     businessId,
     customerId,
     contactPhone,
-    contactName: String(body.name || '').slice(0, 120) || null,
+    contactName,
     addressId: String(body.addressId || '') || null,
     fulfillment,
     paymentMethod,
@@ -413,6 +420,19 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     const code = result.error.code === '42501' ? 403 : 400
     return res.status(code).json({ error: result.error.message || 'No se pudo crear el pedido' })
   }
+
+  // El nombre se recuerda para el próximo pedido.
+  //
+  // Va DESPUÉS de crear el pedido y sin `await` que lo bloquee: es una
+  // comodidad, no un requisito, y si la base la rechaza el cliente ya tiene su
+  // pedido hecho. Antes esto no ocurría en ningún sitio —`ensureCustomer` lo
+  // intenta con un `upsert` que la fila existente ignora—, así que la mini app
+  // tenía la precarga construida y `display_name` en nulo tras 25 pedidos.
+  if (contactName && contactName.trim().length >= 2) {
+    void db.setCustomerDisplayName(businessId, customerId, contactName.trim())
+      .catch(() => { /* el pedido ya está: recordar el nombre no puede fallarlo */ })
+  }
+
   return res.status(201).json(result.data)
 })
 

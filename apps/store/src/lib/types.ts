@@ -209,6 +209,14 @@ export interface TrackedOrder {
   currency?: string | null
   fulfillment: Fulfillment | null
   created_at: string
+  /**
+   * Cuándo el negocio dio el pago por bueno. Nulo = todavía no.
+   *
+   * No siempre viene de haber subido el comprobante aquí: el dueño lo marca
+   * también cuando la captura le llegó por WhatsApp, que es como transfiere la
+   * mayoría. Por eso no se puede deducir del estado.
+   */
+  payment_confirmed_at?: string | null
   /** El historial de estados, que es de donde sale la hora de cada paso. */
   events: { to_status: string; created_at: string }[]
 }

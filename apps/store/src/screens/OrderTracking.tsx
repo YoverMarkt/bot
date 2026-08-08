@@ -98,7 +98,11 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
   }, [slug, orderId])
 
   // Los datos para transferir, solo si aún hay algo que pagar.
-  const esperandoPago = pedido?.status === 'esperando_pago'
+  //
+  // Con el pago ya confirmado por el negocio no se piden: quien transfirió y
+  // mandó la captura por WhatsApp seguía viendo el número de cuenta y el
+  // botón de subir, como si no hubiera pagado nada.
+  const esperandoPago = pedido?.status === 'esperando_pago' && !pedido?.payment_confirmed_at
   useEffect(() => {
     if (!esperandoPago) return
     getPaymentInfo(slug).then(setCuenta).catch(() => setCuenta(null))
@@ -182,7 +186,7 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
       {/* ── Lo que falta para que arranque ──
           Va ARRIBA de la línea de tiempo a propósito: si el negocio está
           esperando el comprobante, eso es lo único que importa ahora mismo. */}
-      {pedido.status === 'esperando_pago' && (
+      {esperandoPago && (
         <section className="mt-5">
           <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold tracking-wide uppercase texto-tenue">
             <Landmark size={15} />
@@ -222,19 +226,56 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
                 {comprobante === 'subiendo' ? 'Subiendo…' : 'Subir comprobante'}
               </span>
             </Boton>
-            <p className="text-center text-[12px] texto-tenue">
-              También puedes enviarlo por WhatsApp si prefieres.
+            {/* ── Las DOS vías, y la segunda es un enlace de verdad ──
+                No es una preferencia estética: mucha gente transfiere desde la
+                app de su banco —a veces desde la cuenta de un familiar— y la
+                captura le queda en el teléfono con el que abrió WhatsApp, no
+                aquí. Antes esto decía «también puedes enviarlo por WhatsApp si
+                prefieres», que sonaba a que daba igual hacerlo o no. */}
+            <p className="text-center text-[12.5px] texto-tenue">
+              Sube tu comprobante para confirmar tu pedido.
             </p>
+            {business.phone && (
+              <a
+                href={`https://wa.me/${business.phone.replace(/[^\d]/g, '')}?text=${
+                  encodeURIComponent(
+                    `Hola, te envío el comprobante de mi pedido #${pedido.order_number} 🙂`,
+                  )
+                }`}
+                className="flex items-center justify-center gap-1.5 text-center text-[12.5px] font-semibold text-marca"
+              >
+                <MessageCircle size={14} />
+                También puedes enviarlo por WhatsApp
+              </a>
+            )}
             {falloComprobante && <Aviso tono="alerta">{falloComprobante}</Aviso>}
           </div>
         </section>
       )}
 
-      {pedido.status === 'pago_en_revision' && (
-        <div className="mt-5">
-          <Aviso>Recibimos tu comprobante. {business.name} lo está revisando.</Aviso>
-        </div>
-      )}
+      {/* ── El pago, dicho de una vez ──
+          Va antes que el comprobante en revisión: si el negocio ya dio el pago
+          por bueno, da igual por qué vía llegó, y decir «lo está revisando»
+          sobre algo ya aprobado es peor que no decir nada. */}
+      {pedido.payment_confirmed_at
+        ? (
+            <div className="mt-5 flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                <Check size={14} strokeWidth={3} />
+              </span>
+              <p className="text-[13.5px] leading-snug font-semibold text-emerald-900">
+                Pago confirmado
+                <span className="block font-normal text-emerald-800">
+                  {business.name} recibió tu pago.
+                </span>
+              </p>
+            </div>
+          )
+        : pedido.status === 'pago_en_revision' && (
+          <div className="mt-5">
+            <Aviso>Recibimos tu comprobante. {business.name} lo está revisando.</Aviso>
+          </div>
+        )}
 
       {cortado
         ? (

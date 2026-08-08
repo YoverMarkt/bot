@@ -2,6 +2,8 @@ import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 import { signedMediaUrl } from '../integrations/cloudinary'
+import { notificarPedidoEnPreparacion, type PedidoParaAvisar } from '../services/order-notify'
+import type { BusinessRecord } from '../db/types'
 
 // Estados que hoy acepta orders.status. El GET puede filtrar por cualquiera
 // (la vigilancia del panel consulta «pendiente»); el PUT no acepta volver a
@@ -37,6 +39,15 @@ interface ModuloDb {
     orderId: string,
     status: string,
   ): Promise<{ data?: unknown; error?: { message?: string } | null }>
+  confirmOrderPayment(
+    businessId: string,
+    orderId: string,
+  ): Promise<{ id: string; status: string; payment_confirmed_at: string } | null>
+  claimOrderNotification(
+    businessId: string,
+    orderId: string,
+  ): Promise<PedidoParaAvisar | null>
+  getBusinessById(id: string): Promise<BusinessRecord | null>
 }
 const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloAuth {
@@ -46,6 +57,36 @@ interface ModuloAuth {
 const auth: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
 const router = createRouter()
+
+/**
+ * Le avisa al cliente por su canal que el pedido entró en preparación.
+ *
+ * **Nunca lanza, y por eso no se comprueba lo que devuelve.** Corre cuando el
+ * estado YA cambió: la comanda está en la cocina. Si el aviso falla —fuera de
+ * la ventana de 24 h de Meta, sin saldo, canal caído— el fallo va al registro
+ * de errores y el dueño recibe su respuesta correcta igualmente. Convertir
+ * esto en un 500 le diría que el pedido no arrancó cuando sí arrancó.
+ */
+const avisarAlCliente = async (businessId: string, orderId: string): Promise<void> => {
+  try {
+    // Se RECLAMA el aviso antes de redactarlo: el reclamo es atómico y solo lo
+    // gana quien de verdad avisa. `set_order_status` responde `updated`
+    // también cuando el estado ya era ese, así que sin esto un segundo toque
+    // en «Aceptar y preparar» mandaría un segundo mensaje — y desde octubre,
+    // lo cobraría dos veces.
+    const pedido = await db.claimOrderNotification(businessId, orderId)
+    if (!pedido) return
+
+    const negocio = await db.getBusinessById(businessId)
+    if (!negocio) return
+    await notificarPedidoEnPreparacion(negocio, pedido)
+  } catch (error) {
+    console.error(
+      '⚠️  aviso de pedido en preparación:',
+      error instanceof Error ? error.message : 'Error desconocido',
+    )
+  }
+}
 
 // ── Ver el comprobante de una transferencia ────────────────────────────────
 //
@@ -170,6 +211,43 @@ router.post(
   },
 )
 
+// ── «Ya me llegó el pago» ──────────────────────────────────────────────────
+//
+// El botón para el pago que NO pasó por la app: el cliente transfirió desde su
+// banco —a veces desde la cuenta de un familiar— y mandó la captura por
+// WhatsApp. Hasta ahora eso no se podía anotar en ningún sitio: el cliente
+// seguía viendo el número de cuenta y el dueño, «sin comprobante todavía».
+//
+// Va SEPARADO de aceptar el pedido a propósito. Son dos momentos distintos:
+// a las once de la noche el dueño da el pago por bueno pero no va a encender
+// la cocina, y el cliente merece saber que su plata llegó igualmente.
+router.put(
+  '/api/client/orders/:id/payment-confirmed',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    try {
+      const pedido = await db.confirmOrderPayment(businessId, String(req.params.id || ''))
+      // Las condiciones viven en el `where` de la consulta, así que un `null`
+      // significa «no cumplía»: de otro negocio, en efectivo, ya cerrado, o ya
+      // marcado. No se distingue cuál para no confirmar qué pedidos existen.
+      if (!pedido) {
+        return res.status(409).json({
+          error: 'Ese pedido no admite confirmar el pago ahora mismo',
+        })
+      }
+      return res.json(pedido)
+    } catch (error) {
+      console.error(
+        '❌ confirmar pago:',
+        error instanceof Error ? error.message : 'Error desconocido',
+      )
+      return res.status(500).json({ error: 'No se pudo confirmar el pago' })
+    }
+  },
+)
+
 router.put(
   '/api/client/orders/:id/status',
   auth.authClient,
@@ -183,9 +261,12 @@ router.put(
         error: `El estado debe ser ${ESTADOS_DESTINO.join(', ')}`,
       })
     }
+    // Del JWT, nunca del request: es el mismo negocio para cambiar el estado,
+    // marcar el pago y avisar al cliente.
+    const businessId = getClientBusinessId(req)
     try {
       const { data, error } = await db.setOrderStatus(
-        getClientBusinessId(req),
+        businessId,
         req.params.id,
         String(status),
       )
@@ -211,6 +292,31 @@ router.put(
       if (result?.result !== 'updated') {
         return res.status(500).json({ error: 'La base de datos devolvió una respuesta inválida' })
       }
+
+      // ── Lo que ocurre al ACEPTAR un pedido ──────────────────────────────
+      //
+      // Las dos cosas van después de responder al dueño en lo que importa: el
+      // estado ya cambió y la cocina tiene su comanda. Ninguna puede
+      // convertir un cambio que funcionó en un error en pantalla.
+      if (String(status) === 'preparacion') {
+        // 1. Aceptar el pedido ES dar el pago por bueno. El dueño que manda
+        //    algo a la cocina ya decidió que le van a pagar, así que un
+        //    segundo toque para decir lo mismo sobraba. La consulta filtra
+        //    sola lo que no aplica (efectivo, ya marcado).
+        await db.confirmOrderPayment(businessId, req.params.id)
+          .catch(() => { /* el pedido ya avanzó: la marca es un extra */ })
+
+        // 2. Y se le avisa al cliente, que hasta ahora no se enteraba de nada
+        //    salvo que tuviera abierta la pantalla de seguimiento.
+        //
+        //    SIN esperar a que termine, a propósito: manda un mensaje por un
+        //    canal externo que puede tardar segundos o colgarse. El dueño toca
+        //    «aceptar» con la cocina esperando; hacerle mirar una pantalla
+        //    quieta hasta que YCloud conteste es cambiar su tiempo por el de
+        //    un aviso que se registra solo si falla.
+        void avisarAlCliente(businessId, req.params.id)
+      }
+
       res.json(result.order)
     } catch (error) {
       console.error(

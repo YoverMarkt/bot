@@ -43,7 +43,19 @@ export default function CartSheet({
 }) {
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
-  const [nombre, setNombre] = useState('')
+  /**
+   * `null` = el cliente no ha tocado el campo; una cadena = lo que escribió,
+   * aunque sea vacía.
+   *
+   * La distinción no es un capricho. Antes era `value={nombre || me?.name}`
+   * sobre un estado que empezaba vacío: el campo se veía relleno pero el
+   * estado no lo estaba, así que al borrarlo reaparecía el nombre guardado y
+   * no había forma de cambiárselo. Y guardar `me.name` en el estado inicial
+   * tampoco vale: este panel se monta con la tienda, ANTES de que `me`
+   * responda, así que el valor inicial siempre sería vacío.
+   */
+  const [nombreEscrito, setNombreEscrito] = useState<string | null>(null)
+  const nombre = nombreEscrito ?? me?.name ?? ''
   // Lo que cambia de un pedido a otro: «llame al llegar», «timbre roto». La
   // referencia de la dirección es del SITIO y se queda; esto es de HOY.
   const [instrucciones, setInstrucciones] = useState('')
@@ -53,7 +65,7 @@ export default function CartSheet({
 
   const direcciones: Address[] = me?.addresses || []
   const elegida = direccionId || direcciones.find(item => item.is_default)?.id || direcciones[0]?.id || null
-  const nombreFinal = (nombre || me?.name || '').trim()
+  const nombreFinal = nombre.trim()
   const faltaDireccion = needsAddress(entrega) && !elegida
   // Al pasar de retiro a domicilio, «pago al retirar» deja de tener sentido.
   // Se DERIVA en vez de corregir el estado durante el render: así no hay un
@@ -292,8 +304,8 @@ export default function CartSheet({
             A nombre de
           </h3>
           <input
-            value={nombre || me?.name || ''}
-            onChange={event => setNombre(event.target.value.slice(0, 120))}
+            value={nombre}
+            onChange={event => setNombreEscrito(event.target.value.slice(0, 120))}
             placeholder="Tu nombre"
             className="w-full rounded-xl border borde-tema bg-transparent px-3.5 py-3 text-[14px] outline-none focus:border-marca"
           />

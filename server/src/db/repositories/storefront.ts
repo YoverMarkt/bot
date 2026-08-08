@@ -60,6 +60,33 @@ const resolveCustomer = async (input: {
   return customer
 }
 
+/**
+ * Guarda el nombre con el que este cliente pide EN ESTE negocio.
+ *
+ * ⚠️ Existe porque `ensureCustomer` no podía hacerlo: hace un `upsert` con
+ * `ignoreDuplicates`, y la fila ya suele existir —la crea el bot al mandar el
+ * enlace, sin nombre—, así que no escribía nada. Y aunque no existiera, en ese
+ * momento el nombre todavía es nulo: se escribe después, en el checkout.
+ * Resultado: 25 pedidos del mismo cliente y `display_name` en nulo, teniendo
+ * la mini app la precarga ya construida y sin nada que precargar.
+ *
+ * Se llama al CREAR el pedido, que es cuando el nombre existe de verdad.
+ */
+const setCustomerDisplayName = async (
+  businessId: string,
+  customerId: string,
+  name: string,
+) => {
+  const { error } = await db
+    .from('business_customers')
+    .update({ display_name: name, updated_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('customer_id', customerId)
+  // No se usa `fail`: que no se pueda recordar el nombre jamás puede tumbar un
+  // pedido que la base ya aceptó. Quien llama decide, y hoy lo ignora.
+  return { error: error || null }
+}
+
 const getBusinessCustomer = async (businessId: string, customerId: string) => {
   const { data, error } = await db
     .from('business_customers')
@@ -286,7 +313,12 @@ const getStorefrontOrder = async (input: {
 }) => {
   const { data, error } = await db
     .from('orders')
-    .select('id,order_number,status,total,currency,fulfillment,created_at')
+    // `payment_confirmed_at` viaja porque el cliente que transfirió necesita
+    // saber si su plata llegó. Sin él, quien mandó el comprobante por WhatsApp
+    // se queda mirando los datos bancarios como si no hubiera pagado.
+    .select(
+      'id,order_number,status,total,currency,fulfillment,created_at,payment_confirmed_at',
+    )
     .eq('business_id', input.businessId)
     .eq('contact_phone', input.contactPhone)
     .eq('id', input.orderId)
@@ -311,6 +343,7 @@ export = {
   claimStorefrontLinkSend,
   bindStorefrontSession,
   getBusinessCustomer,
+  setCustomerDisplayName,
   getCustomerAddresses,
   createCustomerAddress,
   createStorefrontSession,

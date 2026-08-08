@@ -186,6 +186,17 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
     quien reparte; sin eso el campo no serviría de nada.
 - **Método de pago**: Efectivo · Transferencia · Pago al retirar. En
   transferencia se muestran los datos bancarios y el subidor de comprobante.
+  · **El comprobante tiene DOS vías, y las dos valen igual** (2026-08-08):
+    subirlo aquí, o mandárselo al negocio por WhatsApp con un enlace que ya
+    lleva escrito el número de pedido. No es una preferencia estética: mucha
+    gente transfiere desde la app de su banco —a veces desde la cuenta de un
+    familiar— y la captura le queda en el teléfono, no en la tienda. El texto
+    decía «también puedes enviarlo por WhatsApp si prefieres», que sonaba a
+    que daba igual hacerlo o no; ahora dice **para qué** sirve subirlo.
+  · **No se fuerza la cámara** (`capture`), y es deliberado: el comprobante es
+    una CAPTURA DE PANTALLA del banco, que vive en la galería. Forzar la
+    cámara obligaría a fotografiar la pantalla de otro teléfono. El
+    `accept="image/*"` de siempre ya ofrece cámara, galería y archivos.
   ⚠️ **`pago_al_retirar` solo se ofrece en retiro**: no es cómo paga, es CUÁNDO
   —al pasar por el local—, y prometérselo a quien pidió a domicilio es ofrecer
   algo que no se puede cumplir. La app lo esconde, el checkout lo deriva a
@@ -245,6 +256,106 @@ enseñar los dos y dejar uno siempre gris.
 solo se anotan los CAMBIOS de estado, así que ese hito no tiene evento: su hora
 es la de creación, que es literalmente cuando se recibió. Sin eso, el primer
 paso salía con `--:--` estando cumplido — justo el que el cliente sabe seguro.
+
+### El pago que llegó por WhatsApp
+
+`orders.payment_confirmed_at` (2026-08-08). **No es un estado**: no dice dónde
+está el pedido, dice algo que le pasó. Un pedido puede estar cobrado y todavía
+sin empezar — que es justo el caso de las once de la noche.
+
+Existe porque la mayoría transfiere desde su banco y manda la captura por
+WhatsApp, a veces desde la cuenta de un familiar. Ese pago vale igual, pero no
+había dónde anotarlo: **el cliente seguía viendo el número de cuenta como si no
+hubiera pagado, y el dueño «sin comprobante todavía» teniendo la foto en el
+chat.** Con la marca puesta, la mini app esconde los datos bancarios y enseña
+**Pago confirmado**.
+
+Se marca por dos caminos, y **los dos los hace la RUTA**, nunca las funciones
+del dinero — recrear `create_storefront_order` o `set_order_status` por una
+fecha no compensa el riesgo de copiar la versión equivocada desde `schema.sql`:
+
+| Camino | Cuándo |
+|---|---|
+| Aceptar el pedido (`→ preparacion`) | Lo normal: quien manda algo a la cocina ya dio el pago por bueno |
+| «Marcar pago recibido» | El dueño vio la transferencia pero todavía no va a preparar |
+
+⚠️ **Las condiciones viven en el `where` de la consulta, no en un `if`**: el
+negocio, que sea transferencia, que el estado no sea final, y que no esté ya
+marcado. Es una sola operación atómica y no hay forma de colarse por otro
+camino. Lo último importa más de lo que parece: sin ello, dos toques moverían
+la hora y el cliente vería saltar el momento en que le confirmaron.
+
+⚠️ **El botón de aceptar sin comprobante NO se bloquea**, y se decidió así
+sabiendo lo que se dejaba fuera. Un dueño con el dinero ya en su cuenta y la
+captura en el chat no puede quedarse mirando un botón gris. Lo que sí cambia es
+que el botón **no miente**: dice «Recibí el pago, preparar», va en línea en vez
+de sólido, y la confirmación avisa de que nadie ha comprobado nada.
+
+---
+
+## El aviso al cliente
+
+Cuando el dueño acepta, al cliente le llega **un** mensaje por su canal con el
+número, lo que pidió y el total (`services/order-notify.ts`).
+
+⚠️ **Es el ÚNICO mensaje saliente del pedido, y es a propósito.** Desde el
+**1 de octubre de 2026** Meta cobra cada mensaje de servicio —los de texto
+libre dentro de la ventana de 24 h, gratis desde finales de 2024—. Avisar
+también en «en camino» y «entregado» triplicaría el costo por pedido para
+repetir cosas que ya están en la pantalla de seguimiento. El único que vale su
+precio es este, porque cierra la duda que de verdad angustia: «¿le llegó mi
+pago, me van a preparar el pedido?».
+
+⚠️ **La ventana de 24 h NO desaparece en octubre**; lo que cambia es que deja
+de ser gratis. Fuera de ella sigue haciendo falta una **plantilla aprobada por
+Meta**, y la integración de YCloud hoy solo sabe mandar texto. En la práctica
+casi todo cae dentro: el cliente le escribe al bot, recibe el enlace, pide, y
+el dueño acepta en minutos. Lo que queda fuera es el pedido aceptado al día
+siguiente — y por eso **un envío fallido se registra** en vez de perderse: si
+el dueño cree que su cliente fue avisado y no lo fue, es peor que no haber
+avisado nunca.
+
+El aviso sale **sin esperar a que termine** y **nunca lanza**. Corre cuando el
+estado ya cambió: la comanda está en la cocina. Hacerle mirar al dueño una
+pantalla quieta hasta que conteste un canal externo es cambiar su tiempo por el
+de un aviso, y convertir el fallo en un 500 le diría que el pedido no arrancó
+cuando sí arrancó.
+
+⚠️ **El aviso se RECLAMA, no se consulta** (`orders.customer_notified_at`).
+`set_order_status` devuelve `updated` **también cuando el estado ya era ese**
+—pedir un cambio que ya ocurrió no es un error—, así que desde fuera un segundo
+toque en «Aceptar y preparar» es indistinguible del primero: sin el reclamo, el
+cliente recibiría dos mensajes y desde octubre se pagarían dos. El `where
+customer_notified_at is null` va **dentro del propio `update`**, que es atómico;
+comprobar primero y enviar después deja una carrera en la que dos peticiones
+simultáneas leen nulo las dos. Mismo patrón que `last_order_number`, y
+verificado lanzando dos reclamos a la vez contra la base real: gana uno.
+
+Que el botón desaparezca del panel en cuanto el pedido avanza **no basta**: la
+API es la API, y la defensa va donde está el dato, no donde está el botón.
+
+---
+
+## El nombre se escribe una sola vez
+
+`business_customers.display_name`, guardado **al crear el pedido**, que es
+cuando el nombre existe de verdad.
+
+⚠️ La mini app llevaba la precarga construida desde el principio y no
+precargaba nada: **25 pedidos del mismo cliente con `display_name` en nulo**.
+`ensureCustomer` lo intenta con un `upsert` marcado `ignoreDuplicates`, y la
+fila ya suele existir —la crea el bot al mandar el enlace, sin nombre—, así que
+no escribía. Y aunque no existiera, en ese momento el nombre todavía es nulo:
+se escribe después, en el checkout.
+
+⚠️ En el checkout, `null` (sin tocar) y `''` (borrado) **no son lo mismo**.
+Antes era `value={nombre || me?.name}` sobre un estado vacío: el campo se veía
+relleno pero el estado no lo estaba, así que al borrarlo reaparecía el nombre
+guardado y no había forma de cambiárselo. Y guardarlo en el estado inicial
+tampoco vale — el carrito se monta con la tienda, **antes** de que `me`
+responda.
+
+---
 
 **Quién puede verlo:** exige la sesión del enlace, y el filtro es negocio +
 **teléfono de la sesión** + id del pedido. Nunca el número correlativo: ese es
