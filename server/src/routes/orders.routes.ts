@@ -90,10 +90,13 @@ router.get(
     // son DOS estados —un pedido nuevo y un comprobante por revisar—, y la
     // alarma tiene que verlos de una sola consulta. Con uno solo se quedó
     // ciega el 2026-08-08.
+    // Se deduplica: pedir doce veces el mismo estado no significa nada, y sin
+    // esto una petición podía llevar cientos de repeticiones a la consulta.
+    // Los estados posibles son doce contados, así que el conjunto es el tope.
     const crudo = req.query.status === undefined ? null : String(req.query.status)
     const estados = crudo === null
       ? null
-      : crudo.split(',').map(estado => estado.trim()).filter(Boolean)
+      : [...new Set(crudo.split(',').map(estado => estado.trim()).filter(Boolean))]
     if (estados !== null && (
       !estados.length
       || estados.some(estado => !ESTADOS_PEDIDO.includes(estado as typeof ESTADOS_PEDIDO[number]))

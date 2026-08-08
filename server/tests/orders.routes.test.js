@@ -187,6 +187,23 @@ describe('GET /api/client/orders', () => {
     expect(getOrders).not.toHaveBeenCalled()
   })
 
+  it('no repite un estado que venga varias veces', async () => {
+    const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
+    const authorization = `Bearer ${token({
+      role: 'client',
+      businessId: 'business-a',
+      urole: 'owner',
+    })}`
+
+    const response = await dispatch({
+      authorization,
+      query: { status: 'pendiente,pendiente,pago_en_revision,pendiente' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(getOrders).toHaveBeenCalledWith('business-a', 100, ['pendiente', 'pago_en_revision'])
+  })
+
   it('rechaza una lista vacía en vez de traerlo todo', async () => {
     const getOrders = vi.spyOn(db, 'getOrders').mockResolvedValue([])
     const authorization = `Bearer ${token({
