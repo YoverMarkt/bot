@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Clock, Home, Search, ShoppingBag, ShoppingCart, Bike, X } from 'lucide-react'
+import {
+  Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
+} from 'lucide-react'
 import { createAddress, createOrder, getCatalog, getMe } from '../lib/api'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, orderTotal, setQuantity, unitPrice,
@@ -9,6 +11,7 @@ import { money, rangoDeEspera } from '../lib/format'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
 import OrderDone from './OrderDone'
+import OrderTracking from './OrderTracking'
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, OrderResult, PaymentMethod, Product, StoreStatus,
 } from '../lib/types'
@@ -40,6 +43,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   >(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  // El pedido que se está siguiendo. Se recuerda en el navegador para que
+  // cerrar la app y volver no pierda el rastro: el cliente cierra WhatsApp
+  // mientras espera su comida, que es justo cuando quiere mirarlo.
+  const [siguiendo, setSiguiendo] = useState<string | null>(null)
+  const [ultimoPedido, setUltimoPedido] = useState<string | null>(null)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
   const [portadaRota, setPortadaRota] = useState(false)
@@ -56,6 +64,10 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   // La clave del pedido en curso. Vive en un ref porque no pinta nada: si
   // estuviera en el estado, cambiarla repintaría la tienda entera.
   const claveDelPedido = useRef<string | null>(null)
+
+  useEffect(() => {
+    try { setUltimoPedido(localStorage.getItem(`pedido:${slug}`)) } catch { /* modo privado */ }
+  }, [slug])
 
   useEffect(() => {
     Promise.all([getCatalog(slug), getMe(slug).catch(() => null)])
@@ -198,6 +210,10 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       })
       // El total oficial llega en la respuesta (incluye el envío que calculó
       // la base); el del carrito solo sirve de respaldo si no viniera.
+      if (pedido.id) {
+        try { localStorage.setItem(`pedido:${slug}`, String(pedido.id)) } catch { /* modo privado */ }
+        setUltimoPedido(String(pedido.id))
+      }
       setHecho({
         order: pedido,
         total: Number(pedido.total ?? cartTotal(lineas)),
@@ -227,6 +243,17 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     }
   }, [slug, onFalloEnlace])
 
+  if (siguiendo) {
+    return (
+      <OrderTracking
+        slug={slug}
+        business={business}
+        orderId={siguiendo}
+        onVolver={() => setSiguiendo(null)}
+      />
+    )
+  }
+
   if (hecho) {
     return (
       <OrderDone
@@ -237,6 +264,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         paymentMethod={hecho.pago}
         fulfillment={hecho.entrega}
         onVolverAlMenu={() => setHecho(null)}
+        onSeguirPedido={hecho.order.id
+          ? () => { setSiguiendo(String(hecho.order.id)); setHecho(null) }
+          : undefined}
       />
     )
   }
@@ -573,6 +603,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               accion: () => unidades > 0 && setCarritoAbierto(true),
               contador: unidades,
             },
+            // «Pedido» solo aparece cuando hay uno que seguir. Una pestaña que
+            // no lleva a ninguna parte se siente rota, y quien nunca ha pedido
+            // no tiene nada que mirar ahí.
+            ...(ultimoPedido ? [{
+              id: 'pedido',
+              icono: ClipboardList,
+              texto: 'Pedido',
+              accion: () => setSiguiendo(ultimoPedido),
+            }] : []),
           ]).map(({ id, icono: Icono, texto, accion, contador }) => (
             <button
               key={id}

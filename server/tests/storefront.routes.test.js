@@ -45,6 +45,7 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/catalog',
       '/api/store/:slug/me',
       '/api/store/:slug/orders',
+      '/api/store/:slug/orders/:id',
       '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
       '/api/store/:slug/quote',
@@ -90,6 +91,7 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/me',
       '/api/store/:slug/addresses',
       '/api/store/:slug/orders',
+      '/api/store/:slug/orders/:id',
       '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
       '/api/store/:slug/stay/quote',
@@ -307,6 +309,44 @@ describe('crear pedido desde la mini app', () => {
     })
 
     expect(crear.mock.calls[0][0].fulfillment).toBeNull()
+  })
+
+  // ── Seguimiento del pedido ─────────────────────────────────────────────
+  //
+  // Aquí se devuelve el pedido de UNA persona, con su número y su estado. La
+  // sesión no basta por sí sola: hay que atarlo al TELÉFONO de esa sesión, o
+  // cualquiera con un enlace válido de esta tienda leería pedidos ajenos
+  // probando identificadores.
+  it('el seguimiento filtra por el teléfono de la sesión, no solo por el pedido', async () => {
+    const consultar = vi.spyOn(db, 'getStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-1', order_number: 8, status: 'preparacion', events: [] }, error: null,
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders/:id', 'get', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria', id: 'pedido-1' },
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(consultar).toHaveBeenCalledWith({
+      businessId: 'negocio-a',
+      contactPhone: '+593999',
+      orderId: 'pedido-1',
+    })
+  })
+
+  // Un pedido ajeno y uno inexistente responden IGUAL. Si se distinguieran,
+  // se podría averiguar qué pedidos tiene el vecino probando identificadores.
+  it('un pedido que no es suyo responde 404, como uno que no existe', async () => {
+    vi.spyOn(db, 'getStorefrontOrder').mockResolvedValue({ data: null, error: null })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders/:id', 'get', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria', id: 'pedido-de-otro' },
+    })
+
+    expect(respuesta.status).toBe(404)
+    expect(respuesta.body.error).toMatch(/No encontramos/)
   })
 
   // ── El método de pago y las instrucciones ──────────────────────────────

@@ -200,6 +200,19 @@ export interface OrderResult {
   [key: string]: unknown
 }
 
+/** Un pedido tal como lo ve su dueño en la pantalla de seguimiento. */
+export interface TrackedOrder {
+  id: string
+  order_number: number
+  status: string
+  total: number | string | null
+  currency?: string | null
+  fulfillment: Fulfillment | null
+  created_at: string
+  /** El historial de estados, que es de donde sale la hora de cada paso. */
+  events: { to_status: string; created_at: string }[]
+}
+
 export interface BankAccount {
   bank_name?: string | null
   account_type?: string | null

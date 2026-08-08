@@ -66,6 +66,10 @@ interface StorefrontRouteDatabase {
     data: unknown
     error: { message?: string; code?: string } | null
   }>
+  getStorefrontOrder(input: { businessId: string; contactPhone: string; orderId: string }): Promise<{
+    data: unknown
+    error: { message?: string; code?: string } | null
+  }>
   attachStorefrontPaymentProof(input: Record<string, unknown>): Promise<{
     data: unknown
     error: { message?: string; code?: string } | null
@@ -410,6 +414,26 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     return res.status(code).json({ error: result.error.message || 'No se pudo crear el pedido' })
   }
   return res.status(201).json(result.data)
+})
+
+// ── Seguimiento del pedido ────────────────────────────────────────────────
+//
+// ⚠️ EXIGE SESIÓN, y no por costumbre: aquí se devuelve el pedido de UNA
+// persona. Sin ella bastaría con probar identificadores para leer pedidos
+// ajenos. Por eso el filtro es negocio + TELÉFONO DE LA SESIÓN + id, nunca el
+// número correlativo: ese es #1, #2, #3… y se adivina de corrido.
+//
+// Un pedido que no sea suyo devuelve el MISMO 404 que uno que no existe: si
+// distinguiera los dos casos, se podría averiguar qué pedidos tiene el vecino.
+router.get('/api/store/:slug/orders/:id', requireStorefrontSession, async (req, res) => {
+  const { businessId, contactPhone } = req.storefront!
+  const orderId = String(req.params.id || '').trim()
+  if (!orderId) return res.status(404).json({ error: 'No encontramos ese pedido' })
+
+  const { data, error } = await db.getStorefrontOrder({ businessId, contactPhone, orderId })
+  if (error) return res.status(500).json({ error: 'No pudimos consultar tu pedido' })
+  if (!data) return res.status(404).json({ error: 'No encontramos ese pedido' })
+  return res.json(data)
 })
 
 /** Datos bancarios para transferir. Solo con sesión y solo del propio negocio. */
