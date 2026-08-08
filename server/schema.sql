@@ -10232,3 +10232,30 @@ comment on column public.orders.customer_notified_at is
   'Cuándo se le avisó al cliente de que su pedido entró en preparación. Se '
   'reclama de forma atómica: quien gana el update es quien envía. Nulo = '
   'todavía no se le ha avisado.';
+
+-- ════════════════════════════════════════════════════════════════════════
+-- TRES AVISOS POR PEDIDO, UNO POR HITO — Y NINGUNO REPETIDO
+-- (migration-2026-08-08-avisos-por-estado.sql)
+--
+-- Con un solo aviso bastaba `customer_notified_at is null`. Con tres, la
+-- pregunta cambia: ya no es «¿se avisó?», es «¿se avisó DE ESTO?». Sin esta
+-- columna, el primer aviso dejaría la fecha puesta y los otros dos no saldrían
+-- nunca — un fallo silencioso, que no rompe nada y deja de hacer algo.
+--
+-- ⚠️ Se sigue reclamando dentro del propio `update`. Y basta comparar con el
+-- ÚLTIMO estado avisado porque el pedido nunca retrocede: `set_order_status`
+-- lo prohíbe, así que los tres hitos son siempre valores distintos en fila.
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table public.orders
+  add column if not exists customer_notified_status text;
+
+comment on column public.orders.customer_notified_status is
+  'El último estado del que se avisó al cliente. Se reclama de forma atómica: '
+  'quien gana el update es quien envía. Nulo = todavía no se le ha avisado de '
+  'nada.';
+
+update public.orders
+   set customer_notified_status = 'preparacion'
+ where customer_notified_at is not null
+   and customer_notified_status is null;
