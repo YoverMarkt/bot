@@ -107,7 +107,14 @@ export function AlarmBanner({
       const amount = `$${(Number(order.total) || 0).toFixed(2)}`
       const text = `${order.contact_name || order.contact_phone} · ${amount}`
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('🛒 Nuevo pedido', { body: text })
+        // Un comprobante que llega NO es un pedido nuevo: el pedido ya estaba
+        // ahí y lo que cambió es que el cliente pagó. Son dos trabajos
+        // distintos —uno se acepta, el otro se revisa— y el dueño decide si
+        // vale la pena mirar el panel según cuál sea.
+        new Notification(
+          order.status === 'pago_en_revision' ? '🏦 Comprobante recibido' : '🛒 Nuevo pedido',
+          { body: text },
+        )
       }
     }
   }, [ordersPending, ordersLoaded])
@@ -172,15 +179,22 @@ export function AlarmBanner({
     )
   }
 
+  // Los pedidos que suenan son de dos clases y se cuentan por separado: uno
+  // hay que aceptarlo, el otro hay que mirarle el comprobante.
+  const porRevisar = ordersPending.filter(order => order.status === 'pago_en_revision')
+  const porAceptar = ordersPending.filter(order => order.status !== 'pago_en_revision')
+
   const title = [manual.length, pending.length, lodgingPending.length, ordersPending.length].filter(Boolean).length > 1
     ? '¡Tienes pendientes!'
     : manual.length ? '¡Atiende a un cliente!'
+    : porRevisar.length && !porAceptar.length ? '¡Comprobante por revisar!'
     : ordersPending.length ? '¡Nuevo pedido!'
     : lodgingPending.length ? '¡Nueva solicitud de hospedaje!'
     : '¡Nueva reserva!'
   const parts = []
   if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
-  if (ordersPending.length) parts.push(`${ordersPending.length} pedido${ordersPending.length !== 1 ? 's' : ''} por confirmar`)
+  if (porAceptar.length) parts.push(`${porAceptar.length} pedido${porAceptar.length !== 1 ? 's' : ''} por confirmar`)
+  if (porRevisar.length) parts.push(`${porRevisar.length} comprobante${porRevisar.length !== 1 ? 's' : ''} por revisar`)
   if (pending.length) parts.push(`${pending.length} cita${pending.length !== 1 ? 's' : ''} por confirmar/cancelar`)
   if (lodgingPending.length) parts.push(`${lodgingPending.length} estadía${lodgingPending.length !== 1 ? 's' : ''} por confirmar`)
 

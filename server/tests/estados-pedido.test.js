@@ -34,6 +34,13 @@ const rutaPedidos = readFileSync(
   path.join(serverDir, 'src', 'routes', 'orders.routes.ts'),
   'utf8',
 )
+// El CUARTO sitio, y el que se rompió sin avisar: lo que la alarma vigila.
+// Los otros tres fallan de cara —un botón que no funciona, una etiqueta en
+// blanco—; este falla callándose, que es la peor forma.
+const vigilancia = readFileSync(
+  path.join(serverDir, '..', 'apps', 'client', 'src', 'hooks', 'useAttention.ts'),
+  'utf8',
+)
 
 const estadosDeLaRuta = () => {
   const inicio = rutaPedidos.indexOf('const ESTADOS_PEDIDO = [')
@@ -66,6 +73,13 @@ const estadosDelPanel = () => {
   const inicio = panel.indexOf('export type OrderStatus')
   const fin = panel.indexOf('\n\n', inicio)
   return [...panel.slice(inicio, fin).matchAll(/'([a-z_]+)'/g)].map(([, valor]) => valor)
+}
+
+/** El CUARTO sitio: los estados que hacen sonar la alarma del panel. */
+const estadosVigilados = () => {
+  const inicio = vigilancia.indexOf('export const VIGILADOS')
+  const fin = vigilancia.indexOf(']', inicio)
+  return [...vigilancia.slice(inicio, fin).matchAll(/'([a-z_]+)'/g)].map(([, valor]) => valor)
 }
 
 const estadosDeLaFuncion = () => {
@@ -145,6 +159,40 @@ describe('los estados del pedido', () => {
           + `${inventados.map(e => `  · ${e}`).join('\n')}`
         : '',
     ).toEqual([])
+  })
+
+  // ── El CUARTO sitio: lo que la alarma vigila ─────────────────────────────
+  //
+  // El fallo del 2026-08-08. La alarma miraba solo `pendiente`, y el día antes
+  // se había decidido que quien transfiere nace en `esperando_pago` y pasa a
+  // `pago_en_revision` al subir su comprobante. Nada falló al compilar, ningún
+  // test se puso rojo: simplemente dejó de sonar. El negocio tuvo pedidos
+  // pagados sin enterarse.
+  //
+  // No se puede exigir que vigile TODOS los estados —«entregado» no despierta
+  // a nadie—, así que lo que se comprueba es que los que nombra existan de
+  // verdad y que el que de verdad importa no se caiga de la lista.
+  it('la alarma vigila estados que la base conoce', () => {
+    const enLaBase = checksDelEsquema()[0]
+    const inventados = estadosVigilados().filter(estado => !enLaBase.includes(estado))
+
+    expect(
+      inventados,
+      inventados.length
+        ? 'La alarma vigila estados que la base no guarda:\n'
+          + `${inventados.map(e => `  · ${e}`).join('\n')}\n\n`
+          + 'Esa consulta devolverá un 400 y la alarma dejará de sonar entera.'
+        : '',
+    ).toEqual([])
+  })
+
+  it('la alarma vigila el comprobante por revisar', () => {
+    expect(
+      estadosVigilados(),
+      'Si `pago_en_revision` sale de VIGILADOS, un cliente puede pagar y subir\n'
+      + 'su comprobante sin que el negocio se entere de nada. Es exactamente lo\n'
+      + 'que pasó el 2026-08-08.',
+    ).toContain('pago_en_revision')
   })
 
   // Cada estado necesita su etiqueta y su color, o la ficha se ve rota.

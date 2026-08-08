@@ -358,11 +358,24 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
       takes_bookings: false, takes_orders: true,
     }),
   }))
-  await page.route('**/api/client/orders**', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify(orders),
-  }))
+  // ⚠️ El simulacro RESPETA el filtro `?status=`, como la ruta real.
+  //
+  // Ignorarlo fue lo que dejó pasar el fallo del 2026-08-08: la alarma pedía
+  // `?status=pendiente` y este mock le devolvía los pedidos igual, cualquiera
+  // que fuese su estado. Con eso, la prueba seguía en verde mientras en
+  // producción no sonaba nada. Un simulacro más permisivo que el servidor no
+  // prueba el sistema: prueba el simulacro.
+  await page.route('**/api/client/orders**', route => {
+    const pedidos = new URL(route.request().url()).searchParams.get('status')
+    const filtro = pedidos ? pedidos.split(',') : null
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        filtro ? orders.filter(o => filtro.includes(String(o.status))) : orders,
+      ),
+    })
+  })
   await page.goto(clientUrl)
 
   // Un negocio que recibe pedidos tiene su sección propia en el menú: sin ella
@@ -381,6 +394,59 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
 
   await expect(page.getByText('¡Nuevo pedido!')).toBeVisible({ timeout: 25_000 })
   await expect(page.getByText('1 pedido por confirmar')).toBeVisible()
+  await page.getByRole('button', { name: 'Atender' }).click()
+  await expect(page).toHaveURL(/#\/orders$/)
+})
+
+// ── El pedido que se pagó y nadie oyó ──────────────────────────────────────
+//
+// El caso real del 2026-08-08: el cliente pide por transferencia, sube su
+// comprobante y el pedido pasa a `pago_en_revision`. Nunca fue «pendiente»,
+// así que la alarma —que solo vigilaba ese estado— no sonó. Cuatro pedidos
+// pagados esa noche y ni una campana.
+test('la alarma suena cuando llega el comprobante de una transferencia', async ({ page }) => {
+  test.setTimeout(45_000)
+  await seedClientSession(page)
+  await mockClientApi(page)
+  let orders: Record<string, unknown>[] = []
+
+  await page.route('**/api/client/business', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
+      takes_bookings: false, takes_orders: true,
+    }),
+  }))
+  await page.route('**/api/client/orders**', route => {
+    const pedidos = new URL(route.request().url()).searchParams.get('status')
+    const filtro = pedidos ? pedidos.split(',') : null
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        filtro ? orders.filter(o => filtro.includes(String(o.status))) : orders,
+      ),
+    })
+  })
+  await page.goto(clientUrl)
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible()
+
+  // Esperando el pago NO suena: el dueño no puede hacer nada hasta que el
+  // cliente pague, y una alarma sin trabajo detrás enseña a ignorarla.
+  orders = [{
+    id: 'order-transferencia', contact_phone: '+593999000222', contact_name: 'Cliente que paga',
+    status: 'esperando_pago', subtotal: 12.5, discount: 0, total: 12.5, currency: 'USD',
+    created_at: '2026-08-08T04:40:00.000Z',
+  }]
+  await page.waitForTimeout(14_000)
+  await expect(page.getByText('¡Comprobante por revisar!')).toHaveCount(0)
+  await expect(page.getByText('¡Nuevo pedido!')).toHaveCount(0)
+
+  // Sube el comprobante: ahora sí hay algo que mirar, y tiene que sonar.
+  orders = [{ ...orders[0], status: 'pago_en_revision' }]
+  await expect(page.getByText('¡Comprobante por revisar!')).toBeVisible({ timeout: 25_000 })
+  await expect(page.getByText('1 comprobante por revisar')).toBeVisible()
   await page.getByRole('button', { name: 'Atender' }).click()
   await expect(page).toHaveURL(/#\/orders$/)
 })
