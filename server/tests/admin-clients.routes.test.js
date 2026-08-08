@@ -18,6 +18,10 @@ beforeEach(() => {
   process.env.JWT_SECRET = JWT_SECRET
   process.env.YCLOUD_WEBHOOK_SECRET = 'ycloud-signing-secret-test'
   process.env.YCLOUD_WEBHOOK_ENDPOINT_ID = 'ycloud-endpoint-test'
+  // El alta busca un slug libre, así que consulta la base. Sin este simulacro
+  // la ruta llamaría a Supabase de verdad y el test se quedaba colgado hasta
+  // agotar el tiempo — que es exactamente lo que pasó al añadirlo.
+  vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -119,6 +123,47 @@ describe('clientes y onboarding del superadmin', () => {
     expect(JSON.stringify(response.body)).not.toContain('ycloud-secret')
     expect(JSON.stringify(response.body)).not.toContain('ycloud-signing-secret')
     expect(JSON.stringify(response.body)).not.toContain('meta-secret')
+  })
+
+  // La dirección de la tienda viaja en un WhatsApp y la lee una persona:
+  // `pizzeria-don-pepe` dice de quién es, `pizzeria-don-pepe-1785656324571`
+  // parece un identificador de sistema y ocupa el doble.
+  it('el negocio nace con una dirección corta, sin el reloj pegado', async () => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-new', name: 'Pizzería Don Pepe' }, error: null,
+    })
+
+    await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Pizzería Don Pepe', whatsapp_number: '+593999000009',
+        client_email: 'owner@example.com', client_password: 'safe-password-12',
+        ycloud_api_key: 'k', ycloud_webhook_endpoint_id: 'e', ycloud_webhook_secret: 's',
+      },
+    })
+
+    // Y la tilde se CONVIERTE, no se borra: antes daba `pizzera`.
+    expect(createOnboarding.mock.calls[0][0].slug).toBe('pizzeria-don-pepe')
+  })
+
+  it('si la dirección ya existe, prueba la siguiente en vez de fallar', async () => {
+    vi.spyOn(db, 'getBusinessBySlug').mockImplementation(
+      async slug => (slug === 'pizzeria-don-pepe' ? { id: 'otro' } : null),
+    )
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-new' }, error: null,
+    })
+
+    await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Pizzería Don Pepe', whatsapp_number: '+593999000010',
+        client_email: 'owner2@example.com', client_password: 'safe-password-12',
+        ycloud_api_key: 'k', ycloud_webhook_endpoint_id: 'e', ycloud_webhook_secret: 's',
+      },
+    })
+
+    expect(createOnboarding.mock.calls[0][0].slug).toBe('pizzeria-don-pepe-2')
   })
 
   it('crea negocio, políticas, usuario y facturación sin exponer secretos', async () => {

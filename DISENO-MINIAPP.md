@@ -271,6 +271,26 @@ justamente `09:00 – 01:00`, así que este caso no es teórico.
 
 ---
 
+## La dirección de la tienda
+
+`/t/<slug>`, y el slug es el nombre del negocio: `monster-pizza`. Viaja en un
+WhatsApp y la lee una persona — `monster-pizza-1785656324571` parecía un
+identificador de sistema y ocupaba el doble.
+
+El sufijo numérico solo aparece cuando **de verdad** hay dos negocios con el
+mismo nombre (`-2`, `-3`…). Antes se pegaba un `Date.now()` SIEMPRE, por si
+acaso.
+
+⚠️ **Las tildes se convierten, no se borran.** La versión anterior filtraba el
+nombre en crudo con `[^a-z0-9-]`, así que la letra acentuada desaparecía
+entera: «Heladería» daba `heladera` y «Cafetería Ñandú» daba `cafetera-and`.
+
+⚠️ **Cambiar el slug de un negocio que ya opera rompe los enlaces `/t/…` que ya
+circulan.** Los `/s/<token>` que manda el bot NO se rompen: resuelven por token
+y redirigen al slug actual.
+
+---
+
 ## El número de pedido
 
 `orders.order_number`, **correlativo por negocio desde 1**. Es lo que el cliente
