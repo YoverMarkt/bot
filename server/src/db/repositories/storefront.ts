@@ -306,6 +306,26 @@ const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
  * Devuelve lo justo para pintar el seguimiento: ni la dirección completa ni el
  * comprobante, que no hacen falta para saber por dónde va.
  */
+/**
+ * Lo que ve el cliente de su propio pedido.
+ *
+ * `payment_confirmed_at` viaja porque quien transfirió necesita saber si su
+ * plata llegó: sin él, el que mandó el comprobante por WhatsApp se queda
+ * mirando los datos bancarios como si no hubiera pagado.
+ *
+ * Las líneas viajan para que el seguimiento diga QUÉ pidió — antes había que
+ * volverse a WhatsApp para acordarse. Se nombran una a una en vez de
+ * `order_items(*)`: de ahí solo se pintan seis campos, y los demás (ids
+ * internos, precio unitario) no tienen por qué salir de la base.
+ *
+ * ⚠️ Va en una constante `as const` y NO partido con `+`. Concatenar lo
+ * convierte en un `string` cualquiera y supabase-js deja de poder inferir la
+ * forma de la respuesta: el `data` sale sin tipo y el spread de abajo no
+ * compila. La alternativa era un cast, que es justo lo que se quitó de esta
+ * capa.
+ */
+const CAMPOS_DEL_SEGUIMIENTO = 'id,order_number,status,total,currency,fulfillment,created_at,payment_confirmed_at,order_items(product_name,variant_name,extras_names,item_note,quantity,line_total)' as const
+
 const getStorefrontOrder = async (input: {
   businessId: string
   contactPhone: string
@@ -313,12 +333,7 @@ const getStorefrontOrder = async (input: {
 }) => {
   const { data, error } = await db
     .from('orders')
-    // `payment_confirmed_at` viaja porque el cliente que transfirió necesita
-    // saber si su plata llegó. Sin él, quien mandó el comprobante por WhatsApp
-    // se queda mirando los datos bancarios como si no hubiera pagado.
-    .select(
-      'id,order_number,status,total,currency,fulfillment,created_at,payment_confirmed_at',
-    )
+    .select(CAMPOS_DEL_SEGUIMIENTO)
     .eq('business_id', input.businessId)
     .eq('contact_phone', input.contactPhone)
     .eq('id', input.orderId)

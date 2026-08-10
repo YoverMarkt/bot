@@ -383,6 +383,35 @@ responda.
 
 ---
 
+### «Tu pedido»: qué compró
+
+Debajo de la línea de tiempo, las líneas del pedido con su cantidad, lo elegido
+en la ficha, la nota y su importe. Hasta el 2026-08-09 el seguimiento solo
+enseñaba el número y el total, así que para acordarse de qué había pedido el
+cliente tenía que volverse a WhatsApp y buscar el mensaje.
+
+Va **debajo** y no arriba: quien abre esto viene a saber por dónde va su
+pedido, no a repasar la lista.
+
+Los nombres son los **congelados al pedir**, no los del catálogo de hoy: si el
+negocio renombra un producto o le cambia el precio, el pedido tiene que seguir
+diciendo lo que el cliente compró.
+
+⚠️ El select **nombra los seis campos** en vez de pedir `order_items(*)`. Con
+el asterisco saldrían también `product_id`, `unit_price` y los ids internos:
+nada de eso se pinta, y el precio unitario de un producto con opciones no
+coincide con lo que el cliente eligió —enseñarlo confunde—. Lo vigila una
+prueba, porque es una decisión sobre la CONSULTA y con datos de ejemplo
+pasaría igual el día que alguien la abra de más.
+
+⚠️ Y va en una constante `as const`, **no partido con `+`**: concatenar lo
+convierte en un `string` cualquiera, supabase-js deja de inferir la forma de la
+respuesta y la función no compila. La primera salida fue un cast — justo lo que
+se había quitado de esa capa.
+
+Un pedido del bot no trae líneas (nace desde el chat, sin catálogo): la sección
+entera desaparece en vez de dejar un recuadro vacío con su título.
+
 ### El pedido entregado se despide
 
 Con `completado`, la pantalla de seguimiento se **reemplaza entera** por una

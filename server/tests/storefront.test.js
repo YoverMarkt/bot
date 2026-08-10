@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const {
@@ -346,5 +349,55 @@ describe('la tienda del negocio', () => {
       expect(texto).not.toMatch(/secreta|secreto|whsec/)
       expect(Object.keys(publico)).not.toContain('ycloud_api_key')
     })
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE SALE DE LA BASE HACIA EL SEGUIMIENTO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El seguimiento es la única pantalla de la tienda que devuelve datos de UN
+// pedido concreto, así que es la que más cuidado pide con lo que saca de la
+// base. Se comprueba leyendo el código porque es una decisión sobre la
+// consulta, no sobre su resultado: con datos de prueba pasaría igual el día
+// que alguien la abra de más.
+describe('la consulta del seguimiento', () => {
+  const repositorio = readFileSync(
+    path.join(
+      fileURLToPath(new URL('..', import.meta.url)),
+      'src', 'db', 'repositories', 'storefront.ts',
+    ),
+    'utf8',
+  )
+  const select = repositorio.slice(
+    repositorio.indexOf('const CAMPOS_DEL_SEGUIMIENTO'),
+    repositorio.indexOf('const getStorefrontOrder'),
+  )
+
+  it('trae las líneas del pedido, o el cliente no sabe qué pidió', () => {
+    expect(select).toContain('order_items(')
+    for (const campo of ['product_name', 'variant_name', 'quantity', 'line_total']) {
+      expect(select, `falta ${campo}`).toContain(campo)
+    }
+  })
+
+  // `order_items(*)` sacaría también `product_id`, `unit_price` y los ids
+  // internos. Nada de eso se pinta, y el precio unitario de un pedido con
+  // opciones no coincide con lo que el cliente eligió: enseñarlo confunde y
+  // guardarlo en una respuesta pública no aporta nada.
+  it('nombra los campos en vez de pedirlos todos', () => {
+    expect(select).not.toContain('order_items(*)')
+    for (const interno of ['product_id', 'unit_price', 'order_id']) {
+      expect(select, `${interno} no debería salir de la base`).not.toContain(interno)
+    }
+  })
+
+  // Concatenar el select con `+` lo convierte en un `string` cualquiera y
+  // supabase-js deja de inferir la forma de la respuesta: el `data` sale sin
+  // tipo y la función no compila. Se arregló con un cast la primera vez, que
+  // es justo lo que se había quitado de esta capa.
+  it('el select es un literal, no una concatenación', () => {
+    expect(select).toContain('as const')
+    expect(select).not.toMatch(/'\s*\+\s*$/m)
   })
 })

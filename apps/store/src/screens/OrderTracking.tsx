@@ -209,6 +209,9 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
   }
   const indiceActual = pasos.findIndex(paso => paso.estados.includes(pedido.status))
   const cortado = CORTADOS[pedido.status]
+  // Un pedido del bot no trae líneas: nace desde el chat, sin catálogo. La
+  // sección entera desaparece en vez de dejar un recuadro vacío con título.
+  const lineas = pedido.order_items || []
 
   return (
     <div className="animar-entrada mx-auto min-h-full max-w-md px-5 pt-seguro pb-10">
@@ -375,6 +378,52 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
               })}
             </ol>
           )}
+
+      {/* ── Qué pidió ──
+          Va DEBAJO de la línea de tiempo a propósito: quien abre esto viene a
+          saber por dónde va su pedido, no a repasar la lista. Pero tiene que
+          estar, porque hasta ahora la única forma de acordarse era volverse a
+          WhatsApp y buscar el mensaje.
+
+          Los nombres son los CONGELADOS al pedir, no los del catálogo de hoy:
+          si el negocio renombra un producto, el pedido tiene que seguir
+          diciendo lo que el cliente compró. */}
+      {!cortado && lineas.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+            Tu pedido
+          </h2>
+          <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
+            {lineas.map((linea, indice) => (
+              <div key={indice} className="flex items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[14px] leading-snug font-semibold">
+                    {linea.quantity}× {linea.product_name}
+                    {linea.variant_name && (
+                      <span className="font-normal texto-tenue"> · {linea.variant_name}</span>
+                    )}
+                  </p>
+                  {/* Lo elegido en la ficha: sin esto, dos pedidos del mismo
+                      producto con opciones distintas se leen idénticos. */}
+                  {linea.extras_names?.length ? (
+                    <p className="mt-0.5 text-[12.5px] leading-snug texto-tenue">
+                      {linea.extras_names.join(' · ')}
+                    </p>
+                  ) : null}
+                  {linea.item_note && (
+                    <p className="mt-0.5 text-[12.5px] leading-snug italic texto-tenue">
+                      «{linea.item_note}»
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 text-[14px] font-semibold tabular-nums">
+                  {money(Number(linea.line_total))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mt-8 space-y-2.5">
         {business.phone && (
