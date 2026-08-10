@@ -217,6 +217,21 @@ export interface TrackedOrder {
    * mayoría. Por eso no se puede deducir del estado.
    */
   payment_confirmed_at?: string | null
+  /**
+   * Lo que pidió, tal como lo congeló la base al crear el pedido.
+   *
+   * Son los nombres GUARDADOS, no los del catálogo de hoy: si el negocio
+   * renombra un producto o le cambia el precio, el pedido tiene que seguir
+   * diciendo lo que el cliente compró.
+   */
+  order_items?: {
+    product_name: string
+    variant_name?: string | null
+    extras_names?: string[] | null
+    item_note?: string | null
+    quantity: number
+    line_total: number | string
+  }[] | null
   /** El historial de estados, que es de donde sale la hora de cada paso. */
   events: { to_status: string; created_at: string }[]
 }
