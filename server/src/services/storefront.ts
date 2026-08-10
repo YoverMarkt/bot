@@ -622,18 +622,31 @@ export function quoteCart(input: {
       })
     }
 
-    // Los obligatorios se exigen aquí también: cotizar algo que la RPC va a
+    // Los topes del grupo se exigen aquí también: cotizar algo que la RPC va a
     // rechazar dejaría al cliente pagando una pantalla que no existe.
+    //
+    // ⚠️ Los DOS, mínimo y máximo, y con las mismas cuentas que la RPC. Hasta
+    // el 2026-08-09 solo se comprobaba el mínimo: una pizza con tres sabores
+    // teniendo el tope en dos se cotizaba sin queja, con su precio y todo, y
+    // reventaba al confirmar con «Demasiadas opciones». La app bloquea al
+    // llegar al máximo, pero la app no es la defensa — este endpoint se llama
+    // igual sin pasar por ella.
     for (const grupo of input.optionGroups) {
       const aplica = grupo.product_id === producto.id
         || (Boolean(grupo.category_id) && grupo.category_id === producto.category_id)
       if (!aplica) continue
       const elegidas = elegidasPorGrupo.get(grupo.id) || []
+      // En los contadores cuentan las PORCIONES; en el resto, cuántas se
+      // marcaron. Una parrillada de 4 se cumple con un corte pedido 4 veces.
       const cuenta = grupo.selection_type === 'quantity'
         ? elegidas.reduce((suma, opcion) => suma + opcion.quantity, 0)
         : elegidas.length
       const minimo = Math.max(grupo.required ? 1 : 0, grupo.min_selectable ?? 0)
       if (cuenta < minimo) return vacia(`Falta elegir ${grupo.name} en ${producto.name}`)
+      // Mismo texto que la RPC a propósito: el cliente lee lo mismo venga el
+      // rechazo de donde venga.
+      const maximo = Math.max(1, grupo.max_selectable ?? 1)
+      if (cuenta > maximo) return vacia(`Demasiadas opciones en ${grupo.name}`)
     }
 
     const unitPrice = calculateProductPrice({

@@ -153,6 +153,60 @@ describe('lo que la cotización rechaza, para no prometer un precio imposible', 
     expect(r.error).toMatch(/no es de este producto/)
   })
 
+  // ── El tope de arriba, que faltaba ────────────────────────────────────────
+  //
+  // Hasta el 2026-08-09 solo se comprobaba el mínimo. Una pizza con TRES
+  // sabores teniendo el tope en dos se cotizaba sin queja —con su precio y
+  // todo— y reventaba al confirmar con «Demasiadas opciones»: el cliente veía
+  // un número y le llegaba otro, que es justo lo que esta función existe para
+  // evitar. La app bloquea al llegar al máximo, pero la app no es la defensa.
+  it('rechaza pasarse del máximo del grupo', () => {
+    const TERCERA = {
+      id: 'o-ter', option_group_id: 'g-mitades', name: 'Media Carnívora',
+      price_adjustment: 12, stock: 'disponible',
+    }
+    const r = quoteCart({
+      items: [{
+        productId: 'p1', quantity: 1,
+        options: [
+          { optionId: 'o-sup', quantity: 1 },
+          { optionId: 'o-haw', quantity: 1 },
+          { optionId: 'o-ter', quantity: 1 },
+        ],
+      }],
+      products: [PRODUCTO], variants: [],
+      optionGroups: [GRUPO_MITADES], options: [SUPREMA, HAWAIANA, TERCERA],
+      deliveryFee: 0, fulfillment: 'pickup',
+    })
+    // Mismo texto que la RPC: el cliente lee lo mismo venga de donde venga.
+    expect(r.error).toMatch(/Demasiadas opciones en Mitades/)
+  })
+
+  // En un contador el tope es de PORCIONES, no de opciones marcadas: una
+  // parrillada de 4 se cumple con un corte pedido 4 veces. Si aquí se contaran
+  // las opciones, «6 salsas de ajo» pasaría por ser una sola marcada.
+  it('en los contadores el tope cuenta porciones, no opciones marcadas', () => {
+    const SALSAS = {
+      id: 'g-salsas', product_id: 'p1', category_id: null, name: 'Salsas',
+      selection_type: 'quantity', required: false, min_selectable: 0,
+      max_selectable: 3, pricing_strategy: 'sum', free_selections: 0,
+    }
+    const AJO = {
+      id: 'o-ajo', option_group_id: 'g-salsas', name: 'Salsa de ajo',
+      price_adjustment: 0.5, stock: 'disponible',
+    }
+    const cotizarSalsas = porciones => quoteCart({
+      items: [{ productId: 'p1', quantity: 1, options: [{ optionId: 'o-ajo', quantity: porciones }] }],
+      products: [PRODUCTO], variants: [],
+      optionGroups: [{ ...GRUPO_MITADES, required: false, min_selectable: 0 }, SALSAS],
+      options: [SUPREMA, HAWAIANA, AJO],
+      deliveryFee: 0, fulfillment: 'pickup',
+    })
+
+    expect(cotizarSalsas(3).error).toBeUndefined()
+    expect(cotizarSalsas(4).error).toMatch(/Demasiadas opciones en Salsas/)
+  })
+
   // Los descuentos acumulados no pueden regalar el plato; la RPC lo rechaza
   // igual, así que cotizarlo sería prometer algo que no se va a cumplir.
   it('un plato que quedaría en cero por recargos negativos', () => {
