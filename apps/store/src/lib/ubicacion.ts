@@ -23,7 +23,8 @@ export interface Ubicacion {
   accuracy: number | null
 }
 
-export type FalloUbicacion = 'sin_soporte' | 'permiso' | 'no_disponible' | 'tardo'
+export type FalloUbicacion =
+  | 'sin_soporte' | 'incrustado' | 'bloqueada' | 'permiso' | 'no_disponible' | 'tardo'
 
 export type ResultadoUbicacion =
   | { ok: true; ubicacion: Ubicacion }
@@ -32,19 +33,38 @@ export type ResultadoUbicacion =
 /**
  * Qué se le dice al cliente en cada fallo.
  *
- * El de `permiso` menciona abrir en el navegador porque el caso más común no es
- * que haya dicho que no: es que el enlace se abrió DENTRO de WhatsApp, y su
- * navegador incrustado no siempre reenvía el permiso de ubicación.
+ * ⚠️ Cada uno tiene que decir QUÉ HACER, y decir la verdad. La primera versión
+ * mandaba a todos el mismo texto —«si abriste el enlace desde WhatsApp, prueba
+ * en tu navegador»— y se lo enseñaba a quien YA estaba en Chrome con la
+ * ubicación bloqueada. Un mensaje que culpa al sitio equivocado es peor que no
+ * decir nada: el cliente hace lo que le pides, falla otra vez, y se rinde.
  */
 export const MENSAJES: Record<FalloUbicacion, string> = {
   sin_soporte: 'Tu navegador no puede compartir la ubicación. Escribe la dirección y listo.',
-  permiso: 'No pudimos leer tu ubicación. Si abriste el enlace desde WhatsApp, prueba abrirlo en tu navegador.',
-  no_disponible: 'No se pudo obtener tu ubicación ahora mismo. Puedes escribir la dirección.',
+  incrustado: 'Abriste el enlace dentro de WhatsApp y ahí no se puede compartir la ubicación. Ábrelo en tu navegador con el menú ⋮ y vuelve a intentarlo.',
+  bloqueada: 'Tienes la ubicación bloqueada para esta página. Toca el candado 🔒 junto a la dirección, permite «Ubicación» y vuelve a intentarlo.',
+  permiso: 'No nos diste permiso para leer tu ubicación. Puedes intentarlo otra vez o escribir la dirección.',
+  no_disponible: 'No pudimos ubicarte. Revisa que la ubicación del teléfono esté encendida.',
   tardo: 'Tu ubicación está tardando demasiado. Escribe la dirección y sigue con tu pedido.',
 }
 
 /** Cuánto se espera antes de rendirse. Con GPS y bajo techo, 10 s se quedan cortos. */
 const ESPERA_MS = 15000
+/** El segundo intento, por antena y wifi: llega en segundos y no falla bajo techo. */
+const ESPERA_RAPIDA_MS = 8000
+
+/**
+ * ¿Esto es el navegador incrustado de otra app?
+ *
+ * Android marca sus WebView con `; wv)` en el identificador, y WhatsApp además
+ * se nombra. En iOS el de WhatsApp es Safari de verdad y la ubicación funciona,
+ * así que ahí no hace falta avisar de nada.
+ *
+ * Solo decide QUÉ MENSAJE se enseña, nunca si se intenta: si algún día ese
+ * navegador empieza a pasar el permiso, esto no lo impide.
+ */
+export const esNavegadorIncrustado = (agente: string): boolean =>
+  /; wv\)|WhatsApp/i.test(agente)
 
 const fallo = (motivo: FalloUbicacion): ResultadoUbicacion =>
   ({ ok: false, motivo, mensaje: MENSAJES[motivo] })
@@ -82,38 +102,99 @@ export const recortarPrecision = (valor: unknown): number | null => {
 /** El objeto del navegador, inyectable para poder probar esto sin un GPS. */
 type Geo = Pick<Geolocation, 'getCurrentPosition'>
 
-export const pedirUbicacion = (
-  geo: Geo | undefined = typeof navigator === 'undefined' ? undefined : navigator.geolocation,
-): Promise<ResultadoUbicacion> => new Promise((resolver) => {
-  if (!geo || typeof geo.getCurrentPosition !== 'function') {
-    resolver(fallo('sin_soporte'))
-    return
+/** Lo que hace falta del entorno, inyectable entero para poder probarlo. */
+export interface EntornoUbicacion {
+  geo?: Geo
+  /** Para saber si el permiso está BLOQUEADO o solo no se ha pedido. */
+  permisos?: { query(descriptor: { name: PermissionName }): Promise<{ state: string }> }
+  agente?: string
+}
+
+const leerEntorno = (): EntornoUbicacion => (
+  typeof navigator === 'undefined'
+    ? {}
+    : {
+        geo: navigator.geolocation,
+        permisos: navigator.permissions,
+        agente: navigator.userAgent,
+      }
+)
+
+/** Un intento contra el GPS, con las opciones que se le den. */
+const intentar = (geo: Geo, opciones: PositionOptions): Promise<ResultadoUbicacion> =>
+  new Promise((resolver) => {
+    geo.getCurrentPosition(
+      (posicion) => {
+        const { latitude, longitude, accuracy } = posicion.coords
+        // Un navegador puede devolver la posición con coordenadas imposibles si
+        // el aparato va mal. Se comprueba aquí y no solo en el servidor para que
+        // el cliente vea «no se pudo» en vez de un error al guardar.
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+          || latitude < -90 || latitude > 90
+          || longitude < -180 || longitude > 180) {
+          resolver(fallo('no_disponible'))
+          return
+        }
+        resolver({
+          ok: true,
+          ubicacion: {
+            latitude: recortar(latitude),
+            longitude: recortar(longitude),
+            accuracy: recortarPrecision(accuracy),
+          },
+        })
+      },
+      (error) => resolver(fallo(motivoDelError(Number(error?.code)))),
+      opciones,
+    )
+  })
+
+/**
+ * Pide la ubicación, con dos intentos y un diagnóstico honesto del fallo.
+ *
+ * **Dos intentos** porque es lo que hacen las apps grandes: el primero exige
+ * GPS y sin caché —lo que de verdad sirve para llevarle comida a alguien—, pero
+ * bajo techo o de noche el GPS puede no fijar en quince segundos. Si eso pasa,
+ * el segundo intento acepta la posición por antena y wifi, que llega en
+ * segundos y cae a unos cientos de metros. Peor pin es mejor que ningún pin, y
+ * `accuracy` lo dice para que el repartidor sepa de cuál se fía.
+ *
+ * Solo se reintenta cuando el primero TARDÓ. Si el problema es el permiso, el
+ * segundo intento fallaría igual y solo alargaría la espera.
+ */
+export const pedirUbicacion = async (
+  entorno: EntornoUbicacion = leerEntorno(),
+): Promise<ResultadoUbicacion> => {
+  const { geo, agente = '' } = entorno
+  if (!geo || typeof geo.getCurrentPosition !== 'function') return fallo('sin_soporte')
+
+  // Alta precisión y sin caché: una posición guardada de hace una hora puede
+  // ser de otro barrio, y esto decide a dónde va un repartidor.
+  let resultado = await intentar(geo, {
+    enableHighAccuracy: true, timeout: ESPERA_MS, maximumAge: 0,
+  })
+
+  if (!resultado.ok && resultado.motivo === 'tardo') {
+    resultado = await intentar(geo, {
+      enableHighAccuracy: false, timeout: ESPERA_RAPIDA_MS, maximumAge: 60_000,
+    })
   }
 
-  geo.getCurrentPosition(
-    (posicion) => {
-      const { latitude, longitude, accuracy } = posicion.coords
-      // Un navegador puede devolver la posición con coordenadas imposibles si
-      // el aparato va mal. Se comprueba aquí y no solo en el servidor para que
-      // el cliente vea «no se pudo» en vez de un error al guardar.
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
-        || latitude < -90 || latitude > 90
-        || longitude < -180 || longitude > 180) {
-        resolver(fallo('no_disponible'))
-        return
-      }
-      resolver({
-        ok: true,
-        ubicacion: {
-          latitude: recortar(latitude),
-          longitude: recortar(longitude),
-          accuracy: recortarPrecision(accuracy),
-        },
-      })
-    },
-    (error) => resolver(fallo(motivoDelError(Number(error?.code)))),
-    // Alta precisión y sin caché: una posición guardada de hace una hora puede
-    // ser de otro barrio, y esto decide a dónde va un repartidor.
-    { enableHighAccuracy: true, timeout: ESPERA_MS, maximumAge: 0 },
-  )
-})
+  // ── Y si falló por permiso, AVERIGUAR POR QUÉ antes de hablar ────────────
+  //
+  // «Denegado» son tres situaciones distintas y cada una se arregla en un sitio
+  // distinto: el permiso bloqueado para la página (candado del navegador), el
+  // aviso que el cliente acaba de descartar (volver a intentarlo), y el
+  // navegador incrustado de WhatsApp que ni siquiera pregunta (abrir fuera).
+  // Mandarlos a todos al mismo sitio hace que dos de cada tres pierdan el tiempo.
+  if (!resultado.ok && resultado.motivo === 'permiso') {
+    if (esNavegadorIncrustado(agente)) return fallo('incrustado')
+    const estado = await entorno.permisos
+      ?.query({ name: 'geolocation' as PermissionName })
+      .then(permiso => permiso.state)
+      .catch(() => null)
+    if (estado === 'denied') return fallo('bloqueada')
+  }
+
+  return resultado
+}

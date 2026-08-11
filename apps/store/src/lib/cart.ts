@@ -307,3 +307,40 @@ export function groupExtras(extras: Extra[]): { group: string; items: Extra[] }[
   }
   return [...grupos.entries()].map(([group, items]) => ({ group, items }))
 }
+
+/**
+ * Lo que el cliente eligió, agrupado para PINTARLO en el carrito.
+ *
+ * ⚠️ Replica a propósito `services/order-detail.ts` del servidor, igual que
+ * `groupPrice` replica `services/pricing.ts`. Aquí no hay servidor al que
+ * preguntar: el carrito todavía no es un pedido, existe solo en este teléfono.
+ * Las reglas son las mismas —grupos y opciones en orden alfabético, el x1 no se
+ * dice— para que el carrito y la pantalla de seguimiento cuenten el MISMO plato
+ * de la misma forma. Si divergen, el cliente cree que pidió otra cosa.
+ */
+export function groupChosen(
+  options: ChosenOption[],
+): { group: string; items: { name: string; quantity: number }[] }[] {
+  const grupos = new Map<string, { name: string; quantity: number }[]>()
+  for (const opcion of options) {
+    const grupo = (opcion.groupName || '').trim()
+    const nombre = (opcion.name || '').trim()
+    // Sin grupo o sin nombre no se puede contar nada: pintar «: algo» sería
+    // peor que callarlo.
+    if (!grupo || !nombre) continue
+    const cantidad = Math.max(1, Math.trunc(opcion.quantity || 1))
+    grupos.set(grupo, [...grupos.get(grupo) || [], { name: nombre, quantity: cantidad }])
+  }
+  return [...grupos.entries()]
+    .map(([group, items]) => ({
+      group,
+      items: [...items].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group, 'es'))
+}
+
+/** Una línea de texto por grupo: «Sabor: Criolla, Monster». */
+export const chosenLines = (options: ChosenOption[]): string[] =>
+  groupChosen(options).map(grupo => `${grupo.group}: ${grupo.items
+    .map(item => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name))
+    .join(', ')}`)

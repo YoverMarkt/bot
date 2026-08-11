@@ -36,7 +36,21 @@ const DIST = path.join(RAIZ, 'dist')
 // del local, buscador, barra inferior y el observador que sincroniza las
 // pestañas con el scroll— y +0,5 de CSS de la rejilla. Es una pantalla nueva,
 // que es exactamente como crece esta app.
-const PRESUPUESTO_KB = 86
+//
+// Medido el 2026-08-10: 86,1 kB. La subida (86 → 88) también es sin
+// dependencias, y las dos cosas que la causan arreglan fallos que se vieron en
+// un teléfono de verdad:
+//
+//   · el carrito no enseñaba lo que el cliente había elegido —una pizza con
+//     masa, sabor y borde salía como «Pizza · Familiar»— justo en la pantalla
+//     donde confirma y paga;
+//   · el aviso de la ubicación decía lo mismo para tres fallos distintos y
+//     mandaba a abrir el enlace fuera de WhatsApp a quien ya estaba en Chrome
+//     con el permiso bloqueado.
+//
+// El margen sigue en 1,9 kB, bastante por debajo de los ~10 kB de react-router:
+// este guardián no ha perdido nada de su capacidad de cazar una dependencia.
+const PRESUPUESTO_KB = 88
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
