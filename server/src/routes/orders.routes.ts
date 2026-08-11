@@ -5,6 +5,7 @@ import { signedMediaUrl } from '../integrations/cloudinary'
 import {
   notificarCambioDePedido, seAvisa, type PedidoParaAvisar,
 } from '../services/order-notify'
+import { conOpcionesAgrupadasEnLote } from '../services/order-detail'
 import type { BusinessRecord } from '../db/types'
 
 // Estados que hoy acepta orders.status. El GET puede filtrar por cualquiera
@@ -154,7 +155,10 @@ router.get(
     // Uno solo sigue viajando como texto: es como se pedía antes de admitir
     // listas, y el repositorio filtra igual en los dos casos.
     const filtro = estados === null ? null : estados.length === 1 ? estados[0] : estados
-    res.json(await db.getOrders(businessId, 100, filtro))
+    // Las opciones salen ya agrupadas por grupo: el panel pinta lo que recibe
+    // y no vuelve a agrupar por su cuenta, que es como el panel y la mini app
+    // acabaron enseñando cosas distintas del mismo plato.
+    res.json(conOpcionesAgrupadasEnLote(await db.getOrders(businessId, 100, filtro)))
   },
 )
 

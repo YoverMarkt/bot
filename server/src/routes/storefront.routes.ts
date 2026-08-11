@@ -2,6 +2,7 @@ import rateLimit from 'express-rate-limit'
 import multer from 'multer'
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
+import { conOpcionesAgrupadas } from '../services/order-detail'
 import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadPrivateMedia } from '../integrations/cloudinary'
@@ -552,7 +553,9 @@ router.get('/api/store/:slug/orders/:id', requireStorefrontSession, async (req, 
   const { data, error } = await db.getStorefrontOrder({ businessId, contactPhone, orderId })
   if (error) return res.status(500).json({ error: 'No pudimos consultar tu pedido' })
   if (!data) return res.status(404).json({ error: 'No encontramos ese pedido' })
-  return res.json(data)
+  // Agrupadas aquí y no en la app: el mismo plato tiene que leerse igual en el
+  // seguimiento, en el panel del dueño y en el WhatsApp del cliente.
+  return res.json(conOpcionesAgrupadas(data as Record<string, unknown>))
 })
 
 /** Datos bancarios para transferir. Solo con sesión y solo del propio negocio. */

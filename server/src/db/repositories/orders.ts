@@ -39,7 +39,7 @@ const getOrders = async (
   // eso no decía a dónde iba el pedido: decía a dónde va HOY esa dirección.
   let query = db
     .from('orders')
-    .select('*, order_items(*)')
+    .select('*, order_items(*, order_item_options(option_group_name,option_name,quantity))')
     .eq('business_id', businessId)
   if (Array.isArray(status)) {
     if (status.length) query = query.in('status', status)
@@ -131,7 +131,12 @@ const claimOrderNotification = async (
     .eq('business_id', businessId)
     .eq('id', orderId)
     .or(`customer_notified_status.is.null,customer_notified_status.neq.${status}`)
-    .select('id,order_number,status,fulfillment,contact_phone,contact_name,total,currency,order_items(*)')
+    // Las opciones viajan con cada línea: el aviso de preparación cuenta lo
+    // que el cliente eligió, y sin ellas decía «1× Pizza» y punto.
+    .select(
+      'id,order_number,status,fulfillment,contact_phone,contact_name,total,currency,'
+      + 'order_items(*, order_item_options(option_group_name,option_name,quantity))',
+    )
     .maybeSingle()
   if (error) throw new Error(error.message)
   return (data || null) as OrderData | null

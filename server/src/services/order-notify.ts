@@ -27,6 +27,8 @@
 // El día que se enganchen las plantillas, el cambio es aquí y en ningún otro
 // sitio: el resto del sistema solo llama a `notificarCambioDePedido`.
 import type { BusinessRecord } from '../db/types'
+import { detalleEnTexto } from './order-detail'
+import type { OpcionDelPedido } from './order-detail'
 
 /** Lo justo para redactar el aviso. Nada de esto se recalcula: viene de la base. */
 export interface PedidoParaAvisar {
@@ -41,6 +43,11 @@ export interface PedidoParaAvisar {
     product_name?: string | null
     variant_name?: string | null
     quantity?: number | null
+    /** Lo que eligió, agrupado por `order-detail.ts`. Sin esto el mensaje
+     *  decía «1× Pizza (Personal)» y el cliente no podía comprobar nada. */
+    order_item_options?: OpcionDelPedido[] | null
+    /** El respaldo de los pedidos anteriores al motor de opciones. */
+    extras_names?: string[] | null
   }[] | null
 }
 
@@ -91,16 +98,30 @@ const esDestinatarioValido = (telefono: string): boolean => {
 export const GRACIAS_POR_PREFERIRNOS = 'Gracias por preferirnos 🙌'
 export const PRONTO_EN_UMBANI = 'Pronto también estaremos en la app de Umbani.'
 
-/** El detalle de lo que se pidió, que solo hace falta en el primer aviso. */
+/**
+ * El detalle de lo que se pidió, que solo hace falta en el primer aviso.
+ *
+ * Va COMPLETO a propósito. Meta cobra por mensaje, no por carácter: alargar el
+ * texto con lo que el cliente eligió no cuesta un centavo más, y es justo el
+ * momento en que él comprueba que le entendieron bien y aún se puede corregir.
+ *
+ * Antes esto decía «1× Pizza (Personal)» y se acababa ahí — ni siquiera leía
+ * `extras_names`, que ya venía en la consulta.
+ */
 const lineasDelPedido = (pedido: PedidoParaAvisar): string[] => {
   const items = (pedido.order_items || []).filter(item => item?.product_name)
   if (!items.length) return []
-  return items.map((item) => {
+  return items.flatMap((item) => {
     const cantidad = Number(item.quantity) || 1
     // La variante va pegada al nombre porque «Pizza» y «Pizza Familiar» son
     // cosas distintas, y el cliente comprueba aquí que le entendieron bien.
     const variante = item.variant_name ? ` (${item.variant_name})` : ''
-    return `• ${cantidad}× ${item.product_name}${variante}`
+    return [
+      `• ${cantidad}× ${item.product_name}${variante}`,
+      // Sangradas bajo su producto: en un pedido de tres platos, sin sangría no
+      // se sabe de cuál es cada cosa.
+      ...detalleEnTexto(item).map(linea => `   ${linea}`),
+    ]
   })
 }
 

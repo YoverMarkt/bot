@@ -208,6 +208,31 @@ export interface OrderResult {
   [key: string]: unknown
 }
 
+/**
+ * Lo que el cliente eligió, agrupado por el SERVIDOR (`order-detail.ts`).
+ *
+ * Llega agrupado y no en crudo a propósito: el mismo plato se enseña en el
+ * seguimiento, en el panel del dueño y en el WhatsApp del cliente, y agrupar
+ * en cada sitio es como acabaron diciendo cosas distintas.
+ */
+export interface GrupoElegido {
+  group: string
+  items: { name: string; quantity: number }[]
+}
+
+/** Una línea del pedido, tal como la congeló la base al crearlo. */
+export interface TrackedItem {
+  product_name: string
+  variant_name?: string | null
+  /** Ya agrupado. Vacío en los pedidos anteriores al motor de opciones. */
+  options?: GrupoElegido[] | null
+  /** El respaldo de esos pedidos viejos: una lista plana, sin grupos. */
+  extras_names?: string[] | null
+  item_note?: string | null
+  quantity: number
+  line_total: number | string
+}
+
 /** Un pedido tal como lo ve su dueño en la pantalla de seguimiento. */
 export interface TrackedOrder {
   id: string
@@ -232,14 +257,7 @@ export interface TrackedOrder {
    * renombra un producto o le cambia el precio, el pedido tiene que seguir
    * diciendo lo que el cliente compró.
    */
-  order_items?: {
-    product_name: string
-    variant_name?: string | null
-    extras_names?: string[] | null
-    item_note?: string | null
-    quantity: number
-    line_total: number | string
-  }[] | null
+  order_items?: TrackedItem[] | null
   /** El historial de estados, que es de donde sale la hora de cada paso. */
   events: { to_status: string; created_at: string }[]
 }
