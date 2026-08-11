@@ -34,11 +34,12 @@ const getOrders = async (
   limit = 100,
   status: string | string[] | null = null,
 ) => {
-  // La dirección viaja incrustada: sin ella la bandeja de Pedidos no puede
-  // decirle al repartidor a dónde va, que es medio trabajo del pedido.
+  // La dirección sale de las columnas `delivery_*` del propio pedido, que las
+  // trae el `*`. Antes se incrustaba `customer_addresses` por `address_id` y
+  // eso no decía a dónde iba el pedido: decía a dónde va HOY esa dirección.
   let query = db
     .from('orders')
-    .select('*, order_items(*), customer_addresses:address_id (label, address, reference)')
+    .select('*, order_items(*)')
     .eq('business_id', businessId)
   if (Array.isArray(status)) {
     if (status.length) query = query.in('status', status)

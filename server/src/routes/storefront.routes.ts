@@ -61,6 +61,15 @@ interface StorefrontRouteDatabase {
   getBusinessBankAccount(businessId: string): Promise<unknown>
   getCustomerAddresses(businessId: string, customerId: string): Promise<unknown[]>
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
+  /** Devuelve `null` cuando la dirección no es de ese cliente y ese negocio. */
+  setCustomerAddressLocation(input: {
+    businessId: string
+    customerId: string
+    addressId: string
+    latitude: number
+    longitude: number
+    accuracyM: number | null
+  }): Promise<unknown>
   getBusinessCustomer(businessId: string, customerId: string): Promise<unknown>
   setCustomerDisplayName(
     businessId: string,
@@ -304,6 +313,55 @@ router.get('/api/store/:slug/me', requireStorefrontSession, async (req, res) => 
   })
 })
 
+// ── El pin y lo que necesita quien reparte ─────────────────────────────────
+//
+// Estos saneos repiten a propósito los CHECK de `customer_addresses`. No es
+// desconfianza de la base —ella es la que manda— sino que el cliente lea «la
+// ubicación no es válida» en vez de un error de restricción de PostgreSQL.
+
+const TIPOS_DE_EDIFICIO = new Set(['casa', 'departamento', 'oficina', 'hotel', 'otro'])
+
+interface Ubicacion { latitude: number; longitude: number; accuracyM: number | null }
+
+/**
+ * Lee el pin del cuerpo de la petición.
+ *
+ * Devuelve `null` cuando no se mandó ninguno —el pin es OPCIONAL: quien niega
+ * el permiso del navegador tiene que poder pedir igual— y un error solo cuando
+ * lo mandado no sirve.
+ *
+ * ⚠️ Latitud y longitud viajan JUNTAS o no viajan. Media coordenada no es medio
+ * pin: es un punto en el ecuador o en Greenwich, que es peor que no tener nada
+ * porque parece un dato.
+ */
+const leerUbicacion = (
+  body: Record<string, unknown>,
+): { ok: true; valor: Ubicacion | null } | { ok: false; error: string } => {
+  const crudaLat = body.latitude
+  const crudaLng = body.longitude
+  const vacia = (v: unknown) => v === undefined || v === null || v === ''
+  if (vacia(crudaLat) && vacia(crudaLng)) return { ok: true, valor: null }
+  if (vacia(crudaLat) || vacia(crudaLng)) {
+    return { ok: false, error: 'La ubicación llegó incompleta' }
+  }
+
+  const latitude = Number(crudaLat)
+  const longitude = Number(crudaLng)
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
+    || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return { ok: false, error: 'La ubicación no es válida' }
+  }
+
+  // La precisión es opcional y solo informativa: si llega rara se descarta en
+  // vez de rechazar el pin, que es el dato que de verdad importa.
+  const cruda = Number(body.accuracy)
+  const accuracyM = Number.isFinite(cruda) && cruda >= 0 && cruda <= 100000
+    ? Math.round(cruda * 10) / 10
+    : null
+
+  return { ok: true, valor: { latitude, longitude, accuracyM } }
+}
+
 router.post('/api/store/:slug/addresses', requireStorefrontSession, async (req, res) => {
   const { businessId, customerId } = req.storefront!
   const body = (req.body || {}) as Record<string, unknown>
@@ -311,15 +369,56 @@ router.post('/api/store/:slug/addresses', requireStorefrontSession, async (req, 
   if (address.length < 5 || address.length > 300) {
     return res.status(400).json({ error: 'La dirección no es válida' })
   }
+
+  const ubicacion = leerUbicacion(body)
+  if (!ubicacion.ok) return res.status(400).json({ error: ubicacion.error })
+
+  const tipo = String(body.buildingType || '').trim().toLowerCase()
+  if (tipo && !TIPOS_DE_EDIFICIO.has(tipo)) {
+    return res.status(400).json({ error: 'Ese tipo de edificio no existe' })
+  }
+
   const created = await db.createCustomerAddress({
     businessId,
     customerId,
     label: String(body.label || 'Casa').slice(0, 40),
     address,
     reference: String(body.reference || '').slice(0, 300) || null,
+    latitude: ubicacion.valor?.latitude ?? null,
+    longitude: ubicacion.valor?.longitude ?? null,
+    accuracyM: ubicacion.valor?.accuracyM ?? null,
+    buildingType: tipo || null,
+    courierNotes: String(body.courierNotes || '').trim().slice(0, 300) || null,
     isDefault: body.isDefault === true,
   })
   return res.status(201).json(created)
+})
+
+/**
+ * Le pone el pin a una dirección que ya estaba guardada.
+ *
+ * Sin esto, las direcciones de siempre —«7 de agosto», sin coordenadas— se
+ * quedarían sin ubicación para siempre: el botón solo serviría al estrenar
+ * dirección, y el cliente que ya tiene la suya es justo el que más pide.
+ */
+router.put('/api/store/:slug/addresses/:id/location', requireStorefrontSession, async (req, res) => {
+  const { businessId, customerId } = req.storefront!
+  const ubicacion = leerUbicacion((req.body || {}) as Record<string, unknown>)
+  if (!ubicacion.ok) return res.status(400).json({ error: ubicacion.error })
+  if (!ubicacion.valor) return res.status(400).json({ error: 'No llegó ninguna ubicación' })
+
+  const actualizada = await db.setCustomerAddressLocation({
+    businessId,
+    customerId,
+    addressId: String(req.params.id || ''),
+    latitude: ubicacion.valor.latitude,
+    longitude: ubicacion.valor.longitude,
+    accuracyM: ubicacion.valor.accuracyM,
+  })
+  // No era suya, o no existe. Se responde lo mismo en los dos casos: decir
+  // «existe pero no es tuya» ya sería contar algo de otro cliente.
+  if (!actualizada) return res.status(404).json({ error: 'Esa dirección no existe' })
+  return res.json(actualizada)
 })
 
 // ── Pedido ─────────────────────────────────────────────────────────────────

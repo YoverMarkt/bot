@@ -102,10 +102,14 @@ const getBusinessCustomer = async (businessId: string, customerId: string) => {
 // Guardadas por negocio a propósito: que un local vea a dónde pidió ese cliente
 // en otro sería filtrar datos entre negocios.
 
+/** Todo lo que la mini app y el repartidor necesitan de una dirección. */
+const CAMPOS_DE_LA_DIRECCION =
+  'id,label,address,reference,latitude,longitude,accuracy_m,building_type,courier_notes,is_default' as const
+
 const getCustomerAddresses = async (businessId: string, customerId: string) => {
   const { data, error } = await db
     .from('customer_addresses')
-    .select('id,label,address,reference,latitude,longitude,is_default')
+    .select(CAMPOS_DE_LA_DIRECCION)
     .eq('business_id', businessId)
     .eq('customer_id', customerId)
     .eq('active', true)
@@ -123,6 +127,9 @@ const createCustomerAddress = async (input: {
   reference?: string | null
   latitude?: number | null
   longitude?: number | null
+  accuracyM?: number | null
+  buildingType?: string | null
+  courierNotes?: string | null
   isDefault?: boolean
 }) => {
   const { data, error } = await db
@@ -135,12 +142,51 @@ const createCustomerAddress = async (input: {
       reference: input.reference || null,
       latitude: input.latitude ?? null,
       longitude: input.longitude ?? null,
+      accuracy_m: input.accuracyM ?? null,
+      building_type: input.buildingType ?? null,
+      courier_notes: input.courierNotes ?? null,
       is_default: Boolean(input.isDefault),
     })
-    .select('id,label,address,reference,is_default')
+    .select(CAMPOS_DE_LA_DIRECCION)
     .single()
   fail(error, 'No se pudo guardar la dirección')
   return data
+}
+
+/**
+ * Le pone el pin a una dirección que ya existe.
+ *
+ * Hace falta porque las direcciones guardadas antes de esto no tienen
+ * coordenadas: sin esta puerta, un cliente con su «7 de agosto» de siempre no
+ * podría añadírselas nunca y su repartidor seguiría buscando a ciegas.
+ *
+ * El `where` lleva negocio Y cliente: una dirección ajena no se mueve ni
+ * sabiendo su id. Devuelve `null` si no era suya, y quien llama responde 404.
+ */
+const setCustomerAddressLocation = async (input: {
+  businessId: string
+  customerId: string
+  addressId: string
+  latitude: number
+  longitude: number
+  accuracyM?: number | null
+}) => {
+  const { data, error } = await db
+    .from('customer_addresses')
+    .update({
+      latitude: input.latitude,
+      longitude: input.longitude,
+      accuracy_m: input.accuracyM ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('business_id', input.businessId)
+    .eq('customer_id', input.customerId)
+    .eq('id', input.addressId)
+    .eq('active', true)
+    .select(CAMPOS_DE_LA_DIRECCION)
+    .maybeSingle()
+  fail(error, 'No se pudo guardar la ubicación')
+  return data || null
 }
 
 // ── Sesiones del enlace ─────────────────────────────────────────────────────
@@ -361,6 +407,7 @@ export = {
   setCustomerDisplayName,
   getCustomerAddresses,
   createCustomerAddress,
+  setCustomerAddressLocation,
   createStorefrontSession,
   getStorefrontSessionByHash,
   claimStorefrontSession,

@@ -84,8 +84,33 @@ export const getOrder = (slug: string, orderId: string) =>
 export const getPaymentInfo = (slug: string) => request<BankAccount>(`/${slug}/payment-info`)
 
 export const createAddress = (slug: string, body: {
-  label: string; address: string; reference?: string; isDefault?: boolean
+  label: string
+  address: string
+  reference?: string
+  isDefault?: boolean
+  /** El pin, si el cliente lo compartió. Va junto o no va: media coordenada
+   *  no es medio pin, es un punto en el ecuador. */
+  latitude?: number
+  longitude?: number
+  accuracy?: number | null
+  buildingType?: string | null
+  /** Lo permanente de esa casa: «el timbre no sirve, toca la puerta». */
+  courierNotes?: string | null
 }) => request<Address>(`/${slug}/addresses`, { method: 'POST', body })
+
+/**
+ * Le pone el pin a una dirección ya guardada.
+ *
+ * Las direcciones de antes de esto no tienen coordenadas: sin esta puerta, el
+ * botón solo serviría al estrenar dirección, y el cliente que ya tiene la suya
+ * guardada es justo el que más pide.
+ */
+export const setAddressLocation = (slug: string, addressId: string, body: {
+  latitude: number; longitude: number; accuracy?: number | null
+}) => request<Address>(
+  `/${slug}/addresses/${encodeURIComponent(addressId)}/location`,
+  { method: 'PUT', body },
+)
 
 /**
  * Manda SOLO ids y cantidades. Ningún importe viaja desde el teléfono: el

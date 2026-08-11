@@ -57,8 +57,25 @@ export type Order = {
   scheduled_for?: string | null
   created_at: string
   order_items: OrderItem[]
-  /** Incrustada por el servidor desde `address_id`. */
-  customer_addresses?: { label: string; address: string; reference: string | null } | null
+  /**
+   * A dónde va ESTE pedido, congelado al crearlo.
+   *
+   * Antes se leía incrustando `customer_addresses` por `address_id`, o sea que
+   * el pedido preguntaba a dónde va HOY esa dirección: si el cliente la
+   * corregía a media entrega, la pantalla cambiaba debajo del repartidor, y si
+   * la borraba el pedido se quedaba sin destino. Ahora es una fotografía, como
+   * `product_name` en cada línea.
+   */
+  delivery_label?: string | null
+  delivery_address?: string | null
+  delivery_reference?: string | null
+  delivery_latitude?: number | string | null
+  delivery_longitude?: number | string | null
+  /** Metros de error del GPS. Un pin con 2 km de error es un pin que miente. */
+  delivery_accuracy_m?: number | string | null
+  delivery_building_type?: string | null
+  /** Lo permanente de esa casa: «el timbre no sirve». No es `delivery_notes`. */
+  delivery_courier_notes?: string | null
 }
 
 export const getOrders = () => api<Order[]>('/api/client/orders')

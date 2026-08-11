@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
 } from 'lucide-react'
-import { createAddress, createOrder, getCatalog, getMe } from '../lib/api'
+import { createAddress, createOrder, getCatalog, getMe, setAddressLocation } from '../lib/api'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, lineKey, orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
@@ -10,6 +10,8 @@ import { Aviso, Foto } from '../components/ui'
 import { money, rangoDeEspera } from '../lib/format'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
+import type { NuevaDireccion } from '../components/CartSheet'
+import type { Ubicacion } from '../lib/ubicacion'
 import OrderTracking from './OrderTracking'
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
@@ -227,15 +229,34 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     }
   }, [slug, lineas, onFalloEnlace])
 
-  const nuevaDireccion = useCallback(async (datos: {
-    label: string; address: string; reference: string
-  }) => {
+  const nuevaDireccion = useCallback(async (datos: NuevaDireccion) => {
     try {
       await createAddress(slug, datos)
       setMe(await getMe(slug))
     } catch (error) {
       if (await onFalloEnlace(error)) return
       setError('No pudimos guardar la dirección')
+    }
+  }, [slug, onFalloEnlace])
+
+  /**
+   * El pin de una dirección que ya existía.
+   *
+   * Si falla NO se corta nada: la dirección sigue guardada y el pedido se puede
+   * hacer igual, solo que el repartidor irá con el texto. El pin es una ayuda,
+   * no un requisito.
+   */
+  const ubicarDireccion = useCallback(async (addressId: string, ubicacion: Ubicacion) => {
+    try {
+      await setAddressLocation(slug, addressId, {
+        latitude: ubicacion.latitude,
+        longitude: ubicacion.longitude,
+        accuracy: ubicacion.accuracy,
+      })
+      setMe(await getMe(slug))
+    } catch (error) {
+      if (await onFalloEnlace(error)) return
+      setError('No pudimos guardar la ubicación')
     }
   }, [slug, onFalloEnlace])
 
@@ -657,6 +678,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         onEntrega={setEntrega}
         onConfirmar={confirmar}
         onNuevaDireccion={nuevaDireccion}
+        onUbicarDireccion={ubicarDireccion}
       />
     </div>
   )

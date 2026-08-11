@@ -14,7 +14,8 @@ import { useMemo, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Banknote, Bike, Clock, Landmark, MapPin, Receipt, ShoppingBag, Check, X, FileText, Plus,
+  Banknote, Bike, Clock, Landmark, MapPin, Navigation, Receipt, ShoppingBag,
+  Check, X, FileText, Plus,
 } from 'lucide-react'
 import {
   ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, confirmOrderPayment, getOrderProof, getOrders, money,
@@ -226,7 +227,13 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
 }) {
   const paso = siguientePaso(pedido)
   const domicilio = !pedido.fulfillment || pedido.fulfillment === 'delivery'
-  const direccion = pedido.customer_addresses
+  const direccion = pedido.delivery_address
+  // El pin abre en Google Maps con una URL normal: sin clave, sin cuenta y sin
+  // costo. Lo que se paga es DIBUJAR un mapa dentro de la app, no enlazarlo.
+  const pin = pedido.delivery_latitude != null && pedido.delivery_longitude != null
+    ? `https://www.google.com/maps?q=${pedido.delivery_latitude},${pedido.delivery_longitude}`
+    : null
+  const precision = Number(pedido.delivery_accuracy_m)
   const enCurso = ACTIVOS.includes(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -345,10 +352,35 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
                       <span className="flex items-start gap-1">
                         <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
                         <span>
-                          {direccion.address}
-                          {direccion.reference && <span className="block">{direccion.reference}</span>}
+                          {direccion}
+                          {pedido.delivery_reference && (
+                            <span className="block">{pedido.delivery_reference}</span>
+                          )}
                         </span>
                       </span>
+                      {/* El pin, si el cliente lo dejó. La precisión va al lado
+                          a propósito: uno de 2 km no es una dirección, es un
+                          barrio, y quien reparte tiene que saberlo ANTES. */}
+                      {pin && (
+                        <a
+                          href={pin}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        >
+                          <Navigation className="h-3 w-3 shrink-0" />
+                          Abrir en el mapa
+                          {Number.isFinite(precision) && precision > 0 && (
+                            <span className="font-normal text-muted-foreground">
+                              (±{Math.round(precision)} m)
+                            </span>
+                          )}
+                        </a>
+                      )}
+                      {/* Lo permanente de esa casa: no cambia entre pedidos. */}
+                      {pedido.delivery_courier_notes && (
+                        <span className="mt-1 block">{pedido.delivery_courier_notes}</span>
+                      )}
                       {/* Lo que el cliente pidió para ESTE pedido. Va aquí, con
                           la dirección, que es donde lo busca quien reparte. */}
                       {pedido.delivery_notes && (
