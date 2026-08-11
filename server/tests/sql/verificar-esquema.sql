@@ -484,6 +484,80 @@ begin
     end if;
   end;
 
+  -- ── 3b-quater. El pedido se QUEDA con la dirección ───────────────────────
+  --
+  -- `address_id` es una foránea `on delete set null`, y el panel leía la
+  -- dirección a través de ella. O sea que el pedido no guardaba a dónde iba:
+  -- preguntaba a dónde va HOY esa dirección. El cliente la corregía a media
+  -- entrega y la pantalla del repartidor cambiaba debajo de él; la borraba y el
+  -- pedido se quedaba sin dirección para siempre.
+  --
+  -- Es la misma regla que ya cumplían los productos: `order_items` congela
+  -- `product_name` y `unit_price` para que el pedido de ayer siga diciendo lo
+  -- que el cliente compró.
+  declare
+    v_cliente uuid;
+    v_direccion uuid;
+    v_pedido jsonb;
+    v_congelada text;
+    v_lat numeric;
+    v_apunta uuid;
+  begin
+    insert into public.customers (phone, name)
+    values ('593900000123', 'Cliente con casa')
+    returning id into v_cliente;
+
+    insert into public.customer_addresses (
+      business_id, customer_id, label, address, reference,
+      latitude, longitude, accuracy_m, building_type, courier_notes
+    ) values (
+      v_business, v_cliente, 'Casa', 'Calle 4 de Mayo 37', 'junto a la farmacia',
+      -1.0546210, -80.4544720, 12.5, 'casa', 'el timbre no sirve, toca la puerta'
+    ) returning id into v_direccion;
+
+    v_pedido := public.create_storefront_order(
+      v_business, v_cliente, '593900000123', 'Cliente con casa',
+      v_direccion, 'delivery',
+      jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+    );
+
+    -- Nace con la fotografía puesta, no con un puntero.
+    select delivery_address, delivery_latitude
+      into v_congelada, v_lat
+      from public.orders where id = (v_pedido ->> 'id')::uuid;
+    if v_congelada is distinct from 'Calle 4 de Mayo 37' then
+      raise exception 'el pedido no copió la dirección: %', coalesce(v_congelada, '(nula)');
+    end if;
+    if v_lat is distinct from -1.0546210 then
+      raise exception 'el pedido no copió el pin: %', coalesce(v_lat::text, '(nulo)');
+    end if;
+
+    -- El cliente se muda. El pedido de antes sigue yendo a donde iba.
+    update public.customer_addresses
+       set address = 'Otra casa, otro barrio', latitude = 0, longitude = 0
+     where id = v_direccion;
+
+    select delivery_address into v_congelada
+      from public.orders where id = (v_pedido ->> 'id')::uuid;
+    if v_congelada is distinct from 'Calle 4 de Mayo 37' then
+      raise exception 'editar la dirección cambió un pedido ya hecho: %', v_congelada;
+    end if;
+
+    -- Y la borra. `address_id` se queda en nulo —así está declarada la
+    -- foránea— pero la dirección del pedido no se va con ella.
+    delete from public.customer_addresses where id = v_direccion;
+
+    select delivery_address, address_id into v_congelada, v_apunta
+      from public.orders where id = (v_pedido ->> 'id')::uuid;
+    if v_apunta is not null then
+      raise exception 'la foránea dejó de ser «set null», el borrado no la limpió';
+    end if;
+    if v_congelada is distinct from 'Calle 4 de Mayo 37' then
+      raise exception 'borrar la dirección dejó el pedido sin destino: %',
+        coalesce(v_congelada, '(nula)');
+    end if;
+  end;
+
   -- ── 3c. El envío lo pone la BASE, no el teléfono ─────────────────────────
   -- Si el costo de envío se calculara en la app, cualquiera pediría con envío
   -- $0 tocando el JavaScript. Aquí sale de la ficha del negocio.

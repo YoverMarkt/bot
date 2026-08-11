@@ -42,6 +42,7 @@ describe('rutas de la mini app', () => {
     expect(rutas.map(r => r.path).sort()).toEqual([
       '/api/store/:slug',
       '/api/store/:slug/addresses',
+      '/api/store/:slug/addresses/:id/location',
       '/api/store/:slug/catalog',
       '/api/store/:slug/me',
       '/api/store/:slug/orders',
@@ -90,6 +91,7 @@ describe('rutas de la mini app', () => {
     for (const path of [
       '/api/store/:slug/me',
       '/api/store/:slug/addresses',
+      '/api/store/:slug/addresses/:id/location',
       '/api/store/:slug/orders',
       '/api/store/:slug/orders/:id',
       '/api/store/:slug/orders/:id/proof',
@@ -593,5 +595,169 @@ describe('crear pedido desde la mini app', () => {
 
     expect(respuesta.status).toBe(409)
     expect(crear).not.toHaveBeenCalled()
+  })
+})
+
+// ── El pin de la dirección ─────────────────────────────────────────────────
+//
+// La ubicación decide a dónde va un repartidor. Lo que se prueba aquí es que
+// ningún fallo del navegador deje al cliente sin poder pedir, y que lo que se
+// guarda sea un punto de verdad y no medio dato con pinta de dato.
+describe('la ubicación de la dirección', () => {
+  const SESION = { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' }
+  const DIRECCION = { label: 'Casa', address: 'Calle 4 de Mayo 37' }
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('guarda el pin y su precisión cuando el cliente lo comparte', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress').mockResolvedValue({ id: 'dir-1' })
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+      storefront: SESION,
+      params: { slug: 'pizzeria' },
+      body: {
+        ...DIRECCION,
+        latitude: -1.0546211, longitude: -80.454472, accuracy: 12.55,
+        buildingType: 'departamento', courierNotes: 'el timbre no sirve',
+      },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(crear).toHaveBeenCalledWith(expect.objectContaining({
+      latitude: -1.0546211,
+      longitude: -80.454472,
+      accuracyM: 12.6,
+      buildingType: 'departamento',
+      courierNotes: 'el timbre no sirve',
+    }))
+  })
+
+  // El pin es OPCIONAL. Quien niega el permiso —o abre el enlace dentro de
+  // WhatsApp, que no siempre lo reenvía— tiene que poder pedir igual: perder
+  // la venta por un dato de ayuda es peor que repartir con la dirección
+  // escrita, que es como se repartió siempre.
+  it('sin ubicación la dirección se guarda igual', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress').mockResolvedValue({ id: 'dir-1' })
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+      storefront: SESION, params: { slug: 'pizzeria' }, body: DIRECCION,
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(crear).toHaveBeenCalledWith(expect.objectContaining({
+      latitude: null, longitude: null, accuracyM: null,
+    }))
+  })
+
+  // Media coordenada no es medio pin: es un punto en el ecuador o en
+  // Greenwich, que es PEOR que no tener nada porque parece un dato.
+  it('rechaza media coordenada en vez de guardar un punto inventado', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress')
+
+    for (const mitad of [{ latitude: -1.05 }, { longitude: -80.45 }]) {
+      const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+        storefront: SESION, params: { slug: 'pizzeria' }, body: { ...DIRECCION, ...mitad },
+      })
+      expect(respuesta.status).toBe(400)
+      expect(respuesta.body.error).toBe('La ubicación llegó incompleta')
+    }
+    expect(crear).not.toHaveBeenCalled()
+  })
+
+  it('rechaza coordenadas fuera del planeta antes de que las rechace el CHECK', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress')
+
+    for (const fuera of [
+      { latitude: 200, longitude: 0 },
+      { latitude: 0, longitude: -900 },
+      { latitude: 'aquí', longitude: 'allá' },
+    ]) {
+      const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+        storefront: SESION, params: { slug: 'pizzeria' }, body: { ...DIRECCION, ...fuera },
+      })
+      expect(respuesta.status).toBe(400)
+      expect(respuesta.body.error).toBe('La ubicación no es válida')
+    }
+    expect(crear).not.toHaveBeenCalled()
+  })
+
+  // La precisión es accesoria: el punto vale aunque no sepamos cuánto se
+  // equivoca. Descartarla es mejor que tumbar el dato bueno por el adorno.
+  it('una precisión rara se descarta sin tumbar el pin', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress').mockResolvedValue({ id: 'dir-1' })
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+      storefront: SESION,
+      params: { slug: 'pizzeria' },
+      body: { ...DIRECCION, latitude: -1.05, longitude: -80.45, accuracy: -5 },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(crear).toHaveBeenCalledWith(expect.objectContaining({
+      latitude: -1.05, longitude: -80.45, accuracyM: null,
+    }))
+  })
+
+  it('un tipo de edificio inventado no llega a la base', async () => {
+    const crear = vi.spyOn(db, 'createCustomerAddress')
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses', 'post', {
+      storefront: SESION,
+      params: { slug: 'pizzeria' },
+      body: { ...DIRECCION, buildingType: 'castillo' },
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(crear).not.toHaveBeenCalled()
+  })
+
+  // ── Ponerle el pin a una dirección que ya existía ────────────────────────
+
+  it('le pone la ubicación a una dirección guardada', async () => {
+    const ubicar = vi.spyOn(db, 'setCustomerAddressLocation')
+      .mockResolvedValue({ id: 'dir-1', latitude: -1.05 })
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses/:id/location', 'put', {
+      storefront: SESION,
+      params: { slug: 'pizzeria', id: 'dir-1' },
+      body: { latitude: -1.05, longitude: -80.45, accuracy: 9 },
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(ubicar).toHaveBeenCalledWith({
+      businessId: 'negocio-a',
+      customerId: 'cliente-1',
+      addressId: 'dir-1',
+      latitude: -1.05,
+      longitude: -80.45,
+      accuracyM: 9,
+    })
+  })
+
+  // Regla #1: la dirección de otro cliente no se mueve ni sabiendo su id. El
+  // `where` de la consulta lleva negocio Y cliente, y aquí se comprueba que la
+  // ruta no invente un 200 cuando la base no encontró nada suyo.
+  it('una dirección ajena responde 404, sin decir que existe', async () => {
+    vi.spyOn(db, 'setCustomerAddressLocation').mockResolvedValue(null)
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses/:id/location', 'put', {
+      storefront: SESION,
+      params: { slug: 'pizzeria', id: 'dir-de-otro' },
+      body: { latitude: -1.05, longitude: -80.45 },
+    })
+
+    expect(respuesta.status).toBe(404)
+    expect(respuesta.body.error).toBe('Esa dirección no existe')
+  })
+
+  it('sin ubicación no se llama a la base: no hay nada que guardar', async () => {
+    const ubicar = vi.spyOn(db, 'setCustomerAddressLocation')
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses/:id/location', 'put', {
+      storefront: SESION, params: { slug: 'pizzeria', id: 'dir-1' }, body: {},
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(ubicar).not.toHaveBeenCalled()
   })
 })

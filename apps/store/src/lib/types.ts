@@ -168,6 +168,14 @@ export interface Address {
   label: string
   address: string
   reference: string | null
+  /** El pin. Nulo = esta dirección no tiene ubicación todavía. */
+  latitude?: number | string | null
+  longitude?: number | string | null
+  /** Metros de error del GPS. Nulo = no se sabe, que NO es lo mismo que cero. */
+  accuracy_m?: number | string | null
+  building_type?: string | null
+  /** Lo permanente de esa casa. No es `deliveryNotes`, que es de un pedido. */
+  courier_notes?: string | null
   is_default: boolean
 }
 

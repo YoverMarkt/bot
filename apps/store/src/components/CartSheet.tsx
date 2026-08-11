@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Banknote, Bike, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
+import { Banknote, Bike, Crosshair, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money } from '../lib/format'
 import { cartTotal, lineTotal, needsAddress, orderTotal } from '../lib/cart'
+import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
+import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
 
 // El carrito y el cierre del pedido, en una sola hoja.
@@ -11,9 +13,43 @@ import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/t
 // cantidades, y el importe real lo devuelve el servidor: si el negocio cambió
 // un precio hace un minuto, gana el suyo.
 
+/** Lo que se manda al guardar una dirección. El pin viaja aparte y es opcional. */
+export interface NuevaDireccion {
+  label: string
+  address: string
+  reference: string
+  buildingType: string | null
+  courierNotes: string
+  latitude?: number
+  longitude?: number
+  accuracy?: number | null
+}
+
+const DIRECCION_EN_BLANCO: NuevaDireccion = {
+  label: 'Casa', address: '', reference: '', buildingType: null, courierNotes: '',
+}
+
+/**
+ * Los mismos cinco valores que acepta el CHECK de `customer_addresses`. Si
+ * alguien añade uno aquí sin añadirlo allí, la base rechaza la dirección
+ * entera — por eso los textos se separan de los valores.
+ */
+const TIPOS_DE_EDIFICIO = [
+  { valor: 'casa', texto: 'Casa' },
+  { valor: 'departamento', texto: 'Departamento' },
+  { valor: 'oficina', texto: 'Oficina' },
+  { valor: 'hotel', texto: 'Hotel' },
+  { valor: 'otro', texto: 'Otro' },
+] as const
+
+/** Con pin es tener los DOS: media coordenada apunta al ecuador, no a medias. */
+const tieneUbicacion = (direccion: Address): boolean =>
+  direccion.latitude !== null && direccion.latitude !== undefined
+  && direccion.longitude !== null && direccion.longitude !== undefined
+
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  entrega, onEntrega, onConfirmar, onNuevaDireccion,
+  entrega, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -39,7 +75,9 @@ export default function CartSheet({
     paymentMethod: PaymentMethod
     deliveryNotes: string | null
   }) => void
-  onNuevaDireccion: (datos: { label: string; address: string; reference: string }) => Promise<void>
+  onNuevaDireccion: (datos: NuevaDireccion) => Promise<void>
+  /** Le pone el pin a una dirección ya guardada, que es la que no lo tiene. */
+  onUbicarDireccion: (addressId: string, ubicacion: Ubicacion) => Promise<void>
 }) {
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
@@ -60,8 +98,39 @@ export default function CartSheet({
   // referencia de la dirección es del SITIO y se queda; esto es de HOY.
   const [instrucciones, setInstrucciones] = useState('')
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
-  const [nueva, setNueva] = useState({ label: 'Casa', address: '', reference: '' })
+  const [nueva, setNueva] = useState<NuevaDireccion>({ ...DIRECCION_EN_BLANCO })
   const [guardando, setGuardando] = useState(false)
+  /**
+   * El pin del formulario, mientras se escribe la dirección.
+   *
+   * `null` = no se ha pedido o no se pudo. Es OPCIONAL a propósito: quien niega
+   * el permiso —o abre el enlace dentro de WhatsApp, que no siempre lo reenvía—
+   * tiene que poder pedir igual. Perder la venta por un dato de ayuda sería
+   * peor que repartir con la dirección escrita, que es como se hizo siempre.
+   */
+  const [pin, setPin] = useState<Ubicacion | null>(null)
+  const [avisoPin, setAvisoPin] = useState<string | null>(null)
+  /** Qué dirección está pidiendo ubicación: `'nueva'`, un id, o nada. */
+  const [ubicando, setUbicando] = useState<string | null>(null)
+
+  const capturar = async (destino: string) => {
+    setUbicando(destino)
+    setAvisoPin(null)
+    try {
+      const resultado = await pedirUbicacion()
+      if (!resultado.ok) {
+        setAvisoPin(resultado.mensaje)
+        return
+      }
+      if (destino === 'nueva') setPin(resultado.ubicacion)
+      else await onUbicarDireccion(destino, resultado.ubicacion)
+    } catch {
+      // Ni un fallo inesperado puede dejar al cliente sin poder pedir.
+      setAvisoPin(MENSAJES.no_disponible)
+    } finally {
+      setUbicando(null)
+    }
+  }
 
   const direcciones: Address[] = me?.addresses || []
   const elegida = direccionId || direcciones.find(item => item.is_default)?.id || direcciones[0]?.id || null
@@ -78,8 +147,15 @@ export default function CartSheet({
     if (nueva.address.trim().length < 5) return
     setGuardando(true)
     try {
-      await onNuevaDireccion(nueva)
-      setNueva({ label: 'Casa', address: '', reference: '' })
+      await onNuevaDireccion({
+        ...nueva,
+        latitude: pin?.latitude,
+        longitude: pin?.longitude,
+        accuracy: pin?.accuracy ?? null,
+      })
+      setNueva({ ...DIRECCION_EN_BLANCO })
+      setPin(null)
+      setAvisoPin(null)
       setNuevaAbierta(false)
     } finally {
       setGuardando(false)
@@ -208,6 +284,32 @@ export default function CartSheet({
                     {direccion.reference && (
                       <span className="block text-[12px] texto-tenue">{direccion.reference}</span>
                     )}
+                    {/* Las direcciones de siempre no tienen pin. Se ofrece
+                        añadirlo aquí porque el cliente que ya tiene la suya
+                        guardada es justo el que más pide. */}
+                    {tieneUbicacion(direccion)
+                      ? (
+                          <span className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-verde">
+                            <Crosshair size={12} /> Ubicación guardada
+                          </span>
+                        )
+                      : (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => { event.stopPropagation(); void capturar(direccion.id) }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return
+                              event.preventDefault()
+                              event.stopPropagation()
+                              void capturar(direccion.id)
+                            }}
+                            className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-marca"
+                          >
+                            <Crosshair size={12} />
+                            {ubicando === direccion.id ? 'Buscando…' : 'Agregar ubicación'}
+                          </span>
+                        )}
                   </span>
                 </button>
               ))}
@@ -234,6 +336,63 @@ export default function CartSheet({
                         placeholder="Referencia (casa azul, portón negro…)"
                         className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
                       />
+
+                      {/* ── El pin ──
+                          Va con un BOTÓN y nunca solo: quien pide desde la
+                          oficina para su casa mandaría al repartidor a la
+                          oficina sin enterarse. */}
+                      <button
+                        onClick={() => void capturar('nueva')}
+                        disabled={ubicando === 'nueva'}
+                        className={`flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-[14px] font-semibold transition ${
+                          pin ? 'border-verde text-verde' : 'borde-tema text-marca'
+                        }`}
+                      >
+                        <Crosshair size={16} />
+                        {ubicando === 'nueva'
+                          ? 'Buscando tu ubicación…'
+                          : pin
+                            ? `Ubicación lista${pin.accuracy ? ` · ±${Math.round(pin.accuracy)} m` : ''}`
+                            : 'Usar mi ubicación actual'}
+                      </button>
+                      {avisoPin && (
+                        <p className="text-[12px] texto-tenue">{avisoPin}</p>
+                      )}
+
+                      {/* Decide si hay portero, timbre o hay que llamar. */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {TIPOS_DE_EDIFICIO.map(tipo => (
+                          <button
+                            key={tipo.valor}
+                            onClick={() => setNueva({
+                              ...nueva,
+                              // Volver a tocarlo lo quita: es opcional, y sin
+                              // esto no habría forma de deshacer un toque.
+                              buildingType: nueva.buildingType === tipo.valor ? null : tipo.valor,
+                            })}
+                            className={`rounded-full border px-3 py-1.5 text-[13px] font-semibold transition ${
+                              nueva.buildingType === tipo.valor
+                                ? 'border-marca bg-marca-suave text-marca'
+                                : 'borde-tema texto-tenue'
+                            }`}
+                          >
+                            {tipo.texto}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Lo PERMANENTE de esta casa. Las instrucciones de más
+                          abajo son de HOY: juntarlas obligaría al cliente a
+                          reescribir esto en cada pedido. */}
+                      <input
+                        value={nueva.courierNotes}
+                        onChange={event => setNueva({
+                          ...nueva, courierNotes: event.target.value.slice(0, 300),
+                        })}
+                        placeholder="Para el repartidor: el timbre no sirve…"
+                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
+                      />
+
                       <Boton
                         variante="suave"
                         onClick={guardarDireccion}
