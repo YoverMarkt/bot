@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Banknote, Bike, Crosshair, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money } from '../lib/format'
-import { cartTotal, lineTotal, needsAddress, orderTotal } from '../lib/cart'
+import { cartTotal, chosenLines, lineTotal, needsAddress, orderTotal } from '../lib/cart'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
 import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
@@ -211,6 +211,14 @@ export default function CartSheet({
                 {linea.variant && (
                   <p className="text-[13px] texto-tenue">{linea.variant.name}</p>
                 )}
+                {/* ⚠️ Lo que eligió, una línea por grupo. Faltaba: el carrito
+                    pintaba solo `extras` —el sistema viejo— así que una pizza
+                    con masa, sabor y borde salía como «Pizza · Familiar» y el
+                    cliente confirmaba sin ver lo que había armado. Es la
+                    pantalla donde más importa: es la última antes de pagar. */}
+                {chosenLines(linea.options).map(texto => (
+                  <p key={texto} className="text-[12px] leading-snug texto-tenue">{texto}</p>
+                ))}
                 {linea.extras.length > 0 && (
                   <p className="text-[12px] texto-tenue">
                     {linea.extras.map(extra => extra.name).join(' · ')}
@@ -353,10 +361,13 @@ export default function CartSheet({
                           ? 'Buscando tu ubicación…'
                           : pin
                             ? `Ubicación lista${pin.accuracy ? ` · ±${Math.round(pin.accuracy)} m` : ''}`
-                            : 'Usar mi ubicación actual'}
+                            // Tras un fallo el botón dice «Reintentar»: dejarlo
+                            // igual, con un aviso debajo, parece que no hizo
+                            // nada y el cliente no sabe que puede volver.
+                            : avisoPin ? 'Reintentar' : 'Usar mi ubicación actual'}
                       </button>
                       {avisoPin && (
-                        <p className="text-[12px] texto-tenue">{avisoPin}</p>
+                        <p className="text-[12px] leading-snug texto-tenue">{avisoPin}</p>
                       )}
 
                       {/* Decide si hay portero, timbre o hay que llamar. */}
