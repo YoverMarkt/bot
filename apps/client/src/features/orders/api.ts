@@ -24,10 +24,25 @@ export const ACTIVOS: OrderStatus[] = [
   'aceptado', 'preparacion', 'listo_para_retiro', 'en_camino',
 ]
 
+/**
+ * Lo que el cliente eligió, agrupado por el SERVIDOR (`order-detail.ts`).
+ *
+ * Llega agrupado y no en crudo a propósito: el mismo plato se enseña aquí, en
+ * el seguimiento de la mini app y en el WhatsApp del cliente. Agrupar en cada
+ * sitio es como acabaron diciendo cosas distintas del mismo pedido.
+ */
+export type GrupoElegido = {
+  group: string
+  items: { name: string; quantity: number }[]
+}
+
 export type OrderItem = {
   product_id: string | null
   product_name: string
   variant_name?: string | null
+  /** Ya agrupado. Vacío en los pedidos anteriores al motor de opciones. */
+  options?: GrupoElegido[] | null
+  /** El respaldo de esos pedidos viejos: una lista plana, sin grupos. */
   extras_names?: string[] | null
   item_note?: string | null
   quantity: number

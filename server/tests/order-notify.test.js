@@ -32,7 +32,17 @@ const PEDIDO = {
   contact_name: 'Yover',
   total: '12.50',
   order_items: [
-    { product_name: 'Pizza', variant_name: 'Familiar', quantity: 1 },
+    {
+      product_name: 'Pizza',
+      variant_name: 'Familiar',
+      quantity: 1,
+      order_item_options: [
+        { option_group_name: 'Masa', option_name: 'Tradicional', quantity: 1 },
+        { option_group_name: 'Sabor', option_name: 'Criolla', quantity: 1 },
+        { option_group_name: 'Sabor', option_name: 'Monster', quantity: 1 },
+        { option_group_name: 'Retira ingredientes', option_name: 'Sin ají', quantity: 1 },
+      ],
+    },
     { product_name: 'Coca-Cola', variant_name: null, quantity: 2 },
   ],
 }
@@ -70,6 +80,41 @@ describe('el texto de cada aviso', () => {
     expect(texto).toContain('1× Pizza (Familiar)')
     expect(texto).toContain('2× Coca-Cola')
     expect(texto).toContain('$12.50')
+  })
+
+  // Antes decía «1× Pizza (Familiar)» y se acababa ahí: el cliente no podía
+  // comprobar nada, que es justo para lo que sirve este mensaje. Meta cobra por
+  // MENSAJE, no por carácter, así que contarlo entero no cuesta un centavo más.
+  it('cuenta lo que el cliente eligió, agrupado y entero', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'preparacion')
+
+    expect(texto).toContain('Masa: Tradicional')
+    // La mitad y mitad se lee como lo que es: dos sabores de una pizza.
+    expect(texto).toContain('Sabor: Criolla, Monster')
+    // Y un retiro se distingue de un añadido, que en la lista plana no se podía.
+    expect(texto).toContain('Retira ingredientes: Sin ají')
+  })
+
+  // En un pedido de tres platos, sin sangría no se sabe de cuál es cada cosa.
+  it('el detalle va sangrado bajo su producto', () => {
+    const lineas = textoDelAviso(NEGOCIO, PEDIDO, 'preparacion').split('\n')
+    const masa = lineas.find(linea => linea.includes('Masa:'))
+    expect(masa.startsWith('   ')).toBe(true)
+    expect(lineas.find(linea => linea.includes('1× Pizza')).startsWith('•')).toBe(true)
+  })
+
+  // Los pedidos anteriores al motor de opciones no tienen grupos, solo la
+  // lista suelta. Tienen que seguir contándose, aunque se cuenten peor.
+  it('un pedido viejo cae a extras_names en vez de callarse', () => {
+    const viejo = {
+      ...PEDIDO,
+      order_items: [{
+        product_name: 'Pizza', variant_name: 'Personal', quantity: 1,
+        extras_names: ['Tradicional', 'Extra queso'],
+      }],
+    }
+    expect(textoDelAviso(NEGOCIO, viejo, 'preparacion'))
+      .toContain('Tradicional · Extra queso')
   })
 
   // El detalle va SOLO en el primero. Repetirlo alargaría tres mensajes para

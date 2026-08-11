@@ -3,7 +3,7 @@ import { Check, ChevronLeft, Copy, Landmark, MessageCircle, Upload } from 'lucid
 import { getOrder, getPaymentInfo, uploadPaymentProof } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
 import { money } from '../lib/format'
-import type { BankAccount, Business, Fulfillment, TrackedOrder } from '../lib/types'
+import type { BankAccount, Business, Fulfillment, TrackedItem, TrackedOrder } from '../lib/types'
 
 const lineasBanco = (cuenta: BankAccount) => [
   { etiqueta: 'Banco', valor: cuenta.bank_name },
@@ -56,6 +56,42 @@ const hora = (iso?: string | null) => {
   return cuando.toLocaleTimeString('es-EC', {
     timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hour12: false,
   })
+}
+
+/**
+ * Lo que el cliente eligió en una línea del pedido.
+ *
+ * Se corta a DOS LÍNEAS y se despliega al tocarlo. El corte es de la mini app y
+ * solo de la mini app: aquí el cliente ya sabe lo que pidió y le basta un
+ * resumen. En el panel del dueño va entero siempre — si al cocinero le cortas
+ * la descripción, hace la pizza mal.
+ *
+ * Cortar sin poder desplegar reproduciría el problema que esto viene a
+ * arreglar, así que el toque no es un adorno.
+ */
+function DetalleDeLinea({ linea }: { linea: TrackedItem }) {
+  const [abierto, setAbierto] = useState(false)
+
+  const grupos = linea.options?.length
+    ? linea.options.map(grupo => `${grupo.group}: ${grupo.items.map(
+        item => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name),
+      ).join(', ')}`)
+    // Los pedidos de antes del motor de opciones no tienen grupos, solo la
+    // lista suelta. Siguen diciendo lo que el cliente compró, aunque peor.
+    : (linea.extras_names?.length ? [linea.extras_names.join(' · ')] : [])
+
+  if (!grupos.length) return null
+
+  return (
+    <button
+      onClick={() => setAbierto(!abierto)}
+      className={`mt-0.5 block w-full text-left text-[12.5px] leading-snug texto-tenue ${
+        abierto ? '' : 'line-clamp-2'
+      }`}
+    >
+      {grupos.join(' · ')}
+    </button>
+  )
 }
 
 export default function OrderTracking({ slug, business, orderId, onVolver }: {
@@ -404,12 +440,10 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
                     )}
                   </p>
                   {/* Lo elegido en la ficha: sin esto, dos pedidos del mismo
-                      producto con opciones distintas se leen idénticos. */}
-                  {linea.extras_names?.length ? (
-                    <p className="mt-0.5 text-[12.5px] leading-snug texto-tenue">
-                      {linea.extras_names.join(' · ')}
-                    </p>
-                  ) : null}
+                      producto con opciones distintas se leen idénticos.
+                      El servidor lo manda ya agrupado por grupo; `extras_names`
+                      es el respaldo de los pedidos anteriores al motor. */}
+                  <DetalleDeLinea linea={linea} />
                   {linea.item_note && (
                     <p className="mt-0.5 text-[12.5px] leading-snug italic texto-tenue">
                       «{linea.item_note}»

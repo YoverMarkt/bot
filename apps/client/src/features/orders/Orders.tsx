@@ -319,11 +319,27 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
               {item.variant_name && (
                 <span className="text-muted-foreground"> · {item.variant_name}</span>
               )}
-              {item.extras_names?.length ? (
-                <span className="block text-xs text-muted-foreground">
-                  {item.extras_names.join(' · ')}
-                </span>
-              ) : null}
+              {/* ⚠️ ENTERO Y SIN CORTAR, una línea por grupo. Esto lo lee la
+                  cocina: cortarlo a dos líneas como en la mini app —donde el
+                  cliente ya sabe lo que pidió— haría que se prepare mal.
+                  El servidor lo manda ya agrupado; `extras_names` es el
+                  respaldo de los pedidos anteriores al motor de opciones. */}
+              {item.options?.length
+                ? item.options.map(grupo => (
+                    <span key={grupo.group} className="block text-xs text-muted-foreground">
+                      <span className="font-medium">{grupo.group}:</span>{' '}
+                      {grupo.items.map(elegido => (
+                        elegido.quantity > 1 ? `${elegido.name} x${elegido.quantity}` : elegido.name
+                      )).join(', ')}
+                    </span>
+                  ))
+                : item.extras_names?.length
+                  ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {item.extras_names.join(' · ')}
+                      </span>
+                    )
+                  : null}
               {item.item_note && (
                 <span className="block text-xs italic text-muted-foreground">“{item.item_note}”</span>
               )}
