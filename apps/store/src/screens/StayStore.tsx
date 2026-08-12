@@ -234,7 +234,7 @@ export default function StayStore({ slug, business, status, onVolver, onFalloEnl
                 key={opcion.roomTypeId}
                 className="superficie overflow-hidden rounded-2xl border borde-tema"
               >
-                <Foto url={opcion.mediaUrls[0] || null} alto="h-40" nombre={opcion.name} />
+                <Foto url={opcion.mediaUrls[0] || null} alto="h-40" uso="tarjeta" nombre={opcion.name} />
                 <div className="p-4">
                   <h3 className="text-[16px] leading-snug font-bold">{opcion.name}</h3>
                   {opcion.description && (

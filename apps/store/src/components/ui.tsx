@@ -1,5 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { ChevronLeft, X } from 'lucide-react'
+import { foto } from '../lib/imagen'
+import type { AnchoDeFoto } from '../lib/imagen'
 
 // Piezas compartidas por los dos flujos (comida y hospedaje). Deliberadamente
 // pocas y sin librería de componentes: la tienda vive de cargar rápido.
@@ -32,9 +34,11 @@ export function Boton({ children, onClick, disabled, variante = 'principal', typ
 }
 
 /** Hoja que sube desde abajo. Es el patrón que la gente ya conoce del móvil. */
-export function Hoja({ abierta, onCerrar, children, titulo }: {
+export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
   abierta: boolean
   onCerrar: () => void
+  /** Si el contenido tiene pasos, la flecha vuelve al anterior en vez de cerrar. */
+  onAtras?: () => void
   children: ReactNode
   titulo?: string
 }) {
@@ -55,8 +59,19 @@ export function Hoja({ abierta, onCerrar, children, titulo }: {
         className="absolute inset-0 bg-black/50"
       />
       <div className="animar-hoja superficie relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.75rem] sm:mb-6 sm:rounded-[1.75rem]">
-        <div className="superficie sticky top-0 z-10 flex items-center justify-between border-b borde-tema px-5 py-4">
-          <h2 className="truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
+        <div className="superficie sticky top-0 z-10 flex items-center gap-2 border-b borde-tema px-5 py-4">
+          {/* Volver un paso NO es cerrar: quien está en el checkout y toca la
+              flecha quiere revisar su carrito, no perder el pedido entero. */}
+          {onAtras && (
+            <button
+              onClick={onAtras}
+              aria-label="Volver"
+              className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          <h2 className="flex-1 truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
           <button
             onClick={onCerrar}
             aria-label="Cerrar"
@@ -122,8 +137,16 @@ export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; c
  * tinte del color del negocio y sostiene la rejilla mientras tanto. El tamaño
  * se reserva igual en los dos casos para que la lista no salte al cargar.
  */
-export function Foto({ url, alto, nombre }: { url: string | null; alto: string; nombre: string }) {
-  if (!url) {
+export function Foto({ url, alto, uso, nombre }: {
+  url: string | null
+  /** La clase de altura, que sostiene la rejilla mientras la imagen llega. */
+  alto: string
+  /** Para qué es: decide el ancho que se le pide a Cloudinary. */
+  uso: AnchoDeFoto
+  nombre: string
+}) {
+  const fuente = foto(url, uso)
+  if (!fuente) {
     return (
       <div className={`marcador flex ${alto} w-full items-center justify-center overflow-hidden`}>
         <span
@@ -137,7 +160,7 @@ export function Foto({ url, alto, nombre }: { url: string | null; alto: string; 
   }
   return (
     <img
-      src={url}
+      src={fuente}
       alt={nombre}
       loading="lazy"
       decoding="async"

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Boton, Contador, Foto, Hoja } from './ui'
 import { money } from '../lib/format'
+import { foto } from '../lib/imagen'
 import {
   chosenCount,
   groupExtras,
@@ -185,7 +186,7 @@ export default function ProductSheet({
 
   return (
     <Hoja abierta={abierto} onCerrar={onCerrar} titulo={product.name}>
-      <Foto url={product.imageUrl} alto="h-52" nombre={product.name} />
+      <Foto url={product.imageUrl} alto="h-52" uso="ficha" nombre={product.name} />
 
       <div className="space-y-6 p-4 pb-3">
         {product.description && (
@@ -338,7 +339,7 @@ export default function ProductSheet({
                             <>
                               {opcion.imageUrl && (
                                 <img
-                                  src={opcion.imageUrl}
+                                  src={foto(opcion.imageUrl, 'miniatura') || undefined}
                                   alt=""
                                   loading="lazy"
                                   className="size-11 shrink-0 rounded-lg object-cover"
@@ -403,7 +404,7 @@ export default function ProductSheet({
                                   basta para decidir. */}
                               {opcion.imageUrl && (
                                 <img
-                                  src={opcion.imageUrl}
+                                  src={foto(opcion.imageUrl, 'miniatura') || undefined}
                                   alt=""
                                   loading="lazy"
                                   className="size-11 shrink-0 rounded-lg object-cover"
@@ -511,7 +512,7 @@ export default function ProductSheet({
                 >
                   {reco.imageUrl && (
                     <img
-                      src={reco.imageUrl}
+                      src={foto(reco.imageUrl, 'miniatura') || undefined}
                       alt=""
                       loading="lazy"
                       className="size-11 shrink-0 rounded-lg object-cover"

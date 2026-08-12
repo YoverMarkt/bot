@@ -1,18 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
 } from 'lucide-react'
 import { createAddress, createOrder, getCatalog, getMe, setAddressLocation } from '../lib/api'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cartCount, lineKey, orderTotal, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
+  orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
 import { money, rangoDeEspera } from '../lib/format'
+import { foto } from '../lib/imagen'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
+import OrderPlaced from './OrderPlaced'
+import type { PedidoRecibido } from './OrderPlaced'
 import type { NuevaDireccion } from '../components/CartSheet'
 import type { Ubicacion } from '../lib/ubicacion'
-import OrderTracking from './OrderTracking'
+const OrderTracking = lazy(() => import('./OrderTracking'))
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
 } from '../lib/types'
@@ -45,6 +49,14 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   // cerrar la app y volver no pierda el rastro: el cliente cierra WhatsApp
   // mientras espera su comida, que es justo cuando quiere mirarlo.
   const [siguiendo, setSiguiendo] = useState<string | null>(null)
+  /**
+   * El pedido que se acaba de enviar. Vive aquí y no en el seguimiento porque
+   * el resumen sale del CARRITO —que se vacía al confirmar— y del total
+   * oficial que devolvió el servidor.
+   */
+  const [recienHecho, setRecienHecho] = useState<
+    { pedido: PedidoRecibido; nombre: string; transferencia: boolean } | null
+  >(null)
   const [ultimoPedido, setUltimoPedido] = useState<string | null>(null)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
@@ -212,22 +224,43 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         try { localStorage.setItem(`pedido:${slug}`, String(pedido.id)) } catch { /* modo privado */ }
         setUltimoPedido(String(pedido.id))
       }
+      // El resumen se arma ANTES de vaciar: después ya no hay carrito del que
+      // sacarlo, y volver a pedírselo al servidor sería un viaje por algo que
+      // se acaba de tener en la mano.
+      const resumen: PedidoRecibido = {
+        id: String(pedido.id || ''),
+        order_number: pedido.order_number ?? null,
+        total: pedido.total ?? null,
+        subtotal: cartTotal(lineas),
+        envio: needsAddress(datos.fulfillment) ? (business.deliveryFee || 0) : 0,
+        lineas: lineas.map(linea => ({
+          nombre: `${linea.product.name}${linea.variant ? ` · ${linea.variant.name}` : ''}`,
+          cantidad: linea.quantity,
+          importe: lineTotal(linea),
+        })),
+      }
       setLineas([])
       claveDelPedido.current = null
       setCarritoAbierto(false)
-      // Directo al seguimiento. La pantalla de confirmación decía «¡pedido
-      // confirmado!» cuando el negocio ni lo había mirado, y además era
-      // ESTÁTICA: no consultaba nada, así que el cliente tenía que recargar
-      // para enterarse de cualquier cambio. El seguimiento dice la verdad y
-      // se actualiza solo.
-      if (pedido.id) setSiguiendo(String(pedido.id))
+      // ⚠️ Pasa por «recibido» y no directo al seguimiento. La pantalla que se
+      // retiró el 2026-08-08 mentía —decía «confirmado» cuando el negocio ni lo
+      // había mirado— y era estática. Esta dice «recibido», que es verdad
+      // siempre, y no promete nada que pueda cambiar: lo que cambia está en el
+      // seguimiento, a un toque.
+      if (pedido.id) {
+        setRecienHecho({
+          pedido: resumen,
+          nombre: datos.name,
+          transferencia: datos.paymentMethod === 'transferencia',
+        })
+      }
     } catch (error) {
       if (await onFalloEnlace(error)) return
       setError(error instanceof Error ? error.message : 'No pudimos enviar tu pedido')
     } finally {
       setEnviando(false)
     }
-  }, [slug, lineas, onFalloEnlace])
+  }, [slug, lineas, business.deliveryFee, onFalloEnlace])
 
   const nuevaDireccion = useCallback(async (datos: NuevaDireccion) => {
     try {
@@ -260,14 +293,33 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     }
   }, [slug, onFalloEnlace])
 
+  // El orden importa: recién hecho manda sobre el seguimiento, porque al
+  // tocar «Seguir mi pedido» se pasa de una a la otra.
+  if (recienHecho) {
+    return (
+      <OrderPlaced
+        business={business}
+        pedido={recienHecho.pedido}
+        nombre={recienHecho.nombre}
+        entrega={entrega}
+        transferencia={recienHecho.transferencia}
+        onSeguir={() => {
+          setSiguiendo(recienHecho.pedido.id)
+          setRecienHecho(null)
+        }}
+        onVolver={() => setRecienHecho(null)}
+      />
+    )
+  }
+
   if (siguiendo) {
     return (
-      <OrderTracking
+      <Suspense fallback={null}><OrderTracking
         slug={slug}
         business={business}
         orderId={siguiendo}
         onVolver={() => setSiguiendo(null)}
-      />
+      /></Suspense>
     )
   }
 
@@ -279,7 +331,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const total = orderTotal(lineas, entrega, business.deliveryFee)
   const unidades = cartCount(lineas)
   const horario = catalogo.todaysHours
-  const portada = portadaRota ? null : business.coverUrl
+  const portada = portadaRota ? null : foto(business.coverUrl, 'portada')
   const abierto = status === 'abierta'
 
   // ── La tarjeta de la rejilla ──────────────────────────────────────────────
@@ -297,7 +349,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         className="block w-full text-left transition active:scale-[0.99]"
       >
         <span className="relative block">
-          <Foto url={producto.imageUrl} alto="aspect-[4/3]" nombre={producto.name} />
+          <Foto url={producto.imageUrl} alto="aspect-[4/3]" uso="tarjeta" nombre={producto.name} />
           {!producto.available && (
             <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-bold text-white">
               Agotado
@@ -374,7 +426,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           )}
           {business.logoUrl && (
             <img
-              src={business.logoUrl}
+              src={foto(business.logoUrl, 'miniatura') || undefined}
               alt=""
               className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/25"
             />
@@ -493,7 +545,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               className="flex w-16 shrink-0 flex-col items-center gap-1.5"
             >
               <span className="block size-16 overflow-hidden rounded-full">
-                <Foto url={grupo.imagen} alto="h-16" nombre={grupo.nombre} />
+                <Foto url={grupo.imagen} alto="h-16" uso="miniatura" nombre={grupo.nombre} />
               </span>
               <span className="line-clamp-2 text-center text-[11.5px] leading-tight font-semibold">
                 {grupo.nombre}

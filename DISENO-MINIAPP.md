@@ -168,6 +168,20 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
 
 ## 4. Carrito y checkout
 
+**Son DOS pasos desde el 2026-08-11, no una hoja larga.** Mezclados, el cliente
+tenía que pasar por encima de la dirección y del método de pago solo para
+comprobar qué llevaba, y el botón de confirmar quedaba a un scroll de los
+productos. Revisar y decidir son dos momentos distintos:
+
+- **`Tu carrito`** — solo los productos, con lo elegido de cada uno, contador y
+  precio. Abajo el desglose y `Continuar · $X`.
+- **`Finalizar pedido`** — entrega o retiro, dirección, instrucciones, método de
+  pago y nombre. Abajo `Confirmar pedido · $X`.
+
+La flecha de la cabecera vuelve al carrito; no cierra la hoja. Cerrar y volver
+a abrir empieza siempre por el carrito: reabrir en el checkout dejaría al
+cliente sin ver lo que está a punto de pagar.
+
 - Líneas con foto pequeña, nombre, lo elegido en texto tenue, contador y
   precio.
 - **Desglose**: subtotal, envío, total. El envío solo aparece en entrega.
@@ -208,17 +222,32 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
   simulacros — falla cuando un cliente intenta pedir. Pasó.
 - Botón `Continuar` fijo abajo.
 
-## 5. Pedido realizado
+## 5. Pedido recibido
 
-⚠️ **La pantalla de confirmación se RETIRÓ el 2026-08-08.** Decía «¡Pedido
-confirmado!» en el instante de crearlo, cuando el estado real era `pendiente` y
-el negocio no lo había mirado: le prometía al cliente un compromiso que nadie
-había dado. Y era **estática** —no consultaba nada—, así que había que recargar
-para enterarse de cualquier cambio.
+**Vuelve el 2026-08-11, diciendo la verdad.** Se había retirado el 2026-08-08
+porque decía «¡Pedido confirmado!» en el instante de crearlo, cuando el estado
+real era `pendiente` y el negocio no lo había mirado: le prometía al cliente un
+compromiso que nadie había dado. Y era estática.
 
-Ahora el pedido va **directo al seguimiento**, que dice la verdad y se
-actualiza solo. Todo lo que estaba en la confirmación vive allí: el número, el
-tiempo estimado, los datos para transferir y el subidor de comprobante.
+Las dos objeciones se resuelven sin renunciar a la pantalla:
+
+- **Dice «recibido», no «confirmado»**, que es verdad siempre —el pedido está
+  en la base y en la bandeja del dueño— y es además el primer hito de la línea
+  de tiempo del seguimiento, así que las dos pantallas cuentan lo mismo.
+  Curiosamente el propio diagrama de referencia ya lo decía en su subtítulo:
+  «Tu pedido ha sido **recibido** correctamente».
+- **Con transferencia el texto cambia**: ese pedido nace en `esperando_pago` y
+  lo que le toca al cliente es pagar, no esperar. El botón principal dice
+  «Subir mi comprobante» en vez de «Seguir mi pedido».
+- **Sigue siendo estática, y ahora eso está bien**: no promete nada que pueda
+  cambiar. Todo lo que sí cambia —estado, datos bancarios, comprobante— vive en
+  el seguimiento, a un toque de distancia.
+- `Seguir pedido` **sí está**: la objeción de entonces era que la pantalla de
+  seguimiento no existía. Ahora existe.
+
+Contenido: check en el color de marca, `¡Gracias, <nombre>!`, número de pedido,
+tiempo estimado (el mismo cálculo que la portada), resumen con importes, y tres
+salidas: seguir el pedido, escribir por WhatsApp, o volver al menú.
 
 ### Lo que decía la referencia (conservado como historia)
 

@@ -79,6 +79,16 @@ export default function CartSheet({
   /** Le pone el pin a una dirección ya guardada, que es la que no lo tiene. */
   onUbicarDireccion: (addressId: string, ubicacion: Ubicacion) => Promise<void>
 }) {
+  /**
+   * En qué paso está el cliente.
+   *
+   * ⚠️ Son dos pantallas y no una hoja larga a propósito. Mezcladas, el
+   * cliente tenía que pasar por encima de la dirección y del método de pago
+   * solo para comprobar qué llevaba, y el botón de confirmar quedaba a un
+   * scroll de distancia de los productos. Revisar y decidir son dos momentos
+   * distintos: el carrito revisa, el checkout decide.
+   */
+  const [paso, setPaso] = useState<'carrito' | 'checkout'>('carrito')
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
   /**
@@ -130,6 +140,13 @@ export default function CartSheet({
     } finally {
       setUbicando(null)
     }
+  }
+
+  // Cerrar y volver a abrir empieza por el carrito: si la hoja se reabriera en
+  // el checkout, el cliente no vería lo que está a punto de pagar.
+  const cerrar = () => {
+    setPaso('carrito')
+    onCerrar()
   }
 
   const direcciones: Address[] = me?.addresses || []
@@ -199,10 +216,27 @@ export default function CartSheet({
   const envio = needsAddress(entrega) ? deliveryFee : 0
   const total = orderTotal(lines, entrega, deliveryFee)
 
+  const enCarrito = paso === 'carrito'
+
   return (
-    <Hoja abierta={abierta} onCerrar={onCerrar} titulo="Tu pedido">
+    <Hoja
+      abierta={abierta}
+      onCerrar={cerrar}
+      onAtras={enCarrito ? undefined : () => setPaso('carrito')}
+      titulo={enCarrito ? 'Tu carrito' : 'Finalizar pedido'}
+    >
       <div className="space-y-6 p-4">
-        {/* ── Lo que lleva ── */}
+        {/* ── PASO 1: solo lo que lleva ─────────────────────────────────── */}
+        {enCarrito && !lines.length && (
+          <div className="py-10 text-center">
+            <p className="text-[15px] font-semibold">Tu carrito está vacío</p>
+            <p className="mt-1 text-[13px] texto-tenue">
+              Vuelve a la carta y agrega lo que quieras pedir.
+            </p>
+          </div>
+        )}
+
+        {enCarrito && (
         <section className="space-y-3">
           {lines.map(linea => (
             <div key={linea.key} className="flex gap-3 border-b borde-tema pb-3 last:border-0">
@@ -245,8 +279,11 @@ export default function CartSheet({
             </div>
           ))}
         </section>
+        )}
 
-        {/* ── Cómo lo recibe ── */}
+        {/* ── PASO 2: cómo lo recibe, a dónde, cómo paga y quién ────────── */}
+        {!enCarrito && (
+        <>
         <section>
           <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
             ¿Cómo lo quieres?
@@ -482,6 +519,8 @@ export default function CartSheet({
             </p>
           )}
         </section>
+        </>
+        )}
 
         {error && <Aviso tono="alerta">{error}</Aviso>}
       </div>
@@ -503,21 +542,35 @@ export default function CartSheet({
             <span className="text-[24px] font-extrabold tracking-tight tabular-nums">{money(total)}</span>
           </div>
         </div>
-        <Boton
-          onClick={() => onConfirmar({
-            fulfillment: entrega, addressId: elegida, name: nombreFinal,
-            paymentMethod: pagoEfectivo, deliveryNotes: instrucciones.trim() || null,
-          })}
-          disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
-        >
-          {enviando
-            ? 'Enviando…'
-            : faltaNombre
-              ? 'Escribe tu nombre'
-              : faltaDireccion
-                ? 'Elige una dirección'
-                : 'Confirmar pedido'}
-        </Boton>
+        {/* ⚠️ El botón dice QUÉ FALTA, no «completa los datos». Con seis
+            bloques encima, «faltan datos» deja al cliente buscando cuál. */}
+        {enCarrito
+          ? (
+              <Boton onClick={() => setPaso('checkout')} disabled={!puedePedir || !lines.length}>
+                {!lines.length
+                  ? 'Tu carrito está vacío'
+                  : !puedePedir
+                    ? 'El local está cerrado'
+                    : `Continuar · ${money(total)}`}
+              </Boton>
+            )
+          : (
+              <Boton
+                onClick={() => onConfirmar({
+                  fulfillment: entrega, addressId: elegida, name: nombreFinal,
+                  paymentMethod: pagoEfectivo, deliveryNotes: instrucciones.trim() || null,
+                })}
+                disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
+              >
+                {enviando
+                  ? 'Enviando…'
+                  : faltaNombre
+                    ? 'Escribe tu nombre'
+                    : faltaDireccion
+                      ? 'Elige una dirección'
+                      : `Confirmar pedido · ${money(total)}`}
+              </Boton>
+            )}
         <p className="mt-2.5 text-center text-[11.5px] texto-tenue">
           El negocio confirma tu pedido por WhatsApp y coordina el pago.
         </p>
