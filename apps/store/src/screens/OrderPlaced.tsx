@@ -1,5 +1,6 @@
 import { Check, MessageCircle } from 'lucide-react'
 import { Boton } from '../components/ui'
+import PagoPendiente from '../components/PagoPendiente'
 import { money, rangoDeEspera } from '../lib/format'
 import type { Business, Fulfillment } from '../lib/types'
 
@@ -40,8 +41,9 @@ export interface PedidoRecibido {
 }
 
 export default function OrderPlaced({
-  business, pedido, nombre, entrega, transferencia, onSeguir, onVolver,
+  slug, business, pedido, nombre, entrega, transferencia, onSeguir, onVolver,
 }: {
+  slug: string
   business: Business
   pedido: PedidoRecibido
   nombre: string
@@ -133,11 +135,28 @@ export default function OrderPlaced({
             </div>
           </section>
         )}
+        {/* ⚠️ Los datos para transferir van AQUÍ y no en el seguimiento. El
+            seguimiento cuenta por dónde va el pedido; mezclarle un formulario
+            de pago lo convertía en un cajón donde la línea de tiempo —lo único
+            que el cliente vuelve a mirar— quedaba enterrada al final. */}
+        {transferencia && (
+          <div className="mt-8 w-full">
+            <PagoPendiente
+              slug={slug}
+              orderId={pedido.id}
+              orderNumber={pedido.order_number}
+              telefonoNegocio={business.phone}
+              onSubido={onSeguir}
+            />
+          </div>
+        )}
       </div>
 
       <div className="mt-8 space-y-2.5">
-        <Boton onClick={onSeguir}>
-          {transferencia ? 'Subir mi comprobante' : 'Seguir mi pedido'}
+        {/* Con transferencia el botón de arriba ya es el que importa, así que
+            aquí solo queda seguir el pedido sin pagar todavía. */}
+        <Boton onClick={onSeguir} variante={transferencia ? 'linea' : 'principal'}>
+          {transferencia ? 'Ver el estado de mi pedido' : 'Seguir mi pedido'}
         </Boton>
         {whatsapp && (
           <a

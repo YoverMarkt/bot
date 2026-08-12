@@ -32,6 +32,27 @@ describe('cabeceras HTTP de seguridad', () => {
     expect(csp.replace("media-src 'self' data: https: blob:", '')).not.toContain('blob:')
   })
 
+  // ⚠️ Con la lista VACÍA —`geolocation=()`— la ubicación queda prohibida en la
+  // página para todo el mundo y el navegador la deniega sin preguntar. Eso
+  // rompió el pin de la mini app de una forma imposible de diagnosticar desde
+  // el teléfono: el cliente tenía el permiso concedido en Android, en Chrome y
+  // en el sitio, y seguía fallando porque la propia página lo prohibía.
+  it('permite la ubicación en nuestro origen, y solo ahí', () => {
+    const politica = run().headers.get('Permissions-Policy')
+    expect(politica).toContain('geolocation=(self)')
+    // La lista vacía es justo lo que no puede volver: no se distingue de un
+    // permiso denegado por el usuario, y nadie lo arregla desde su teléfono.
+    expect(politica).not.toContain('geolocation=()')
+  })
+
+  // El comprobante se sube con un `<input type="file">`, que abre la galería
+  // del sistema: no hace falta cámara ni micrófono, así que siguen cerrados.
+  it('la cámara y el micrófono siguen prohibidos', () => {
+    const politica = run().headers.get('Permissions-Policy')
+    expect(politica).toContain('camera=()')
+    expect(politica).toContain('microphone=()')
+  })
+
   it('activa HSTS únicamente en producción', () => {
     process.env.NODE_ENV = 'production'
     expect(run().headers.get('Strict-Transport-Security')).toContain('max-age=31536000')

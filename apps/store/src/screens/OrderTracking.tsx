@@ -1,17 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
-import { getOrder, getPaymentInfo, uploadPaymentProof } from '../lib/api'
+import { useEffect, useState } from 'react'
+import { Check, ChevronLeft, MessageCircle } from 'lucide-react'
+import { getOrder } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
 import { money } from '../lib/format'
-import type { BankAccount, Business, Fulfillment, TrackedItem, TrackedOrder } from '../lib/types'
-
-const lineasBanco = (cuenta: BankAccount) => [
-  { etiqueta: 'Banco', valor: cuenta.bank_name },
-  { etiqueta: 'Tipo', valor: cuenta.account_type },
-  { etiqueta: 'Número', valor: cuenta.account_number, copiable: true },
-  { etiqueta: 'Titular', valor: cuenta.holder_name },
-  { etiqueta: 'Cédula / RUC', valor: cuenta.holder_id, copiable: true },
-].filter(linea => Boolean(linea.valor))
+import type { Business, Fulfillment, TrackedItem, TrackedOrder } from '../lib/types'
 
 // Seguimiento del pedido: por dónde va, con la hora de cada paso.
 //
@@ -102,11 +94,6 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
 }) {
   const [pedido, setPedido] = useState<TrackedOrder | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [cuenta, setCuenta] = useState<BankAccount | null>(null)
-  const [copiado, setCopiado] = useState('')
-  const [comprobante, setComprobante] = useState<'ninguno' | 'subiendo' | 'listo'>('ninguno')
-  const [falloComprobante, setFalloComprobante] = useState<string | null>(null)
-  const archivo = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let vivo = true
@@ -133,42 +120,6 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
     }
   }, [slug, orderId])
 
-  // Los datos para transferir, solo si aún hay algo que pagar.
-  //
-  // Con el pago ya confirmado por el negocio no se piden: quien transfirió y
-  // mandó la captura por WhatsApp seguía viendo el número de cuenta y el
-  // botón de subir, como si no hubiera pagado nada.
-  const esperandoPago = pedido?.status === 'esperando_pago' && !pedido?.payment_confirmed_at
-  useEffect(() => {
-    if (!esperandoPago) return
-    getPaymentInfo(slug).then(setCuenta).catch(() => setCuenta(null))
-  }, [slug, esperandoPago])
-
-  const subir = async (elegido: File | undefined) => {
-    if (!elegido) return
-    setComprobante('subiendo')
-    setFalloComprobante(null)
-    try {
-      await uploadPaymentProof(slug, orderId, elegido)
-      setComprobante('listo')
-      // El pedido pasa a «pago en revisión»: se recarga para que la línea de
-      // tiempo lo refleje sin esperar al siguiente intervalo.
-      getOrder(slug, orderId).then(setPedido).catch(() => {})
-    } catch (error) {
-      setComprobante('ninguno')
-      setFalloComprobante(
-        error instanceof Error ? error.message : 'No pudimos subir tu comprobante',
-      )
-    }
-  }
-
-  const copiar = async (texto: string) => {
-    try {
-      await navigator.clipboard.writeText(texto)
-      setCopiado(texto)
-      setTimeout(() => setCopiado(''), 1800)
-    } catch { /* sin portapapeles: el número está a la vista igual */ }
-  }
 
   if (error) {
     return (
@@ -270,75 +221,11 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
         )}
       </div>
 
-      {/* ── Lo que falta para que arranque ──
-          Va ARRIBA de la línea de tiempo a propósito: si el negocio está
-          esperando el comprobante, eso es lo único que importa ahora mismo. */}
-      {esperandoPago && (
-        <section className="mt-5">
-          <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            <Landmark size={15} />
-            Para transferir
-          </h2>
-          {cuenta && lineasBanco(cuenta).length > 0 && (
-            <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
-              {lineasBanco(cuenta).map(({ etiqueta, valor, copiable }) => (
-                <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <span className="text-[13px] texto-tenue">{etiqueta}</span>
-                  <span className="flex items-center gap-2 text-right text-[14px] font-semibold">
-                    {String(valor)}
-                    {copiable && (
-                      <button onClick={() => copiar(String(valor))} aria-label={`Copiar ${etiqueta}`}>
-                        <Copy size={14} className={copiado === String(valor) ? 'text-marca' : 'texto-tenue'} />
-                      </button>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 space-y-3">
-            <input
-              ref={archivo}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={event => void subir(event.target.files?.[0])}
-            />
-            <Boton
-              disabled={comprobante === 'subiendo'}
-              onClick={() => archivo.current?.click()}
-            >
-              <span className="flex items-center justify-center gap-2">
-                <Upload size={17} />
-                {comprobante === 'subiendo' ? 'Subiendo…' : 'Subir comprobante'}
-              </span>
-            </Boton>
-            {/* ── Las DOS vías, y la segunda es un enlace de verdad ──
-                No es una preferencia estética: mucha gente transfiere desde la
-                app de su banco —a veces desde la cuenta de un familiar— y la
-                captura le queda en el teléfono con el que abrió WhatsApp, no
-                aquí. Antes esto decía «también puedes enviarlo por WhatsApp si
-                prefieres», que sonaba a que daba igual hacerlo o no. */}
-            <p className="text-center text-[12.5px] texto-tenue">
-              Sube tu comprobante para confirmar tu pedido.
-            </p>
-            {business.phone && (
-              <a
-                href={`https://wa.me/${business.phone.replace(/[^\d]/g, '')}?text=${
-                  encodeURIComponent(
-                    `Hola, te envío el comprobante de mi pedido #${pedido.order_number} 🙂`,
-                  )
-                }`}
-                className="flex items-center justify-center gap-1.5 text-center text-[12.5px] font-semibold text-marca"
-              >
-                <MessageCircle size={14} />
-                También puedes enviarlo por WhatsApp
-              </a>
-            )}
-            {falloComprobante && <Aviso tono="alerta">{falloComprobante}</Aviso>}
-          </div>
-        </section>
-      )}
+      {/* ⚠️ Los datos para transferir y el subidor de comprobante VIVEN EN LA
+          PANTALLA ANTERIOR («pedido recibido»), no aquí. Esta pantalla cuenta
+          por dónde va el pedido; con el formulario de pago encima, la línea de
+          tiempo —lo único que el cliente vuelve a mirar— quedaba enterrada al
+          final de un cajón. */}
 
       {/* ── El pago, dicho de una vez ──
           Va antes que el comprobante en revisión: si el negocio ya dio el pago
