@@ -42,9 +42,14 @@ export type ResultadoUbicacion =
 export const MENSAJES: Record<FalloUbicacion, string> = {
   sin_soporte: 'Tu navegador no puede compartir la ubicación. Escribe la dirección y listo.',
   incrustado: 'Abriste el enlace dentro de WhatsApp y ahí no se puede compartir la ubicación. Ábrelo en tu navegador con el menú ⋮ y vuelve a intentarlo.',
-  bloqueada: 'Tienes la ubicación bloqueada para esta página. Toca el candado 🔒 junto a la dirección, permite «Ubicación» y vuelve a intentarlo.',
+  // ⚠️ NO se nombra el candado. Chrome para Android lo cambió hace tiempo por
+  // un icono de controles, y mandar a buscar un candado que no está hace que
+  // el cliente crea que ya lo tiene bien y se rinda. Y es un permiso POR
+  // PÁGINA: tener la ubicación activada en el teléfono no lo cubre — es
+  // exactamente donde la gente mira primero y no encuentra nada que cambiar.
+  bloqueada: 'Esta página tiene la ubicación bloqueada. Toca el icono a la izquierda de la dirección (arriba) → Permisos → Ubicación → Permitir, y vuelve a intentarlo. Ojo: es el permiso de esta página, no el del teléfono.',
   permiso: 'No nos diste permiso para leer tu ubicación. Puedes intentarlo otra vez o escribir la dirección.',
-  no_disponible: 'No pudimos ubicarte. Revisa que la ubicación del teléfono esté encendida.',
+  no_disponible: 'No pudimos ubicarte. Revisa que la ubicación del teléfono esté encendida y vuelve a intentarlo.',
   tardo: 'Tu ubicación está tardando demasiado. Escribe la dirección y sigue con tu pedido.',
 }
 

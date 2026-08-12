@@ -131,7 +131,13 @@ describe('pedirUbicacion', () => {
     })
     if (r.ok) throw new Error('debía fallar')
     expect(r.motivo).toBe('bloqueada')
-    expect(r.mensaje).toContain('🔒')
+    // ⚠️ NO se nombra el candado: Chrome para Android lo cambió por un icono
+    // de controles, y mandar a buscar un candado que no está hace que el
+    // cliente crea que ya lo tiene bien y se rinda.
+    expect(r.mensaje).not.toContain('candado')
+    expect(r.mensaje).toContain('icono a la izquierda de la dirección')
+    // Y que es de la PÁGINA, que es donde la gente no mira.
+    expect(r.mensaje).toContain('no el del teléfono')
   })
 
   it('si la API de permisos no existe o falla, no se cae', async () => {

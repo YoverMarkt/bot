@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
-  chosenLines, groupChosen, lineKey, lineTotal, missingRequirement, needsAddress,
+  chosenLines, detalleDeLinea, groupChosen, lineKey, lineTotal, missingRequirement, needsAddress,
   optionPriceLabel, orderTotal, pillLayout, setQuantity, singleChoice, unitPrice,
 } from '../src/lib/cart'
 import type {
@@ -687,5 +687,60 @@ describe('groupChosen', () => {
       { ...elegida('Masa', '  ') },
       elegida('Masa', 'Delgada'),
     ])).toEqual([{ group: 'Masa', items: [{ name: 'Delgada', quantity: 1 }] }])
+  })
+})
+
+// ── Qué dice cada línea del carrito ────────────────────────────────────────
+//
+// El carrito es la última pantalla antes de pagar. Una línea que solo dice
+// «Burger Pack $10.99» no le cuenta a nadie que son dos hamburguesas dobles,
+// una salchipapa y una cola de 1.35 litros: el cliente confirma a ciegas.
+
+describe('detalleDeLinea', () => {
+  const linea = (extra: Partial<CartLine> = {}): CartLine => ({
+    key: 'k', product: producto(), variant: null, extras: [], options: [],
+    quantity: 1, note: '', unitPrice: 10, ...extra,
+  })
+
+  it('en un combo enseña la descripción, que es lo que dice qué lleva', () => {
+    expect(detalleDeLinea(linea({
+      product: producto({
+        description: '2 Cheese Burger dobles + 1 salchipapa + 1 cola de 1.35 Lt',
+        optionGroups: [],
+      }),
+    }))).toEqual(['2 Cheese Burger dobles + 1 salchipapa + 1 cola de 1.35 Lt'])
+  })
+
+  // «Elige tamaño y sabor» es la descripción de la pizza en el catálogo, y
+  // después de elegir no sirve de nada: lo que importa es qué eligió.
+  it('si eligió algo, manda lo elegido y no la descripción', () => {
+    const salida = detalleDeLinea(linea({
+      product: producto({ description: 'Elige tamaño y sabor. 19 sabores.' }),
+      options: [{
+        groupId: 'g1', groupName: 'Sabor', optionId: 'o1',
+        name: 'Criolla', price: 0, quantity: 1,
+      }],
+    }))
+    expect(salida).toEqual(['Sabor: Criolla'])
+    expect(salida.join(' ')).not.toContain('Elige tamaño')
+  })
+
+  it('sin opciones pero con extras, enseña los extras', () => {
+    expect(detalleDeLinea(linea({
+      product: producto({ description: 'Algo', optionGroups: [] }),
+      extras: [{
+        id: 'e1', group: 'Extras', name: 'Extra queso',
+        description: null, price: 1.5, maxSelectable: null,
+      }],
+    }))).toEqual(['Extra queso'])
+  })
+
+  it('un producto sin nada que contar no inventa una línea vacía', () => {
+    expect(detalleDeLinea(linea({
+      product: producto({ description: null, optionGroups: [] }),
+    }))).toEqual([])
+    expect(detalleDeLinea(linea({
+      product: producto({ description: '   ', optionGroups: [] }),
+    }))).toEqual([])
   })
 })
