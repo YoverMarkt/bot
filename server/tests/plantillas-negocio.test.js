@@ -190,3 +190,52 @@ describe('tiempo de preparación por tipo de negocio', () => {
     expect(malos, `Tipos fuera del rango de la base: ${JSON.stringify(malos)}`).toEqual([])
   })
 })
+
+// ── El orden con el que nace un negocio ────────────────────────────────────
+//
+// Cada grupo de una plantilla llega a la base con su `sort`, y de ahí sale el
+// orden en que el cliente ve las opciones y en que se lee su pedido.
+//
+// El orden ya estaba escrito y se tiraba: `grupos: [terminoDeLaCarne,
+// extrasHamburguesa, retirarIngredientes]` dice cómo se piensa una
+// hamburguesa —primero el término, luego lo que se agrega, al final lo que se
+// quita— y como nadie rellenaba `orden`, la RPC los insertaba TODOS en cero.
+// Con todo empatado caían al desempate alfabético: «Extras, Retira, Término».
+describe('un negocio nuevo nace ordenado', () => {
+  it('cada categoría, grupo y opción lleva su orden', () => {
+    for (const tipo of businessTypesWithTemplate()) {
+      const plantilla = templateForBusinessType(tipo)
+      plantilla.categorias.forEach((categoria, posicion) => {
+        expect(categoria.orden, `${tipo} → ${categoria.nombre}`).toBe(posicion)
+        ;(categoria.grupos || []).forEach((grupo, puesto) => {
+          expect(grupo.orden, `${tipo} → ${categoria.nombre} → ${grupo.nombre}`).toBe(puesto)
+          ;(grupo.opciones || []).forEach((opcion, lugar) => {
+            expect(opcion.orden, `${tipo} → ${grupo.nombre} → ${opcion.nombre}`).toBe(lugar)
+          })
+        })
+      })
+    }
+  })
+
+  // El caso que motivó todo: en una hamburguesería, el término va PRIMERO.
+  // Por nombre saldría al final, detrás de «Extras» y «Retira ingredientes».
+  it('en la hamburguesería el término va antes que los extras', () => {
+    const hamburguesas = templateForBusinessType('hamburgueseria')
+      .categorias.find(c => c.nombre === 'Hamburguesas')
+    const porOrden = [...hamburguesas.grupos].sort((a, b) => a.orden - b.orden)
+
+    expect(porOrden.map(g => g.nombre))
+      .toEqual(['Término de la carne', 'Extras', 'Retira ingredientes'])
+    // Y que de verdad NO es el alfabético, que es lo que salía antes.
+    expect(porOrden.map(g => g.nombre))
+      .not.toEqual([...porOrden.map(g => g.nombre)].sort((a, b) => a.localeCompare(b, 'es')))
+  })
+
+  // Las categorías que ya traen su orden a mano —`bebidas(3)`— no se renumeran:
+  // así se puede intercalar una sin tocar las demás.
+  it('un orden puesto a mano gana sobre la posición', () => {
+    const comidaRapida = templateForBusinessType('comida rapida')
+    const bebidas = comidaRapida.categorias.find(c => c.nombre === 'Bebidas')
+    expect(bebidas.orden).toBe(4)
+  })
+})
