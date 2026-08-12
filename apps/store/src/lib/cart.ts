@@ -320,6 +320,7 @@ export function groupExtras(extras: Extra[]): { group: string; items: Extra[] }[
  */
 export function groupChosen(
   options: ChosenOption[],
+  groups: OptionGroup[] = [],
 ): { group: string; items: { name: string; quantity: number }[] }[] {
   const grupos = new Map<string, { name: string; quantity: number }[]>()
   for (const opcion of options) {
@@ -331,16 +332,29 @@ export function groupChosen(
     const cantidad = Math.max(1, Math.trunc(opcion.quantity || 1))
     grupos.set(grupo, [...grupos.get(grupo) || [], { name: nombre, quantity: cantidad }])
   }
+
+  // ⚠️ El orden es el que puso EL DUEÑO, que aquí sale gratis: `groups` viene
+  // del catálogo ya ordenado por su `sort`, y es el MISMO orden en que el
+  // cliente acaba de armar el plato en la ficha. Ordenarlo distinto en el
+  // carrito le haría releer de arriba abajo para comprobar lo que eligió.
+  // El alfabético queda de desempate, para los grupos que ya no están en el
+  // catálogo y para los que el dueño nunca ordenó.
+  const posicion = new Map(groups.map((grupo, indice) => [grupo.name, indice]))
+  const puesto = (nombre: string) => posicion.get(nombre) ?? Number.MAX_SAFE_INTEGER
+
   return [...grupos.entries()]
+    .sort(([a], [b]) => puesto(a) - puesto(b) || a.localeCompare(b, 'es'))
     .map(([group, items]) => ({
       group,
       items: [...items].sort((a, b) => a.name.localeCompare(b.name, 'es')),
     }))
-    .sort((a, b) => a.group.localeCompare(b.group, 'es'))
 }
 
 /** Una línea de texto por grupo: «Sabor: Criolla, Monster». */
-export const chosenLines = (options: ChosenOption[]): string[] =>
-  groupChosen(options).map(grupo => `${grupo.group}: ${grupo.items
+export const chosenLines = (
+  options: ChosenOption[],
+  groups: OptionGroup[] = [],
+): string[] =>
+  groupChosen(options, groups).map(grupo => `${grupo.group}: ${grupo.items
     .map(item => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name))
     .join(', ')}`)

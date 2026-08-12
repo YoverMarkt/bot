@@ -558,6 +558,124 @@ begin
     end if;
   end;
 
+  -- ── 3b-quinquies. El pedido se lee en el orden que puso el dueño ─────────
+  --
+  -- Una pizza se piensa en un orden: sabor, masa, borde, y al final lo que se
+  -- agrega y cuesta aparte. El pedido se contaba en orden alfabético, que es el
+  -- de un listado y no el de una cocina.
+  --
+  -- El orden se COPIA al crear el pedido en vez de consultarse al leerlo: el
+  -- panel del dueño pide sus pedidos cada 12 segundos, y una unión más ahí
+  -- correría sin parar durante todo el servicio.
+  declare
+    v_pizza uuid;
+    v_grupo_sabor uuid;
+    v_grupo_borde uuid;
+    v_opcion_sabor uuid;
+    v_opcion_borde uuid;
+    v_pedido jsonb;
+    v_orden integer[];
+    v_movidos integer;
+  begin
+    -- Producto PROPIO: colgarle un grupo obligatorio al de las demás pruebas
+    -- las rompería a todas, porque sus pedidos no lo mandarían.
+    insert into public.products (business_id, name, price)
+    values (v_business, 'Pizza del orden', 9.00)
+    returning id into v_pizza;
+
+    -- Dos grupos del mismo producto, con el orden que el dueño querría: el
+    -- sabor manda, el borde es un añadido. Alfabéticamente saldrían al revés.
+    -- Obligatorio exige mínimo 1: un «obligatorio» sin mínimo no obliga a nada.
+    insert into public.option_groups (
+      business_id, product_id, name, selection_type, required, min_selectable, sort)
+    values (v_business, v_pizza, 'Sabor', 'single', true, 1, 0)
+    returning id into v_grupo_sabor;
+    insert into public.option_groups (business_id, product_id, name, selection_type, required, sort)
+    values (v_business, v_pizza, 'Borde', 'single', false, 1)
+    returning id into v_grupo_borde;
+
+    insert into public.options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_sabor, 'Criolla', 0) returning id into v_opcion_sabor;
+    insert into public.options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_grupo_borde, 'Sin borde', 0) returning id into v_opcion_borde;
+
+    v_pedido := public.create_storefront_order(
+      v_business, null, '+593900000002', 'Cliente', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_pizza, 'quantity', 1,
+        'options', jsonb_build_array(
+          -- Se mandan al revés a propósito: el orden lo decide el dueño, no
+          -- en qué orden tocó el cliente.
+          jsonb_build_object('option_id', v_opcion_borde, 'quantity', 1),
+          jsonb_build_object('option_id', v_opcion_sabor, 'quantity', 1)
+        )
+      ))
+    );
+
+    select array_agg(oio.group_sort order by oio.option_group_name)
+      into v_orden
+      from public.order_item_options oio
+      join public.order_items oi on oi.id = oio.order_item_id
+     where oi.order_id = (v_pedido ->> 'id')::uuid;
+
+    -- Por nombre alfabético: Borde primero (sort 1), Sabor después (sort 0).
+    if v_orden is distinct from array[1, 0] then
+      raise exception 'el pedido no copió el orden de los grupos: %', v_orden;
+    end if;
+
+    -- Y el orden es una FOTOGRAFÍA: reordenar mañana no reescribe la comanda
+    -- de hoy, igual que cambiar un precio no reescribe lo que se cobró.
+    v_movidos := public.reorder_option_groups(
+      v_business, array[v_grupo_borde, v_grupo_sabor]);
+    if v_movidos <> 2 then
+      raise exception 'reorder_option_groups movió % grupos, se esperaban 2', v_movidos;
+    end if;
+
+    select array_agg(oio.group_sort order by oio.option_group_name)
+      into v_orden
+      from public.order_item_options oio
+      join public.order_items oi on oi.id = oio.order_item_id
+     where oi.order_id = (v_pedido ->> 'id')::uuid;
+    if v_orden is distinct from array[1, 0] then
+      raise exception 'reordenar cambió un pedido ya hecho: %', v_orden;
+    end if;
+
+    -- Y el nuevo orden sí manda para lo que venga.
+    if (select sort from public.option_groups where id = v_grupo_borde) <> 0 then
+      raise exception 'reorder_option_groups no aplicó el orden nuevo';
+    end if;
+
+    -- ⚠️ REGLA #1: los grupos de OTRO negocio no se mueven ni sabiendo su id.
+    declare
+      v_vecino uuid;
+      v_grupo_ajeno uuid;
+    begin
+      insert into businesses (slug, name, whatsapp_number)
+      values ('orden-vecino', 'Local vecino', '+593900000998')
+      returning id into v_vecino;
+      insert into public.products (business_id, name, price)
+      values (v_vecino, 'Algo', 5.00);
+      insert into public.option_groups (business_id, product_id, name, selection_type, sort)
+      values (v_vecino, (select id from public.products where business_id = v_vecino limit 1),
+              'Suyo', 'single', 7)
+      returning id into v_grupo_ajeno;
+
+      v_movidos := public.reorder_option_groups(v_business, array[v_grupo_ajeno]);
+      if v_movidos <> 0 then
+        raise exception 'se reordenó un grupo de otro negocio';
+      end if;
+      if (select sort from public.option_groups where id = v_grupo_ajeno) <> 7 then
+        raise exception 'el grupo del vecino cambió de orden';
+      end if;
+
+      -- Y una opción de otro GRUPO del mismo negocio tampoco se cuela.
+      v_movidos := public.reorder_options(v_business, v_grupo_sabor, array[v_opcion_borde]);
+      if v_movidos <> 0 then
+        raise exception 'se reordenó una opción de otro grupo';
+      end if;
+    end;
+  end;
+
   -- ── 3c. El envío lo pone la BASE, no el teléfono ─────────────────────────
   -- Si el costo de envío se calculara en la app, cualquiera pediría con envío
   -- $0 tocando el JavaScript. Aquí sale de la ficha del negocio.

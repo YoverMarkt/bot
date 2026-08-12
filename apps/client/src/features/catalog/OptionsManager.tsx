@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  ChevronDown, ChevronDown as ChevronDownIcon, ChevronRight, ChevronUp,
+  Layers, Pencil, Plus, Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -116,6 +119,64 @@ const money = (valor: string | number) => {
   return `${n > 0 ? '+' : '−'}$${Math.abs(n).toFixed(2)}`
 }
 
+/**
+ * Mueve un elemento una posición y devuelve la lista nueva de ids.
+ *
+ * Se manda la lista ENTERA al servidor y no «este sube uno»: dos toques
+ * seguidos con la lista de por medio dejarían un orden que nadie pidió, y el
+ * servidor tendría que adivinar desde dónde se movía.
+ */
+export function moverEnLista<T extends { id: string }>(
+  lista: T[], indice: number, direccion: -1 | 1,
+): string[] {
+  const destino = indice + direccion
+  // En los bordes se devuelve el orden actual: así quien llama puede comparar
+  // y no gastar una petición en un movimiento que no mueve nada.
+  if (destino < 0 || destino >= lista.length) return lista.map(item => item.id)
+  const copia = [...lista]
+  const [movido] = copia.splice(indice, 1)
+  copia.splice(destino, 0, movido)
+  return copia.map(item => item.id)
+}
+
+/**
+ * Las flechas de subir y bajar.
+ *
+ * ⚠️ Llevan `aria-label` con el nombre de lo que mueven. Una fila de flechas
+ * idénticas es ilegible para quien navega por teclado o con lector: «subir» a
+ * secas no dice subir qué, y en una lista de ocho grupos son dieciséis botones
+ * que suenan igual.
+ */
+function Flechas({ nombre, primero, ultimo, onSubir, onBajar, ocupado }: {
+  nombre: string
+  primero: boolean
+  ultimo: boolean
+  onSubir: () => void
+  onBajar: () => void
+  ocupado: boolean
+}) {
+  return (
+    <div className="flex shrink-0">
+      <Button
+        variant="ghost" size="sm"
+        aria-label={`Subir ${nombre}`}
+        disabled={primero || ocupado}
+        onClick={onSubir}
+      >
+        <ChevronUp className="size-4" />
+      </Button>
+      <Button
+        variant="ghost" size="sm"
+        aria-label={`Bajar ${nombre}`}
+        disabled={ultimo || ocupado}
+        onClick={onBajar}
+      >
+        <ChevronDownIcon className="size-4" />
+      </Button>
+    </div>
+  )
+}
+
 export default function OptionsManager({
   productos, categorias,
 }: {
@@ -177,6 +238,52 @@ export default function OptionsManager({
       refrescar()
     },
     onError: alFallar,
+  })
+
+  /**
+   * Reordenar es OPTIMISTA: la lista se mueve en pantalla al instante y solo
+   * se deshace si el servidor dice que no. Esperar un viaje de red por cada
+   * toque en una flecha convierte ordenar ocho grupos en ocho esperas.
+   */
+  const ordenarGrupos = useMutation({
+    mutationFn: catApi.reorderOptionGroups,
+    onMutate: async (ids: string[]) => {
+      await qc.cancelQueries({ queryKey: ['option-groups'] })
+      const antes = qc.getQueryData<OptionGroup[]>(['option-groups'])
+      if (antes) {
+        const posicion = new Map(ids.map((id, indice) => [id, indice]))
+        qc.setQueryData<OptionGroup[]>(['option-groups'], [...antes].sort(
+          (a, b) => (posicion.get(a.id) ?? 0) - (posicion.get(b.id) ?? 0),
+        ))
+      }
+      return { antes }
+    },
+    onError: (error, _ids, contexto) => {
+      if (contexto?.antes) qc.setQueryData(['option-groups'], contexto.antes)
+      alFallar(error)
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['option-groups'] }),
+  })
+
+  const ordenarOpciones = useMutation({
+    mutationFn: ({ groupId, ids }: { groupId: string; ids: string[] }) =>
+      catApi.reorderOptions(groupId, ids),
+    onMutate: async ({ ids }) => {
+      await qc.cancelQueries({ queryKey: ['options'] })
+      const antes = qc.getQueryData<ProductOption[]>(['options'])
+      if (antes) {
+        const posicion = new Map(ids.map((id, indice) => [id, indice]))
+        qc.setQueryData<ProductOption[]>(['options'], [...antes].sort(
+          (a, b) => (posicion.get(a.id) ?? 0) - (posicion.get(b.id) ?? 0),
+        ))
+      }
+      return { antes }
+    },
+    onError: (error, _vars, contexto) => {
+      if (contexto?.antes) qc.setQueryData(['options'], contexto.antes)
+      alFallar(error)
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['options'] }),
   })
 
   const borrarOpcion = useMutation({
@@ -262,7 +369,7 @@ export default function OptionsManager({
       )}
 
       <div className="space-y-3">
-        {lista.map((grupo) => {
+        {lista.map((grupo, indice) => {
           const suyas = opcionesPorGrupo.get(grupo.id) || []
           const desplegado = abierto[grupo.id]
           return (
@@ -290,7 +397,17 @@ export default function OptionsManager({
                     </span>
                   </span>
                 </button>
-                <div className="flex shrink-0 gap-1.5">
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {/* El orden decide cómo se lee el plato: en la ficha del
+                      cliente, en el carrito, en el pedido y en su WhatsApp. */}
+                  <Flechas
+                    nombre={grupo.name}
+                    primero={indice === 0}
+                    ultimo={indice === lista.length - 1}
+                    ocupado={ordenarGrupos.isPending}
+                    onSubir={() => ordenarGrupos.mutate(moverEnLista(lista, indice, -1))}
+                    onBajar={() => ordenarGrupos.mutate(moverEnLista(lista, indice, 1))}
+                  />
                   <Button
                     variant="ghost" size="sm"
                     onClick={() => setEditandoGrupo({ grupo: { ...grupo }, id: grupo.id })}
@@ -312,7 +429,7 @@ export default function OptionsManager({
               {desplegado && (
                 <div className="border-t bg-muted/30 p-4">
                   <div className="space-y-2">
-                    {suyas.map(opcion => (
+                    {suyas.map((opcion, puesto) => (
                       <div
                         key={opcion.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2"
@@ -329,7 +446,21 @@ export default function OptionsManager({
                         <span className="text-sm font-semibold">
                           {money(opcion.price_adjustment)}
                         </span>
-                        <span className="flex gap-1">
+                        <span className="flex items-center gap-1">
+                          {/* Aquí se ordenan los 19 sabores: el cliente los ve
+                              en este orden en la ficha del producto. */}
+                          <Flechas
+                            nombre={opcion.name}
+                            primero={puesto === 0}
+                            ultimo={puesto === suyas.length - 1}
+                            ocupado={ordenarOpciones.isPending}
+                            onSubir={() => ordenarOpciones.mutate({
+                              groupId: grupo.id, ids: moverEnLista(suyas, puesto, -1),
+                            })}
+                            onBajar={() => ordenarOpciones.mutate({
+                              groupId: grupo.id, ids: moverEnLista(suyas, puesto, 1),
+                            })}
+                          />
                           <Button
                             variant="ghost" size="sm"
                             onClick={() => setEditandoOpcion({

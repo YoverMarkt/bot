@@ -216,7 +216,7 @@ export default function CartSheet({
                     con masa, sabor y borde salía como «Pizza · Familiar» y el
                     cliente confirmaba sin ver lo que había armado. Es la
                     pantalla donde más importa: es la última antes de pagar. */}
-                {chosenLines(linea.options).map(texto => (
+                {chosenLines(linea.options, linea.product.optionGroups).map(texto => (
                   <p key={texto} className="text-[12px] leading-snug texto-tenue">{texto}</p>
                 ))}
                 {linea.extras.length > 0 && (

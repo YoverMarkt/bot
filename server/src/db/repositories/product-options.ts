@@ -88,6 +88,35 @@ const deleteOptionGroup = async (businessId: string, id: string) => (
   db.from('option_groups').delete().eq('business_id', businessId).eq('id', id)
 )
 
+/**
+ * Reordena los grupos según la lista que llega, y en UNA sola operación.
+ *
+ * Va por RPC y no con un update por grupo porque reordenar es una decisión
+ * sola: a mitad de camino, media lista movida es peor que la lista intacta.
+ * La función comprueba el `business_id` de cada fila, así que un id de otro
+ * local simplemente no se mueve.
+ */
+const reorderOptionGroups = async (businessId: string, ids: string[]) => {
+  const { data, error } = await db.rpc('reorder_option_groups', {
+    p_business_id: businessId,
+    p_ids: ids,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data) || 0
+}
+
+/** Lo mismo dentro de un grupo. Lleva el grupo además del negocio: sin él, una
+ *  opción de otro grupo del mismo local se colaría en la lista. */
+const reorderOptions = async (businessId: string, groupId: string, ids: string[]) => {
+  const { data, error } = await db.rpc('reorder_options', {
+    p_business_id: businessId,
+    p_group_id: groupId,
+    p_ids: ids,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data) || 0
+}
+
 // ── Opciones ────────────────────────────────────────────────────────────────
 
 const getOptions = async (businessId: string) => {
@@ -286,11 +315,13 @@ export = {
   createOptionGroup,
   updateOptionGroup,
   deleteOptionGroup,
+  reorderOptionGroups,
   getOptions,
   getOptionById,
   createOption,
   updateOption,
   deleteOption,
+  reorderOptions,
   getOptionTemplates,
   getOptionTemplateById,
   createOptionTemplate,

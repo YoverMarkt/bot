@@ -67,12 +67,14 @@ describe('rutas de opciones del panel', () => {
     expect(paths).toEqual([
       '/api/client/option-groups',
       '/api/client/option-groups/:id',
+      '/api/client/option-groups/reorder',
       '/api/client/option-template-items',
       '/api/client/option-template-items/:id',
       '/api/client/option-templates',
       '/api/client/option-templates/:id',
       '/api/client/options',
       '/api/client/options/:id',
+      '/api/client/options/reorder',
       '/api/client/recommendations',
       '/api/client/recommendations/:id',
     ])
@@ -395,5 +397,98 @@ describe('adicionales', () => {
 
     expect(r.status).toBe(404)
     expect(borrar).not.toHaveBeenCalled()
+  })
+})
+
+// ── Reordenar ──────────────────────────────────────────────────────────────
+//
+// El orden que pone el dueño aquí es el que ve el cliente al armar su plato Y
+// el que se congela en su pedido. Antes no se podía tocar: el editor creaba
+// todos los grupos con `sort = 0` y no ofrecía ninguna forma de cambiarlo, así
+// que ordenar por `sort` no habría hecho nada.
+describe('ordenar los grupos y las opciones', () => {
+  it('manda la lista al servidor y responde cuántos movió', async () => {
+    const ordenar = vi.spyOn(db, 'reorderOptionGroups').mockResolvedValue(3)
+
+    const r = await ejecutar('/api/client/option-groups/reorder', 'post', {
+      body: { ids: ['g-1', 'g-2', 'g-3'] },
+    })
+
+    expect(r.status).toBe(200)
+    expect(r.body).toEqual({ ok: true, movidos: 3 })
+    // ⚠️ REGLA #1: el negocio sale del JWT, nunca del cuerpo.
+    expect(ordenar).toHaveBeenCalledWith('negocio-a', ['g-1', 'g-2', 'g-3'])
+  })
+
+  it('el negocio del cuerpo se ignora', async () => {
+    const ordenar = vi.spyOn(db, 'reorderOptionGroups').mockResolvedValue(1)
+
+    await ejecutar('/api/client/option-groups/reorder', 'post', {
+      businessId: 'negocio-a',
+      body: { ids: ['g-1'], business_id: 'negocio-b', businessId: 'negocio-b' },
+    })
+
+    expect(ordenar).toHaveBeenCalledWith('negocio-a', ['g-1'])
+  })
+
+  it('una lista repetida se rechaza: dejaría huecos en el orden', async () => {
+    const ordenar = vi.spyOn(db, 'reorderOptionGroups')
+
+    const r = await ejecutar('/api/client/option-groups/reorder', 'post', {
+      body: { ids: ['g-1', 'g-1'] },
+    })
+
+    expect(r.status).toBe(400)
+    expect(ordenar).not.toHaveBeenCalled()
+  })
+
+  it('sin lista no se llama a la base', async () => {
+    const ordenar = vi.spyOn(db, 'reorderOptionGroups')
+
+    for (const body of [{}, { ids: [] }, { ids: 'g-1' }, { ids: ['', '  '] }]) {
+      const r = await ejecutar('/api/client/option-groups/reorder', 'post', { body })
+      expect(r.status).toBe(400)
+    }
+    expect(ordenar).not.toHaveBeenCalled()
+  })
+
+  // Las opciones llevan además su grupo: sin él, una opción de otro grupo del
+  // mismo negocio se colaría en la lista y saldría reordenada donde no toca.
+  it('ordenar opciones comprueba que el grupo sea suyo', async () => {
+    const buscar = vi.spyOn(db, 'getOptionGroupById').mockResolvedValue({ id: 'g-1' })
+    const ordenar = vi.spyOn(db, 'reorderOptions').mockResolvedValue(2)
+
+    const r = await ejecutar('/api/client/options/reorder', 'post', {
+      body: { groupId: 'g-1', ids: ['o-1', 'o-2'] },
+    })
+
+    expect(r.status).toBe(200)
+    expect(buscar).toHaveBeenCalledWith('negocio-a', 'g-1')
+    expect(ordenar).toHaveBeenCalledWith('negocio-a', 'g-1', ['o-1', 'o-2'])
+  })
+
+  // Sin esto la función devolvería «cero movidos» y el dueño leería «ordenado»
+  // sin que se hubiera ordenado nada.
+  it('un grupo de otro negocio responde 404 y no toca la base', async () => {
+    vi.spyOn(db, 'getOptionGroupById').mockResolvedValue(null)
+    const ordenar = vi.spyOn(db, 'reorderOptions')
+
+    const r = await ejecutar('/api/client/options/reorder', 'post', {
+      body: { groupId: 'g-de-otro', ids: ['o-1'] },
+    })
+
+    expect(r.status).toBe(404)
+    expect(ordenar).not.toHaveBeenCalled()
+  })
+
+  it('sin grupo no se ordena nada', async () => {
+    const ordenar = vi.spyOn(db, 'reorderOptions')
+
+    const r = await ejecutar('/api/client/options/reorder', 'post', {
+      body: { ids: ['o-1'] },
+    })
+
+    expect(r.status).toBe(400)
+    expect(ordenar).not.toHaveBeenCalled()
   })
 })

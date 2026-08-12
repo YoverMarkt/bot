@@ -229,6 +229,18 @@ export const updateOptionGroup = (id: string, g: OptionGroupPayload) =>
 export const deleteOptionGroup = (id: string) =>
   api(`/api/client/option-groups/${id}`, { method: 'DELETE' })
 
+/**
+ * El orden en que el dueño quiere sus grupos.
+ *
+ * Se manda la lista ENTERA y no «este sube una posición»: dos toques seguidos
+ * con la lista de por medio dejarían un orden que nadie pidió, y el servidor
+ * tendría que adivinar desde dónde se movía.
+ */
+export const reorderOptionGroups = (ids: string[]) =>
+  api<{ ok: true; movidos: number }>('/api/client/option-groups/reorder', {
+    method: 'POST', body: JSON.stringify({ ids }),
+  })
+
 export const getOptions = () => api<ProductOption[]>('/api/client/options')
 
 export const createOption = (o: ProductOptionPayload) =>
@@ -239,6 +251,12 @@ export const updateOption = (id: string, o: ProductOptionPayload) =>
 
 export const deleteOption = (id: string) =>
   api(`/api/client/options/${id}`, { method: 'DELETE' })
+
+/** Lo mismo dentro de un grupo: el orden en que se ven los sabores. */
+export const reorderOptions = (groupId: string, ids: string[]) =>
+  api<{ ok: true; movidos: number }>('/api/client/options/reorder', {
+    method: 'POST', body: JSON.stringify({ groupId, ids }),
+  })
 
 export const getOptionTemplates = () => api<OptionTemplate[]>('/api/client/option-templates')
 
