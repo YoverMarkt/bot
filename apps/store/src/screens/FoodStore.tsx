@@ -298,6 +298,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   if (recienHecho) {
     return (
       <OrderPlaced
+        slug={slug}
         business={business}
         pedido={recienHecho.pedido}
         nombre={recienHecho.nombre}
