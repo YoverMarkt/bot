@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { textoDelComprobante } from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
   normalizeChannelIdentifier,
@@ -93,6 +94,21 @@ export interface InboundWebhookDependencies {
   http?: InboundHttpClient
   env?: NodeJS.ProcessEnv
   logger?: InboundLogger
+  /**
+   * ¿Este contacto tiene un pedido esperando el comprobante?
+   *
+   * Se pregunta ANTES de descargar la foto, y ese orden es el punto entero:
+   * una consulta a la base cuesta milisegundos, bajar una imagen de 5 MB
+   * cuesta tráfico. Sin él, el modo mini app volvería a pagar por cada foto
+   * que le manden — que es justo lo que el atajo de abajo evita.
+   */
+  esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
+  /** Sube la foto y la engancha al pedido. Devuelve el número si lo logró. */
+  adjuntarComprobante?: (
+    businessId: string,
+    contactPhone: string,
+    imagen: Buffer,
+  ) => Promise<{ adjuntado: boolean; orderNumber?: number | null }>
 }
 
 export interface InboundWebhookExpectation {
@@ -344,6 +360,40 @@ export function createInboundWebhookProcessor(
       ...(payload._inboxBatch ? { bypassDebounce: true } : {}),
     }
 
+    /**
+     * Baja la media del proveedor que toque.
+     *
+     * Se extrajo para que el atajo del modo mini app pueda usarla cuando SÍ
+     * hace falta —la foto de quien tiene un pedido esperando comprobante— sin
+     * duplicar los límites de tamaño ni la elección de credencial, que son
+     * distintos por proveedor y por tipo.
+     */
+    const descargarMedia = async (): Promise<{ data: Buffer; mimeType?: string }> => {
+      if (payload.content.kind === 'text') throw new Error('Un texto no tiene media')
+      const audio = payload.content.kind === 'audio'
+      if (payload.provider === 'meta') {
+        const token = business.meta_token?.trim()
+        if (!token || !payload.content.media.id) {
+          throw new Error('Falta el token Meta para procesar la media')
+        }
+        return downloadMetaMedia(
+          http,
+          payload.content.media.id,
+          token,
+          businessIdentifier,
+          audio ? META_AUDIO_LIMIT : META_IMAGE_LIMIT,
+        )
+      }
+      const apiKey = business.ycloud_api_key?.trim() || env.YCLOUD_API_KEY?.trim()
+      if (!apiKey) throw new Error('Falta la API Key YCloud para procesar la media')
+      return downloadYCloudMedia(
+        http,
+        payload.content.media,
+        apiKey,
+        audio ? YCLOUD_AUDIO_LIMIT : YCLOUD_IMAGE_LIMIT,
+      )
+    }
+
     if (payload.content.kind === 'text') {
       await dependencies.bot.handleMessage(
         payload.from,
@@ -365,10 +415,42 @@ export function createInboundWebhookProcessor(
     // El corte de `bot-conversation` llega DESPUÉS de esto, así que no basta
     // con el que ya hay: aquí el gasto ya se habría hecho.
     if (business.chat_mode === 'miniapp') {
-      logger.log(`🛍️  [${payload.provider}] media en modo mini app: no se procesa`)
+      // ⚠️ Con UNA excepción: la foto de quien tiene un pedido esperando el
+      // comprobante. Ese es el caso más común del modo mini app —se pide por
+      // la app, se transfiere desde el banco y se manda la captura por el
+      // chat— y era el que se perdía: la foto no se bajaba, no se adjuntaba a
+      // nada, y el cliente recibía «usa el enlace» después de pagar.
+      //
+      // Se pregunta a la BASE antes de bajar nada. Ese orden es el punto: una
+      // consulta cuesta milisegundos, bajar 5 MB cuesta tráfico. Quien no
+      // tenga un pedido esperando pago sigue por el atajo de siempre, sin
+      // descargar ni pagar visión.
+      const esFoto = payload.content.kind === 'image'
+      const toca = esFoto && dependencies.esperaComprobante && dependencies.adjuntarComprobante
+        ? await dependencies.esperaComprobante(business.id, payload.from).catch(() => false)
+        : false
+
+      if (!toca) {
+        logger.log(`🛍️  [${payload.provider}] media en modo mini app: no se procesa`)
+        await dependencies.bot.handleMessage(
+          payload.from,
+          payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]',
+          businessIdentifier,
+          options,
+        )
+        return
+      }
+
+      logger.log(`🧾 [${payload.provider}] foto con pedido esperando pago: se descarga`)
+      const foto = await descargarMedia()
+      const comprobante = await dependencies.adjuntarComprobante!(
+        business.id, payload.from, foto.data,
+      )
       await dependencies.bot.handleMessage(
         payload.from,
-        payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]',
+        // Si no se pudo adjuntar se sigue como siempre: el cliente recibe su
+        // respuesta de siempre en vez de quedarse sin nada.
+        comprobante.adjuntado ? textoDelComprobante(comprobante.orderNumber) : '[foto]',
         businessIdentifier,
         options,
       )
@@ -376,29 +458,7 @@ export function createInboundWebhookProcessor(
     }
 
     const isAudio = payload.content.kind === 'audio'
-    let media: { data: Buffer; mimeType?: string }
-    if (payload.provider === 'meta') {
-      const token = business.meta_token?.trim()
-      if (!token || !payload.content.media.id) {
-        throw new Error('Falta el token Meta para procesar la media')
-      }
-      media = await downloadMetaMedia(
-        http,
-        payload.content.media.id,
-        token,
-        businessIdentifier,
-        isAudio ? META_AUDIO_LIMIT : META_IMAGE_LIMIT,
-      )
-    } else {
-      const apiKey = business.ycloud_api_key?.trim() || env.YCLOUD_API_KEY?.trim()
-      if (!apiKey) throw new Error('Falta la API Key YCloud para procesar la media')
-      media = await downloadYCloudMedia(
-        http,
-        payload.content.media,
-        apiKey,
-        isAudio ? YCLOUD_AUDIO_LIMIT : YCLOUD_IMAGE_LIMIT,
-      )
-    }
+    const media = await descargarMedia()
 
     if (isAudio) {
       if (media.mimeType && !media.mimeType.startsWith('audio/')) {
@@ -434,6 +494,22 @@ export function createInboundWebhookProcessor(
 const processor = createInboundWebhookProcessor({
   database: require('../db') as InboundDatabase,
   bot: require('./bot-entry') as InboundBot,
+  /**
+   * La pregunta barata que decide si vale la pena bajar la foto.
+   *
+   * Carga diferida como el resto de lo que habla con la base: `require` dentro
+   * de la función evita un ciclo de importaciones al arrancar.
+   */
+  esperaComprobante: async (businessId, contactPhone) => {
+    const db = require('../db') as typeof import('../db')
+    const inbox = require('./payment-proof-inbox') as typeof import('./payment-proof-inbox')
+    const pedido = await db.getLastOrderForContact(businessId, contactPhone).catch(() => null)
+    return inbox.esperaComprobante(pedido)
+  },
+  adjuntarComprobante: (businessId, contactPhone, imagen) => {
+    const bot = require('./bot-entry') as typeof import('./bot-entry')
+    return bot.adjuntarComprobante(businessId, contactPhone, imagen)
+  },
 })
 
 export const processInboundWebhook = processor

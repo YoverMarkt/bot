@@ -126,7 +126,7 @@ const money = (valor: string | number) => {
  * seguidos con la lista de por medio dejarían un orden que nadie pidió, y el
  * servidor tendría que adivinar desde dónde se movía.
  */
-export function moverEnLista<T extends { id: string }>(
+function moverEnLista<T extends { id: string }>(
   lista: T[], indice: number, direccion: -1 | 1,
 ): string[] {
   const destino = indice + direccion
