@@ -249,6 +249,23 @@ Contenido: check en el color de marca, `¡Gracias, <nombre>!`, número de pedido
 tiempo estimado (el mismo cálculo que la portada), resumen con importes, y tres
 salidas: seguir el pedido, escribir por WhatsApp, o volver al menú.
 
+**Aquí viven los datos para transferir** (`components/PagoPendiente.tsx`):
+banco, cuenta con botón de copiar, `Subir comprobante` y las dos vías. Estaban
+en el seguimiento y lo convertían en un cajón donde la línea de tiempo —lo
+único que el cliente vuelve a mirar— quedaba enterrada al final. Pagar es lo
+primero que hay que hacer, así que va en la pantalla inmediatamente posterior
+a confirmar.
+
+⚠️ **Y quien vuelve debiendo dinero aterriza AQUÍ, no en el seguimiento.** Lo
+normal es cerrar la app para ir al banco y volver con la captura; al regresar
+caía en el seguimiento, que ya no tiene dónde subirla, y se quedaba con el
+pedido en el aire. Al abrir la tienda se consulta el último pedido guardado y,
+si sigue en `esperando_pago` sin pago confirmado, se entra por esta pantalla —
+con reloj ámbar y **«Falta tu comprobante»** en vez del check verde y las
+gracias, que sobre un pedido sin pagar suenan a que ya está todo hecho.
+`Volver al menú` sigue disponible: un pedido a medias no puede secuestrar la
+tienda.
+
 ### Lo que decía la referencia (conservado como historia)
 
 ## 5-bis. Confirmación
