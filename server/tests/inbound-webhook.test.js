@@ -53,7 +53,13 @@ function setup(overrides = {}) {
     bot,
     http,
     logger,
-    process: createInboundWebhookProcessor({ database, bot, http, logger }),
+    esperaComprobante: overrides.esperaComprobante,
+    adjuntarComprobante: overrides.adjuntarComprobante,
+    process: createInboundWebhookProcessor({
+      database, bot, http, logger,
+      esperaComprobante: overrides.esperaComprobante,
+      adjuntarComprobante: overrides.adjuntarComprobante,
+    }),
   }
 }
 
@@ -268,5 +274,119 @@ describe('procesador durable de webhooks', () => {
       },
     }))).rejects.toThrow(/YCloud no permitida/)
     expect(insecure.http.get).not.toHaveBeenCalled()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL COMPROBANTE QUE LLEGA POR EL CHAT, EN MODO MINI APP
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ ESTE es el camino real de una foto en modo mini app, y por eso está aquí
+// y no en las pruebas de `bot-entry`: el atajo de este archivo NUNCA llama a
+// `handleImage`. Manda un `[foto]` de texto y se acabó.
+//
+// El buzón de comprobantes se enganchó primero en `handleImage` y no se
+// disparó nunca en producción — la foto no llegaba ahí. Se descubrió
+// probándolo: el cliente mandaba su captura y recibía «usa el enlace».
+//
+// El atajo existe para no pagar tráfico ni visión por una foto que no se va a
+// mirar, y eso NO cambia: se pregunta a la base primero, y solo se descarga
+// cuando hay un pedido esperando comprobante.
+
+const negocioMiniapp = {
+  getBusinessByChannel: vi.fn().mockResolvedValue({
+    id: 'business-a',
+    chat_mode: 'miniapp',
+    meta_token: 'meta-token-a',
+    ycloud_api_key: 'ycloud-key-a',
+  }),
+}
+
+const fotoEntrante = () => payload({
+  content: { kind: 'image', media: { id: 'media-1', mimeType: 'image/jpeg' } },
+})
+
+describe('la foto de quien tiene un pedido esperando pago', () => {
+  it('se descarga, se adjunta y el bot lo dice', async () => {
+    const adjuntarComprobante = vi.fn().mockResolvedValue({ adjuntado: true, orderNumber: 45 })
+    const contexto = setup({
+      database: negocioMiniapp,
+      esperaComprobante: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante,
+      http: { get: vi.fn().mockResolvedValue({ data: Buffer.from('captura'), headers: {} }) },
+    })
+    // Meta pide dos viajes: la URL y luego el binario.
+    contexto.http.get
+      .mockResolvedValueOnce({ data: { url: 'https://media/1' }, headers: {} })
+      .mockResolvedValueOnce({ data: Buffer.from('captura'), headers: { 'content-type': 'image/jpeg' } })
+
+    await contexto.process(fotoEntrante())
+
+    expect(adjuntarComprobante).toHaveBeenCalledWith(
+      'business-a', '+593988000001', expect.any(Buffer),
+    )
+    // El texto que sigue lo lee el dueño en su panel, y decide la respuesta.
+    expect(contexto.bot.handleMessage).toHaveBeenCalledWith(
+      '+593988000001',
+      '[el cliente envió su comprobante de pago del pedido #45]',
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  // ⚠️ El ahorro del modo mini app NO se pierde: sin pedido esperando pago no
+  // se baja ni un byte. Bajar 5 MB por cada foto que manden es exactamente lo
+  // que el atajo evita.
+  it('sin pedido esperando pago no se descarga nada', async () => {
+    const contexto = setup({
+      database: negocioMiniapp,
+      esperaComprobante: vi.fn().mockResolvedValue(false),
+      adjuntarComprobante: vi.fn(),
+    })
+
+    await contexto.process(fotoEntrante())
+
+    expect(contexto.http.get).not.toHaveBeenCalled()
+    expect(contexto.adjuntarComprobante).not.toHaveBeenCalled()
+    expect(contexto.bot.handleMessage).toHaveBeenCalledWith(
+      '+593988000001', '[foto]', expect.anything(), expect.anything(),
+    )
+  })
+
+  // Una nota de voz nunca es un comprobante: ni se pregunta a la base.
+  it('un audio sigue por el atajo de siempre', async () => {
+    const contexto = setup({
+      database: negocioMiniapp,
+      esperaComprobante: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn(),
+    })
+
+    await contexto.process(payload({
+      content: { kind: 'audio', media: { id: 'media-1', mimeType: 'audio/ogg' } },
+    }))
+
+    expect(contexto.esperaComprobante).not.toHaveBeenCalled()
+    expect(contexto.bot.handleMessage).toHaveBeenCalledWith(
+      '+593988000001', '[nota de voz]', expect.anything(), expect.anything(),
+    )
+  })
+
+  // Si adjuntar falla, el cliente recibe su respuesta de siempre en vez de
+  // quedarse sin nada.
+  it('si no se pudo adjuntar, sigue como antes', async () => {
+    const contexto = setup({
+      database: negocioMiniapp,
+      esperaComprobante: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn().mockResolvedValue({ adjuntado: false }),
+    })
+    contexto.http.get
+      .mockResolvedValueOnce({ data: { url: 'https://media/1' }, headers: {} })
+      .mockResolvedValueOnce({ data: Buffer.from('x'), headers: { 'content-type': 'image/jpeg' } })
+
+    await contexto.process(fotoEntrante())
+
+    expect(contexto.bot.handleMessage).toHaveBeenCalledWith(
+      '+593988000001', '[foto]', expect.anything(), expect.anything(),
+    )
   })
 })

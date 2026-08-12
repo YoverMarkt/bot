@@ -536,4 +536,4 @@ export const callAI = ai.callAI
 export const transcribeAudio = ai.transcribeAudio
 export const embedText = ai.embedText
 export const indexProduct = ai.indexProduct
-export { createBotEntry, imageQuery }
+export { createBotEntry, imageQuery, adjuntarComprobante }
