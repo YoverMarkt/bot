@@ -181,7 +181,34 @@ const gruposDelAlmuerzo: TemplateGroup[] = [
   bebidaIncluida,
 ]
 
-const plantilla = (categorias: TemplateCategory[]): BusinessTemplate => ({ categorias })
+/**
+ * Arma una plantilla dejando el ORDEN puesto.
+ *
+ * ⚠️ El orden ya estaba escrito y se tiraba: `grupos: [terminoDeLaCarne,
+ * extrasHamburguesa, retirarIngredientes]` dice exactamente cómo se piensa una
+ * hamburguesa —primero el término, luego lo que se agrega, al final lo que se
+ * quita— y como nadie rellenaba `orden`, la RPC los insertaba TODOS en cero.
+ * Con todo empatado, el pedido y la ficha caían al desempate alfabético:
+ * «Extras, Retira ingredientes, Término». El dueño podía arreglarlo con las
+ * flechas de su panel, pero tenía que descubrirlo él.
+ *
+ * La posición en el array ES la intención, así que se usa. Un `orden` puesto a
+ * mano gana, para poder intercalar sin renumerar lo demás.
+ */
+const plantilla = (categorias: TemplateCategory[]): BusinessTemplate => ({
+  categorias: categorias.map((categoria, posicion) => ({
+    ...categoria,
+    orden: categoria.orden ?? posicion,
+    grupos: categoria.grupos?.map((grupo, puesto) => ({
+      ...grupo,
+      orden: grupo.orden ?? puesto,
+      opciones: grupo.opciones?.map((opcion, lugar) => ({
+        ...opcion,
+        orden: opcion.orden ?? lugar,
+      })),
+    })),
+  })),
+})
 
 // ── El catálogo, tipo por tipo ────────────────────────────────────────────
 // La clave va normalizada: así entra igual «Hamburguesería» que lo que el
