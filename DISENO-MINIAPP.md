@@ -75,13 +75,22 @@ De arriba abajo:
   reflejan (`ENTREGA_POR_DEFECTO`, `needsAddress` y `orderTotal` en
   `apps/store/src/lib/cart.ts`, probadas una por una).
 - **Buscador** de ancho completo, con lupa a la izquierda.
-- **Categorías en círculos** con su imagen, en fila horizontal desplazable:
-  «Para ti», «Pizzas», «Combos», «Bebidas».
-- **Barra inferior fija**. El diagrama pide cinco destinos (Inicio · Buscar ·
-  Carrito · Pedido · Cuenta) y hoy hay **tres**: Inicio, Buscar y Carrito, con
-  su contador. «Pedido» y «Cuenta» no se pintan porque **no tienen a dónde ir**
-  —no existe pantalla de seguimiento ni de cuenta del cliente—, y una pestaña
-  que no lleva a ninguna parte se siente rota. Entran aquí cuando existan.
+- ~~**Categorías en círculos**~~ **RETIRADAS el 2026-08-11.** Pintaban
+  exactamente la misma lista (`grupos`) que las pestañas pegajosas de justo
+  debajo: dos veces lo mismo, una encima de la otra. El sitio se lo gana el
+  **aviso de pago pendiente**, que es lo primero que se ve bajo el buscador.
+  ⚠️ Ese aviso reemplazó al secuestro: antes, reabrir la app con un pedido sin
+  pagar entraba DIRECTO a la pantalla de pago. Ahora se abre la tienda con el
+  aviso a la vista y se entra tocándolo — quien abrió la app para mirar la
+  carta puede mirarla, y el recordatorio no se pierde.
+- **Barra inferior fija**: Inicio · Buscar · Carrito · **Cuenta**.
+  La cuarta decía «Pedido» y abría el ÚLTIMO pedido directamente. Servía
+  mientras solo hubiera uno del que preocuparse; quien ha pedido cinco veces
+  tiene un historial, no «un pedido». Desde el 2026-08-11 abre
+  `screens/Account.tsx`: sus pedidos —tocando uno se abre su seguimiento— y
+  sus direcciones, con sitio para lo que venga. Y hacía falta por otro motivo:
+  la pantalla de pago dejó de ofrecer atajo al seguimiento, así que sin Cuenta
+  el cliente con transferencia se quedaba sin puerta para mirar su pedido.
 
 ## 2. Catálogo
 

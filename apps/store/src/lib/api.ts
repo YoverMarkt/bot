@@ -77,6 +77,9 @@ export const getCatalog = (slug: string) => request<Catalog>(`/${slug}/catalog`)
 
 export const getMe = (slug: string) => request<Me>(`/${slug}/me`)
 
+/** Mis pedidos en este negocio, para la pestaña de Cuenta. */
+export const getOrders = (slug: string) => request<TrackedOrder[]>(`/${slug}/orders`)
+
 /** El pedido del cliente con su línea de tiempo. Exige la sesión del enlace. */
 export const getOrder = (slug: string, orderId: string) =>
   request<TrackedOrder>(`/${slug}/orders/${encodeURIComponent(orderId)}`)

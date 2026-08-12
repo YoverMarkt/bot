@@ -86,6 +86,10 @@ interface StorefrontRouteDatabase {
     data: unknown
     error: { message?: string; code?: string } | null
   }>
+  getStorefrontOrders(input: { businessId: string; contactPhone: string }): Promise<{
+    data: unknown[] | null
+    error: { message?: string } | null
+  }>
   getStorefrontOrder(input: { businessId: string; contactPhone: string; orderId: string }): Promise<{
     data: unknown
     error: { message?: string; code?: string } | null
@@ -570,6 +574,21 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
 //
 // Un pedido que no sea suyo devuelve el MISMO 404 que uno que no existe: si
 // distinguiera los dos casos, se podría averiguar qué pedidos tiene el vecino.
+/**
+ * Mis pedidos en este negocio. Alimenta la pestaña de Cuenta.
+ *
+ * ⚠️ Va declarada ANTES que `/orders/:id`: Express resuelve por orden, y una
+ * ruta con parámetro no se traga esta porque son caminos distintos, pero
+ * dejarlas juntas y en este orden evita sorpresas si mañana cambia una.
+ */
+router.get('/api/store/:slug/orders', requireStorefrontSession, async (req, res) => {
+  const { businessId, contactPhone } = req.storefront!
+  const { data, error } = await db.getStorefrontOrders({ businessId, contactPhone })
+  if (error) return res.status(500).json({ error: 'No pudimos consultar tus pedidos' })
+  // Agrupadas aquí, como en el pedido suelto: la lista enseña lo que se pidió.
+  return res.json((data || []).map(pedido => conOpcionesAgrupadas(pedido as Record<string, unknown>)))
+})
+
 router.get('/api/store/:slug/orders/:id', requireStorefrontSession, async (req, res) => {
   const { businessId, contactPhone } = req.storefront!
   const orderId = String(req.params.id || '').trim()
