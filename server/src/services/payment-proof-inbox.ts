@@ -46,6 +46,16 @@ export interface PedidoEsperandoPago {
   order_number?: number | null
   payment_proof_url?: unknown
   payment_confirmed_at?: unknown
+  /**
+   * El teléfono TAL COMO lo guardó el pedido.
+   *
+   * ⚠️ Se usa este y no el que llega por el canal: la RPC que adjunta compara
+   * `contact_phone = btrim(p_contact_phone)`, exacto. Un pedido de la mini app
+   * guarda `593990978367` y el mismo cliente por WhatsApp llega
+   * `+593990978367` — buscar ya contempla las dos formas, pero al adjuntar hay
+   * que devolverle a la base la que ella tiene escrita.
+   */
+  contact_phone?: unknown
 }
 
 /** Los estados en los que una foto es, casi con seguridad, el comprobante. */
@@ -106,7 +116,8 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
       const { error } = await dependencias.adjuntar({
         businessId,
         orderId: String(pedido!.id),
-        contactPhone,
+        // El del PEDIDO, no el del canal: ver el comentario del tipo.
+        contactPhone: String(pedido!.contact_phone || contactPhone),
         url: subida.url,
         publicId: subida.public_id,
       })

@@ -53,15 +53,37 @@ const getOrders = async (
   return (data || []) as OrderData[]
 }
 
-// Último pedido de UN contacto dentro de SU negocio. Alimenta "repetir pedido":
-// se leen los ítems para rearmar el carrito, pero los precios NO se reutilizan
-// (se recalculan con el catálogo vigente en bot-menu-flow).
+/**
+ * Las formas en que el MISMO teléfono aparece guardado.
+ *
+ * ⚠️ Un pedido hecho por la mini app guarda `593990978367` —su CHECK exige
+ * solo dígitos— y el mismo cliente escribiendo por WhatsApp llega como
+ * `+593990978367`. Buscar con `=` no encuentra nada, y no falla: devuelve
+ * vacío, que es peor porque parece que ese cliente nunca pidió.
+ *
+ * Costó un rato descubrirlo el 2026-08-12: el comprobante que llegaba por el
+ * chat no se adjuntaba a ningún pedido y el bot respondía con el enlace del
+ * menú a quien acababa de pagar. No había ningún error que mirar.
+ */
+const variantesDelTelefono = (telefono: string): string[] => {
+  const crudo = String(telefono || '').trim()
+  const digitos = crudo.replace(/\D/g, '')
+  if (!digitos) return crudo ? [crudo] : []
+  return [...new Set([crudo, digitos, `+${digitos}`])]
+}
+
+// Último pedido de UN contacto dentro de SU negocio. Alimenta "repetir pedido"
+// y el comprobante que llega por el chat: se leen los ítems para rearmar el
+// carrito, pero los precios NO se reutilizan (se recalculan con el catálogo
+// vigente en bot-menu-flow).
 const getLastOrderForContact = async (businessId: string, contactPhone: string) => {
   const { data, error } = await db
     .from('orders')
     .select('*, order_items(*)')
     .eq('business_id', businessId)
-    .eq('contact_phone', contactPhone)
+    // Con `in` en vez de `eq`: el mismo número vive con y sin el `+` según por
+    // dónde entró el pedido.
+    .in('contact_phone', variantesDelTelefono(contactPhone))
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -204,6 +226,7 @@ export = {
   createOrder,
   getOrders,
   getLastOrderForContact,
+  variantesDelTelefono,
   updateOrder,
   setOrderStatus,
   confirmOrderPayment,
