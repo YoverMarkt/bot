@@ -74,15 +74,50 @@ if (!archivos.length) {
   process.exit(1)
 }
 
-const total = archivos.reduce((suma, a) => suma + a.gzip, 0)
+// ── Qué es «primera carga» de verdad ─────────────────────────────────────
+//
+// ⚠️ Antes se sumaba TODO lo que hubiera en `dist`, y eso convertía en un
+// suspenso justo la optimización correcta: al diferir el flujo de hospedaje
+// —que un cliente de una pizzería jamás abre— la primera carga BAJÓ 4 kB y el
+// guardián marcó que la app había engordado, porque contaba el trozo nuevo
+// como si se descargara al entrar.
+//
+// La lista buena está escrita en el propio `index.html`: lo que trae en un
+// `src` o un `href` es lo que el navegador pide para pintar —incluidos los
+// `modulepreload` que Vite añade para los imports estáticos—. Lo demás son
+// trozos que llegan cuando se necesitan, y se enseñan aparte para que se vean
+// pero no cuenten.
+const html = readFileSync(path.join(DIST, 'index.html'), 'utf8')
+const referidos = new Set(
+  [...html.matchAll(/(?:src|href)="\/?t?\/?([^"]+\.(?:js|css))"/g)]
+    .map(coincidencia => coincidencia[1].replace(/^\/+/, '')),
+)
+const enLaPrimeraCarga = archivo => (
+  archivo.nombre === 'index.html'
+  || referidos.has(archivo.nombre)
+  || [...referidos].some(ref => ref.endsWith(archivo.nombre))
+)
+
+const inicial = archivos.filter(enLaPrimeraCarga)
+const diferidos = archivos.filter(archivo => !enLaPrimeraCarga(archivo))
+
+const total = inicial.reduce((suma, a) => suma + a.gzip, 0)
 const kb = n => (n / 1024).toFixed(1)
 
 console.log('\n📦 Tamaño de la mini app (gzip, primera carga)\n')
-for (const a of archivos) {
+for (const a of inicial) {
   console.log(`   ${kb(a.gzip).padStart(7)} kB  ${a.nombre}`)
 }
 console.log(`   ${'─'.repeat(9)}`)
 console.log(`   ${kb(total).padStart(7)} kB  TOTAL   (presupuesto: ${PRESUPUESTO_KB} kB)\n`)
+
+if (diferidos.length) {
+  console.log('   Se descargan solo cuando hacen falta, y NO cuentan aquí:')
+  for (const a of diferidos) {
+    console.log(`   ${kb(a.gzip).padStart(7)} kB  ${a.nombre}`)
+  }
+  console.log('')
+}
 
 if (total > PRESUPUESTO_KB * 1024) {
   console.error(`❌ La tienda pesa ${kb(total)} kB y el presupuesto son ${PRESUPUESTO_KB} kB.`)

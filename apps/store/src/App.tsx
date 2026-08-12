@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
@@ -8,7 +8,7 @@ import Confirmar from './screens/Confirmar'
 import Gate from './screens/Gate'
 import DesktopGate from './screens/DesktopGate'
 import FoodStore from './screens/FoodStore'
-import StayStore from './screens/StayStore'
+const StayStore = lazy(() => import('./screens/StayStore'))
 import Picker from './screens/Picker'
 
 // Armazón de la tienda.
@@ -134,13 +134,13 @@ export default function App() {
 
   if (seccion === 'estadia' || (lodging && !orders)) {
     return (
-      <StayStore
+      <Suspense fallback={null}><StayStore
         slug={slug}
         business={business}
         status={status}
         onVolver={volver}
         onFalloEnlace={alFallarEnlace}
-      />
+      /></Suspense>
     )
   }
 
