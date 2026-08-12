@@ -17,6 +17,8 @@ const PEDIDO_ESPERANDO = {
   status: 'esperando_pago',
   payment_proof_url: null,
   payment_confirmed_at: null,
+  // Como lo guarda la mini app: solo dígitos, sin el «+».
+  contact_phone: '593990978367',
 }
 
 const FOTO = Buffer.from('una captura del banco')
@@ -69,7 +71,8 @@ describe('adjuntar el comprobante que llegó por el chat', () => {
   it('lo sube en privado y lo engancha al pedido', async () => {
     const { adjuntar, espias } = montar()
 
-    const resultado = await adjuntar('negocio-a', '593999', FOTO)
+    // Llega CON el «+», como lo manda WhatsApp.
+    const resultado = await adjuntar('negocio-a', '+593990978367', FOTO)
 
     expect(resultado).toEqual({ adjuntado: true, orderNumber: 43 })
     expect(espias.subirPrivado).toHaveBeenCalledWith(FOTO, 'negocio-a')
@@ -78,7 +81,10 @@ describe('adjuntar el comprobante que llegó por el chat', () => {
     expect(espias.adjuntar).toHaveBeenCalledWith({
       businessId: 'negocio-a',
       orderId: 'pedido-1',
-      contactPhone: '593999',
+      // ⚠️ El del PEDIDO, SIN el «+». La RPC compara exacto: mandarle el del
+      // canal la haría rechazar un comprobante legítimo. Fue el segundo tramo
+      // del mismo bug del 2026-08-12.
+      contactPhone: '593990978367',
       url: 'https://nube/x.jpg',
       publicId: 'x',
     })
