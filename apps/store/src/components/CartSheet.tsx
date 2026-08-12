@@ -18,21 +18,22 @@ export interface NuevaDireccion {
   label: string
   address: string
   reference: string
-  buildingType: string | null
-  courierNotes: string
+  buildingType: string
   latitude?: number
   longitude?: number
   accuracy?: number | null
-}
-
-const DIRECCION_EN_BLANCO: NuevaDireccion = {
-  label: 'Casa', address: '', reference: '', buildingType: null, courierNotes: '',
 }
 
 /**
  * Los mismos cinco valores que acepta el CHECK de `customer_addresses`. Si
  * alguien añade uno aquí sin añadirlo allí, la base rechaza la dirección
  * entera — por eso los textos se separan de los valores.
+ *
+ * ⚠️ Estas cápsulas son TAMBIÉN la etiqueta de la dirección. Antes había
+ * además un campo de texto libre —«Casa, Oficina…»— justo encima, y preguntaba
+ * dos veces lo mismo: el cliente escribía «Casa» arriba y volvía a tocar
+ * «Casa» abajo. Peor, podía escribir «Fffffff» y quedarse con una libreta de
+ * direcciones que no distingue una de otra. Eligiendo, no hay forma de fallar.
  */
 const TIPOS_DE_EDIFICIO = [
   { valor: 'casa', texto: 'Casa' },
@@ -42,6 +43,10 @@ const TIPOS_DE_EDIFICIO = [
   { valor: 'otro', texto: 'Otro' },
 ] as const
 
+const DIRECCION_EN_BLANCO: NuevaDireccion = {
+  label: 'Casa', address: '', reference: '', buildingType: 'casa',
+}
+
 /** Con pin es tener los DOS: media coordenada apunta al ecuador, no a medias. */
 const tieneUbicacion = (direccion: Address): boolean =>
   direccion.latitude !== null && direccion.latitude !== undefined
@@ -49,7 +54,7 @@ const tieneUbicacion = (direccion: Address): boolean =>
 
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  entrega, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion,
+  entrega, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion, onBorrarDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -78,6 +83,7 @@ export default function CartSheet({
   onNuevaDireccion: (datos: NuevaDireccion) => Promise<void>
   /** Le pone el pin a una dirección ya guardada, que es la que no lo tiene. */
   onUbicarDireccion: (addressId: string, ubicacion: Ubicacion) => Promise<void>
+  onBorrarDireccion: (addressId: string) => Promise<void>
 }) {
   /**
    * En qué paso está el cliente.
@@ -122,6 +128,23 @@ export default function CartSheet({
   const [avisoPin, setAvisoPin] = useState<string | null>(null)
   /** Qué dirección está pidiendo ubicación: `'nueva'`, un id, o nada. */
   const [ubicando, setUbicando] = useState<string | null>(null)
+  /** Qué dirección se está retirando. Evita el doble toque. */
+  const [borrando, setBorrando] = useState<string | null>(null)
+
+  const borrarDireccion = async (direccion: Address) => {
+    // Confirmar antes: la papelera está a un centímetro de elegir la
+    // dirección, y perderla por un dedo grande no se deshace.
+    if (!window.confirm(`¿Eliminar «${direccion.label}»?`)) return
+    setBorrando(direccion.id)
+    try {
+      await onBorrarDireccion(direccion.id)
+      // Si era la elegida, se suelta: dejar seleccionada una que ya no está
+      // mandaría el pedido con un id que el servidor va a rechazar.
+      if (direccionId === direccion.id) setDireccionId(null)
+    } finally {
+      setBorrando(null)
+    }
+  }
 
   const capturar = async (destino: string) => {
     setUbicando(destino)
@@ -312,12 +335,15 @@ export default function CartSheet({
             </h3>
             <div className="space-y-2">
               {direcciones.map(direccion => (
-                <button
+                <div
                   key={direccion.id}
-                  onClick={() => setDireccionId(direccion.id)}
-                  className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                  className={`flex w-full items-start gap-2 rounded-xl border px-4 py-3 transition ${
                     elegida === direccion.id ? 'border-marca bg-marca-suave' : 'borde-tema'
                   }`}
+                >
+                <button
+                  onClick={() => setDireccionId(direccion.id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
                   <MapPin size={17} className="mt-0.5 shrink-0 texto-tenue" />
                   <span className="min-w-0">
@@ -354,17 +380,23 @@ export default function CartSheet({
                         )}
                   </span>
                 </button>
+                {/* Borrar pide confirmación: está a un centímetro de elegir, y
+                    perder una dirección por un dedo grande es una molestia que
+                    no se deshace. */}
+                <button
+                  onClick={() => void borrarDireccion(direccion)}
+                  disabled={borrando === direccion.id}
+                  aria-label={`Eliminar ${direccion.label}`}
+                  className="-mr-1 shrink-0 rounded-full p-1.5 texto-tenue transition active:scale-90"
+                >
+                  <Trash2 size={16} />
+                </button>
+                </div>
               ))}
 
               {nuevaAbierta
                 ? (
                     <div className="space-y-2 rounded-xl border borde-tema p-3">
-                      <input
-                        value={nueva.label}
-                        onChange={event => setNueva({ ...nueva, label: event.target.value.slice(0, 40) })}
-                        placeholder="Casa, Oficina…"
-                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
-                      />
                       <textarea
                         value={nueva.address}
                         onChange={event => setNueva({ ...nueva, address: event.target.value.slice(0, 300) })}
@@ -409,11 +441,11 @@ export default function CartSheet({
                         {TIPOS_DE_EDIFICIO.map(tipo => (
                           <button
                             key={tipo.valor}
+                            // Elige el tipo Y la etiqueta a la vez: son lo
+                            // mismo. Y no se puede dejar en blanco — algo tiene
+                            // que llamarse esta dirección en la libreta.
                             onClick={() => setNueva({
-                              ...nueva,
-                              // Volver a tocarlo lo quita: es opcional, y sin
-                              // esto no habría forma de deshacer un toque.
-                              buildingType: nueva.buildingType === tipo.valor ? null : tipo.valor,
+                              ...nueva, buildingType: tipo.valor, label: tipo.texto,
                             })}
                             className={`rounded-full border px-3 py-1.5 text-[13px] font-semibold transition ${
                               nueva.buildingType === tipo.valor
@@ -426,17 +458,14 @@ export default function CartSheet({
                         ))}
                       </div>
 
-                      {/* Lo PERMANENTE de esta casa. Las instrucciones de más
-                          abajo son de HOY: juntarlas obligaría al cliente a
-                          reescribir esto en cada pedido. */}
-                      <input
-                        value={nueva.courierNotes}
-                        onChange={event => setNueva({
-                          ...nueva, courierNotes: event.target.value.slice(0, 300),
-                        })}
-                        placeholder="Para el repartidor: el timbre no sirve…"
-                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
-                      />
+                      {/* ⚠️ Aquí había un segundo campo de instrucciones, el
+                          PERMANENTE de esta casa. Se retiró: preguntaba casi lo
+                          mismo que «Instrucciones» de más abajo —a dos dedos de
+                          distancia— y el cliente no sabía cuál llenar. Queda el
+                          del PEDIDO, que es el que el dueño lee en su comanda.
+                          `customer_addresses.courier_notes` sigue en la base y
+                          el panel la pinta si tiene algo; simplemente ya no se
+                          pide aquí. */}
 
                       <Boton
                         variante="suave"

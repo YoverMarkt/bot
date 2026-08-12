@@ -42,6 +42,7 @@ describe('rutas de la mini app', () => {
     expect(rutas.map(r => r.path).sort()).toEqual([
       '/api/store/:slug',
       '/api/store/:slug/addresses',
+      '/api/store/:slug/addresses/:id',
       '/api/store/:slug/addresses/:id/location',
       '/api/store/:slug/catalog',
       '/api/store/:slug/me',
@@ -91,6 +92,7 @@ describe('rutas de la mini app', () => {
     for (const path of [
       '/api/store/:slug/me',
       '/api/store/:slug/addresses',
+      '/api/store/:slug/addresses/:id',
       '/api/store/:slug/addresses/:id/location',
       '/api/store/:slug/orders',
       '/api/store/:slug/orders/:id',
@@ -759,5 +761,45 @@ describe('la ubicación de la dirección', () => {
 
     expect(respuesta.status).toBe(400)
     expect(ubicar).not.toHaveBeenCalled()
+  })
+})
+
+// ── Retirar una dirección ──────────────────────────────────────────────────
+//
+// Se marca inactiva, no se borra: `orders.address_id` apunta aquí y con él se
+// sabe a qué casa pide más un cliente. El destino de cada pedido va congelado
+// aparte desde el 2026-08-10, así que retirarla no deja ningún reparto sin
+// dirección — antes sí lo habría hecho.
+describe('eliminar una dirección', () => {
+  const SESION = { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' }
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('la retira con el negocio y el cliente de la sesión', async () => {
+    const retirar = vi.spyOn(db, 'deactivateCustomerAddress').mockResolvedValue({ id: 'dir-1' })
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses/:id', 'delete', {
+      storefront: SESION,
+      params: { slug: 'pizzeria', id: 'dir-1' },
+    })
+
+    expect(respuesta.status).toBe(200)
+    // ⚠️ REGLA #1: el negocio y el cliente salen de la sesión, nunca de la URL.
+    expect(retirar).toHaveBeenCalledWith({
+      businessId: 'negocio-a', customerId: 'cliente-1', addressId: 'dir-1',
+    })
+  })
+
+  // Decir «existe pero no es tuya» ya sería contar algo de otro cliente.
+  it('una dirección ajena responde 404, igual que una que no existe', async () => {
+    vi.spyOn(db, 'deactivateCustomerAddress').mockResolvedValue(null)
+
+    const respuesta = await ejecutar('/api/store/:slug/addresses/:id', 'delete', {
+      storefront: SESION,
+      params: { slug: 'pizzeria', id: 'dir-de-otro' },
+    })
+
+    expect(respuesta.status).toBe(404)
+    expect(respuesta.body.error).toBe('Esa dirección no existe')
   })
 })

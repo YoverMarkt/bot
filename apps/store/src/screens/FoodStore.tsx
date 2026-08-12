@@ -2,7 +2,9 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
 } from 'lucide-react'
-import { createAddress, createOrder, getCatalog, getMe, getOrder, setAddressLocation } from '../lib/api'
+import {
+  createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
+} from '../lib/api'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
   orderTotal, setQuantity, unitPrice,
@@ -295,6 +297,16 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     } catch (error) {
       if (await onFalloEnlace(error)) return
       setError('No pudimos guardar la dirección')
+    }
+  }, [slug, onFalloEnlace])
+
+  const borrarDireccion = useCallback(async (addressId: string) => {
+    try {
+      await deleteAddress(slug, addressId)
+      setMe(await getMe(slug))
+    } catch (error) {
+      if (await onFalloEnlace(error)) return
+      setError('No pudimos eliminar la dirección')
     }
   }, [slug, onFalloEnlace])
 
@@ -792,6 +804,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         onConfirmar={confirmar}
         onNuevaDireccion={nuevaDireccion}
         onUbicarDireccion={ubicarDireccion}
+        onBorrarDireccion={borrarDireccion}
       />
     </div>
   )

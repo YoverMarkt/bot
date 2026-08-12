@@ -63,6 +63,11 @@ interface StorefrontRouteDatabase {
   getCustomerAddresses(businessId: string, customerId: string): Promise<unknown[]>
   createCustomerAddress(input: Record<string, unknown>): Promise<unknown>
   /** Devuelve `null` cuando la dirección no es de ese cliente y ese negocio. */
+  deactivateCustomerAddress(input: {
+    businessId: string
+    customerId: string
+    addressId: string
+  }): Promise<unknown>
   setCustomerAddressLocation(input: {
     businessId: string
     customerId: string
@@ -393,6 +398,26 @@ router.post('/api/store/:slug/addresses', requireStorefrontSession, async (req, 
     isDefault: body.isDefault === true,
   })
   return res.status(201).json(created)
+})
+
+/**
+ * Retira una dirección de la libreta.
+ *
+ * Se marca inactiva, no se borra: `orders.address_id` apunta aquí y con él se
+ * sabe a qué casa pide más un cliente. El destino de cada pedido ya va
+ * congelado aparte, así que retirarla no deja ningún reparto sin dirección.
+ */
+router.delete('/api/store/:slug/addresses/:id', requireStorefrontSession, async (req, res) => {
+  const { businessId, customerId } = req.storefront!
+  const retirada = await db.deactivateCustomerAddress({
+    businessId,
+    customerId,
+    addressId: String(req.params.id || ''),
+  })
+  // No era suya, o ya estaba retirada. Se responde lo mismo en los dos casos:
+  // decir «existe pero no es tuya» ya sería contar algo de otro cliente.
+  if (!retirada) return res.status(404).json({ error: 'Esa dirección no existe' })
+  return res.json({ ok: true })
 })
 
 /**

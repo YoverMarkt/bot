@@ -93,10 +93,13 @@ export const createAddress = (slug: string, body: {
   latitude?: number
   longitude?: number
   accuracy?: number | null
+  /** También hace de etiqueta: «Casa», «Oficina»… Se elige, no se escribe. */
   buildingType?: string | null
-  /** Lo permanente de esa casa: «el timbre no sirve, toca la puerta». */
-  courierNotes?: string | null
 }) => request<Address>(`/${slug}/addresses`, { method: 'POST', body })
+
+/** Retira una dirección de la libreta. El servidor la marca inactiva. */
+export const deleteAddress = (slug: string, addressId: string) =>
+  request<{ ok: true }>(`/${slug}/addresses/${encodeURIComponent(addressId)}`, { method: 'DELETE' })
 
 /**
  * Le pone el pin a una dirección ya guardada.

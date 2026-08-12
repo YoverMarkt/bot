@@ -192,6 +192,23 @@ cliente sin ver lo que está a punto de pagar.
   permitía —a las once de la noche es cuando alguien decide qué va a comer
   mañana—, y el dueño aceptó esa consecuencia sabiéndola. `prep_time_minutes`
   sigue existiendo, pero ahora solo se MUESTRA: ya no decide ninguna hora.
+- **La libreta de direcciones** (simplificada el 2026-08-11):
+  · Cada dirección guardada se puede **eliminar**. Se marca inactiva, no se
+    borra: `orders.address_id` apunta ahí y con él se sabe a qué casa pide más
+    un cliente. El destino de cada pedido va congelado aparte desde el
+    2026-08-10, así que retirarla no deja ningún reparto sin dirección — antes
+    de congelarla, sí lo habría hecho.
+  · **La etiqueta la ponen las cápsulas** (Casa · Departamento · Oficina ·
+    Hotel · Otro), no un campo de texto. Había los dos, y preguntaban lo mismo
+    a dos dedos de distancia: el cliente escribía «Casa» arriba y volvía a
+    tocar «Casa» abajo. Peor, podía escribir «Fffffff» y quedarse con una
+    libreta donde no distingue una dirección de otra. Eligiendo no hay forma
+    de fallar, y `building_type` y `label` dejan de poder contradecirse.
+  · **Un solo campo de instrucciones**, el del PEDIDO. Existía además uno
+    permanente por dirección, justo debajo de las cápsulas, y el cliente no
+    sabía cuál llenar. ⚠️ Consecuencia aceptada: «el timbre no sirve» se
+    reescribe en cada pedido. `customer_addresses.courier_notes` sigue en la
+    base y el panel la pinta si tiene algo; simplemente ya no se pide.
 - **Información de entrega**: dirección, referencia, teléfono, instrucciones.
   En retiro, esos campos desaparecen.
   · Las **instrucciones** (`orders.delivery_notes`) son de ESTE pedido —«llame
