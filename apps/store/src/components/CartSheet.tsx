@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Banknote, Bike, Crosshair, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money } from '../lib/format'
-import { cartTotal, chosenLines, lineTotal, needsAddress, orderTotal } from '../lib/cart'
+import { cartTotal, detalleDeLinea, lineTotal, needsAddress, orderTotal } from '../lib/cart'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
 import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
@@ -216,14 +216,11 @@ export default function CartSheet({
                     con masa, sabor y borde salía como «Pizza · Familiar» y el
                     cliente confirmaba sin ver lo que había armado. Es la
                     pantalla donde más importa: es la última antes de pagar. */}
-                {chosenLines(linea.options, linea.product.optionGroups).map(texto => (
-                  <p key={texto} className="text-[12px] leading-snug texto-tenue">{texto}</p>
-                ))}
-                {linea.extras.length > 0 && (
-                  <p className="text-[12px] texto-tenue">
-                    {linea.extras.map(extra => extra.name).join(' · ')}
+                {detalleDeLinea(linea).map(texto => (
+                  <p key={texto} className="line-clamp-2 text-[12px] leading-snug texto-tenue">
+                    {texto}
                   </p>
-                )}
+                ))}
                 {linea.note && (
                   <p className="mt-0.5 text-[12px] italic texto-tenue">“{linea.note}”</p>
                 )}

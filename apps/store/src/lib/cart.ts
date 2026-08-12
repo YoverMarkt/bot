@@ -358,3 +358,25 @@ export const chosenLines = (
   groupChosen(options, groups).map(grupo => `${grupo.group}: ${grupo.items
     .map(item => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name))
     .join(', ')}`)
+
+/**
+ * Qué dice cada línea del carrito además de su nombre.
+ *
+ * Si el cliente eligió algo, eso manda: en una pizza, «Sabor: Criolla» dice
+ * mucho más que «Elige tamaño y sabor», que es la descripción del catálogo y a
+ * estas alturas ya no sirve de nada — ya eligió.
+ *
+ * ⚠️ Si NO eligió nada, va la descripción del producto, y ahí es donde hace
+ * falta de verdad: en un combo la descripción ES el contenido. «Burger Pack
+ * $10.99» no le dice a nadie que son dos hamburguesas dobles, una salchipapa y
+ * una cola de 1.35 litros. Sin esto el cliente confirma sin saber qué compra.
+ *
+ * Nunca las dos cosas: la línea del carrito es un resumen, no una ficha.
+ */
+export const detalleDeLinea = (linea: CartLine): string[] => {
+  const elegido = chosenLines(linea.options, linea.product.optionGroups)
+  if (elegido.length) return elegido
+  if (linea.extras.length) return [linea.extras.map(extra => extra.name).join(' · ')]
+  const descripcion = (linea.product.description || '').trim()
+  return descripcion ? [descripcion] : []
+}
