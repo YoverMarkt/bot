@@ -397,6 +397,23 @@ export default function CartSheet({
               {nuevaAbierta
                 ? (
                     <div className="space-y-2 rounded-xl border borde-tema p-3">
+                      {/* ⚠️ Un `select` NATIVO, no cápsulas. Abre la rueda del
+                          teléfono, ocupa una línea en vez de dos filas y pesa
+                          cero. Pone el tipo Y la etiqueta a la vez: son lo
+                          mismo, y así no pueden contradecirse. */}
+                      <select
+                        value={nueva.buildingType}
+                        onChange={(event) => {
+                          const tipo = TIPOS_DE_EDIFICIO
+                            .find(item => item.valor === event.target.value)
+                          if (tipo) setNueva({ ...nueva, buildingType: tipo.valor, label: tipo.texto })
+                        }}
+                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
+                      >
+                        {TIPOS_DE_EDIFICIO.map(tipo => (
+                          <option key={tipo.valor} value={tipo.valor}>{tipo.texto}</option>
+                        ))}
+                      </select>
                       <textarea
                         value={nueva.address}
                         onChange={event => setNueva({ ...nueva, address: event.target.value.slice(0, 300) })}
@@ -436,28 +453,6 @@ export default function CartSheet({
                         <p className="text-[12px] leading-snug texto-tenue">{avisoPin}</p>
                       )}
 
-                      {/* Decide si hay portero, timbre o hay que llamar. */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {TIPOS_DE_EDIFICIO.map(tipo => (
-                          <button
-                            key={tipo.valor}
-                            // Elige el tipo Y la etiqueta a la vez: son lo
-                            // mismo. Y no se puede dejar en blanco — algo tiene
-                            // que llamarse esta dirección en la libreta.
-                            onClick={() => setNueva({
-                              ...nueva, buildingType: tipo.valor, label: tipo.texto,
-                            })}
-                            className={`rounded-full border px-3 py-1.5 text-[13px] font-semibold transition ${
-                              nueva.buildingType === tipo.valor
-                                ? 'border-marca bg-marca-suave text-marca'
-                                : 'borde-tema texto-tenue'
-                            }`}
-                          >
-                            {tipo.texto}
-                          </button>
-                        ))}
-                      </div>
-
                       {/* ⚠️ Aquí había un segundo campo de instrucciones, el
                           PERMANENTE de esta casa. Se retiró: preguntaba casi lo
                           mismo que «Instrucciones» de más abajo —a dos dedos de
@@ -474,6 +469,20 @@ export default function CartSheet({
                       >
                         {guardando ? 'Guardando…' : 'Guardar dirección'}
                       </Boton>
+                      {/* Sin esto el formulario se abría y no se cerraba: quien
+                          toca «Agregar dirección» teniendo ya una guardada se
+                          quedaba con el cuadro abierto y sin salida. */}
+                      <button
+                        onClick={() => {
+                          setNuevaAbierta(false)
+                          setNueva({ ...DIRECCION_EN_BLANCO })
+                          setPin(null)
+                          setAvisoPin(null)
+                        }}
+                        className="w-full py-1.5 text-[13px] font-semibold texto-tenue transition active:scale-[0.98]"
+                      >
+                        Cancelar
+                      </button>
                     </div>
                   )
                 : (

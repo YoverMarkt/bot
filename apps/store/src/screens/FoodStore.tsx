@@ -19,6 +19,7 @@ import type { PedidoRecibido } from './OrderPlaced'
 import type { NuevaDireccion } from '../components/CartSheet'
 import type { Ubicacion } from '../lib/ubicacion'
 const OrderTracking = lazy(() => import('./OrderTracking'))
+const Account = lazy(() => import('./Account'))
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
   TrackedOrder,
@@ -60,9 +61,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [recienHecho, setRecienHecho] = useState<
     { pedido: PedidoRecibido; nombre: string; transferencia: boolean } | null
   >(null)
-  const [ultimoPedido, setUltimoPedido] = useState<string | null>(null)
-  /** El pedido que se dejó a medio pagar. Manda sobre todo lo demás al abrir. */
+  /** El pedido que se dejó a medio pagar. Alimenta el aviso de la portada. */
   const [pagoPendiente, setPagoPendiente] = useState<TrackedOrder | null>(null)
+  /** Si el cliente tocó ese aviso y está en la pantalla de pago. */
+  const [abrirPago, setAbrirPago] = useState(false)
+  const [enCuenta, setEnCuenta] = useState(false)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
   const [portadaRota, setPortadaRota] = useState(false)
@@ -84,7 +87,6 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     let guardado: string | null = null
     try { guardado = localStorage.getItem(`pedido:${slug}`) } catch { /* modo privado */ }
     if (!guardado) return
-    setUltimoPedido(guardado)
 
     /**
      * ⚠️ Quien todavía DEBE dinero aterriza en la pantalla de pago, no en el
@@ -248,9 +250,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       })
       // El total oficial llega en la respuesta (incluye el envío que calculó
       // la base); el del carrito solo sirve de respaldo si no viniera.
+      // El id se guarda en el navegador para detectar al abrir si quedó un
+      // pago pendiente. Ya no alimenta ninguna pestaña: la lista de pedidos la
+      // trae el servidor en la pantalla de Cuenta.
       if (pedido.id) {
         try { localStorage.setItem(`pedido:${slug}`, String(pedido.id)) } catch { /* modo privado */ }
-        setUltimoPedido(String(pedido.id))
       }
       // El resumen se arma ANTES de vaciar: después ya no hay carrito del que
       // sacarlo, y volver a pedírselo al servidor sería un viaje por algo que
@@ -331,9 +335,29 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     }
   }, [slug, onFalloEnlace])
 
-  // Un pedido a medio pagar manda sobre todo lo demás: es lo único que el
-  // cliente tiene que hacer, y lo hace desde aquí.
-  if (pagoPendiente) {
+  if (enCuenta) {
+    return (
+      <Suspense fallback={null}>
+        <Account
+          slug={slug}
+          me={me}
+          onVolver={() => setEnCuenta(false)}
+          onAbrirPedido={(orderId) => {
+            setEnCuenta(false)
+            setSiguiendo(orderId)
+          }}
+          onBorrarDireccion={borrarDireccion}
+        />
+      </Suspense>
+    )
+  }
+
+  // ⚠️ Un pedido a medio pagar YA NO secuestra la app al abrirla. Antes se
+  // entraba directo aquí; ahora se abre la tienda con un aviso donde estaban
+  // los círculos de categoría, y se entra tocándolo. El recordatorio queda a
+  // la vista en el sitio más visible, y quien abrió la app para mirar la carta
+  // puede mirarla.
+  if (pagoPendiente && abrirPago) {
     return (
       <OrderPlaced
         slug={slug}
@@ -358,9 +382,12 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         volviendo
         onSeguir={() => {
           setSiguiendo(pagoPendiente.id)
+          // Se limpian los DOS: sin soltar `abrirPago`, volver al menú más
+          // tarde reabriría la pantalla de pago de un pedido ya pagado.
           setPagoPendiente(null)
+          setAbrirPago(false)
         }}
-        onVolver={() => setPagoPendiente(null)}
+        onVolver={() => setAbrirPago(false)}
       />
     )
   }
@@ -606,25 +633,31 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </div>
       )}
 
-      {/* ── Categorías en círculos ── */}
-      {/* El atajo visual de la portada. Las pestañas de abajo hacen el trabajo
-          mientras se recorre la carta; esto es para el primer vistazo. */}
-      {!resultados && grupos.length > 1 && (
-        <div className="sin-barra mt-4 flex gap-4 overflow-x-auto px-4 pb-1">
-          {grupos.map(grupo => (
-            <button
-              key={grupo.id}
-              onClick={() => irACategoria(grupo.id)}
-              className="flex w-16 shrink-0 flex-col items-center gap-1.5"
-            >
-              <span className="block size-16 overflow-hidden rounded-full">
-                <Foto url={grupo.imagen} alto="h-16" uso="miniatura" nombre={grupo.nombre} />
+      {/* ⚠️ Aquí había una fila de CÍRCULOS de categoría, y se retiró: pintaba
+          exactamente la misma lista (`grupos`) que las pestañas pegajosas de
+          justo debajo. Dos veces lo mismo, una encima de la otra.
+
+          El sitio se gana lo que vale: es lo primero que se ve bajo el
+          buscador, y ahí va el aviso del pago pendiente. */}
+      {pagoPendiente && (
+        <div className="px-4 pt-4">
+          <button
+            onClick={() => setAbrirPago(true)}
+            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left transition active:scale-[0.99] dark:border-amber-500/40 dark:bg-amber-500/10"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+              <Clock size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-bold">
+                Falta tu comprobante
               </span>
-              <span className="line-clamp-2 text-center text-[11.5px] leading-tight font-semibold">
-                {grupo.nombre}
+              <span className="block text-[12.5px] texto-tenue">
+                Tu pedido #{pagoPendiente.order_number} está guardado. Toca para pagarlo.
               </span>
-            </button>
-          ))}
+            </span>
+            <ChevronLeft size={18} className="shrink-0 rotate-180 texto-tenue" />
+          </button>
         </div>
       )}
 
@@ -728,15 +761,17 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               accion: () => unidades > 0 && setCarritoAbierto(true),
               contador: unidades,
             },
-            // «Pedido» solo aparece cuando hay uno que seguir. Una pestaña que
-            // no lleva a ninguna parte se siente rota, y quien nunca ha pedido
-            // no tiene nada que mirar ahí.
-            ...(ultimoPedido ? [{
-              id: 'pedido',
+            // ⚠️ Antes decía «Pedido» y abría el ÚLTIMO directamente. Servía
+            // mientras solo hubiera uno del que preocuparse; quien ha pedido
+            // cinco veces no tiene «un pedido», tiene un historial. Y desde
+            // que la pantalla de pago dejó de ofrecer atajo al seguimiento,
+            // hacía falta una puerta estable para mirar cómo va lo de uno.
+            {
+              id: 'cuenta',
               icono: ClipboardList,
-              texto: 'Pedido',
-              accion: () => setSiguiendo(ultimoPedido),
-            }] : []),
+              texto: 'Cuenta',
+              accion: () => setEnCuenta(true),
+            },
           ]).map(({ id, icono: Icono, texto, accion, contador }) => (
             <button
               key={id}

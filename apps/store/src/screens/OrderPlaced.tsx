@@ -168,11 +168,13 @@ export default function OrderPlaced({
       </div>
 
       <div className="mt-8 space-y-2.5">
-        {/* Con transferencia el botón de arriba ya es el que importa, así que
-            aquí solo queda seguir el pedido sin pagar todavía. */}
-        <Boton onClick={onSeguir} variante={transferencia ? 'linea' : 'principal'}>
-          {transferencia ? 'Ver el estado de mi pedido' : 'Seguir mi pedido'}
-        </Boton>
+        {/* ⚠️ Con transferencia NO hay botón de seguimiento, y es deliberado:
+            mientras el pago no esté resuelto, lo único que hay que hacer es
+            subir el comprobante. Un botón que lleva a mirar la línea de tiempo
+            invita a saltarse el paso que bloquea el pedido. Se sale de aquí
+            cuando el comprobante entra —o cuando el dueño da el pago por
+            bueno—, y para consultar el estado antes está la pestaña Cuenta. */}
+        {!transferencia && <Boton onClick={onSeguir}>Seguir mi pedido</Boton>}
         {whatsapp && (
           <a
             href={whatsapp}

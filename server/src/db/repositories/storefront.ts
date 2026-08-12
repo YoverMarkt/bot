@@ -401,6 +401,32 @@ const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
  */
 const CAMPOS_DEL_SEGUIMIENTO = 'id,order_number,status,total,currency,fulfillment,created_at,payment_confirmed_at,order_items(product_name,variant_name,extras_names,item_note,quantity,line_total,order_item_options(option_group_name,option_name,quantity,group_sort))' as const
 
+/**
+ * Los pedidos de UN cliente en ESTE negocio, para su pestaña de Cuenta.
+ *
+ * Se filtra por `contact_phone` además de por negocio: es la misma llave con
+ * la que se abre un pedido suelto, y la única que la sesión del enlace puede
+ * demostrar. Sin ella, quien tuviera una sesión vería la bandeja del local.
+ *
+ * No trae la línea de tiempo —eso lo pide el seguimiento al abrir uno— pero sí
+ * lo suficiente para pintar la lista: qué pidió, cuánto y cómo va.
+ */
+const getStorefrontOrders = async (input: {
+  businessId: string
+  contactPhone: string
+  limit?: number
+}) => {
+  const { data, error } = await db
+    .from('orders')
+    .select(CAMPOS_DEL_SEGUIMIENTO)
+    .eq('business_id', input.businessId)
+    .eq('contact_phone', input.contactPhone)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(50, Math.max(1, input.limit || 20)))
+  if (error) return { data: null, error }
+  return { data: data || [], error: null }
+}
+
 const getStorefrontOrder = async (input: {
   businessId: string
   contactPhone: string
@@ -444,6 +470,7 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   createStorefrontOrder,
+  getStorefrontOrders,
   getStorefrontOrder,
   attachStorefrontPaymentProof,
 }

@@ -39,7 +39,9 @@ const PUBLICAS = [...SIN_SESION, CATALOGO, COTIZAR]
 
 describe('rutas de la mini app', () => {
   it('expone las rutas esperadas y ninguna más', () => {
-    expect(rutas.map(r => r.path).sort()).toEqual([
+    // Sin duplicar: `/orders` existe dos veces —GET para la lista de la Cuenta
+    // y POST para crear— y son la misma ruta con dos verbos.
+    expect([...new Set(rutas.map(r => r.path))].sort()).toEqual([
       '/api/store/:slug',
       '/api/store/:slug/addresses',
       '/api/store/:slug/addresses/:id',
@@ -801,5 +803,69 @@ describe('eliminar una dirección', () => {
 
     expect(respuesta.status).toBe(404)
     expect(respuesta.body.error).toBe('Esa dirección no existe')
+  })
+})
+
+// ── Mis pedidos ────────────────────────────────────────────────────────────
+//
+// La pestaña de abajo abría el ÚLTIMO pedido directamente. Servía mientras
+// solo hubiera uno del que preocuparse; quien ha pedido cinco veces tiene un
+// historial, no «un pedido».
+describe('la lista de mis pedidos', () => {
+  const SESION = { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '593999' }
+
+  afterEach(() => vi.restoreAllMocks())
+
+  // ⚠️ REGLA #1 con un matiz propio de la tienda: aquí no hay JWT, la
+  // credencial es el enlace. El teléfono de la SESIÓN es lo único que separa
+  // «mis pedidos» de «la bandeja del local».
+  it('filtra por el negocio y el teléfono de la sesión', async () => {
+    const leer = vi.spyOn(db, 'getStorefrontOrders').mockResolvedValue({ data: [], error: null })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'get', {
+      storefront: SESION,
+      params: { slug: 'pizzeria' },
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(leer).toHaveBeenCalledWith({ businessId: 'negocio-a', contactPhone: '593999' })
+  })
+
+  // La lista pinta lo que se pidió, igual que el pedido suelto: sin agrupar,
+  // cada línea saldría con el nombre a secas y dos pizzas distintas se leerían
+  // idénticas en el historial.
+  it('devuelve las opciones ya agrupadas', async () => {
+    vi.spyOn(db, 'getStorefrontOrders').mockResolvedValue({
+      data: [{
+        id: 'p1',
+        order_items: [{
+          product_name: 'Pizza',
+          order_item_options: [
+            { option_group_name: 'Sabor', option_name: 'Criolla', quantity: 1, group_sort: 0 },
+          ],
+        }],
+      }],
+      error: null,
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+
+    expect(respuesta.body[0].order_items[0].options).toEqual([
+      { group: 'Sabor', items: [{ name: 'Criolla', quantity: 1 }] },
+    ])
+  })
+
+  it('un fallo de la base responde 500, no una lista vacía que parece cierta', async () => {
+    vi.spyOn(db, 'getStorefrontOrders').mockResolvedValue({
+      data: null, error: { message: 'se cayó' },
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+
+    expect(respuesta.status).toBe(500)
   })
 })
