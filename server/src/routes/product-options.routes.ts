@@ -34,11 +34,14 @@ interface ModuloDb {
   createOptionGroup(businessId: string, data: DataRecord): Promise<DatabaseResult>
   updateOptionGroup(businessId: string, id: string, data: DataRecord): Promise<DatabaseResult>
   deleteOptionGroup(businessId: string, id: string): Promise<DatabaseResult>
+  /** Devuelve cuántos movió. Los ids de otro negocio no se mueven. */
+  reorderOptionGroups(businessId: string, ids: string[]): Promise<number>
   getOptions(businessId: string): Promise<OptionRow[]>
   getOptionById(businessId: string, id: string): Promise<OptionRow | null>
   createOption(businessId: string, data: DataRecord): Promise<DatabaseResult>
   updateOption(businessId: string, id: string, data: DataRecord): Promise<DatabaseResult>
   deleteOption(businessId: string, id: string): Promise<DatabaseResult>
+  reorderOptions(businessId: string, groupId: string, ids: string[]): Promise<number>
   getOptionTemplates(businessId: string): Promise<OptionTemplateRow[]>
   getOptionTemplateById(businessId: string, id: string): Promise<OptionTemplateRow | null>
   createOptionTemplate(businessId: string, data: DataRecord): Promise<DatabaseResult>
@@ -320,6 +323,54 @@ router.put('/api/client/option-groups/:id', ...guards, async (req, res) => {
     res.json({ ok: true })
   } catch (error) {
     fail(res, 'actualizar el grupo', error)
+  }
+})
+
+// ── Reordenar ──────────────────────────────────────────────────────────────
+//
+// El orden importa porque es el que ve el cliente al armar su plato Y el que
+// se congela en su pedido: una pizza se piensa por el sabor, no por el borde.
+//
+// Van como POST y no como PUT sobre `/:id` a propósito: reordenar no es
+// modificar un grupo, es reordenar la lista entera. Y así tampoco compite con
+// la ruta `/:id`, que se tragaría un `/reorder` como si fuera un identificador.
+
+/** Lee una lista de ids del cuerpo, saneada. Sin ids no hay nada que hacer. */
+const listaDeIds = (valor: unknown): string[] => {
+  if (!Array.isArray(valor)) throw new InvalidInput('Falta la lista a ordenar')
+  const ids = valor.map(id => String(id || '').trim()).filter(Boolean)
+  if (!ids.length) throw new InvalidInput('Falta la lista a ordenar')
+  if (ids.length > 200) throw new InvalidInput('Demasiados elementos a la vez')
+  if (new Set(ids).size !== ids.length) throw new InvalidInput('La lista trae repetidos')
+  return ids
+}
+
+router.post('/api/client/option-groups/reorder', ...guards, async (req, res) => {
+  const businessId = getClientBusinessId(req)
+  try {
+    const ids = listaDeIds((req.body as { ids?: unknown })?.ids)
+    // El `business_id` va DENTRO de la función: un id de otro local no se
+    // mueve, y la respuesta dice cuántos se movieron de verdad.
+    res.json({ ok: true, movidos: await db.reorderOptionGroups(businessId, ids) })
+  } catch (error) {
+    fail(res, 'ordenar los grupos', error)
+  }
+})
+
+router.post('/api/client/options/reorder', ...guards, async (req, res) => {
+  const businessId = getClientBusinessId(req)
+  try {
+    const cuerpo = (req.body || {}) as { groupId?: unknown; ids?: unknown }
+    const groupId = String(cuerpo.groupId || '').trim()
+    if (!groupId) throw new InvalidInput('Falta el grupo')
+    // Se comprueba que el grupo sea suyo ANTES: si no, la función devolvería
+    // cero movidos y el dueño vería «ordenado» sin que se ordenara nada.
+    const grupo = await db.getOptionGroupById(businessId, groupId)
+    if (!grupo) return res.status(404).json({ error: 'Ese grupo no existe' })
+    const ids = listaDeIds(cuerpo.ids)
+    res.json({ ok: true, movidos: await db.reorderOptions(businessId, groupId, ids) })
+  } catch (error) {
+    fail(res, 'ordenar las opciones', error)
   }
 })
 

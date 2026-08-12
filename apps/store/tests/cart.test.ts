@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
-  lineKey, lineTotal, missingRequirement, needsAddress, optionPriceLabel, orderTotal, pillLayout,
-  setQuantity, singleChoice, unitPrice,
+  chosenLines, groupChosen, lineKey, lineTotal, missingRequirement, needsAddress,
+  optionPriceLabel, orderTotal, pillLayout, setQuantity, singleChoice, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -621,5 +621,71 @@ describe('un adicional es una línea propia', () => {
 
     expect(carrito).toHaveLength(1)
     expect(carrito[0].options[0].name).toBe('Coca Cola')
+  })
+})
+
+// ── El orden en que se lee lo elegido ──────────────────────────────────────
+//
+// Una pizza se piensa en un orden: sabor, masa, borde, y al final lo que se
+// agrega y cuesta aparte. Ese orden lo pone el dueño en su panel y llega en el
+// catálogo; el carrito tiene que respetarlo porque es el MISMO en que el
+// cliente acaba de armar el plato en la ficha. Ordenarlo distinto le obliga a
+// releer de arriba abajo para comprobar lo que eligió.
+
+describe('groupChosen', () => {
+  const elegida = (groupName: string, name: string, quantity = 1): ChosenOption => ({
+    groupId: groupName.toLowerCase(), groupName, optionId: name, name, price: 0, quantity,
+  })
+  const grupo = (name: string): OptionGroup => ({
+    id: name.toLowerCase(), name, description: null, selectionType: 'single',
+    pricingStrategy: 'sum', freeSelections: 0, required: false,
+    minSelectable: 0, maxSelectable: 1, options: [],
+  })
+
+  it('respeta el orden del catálogo, no el alfabeto', () => {
+    const grupos = groupChosen(
+      [elegida('Borde', 'Sin borde'), elegida('Sabor', 'Criolla'), elegida('Masa', 'Delgada')],
+      [grupo('Sabor'), grupo('Masa'), grupo('Borde')],
+    )
+    expect(grupos.map(g => g.group)).toEqual(['Sabor', 'Masa', 'Borde'])
+  })
+
+  it('sin catálogo cae al alfabeto en vez de barajar', () => {
+    const grupos = groupChosen([elegida('Sabor', 'Criolla'), elegida('Borde', 'Sin borde')])
+    expect(grupos.map(g => g.group)).toEqual(['Borde', 'Sabor'])
+  })
+
+  it('un grupo que ya no está en el catálogo va al final, no desaparece', () => {
+    // El dueño puede borrar un grupo con el carrito abierto. Lo que el cliente
+    // eligió sigue en su carrito y tiene que seguir viéndose.
+    const grupos = groupChosen(
+      [elegida('Retirado', 'Algo'), elegida('Sabor', 'Criolla')],
+      [grupo('Sabor')],
+    )
+    expect(grupos.map(g => g.group)).toEqual(['Sabor', 'Retirado'])
+  })
+
+  it('la mitad y mitad sale como dos sabores del mismo grupo', () => {
+    const grupos = groupChosen(
+      [elegida('Sabor', 'Monster'), elegida('Sabor', 'Carnívora')],
+      [grupo('Sabor')],
+    )
+    expect(grupos).toEqual([{
+      group: 'Sabor',
+      items: [{ name: 'Carnívora', quantity: 1 }, { name: 'Monster', quantity: 1 }],
+    }])
+  })
+
+  it('el x1 no se dice; la cantidad de verdad sí', () => {
+    expect(chosenLines([elegida('Cortes', 'Chuleta', 3), elegida('Cortes', 'Chorizo')]))
+      .toEqual(['Cortes: Chorizo, Chuleta x3'])
+  })
+
+  it('lo que no se puede nombrar se ignora en vez de pintarse a medias', () => {
+    expect(groupChosen([
+      { ...elegida('', 'Huérfana') },
+      { ...elegida('Masa', '  ') },
+      elegida('Masa', 'Delgada'),
+    ])).toEqual([{ group: 'Masa', items: [{ name: 'Delgada', quantity: 1 }] }])
   })
 })

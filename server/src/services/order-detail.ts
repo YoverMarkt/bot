@@ -23,6 +23,14 @@ export interface OpcionDelPedido {
   option_group_name?: string | null
   option_name?: string | null
   quantity?: number | null
+  /**
+   * El orden que el dueño le dio a este grupo, copiado al crear el pedido.
+   *
+   * Se copia y no se consulta a propósito: el panel del dueño pide sus pedidos
+   * cada 12 segundos, y unirse a `option_groups` en esa consulta la haría
+   * correr sin parar durante todo el servicio.
+   */
+  group_sort?: number | null
 }
 
 /** Un grupo con lo que se eligió dentro. El nombre del grupo es lo que explica
@@ -37,21 +45,22 @@ const texto = (valor: unknown): string => String(valor ?? '').trim()
 /**
  * Agrupa las opciones de una línea por su grupo.
  *
- * ⚠️ El orden de los grupos es ALFABÉTICO, y es una decisión, no un descuido.
- * Las filas de `order_item_options` se insertan todas en la misma sentencia, o
- * sea que comparten `created_at` al milisegundo: no hay ningún orden guardado
- * que respetar, y sin criterio propio el mismo plato saldría con los grupos
- * barajados de un pedido a otro.
+ * ⚠️ El orden es el que puso EL DUEÑO (`group_sort`), no el alfabético. Una
+ * pizza se piensa en un orden —sabor, masa, borde, y al final lo que se agrega
+ * y cuesta aparte— y ese orden es el mismo que el cliente vio al armarla. Por
+ * nombre saldría «Borde, Extras, Masa, Retira, Sabor», que es el orden de un
+ * listado y no el de una cocina.
  *
- * Lo natural sería usar `option_groups.sort`, que es el orden que el dueño
- * configuró y el que vio el cliente al armar el plato. Eso pide una columna
- * copiada al insertar —y recrear la RPC del dinero— y no compensa hacerlo por
- * el orden de cinco líneas: está anotado en PENDIENTE.md.
+ * El alfabético queda de desempate, y hace falta: los grupos de un pedido
+ * anterior a esto tienen `group_sort` en cero, igual que dos grupos que el
+ * dueño nunca ordenó. Sin desempate, esos saldrían barajados de un pedido a
+ * otro, porque las filas se insertan todas en la misma sentencia y comparten
+ * `created_at` al milisegundo — no hay ningún orden natural del que fiarse.
  */
 export const agruparOpciones = (
   opciones: readonly OpcionDelPedido[] | null | undefined,
 ): GrupoDelPedido[] => {
-  const porGrupo = new Map<string, GrupoDelPedido>()
+  const porGrupo = new Map<string, GrupoDelPedido & { orden: number }>()
 
   for (const opcion of opciones || []) {
     const grupo = texto(opcion?.option_group_name)
@@ -61,17 +70,24 @@ export const agruparOpciones = (
     if (!grupo || !nombre) continue
 
     const cantidad = Math.max(1, Math.trunc(Number(opcion?.quantity) || 1))
+    const orden = Number(opcion?.group_sort)
     const yaEsta = porGrupo.get(grupo)
     if (yaEsta) yaEsta.items.push({ name: nombre, quantity: cantidad })
-    else porGrupo.set(grupo, { group: grupo, items: [{ name: nombre, quantity: cantidad }] })
+    else {
+      porGrupo.set(grupo, {
+        group: grupo,
+        orden: Number.isFinite(orden) ? orden : 0,
+        items: [{ name: nombre, quantity: cantidad }],
+      })
+    }
   }
 
   return [...porGrupo.values()]
+    .sort((a, b) => a.orden - b.orden || a.group.localeCompare(b.group, 'es'))
     .map(grupo => ({
       group: grupo.group,
       items: [...grupo.items].sort((a, b) => a.name.localeCompare(b.name, 'es')),
     }))
-    .sort((a, b) => a.group.localeCompare(b.group, 'es'))
 }
 
 /**

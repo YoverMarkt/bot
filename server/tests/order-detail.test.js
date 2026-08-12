@@ -52,6 +52,45 @@ describe('agruparOpciones', () => {
     expect(alRevés).toEqual(alDerecho)
   })
 
+  // ── El orden lo pone el dueño ───────────────────────────────────────────
+  //
+  // Una pizza se piensa en un orden: sabor, masa, borde, y al final lo que se
+  // agrega y cuesta aparte. Alfabéticamente saldría «Borde, Extras, Masa,
+  // Retira, Sabor», que es el orden de un listado y no el de una cocina.
+
+  it('manda `group_sort`, no el alfabeto', () => {
+    const grupos = agruparOpciones([
+      { option_group_name: 'Borde', option_name: 'Sin borde', quantity: 1, group_sort: 2 },
+      { option_group_name: 'Sabor', option_name: 'Criolla', quantity: 1, group_sort: 0 },
+      { option_group_name: 'Masa', option_name: 'Tradicional', quantity: 1, group_sort: 1 },
+      { option_group_name: 'Extras', option_name: 'Extra queso', quantity: 1, group_sort: 4 },
+    ])
+    expect(grupos.map(g => g.group)).toEqual(['Sabor', 'Masa', 'Borde', 'Extras'])
+  })
+
+  // Los pedidos anteriores a esto llevan cero, igual que dos grupos que el
+  // dueño nunca ordenó. Sin desempate saldrían barajados entre pedidos.
+  it('con el mismo orden desempata el alfabeto', () => {
+    const grupos = agruparOpciones([
+      { option_group_name: 'Masa', option_name: 'Delgada', quantity: 1, group_sort: 0 },
+      { option_group_name: 'Borde', option_name: 'De queso', quantity: 1, group_sort: 0 },
+    ])
+    expect(grupos.map(g => g.group)).toEqual(['Borde', 'Masa'])
+  })
+
+  it('sin `group_sort` se comporta como antes: alfabético', () => {
+    expect(agruparOpciones(PIZZA_34).map(g => g.group))
+      .toEqual(['Borde', 'Extras', 'Masa', 'Retira ingredientes', 'Sabor'])
+  })
+
+  it('un `group_sort` con basura no reordena nada raro', () => {
+    const grupos = agruparOpciones([
+      { option_group_name: 'Masa', option_name: 'Delgada', quantity: 1, group_sort: 'x' },
+      { option_group_name: 'Borde', option_name: 'De queso', quantity: 1, group_sort: null },
+    ])
+    expect(grupos.map(g => g.group)).toEqual(['Borde', 'Masa'])
+  })
+
   it('cuenta las porciones de los contadores', () => {
     const grupos = agruparOpciones([
       { option_group_name: 'Cortes', option_name: 'Chuleta', quantity: 3 },
