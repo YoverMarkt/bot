@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, ChevronLeft, MessageCircle } from 'lucide-react'
 import { getOrder } from '../lib/api'
 import { Aviso, Boton } from '../components/ui'
-import { money } from '../lib/format'
-import type { Business, Fulfillment, TrackedItem, TrackedOrder } from '../lib/types'
+import type { Business, Fulfillment, TrackedOrder } from '../lib/types'
 
 // Seguimiento del pedido: por dónde va, con la hora de cada paso.
 //
@@ -48,42 +47,6 @@ const hora = (iso?: string | null) => {
   return cuando.toLocaleTimeString('es-EC', {
     timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hour12: false,
   })
-}
-
-/**
- * Lo que el cliente eligió en una línea del pedido.
- *
- * Se corta a DOS LÍNEAS y se despliega al tocarlo. El corte es de la mini app y
- * solo de la mini app: aquí el cliente ya sabe lo que pidió y le basta un
- * resumen. En el panel del dueño va entero siempre — si al cocinero le cortas
- * la descripción, hace la pizza mal.
- *
- * Cortar sin poder desplegar reproduciría el problema que esto viene a
- * arreglar, así que el toque no es un adorno.
- */
-function DetalleDeLinea({ linea }: { linea: TrackedItem }) {
-  const [abierto, setAbierto] = useState(false)
-
-  const grupos = linea.options?.length
-    ? linea.options.map(grupo => `${grupo.group}: ${grupo.items.map(
-        item => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name),
-      ).join(', ')}`)
-    // Los pedidos de antes del motor de opciones no tienen grupos, solo la
-    // lista suelta. Siguen diciendo lo que el cliente compró, aunque peor.
-    : (linea.extras_names?.length ? [linea.extras_names.join(' · ')] : [])
-
-  if (!grupos.length) return null
-
-  return (
-    <button
-      onClick={() => setAbierto(!abierto)}
-      className={`mt-0.5 block w-full text-left text-[12.5px] leading-snug texto-tenue ${
-        abierto ? '' : 'line-clamp-2'
-      }`}
-    >
-      {grupos.join(' · ')}
-    </button>
-  )
 }
 
 export default function OrderTracking({ slug, business, orderId, onVolver }: {
@@ -196,9 +159,6 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
   }
   const indiceActual = pasos.findIndex(paso => paso.estados.includes(pedido.status))
   const cortado = CORTADOS[pedido.status]
-  // Un pedido del bot no trae líneas: nace desde el chat, sin catálogo. La
-  // sección entera desaparece en vez de dejar un recuadro vacío con título.
-  const lineas = pedido.order_items || []
 
   return (
     <div className="animar-entrada mx-auto min-h-full max-w-md px-5 pt-seguro pb-10">
@@ -206,19 +166,13 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
         <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
           <ChevronLeft size={22} />
         </button>
-        <h1 className="text-[22px] leading-none font-extrabold tracking-tight">Seguimiento</h1>
-      </div>
-
-      <div className="superficie rounded-(--radius-tarjeta) border borde-tema px-4 py-4">
-        <p className="text-[13px] font-semibold texto-tenue">Pedido</p>
-        <p className="mt-0.5 text-[26px] leading-none font-black tracking-tight text-marca tabular-nums">
-          #{pedido.order_number}
-        </p>
-        {pedido.total != null && (
-          <p className="mt-2 text-[14px] texto-tenue">
-            Total <span className="font-bold text-(--texto)">{money(Number(pedido.total))}</span>
-          </p>
-        )}
+        {/* El número va AQUÍ y no en una ficha aparte. Quitarlo del todo
+            dejaba sin contexto a quien entra desde Cuenta con cinco pedidos:
+            la pantalla decía «Seguimiento» y nada más. El total y los
+            productos ya se ven en Cuenta y en la pantalla de pago. */}
+        <h1 className="text-[22px] leading-none font-extrabold tracking-tight tabular-nums">
+          Pedido #{pedido.order_number}
+        </h1>
       </div>
 
       {/* ⚠️ Los datos para transferir y el subidor de comprobante VIVEN EN LA
@@ -302,49 +256,10 @@ export default function OrderTracking({ slug, business, orderId, onVolver }: {
             </ol>
           )}
 
-      {/* ── Qué pidió ──
-          Va DEBAJO de la línea de tiempo a propósito: quien abre esto viene a
-          saber por dónde va su pedido, no a repasar la lista. Pero tiene que
-          estar, porque hasta ahora la única forma de acordarse era volverse a
-          WhatsApp y buscar el mensaje.
-
-          Los nombres son los CONGELADOS al pedir, no los del catálogo de hoy:
-          si el negocio renombra un producto, el pedido tiene que seguir
-          diciendo lo que el cliente compró. */}
-      {!cortado && lineas.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-3 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            Tu pedido
-          </h2>
-          <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
-            {lineas.map((linea, indice) => (
-              <div key={indice} className="flex items-start justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-[14px] leading-snug font-semibold">
-                    {linea.quantity}× {linea.product_name}
-                    {linea.variant_name && (
-                      <span className="font-normal texto-tenue"> · {linea.variant_name}</span>
-                    )}
-                  </p>
-                  {/* Lo elegido en la ficha: sin esto, dos pedidos del mismo
-                      producto con opciones distintas se leen idénticos.
-                      El servidor lo manda ya agrupado por grupo; `extras_names`
-                      es el respaldo de los pedidos anteriores al motor. */}
-                  <DetalleDeLinea linea={linea} />
-                  {linea.item_note && (
-                    <p className="mt-0.5 text-[12.5px] leading-snug italic texto-tenue">
-                      «{linea.item_note}»
-                    </p>
-                  )}
-                </div>
-                <span className="shrink-0 text-[14px] font-semibold tabular-nums">
-                  {money(Number(linea.line_total))}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* ⚠️ Aquí se listaba lo que compró («Tu pedido»). Se retiró: esta
+          pantalla cuenta por dónde va el pedido y nada más. Lo que compró se
+          ve en la pantalla de pago —justo después de confirmar— y en Cuenta,
+          que es donde alguien vuelve a mirarlo. */}
 
       <div className="mt-8 space-y-2.5">
         {business.phone && (

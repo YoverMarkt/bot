@@ -1,3 +1,4 @@
+import { crearBuzonDeComprobantes, textoDelComprobante } from './payment-proof-inbox'
 import type { ProcessMessageInput } from './bot-conversation'
 import type { ScheduleRecord } from '../db/types'
 import {
@@ -123,7 +124,44 @@ export interface BotEntryDependencies {
   debounceMs?: number
   setTimer?: (callback: () => void, milliseconds: number) => TimerHandle
   clearTimer?: (timer: TimerHandle) => void
+  /**
+   * Engancha al pedido la foto que llegó por el chat, si era un comprobante.
+   *
+   * Opcional a propósito: sin él, `handleImage` se comporta como siempre. Es
+   * lo que permite que las pruebas del bot no toquen Cloudinary ni la base.
+   */
+  attachPaymentProof?: (
+    businessId: string,
+    contactPhone: string,
+    imagen: Buffer,
+  ) => Promise<{ adjuntado: boolean; orderNumber?: number | null }>
 }
+
+/**
+ * El buzón de comprobantes, cableado a las piezas de verdad.
+ *
+ * Se arma aquí con carga diferida, como el resto de lo que habla con la nube:
+ * `require` dentro de la función evita que un ciclo de importaciones tumbe el
+ * arranque del bot.
+ */
+const adjuntarComprobante = crearBuzonDeComprobantes({
+  ultimoPedido: (businessId, contactPhone) => {
+    const db = require('../db') as typeof import('../db')
+    return db.getLastOrderForContact(businessId, contactPhone)
+  },
+  subirPrivado: (buffer, businessId) => {
+    const nube = require('../integrations/cloudinary') as typeof import('../integrations/cloudinary')
+    return nube.uploadPrivateMedia(buffer, businessId)
+  },
+  adjuntar: (input) => {
+    const db = require('../db') as typeof import('../db')
+    return db.attachStorefrontPaymentProof(input)
+  },
+  registrarError: (input) => {
+    const log = require('./error-log') as typeof import('./error-log')
+    return log.recordError(input)
+  },
+})
 
 function imageQuery(identified: string): string {
   if (!/NO_IDENTIFICADO/i.test(identified)) {
@@ -134,6 +172,10 @@ function imageQuery(identified: string): string {
 
 function createBotEntry(dependencies: BotEntryDependencies) {
   const { database, conversation, ai, whatsapp, media } = dependencies
+  // Inyectable como todo lo demás de este archivo. Sin defecto NO se intenta
+  // adjuntar nada: una prueba que no lo pase se comporta como antes, en vez de
+  // colgarse llamando a la nube de verdad.
+  const buzonDeComprobantes = dependencies.attachPaymentProof
   const logger = dependencies.logger || console
   const debounceMs = dependencies.debounceMs ?? 3000
   const setTimer = dependencies.setTimer || ((callback, milliseconds) => (
@@ -385,7 +427,22 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     }
     const wasIdentified = !/NO_IDENTIFICADO/i.test(identified)
     logger.log(`🖼️  imagen procesada: ${wasIdentified ? 'identificada' : 'no identificada'}`)
-    const query = imageQuery(identified)
+
+    // ⚠️ ¿Era el comprobante de un pedido que espera pago? La mayoría de la
+    // gente transfiere desde su banco y manda la captura POR EL CHAT, y hasta
+    // hoy esa foto se perdía: el dueño la veía en su WhatsApp, el panel nunca
+    // activaba «Ver comprobante» y el cliente se quedaba atascado en la
+    // pantalla de pago. Si lo era, ya quedó adjunta al pedido y el texto que
+    // sigue lo dice — para el dueño que lee su chat y para la respuesta.
+    //
+    // Solo se intenta si hay un pedido esperando pago; si no, no se sube nada.
+    let query = imageQuery(identified)
+    if (buzonDeComprobantes && negocioDeLaFoto?.id) {
+      const comprobante = await buzonDeComprobantes(
+        String(negocioDeLaFoto.id), from, imageBuffer,
+      )
+      if (comprobante.adjuntado) query = textoDelComprobante(comprobante.orderNumber)
+    }
 
     if (options.channel === 'telegram') {
       const business = await database.getBusinessBySlug(options.slug)
@@ -462,7 +519,10 @@ const media: EntryMedia = require('./media') as typeof import('./media')
 const prompt: EntryPrompt = require('./prompt') as typeof import('./prompt')
 const schedule: EntrySchedule = require('./schedule') as typeof import('./schedule')
 
-const entry = createBotEntry({ database, conversation, ai, whatsapp, media })
+const entry = createBotEntry({
+  database, conversation, ai, whatsapp, media,
+  attachPaymentProof: adjuntarComprobante,
+})
 
 export const handleImage = entry.handleImage
 export const handleMessage = entry.handleMessage

@@ -480,22 +480,32 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
         {paso && (
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {/* ── El pago que llegó por WhatsApp ──
-                Da el pago por bueno SIN arrancar el pedido. Existe para el
-                rato en que el dueño ya vio la transferencia pero todavía no va
-                a encender la cocina —cerrando, o con cola—: sin esto, la única
-                forma de decirle al cliente «tu plata llegó» era mandar su
-                pedido a preparación antes de tiempo. */}
+                Da el pago por bueno SIN arrancar el pedido ni avisar al
+                cliente. Existe para el rato en que el dueño ya vio la
+                transferencia pero todavía no va a encender la cocina
+                —cerrando, o con cola—.
+
+                ⚠️ Y desde el 2026-08-11 hace algo más importante: es lo ÚNICO
+                que libera al cliente de la pantalla de pago. Quien manda el
+                comprobante por WhatsApp se queda ahí hasta que esto se marque,
+                porque su pedido sigue en `esperando_pago`. Sin este botón, la
+                única forma de desatascarlo sería mandarlo a la cocina.
+
+                El texto dice «SOLO confirmar» a propósito: al lado de «Aceptar
+                el pago y preparar» los dos se leían igual, y el dueño no sabía
+                cuál era cuál. */}
             {puedeConfirmarPago && (
               <ConfirmAction
                 trigger={
-                  <Button variant="outline" size="sm" disabled={ocupado || confirmando}>
-                    <Landmark /> {confirmando ? 'Confirmando…' : 'Marcar pago recibido'}
+                  <Button variant="ghost" size="sm" disabled={ocupado || confirmando}>
+                    <Landmark /> {confirmando ? 'Confirmando…' : 'Solo confirmar el pago'}
                   </Button>
                 }
-                title="Marcar el pago como recibido"
+                title="Confirmar el pago sin preparar todavía"
                 description={
-                  'El cliente verá «Pago confirmado» y dejará de ver los datos bancarios. '
-                  + 'El pedido no arranca todavía: sigue esperando a que lo aceptes.'
+                  'El cliente verá «Pago confirmado», dejará de ver los datos bancarios y '
+                  + 'podrá salir de la pantalla de pago. NO se le avisa por WhatsApp y el '
+                  + 'pedido no arranca: sigue esperando a que lo aceptes.'
                 }
                 confirmLabel="Ya me llegó el pago"
                 onConfirm={confirmarPago}
