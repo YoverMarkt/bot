@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
 } from 'lucide-react'
-import { createAddress, createOrder, getCatalog, getMe, setAddressLocation } from '../lib/api'
+import { createAddress, createOrder, getCatalog, getMe, getOrder, setAddressLocation } from '../lib/api'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
   orderTotal, setQuantity, unitPrice,
@@ -19,6 +19,7 @@ import type { Ubicacion } from '../lib/ubicacion'
 const OrderTracking = lazy(() => import('./OrderTracking'))
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
+  TrackedOrder,
 } from '../lib/types'
 
 // Flujo de comida, bebidas y retail: portada → categorías → producto → carrito.
@@ -58,6 +59,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     { pedido: PedidoRecibido; nombre: string; transferencia: boolean } | null
   >(null)
   const [ultimoPedido, setUltimoPedido] = useState<string | null>(null)
+  /** El pedido que se dejó a medio pagar. Manda sobre todo lo demás al abrir. */
+  const [pagoPendiente, setPagoPendiente] = useState<TrackedOrder | null>(null)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
   const [portadaRota, setPortadaRota] = useState(false)
@@ -76,7 +79,30 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const claveDelPedido = useRef<string | null>(null)
 
   useEffect(() => {
-    try { setUltimoPedido(localStorage.getItem(`pedido:${slug}`)) } catch { /* modo privado */ }
+    let guardado: string | null = null
+    try { guardado = localStorage.getItem(`pedido:${slug}`) } catch { /* modo privado */ }
+    if (!guardado) return
+    setUltimoPedido(guardado)
+
+    /**
+     * ⚠️ Quien todavía DEBE dinero aterriza en la pantalla de pago, no en el
+     * seguimiento.
+     *
+     * Los datos para transferir viven en la pantalla posterior a confirmar. Si
+     * el cliente cierra la app antes de pagar —que es lo normal: va a su banco,
+     * transfiere, y vuelve con la captura— al regresar caía en el seguimiento y
+     * ahí ya no tenía dónde subirla. Se quedaba con el pedido en el aire y sin
+     * más salida que escribir por WhatsApp.
+     *
+     * Si falla la consulta no se hace nada: la tienda abre como siempre. Un
+     * pedido viejo no puede impedir que alguien mire la carta.
+     */
+    getOrder(slug, guardado)
+      .then((pedido) => {
+        if (pedido.status !== 'esperando_pago' || pedido.payment_confirmed_at) return
+        setPagoPendiente(pedido)
+      })
+      .catch(() => { /* sin conexión o pedido borrado: la tienda abre igual */ })
   }, [slug])
 
   useEffect(() => {
@@ -292,6 +318,40 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       setError('No pudimos guardar la ubicación')
     }
   }, [slug, onFalloEnlace])
+
+  // Un pedido a medio pagar manda sobre todo lo demás: es lo único que el
+  // cliente tiene que hacer, y lo hace desde aquí.
+  if (pagoPendiente) {
+    return (
+      <OrderPlaced
+        slug={slug}
+        business={business}
+        pedido={{
+          id: pagoPendiente.id,
+          order_number: pagoPendiente.order_number,
+          total: pagoPendiente.total,
+          subtotal: Number(pagoPendiente.total) || 0,
+          envio: 0,
+          // Lo que pidió, tal como lo congeló la base. Aquí ya no hay carrito
+          // del que sacarlo: el cliente cerró la app hace rato.
+          lineas: (pagoPendiente.order_items || []).map(item => ({
+            nombre: `${item.product_name}${item.variant_name ? ` · ${item.variant_name}` : ''}`,
+            cantidad: item.quantity,
+            importe: Number(item.line_total) || 0,
+          })),
+        }}
+        nombre=""
+        entrega={pagoPendiente.fulfillment || entrega}
+        transferencia
+        volviendo
+        onSeguir={() => {
+          setSiguiendo(pagoPendiente.id)
+          setPagoPendiente(null)
+        }}
+        onVolver={() => setPagoPendiente(null)}
+      />
+    )
+  }
 
   // El orden importa: recién hecho manda sobre el seguimiento, porque al
   // tocar «Seguir mi pedido» se pasa de una a la otra.

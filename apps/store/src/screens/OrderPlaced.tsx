@@ -1,4 +1,4 @@
-import { Check, MessageCircle } from 'lucide-react'
+import { Check, Clock, MessageCircle } from 'lucide-react'
 import { Boton } from '../components/ui'
 import PagoPendiente from '../components/PagoPendiente'
 import { money, rangoDeEspera } from '../lib/format'
@@ -41,7 +41,7 @@ export interface PedidoRecibido {
 }
 
 export default function OrderPlaced({
-  slug, business, pedido, nombre, entrega, transferencia, onSeguir, onVolver,
+  slug, business, pedido, nombre, entrega, transferencia, volviendo, onSeguir, onVolver,
 }: {
   slug: string
   business: Business
@@ -50,6 +50,14 @@ export default function OrderPlaced({
   entrega: Fulfillment
   /** Si va a transferir, todavía falta su parte. */
   transferencia: boolean
+  /**
+   * `true` cuando el cliente VUELVE a un pedido que dejó sin pagar.
+   *
+   * Cambia el titular, y no es cosmético: «¡Gracias!» sobre un pedido que
+   * lleva veinte minutos esperando el comprobante suena a que ya está todo
+   * hecho, y es justo lo contrario — falta lo único que hace falta.
+   */
+  volviendo?: boolean
   onSeguir: () => void
   onVolver: () => void
 }) {
@@ -71,17 +79,24 @@ export default function OrderPlaced({
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 py-10">
       <div className="flex flex-1 flex-col items-center text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-marca text-white">
-          <Check size={32} strokeWidth={3} />
+        <div className={`flex size-16 items-center justify-center rounded-full text-white ${
+          volviendo ? 'bg-amber-500' : 'bg-marca'
+        }`}
+        >
+          {volviendo ? <Clock size={30} strokeWidth={2.5} /> : <Check size={32} strokeWidth={3} />}
         </div>
 
         <h1 className="mt-5 text-[26px] leading-tight font-extrabold tracking-tight">
-          {nombre ? `¡Gracias, ${nombre.split(' ')[0]}!` : '¡Gracias!'}
+          {volviendo
+            ? 'Falta tu comprobante'
+            : nombre ? `¡Gracias, ${nombre.split(' ')[0]}!` : '¡Gracias!'}
         </h1>
         <p className="mt-2 text-[14px] texto-tenue">
-          {transferencia
-            ? 'Recibimos tu pedido. Falta tu comprobante para que el local lo prepare.'
-            : 'Tu pedido fue recibido correctamente.'}
+          {volviendo
+            ? 'Tu pedido está guardado. En cuanto subas el comprobante, el local lo prepara.'
+            : transferencia
+              ? 'Recibimos tu pedido. Falta tu comprobante para que el local lo prepare.'
+              : 'Tu pedido fue recibido correctamente.'}
         </p>
 
         <dl className="mt-7 w-full space-y-2.5">
