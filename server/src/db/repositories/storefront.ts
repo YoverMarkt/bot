@@ -154,6 +154,35 @@ const createCustomerAddress = async (input: {
 }
 
 /**
+ * Retira una dirección de la libreta del cliente.
+ *
+ * Se marca `active = false` en vez de borrarla, y no es prudencia genérica:
+ * `orders.address_id` apunta aquí. Borrarla de verdad dejaría ese puntero en
+ * nulo y se perdería a qué casa pide más un cliente —lo único para lo que
+ * sirve ya ese puntero, porque el destino del pedido va congelado aparte—.
+ *
+ * El `where` lleva negocio Y cliente: una dirección ajena no se retira ni
+ * sabiendo su id. Devuelve `null` si no era suya, y quien llama responde 404.
+ */
+const deactivateCustomerAddress = async (input: {
+  businessId: string
+  customerId: string
+  addressId: string
+}) => {
+  const { data, error } = await db
+    .from('customer_addresses')
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('business_id', input.businessId)
+    .eq('customer_id', input.customerId)
+    .eq('id', input.addressId)
+    .eq('active', true)
+    .select('id')
+    .maybeSingle()
+  fail(error, 'No se pudo eliminar la dirección')
+  return data || null
+}
+
+/**
  * Le pone el pin a una dirección que ya existe.
  *
  * Hace falta porque las direcciones guardadas antes de esto no tienen
@@ -408,6 +437,7 @@ export = {
   getCustomerAddresses,
   createCustomerAddress,
   setCustomerAddressLocation,
+  deactivateCustomerAddress,
   createStorefrontSession,
   getStorefrontSessionByHash,
   claimStorefrontSession,
