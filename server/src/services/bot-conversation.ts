@@ -10,6 +10,7 @@ import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 // Detector de saludos puros ya probado: "hola", "buenas", "menú". Es una
 // función pura sin base de datos, así que se importa directo.
 import { wantsWelcomeMenu } from './bot-menu'
+import { RESPUESTA_COMPROBANTE, esComprobante } from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
   BotMediaHistoryMessage,
@@ -425,6 +426,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     const invite = toca
       ? await storefrontInviteFor(business, phone, session?.contact_name, true)
       : ''
+
+    // ⚠️ Si la foto era el comprobante de un pedido que espera pago, ya quedó
+    // adjunta (`services/payment-proof-inbox.ts`) y lo que toca decir es otra
+    // cosa. Mandarle el enlace a quien acaba de pagar es contestarle a una
+    // pregunta que no hizo — y era exactamente lo que pasaba: el cliente
+    // mandaba su captura y el bot le respondía «aquí tienes el menú».
+    if (esComprobante(text)) {
+      await send(RESPUESTA_COMPROBANTE)
+      await database.saveMessage(business.id, phone, 'assistant', RESPUESTA_COMPROBANTE)
+      logger.log(`🧾 [${business.name}] comprobante recibido por el chat de ${phone}`)
+      return
+    }
 
     // `invite` puede venir vacío si el negocio no tiene tienda utilizable —sin
     // catálogo no hay nada que enseñar—. Ahí se recuerda igual, con el
