@@ -39,7 +39,9 @@ El diagrama recorre el viaje entero, de WhatsApp a la entrega:
 7. Adicionales independientes
 8. Checkout
 9. Confirmación
-10. Seguimiento del pedido
+10. ~~Seguimiento del pedido~~ — **RETIRADO el 2026-08-12.** El viaje ya no
+    termina en una pantalla de esta app: termina donde empezó, en el chat. Ver
+    el apartado 6.
 
 ---
 
@@ -87,10 +89,14 @@ De arriba abajo:
   La cuarta decía «Pedido» y abría el ÚLTIMO pedido directamente. Servía
   mientras solo hubiera uno del que preocuparse; quien ha pedido cinco veces
   tiene un historial, no «un pedido». Desde el 2026-08-11 abre
-  `screens/Account.tsx`: sus pedidos —tocando uno se abre su seguimiento— y
-  sus direcciones, con sitio para lo que venga. Y hacía falta por otro motivo:
-  la pantalla de pago dejó de ofrecer atajo al seguimiento, así que sin Cuenta
-  el cliente con transferencia se quedaba sin puerta para mirar su pedido.
+  `screens/Account.tsx`: sus pedidos y sus direcciones, con sitio para lo que
+  venga.
+  ⚠️ **La lista de pedidos es de solo lectura desde el 2026-08-12**: tocar uno
+  abría su seguimiento, y esa pantalla ya no existe. Lo que se conserva es el
+  **estado en texto** junto a cada pedido (`COMO_VA`), y eso no es decorativo:
+  es el único sitio de la app donde el cliente puede comprobar por dónde va lo
+  suyo si el aviso de WhatsApp no llegara. Una fila que no lleva a ninguna
+  parte deja de ser un botón — fingir que sí es peor que no ofrecerlo.
 
 ## 2. Catálogo
 
@@ -225,18 +231,21 @@ cliente sin ver lo que está a punto de pagar.
     Se ven en el panel del dueño junto a la dirección, que es donde las busca
     quien reparte; sin eso el campo no serviría de nada.
 - **Método de pago**: Efectivo · Transferencia · Pago al retirar. En
-  transferencia se muestran los datos bancarios y el subidor de comprobante.
-  · **El comprobante tiene DOS vías, y las dos valen igual** (2026-08-08):
-    subirlo aquí, o mandárselo al negocio por WhatsApp con un enlace que ya
-    lleva escrito el número de pedido. No es una preferencia estética: mucha
-    gente transfiere desde la app de su banco —a veces desde la cuenta de un
-    familiar— y la captura le queda en el teléfono, no en la tienda. El texto
-    decía «también puedes enviarlo por WhatsApp si prefieres», que sonaba a
-    que daba igual hacerlo o no; ahora dice **para qué** sirve subirlo.
-  · **No se fuerza la cámara** (`capture`), y es deliberado: el comprobante es
-    una CAPTURA DE PANTALLA del banco, que vive en la galería. Forzar la
-    cámara obligaría a fotografiar la pantalla de otro teléfono. El
-    `accept="image/*"` de siempre ya ofrece cámara, galería y archivos.
+  transferencia se muestran los datos bancarios en la pantalla siguiente.
+  · **El comprobante tiene UNA vía desde el 2026-08-12: WhatsApp.** Tuvo dos
+    entre el 2026-08-08 y esa fecha —subirlo en la app o mandarlo por el chat—
+    y se retiró la de la app. El motivo por el que existían las dos es el mismo
+    por el que sobrevive la del chat: mucha gente transfiere desde la app de su
+    banco —a veces desde la cuenta de un familiar— y la captura le queda en la
+    galería del teléfono, a un toque de la conversación donde recibió el
+    enlace. Pedirle además que vuelva a la tienda y la suba otra vez es trabajo
+    de más para llegar al mismo sitio. El detalle del método lo dice ahora
+    literalmente: «Te mostramos la cuenta y nos envías el comprobante por
+    WhatsApp».
+  · ~~**No se fuerza la cámara**~~ — se fue con el subidor. Se anota porque el
+    motivo sigue valiendo el día que algo vuelva a pedir una imagen: el
+    comprobante es una CAPTURA DE PANTALLA del banco, que vive en la galería, y
+    forzar la cámara obligaría a fotografiar la pantalla de otro teléfono.
   ⚠️ **`pago_al_retirar` solo se ofrece en retiro**: no es cómo paga, es CUÁNDO
   —al pasar por el local—, y prometérselo a quien pidió a domicilio es ofrecer
   algo que no se puede cumplir. La app lo esconde, el checkout lo deriva a
@@ -257,40 +266,52 @@ compromiso que nadie había dado. Y era estática.
 
 Las dos objeciones se resuelven sin renunciar a la pantalla:
 
-- **Dice «recibido», no «confirmado»**, que es verdad siempre —el pedido está
-  en la base y en la bandeja del dueño— y es además el primer hito de la línea
-  de tiempo del seguimiento, así que las dos pantallas cuentan lo mismo.
-  Curiosamente el propio diagrama de referencia ya lo decía en su subtítulo:
-  «Tu pedido ha sido **recibido** correctamente».
+- **Dice «recibido», no «confirmado»**, que es verdad siempre: el pedido está
+  en la base y en la bandeja del dueño. Curiosamente el propio diagrama de
+  referencia ya lo decía en su subtítulo: «Tu pedido ha sido **recibido**
+  correctamente».
 - **Con transferencia el texto cambia**: ese pedido nace en `esperando_pago` y
-  lo que le toca al cliente es pagar, no esperar. El botón principal dice
-  «Subir mi comprobante» en vez de «Seguir mi pedido».
+  lo que le toca al cliente es pagar, no esperar.
 - **Sigue siendo estática, y ahora eso está bien**: no promete nada que pueda
-  cambiar. Todo lo que sí cambia —estado, datos bancarios, comprobante— vive en
-  el seguimiento, a un toque de distancia.
-- `Seguir pedido` **sí está**: la objeción de entonces era que la pantalla de
-  seguimiento no existía. Ahora existe.
+  cambiar.
 
-Contenido: check en el color de marca, `¡Gracias, <nombre>!`, número de pedido,
-tiempo estimado (el mismo cálculo que la portada), resumen con importes, y tres
-salidas: seguir el pedido, escribir por WhatsApp, o volver al menú.
+**Es la ÚLTIMA pantalla del pedido desde el 2026-08-12**, y por eso su trabajo
+cambió. Antes era una escala hacia el seguimiento; ahora es la despedida, y
+tiene que dejar dicho todo lo que el cliente necesita saber:
 
-**Aquí viven los datos para transferir** (`components/PagoPendiente.tsx`):
-banco, cuenta con botón de copiar, `Subir comprobante` y las dos vías. Estaban
-en el seguimiento y lo convertían en un cajón donde la línea de tiempo —lo
-único que el cliente vuelve a mirar— quedaba enterrada al final. Pagar es lo
-primero que hay que hacer, así que va en la pantalla inmediatamente posterior
-a confirmar.
+- Check en el color de marca, `¡Gracias, <nombre>!`, número de pedido, tiempo
+  estimado (el mismo cálculo que la portada) y resumen con importes.
+- **Los datos para transferir** (`components/PagoPendiente.tsx`): banco y
+  cuenta con botón de copiar. **Sin subidor** — ver el apartado 4. Si el
+  negocio no tiene datos bancarios cargados, el bloque entero desaparece en vez
+  de dejar un título con un hueco: ese negocio coordina el pago por el chat,
+  que es la salida de todas formas.
+- **El texto grande**, y el tamaño es la decisión: con transferencia es la
+  instrucción que desbloquea el pedido («Mándanos el comprobante por
+  WhatsApp»), y sin ella es la promesa de que nadie tiene que volver a abrir
+  esto para enterarse de nada («Te mantenemos al tanto por WhatsApp», con los
+  hitos que le tocan según entrega o retiro). En letra pequeña bajo un botón se
+  lee cuando ya no hace falta.
+- **Dos salidas**: `Volver a WhatsApp` en tinta —con el texto del comprobante
+  ya escrito si transfiere, y el chat limpio si no— y `Volver al menú`.
+  El principal es tinta y no el color del negocio, como todo botón principal de
+  esta app: el acento señala, no acciona.
 
-⚠️ **Y quien vuelve debiendo dinero aterriza AQUÍ, no en el seguimiento.** Lo
-normal es cerrar la app para ir al banco y volver con la captura; al regresar
-caía en el seguimiento, que ya no tiene dónde subirla, y se quedaba con el
-pedido en el aire. Al abrir la tienda se consulta el último pedido guardado y,
-si sigue en `esperando_pago` sin pago confirmado, se entra por esta pantalla —
-con reloj ámbar y **«Falta tu comprobante»** en vez del check verde y las
-gracias, que sobre un pedido sin pagar suenan a que ya está todo hecho.
-`Volver al menú` sigue disponible: un pedido a medias no puede secuestrar la
-tienda.
+⚠️ **El enlace se arma en `lib/whatsapp.ts`, no a mano.** Dejó de ser un atajo
+cómodo para ser el camino, y un enlace mal formado ya no incomoda: impide
+pagar. Tiene pruebas porque el código anterior tenía un fallo real —pegaba el
+`#` aunque no hubiera número y lo intentaba limpiar con un `.replace(' #  ',
+' ')` que busca dos espacios que nunca están ahí—, así que el cliente escribía
+«…de mi pedido # 🙂».
+
+⚠️ **Y quien vuelve debiendo dinero aterriza AQUÍ.** Lo normal es cerrar la app
+para ir al banco; al volver, la tienda consulta el último pedido guardado y, si
+sigue en `esperando_pago` sin pago confirmado, entra por esta pantalla — con
+reloj ámbar y **«Falta tu comprobante»** en vez del check verde y las gracias,
+que sobre un pedido sin pagar suenan a que ya está todo hecho. `Volver al menú`
+sigue disponible: un pedido a medias no puede secuestrar la tienda. Se sale de
+ese estado por los dos caminos de siempre: la foto que llega por el chat lo
+mueve a `pago_en_revision`, o el dueño marca «Solo confirmar el pago».
 
 ### Lo que decía la referencia (conservado como historia)
 
@@ -307,27 +328,57 @@ tienda.
   todavía no existe, y un botón que no lleva a ninguna parte se siente roto.
   Entra cuando exista.
 
-## 6. Seguimiento
+## 6. ~~Seguimiento~~ — RETIRADO el 2026-08-12
 
-- **Línea de tiempo vertical** con un punto por estado y la hora al lado.
-- Los cumplidos, en verde y con su hora. Los pendientes, en gris y con `--:--`
-  —el hueco vacío se lee como un dato que falta; `--:--` dice «todavía no».
-- El estado actual, destacado.
+**`screens/OrderTracking.tsx` se borró entero.** Tenía línea de tiempo con la
+hora de cada hito, el detalle de lo pedido y la despedida al entregarse.
 
-**Los estados internos son DOCE, y al cliente se le enseñan cinco.** No le
+El motivo no es que estuviera mal hecha: es que contaba **por segunda vez** lo
+que el cliente ya recibe por WhatsApp. Los tres avisos de
+`services/order-notify.ts` llegan al sitio donde esa persona ya está mirando —
+la conversación por la que pidió—, y ninguna app sobrevive pidiéndole a alguien
+que vuelva a abrirla para enterarse de algo que le llega solo.
+
+**Lo que se fue con ella, y dónde vive ahora:**
+
+| Se iba a perder | Dónde está |
+|---|---|
+| La despedida de Umbani al entregarse | En el aviso de `completado`, con el MISMO texto (`GRACIAS_POR_PREFERIRNOS` y `PRONTO_EN_UMBANI`) |
+| Saber por dónde va el pedido | Los tres avisos, y el estado en texto en la lista de Cuenta |
+| «¿Qué fue lo que pedí?» | El detalle completo va en el aviso de `preparacion`, que es cuando sirve para corregirlo |
+
+**Lo que se perdió de verdad, y se aceptó:** la hora exacta de cada paso, y la
+posibilidad de comprobar el estado sin depender del canal. Si el aviso no sale
+—sin saldo en YCloud, o fuera de la ventana de 24 h— al cliente le queda la
+lista de Cuenta, que dice el estado pero no la hora. El envío fallido se
+registra, que es lo que impide que el dueño crea que avisó sin haber avisado.
+
+⚠️ **Lo que NO se retiró**: `GET /api/store/:slug/orders/:id` sigue en pie y
+con dos llamadores —la comprobación del pago pendiente al abrir la tienda y el
+resumen de esa pantalla—, así que el agrupado de opciones del servidor
+(`services/order-detail.ts`) y su prueba del select siguen vivos.
+
+Lo de abajo se conserva porque **no era de la pantalla**, era del pedido, y
+sigue mandando: cómo se marca un pago que llegó por fuera, y quién puede ver un
+pedido.
+
+### Lo que enseñaba la línea de tiempo (conservado como historia)
+
+**Los estados internos son DOCE, y al cliente se le enseñaban cinco.** No le
 sirve saber que su pedido está en `aceptado` y no en `confirmado`: le sirve
 saber si su comida está hecha y si viene en camino. Los que solo importan al
-dueño se pliegan sobre el hito que representan.
+dueño se plegaban sobre el hito que representan. **Ese mismo plegado sigue
+vivo** en `COMO_VA` (`screens/Account.tsx`) y en `HITOS_QUE_SE_AVISAN`
+(`services/order-notify.ts`).
 
 ⚠️ **`en_camino` y `listo_para_retiro` son el MISMO paso** contado de dos
 maneras: a quien le llevan el pedido le importa que salió; a quien lo recoge,
-que ya puede pasar. El cuarto hito cambia con el modo de entrega, en vez de
-enseñar los dos y dejar uno siempre gris.
+que ya puede pasar. Sigue vigente en los avisos.
 
-⚠️ **«Recibido» no sale de `order_events`.** El pedido NACE en `pendiente` y
-solo se anotan los CAMBIOS de estado, así que ese hito no tiene evento: su hora
-es la de creación, que es literalmente cuando se recibió. Sin eso, el primer
-paso salía con `--:--` estando cumplido — justo el que el cliente sabe seguro.
+⚠️ **«Recibido» no salía de `order_events`.** El pedido NACE en `pendiente` y
+solo se anotan los CAMBIOS de estado, así que ese hito no tenía evento: su hora
+era la de creación. Vale la pena recordarlo el día que alguien quiera pintar
+una línea de tiempo en el panel del dueño.
 
 ### El pago que llegó por WhatsApp
 
@@ -457,13 +508,10 @@ responda.
 
 ### «Tu pedido»: qué compró
 
-Debajo de la línea de tiempo, las líneas del pedido con su cantidad, lo elegido
-en la ficha, la nota y su importe. Hasta el 2026-08-09 el seguimiento solo
-enseñaba el número y el total, así que para acordarse de qué había pedido el
-cliente tenía que volverse a WhatsApp y buscar el mensaje.
-
-Va **debajo** y no arriba: quien abre esto viene a saber por dónde va su
-pedido, no a repasar la lista.
+Las líneas del pedido con su cantidad, lo elegido en la ficha, la nota y su
+importe. Nacieron en el seguimiento el 2026-08-09 y **sobreviven a su retirada**
+en la pantalla de pedido recibido: quien vuelve debiendo el comprobante tiene
+que ver qué está pagando, y quien acaba de pedir, qué acaba de encargar.
 
 Los nombres son los **congelados al pedir**, no los del catálogo de hoy: si el
 negocio renombra un producto o le cambia el precio, el pedido tiene que seguir
@@ -484,26 +532,31 @@ se había quitado de esa capa.
 Un pedido del bot no trae líneas (nace desde el chat, sin catálogo): la sección
 entera desaparece en vez de dejar un recuadro vacío con su título.
 
-### El pedido entregado se despide
+### El pedido entregado se despide — ahora SOLO por WhatsApp
 
-Con `completado`, la pantalla de seguimiento se **reemplaza entera** por una
+Con `completado`, la pantalla de seguimiento se reemplazaba entera por una
 despedida: check verde, **«Gracias por preferirnos»**, **«Pronto también
 estaremos en la app de Umbani»** y el botón de volver al menú.
 
-No se añade encima de la línea de tiempo, la sustituye. Con el pedido ya en la
-mano, esa línea no informa de nada —todos los puntos en verde— y el cliente no
-ha vuelto a abrir esto para consultar un estado: ha vuelto porque le llegó el
-aviso. Lo único que queda es agradecérselo y devolverle al menú, que es donde
-puede volver a pedir.
+Con el seguimiento retirado el 2026-08-12, esa despedida vive **solo en el
+aviso de WhatsApp** (`GRACIAS_POR_PREFERIRNOS` y `PRONTO_EN_UMBANI` en
+`services/order-notify.ts`). No se perdió ni una palabra: eran el mismo texto a
+propósito, precisamente porque el cliente llegaba por los dos caminos y no
+podía leer dos despedidas distintas del mismo negocio.
 
-⚠️ **El texto es el MISMO que el del WhatsApp** (`GRACIAS_POR_PREFERIRNOS` y
-`PRONTO_EN_UMBANI` en `services/order-notify.ts`). El cliente llega por los dos
-caminos y no puede leer dos despedidas distintas del mismo negocio; si se
-cambia, se cambia en los dos sitios.
+Y llega mejor así. El razonamiento de entonces ya lo decía sin sacar la
+conclusión: «el cliente no ha vuelto a abrir esto para consultar un estado, ha
+vuelto porque le llegó el aviso». Si el aviso es lo que le trae, la despedida
+puede estar en el aviso.
+
+⚠️ **Sigue habiendo un solo sitio donde se cambia.** Antes eran dos que había
+que mantener iguales; hoy es uno. Si algún día vuelve a haber dos, vuelven las
+dos versiones.
 
 ---
 
-**Quién puede verlo:** exige la sesión del enlace, y el filtro es negocio +
+**Quién puede ver un pedido** (sigue vigente: la ruta no se retiró, solo la
+pantalla que la pintaba): exige la sesión del enlace, y el filtro es negocio +
 **teléfono de la sesión** + id del pedido. Nunca el número correlativo: ese es
 #1, #2, #3… y se adivina de corrido. Un pedido ajeno devuelve el MISMO 404 que
 uno inexistente — si distinguiera los dos casos, se podría averiguar qué

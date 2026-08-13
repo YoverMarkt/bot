@@ -1,27 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
-import { Copy, Landmark, MessageCircle, Upload } from 'lucide-react'
-import { Aviso, Boton } from './ui'
-import { getPaymentInfo, uploadPaymentProof } from '../lib/api'
+import { useEffect, useState } from 'react'
+import { Copy, Landmark } from 'lucide-react'
+import { getPaymentInfo } from '../lib/api'
 import type { BankAccount } from '../lib/types'
 
-// ── LO QUE FALTA PARA QUE EL PEDIDO ARRANQUE ───────────────────────────────
+// ── A DÓNDE TRANSFERIR ─────────────────────────────────────────────────────
 //
-// Los datos para transferir y las dos vías de mandar el comprobante.
+// Los datos bancarios del negocio, y nada más.
 //
-// Vive junto al «pedido recibido» y NO en el seguimiento: el seguimiento
-// cuenta por dónde va el pedido, y mezclarle un formulario de pago lo
-// convertía en un cajón. Pagar es lo primero que hay que hacer, así que va en
-// la pantalla inmediatamente posterior a confirmar.
+// ⚠️ Aquí había además un botón para SUBIR el comprobante, y se retiró el
+// 2026-08-12. No porque fallara —funcionaba—, sino porque eran dos caminos
+// para lo mismo y el de la app era el que casi nadie tomaba: la gente
+// transfiere desde su banco y la captura le queda en la galería del teléfono,
+// a un toque del chat donde le llegó el enlace de la tienda. Pedirle que
+// vuelva a la tienda, encuentre el pedido y la suba otra vez es trabajo de más
+// para llegar al mismo sitio.
 //
-// ⚠️ Las DOS vías valen igual, y la segunda es un enlace de verdad. No es
-// preferencia estética: mucha gente transfiere desde la app de su banco —a
-// veces desde la cuenta de un familiar— y la captura le queda en el teléfono
-// con el que abrió WhatsApp, no aquí. El enlace lleva escrito el número de
-// pedido para que el dueño sepa de cuál le hablan.
+// Lo que hace que quitarlo no pierda nada: la foto que llega por el chat YA se
+// adjunta sola al pedido (`services/payment-proof-inbox.ts`) — misma RPC,
+// mismo estado `pago_en_revision`, misma alarma en el panel y el mismo «Ver
+// comprobante» con firma temporal. El dueño no nota diferencia.
 //
-// ⚠️ NO se fuerza la cámara (`capture`), y es deliberado: el comprobante es
-// una captura de pantalla del banco, que vive en la galería. Forzar la cámara
-// obligaría a fotografiar la pantalla de otro teléfono.
+// ⚠️ Se conserva el `<a>` de vuelta a WhatsApp en la pantalla que envuelve a
+// esto (`screens/OrderPlaced.tsx`), no aquí: con el enlace en los dos sitios
+// había dos botones verdes compitiendo en la misma pantalla por el mismo
+// gesto. La instrucción y el botón van juntos, y este bloque solo informa.
+//
+// La ruta `POST /api/store/:slug/orders/:id/proof` sigue viva en el servidor,
+// protegida y con sus pruebas. No se borró a propósito: funciona, no estorba,
+// y es la puerta que usaría el Marketplace o una vuelta atrás. Lo que ya no
+// existe es quien la llame desde esta app.
 
 const lineasBanco = (cuenta: BankAccount) => [
   { etiqueta: 'Banco', valor: cuenta.bank_name },
@@ -31,21 +38,9 @@ const lineasBanco = (cuenta: BankAccount) => [
   { etiqueta: 'Cédula / RUC', valor: cuenta.holder_id, copiable: true },
 ].filter(linea => Boolean(linea.valor))
 
-export default function PagoPendiente({
-  slug, orderId, orderNumber, telefonoNegocio, onSubido,
-}: {
-  slug: string
-  orderId: string
-  orderNumber?: number | string | null
-  telefonoNegocio?: string | null
-  /** Se avisa al terminar para que quien llame pase al seguimiento. */
-  onSubido: () => void
-}) {
+export default function PagoPendiente({ slug }: { slug: string }) {
   const [cuenta, setCuenta] = useState<BankAccount | null>(null)
   const [copiado, setCopiado] = useState('')
-  const [estado, setEstado] = useState<'ninguno' | 'subiendo'>('ninguno')
-  const [fallo, setFallo] = useState<string | null>(null)
-  const archivo = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getPaymentInfo(slug).then(setCuenta).catch(() => setCuenta(null))
@@ -59,77 +54,33 @@ export default function PagoPendiente({
     } catch { /* sin portapapeles: el número está a la vista igual */ }
   }
 
-  const subir = async (elegido: File | undefined) => {
-    if (!elegido) return
-    setEstado('subiendo')
-    setFallo(null)
-    try {
-      await uploadPaymentProof(slug, orderId, elegido)
-      onSubido()
-    } catch (error) {
-      setEstado('ninguno')
-      setFallo(error instanceof Error ? error.message : 'No pudimos subir tu comprobante')
-    }
-  }
-
   const filas = cuenta ? lineasBanco(cuenta) : []
+  // Sin datos cargados no se pinta un título con un hueco debajo. El negocio
+  // que no los tenga coordina el pago por el chat, que es la salida de todos
+  // modos.
+  if (filas.length === 0) return null
 
   return (
     <section className="w-full text-left">
-      <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-        <Landmark size={15} />
+      <h2 className="mb-3 flex items-center gap-2 text-[17px] font-extrabold tracking-tight">
+        <Landmark size={17} className="texto-tenue" />
         Para transferir
       </h2>
 
-      {filas.length > 0 && (
-        <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
-          {filas.map(({ etiqueta, valor, copiable }) => (
-            <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-[13px] texto-tenue">{etiqueta}</span>
-              <span className="flex items-center gap-2 text-right text-[14px] font-semibold">
-                {String(valor)}
-                {copiable && (
-                  <button onClick={() => copiar(String(valor))} aria-label={`Copiar ${etiqueta}`}>
-                    <Copy size={14} className={copiado === String(valor) ? 'text-marca' : 'texto-tenue'} />
-                  </button>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-3 space-y-3">
-        <input
-          ref={archivo}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={event => void subir(event.target.files?.[0])}
-        />
-        <Boton disabled={estado === 'subiendo'} onClick={() => archivo.current?.click()}>
-          <span className="flex items-center justify-center gap-2">
-            <Upload size={17} />
-            {estado === 'subiendo' ? 'Subiendo…' : 'Subir comprobante'}
-          </span>
-        </Boton>
-        <p className="text-center text-[12.5px] texto-tenue">
-          Sube tu comprobante para confirmar tu pedido.
-        </p>
-        {telefonoNegocio && (
-          <a
-            href={`https://wa.me/${telefonoNegocio.replace(/[^\d]/g, '')}?text=${
-              encodeURIComponent(
-                `Hola, te envío el comprobante de mi pedido #${orderNumber ?? ''} 🙂`.replace(' #  ', ' '),
-              )
-            }`}
-            className="flex items-center justify-center gap-1.5 text-center text-[12.5px] font-semibold text-marca"
-          >
-            <MessageCircle size={14} />
-            También puedes enviarlo por WhatsApp
-          </a>
-        )}
-        {fallo && <Aviso tono="alerta">{fallo}</Aviso>}
+      <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
+        {filas.map(({ etiqueta, valor, copiable }) => (
+          <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3.5">
+            <span className="text-[13.5px] texto-tenue">{etiqueta}</span>
+            <span className="flex items-center gap-2 text-right text-[14.5px] font-semibold">
+              {String(valor)}
+              {copiable && (
+                <button onClick={() => copiar(String(valor))} aria-label={`Copiar ${etiqueta}`}>
+                  <Copy size={15} className={copiado === String(valor) ? 'text-marca' : 'texto-tenue'} />
+                </button>
+              )}
+            </span>
+          </div>
+        ))}
       </div>
     </section>
   )

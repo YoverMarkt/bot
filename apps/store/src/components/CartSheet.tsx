@@ -215,7 +215,10 @@ export default function CartSheet({
       id: 'transferencia' as const,
       icono: Landmark,
       texto: 'Transferencia bancaria',
-      detalle: 'Te mostramos la cuenta y subes tu comprobante.',
+      // Dice lo que va a pasar de verdad desde el 2026-08-12: la cuenta se
+      // enseña en la pantalla siguiente y el comprobante va por el chat. Antes
+      // decía «subes tu comprobante» y prometía un botón que ya no existe.
+      detalle: 'Te mostramos la cuenta y nos envías el comprobante por WhatsApp.',
     },
     {
       id: 'efectivo' as const,

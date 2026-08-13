@@ -18,7 +18,6 @@ import OrderPlaced from './OrderPlaced'
 import type { PedidoRecibido } from './OrderPlaced'
 import type { NuevaDireccion } from '../components/CartSheet'
 import type { Ubicacion } from '../lib/ubicacion'
-const OrderTracking = lazy(() => import('./OrderTracking'))
 const Account = lazy(() => import('./Account'))
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
@@ -49,10 +48,6 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [error, setError] = useState<string | null>(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
-  // El pedido que se está siguiendo. Se recuerda en el navegador para que
-  // cerrar la app y volver no pierda el rastro: el cliente cierra WhatsApp
-  // mientras espera su comida, que es justo cuando quiere mirarlo.
-  const [siguiendo, setSiguiendo] = useState<string | null>(null)
   /**
    * El pedido que se acaba de enviar. Vive aquí y no en el seguimiento porque
    * el resumen sale del CARRITO —que se vacía al confirmar— y del total
@@ -342,10 +337,6 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           slug={slug}
           me={me}
           onVolver={() => setEnCuenta(false)}
-          onAbrirPedido={(orderId) => {
-            setEnCuenta(false)
-            setSiguiendo(orderId)
-          }}
           onBorrarDireccion={borrarDireccion}
         />
       </Suspense>
@@ -380,20 +371,18 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         entrega={pagoPendiente.fulfillment || entrega}
         transferencia
         volviendo
-        onSeguir={() => {
-          setSiguiendo(pagoPendiente.id)
-          // Se limpian los DOS: sin soltar `abrirPago`, volver al menú más
-          // tarde reabriría la pantalla de pago de un pedido ya pagado.
-          setPagoPendiente(null)
-          setAbrirPago(false)
-        }}
         onVolver={() => setAbrirPago(false)}
       />
     )
   }
 
-  // El orden importa: recién hecho manda sobre el seguimiento, porque al
-  // tocar «Seguir mi pedido» se pasa de una a la otra.
+  // ⚠️ Aquí había una pantalla de SEGUIMIENTO —línea de tiempo, estados,
+  // despedida— y se retiró el 2026-08-12. El pedido se sigue por WhatsApp, con
+  // los tres avisos de `services/order-notify.ts`, que es donde el cliente ya
+  // está mirando: no hay que enseñarle a volver a una app para enterarse de
+  // algo que le llega solo. La despedida de Umbani no se perdió, viaja idéntica
+  // en el aviso de `completado`. Lo que queda en la app es la lista de Cuenta,
+  // que dice el estado en texto para quien quiera comprobarlo.
   if (recienHecho) {
     return (
       <OrderPlaced
@@ -403,23 +392,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         nombre={recienHecho.nombre}
         entrega={entrega}
         transferencia={recienHecho.transferencia}
-        onSeguir={() => {
-          setSiguiendo(recienHecho.pedido.id)
-          setRecienHecho(null)
-        }}
         onVolver={() => setRecienHecho(null)}
       />
-    )
-  }
-
-  if (siguiendo) {
-    return (
-      <Suspense fallback={null}><OrderTracking
-        slug={slug}
-        business={business}
-        orderId={siguiendo}
-        onVolver={() => setSiguiendo(null)}
-      /></Suspense>
     )
   }
 
