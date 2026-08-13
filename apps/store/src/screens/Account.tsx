@@ -17,6 +17,14 @@ import type { Address, Me, TrackedOrder } from '../lib/types'
 //
 // Es la casa de lo que venga después: datos personales, favoritos, o lo que el
 // dueño decida. Hoy son dos secciones y ya justifica la pestaña.
+//
+// ⚠️ La lista de pedidos es de SOLO LECTURA desde el 2026-08-12. Tocar uno
+// abría su seguimiento, y esa pantalla se retiró: el pedido se sigue por
+// WhatsApp. Lo que se conserva —y no es poco— es el estado dicho en cristiano
+// junto a cada pedido: si el aviso no llegara (sin saldo en el canal, o fuera
+// de la ventana de 24 h), este es el único sitio de la app donde el cliente
+// puede comprobar por dónde va lo suyo. Una fila que no lleva a ninguna parte
+// no debe FINGIR que sí, así que deja de ser un botón.
 
 /** Los doce estados internos, dichos como los entiende quien compró. */
 const COMO_VA: Record<string, { texto: string; tono: string }> = {
@@ -43,12 +51,11 @@ const cuando = (iso: string) => {
 }
 
 export default function Account({
-  slug, me, onVolver, onAbrirPedido, onBorrarDireccion,
+  slug, me, onVolver, onBorrarDireccion,
 }: {
   slug: string
   me: Me | null
   onVolver: () => void
-  onAbrirPedido: (orderId: string) => void
   onBorrarDireccion: (addressId: string) => Promise<void>
 }) {
   const [pedidos, setPedidos] = useState<TrackedOrder[] | null>(null)
@@ -80,7 +87,7 @@ export default function Account({
 
         {/* ── Mis pedidos ── */}
         <section>
-          <h2 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+          <h2 className="mb-2.5 text-[17px] font-extrabold tracking-tight">
             Mis pedidos
           </h2>
 
@@ -110,15 +117,14 @@ export default function Account({
               const estado = COMO_VA[pedido.status] || { texto: pedido.status, tono: 'texto-tenue' }
               const cuantos = (pedido.order_items || []).length
               return (
-                <button
+                <div
                   key={pedido.id}
-                  onClick={() => onAbrirPedido(pedido.id)}
-                  className="flex w-full items-center gap-3 rounded-2xl border borde-tema px-4 py-3 text-left transition active:scale-[0.99]"
+                  className="superficie flex w-full items-center gap-3 rounded-2xl border borde-tema px-4 py-3.5 text-left"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
-                      <span className="text-[14px] font-bold">#{pedido.order_number}</span>
-                      <span className={`text-[12.5px] font-semibold ${estado.tono}`}>
+                      <span className="text-[14.5px] font-bold">#{pedido.order_number}</span>
+                      <span className={`text-[13px] font-semibold ${estado.tono}`}>
                         {estado.texto}
                       </span>
                     </span>
@@ -127,10 +133,10 @@ export default function Account({
                       {cuantos > 0 && ` · ${cuantos} ${cuantos === 1 ? 'producto' : 'productos'}`}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[15px] font-bold tabular-nums">
+                  <span className="shrink-0 text-[15.5px] font-bold tabular-nums">
                     {money(Number(pedido.total) || 0)}
                   </span>
-                </button>
+                </div>
               )
             })}
           </div>
@@ -138,7 +144,7 @@ export default function Account({
 
         {/* ── Mis direcciones ── */}
         <section>
-          <h2 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+          <h2 className="mb-2.5 text-[17px] font-extrabold tracking-tight">
             Mis direcciones
           </h2>
 
@@ -154,7 +160,7 @@ export default function Account({
             {direcciones.map(direccion => (
               <div
                 key={direccion.id}
-                className="flex items-start gap-2 rounded-2xl border borde-tema px-4 py-3"
+                className="superficie flex items-start gap-2 rounded-2xl border borde-tema px-4 py-3.5"
               >
                 <MapPin size={17} className="mt-0.5 shrink-0 texto-tenue" />
                 <span className="min-w-0 flex-1">

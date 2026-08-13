@@ -50,6 +50,13 @@ const DIST = path.join(RAIZ, 'dist')
 //
 // El margen sigue en 1,9 kB, bastante por debajo de los ~10 kB de react-router:
 // este guardián no ha perdido nada de su capacidad de cazar una dependencia.
+//
+// Medido el 2026-08-12: 84,7 kB. BAJA por primera vez (86,1 → 84,7). Se fueron
+// la pantalla de seguimiento y la subida del comprobante: el pedido se sigue
+// por WhatsApp y la captura se manda por el chat. El presupuesto se deja en 88
+// a propósito —bajarlo a ras del número de hoy convierte cualquier pantalla
+// nueva en una alarma, y este guardián está para cazar dependencias, no
+// features—, pero el margen real vuelve a ser cómodo.
 const PRESUPUESTO_KB = 88
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {

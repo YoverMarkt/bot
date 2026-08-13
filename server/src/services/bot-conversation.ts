@@ -207,6 +207,11 @@ interface ConversationStorefrontLink {
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
   ): string
+  /** El mismo enlace, listo para ir como botón nativo del canal. */
+  storefrontInviteButton(
+    business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
+    url: string,
+  ): { body: string; url: string; label: string; footer: string }
 }
 
 /**
@@ -272,6 +277,12 @@ export interface ProcessMessageInput {
     body: string,
     options: { id: string; title: string; description?: string }[],
     deliveryMode?: 'queued' | 'direct',
+  ) => Promise<boolean>
+  // El enlace de la tienda como BOTÓN nativo. Devuelve false si el canal no lo
+  // soporta o si el envío falla, y entonces el enlace sale como texto — que es
+  // como salía hasta el 2026-08-12.
+  sendLink?: (
+    message: { body: string; url: string; label: string; footer?: string | null },
   ) => Promise<boolean>
 }
 
@@ -359,16 +370,50 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         cooldown en memoria de `issueLink` no debe volver a filtrar y dejar al
         cliente sin enlace. */
     force = false,
-  ): Promise<string> {
-    if (!storefrontLink) return ''
+  ): Promise<{ texto: string; url: string } | null> {
+    if (!storefrontLink) return null
     try {
       const url = await storefrontLink.issueLink({ business, phone, name, force })
-      if (!url) return ''
+      if (!url) return null
       logger.log(`🛍️ [${business.name}] enlace de tienda enviado a ${phone}`)
-      return storefrontLink.storefrontInvite(business, url)
+      return { texto: storefrontLink.storefrontInvite(business, url), url }
     } catch {
-      return ''
+      return null
     }
+  }
+
+  /**
+   * Manda la invitación por el mejor formato que admita el canal.
+   *
+   * WhatsApp con YCloud la recibe como BOTÓN nativo (`cta_url`) desde el
+   * 2026-08-12: una URL cruda ocupa tres líneas, se parte en pantallas
+   * estrechas y se lee como publicidad. Telegram, Meta directo y el simulador
+   * la reciben como el texto de siempre.
+   *
+   * ⚠️ El texto NO es un plan B triste: es el respaldo que garantiza que el
+   * enlace SIEMPRE sale. En modo mini app ese enlace es lo único que le permite
+   * pedir al cliente, así que un botón rechazado por el canal no puede
+   * traducirse en silencio. Por eso `sendLink` devuelve false en vez de lanzar,
+   * y aquí se cae al texto sin ruido.
+   *
+   * ⚠️ En el historial se guarda SIEMPRE el texto, con la URL a la vista. El
+   * dueño lee su panel para saber qué se le mandó a un cliente, y «botón» no
+   * le dice a dónde apuntaba.
+   */
+  async function enviarInvitacion(input: {
+    business: ConversationBusiness
+    invitacion: { texto: string; url: string }
+    send: (message: string) => Promise<unknown>
+    sendLink?: ProcessMessageInput['sendLink']
+  }): Promise<void> {
+    const { business, invitacion, send, sendLink } = input
+    if (sendLink && storefrontLink) {
+      try {
+        const enviado = await sendLink(storefrontLink.storefrontInviteButton(business, invitacion.url))
+        if (enviado) return
+      } catch { /* el canal no pudo con el botón: sale el texto */ }
+    }
+    await send(invitacion.texto)
   }
 
   /**
@@ -389,6 +434,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     session: ConversationSession | null
     send: (text: string) => Promise<unknown>
     sendTyping?: () => Promise<unknown>
+    sendLink?: ProcessMessageInput['sendLink']
   }): Promise<void> {
     const { business, phone, text, session, send } = input
 
@@ -442,9 +488,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // `invite` puede venir vacío si el negocio no tiene tienda utilizable —sin
     // catálogo no hay nada que enseñar—. Ahí se recuerda igual, con el
     // teléfono del local, en vez de dejar el mensaje sin respuesta.
-    const respuesta = invite || MINIAPP_RECORDATORIO
-    await send(respuesta)
-    await database.saveMessage(business.id, phone, 'assistant', respuesta)
+    //
+    // ⚠️ El guardado en el historial se hace en los DOS caminos, y con el
+    // mismo texto que se envió: el dueño abre su panel para saber qué recibió
+    // su cliente, y un mensaje que salió sin quedar escrito es un hueco en esa
+    // conversación.
+    if (invite) {
+      await enviarInvitacion({ business, invitacion: invite, send, sendLink: input.sendLink })
+      await database.saveMessage(business.id, phone, 'assistant', invite.texto)
+    } else {
+      await send(MINIAPP_RECORDATORIO)
+      await database.saveMessage(business.id, phone, 'assistant', MINIAPP_RECORDATORIO)
+    }
     logger.log(
       `🛍️ [${business.name}] modo mini app — ${toca ? 'enlace enviado' : 'recordatorio'} a ${phone} (sin IA)`,
     )
@@ -764,7 +819,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // en este modo no puede generar coste de OpenAI. Antes el enlace se
     // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
     if (business.chat_mode === 'miniapp') {
-      await runMiniappMode({ business, phone, text, session, send, sendTyping })
+      await runMiniappMode({
+        business, phone, text, session, send, sendTyping, sendLink: input.sendLink,
+      })
       return
     }
 
@@ -1115,8 +1172,8 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     if (business.chat_mode === 'miniapp' && wantsWelcomeMenu(text)) {
       const invite = await storefrontInviteFor(business, phone, session?.contact_name)
       if (invite) {
-        await send(invite)
-        await database.saveMessage(business.id, phone, 'assistant', invite)
+        await enviarInvitacion({ business, invitacion: invite, send, sendLink: input.sendLink })
+        await database.saveMessage(business.id, phone, 'assistant', invite.texto)
       }
     }
 
@@ -1159,6 +1216,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
 interface ModuloStorefrontLinkService {
   issueStorefrontLink: ConversationStorefrontLink['issueLink']
   storefrontInvite: ConversationStorefrontLink['storefrontInvite']
+  storefrontInviteButton: ConversationStorefrontLink['storefrontInviteButton']
 }
 const storefrontLinkService: ModuloStorefrontLinkService = require('./storefront-link') as typeof import('./storefront-link')
 interface ModuloPriceGuardService {
@@ -1195,6 +1253,7 @@ const conversation = createBotConversation({
   storefrontLink: {
     issueLink: storefrontLinkService.issueStorefrontLink,
     storefrontInvite: storefrontLinkService.storefrontInvite,
+    storefrontInviteButton: storefrontLinkService.storefrontInviteButton,
   },
   priceGuard: {
     check: input => priceGuardService.checkQuotedPrices(input),

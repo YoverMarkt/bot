@@ -1,7 +1,7 @@
 import { Check, Clock, MessageCircle } from 'lucide-react'
-import { Boton } from '../components/ui'
 import PagoPendiente from '../components/PagoPendiente'
 import { money, rangoDeEspera } from '../lib/format'
+import { enlaceWhatsApp, textoComprobante } from '../lib/whatsapp'
 import type { Business, Fulfillment } from '../lib/types'
 
 // ── EL PEDIDO ENTRÓ ────────────────────────────────────────────────────────
@@ -26,9 +26,22 @@ import type { Business, Fulfillment } from '../lib/types'
 // el texto cambia — decirle «lo estamos preparando» a quien todavía no ha
 // transferido es mandarlo a esperar sentado.
 //
-// Es ESTÁTICA a propósito, que fue la otra crítica de entonces: no consulta
-// nada porque no promete nada que pueda cambiar. Todo lo que sí cambia vive en
-// el seguimiento, a un toque de aquí.
+// ── El comprobante se manda por WhatsApp (2026-08-12) ─────────────────────
+//
+// Esta pantalla tenía un botón para subirlo aquí y el chat como segunda vía.
+// Dos caminos para lo mismo, y el que casi nadie usaba era el de la app: la
+// gente transfiere desde su banco y la captura le queda en el teléfono, junto
+// a la conversación donde le llegó el enlace. Ahora hay UNO: los datos para
+// transferir, y de ahí de vuelta a WhatsApp.
+//
+// Lo que sostiene la decisión es que la foto del chat YA se adjunta sola al
+// pedido (`services/payment-proof-inbox.ts`), así que el cliente no hace nada
+// distinto y el dueño ve exactamente lo mismo en su panel.
+//
+// Es ESTÁTICA a propósito, que fue la otra crítica de cuando se retiró: no
+// consulta nada porque no promete nada que pueda cambiar. Lo que cambia —el
+// estado del pedido— llega por los tres avisos de WhatsApp, que es donde el
+// cliente ya está mirando.
 
 export interface PedidoRecibido {
   id: string
@@ -41,7 +54,7 @@ export interface PedidoRecibido {
 }
 
 export default function OrderPlaced({
-  slug, business, pedido, nombre, entrega, transferencia, volviendo, onSeguir, onVolver,
+  slug, business, pedido, nombre, entrega, transferencia, volviendo, onVolver,
 }: {
   slug: string
   business: Business
@@ -58,7 +71,6 @@ export default function OrderPlaced({
    * hecho, y es justo lo contrario — falta lo único que hace falta.
    */
   volviendo?: boolean
-  onSeguir: () => void
   onVolver: () => void
 }) {
   const numero = pedido.order_number ? `#${pedido.order_number}` : null
@@ -69,12 +81,14 @@ export default function OrderPlaced({
   )
   const total = Number(pedido.total) || pedido.subtotal + pedido.envio
 
-  const telefono = String(business.phone || '').replace(/\D/g, '')
-  const whatsapp = telefono
-    ? `https://wa.me/${telefono}?text=${encodeURIComponent(
-        `Hola, quiero consultar por mi pedido ${numero || ''}`.trim(),
-      )}`
-    : null
+  // ⚠️ Con transferencia el enlace lleva escrito el texto del comprobante: el
+  // cliente vuelve al chat con la frase puesta y solo tiene que adjuntar la
+  // foto. Sin transferencia se abre la conversación limpia — no hay nada que
+  // pedirle, y un mensaje prellenado que no viene a cuento se borra.
+  const whatsapp = enlaceWhatsApp(
+    business.phone,
+    transferencia ? textoComprobante(pedido.order_number) : null,
+  )
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 py-10">
@@ -91,9 +105,9 @@ export default function OrderPlaced({
             ? 'Falta tu comprobante'
             : nombre ? `¡Gracias, ${nombre.split(' ')[0]}!` : '¡Gracias!'}
         </h1>
-        <p className="mt-2 text-[14px] texto-tenue">
+        <p className="mt-2 text-[14.5px] leading-snug texto-tenue">
           {volviendo
-            ? 'Tu pedido está guardado. En cuanto subas el comprobante, el local lo prepara.'
+            ? 'Tu pedido está guardado. En cuanto recibamos tu comprobante, el local lo prepara.'
             : transferencia
               ? 'Recibimos tu pedido. Falta tu comprobante para que el local lo prepare.'
               : 'Tu pedido fue recibido correctamente.'}
@@ -122,7 +136,7 @@ export default function OrderPlaced({
             devolvió el total oficial, y ese es el que manda arriba del todo. */}
         {pedido.lineas.length > 0 && (
           <section className="mt-7 w-full text-left">
-            <h2 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
+            <h2 className="mb-2.5 text-[17px] font-extrabold tracking-tight">
               Resumen del pedido
             </h2>
             <div className="space-y-2">
@@ -150,45 +164,62 @@ export default function OrderPlaced({
             </div>
           </section>
         )}
-        {/* ⚠️ Los datos para transferir van AQUÍ y no en el seguimiento. El
-            seguimiento cuenta por dónde va el pedido; mezclarle un formulario
-            de pago lo convertía en un cajón donde la línea de tiempo —lo único
-            que el cliente vuelve a mirar— quedaba enterrada al final. */}
+        {/* Los datos para transferir. Sin subidor desde el 2026-08-12: aquí
+            solo se lee el número de cuenta, y el comprobante se manda por el
+            chat, que es donde el cliente tiene la captura. */}
         {transferencia && (
           <div className="mt-8 w-full">
-            <PagoPendiente
-              slug={slug}
-              orderId={pedido.id}
-              orderNumber={pedido.order_number}
-              telefonoNegocio={business.phone}
-              onSubido={onSeguir}
-            />
+            <PagoPendiente slug={slug} />
           </div>
         )}
+
+        {/* ⚠️ EL TEXTO GRANDE, y el tamaño es la decisión. Esto no es una nota
+            al pie: con transferencia es la instrucción que desbloquea el
+            pedido, y en efectivo es la promesa de que nadie tiene que volver a
+            abrir esta app para enterarse de nada. Puesto en letra pequeña bajo
+            un botón, se lee cuando ya no hace falta. */}
+        <div className="superficie mt-6 w-full rounded-2xl border borde-tema px-4 py-4 text-left">
+          <div className="flex items-start gap-3">
+            <span className="acento flex size-9 shrink-0 items-center justify-center rounded-full">
+              <MessageCircle size={18} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[16px] leading-snug font-bold tracking-tight">
+                {transferencia
+                  ? 'Mándanos el comprobante por WhatsApp'
+                  : 'Te mantenemos al tanto por WhatsApp'}
+              </p>
+              <p className="mt-1 text-[14px] leading-snug texto-tenue">
+                {transferencia
+                  ? 'Envía la captura de tu transferencia al chat del local. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.'
+                  : entrega === 'delivery'
+                    ? 'Te escribimos cuando el local empiece a prepararlo, cuando salga para tu dirección y cuando llegue.'
+                    : 'Te escribimos cuando el local empiece a prepararlo y cuando esté listo para que pases a retirarlo.'}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mt-8 space-y-2.5">
-        {/* ⚠️ Con transferencia NO hay botón de seguimiento, y es deliberado:
-            mientras el pago no esté resuelto, lo único que hay que hacer es
-            subir el comprobante. Un botón que lleva a mirar la línea de tiempo
-            invita a saltarse el paso que bloquea el pedido. Se sale de aquí
-            cuando el comprobante entra —o cuando el dueño da el pago por
-            bueno—, y para consultar el estado antes está la pestaña Cuenta. */}
-        {!transferencia && <Boton onClick={onSeguir}>Seguir mi pedido</Boton>}
+        {/* ⚠️ La salida principal es el chat, no una pantalla de esta app. El
+            cliente llegó aquí desde WhatsApp y ahí es donde va a recibir los
+            avisos; devolverlo es terminar el viaje donde empezó. Va en TINTA
+            como todo botón principal: el acento señala, no acciona. */}
         {whatsapp && (
           <a
             href={whatsapp}
             target="_blank"
             rel="noreferrer"
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border borde-tema px-4 py-3.5 text-[15px] font-bold transition active:scale-[0.98]"
+            className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight transition active:opacity-90"
           >
             <MessageCircle size={18} />
-            Contactar por WhatsApp
+            Volver a WhatsApp
           </a>
         )}
         <button
           onClick={onVolver}
-          className="w-full py-2 text-[13.5px] font-semibold texto-tenue transition active:scale-[0.98]"
+          className="w-full py-2.5 text-[14px] font-semibold texto-tenue transition active:scale-[0.98]"
         >
           Volver al menú
         </button>
