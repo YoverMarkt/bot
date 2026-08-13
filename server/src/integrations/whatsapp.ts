@@ -30,6 +30,13 @@ interface YCloudClient {
     listButtonText?: string,
     direct?: boolean,
   ): Promise<boolean>
+  sendCtaUrl(
+    apiKey: string,
+    from: string,
+    to: string,
+    message: { body: string; url: string; label: string; footer?: string | null },
+    direct?: boolean,
+  ): Promise<boolean>
   sendImage(
     apiKey: string,
     from: string,
@@ -297,4 +304,37 @@ async function sendInteractive(
   }
 }
 
-export { sendTyping, sendText, sendImage, sendVideo, sendInteractive }
+// El enlace de la tienda como BOTÓN nativo. Solo YCloud lo soporta hoy; con
+// cualquier otro proveedor devuelve false y quien llama manda el enlace como
+// texto, que es exactamente lo que se hacía antes de esto.
+//
+// ⚠️ Nunca lanza, y esa es su función. El enlace es lo único que le permite
+// pedir a un cliente en modo mini app: si el botón falla —porque la cuenta no
+// admite interactivos, porque YCloud cambia algo, porque hay un 400 raro— lo
+// que NO puede pasar es que el cliente se quede sin enlace. Un `false` manda
+// a quien llama al camino de siempre.
+async function sendLinkButton(
+  business: WhatsAppBusiness,
+  to: string,
+  message: { body: string; url: string; label: string; footer?: string | null },
+  deliveryMode: DeliveryMode = 'queued',
+): Promise<boolean> {
+  if (providerFor(business) !== 'ycloud') return false
+  try {
+    const sent = await ycloud.sendCtaUrl(
+      ycloudKeyFor(business),
+      ycloudNumberFor(business),
+      to,
+      message,
+      deliveryMode === 'direct',
+    )
+    if (sent) await recordAcceptedMessage(business, 'ycloud', to, 'interactive')
+    return sent
+  } catch (error) {
+    console.error('❌ [ycloud] sendLinkButton:', errorDetail(error))
+    recordSendFailure(business, 'ycloud', 'sendLinkButton', error)
+    return false
+  }
+}
+
+export { sendTyping, sendText, sendImage, sendVideo, sendInteractive, sendLinkButton }

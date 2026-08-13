@@ -599,6 +599,24 @@ entera: «Heladería» daba `heladera` y «Cafetería Ñandú» daba `cafetera-a
 circulan.** Los `/s/<token>` que manda el bot NO se rompen: resuelven por token
 y redirigen al slug actual.
 
+**Y desde el 2026-08-12 el enlace llega como BOTÓN, no como URL pegada en el
+chat** (`interactive.type: 'cta_url'`). Es la misma razón por la que la URL se
+acortó: tres líneas de texto azul se leen como spam y la gente no las toca. El
+botón dice «Ver la carta» —o «Ver habitaciones» en un hotel— bajo una línea de
+texto y el pie de siempre.
+
+⚠️ **La etiqueta se mide en BYTES, no en caracteres.** El tope de WhatsApp son
+20, y «🛍️ Ver la carta» son 15 caracteres pero 23 bytes: se rechazaría en el
+canal, que es el peor sitio donde enterarse. Por eso la etiqueta va sin emoji y
+el adorno se queda en el cuerpo, que admite 1024.
+
+⚠️ **El texto plano sigue existiendo y no es un plan B triste**: es lo que sale
+por Telegram, por Meta directo, en el simulador y cuando YCloud rechaza el
+botón. En modo mini app el enlace es lo ÚNICO que permite pedir, así que
+`sendLinkButton` devuelve `false` en vez de lanzar y el enlace sale igual. En
+el historial se guarda siempre el texto, con la URL a la vista: el dueño mira
+su panel para saber qué recibió su cliente, y «botón» no dice a dónde apuntaba.
+
 ---
 
 ## El número de pedido

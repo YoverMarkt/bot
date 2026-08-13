@@ -55,6 +55,14 @@ interface EntryWhatsApp {
     listButtonText?: string,
     deliveryMode?: 'queued' | 'direct',
   ): Promise<boolean>
+  // El enlace de la tienda como botón nativo. false = el canal no puede, y
+  // quien llama manda el enlace como texto.
+  sendLinkButton(
+    business: EntryBusiness,
+    to: string,
+    message: { body: string; url: string; label: string; footer?: string | null },
+    deliveryMode?: 'queued' | 'direct',
+  ): Promise<boolean>
 }
 
 interface EntryMedia {
@@ -233,6 +241,9 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       options: { id: string; title: string; description?: string }[],
       deliveryMode?: 'queued' | 'direct',
     ) => Promise<boolean>,
+    sendLink?: (
+      message: { body: string; url: string; label: string; footer?: string | null },
+    ) => Promise<boolean>,
   ): Promise<void> {
     return conversation.processMessage({
       business,
@@ -243,6 +254,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       sendTyping,
       sendVideo,
       sendOptions,
+      sendLink,
     })
   }
 
@@ -324,6 +336,9 @@ function createBotEntry(dependencies: BotEntryDependencies) {
             deliveryMode,
           )
         : whatsapp.sendInteractive(business, from, body, menuOptions),
+      // El enlace de la tienda va como botón nativo. Solo aquí: es el camino
+      // del mensaje de texto entrante, que es el único que lo manda.
+      message => whatsapp.sendLinkButton(business, from, message),
     )
   }
 
@@ -492,6 +507,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       () => whatsapp.sendTyping(business, options.inboundId),
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
       (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
+      message => whatsapp.sendLinkButton(business, from, message),
     )
   }
 

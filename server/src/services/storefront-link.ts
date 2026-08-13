@@ -84,8 +84,50 @@ export function buildStorefrontUrl(input: {
  * El texto que acompaña al enlace. Dice lo que el cliente necesita saber sin
  * prometer nada: que es suyo, y que caduca.
  */
+/** ¿Este negocio vende noches o vende productos? Decide cómo se invita. */
+const esAlojamiento = (business: LinkBusiness): boolean => (
+  business.lodging_enabled === true && business.takes_orders !== true
+)
+
+/** La coletilla, en los dos formatos. Dice que el enlace es SUYO. */
+const PIE_DEL_ENLACE = 'Tu enlace personal · guárdalo, no vence'
+
+/**
+ * El enlace como BOTÓN nativo de WhatsApp (`cta_url`), que es como se manda
+ * desde el 2026-08-12.
+ *
+ * Una URL cruda en el chat ocupa tres líneas, se parte en pantallas estrechas
+ * y se lee como publicidad: el propio texto de abajo pedía disculpas por ello
+ * («un bloque de texto con un enlace dentro se lee como publicidad»). El botón
+ * dice lo mismo con una línea y un toque.
+ *
+ * ⚠️ La etiqueta va SIN EMOJI y corta: WhatsApp la limita a 20 BYTES, y un
+ * emoji gasta cuatro. El adorno se queda en el cuerpo, que admite 1024.
+ *
+ * ⚠️ El texto plano (`storefrontInvite`) NO se retira: es el respaldo cuando
+ * el canal no admite botones —Telegram, Meta directo— o cuando YCloud rechaza
+ * el envío, y es además lo que se guarda en el historial para que el dueño vea
+ * en su panel qué enlace se mandó.
+ */
+export function storefrontInviteButton(business: LinkBusiness, url: string): {
+  body: string
+  url: string
+  label: string
+  footer: string
+} {
+  const alojamiento = esAlojamiento(business)
+  return {
+    body: alojamiento
+      ? '🛏️ Mira las habitaciones y reserva desde aquí 👇'
+      : '🛍️ Mira la carta y pide desde aquí 👇',
+    url,
+    label: alojamiento ? 'Ver habitaciones' : 'Ver la carta',
+    footer: PIE_DEL_ENLACE,
+  }
+}
+
 export function storefrontInvite(business: LinkBusiness, url: string): string {
-  const compra = business.lodging_enabled === true && business.takes_orders !== true
+  const compra = esAlojamiento(business)
     ? '🛏️ Mira las habitaciones y reserva aquí:'
     : '🛍️ Mira la carta y pide aquí:'
   // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
@@ -93,7 +135,7 @@ export function storefrontInvite(business: LinkBusiness, url: string): string {
   // Ya no se anuncia caducidad porque no la hay. Sí se avisa de que es
   // personal: es lo que evita que el cliente lo reenvíe pensando que hace un
   // favor y acabe mandando a su amigo a una pantalla de "pide el tuyo".
-  return `${compra}\n${url}\n_Tu enlace personal · guárdalo, no vence_`
+  return `${compra}\n${url}\n_${PIE_DEL_ENLACE}_`
 }
 
 export function createStorefrontLinkService(dependencies: {
