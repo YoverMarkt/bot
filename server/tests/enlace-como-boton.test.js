@@ -112,7 +112,7 @@ const negocioMiniapp = {
 }
 const URL_DEL_ENLACE = 'https://ejemplo.com/s/tok123'
 
-function montar() {
+function montar(yaSeLeMando = false) {
   const guardados = []
   const database = {
     getSession: async () => ({ manual_mode: false, contact_name: 'Ana' }),
@@ -127,15 +127,17 @@ function montar() {
     getProducts: async () => [],
     recordConsultations: async () => ({}),
     resolveCustomer: async () => ({ id: 'cust-1' }),
-    claimStorefrontLinkSend: async () => true,
+    claimStorefrontLinkSend: async () => !yaSeLeMando,
   }
   const conversation = createBotConversation({
     database,
     ai: { callAI: async () => 'x', embedText: async () => [] },
     storefrontLink: {
       issueLink: async () => URL_DEL_ENLACE,
-      storefrontInvite: (negocio, url) => storefrontInvite(negocio, url),
-      storefrontInviteButton: (negocio, url) => storefrontInviteButton(negocio, url),
+      // ⚠️ Se pasan TODOS los argumentos, no los dos primeros: un doble que
+      // se come el tercero (`repetido`) prueba el doble, no el bot. Pasó.
+      storefrontInvite: (...args) => storefrontInvite(...args),
+      storefrontInviteButton: (...args) => storefrontInviteButton(...args),
     },
     reports: { handleOwnerMessage: async () => ({ handled: false, reply: '' }) },
     schedule: { isOutsideHours: () => false, buildScheduleMessage: () => '' },
@@ -161,8 +163,8 @@ function montar() {
   return { conversation, guardados }
 }
 
-const procesar = async (sendLink) => {
-  const montaje = montar()
+const procesar = async (sendLink, yaSeLeMando = false) => {
+  const montaje = montar(yaSeLeMando)
   const enviados = []
   await montaje.conversation.processMessage({
     business: negocioMiniapp,
@@ -207,6 +209,21 @@ describe('el enlace sale por el mejor formato del canal, pero SALE', () => {
     const { enviados, guardados } = await procesar(sendLink)
     expect(enviados.join('\n')).toContain(URL_DEL_ENLACE)
     expect(guardados.some(m => m.content.includes(URL_DEL_ENLACE))).toBe(true)
+  })
+
+  // ⚠️ El caso que motivó todo esto: el cliente borró el chat y vuelve a
+  // escribir el mismo día. Antes recibía «usa el enlace que te envié» y se
+  // quedaba sin poder pedir.
+  it('quien ya recibió el enlace hoy lo recibe otra vez, en el botón', async () => {
+    const sendLink = vi.fn(async () => true)
+    await procesar(sendLink, true)
+
+    expect(sendLink).toHaveBeenCalledTimes(1)
+    const mensaje = sendLink.mock.calls[0][0]
+    expect(mensaje.url).toBe(URL_DEL_ENLACE)
+    expect(mensaje.body).toContain('otra vez')
+    // La etiqueta no cambia: sigue siendo el mismo sitio al que va.
+    expect(mensaje.label).toBe('Ver la carta')
   })
 
   it('sin canal con botones (Telegram, simulador) todo sigue como antes', async () => {

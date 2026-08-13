@@ -3,6 +3,9 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const { createBotConversation, MINIAPP_RECORDATORIO } = require('../dist/services/bot-conversation')
+// El redactado va con la función REAL, no con un doble: si el doble ignora un
+// parámetro —como pasó con `repetido`— la prueba comprueba el doble, no el bot.
+const enlace = require('../dist/services/storefront-link')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MODO MINI APP: WHATSAPP NO ATIENDE, SOLO ABRE LA PUERTA
@@ -51,7 +54,8 @@ function montar(overrides = {}) {
   }
   const storefrontLink = {
     issueLink: vi.fn(async () => 'https://ejemplo.com/s/tok'),
-    storefrontInvite: (_b, url) => `🛍️ Mira la carta y pide aquí:\n${url}`,
+    storefrontInvite: enlace.storefrontInvite,
+    storefrontInviteButton: enlace.storefrontInviteButton,
     ...overrides.storefrontLink,
   }
   const conversation = createBotConversation({
@@ -104,13 +108,27 @@ describe('modo mini app: ni un token de OpenAI', () => {
     expect(m.database.claimStorefrontLinkSend).toHaveBeenCalledWith('biz-1', 'cust-1')
   })
 
-  it('CASO 2 — dentro de 24 h solo recuerda, sin enlace nuevo ni IA', async () => {
+  // ⚠️ CAMBIADO EL 2026-08-12, y el caso anterior era este mismo al revés:
+  // dentro de las 24 h se respondía «usa el enlace que te envié» SIN enlace.
+  // Quien había borrado el chat se quedaba sin poder pedir, y no es teórico —
+  // en la conversación real de Monster Pizza hay un cliente pegando la URL de
+  // la tienda en el chat dos veces para intentar entrar.
+  //
+  // El freno no ahorraba nada donde duele: se contesta un mensaje igual en los
+  // dos casos. Lo que ahorraba era una fila de sesión, con nueve en la tabla.
+  it('CASO 2 — dentro de 24 h TAMBIÉN manda el enlace, dicho como reenvío', async () => {
     const m = montar({ database: { claimStorefrontLinkSend: vi.fn(async () => false) } })
     const enviados = await procesar(m, '¿cuánto cuesta la familiar?')
 
     expect(m.ai.callAI).not.toHaveBeenCalled()
-    expect(m.storefrontLink.issueLink).not.toHaveBeenCalled()
-    expect(enviados).toEqual([MINIAPP_RECORDATORIO])
+    // Lo que NO puede pasar nunca más: quedarse sin enlace por haber escrito
+    // dos veces el mismo día.
+    expect(enviados).toHaveLength(1)
+    expect(enviados[0]).toContain('https://ejemplo.com/s/tok')
+    // Y se nombra que es otra vez, para que no parezca un bot que se repite
+    // sin enterarse.
+    expect(enviados[0]).toContain('otra vez')
+    expect(m.storefrontLink.issueLink).toHaveBeenCalledTimes(1)
   })
 
   it('CASO 3 — pasadas 24 h vuelve a mandarlo, tampoco con IA', async () => {
@@ -135,7 +153,12 @@ describe('modo mini app: ni un token de OpenAI', () => {
       const m = montar({ database: { claimStorefrontLinkSend: vi.fn(async () => false) } })
       const enviados = await procesar(m, pregunta)
       expect(m.ai.callAI, `"${pregunta}" no debe llegar al modelo`).not.toHaveBeenCalled()
-      expect(enviados).toEqual([MINIAPP_RECORDATORIO])
+      // No se le CONTESTA la pregunta: se le da la app, que es donde este
+      // negocio decidió atender. Lo que se comprueba es que no hay modelo de
+      // por medio, no el texto exacto.
+      expect(enviados).toHaveLength(1)
+      expect(enviados[0]).toContain('https://ejemplo.com/s/tok')
+      expect(enviados[0]).not.toContain('$')
     }
   })
 
