@@ -109,27 +109,49 @@ const PIE_DEL_ENLACE = 'Tu enlace personal · guárdalo, no vence'
  * el envío, y es además lo que se guarda en el historial para que el dueño vea
  * en su panel qué enlace se mandó.
  */
-export function storefrontInviteButton(business: LinkBusiness, url: string): {
+export function storefrontInviteButton(
+  business: LinkBusiness,
+  url: string,
+  /**
+   * `true` cuando a este cliente ya se le mandó el enlace hace poco.
+   *
+   * ⚠️ Cambia el TEXTO, nunca el hecho de mandarlo. Hasta el 2026-08-12 este
+   * caso no recibía enlace: se le contestaba «usa el enlace que te envié», y
+   * quien había borrado el chat se quedaba sin poder pedir — pasó en
+   * producción, con un cliente pegando la URL de la tienda en el chat dos
+   * veces para intentar entrar. Ver `runMiniappMode`.
+   */
+  repetido = false,
+): {
   body: string
   url: string
   label: string
   footer: string
 } {
   const alojamiento = esAlojamiento(business)
+  const primeraVez = alojamiento
+    ? '🛏️ Mira las habitaciones y reserva desde aquí 👇'
+    : '🛍️ Mira la carta y pide desde aquí 👇'
   return {
-    body: alojamiento
-      ? '🛏️ Mira las habitaciones y reserva desde aquí 👇'
-      : '🛍️ Mira la carta y pide desde aquí 👇',
+    // Se nombra que es «otra vez» para que no parezca que el bot se repite sin
+    // enterarse: reconocerlo es lo que lo hace sonar atento en vez de roto.
+    body: repetido ? '🛍️ Aquí tienes tu enlace otra vez 👇' : primeraVez,
     url,
     label: alojamiento ? 'Ver habitaciones' : 'Ver la carta',
     footer: PIE_DEL_ENLACE,
   }
 }
 
-export function storefrontInvite(business: LinkBusiness, url: string): string {
-  const compra = esAlojamiento(business)
+export function storefrontInvite(
+  business: LinkBusiness,
+  url: string,
+  /** Igual que en el botón: cambia el texto, no el hecho de mandarlo. */
+  repetido = false,
+): string {
+  const primeraVez = esAlojamiento(business)
     ? '🛏️ Mira las habitaciones y reserva aquí:'
     : '🛍️ Mira la carta y pide aquí:'
+  const compra = repetido ? '🛍️ Aquí tienes tu enlace otra vez:' : primeraVez
   // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
   // dentro se lee como publicidad y el cliente lo pasa de largo.
   // Ya no se anuncia caducidad porque no la hay. Sí se avisa de que es

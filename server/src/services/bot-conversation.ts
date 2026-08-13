@@ -206,11 +206,13 @@ interface ConversationStorefrontLink {
   storefrontInvite(
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
+    repetido?: boolean,
   ): string
   /** El mismo enlace, listo para ir como botón nativo del canal. */
   storefrontInviteButton(
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
+    repetido?: boolean,
   ): { body: string; url: string; label: string; footer: string }
 }
 
@@ -362,7 +364,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
    * poco). Nunca lanza: quedarse sin enlace no puede tumbar la conversación —
    * el cliente sigue siendo atendido por chat como toda la vida.
    */
-  async function storefrontInviteFor(
+  async function storefrontUrlFor(
     business: ConversationBusiness,
     phone: string,
     name?: string | null,
@@ -370,13 +372,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         cooldown en memoria de `issueLink` no debe volver a filtrar y dejar al
         cliente sin enlace. */
     force = false,
-  ): Promise<{ texto: string; url: string } | null> {
+  ): Promise<string | null> {
     if (!storefrontLink) return null
     try {
       const url = await storefrontLink.issueLink({ business, phone, name, force })
       if (!url) return null
       logger.log(`🛍️ [${business.name}] enlace de tienda enviado a ${phone}`)
-      return { texto: storefrontLink.storefrontInvite(business, url), url }
+      return url
     } catch {
       return null
     }
@@ -402,18 +404,28 @@ function createBotConversation(dependencies: BotConversationDependencies) {
    */
   async function enviarInvitacion(input: {
     business: ConversationBusiness
-    invitacion: { texto: string; url: string }
+    url: string
     send: (message: string) => Promise<unknown>
     sendLink?: ProcessMessageInput['sendLink']
-  }): Promise<void> {
-    const { business, invitacion, send, sendLink } = input
+    /** Ya se le mandó hace poco: cambia el texto, nunca el envío. */
+    repetido?: boolean
+  }): Promise<string> {
+    const { business, url, send, sendLink, repetido = false } = input
+    // El texto se redacta siempre, salga o no por él: es lo que se guarda en
+    // el historial para que el dueño vea a dónde apuntaba lo que se mandó.
+    const texto = storefrontLink
+      ? storefrontLink.storefrontInvite(business, url, repetido)
+      : url
     if (sendLink && storefrontLink) {
       try {
-        const enviado = await sendLink(storefrontLink.storefrontInviteButton(business, invitacion.url))
-        if (enviado) return
+        const enviado = await sendLink(
+          storefrontLink.storefrontInviteButton(business, url, repetido),
+        )
+        if (enviado) return texto
       } catch { /* el canal no pudo con el botón: sale el texto */ }
     }
-    await send(invitacion.texto)
+    await send(texto)
+    return texto
   }
 
   /**
@@ -469,9 +481,21 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       toca = true
     }
 
-    const invite = toca
-      ? await storefrontInviteFor(business, phone, session?.contact_name, true)
-      : ''
+    // ⚠️ EL ENLACE SALE SIEMPRE, y el reclamo solo decide cómo se dice.
+    //
+    // Hasta el 2026-08-12 este `toca` decidía si había enlace: dentro de las 24
+    // h se respondía «usa el enlace que te envié», y quien había borrado el
+    // chat —o cambiado de teléfono, o archivado la conversación— se quedaba sin
+    // forma de pedir. No es teórico: en la conversación real de Monster Pizza
+    // hay un cliente pegando la URL de la tienda en el chat dos veces
+    // intentando entrar, y las dos veces recibió ese muro.
+    //
+    // El freno no ahorraba nada donde duele: se contesta un mensaje igual en
+    // los dos casos, así que el coste en WhatsApp es el mismo. Lo único que
+    // ahorraba era una fila de sesión, en una tabla que llevaba NUEVE. Ahora
+    // solo cambia el texto: «Mira la carta» la primera vez, «Aquí tienes tu
+    // enlace otra vez» después.
+    const url = await storefrontUrlFor(business, phone, session?.contact_name, true)
 
     // ⚠️ Si la foto era el comprobante de un pedido que espera pago, ya quedó
     // adjunta (`services/payment-proof-inbox.ts`) y lo que toca decir es otra
@@ -493,15 +517,19 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // mismo texto que se envió: el dueño abre su panel para saber qué recibió
     // su cliente, y un mensaje que salió sin quedar escrito es un hueco en esa
     // conversación.
-    if (invite) {
-      await enviarInvitacion({ business, invitacion: invite, send, sendLink: input.sendLink })
-      await database.saveMessage(business.id, phone, 'assistant', invite.texto)
+    if (url) {
+      const texto = await enviarInvitacion({
+        business, url, send, sendLink: input.sendLink, repetido: !toca,
+      })
+      await database.saveMessage(business.id, phone, 'assistant', texto)
     } else {
       await send(MINIAPP_RECORDATORIO)
       await database.saveMessage(business.id, phone, 'assistant', MINIAPP_RECORDATORIO)
     }
     logger.log(
-      `🛍️ [${business.name}] modo mini app — ${toca ? 'enlace enviado' : 'recordatorio'} a ${phone} (sin IA)`,
+      `🛍️ [${business.name}] modo mini app — ${
+        url ? (toca ? 'enlace enviado' : 'enlace reenviado') : 'sin tienda, recordatorio'
+      } a ${phone} (sin IA)`,
     )
   }
 
@@ -1170,10 +1198,12 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // leería como publicidad antes de siquiera responderle a la persona. Y
     // solo ante un saludo, porque quien ya pregunta algo concreto no lo quiere.
     if (business.chat_mode === 'miniapp' && wantsWelcomeMenu(text)) {
-      const invite = await storefrontInviteFor(business, phone, session?.contact_name)
-      if (invite) {
-        await enviarInvitacion({ business, invitacion: invite, send, sendLink: input.sendLink })
-        await database.saveMessage(business.id, phone, 'assistant', invite.texto)
+      const url = await storefrontUrlFor(business, phone, session?.contact_name)
+      if (url) {
+        const texto = await enviarInvitacion({
+          business, url, send, sendLink: input.sendLink,
+        })
+        await database.saveMessage(business.id, phone, 'assistant', texto)
       }
     }
 
