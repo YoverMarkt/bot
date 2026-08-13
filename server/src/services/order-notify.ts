@@ -64,6 +64,18 @@ export const HITOS_QUE_SE_AVISAN = [
   'en_camino',
   'listo_para_retiro',
   'completado',
+  // ⚠️ Los dos finales que dejan al cliente esperando algo que NO va a llegar,
+  // añadidos el 2026-08-13 por decisión del dueño. En los otros cuatro el
+  // cliente espera algo que viene; aquí espera de balde hasta que se cansa —
+  // y ese es el que no vuelve a pedir.
+  //
+  // No multiplican el gasto como los demás: un pedido cancelado no recibe
+  // ninguno de los otros, así que es UN mensaje en vez de tres. Y no puede
+  // dispararse solo: `cancelado` y `rechazado` únicamente se escriben desde
+  // `PUT /api/client/orders/:id/status`, que exige sesión de cliente y permiso
+  // de ventas. No hay tarea que expire pedidos por su cuenta.
+  'cancelado',
+  'rechazado',
 ] as const
 
 export type HitoAvisado = typeof HITOS_QUE_SE_AVISAN[number]
@@ -138,7 +150,9 @@ const lineasDelPedido = (pedido: PedidoParaAvisar): string[] => {
  * vacío: así quien llama no manda un WhatsApp en blanco.
  */
 export const textoDelAviso = (
-  negocio: Pick<BusinessRecord, 'name'>,
+  // El teléfono hace falta para el aviso de cancelación: ahí lo único útil que
+  // se le puede ofrecer al cliente es a quién llamar.
+  negocio: Pick<BusinessRecord, 'name' | 'phone'>,
   pedido: PedidoParaAvisar,
   status: string,
 ): string | null => {
@@ -177,6 +191,25 @@ export const textoDelAviso = (
     lineas.push(`🛍️ *Tu pedido${numero} está listo*`)
     lineas.push('')
     lineas.push(`Ya puedes pasar a retirarlo por ${negocio.name}.`)
+    return lineas.join('\n')
+  }
+
+  // ⚠️ Cancelado y rechazado se cuentan IGUAL al cliente, y es deliberado.
+  // Para él son la misma noticia —su pedido no va a llegar— y la diferencia
+  // entre «lo cancelé» y «no lo acepté» es de gestión interna. Contársela solo
+  // le haría preguntarse qué hizo mal.
+  if (status === 'cancelado' || status === 'rechazado') {
+    lineas.push(`❌ *Tu pedido${numero} fue cancelado*`)
+    lineas.push('')
+    lineas.push(`${negocio.name} no pudo continuar con este pedido.`)
+    // No se inventa un motivo: no hay ningún campo donde el dueño lo escriba,
+    // y un motivo falso es peor que ninguno. Lo que sí se puede dar es a quién
+    // preguntarle, que es exactamente lo que el cliente quiere en ese momento.
+    const telefono = String(negocio.phone || '').trim()
+    lineas.push('')
+    lineas.push(telefono
+      ? `Si quieres saber qué pasó o volver a pedir, llámalos al ${telefono}.`
+      : 'Si quieres saber qué pasó o volver a pedir, escríbeles por aquí.')
     return lineas.join('\n')
   }
 

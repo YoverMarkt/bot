@@ -51,9 +51,14 @@ describe('qué estados se avisan', () => {
   // Esta lista decide CUÁNTO cuesta cada pedido en mensajes. Añadir un hito
   // multiplica el gasto de todos los negocios del SaaS, así que el número
   // está aquí escrito a propósito: que cambiarlo obligue a tocar la prueba.
-  it('son cuatro, y ni uno más sin decidirlo', () => {
+  // Eran cuatro; son SEIS desde el 2026-08-13, cuando el dueño decidió avisar
+  // también los dos finales que dejan al cliente esperando de balde. Este test
+  // no impide que la lista crezca: impide que crezca sin que alguien lo decida
+  // y lo escriba, porque cada hito es dinero en todos los negocios del SaaS.
+  it('son seis, y ni uno más sin decidirlo', () => {
     expect([...HITOS_QUE_SE_AVISAN]).toEqual([
       'preparacion', 'en_camino', 'listo_para_retiro', 'completado',
+      'cancelado', 'rechazado',
     ])
   })
 
@@ -63,11 +68,63 @@ describe('qué estados se avisan', () => {
   it('los estados intermedios no gastan un mensaje', () => {
     for (const status of [
       'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado',
-      'aceptado', 'cancelado', 'rechazado', 'expirado',
+      'aceptado', 'expirado',
     ]) {
       expect(seAvisa(status), `${status} no debería avisarse`).toBe(false)
       expect(textoDelAviso(NEGOCIO, PEDIDO, status)).toBeNull()
     }
+  })
+
+  // ⚠️ `expirado` se queda FUERA a propósito aunque sea final como los otros
+  // dos: hoy no lo escribe nadie —no hay tarea que expire pedidos— así que un
+  // texto para él sería código muerto. Si algún día existe esa tarea, avisar
+  // pasa a ser una decisión de dinero (podría dispararse sobre cien pedidos de
+  // golpe, sin que nadie toque un botón), y por eso no se adelanta aquí.
+  it('expirado no avisa: hoy nadie lo escribe', () => {
+    expect(seAvisa('expirado')).toBe(false)
+  })
+})
+
+// El cliente esperando algo que no va a llegar es el que no vuelve a pedir.
+describe('el aviso de cancelación', () => {
+  it('cancelado y rechazado dicen lo MISMO', () => {
+    const cancelado = textoDelAviso(NEGOCIO, PEDIDO, 'cancelado')
+    const rechazado = textoDelAviso(NEGOCIO, PEDIDO, 'rechazado')
+    // Para el cliente son la misma noticia. La diferencia entre «lo cancelé» y
+    // «no lo acepté» es de gestión interna, y contársela solo le haría
+    // preguntarse qué hizo mal.
+    expect(cancelado).toBe(rechazado)
+    expect(cancelado).toContain('fue cancelado')
+  })
+
+  it('da el teléfono del local, que es lo único útil en ese momento', () => {
+    const texto = textoDelAviso({ ...NEGOCIO, phone: '+593991716574' }, PEDIDO, 'cancelado')
+    expect(texto).toContain('+593991716574')
+    expect(texto).toContain('llámalos')
+  })
+
+  it('sin teléfono cargado no deja la frase coja', () => {
+    const texto = textoDelAviso({ ...NEGOCIO, phone: null }, PEDIDO, 'cancelado')
+    expect(texto).not.toContain('llámalos al')
+    expect(texto).toContain('escríbeles por aquí')
+  })
+
+  // No hay ningún campo donde el dueño escriba el motivo, y uno inventado es
+  // peor que ninguno.
+  it('no inventa un motivo', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'cancelado')
+    expect(texto).not.toMatch(/porque|motivo|falta de|sin stock/i)
+  })
+
+  // El detalle de lo pedido va solo en el aviso de preparación: repetirlo aquí
+  // sería recitarle lo que no va a comer.
+  it('no repite el detalle del pedido', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'cancelado')
+    // Ojo con comprobar el nombre de un producto: el negocio se llama «Monster
+    // Pizza», así que buscar «Pizza» da un falso positivo. Lo que distingue al
+    // detalle son sus viñetas y el total.
+    expect(texto).not.toContain('•')
+    expect(texto).not.toContain('Total:')
   })
 })
 

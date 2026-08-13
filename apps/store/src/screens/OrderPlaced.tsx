@@ -1,5 +1,8 @@
-import { Check, Clock, MessageCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Clock, MessageCircle, Phone, X } from 'lucide-react'
 import PagoPendiente from '../components/PagoPendiente'
+import { getOrder } from '../lib/api'
+import { esEstadoFinal, estaCancelado } from '../lib/estado'
 import { money, rangoDeEspera } from '../lib/format'
 import { grupoEnTexto } from '../lib/resumen'
 import type { LineaResumen } from '../lib/resumen'
@@ -78,6 +81,46 @@ export default function OrderPlaced({
   volviendo?: boolean
   onVolver: () => void
 }) {
+  // ── Lo ÚNICO que esta pantalla consulta ─────────────────────────────────
+  //
+  // Era estática a propósito: no promete nada que pueda cambiar. Pero sí hay
+  // algo que cambia y lo cambia todo — que el dueño cancele. Entonces el
+  // «¡Gracias!» pasa a ser mentira y el cliente espera comida que nadie está
+  // haciendo.
+  //
+  // Pregunta UNA cosa, «¿sigue vivo?», y solo mientras está abierta, que son
+  // un par de minutos. No es la pantalla de seguimiento que se retiró: aquella
+  // preguntaba «¿por dónde va?» durante toda la vida del pedido, cada 10 s.
+  //
+  // ⚠️ No consulta al montar: el pedido se acaba de crear, o lo acaba de traer
+  // la tienda. Sería una petición para saber algo que ya se sabe.
+  const [cancelado, setCancelado] = useState(false)
+  useEffect(() => {
+    if (!pedido.id || cancelado) return
+    let vivo = true
+    const mirar = () => {
+      if (document.visibilityState !== 'visible') return
+      getOrder(slug, pedido.id)
+        .then((actual) => {
+          if (!vivo) return
+          if (estaCancelado(actual.status)) setCancelado(true)
+          // Un pedido que llegó a un final bueno tampoco necesita más
+          // preguntas, pero esta pantalla ya no está delante en ese caso.
+          else if (esEstadoFinal(actual.status)) vivo = false
+        })
+        .catch(() => { /* sin conexión: se vuelve a intentar en 30 s */ })
+    }
+    const cada = window.setInterval(mirar, 30_000)
+    // Y al volver a la app, que es cuando de verdad se nota: el cliente sale a
+    // su banco o a otro chat y vuelve al rato.
+    document.addEventListener('visibilitychange', mirar)
+    return () => {
+      vivo = false
+      window.clearInterval(cada)
+      document.removeEventListener('visibilitychange', mirar)
+    }
+  }, [slug, pedido.id, cancelado])
+
   const numero = pedido.order_number ? `#${pedido.order_number}` : null
   // El MISMO cálculo que la portada: preparación, más el reparto solo si se lo
   // llevan. Quien retira no espera lo que tarda el repartidor.
@@ -94,6 +137,53 @@ export default function OrderPlaced({
     business.phone,
     transferencia ? textoComprobante(pedido.order_number) : null,
   )
+
+  // ── El pedido murió ─────────────────────────────────────────────────────
+  //
+  // Reemplaza la pantalla ENTERA, no se añade encima. El resumen de lo que
+  // pidió y el número de cuenta ya no sirven para nada: lo único que le queda
+  // por hacer es preguntar qué pasó.
+  //
+  // ⚠️ El botón es una LLAMADA (`tel:`), no un chat. Quien acaba de quedarse
+  // sin su comida no quiere escribir y esperar respuesta, y el dueño acaba de
+  // tomar una decisión que quizá tenga que explicar.
+  if (cancelado) {
+    const llamar = String(business.phone || '').replace(/[^\d+]/g, '')
+    return (
+      <div className="animar-entrada mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-10">
+        <div className="flex flex-col items-center text-center">
+          <div className="flex size-16 items-center justify-center rounded-full bg-red-500 text-white">
+            <X size={32} strokeWidth={3} />
+          </div>
+          <h1 className="mt-5 text-[26px] leading-tight font-extrabold tracking-tight">
+            Pedido cancelado
+          </h1>
+          <p className="mt-2 text-[14.5px] leading-snug texto-tenue">
+            {numero ? `Tu pedido ${numero} no pudo continuar. ` : 'Tu pedido no pudo continuar. '}
+            Si quieres saber qué pasó o volver a pedir, llama al local.
+          </p>
+        </div>
+
+        <div className="mt-8 space-y-2.5">
+          {llamar && (
+            <a
+              href={`tel:${llamar}`}
+              className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight transition active:opacity-90"
+            >
+              <Phone size={18} />
+              Llamar al local
+            </a>
+          )}
+          <button
+            onClick={onVolver}
+            className="w-full py-2.5 text-[14px] font-semibold texto-tenue transition active:scale-[0.98]"
+          >
+            Volver al menú
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 py-10">
