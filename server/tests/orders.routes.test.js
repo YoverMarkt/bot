@@ -483,11 +483,14 @@ describe('PUT /api/client/orders/:id/status', () => {
 
   // Cada hito es un mensaje que se paga. Los estados intermedios no le dicen
   // al cliente nada que no sepa: pagar por contárselos sería pagar por ruido.
+  // ⚠️ `cancelado` y `rechazado` SALIERON de esta lista el 2026-08-13: desde
+  // entonces sí avisan, porque dejan al cliente esperando algo que no llega.
+  // Los que quedan son los que no le dicen nada que no sepa.
   it('los estados intermedios no gastan un mensaje', async () => {
     vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
     const reclamar = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
 
-    for (const status of ['confirmado', 'aceptado', 'cancelado', 'rechazado']) {
+    for (const status of ['confirmado', 'aceptado']) {
       vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
         data: { result: 'updated', order: { id: 'order-a', status } },
         error: null,
@@ -496,6 +499,24 @@ describe('PUT /api/client/orders/:id/status', () => {
     }
 
     expect(reclamar).not.toHaveBeenCalled()
+  })
+
+  it('cancelar SÍ avisa: el cliente está esperando algo que no va a llegar', async () => {
+    vi.spyOn(db, 'confirmOrderPayment').mockResolvedValue(null)
+    const reclamar = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+
+    for (const status of ['cancelado', 'rechazado']) {
+      vi.spyOn(db, 'setOrderStatus').mockResolvedValue({
+        data: { result: 'updated', order: { id: 'order-a', status } },
+        error: null,
+      })
+      await dispatchStatus({ authorization: authorization(), status })
+    }
+
+    // Se reclama por HITO, así que los dos pasan por aquí: un pedido no puede
+    // ser cancelado y rechazado a la vez, pero el reclamo es lo que impide que
+    // un doble toque mande —y cobre— dos veces el mismo aviso.
+    expect(reclamar).toHaveBeenCalledTimes(2)
   })
 
   it('si el reclamo lo perdió, no redacta ni envía nada', async () => {

@@ -272,8 +272,17 @@ Las dos objeciones se resuelven sin renunciar a la pantalla:
   correctamente».
 - **Con transferencia el texto cambia**: ese pedido nace en `esperando_pago` y
   lo que le toca al cliente es pagar, no esperar.
-- **Sigue siendo estática, y ahora eso está bien**: no promete nada que pueda
-  cambiar.
+- **Es estática salvo por UNA pregunta** (2026-08-13): mientras está abierta
+  comprueba cada 30 s —y al volver a la app— si el pedido sigue vivo. La
+  premisa de «no promete nada que pueda cambiar» aguanta para todo menos para
+  que el dueño cancele: entonces el «¡Gracias!» es mentira y el cliente espera
+  comida que nadie está haciendo. Al detectarlo, la pantalla se **reemplaza
+  entera** por «Pedido cancelado» con un botón de **llamar** (`tel:`, no un
+  chat: quien se queda sin su comida no quiere escribir y esperar).
+  ⚠️ No es la pantalla de seguimiento por la puerta de atrás: aquella
+  preguntaba «¿por dónde va?» cada 10 s durante toda la vida del pedido; esta
+  pregunta «¿sigue vivo?» durante los dos minutos que está delante, y deja de
+  preguntar en cuanto el estado es final.
 
 **Es la ÚLTIMA pantalla del pedido desde el 2026-08-12**, y por eso su trabajo
 cambió. Antes era una escala hacia el seguimiento; ahora es la despedida, y
@@ -435,6 +444,7 @@ teléfono (`services/order-notify.ts`):
 | `en_camino` | Ya salió para su dirección |
 | `listo_para_retiro` | Ya puede pasar a recogerlo |
 | `completado` | Entregado, **gracias por preferirnos** y Umbani |
+| `cancelado` · `rechazado` | El pedido no continúa, **con el teléfono para llamar** |
 
 **El detalle de lo pedido va SOLO en el primero.** Repetirlo alargaría los tres
 mensajes para decir lo mismo, y su valor está en ese momento: es cuando el
