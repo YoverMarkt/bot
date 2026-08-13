@@ -140,10 +140,26 @@ export const conOpcionesAgrupadasEnLote = (pedidos: unknown): unknown => {
 export const detalleEnTexto = (linea: {
   order_item_options?: readonly OpcionDelPedido[] | null
   extras_names?: readonly string[] | null
+  item_note?: string | null
 }): string[] => {
   const grupos = agruparOpciones(linea?.order_item_options)
-  if (grupos.length) return grupos.map(grupoEnTexto)
+  const elegido = grupos.length
+    ? grupos.map(grupoEnTexto)
+    : (() => {
+        const sueltos = (linea?.extras_names || []).map(texto).filter(Boolean)
+        return sueltos.length ? [sueltos.join(' · ')] : []
+      })()
 
-  const sueltos = (linea?.extras_names || []).map(texto).filter(Boolean)
-  return sueltos.length ? [sueltos.join(' · ')] : []
+  // ⚠️ La NOTA del cliente va también, y va la última.
+  //
+  // Es lo único que escribió él con sus palabras —«sin cebolla», «que venga
+  // bien caliente»— y era lo único que no le volvía. El panel del dueño la
+  // enseña desde el principio; el mensaje de confirmación, no. Y este mensaje
+  // existe justo para que compruebe que le entendieron bien: si su nota no
+  // aparece, no puede saber si llegó.
+  //
+  // Entre comillas y al final para que no se confunda con una opción del
+  // catálogo. No cuesta un centavo: Meta cobra por mensaje, no por carácter.
+  const nota = texto(linea?.item_note)
+  return nota ? [...elegido, `«${nota}»`] : elegido
 }

@@ -10,6 +10,7 @@ import {
   orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
+import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
 import { money, rangoDeEspera } from '../lib/format'
 import { foto } from '../lib/imagen'
 import ProductSheet from '../components/ProductSheet'
@@ -260,10 +261,13 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         total: pedido.total ?? null,
         subtotal: cartTotal(lineas),
         envio: needsAddress(datos.fulfillment) ? (business.deliveryFee || 0) : 0,
-        lineas: lineas.map(linea => ({
-          nombre: `${linea.product.name}${linea.variant ? ` · ${linea.variant.name}` : ''}`,
-          cantidad: linea.quantity,
-          importe: lineTotal(linea),
+        // El detalle sale de `lib/resumen.ts`, el mismo sitio que lo arma
+        // cuando el cliente VUELVE a un pedido guardado: dos caminos, una
+        // sola forma. El importe se pone aquí porque el dinero no se calcula
+        // en ese módulo, ni siquiera para pintar.
+        lineas: resumenDesdeCarrito(lineas).map((resumen, indice) => ({
+          ...resumen,
+          importe: lineTotal(lineas[indice]),
         })),
       }
       setLineas([])
@@ -359,13 +363,10 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           total: pagoPendiente.total,
           subtotal: Number(pagoPendiente.total) || 0,
           envio: 0,
-          // Lo que pidió, tal como lo congeló la base. Aquí ya no hay carrito
-          // del que sacarlo: el cliente cerró la app hace rato.
-          lineas: (pagoPendiente.order_items || []).map(item => ({
-            nombre: `${item.product_name}${item.variant_name ? ` · ${item.variant_name}` : ''}`,
-            cantidad: item.quantity,
-            importe: Number(item.line_total) || 0,
-          })),
+          // Lo que pidió, tal como lo congeló la base —y ya agrupado por el
+          // servidor—. Aquí no hay carrito del que sacarlo: el cliente cerró
+          // la app hace rato.
+          lineas: resumenDesdePedido(pagoPendiente.order_items || []),
         }}
         nombre=""
         entrega={pagoPendiente.fulfillment || entrega}

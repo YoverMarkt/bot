@@ -280,7 +280,15 @@ cambió. Antes era una escala hacia el seguimiento; ahora es la despedida, y
 tiene que dejar dicho todo lo que el cliente necesita saber:
 
 - Check en el color de marca, `¡Gracias, <nombre>!`, número de pedido, tiempo
-  estimado (el mismo cálculo que la portada) y resumen con importes.
+  estimado (el mismo cálculo que la portada) y el resumen.
+- **El resumen dice QUÉ pidió, no solo cuánto** (2026-08-12). Decía «1× Pizza
+  $16.83» justo después de que el cliente eligiera masa, borde y sabor. El dato
+  estaba en las dos fuentes —el carrito recién enviado y el pedido que devuelve
+  el servidor, este último ya agrupado por `services/order-detail.ts`—; la
+  pantalla no lo pintaba. Las dos se normalizan en `lib/resumen.ts`, y no en la
+  pantalla, por el mismo motivo que el agrupado vive en el servidor: cuando
+  cada camino arma su versión, acaban contando cosas distintas del mismo plato.
+  Va también la **nota** que escribió el cliente.
 - **Los datos para transferir** (`components/PagoPendiente.tsx`): banco y
   cuenta con botón de copiar. **Sin subidor** — ver el apartado 4. Si el
   negocio no tiene datos bancarios cargados, el bloque entero desaparece en vez
