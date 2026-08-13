@@ -131,6 +131,28 @@ describe('opcionEnTexto', () => {
 })
 
 describe('detalleEnTexto', () => {
+  // ⚠️ La nota es lo ÚNICO que el cliente escribió con sus palabras, y era lo
+  // único que no le volvía: el panel del dueño la enseña desde el principio,
+  // el mensaje de confirmación no. Y ese mensaje existe justo para que
+  // compruebe que le entendieron bien.
+  it('añade la nota del cliente al final, entre comillas', () => {
+    expect(detalleEnTexto({
+      order_item_options: [{ option_group_name: 'Masa', option_name: 'Fina', quantity: 1 }],
+      item_note: 'sin cebolla, por favor',
+    })).toEqual(['Masa: Fina', '«sin cebolla, por favor»'])
+  })
+
+  it('la nota sale también en un producto sin opciones', () => {
+    expect(detalleEnTexto({ item_note: 'que venga bien caliente' }))
+      .toEqual(['«que venga bien caliente»'])
+  })
+
+  it('una nota vacía o en blanco no deja unas comillas sueltas', () => {
+    for (const vacia of [null, undefined, '', '   ']) {
+      expect(detalleEnTexto({ item_note: vacia })).toEqual([])
+    }
+  })
+
   it('devuelve una línea por grupo', () => {
     expect(detalleEnTexto({ order_item_options: PIZZA_34 })).toEqual([
       'Borde: Sin borde',

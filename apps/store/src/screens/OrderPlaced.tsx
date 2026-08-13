@@ -1,6 +1,8 @@
 import { Check, Clock, MessageCircle } from 'lucide-react'
 import PagoPendiente from '../components/PagoPendiente'
 import { money, rangoDeEspera } from '../lib/format'
+import { grupoEnTexto } from '../lib/resumen'
+import type { LineaResumen } from '../lib/resumen'
 import { enlaceWhatsApp, textoComprobante } from '../lib/whatsapp'
 import type { Business, Fulfillment } from '../lib/types'
 
@@ -47,8 +49,11 @@ export interface PedidoRecibido {
   id: string
   order_number?: number | string | null
   total?: number | string | null
-  /** Lo que se pidió, tal como lo devolvió el servidor o el carrito local. */
-  lineas: { nombre: string; cantidad: number; importe: number }[]
+  /**
+   * Lo que se pidió, ENTERO. Las dos fuentes —el carrito recién enviado y el
+   * pedido que devuelve el servidor— se normalizan en `lib/resumen.ts`.
+   */
+  lineas: LineaResumen[]
   envio: number
   subtotal: number
 }
@@ -140,11 +145,29 @@ export default function OrderPlaced({
               Resumen del pedido
             </h2>
             <div className="space-y-2">
+              {/* ⚠️ Lo elegido va DEBAJO de su producto, no pegado al nombre.
+                  Esta pantalla decía «1× Pizza $16.83» justo después de que el
+                  cliente eligiera masa, borde y sabor: el dato estaba en el
+                  carrito y en el pedido, y no se pintaba.
+
+                  Se corta a dos líneas —y solo aquí—: el cliente acaba de
+                  armarlo y ya sabe lo que pidió. En el panel del dueño va
+                  entero, porque ahí lo lee la cocina. */}
               {pedido.lineas.map((linea, indice) => (
                 <div key={indice} className="flex items-baseline justify-between gap-3 text-[14px]">
                   <span className="min-w-0">
                     <span className="texto-tenue">{linea.cantidad}× </span>
                     {linea.nombre}
+                    {linea.grupos.map(grupo => (
+                      <span key={grupo.group} className="mt-0.5 block text-[12.5px] leading-snug line-clamp-2 texto-tenue">
+                        {grupoEnTexto(grupo)}
+                      </span>
+                    ))}
+                    {linea.nota && (
+                      <span className="mt-0.5 block text-[12.5px] leading-snug italic texto-tenue">
+                        «{linea.nota}»
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 tabular-nums">{money(linea.importe)}</span>
                 </div>
