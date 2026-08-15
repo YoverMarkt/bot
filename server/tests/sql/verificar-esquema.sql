@@ -1811,3 +1811,146 @@ end;
 $$;
 
 select '✅ sin funciones duplicadas' as resultado;
+
+-- ── Motor de margen de la plataforma ───────────────────────────────────────
+--
+-- PostgreSQL acepta una función plpgsql rota sin avisar: solo revienta en el
+-- primer uso real. Aquí se EJECUTA, que es lo único que lo demuestra.
+--
+-- Los mismos casos que `tests/motor-de-margen.test.js` ejercita sobre el
+-- espejo en TypeScript. Si los dos motores se separan, uno de los dos falla.
+do $$
+declare
+  v_biz    uuid;
+  v_otro   uuid;
+  v_regla  uuid;
+  v_nueva  uuid;
+  v_calc   jsonb;
+  v_markup numeric;
+  v_ped    record;
+begin
+  select id into v_biz from public.businesses where slug = 'alta-verificacion';
+  if v_biz is null then
+    raise exception 'falta el negocio de verificación';
+  end if;
+
+  -- 1. FALLA ABIERTO: sin regla, margen 0 y el pedido sigue.
+  v_calc := public.calculate_platform_markup(v_biz, 50);
+  if (v_calc ->> 'markup')::numeric <> 0 then
+    raise exception 'sin regla el margen debería ser 0, fue %', v_calc ->> 'markup';
+  end if;
+
+  -- 2. RESTAURANTE: porcentaje simple.
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 15) ->> 'markup')::numeric;
+  if v_markup <> 1.50 then
+    raise exception '10%% de 15 debería ser 1.50, fue %', v_markup;
+  end if;
+
+  -- 3. EL DISPARADOR sella el margen y la trazabilidad al crear el pedido.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000001', 'pendiente', 20, 0, 20, 'USD', 'manual')
+  returning merchant_subtotal, platform_markup, pricing_rule_id, pricing_rule_version into v_ped;
+
+  if v_ped.platform_markup <> 2.00 then
+    raise exception 'el disparador debería sellar 2.00 de margen, selló %', v_ped.platform_markup;
+  end if;
+  if v_ped.merchant_subtotal <> 18.00 then
+    raise exception 'al comercio deberían quedarle 18.00, le quedaron %', v_ped.merchant_subtotal;
+  end if;
+  if v_ped.pricing_rule_id is distinct from v_regla then
+    raise exception 'el pedido no registró qué regla se le aplicó';
+  end if;
+  if v_ped.pricing_rule_version is null then
+    raise exception 'el pedido no registró la versión de la regla';
+  end if;
+
+  -- 4. SUPERMERCADO: el techo protege al comercio de volumen.
+  update public.pricing_rules set status = 'archived' where id = v_regla;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage, max_amount)
+  values ('business', v_biz, 'percentage', 4, 3) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 150) ->> 'markup')::numeric;
+  if v_markup <> 3.00 then
+    raise exception 'el techo debería dejarlo en 3.00, fue %', v_markup;
+  end if;
+
+  -- 5. EL PISO nos protege: un pedido de $2 no puede dejar $0.08.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage, min_amount)
+  values ('business', v_biz, 'percentage', 4, 0.50) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 2) ->> 'markup')::numeric;
+  if v_markup <> 0.50 then
+    raise exception 'el piso debería subirlo a 0.50, fue %', v_markup;
+  end if;
+
+  -- 6. RAÍL: el margen nunca supera el subtotal.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, fixed_amount)
+  values ('business', v_biz, 'fixed', 5) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 2) ->> 'markup')::numeric;
+  if v_markup <> 2.00 then
+    raise exception 'el margen no puede superar el subtotal: fue % sobre 2', v_markup;
+  end if;
+
+  -- 7. TRAMOS: se ordenan por `up_to`, no por el orden del array.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, tiers)
+  values ('business', v_biz, 'tiered',
+          '[{"up_to":30,"amount":1.5},{"amount":3},{"up_to":10,"amount":0.5}]'::jsonb)
+  returning id into v_nueva;
+
+  if (public.calculate_platform_markup(v_biz,   8) ->> 'markup')::numeric <> 0.50
+     or (public.calculate_platform_markup(v_biz,  25) ->> 'markup')::numeric <> 1.50
+     or (public.calculate_platform_markup(v_biz, 500) ->> 'markup')::numeric <> 3.00 then
+    raise exception 'los tramos no se resolvieron por up_to';
+  end if;
+
+  -- 8. CONGELADO: la regla sellada manda aunque hoy esté archivada.
+  v_markup := (public.calculate_platform_markup(v_biz, 15, v_regla) ->> 'markup')::numeric;
+  if v_markup <> 1.50 then
+    raise exception 'la regla congelada debería seguir dando 1.50, dio %', v_markup;
+  end if;
+
+  -- 9. AISLAMIENTO: la regla de un negocio no alcanza a otro.
+  v_otro := gen_random_uuid();
+  if (public.calculate_platform_markup(v_otro, 100) ->> 'markup')::numeric <> 0 then
+    raise exception 'la regla de un negocio alcanzó a otro';
+  end if;
+
+  -- 10. Los CHECK que impiden guardar una regla que el motor no honraría.
+  begin
+    insert into public.pricing_rules (scope, strategy, percentage)
+    values ('business', 'percentage', 5);
+    raise exception 'se guardó una regla de negocio sin business_id';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy)
+    values ('business', v_biz, 'percentage');
+    raise exception 'se guardó una regla percentage sin porcentaje';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy, percentage)
+    values ('category', v_biz, 'percentage', 5);
+    raise exception 'se guardó un scope que el motor todavía no resuelve';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy, percentage)
+    values ('business', v_biz, 'percentage', 7);
+    raise exception 'se guardaron dos reglas activas para el mismo negocio';
+  exception when unique_violation then null;
+  end;
+end;
+$$;
+
+select '✅ motor de margen: reglas, frenos, disparador y congelado' as resultado;

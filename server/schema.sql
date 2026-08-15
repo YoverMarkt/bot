@@ -11930,3 +11930,289 @@ begin
   );
 end;
 $$;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- MOTOR DE MARGEN DE LA PLATAFORMA
+-- Migración incremental: migration-2026-08-16-motor-de-margen.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Un restaurante y un supermercado no se pueden cobrar igual: el primero
+-- trabaja con márgenes amplios y el segundo al 2–5 %, así que cobrarle a un
+-- supermercado el 8 % de una canasta de $80 le costaría MÁS de lo que gana
+-- con esa venta. Por eso el margen es una tabla configurable y no un número,
+-- con tres frenos que protegen a partes distintas:
+--
+--   · `max_amount` (TECHO) protege al comercio de volumen.
+--   · `min_amount` (PISO) protege a la PLATAFORMA: cada pedido cuesta
+--     mensajes de WhatsApp y llamadas de IA, y sin piso los pedidos pequeños
+--     se atienden a pérdida.
+--   · `tiered` cubre lo que no alcanzan los otros dos.
+--
+-- `markup_mode` reconcilia los dos modelos económicos: `absorbed` (el margen
+-- se absorbe del precio del comercio, invisible para el cliente) y `on_top`
+-- (se suma al precio del cliente). Mismo cálculo y mismo asiento; lo único
+-- que cambia es de dónde sale. Arranca en `absorbed` y el motor NO toca
+-- `orders.total`: encender `on_top` exige antes pintar el precio con margen
+-- en el catálogo, el carrito y el resumen.
+--
+-- ⚠️ El margen se calcula sobre el SUBTOTAL, una vez, no por línea. El
+-- margen por producto o categoría exigiría leer `order_items` desde el
+-- disparador, y en ese momento esas filas todavía no existen en uno de los
+-- dos caminos de creación. Por eso `scope` admite hoy solo los tres niveles
+-- resolubles sobre el subtotal, y FALLA CERRADO: no se puede guardar una
+-- regla que el motor no vaya a honrar.
+
+create table if not exists public.pricing_rules (
+  id               uuid primary key default gen_random_uuid(),
+  business_id      uuid references public.businesses(id) on delete cascade,
+  scope            text not null,
+  target_name      text,
+  strategy         text not null,
+  percentage       numeric(7,4),
+  fixed_amount     numeric(10,2),
+  tiers            jsonb,
+  min_amount       numeric(10,2),
+  max_amount       numeric(10,2),
+  markup_mode      text not null default 'absorbed',
+  version          integer not null default 1,
+  effective_from   timestamptz not null default now(),
+  effective_until  timestamptz,
+  status           text not null default 'active',
+  notes            text,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+
+  constraint pricing_rules_scope_check
+    check (scope in ('global', 'business_type', 'business')),
+  constraint pricing_rules_strategy_check
+    check (strategy in ('percentage', 'fixed', 'tiered')),
+  constraint pricing_rules_mode_check
+    check (markup_mode in ('absorbed', 'on_top')),
+  constraint pricing_rules_status_check
+    check (status in ('active', 'draft', 'archived')),
+
+  -- Una regla «de negocio» sin `business_id` se aplicaría a TODA la
+  -- plataforma sin que nadie lo pidiera: el error más caro de esta tabla.
+  constraint pricing_rules_destino_check check (
+    (scope = 'global'        and business_id is null     and target_name is null)
+    or
+    (scope = 'business_type' and business_id is null     and target_name is not null)
+    or
+    (scope = 'business'      and business_id is not null and target_name is null)
+  ),
+
+  -- Una regla `percentage` sin porcentaje cobraría 0 en silencio.
+  constraint pricing_rules_datos_check check (
+    (strategy = 'percentage' and percentage   is not null and fixed_amount is null and tiers is null)
+    or
+    (strategy = 'fixed'      and fixed_amount is not null and percentage   is null and tiers is null)
+    or
+    (strategy = 'tiered'     and tiers        is not null and percentage   is null and fixed_amount is null)
+  ),
+
+  constraint pricing_rules_rangos_check check (
+    (percentage   is null or (percentage   >= 0 and percentage   <= 100))
+    and (fixed_amount is null or (fixed_amount >= 0 and fixed_amount <= 9999))
+    and (min_amount   is null or (min_amount   >= 0 and min_amount   <= 9999))
+    and (max_amount   is null or (max_amount   >= 0 and max_amount   <= 9999))
+    and (min_amount is null or max_amount is null or min_amount <= max_amount)
+    and (version >= 1)
+    and (effective_until is null or effective_until > effective_from)
+  ),
+
+  constraint pricing_rules_tiers_check check (
+    tiers is null or jsonb_typeof(tiers) = 'array'
+  )
+);
+
+alter table public.pricing_rules enable row level security;
+
+-- Dos reglas activas para el mismo destino dejarían el margen a merced del
+-- orden de lectura: el mismo pedido cobraría distinto según cómo respondiera
+-- PostgreSQL ese día.
+create unique index if not exists idx_pricing_rules_activa_negocio
+  on public.pricing_rules (business_id)
+  where scope = 'business' and status = 'active';
+
+create unique index if not exists idx_pricing_rules_activa_tipo
+  on public.pricing_rules (target_name)
+  where scope = 'business_type' and status = 'active';
+
+create unique index if not exists idx_pricing_rules_activa_global
+  on public.pricing_rules ((true))
+  where scope = 'global' and status = 'active';
+
+-- Se copian AL PEDIDO en vez de consultarse al leerlo, por lo mismo que se
+-- copió la dirección: el panel pide sus pedidos cada 12 segundos. Cambiar el
+-- porcentaje mañana NO reescribe el margen de los pedidos de hoy.
+alter table public.orders
+  add column if not exists merchant_subtotal    numeric(10,2),
+  add column if not exists platform_markup      numeric(10,2),
+  add column if not exists pricing_rule_id      uuid,
+  add column if not exists pricing_rule_version integer;
+
+-- Sin FK a `pricing_rules` a propósito: es un rastro histórico, no un puntero
+-- vivo. Con `set null` se borraría la prueba de qué regla se aplicó.
+comment on column public.orders.pricing_rule_id is
+  'Regla de margen aplicada. Sin FK: es un rastro histórico, no un puntero vivo.';
+
+-- Resuelve la regla y aplica la estrategia en UNA función, para que no exista
+-- la posibilidad de resolver con una y cobrar con otra. `p_rule_id` fuerza una
+-- regla ya congelada.
+create or replace function public.calculate_platform_markup(
+  p_business_id uuid,
+  p_subtotal    numeric,
+  p_rule_id     uuid default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_regla   public.pricing_rules%rowtype;
+  v_base    numeric(10,2);
+  v_markup  numeric(10,2) := 0;
+  v_tier    jsonb;
+  v_tipo    text;
+begin
+  v_base := round(coalesce(p_subtotal, 0), 2);
+
+  if v_base <= 0 then
+    return jsonb_build_object(
+      'markup', 0, 'rule_id', null, 'rule_version', null,
+      'markup_mode', 'absorbed', 'strategy', null
+    );
+  end if;
+
+  if p_rule_id is not null then
+    select * into v_regla from public.pricing_rules where id = p_rule_id;
+  else
+    select pr.* into v_regla
+    from public.pricing_rules pr
+    left join public.businesses b on b.id = p_business_id
+    where pr.status = 'active'
+      and pr.effective_from <= now()
+      and (pr.effective_until is null or pr.effective_until > now())
+      and (
+        (pr.scope = 'business'      and pr.business_id = p_business_id)
+        or (pr.scope = 'business_type' and pr.target_name = b.type)
+        or (pr.scope = 'global')
+      )
+    order by case pr.scope
+               when 'business'      then 1
+               when 'business_type' then 2
+               when 'global'        then 3
+             end
+    limit 1;
+  end if;
+
+  -- FALLA ABIERTO: un problema de configuración de precios no puede dejar a
+  -- una pizzería sin poder vender.
+  if v_regla.id is null then
+    return jsonb_build_object(
+      'markup', 0, 'rule_id', null, 'rule_version', null,
+      'markup_mode', 'absorbed', 'strategy', null
+    );
+  end if;
+
+  if v_regla.strategy = 'percentage' then
+    v_markup := v_base * v_regla.percentage / 100.0;
+
+  elsif v_regla.strategy = 'fixed' then
+    v_markup := v_regla.fixed_amount;
+
+  elsif v_regla.strategy = 'tiered' then
+    -- Ordenado por `up_to` y no por el orden del array: un array mal ordenado
+    -- en el panel cobraría el tramo equivocado sin avisar.
+    for v_tier in
+      select value
+      from jsonb_array_elements(v_regla.tiers) as value
+      order by coalesce((value ->> 'up_to')::numeric, 'infinity'::numeric)
+    loop
+      v_tipo := v_tier ->> 'up_to';
+      if v_tipo is null or v_base <= v_tipo::numeric then
+        v_markup := coalesce((v_tier ->> 'amount')::numeric, 0);
+        exit;
+      end if;
+    end loop;
+  end if;
+
+  if v_regla.min_amount is not null then
+    v_markup := greatest(v_markup, v_regla.min_amount);
+  end if;
+  if v_regla.max_amount is not null then
+    v_markup := least(v_markup, v_regla.max_amount);
+  end if;
+
+  -- Raíles que no dependen de la configuración: nunca negativo, y nunca más
+  -- que el subtotal. Un piso de $5 sobre un pedido de $2 no puede dejar al
+  -- comercio debiendo dinero por haber vendido.
+  v_markup := greatest(v_markup, 0);
+  v_markup := least(v_markup, v_base);
+
+  return jsonb_build_object(
+    'markup',       round(v_markup, 2),
+    'rule_id',      v_regla.id,
+    'rule_version', v_regla.version,
+    'markup_mode',  v_regla.markup_mode,
+    'strategy',     v_regla.strategy
+  );
+end;
+$$;
+
+revoke all on function public.calculate_platform_markup(uuid, numeric, uuid)
+  from public, anon, authenticated;
+grant execute on function public.calculate_platform_markup(uuid, numeric, uuid)
+  to service_role;
+
+-- ⚠️ NO se recrean `create_storefront_order` ni `set_order_status`, mismo
+-- criterio que `orders_reject_blocked`. Un disparador cubre LOS TRES caminos
+-- —tienda, bot y mostrador— y cualquiera que se invente después.
+create or replace function public.orders_stamp_pricing()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_calc jsonb;
+begin
+  -- `create_storefront_order` inserta el pedido con subtotal 0 y lo actualiza
+  -- al final: sin esta condición se sellaría 0 y no volvería a mirarse.
+  if coalesce(new.subtotal, 0) <= 0 then
+    return new;
+  end if;
+
+  -- El panel actualiza estos pedidos muchas veces (estado, aviso,
+  -- comprobante); recalcular en cada una sería trabajo tirado.
+  if tg_op = 'UPDATE'
+     and new.subtotal is not distinct from old.subtotal
+     and new.pricing_rule_id is not distinct from old.pricing_rule_id then
+    return new;
+  end if;
+
+  -- Si el pedido ya tiene regla sellada se recalcula con ESA y no con la
+  -- vigente hoy: un pedido de febrero no puede empezar a cobrar el porcentaje
+  -- de marzo porque alguien le cambió el estado.
+  v_calc := public.calculate_platform_markup(
+    new.business_id,
+    new.subtotal,
+    new.pricing_rule_id
+  );
+
+  new.merchant_subtotal    := round(new.subtotal - (v_calc ->> 'markup')::numeric, 2);
+  new.platform_markup      := (v_calc ->> 'markup')::numeric;
+  new.pricing_rule_id      := nullif(v_calc ->> 'rule_id', '')::uuid;
+  new.pricing_rule_version := nullif(v_calc ->> 'rule_version', '')::integer;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_stamp_pricing on public.orders;
+create trigger orders_stamp_pricing
+  before insert or update on public.orders
+  for each row execute function public.orders_stamp_pricing();
