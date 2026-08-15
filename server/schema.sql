@@ -12731,3 +12731,32 @@ revoke all on function public.carry_commission_adjustments(date)
   from public, anon, authenticated;
 grant execute on function public.carry_commission_adjustments(date)
   to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- UN AJUSTE NO PUEDE APUNTAR A LA FACTURA DE OTRO NEGOCIO
+-- Migración incremental: migration-2026-08-16-frontera-ajustes.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- `billing_adjustments.billing_id` referenciaba `billing(id)` a secas: el
+-- descuento de una venta anulada en el local A podía acabar restando en la
+-- factura del local B. Lo cazó `verificar-fronteras.sql` — no una prueba de
+-- comportamiento, sino el guardián que busca exactamente esto.
+--
+-- Se cierra con foránea COMPUESTA sobre `(id, business_id)`, el mismo patrón
+-- que `product_variants` y los grupos de opciones.
+
+-- La compuesta necesita un índice único sobre las dos columnas del destino.
+-- No es redundante con la clave primaria: PostgreSQL exige exactamente esta
+-- pareja para poder referenciarla.
+create unique index if not exists uq_billing_id_negocio
+  on public.billing (id, business_id);
+
+alter table public.billing_adjustments
+  drop constraint if exists billing_adjustments_billing_id_fkey;
+
+alter table public.billing_adjustments
+  add constraint billing_adjustments_billing_fkey
+  foreign key (billing_id, business_id)
+  references public.billing (id, business_id)
+  on delete set null;
