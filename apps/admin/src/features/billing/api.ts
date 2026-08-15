@@ -5,6 +5,10 @@ export type BillingRow = {
   id: string
   business_id: string
   amount: number | string
+  // `amount` es la CUOTA del servicio; la comisión de las ventas va aparte.
+  // El total de la factura es la suma de las dos.
+  commission_amount?: number | string | null
+  commission_orders?: number | null
   status: 'pending' | 'paid' | 'overdue'
   period_start: string | null
   period_end: string | null

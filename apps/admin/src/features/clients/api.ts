@@ -191,3 +191,86 @@ export const verifyClient = (id: string, payload?: ProviderVerificationPayload) 
 
 export const deleteClient = (id: string) =>
   api(`/api/admin/clients/${id}`, { method: 'DELETE' })
+
+// ── Motor de margen de la plataforma ─────────────────────────────────
+//
+// Lo que decide cuánto gana la plataforma con cada pedido. El importe lo
+// calcula y sella PostgreSQL (regla inviolable #8); desde aquí solo se
+// administran las reglas y se simula antes de activarlas.
+
+export type MarkupTier = { up_to: number | null, amount: number }
+
+export type PricingRule = {
+  id: string
+  business_id: string | null
+  scope: 'global' | 'business_type' | 'business'
+  target_name: string | null
+  strategy: 'percentage' | 'fixed' | 'tiered'
+  percentage: number | null
+  fixed_amount: number | null
+  tiers: MarkupTier[] | null
+  min_amount: number | null
+  max_amount: number | null
+  markup_mode: 'absorbed' | 'on_top'
+  version: number
+  status: 'active' | 'draft' | 'archived'
+  notes: string | null
+  created_at: string
+  businesses?: { name: string } | null
+}
+
+/** Lo que se manda al crear o reemplazar. */
+export type PricingRuleDraft = {
+  scope: PricingRule['scope']
+  business_id?: string | null
+  target_name?: string | null
+  strategy: PricingRule['strategy']
+  percentage?: number | null
+  fixed_amount?: number | null
+  tiers?: MarkupTier[] | null
+  min_amount?: number | null
+  max_amount?: number | null
+  markup_mode?: PricingRule['markup_mode']
+  notes?: string | null
+}
+
+export type MarkupSimulation = {
+  markup: number
+  merchantSubtotal: number
+  customerSubtotal: number
+  markupMode: 'absorbed' | 'on_top'
+}
+
+export type MarkupSummaryRow = {
+  business_id: string
+  business_name: string
+  pedidos: number
+  bruto: number
+  margen: number
+  comercio: number
+}
+
+export const getPricingRules = () => api<PricingRule[]>('/api/admin/pricing-rules')
+
+export const createPricingRule = (rule: PricingRuleDraft) =>
+  api<PricingRule>('/api/admin/pricing-rules', {
+    method: 'POST', body: JSON.stringify(rule),
+  })
+
+/** Reemplazar crea una VERSIÓN nueva y archiva la anterior. */
+export const replacePricingRule = (id: string, rule: PricingRuleDraft) =>
+  api<PricingRule>(`/api/admin/pricing-rules/${id}`, {
+    method: 'PUT', body: JSON.stringify(rule),
+  })
+
+export const archivePricingRule = (id: string) =>
+  api<{ ok: boolean }>(`/api/admin/pricing-rules/${id}`, { method: 'DELETE' })
+
+/** Cuánto dejaría una regla ANTES de activarla (§42). */
+export const simulateMarkup = (rule: PricingRuleDraft, subtotal: number) =>
+  api<MarkupSimulation>('/api/admin/pricing-rules/simulate', {
+    method: 'POST', body: JSON.stringify({ ...rule, subtotal }),
+  })
+
+export const getMarkupSummary = () =>
+  api<MarkupSummaryRow[]>('/api/admin/pricing-summary')

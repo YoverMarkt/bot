@@ -19,6 +19,7 @@ import platformErrors = require('./repositories/platform-errors')
 import storefront = require('./repositories/storefront')
 import catalog = require('./repositories/catalog')
 import productOptions = require('./repositories/product-options')
+import pricingRules = require('./repositories/pricing-rules')
 
 // SIN anotación a propósito: aquí TypeScript infiere el tipo REAL de los 20
 // repositorios juntos. Estuvo anotado como `Record<string, unknown>` y eso
@@ -47,6 +48,7 @@ const database = {
   ...storefront,
   ...catalog,
   ...productOptions,
+  ...pricingRules,
 }
 
 export = database

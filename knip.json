@@ -39,7 +39,8 @@
     }
   },
   "ignore": [
-    "apps/*/public/theme-boot.js"
+    "apps/*/public/theme-boot.js",
+    "server/src/services/platform-pricing.ts"
   ],
   "ignoreDependencies": [
     "class-variance-authority",

@@ -1811,3 +1811,304 @@ end;
 $$;
 
 select '✅ sin funciones duplicadas' as resultado;
+
+-- ── Motor de margen de la plataforma ───────────────────────────────────────
+--
+-- PostgreSQL acepta una función plpgsql rota sin avisar: solo revienta en el
+-- primer uso real. Aquí se EJECUTA, que es lo único que lo demuestra.
+--
+-- Los mismos casos que `tests/motor-de-margen.test.js` ejercita sobre el
+-- espejo en TypeScript. Si los dos motores se separan, uno de los dos falla.
+do $$
+declare
+  v_biz    uuid;
+  v_otro   uuid;
+  v_regla  uuid;
+  v_nueva  uuid;
+  v_calc   jsonb;
+  v_markup numeric;
+  v_ped    record;
+  v_pedido uuid;
+  v_suma   numeric;
+  v_cierre jsonb;
+begin
+  -- Cada bloque de este archivo trae su propio negocio y lo borra al terminar.
+  -- Reutilizar el de otro bloque no funciona: ese ya se borró en su limpieza.
+  insert into public.businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number, takes_orders
+  ) values (
+    'verificacion-margen', 'Negocio de margen', 'pizzería',
+    'ycloud', '+593900000920', '+593900000920', true
+  )
+  returning id into v_biz;
+
+  -- 1. FALLA ABIERTO: sin regla, margen 0 y el pedido sigue.
+  v_calc := public.calculate_platform_markup(v_biz, 50);
+  if (v_calc ->> 'markup')::numeric <> 0 then
+    raise exception 'sin regla el margen debería ser 0, fue %', v_calc ->> 'markup';
+  end if;
+
+  -- 2. RESTAURANTE: porcentaje simple.
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 15) ->> 'markup')::numeric;
+  if v_markup <> 1.50 then
+    raise exception '10%% de 15 debería ser 1.50, fue %', v_markup;
+  end if;
+
+  -- 3. EL DISPARADOR sella el margen y la trazabilidad al crear el pedido.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000001', 'pendiente', 20, 0, 20, 'USD', 'manual')
+  returning merchant_subtotal, platform_markup, pricing_rule_id, pricing_rule_version into v_ped;
+
+  if v_ped.platform_markup <> 2.00 then
+    raise exception 'el disparador debería sellar 2.00 de margen, selló %', v_ped.platform_markup;
+  end if;
+  if v_ped.merchant_subtotal <> 18.00 then
+    raise exception 'al comercio deberían quedarle 18.00, le quedaron %', v_ped.merchant_subtotal;
+  end if;
+  if v_ped.pricing_rule_id is distinct from v_regla then
+    raise exception 'el pedido no registró qué regla se le aplicó';
+  end if;
+  if v_ped.pricing_rule_version is null then
+    raise exception 'el pedido no registró la versión de la regla';
+  end if;
+
+  -- 4. SUPERMERCADO: el techo protege al comercio de volumen.
+  update public.pricing_rules set status = 'archived' where id = v_regla;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage, max_amount)
+  values ('business', v_biz, 'percentage', 4, 3) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 150) ->> 'markup')::numeric;
+  if v_markup <> 3.00 then
+    raise exception 'el techo debería dejarlo en 3.00, fue %', v_markup;
+  end if;
+
+  -- 5. EL PISO nos protege: un pedido de $2 no puede dejar $0.08.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage, min_amount)
+  values ('business', v_biz, 'percentage', 4, 0.50) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 2) ->> 'markup')::numeric;
+  if v_markup <> 0.50 then
+    raise exception 'el piso debería subirlo a 0.50, fue %', v_markup;
+  end if;
+
+  -- 6. RAÍL: el margen nunca supera el subtotal.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, fixed_amount)
+  values ('business', v_biz, 'fixed', 5) returning id into v_nueva;
+
+  v_markup := (public.calculate_platform_markup(v_biz, 2) ->> 'markup')::numeric;
+  if v_markup <> 2.00 then
+    raise exception 'el margen no puede superar el subtotal: fue % sobre 2', v_markup;
+  end if;
+
+  -- 7. TRAMOS: se ordenan por `up_to`, no por el orden del array.
+  update public.pricing_rules set status = 'archived' where id = v_nueva;
+  insert into public.pricing_rules (scope, business_id, strategy, tiers)
+  values ('business', v_biz, 'tiered',
+          '[{"up_to":30,"amount":1.5},{"amount":3},{"up_to":10,"amount":0.5}]'::jsonb)
+  returning id into v_nueva;
+
+  if (public.calculate_platform_markup(v_biz,   8) ->> 'markup')::numeric <> 0.50
+     or (public.calculate_platform_markup(v_biz,  25) ->> 'markup')::numeric <> 1.50
+     or (public.calculate_platform_markup(v_biz, 500) ->> 'markup')::numeric <> 3.00 then
+    raise exception 'los tramos no se resolvieron por up_to';
+  end if;
+
+  -- 8. CONGELADO: la regla sellada manda aunque hoy esté archivada.
+  v_markup := (public.calculate_platform_markup(v_biz, 15, v_regla) ->> 'markup')::numeric;
+  if v_markup <> 1.50 then
+    raise exception 'la regla congelada debería seguir dando 1.50, dio %', v_markup;
+  end if;
+
+  -- 9. AISLAMIENTO: la regla de un negocio no alcanza a otro.
+  v_otro := gen_random_uuid();
+  if (public.calculate_platform_markup(v_otro, 100) ->> 'markup')::numeric <> 0 then
+    raise exception 'la regla de un negocio alcanzó a otro';
+  end if;
+
+  -- 10. Los CHECK que impiden guardar una regla que el motor no honraría.
+  begin
+    insert into public.pricing_rules (scope, strategy, percentage)
+    values ('business', 'percentage', 5);
+    raise exception 'se guardó una regla de negocio sin business_id';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy)
+    values ('business', v_biz, 'percentage');
+    raise exception 'se guardó una regla percentage sin porcentaje';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy, percentage)
+    values ('category', v_biz, 'percentage', 5);
+    raise exception 'se guardó un scope que el motor todavía no resuelve';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into public.pricing_rules (scope, business_id, strategy, percentage)
+    values ('business', v_biz, 'percentage', 7);
+    raise exception 'se guardaron dos reglas activas para el mismo negocio';
+  exception when unique_violation then null;
+  end;
+
+  -- 11. EL ACUMULADO: se suma sobre `sales`, no sobre `orders`.
+  --
+  -- Un pedido aceptado o en preparación todavía no es dinero; la venta nace
+  -- cuando se ENTREGA. Y una venta anulada deja de contar, que es la
+  -- devolución sin construir nada nuevo.
+  update public.pricing_rules set status = 'archived' where business_id = v_biz;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000921', 'completado', 100, 0, 100, 'USD', 'manual')
+  returning id into v_pedido;
+
+  -- Sin venta todavía: el pedido existe pero no ha entrado al acumulado.
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'un pedido sin venta no puede acumular comisión, acumuló %', v_suma;
+  end if;
+
+  insert into public.sales (business_id, order_id, total, status, sold_at)
+  values (v_biz, v_pedido, 100, 'completada', now());
+
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 10 then
+    raise exception 'el acumulado debería ser 10.00, fue %', v_suma;
+  end if;
+
+  -- Anular la venta retira su comisión.
+  update public.sales set status = 'anulada' where order_id = v_pedido;
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'una venta anulada no puede seguir cobrando, quedó %', v_suma;
+  end if;
+
+  -- Y el acumulado tampoco cruza la frontera entre negocios.
+  if exists (select 1 from public.platform_markup_summary('2000-01-01', '2100-01-01', gen_random_uuid())) then
+    raise exception 'el acumulado de un negocio se vio desde otro';
+  end if;
+
+  -- 12. EL CIERRE DE MES lleva la comisión a la factura.
+  --
+  -- Es idempotente por naturaleza: no suma, RECALCULA desde `sales`. Correrlo
+  -- dos veces tiene que dar el mismo número, o un reintento tras un fallo de
+  -- red cobraría el doble.
+  update public.sales set status = 'completada' where order_id = v_pedido;
+
+  v_cierre := public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if coalesce(v_suma, -1) <> 10 then
+    raise exception 'el cierre debería dejar 10.00 de comisión, dejó %', v_suma;
+  end if;
+
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma <> 10 then
+    raise exception 'tres cierres seguidos cambiaron el importe: %', v_suma;
+  end if;
+
+  -- La CUOTA no se toca: `amount` es el servicio, la comisión va aparte.
+  select amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma is null then
+    raise exception 'el cierre borró la cuota mensual';
+  end if;
+
+  -- Un mes ya PAGADO no se reescribe: una factura emitida es un hecho.
+  update public.billing set status = 'paid'
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  update public.orders set subtotal = 500, total = 500 where id = v_pedido;
+  update public.sales set total = 500 where order_id = v_pedido;
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma <> 10 then
+    raise exception 'se reescribió un mes ya pagado: quedó en %', v_suma;
+  end if;
+
+  -- Y el cierre solo acepta el primer día de un mes.
+  begin
+    perform public.settle_month_commission('2026-08-15'::date);
+    raise exception 'el cierre aceptó una fecha que no es inicio de mes';
+  exception when sqlstate '22023' then null;
+  end;
+
+  -- 13. LOS TRES CASOS LÍMITE.
+  --
+  -- Los tres son de dinero y los tres se encontraron auditando, no fallando.
+  -- Se parte de cero: los bloques anteriores dejaron ventas de ESTE mes y sus
+  -- comisiones se sumarían a las de aquí, midiendo otra cosa.
+  delete from public.sales where business_id = v_biz;
+  delete from public.orders where business_id = v_biz;
+  update public.pricing_rules set status = 'archived' where business_id = v_biz;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  -- (a) El mes termina en ECUADOR. Una venta del último día a las 20:00 hora
+  -- local son las 01:00 UTC del día siguiente: sin la conversión se facturaba
+  -- en el mes que no era, y son las cinco últimas horas de cada día.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000931', 'completado', 100, 0, 100, 'USD', 'manual')
+  returning id into v_pedido;
+  insert into public.sales (business_id, order_id, total, status, sold_at)
+  values (v_biz, v_pedido, 100, 'completada', '2026-08-31 20:00:00-05');
+
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2026-08-01', '2026-09-01', v_biz);
+  if v_suma <> 10 then
+    raise exception 'la venta del 31 a las 20:00 de Ecuador no cayó en agosto: %', v_suma;
+  end if;
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2026-09-01', '2026-10-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'esa venta se coló en septiembre: %', v_suma;
+  end if;
+  delete from public.sales where order_id = v_pedido;
+  delete from public.orders where id = v_pedido;
+
+  -- (b) El descuento sale de la base: no se cobra comisión sobre dinero que
+  -- el comercio no recibió.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000932', 'completado', 100, 20, 80, 'USD', 'manual')
+  returning platform_markup, merchant_subtotal into v_ped;
+  if v_ped.platform_markup <> 8.00 then
+    raise exception 'con $20 de descuento la comisión debía ser 8.00, fue %', v_ped.platform_markup;
+  end if;
+  if v_ped.merchant_subtotal <> 72.00 then
+    raise exception 'al comercio debían quedarle 72.00, le quedaron %', v_ped.merchant_subtotal;
+  end if;
+
+  -- (c) `on_top` no se puede guardar mientras el motor no lo honre.
+  begin
+    update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
+    raise exception 'se guardó un modo de margen que el motor no aplica';
+  exception when check_violation then null;
+  end;
+
+  -- ── Limpieza ──────────────────────────────────────────────────────────────
+  -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.
+  delete from public.businesses where id = v_biz;
+end;
+$$;
+
+select '✅ motor de margen: reglas, frenos, disparador y congelado' as resultado;

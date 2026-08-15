@@ -11930,3 +11930,637 @@ begin
   );
 end;
 $$;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- MOTOR DE MARGEN DE LA PLATAFORMA
+-- Migración incremental: migration-2026-08-16-motor-de-margen.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Un restaurante y un supermercado no se pueden cobrar igual: el primero
+-- trabaja con márgenes amplios y el segundo al 2–5 %, así que cobrarle a un
+-- supermercado el 8 % de una canasta de $80 le costaría MÁS de lo que gana
+-- con esa venta. Por eso el margen es una tabla configurable y no un número,
+-- con tres frenos que protegen a partes distintas:
+--
+--   · `max_amount` (TECHO) protege al comercio de volumen.
+--   · `min_amount` (PISO) protege a la PLATAFORMA: cada pedido cuesta
+--     mensajes de WhatsApp y llamadas de IA, y sin piso los pedidos pequeños
+--     se atienden a pérdida.
+--   · `tiered` cubre lo que no alcanzan los otros dos.
+--
+-- `markup_mode` reconcilia los dos modelos económicos: `absorbed` (el margen
+-- se absorbe del precio del comercio, invisible para el cliente) y `on_top`
+-- (se suma al precio del cliente). Mismo cálculo y mismo asiento; lo único
+-- que cambia es de dónde sale. Arranca en `absorbed` y el motor NO toca
+-- `orders.total`: encender `on_top` exige antes pintar el precio con margen
+-- en el catálogo, el carrito y el resumen.
+--
+-- ⚠️ El margen se calcula sobre el SUBTOTAL, una vez, no por línea. El
+-- margen por producto o categoría exigiría leer `order_items` desde el
+-- disparador, y en ese momento esas filas todavía no existen en uno de los
+-- dos caminos de creación. Por eso `scope` admite hoy solo los tres niveles
+-- resolubles sobre el subtotal, y FALLA CERRADO: no se puede guardar una
+-- regla que el motor no vaya a honrar.
+
+create table if not exists public.pricing_rules (
+  id               uuid primary key default gen_random_uuid(),
+  business_id      uuid references public.businesses(id) on delete cascade,
+  scope            text not null,
+  target_name      text,
+  strategy         text not null,
+  percentage       numeric(7,4),
+  fixed_amount     numeric(10,2),
+  tiers            jsonb,
+  min_amount       numeric(10,2),
+  max_amount       numeric(10,2),
+  markup_mode      text not null default 'absorbed',
+  version          integer not null default 1,
+  effective_from   timestamptz not null default now(),
+  effective_until  timestamptz,
+  status           text not null default 'active',
+  notes            text,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+
+  constraint pricing_rules_scope_check
+    check (scope in ('global', 'business_type', 'business')),
+  constraint pricing_rules_strategy_check
+    check (strategy in ('percentage', 'fixed', 'tiered')),
+  constraint pricing_rules_mode_check
+    check (markup_mode in ('absorbed', 'on_top')),
+  constraint pricing_rules_status_check
+    check (status in ('active', 'draft', 'archived')),
+
+  -- Una regla «de negocio» sin `business_id` se aplicaría a TODA la
+  -- plataforma sin que nadie lo pidiera: el error más caro de esta tabla.
+  constraint pricing_rules_destino_check check (
+    (scope = 'global'        and business_id is null     and target_name is null)
+    or
+    (scope = 'business_type' and business_id is null     and target_name is not null)
+    or
+    (scope = 'business'      and business_id is not null and target_name is null)
+  ),
+
+  -- Una regla `percentage` sin porcentaje cobraría 0 en silencio.
+  constraint pricing_rules_datos_check check (
+    (strategy = 'percentage' and percentage   is not null and fixed_amount is null and tiers is null)
+    or
+    (strategy = 'fixed'      and fixed_amount is not null and percentage   is null and tiers is null)
+    or
+    (strategy = 'tiered'     and tiers        is not null and percentage   is null and fixed_amount is null)
+  ),
+
+  constraint pricing_rules_rangos_check check (
+    (percentage   is null or (percentage   >= 0 and percentage   <= 100))
+    and (fixed_amount is null or (fixed_amount >= 0 and fixed_amount <= 9999))
+    and (min_amount   is null or (min_amount   >= 0 and min_amount   <= 9999))
+    and (max_amount   is null or (max_amount   >= 0 and max_amount   <= 9999))
+    and (min_amount is null or max_amount is null or min_amount <= max_amount)
+    and (version >= 1)
+    and (effective_until is null or effective_until > effective_from)
+  ),
+
+  constraint pricing_rules_tiers_check check (
+    tiers is null or jsonb_typeof(tiers) = 'array'
+  )
+);
+
+alter table public.pricing_rules enable row level security;
+
+-- Dos reglas activas para el mismo destino dejarían el margen a merced del
+-- orden de lectura: el mismo pedido cobraría distinto según cómo respondiera
+-- PostgreSQL ese día.
+create unique index if not exists idx_pricing_rules_activa_negocio
+  on public.pricing_rules (business_id)
+  where scope = 'business' and status = 'active';
+
+create unique index if not exists idx_pricing_rules_activa_tipo
+  on public.pricing_rules (target_name)
+  where scope = 'business_type' and status = 'active';
+
+create unique index if not exists idx_pricing_rules_activa_global
+  on public.pricing_rules ((true))
+  where scope = 'global' and status = 'active';
+
+-- Se copian AL PEDIDO en vez de consultarse al leerlo, por lo mismo que se
+-- copió la dirección: el panel pide sus pedidos cada 12 segundos. Cambiar el
+-- porcentaje mañana NO reescribe el margen de los pedidos de hoy.
+alter table public.orders
+  add column if not exists merchant_subtotal    numeric(10,2),
+  add column if not exists platform_markup      numeric(10,2),
+  add column if not exists pricing_rule_id      uuid,
+  add column if not exists pricing_rule_version integer;
+
+-- Sin FK a `pricing_rules` a propósito: es un rastro histórico, no un puntero
+-- vivo. Con `set null` se borraría la prueba de qué regla se aplicó.
+comment on column public.orders.pricing_rule_id is
+  'Regla de margen aplicada. Sin FK: es un rastro histórico, no un puntero vivo.';
+
+-- Resuelve la regla y aplica la estrategia en UNA función, para que no exista
+-- la posibilidad de resolver con una y cobrar con otra. `p_rule_id` fuerza una
+-- regla ya congelada.
+create or replace function public.calculate_platform_markup(
+  p_business_id uuid,
+  p_subtotal    numeric,
+  p_rule_id     uuid default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_regla   public.pricing_rules%rowtype;
+  v_base    numeric(10,2);
+  v_markup  numeric(10,2) := 0;
+  v_tier    jsonb;
+  v_tipo    text;
+begin
+  v_base := round(coalesce(p_subtotal, 0), 2);
+
+  if v_base <= 0 then
+    return jsonb_build_object(
+      'markup', 0, 'rule_id', null, 'rule_version', null,
+      'markup_mode', 'absorbed', 'strategy', null
+    );
+  end if;
+
+  if p_rule_id is not null then
+    select * into v_regla from public.pricing_rules where id = p_rule_id;
+  else
+    select pr.* into v_regla
+    from public.pricing_rules pr
+    left join public.businesses b on b.id = p_business_id
+    where pr.status = 'active'
+      and pr.effective_from <= now()
+      and (pr.effective_until is null or pr.effective_until > now())
+      and (
+        (pr.scope = 'business'      and pr.business_id = p_business_id)
+        or (pr.scope = 'business_type' and pr.target_name = b.type)
+        or (pr.scope = 'global')
+      )
+    order by case pr.scope
+               when 'business'      then 1
+               when 'business_type' then 2
+               when 'global'        then 3
+             end
+    limit 1;
+  end if;
+
+  -- FALLA ABIERTO: un problema de configuración de precios no puede dejar a
+  -- una pizzería sin poder vender.
+  if v_regla.id is null then
+    return jsonb_build_object(
+      'markup', 0, 'rule_id', null, 'rule_version', null,
+      'markup_mode', 'absorbed', 'strategy', null
+    );
+  end if;
+
+  if v_regla.strategy = 'percentage' then
+    v_markup := v_base * v_regla.percentage / 100.0;
+
+  elsif v_regla.strategy = 'fixed' then
+    v_markup := v_regla.fixed_amount;
+
+  elsif v_regla.strategy = 'tiered' then
+    -- Ordenado por `up_to` y no por el orden del array: un array mal ordenado
+    -- en el panel cobraría el tramo equivocado sin avisar.
+    for v_tier in
+      select value
+      from jsonb_array_elements(v_regla.tiers) as value
+      order by coalesce((value ->> 'up_to')::numeric, 'infinity'::numeric)
+    loop
+      v_tipo := v_tier ->> 'up_to';
+      if v_tipo is null or v_base <= v_tipo::numeric then
+        v_markup := coalesce((v_tier ->> 'amount')::numeric, 0);
+        exit;
+      end if;
+    end loop;
+  end if;
+
+  if v_regla.min_amount is not null then
+    v_markup := greatest(v_markup, v_regla.min_amount);
+  end if;
+  if v_regla.max_amount is not null then
+    v_markup := least(v_markup, v_regla.max_amount);
+  end if;
+
+  -- Raíles que no dependen de la configuración: nunca negativo, y nunca más
+  -- que el subtotal. Un piso de $5 sobre un pedido de $2 no puede dejar al
+  -- comercio debiendo dinero por haber vendido.
+  v_markup := greatest(v_markup, 0);
+  v_markup := least(v_markup, v_base);
+
+  return jsonb_build_object(
+    'markup',       round(v_markup, 2),
+    'rule_id',      v_regla.id,
+    'rule_version', v_regla.version,
+    'markup_mode',  v_regla.markup_mode,
+    'strategy',     v_regla.strategy
+  );
+end;
+$$;
+
+revoke all on function public.calculate_platform_markup(uuid, numeric, uuid)
+  from public, anon, authenticated;
+grant execute on function public.calculate_platform_markup(uuid, numeric, uuid)
+  to service_role;
+
+-- ⚠️ NO se recrean `create_storefront_order` ni `set_order_status`, mismo
+-- criterio que `orders_reject_blocked`. Un disparador cubre LOS TRES caminos
+-- —tienda, bot y mostrador— y cualquiera que se invente después.
+create or replace function public.orders_stamp_pricing()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_calc jsonb;
+begin
+  -- `create_storefront_order` inserta el pedido con subtotal 0 y lo actualiza
+  -- al final: sin esta condición se sellaría 0 y no volvería a mirarse.
+  if coalesce(new.subtotal, 0) <= 0 then
+    return new;
+  end if;
+
+  -- El panel actualiza estos pedidos muchas veces (estado, aviso,
+  -- comprobante); recalcular en cada una sería trabajo tirado.
+  if tg_op = 'UPDATE'
+     and new.subtotal is not distinct from old.subtotal
+     and new.pricing_rule_id is not distinct from old.pricing_rule_id then
+    return new;
+  end if;
+
+  -- Si el pedido ya tiene regla sellada se recalcula con ESA y no con la
+  -- vigente hoy: un pedido de febrero no puede empezar a cobrar el porcentaje
+  -- de marzo porque alguien le cambió el estado.
+  v_calc := public.calculate_platform_markup(
+    new.business_id,
+    new.subtotal,
+    new.pricing_rule_id
+  );
+
+  new.merchant_subtotal    := round(new.subtotal - (v_calc ->> 'markup')::numeric, 2);
+  new.platform_markup      := (v_calc ->> 'markup')::numeric;
+  new.pricing_rule_id      := nullif(v_calc ->> 'rule_id', '')::uuid;
+  new.pricing_rule_version := nullif(v_calc ->> 'rule_version', '')::integer;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_stamp_pricing on public.orders;
+create trigger orders_stamp_pricing
+  before insert or update on public.orders
+  for each row execute function public.orders_stamp_pricing();
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- CUÁNTO LLEVA ACUMULADO CADA COMERCIO
+-- Migración incremental: migration-2026-08-16-resumen-de-margen.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Se suma sobre `sales`, NO sobre `orders`: un pedido puede estar aceptado o
+-- en preparación y todavía no ser dinero. La venta nace cuando el pedido se
+-- ENTREGA, que es el estándar que ya siguen todos los reportes del dueño.
+--
+-- Consecuencias deliberadas: un pedido cancelado nunca llega a `sales` y no
+-- genera comisión —no hay que excluirlo, no está—; una venta ANULADA deja de
+-- contar; y las ventas de citas y estadías entran con margen 0, porque
+-- `platform_markup` vive en `orders`.
+--
+-- La fecha que manda es `sold_at` y no `orders.created_at`: un pedido de fin
+-- de mes entregado el día 1 pertenece al mes en que se cobró. Contarlo por la
+-- fecha del pedido haría que cerrar un mes cambiara números ya facturados.
+--
+-- ⚠️ `p_business_id` nulo devuelve TODOS los negocios y existe solo para el
+-- panel del superadmin. La ruta del comercio pasa SIEMPRE su `businessId` del
+-- JWT (regla inviolable #1).
+
+create or replace function public.platform_markup_summary(
+  p_from        date,
+  p_to          date,
+  p_business_id uuid default null
+)
+returns table (
+  business_id   uuid,
+  business_name text,
+  pedidos       bigint,
+  bruto         numeric,
+  margen        numeric,
+  comercio      numeric
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    s.business_id,
+    max(b.name)                                    as business_name,
+    count(*)                                       as pedidos,
+    round(coalesce(sum(s.total), 0), 2)            as bruto,
+    round(coalesce(sum(o.platform_markup), 0), 2)  as margen,
+    round(coalesce(sum(s.total), 0)
+        - coalesce(sum(o.platform_markup), 0), 2)  as comercio
+  from public.sales s
+  join public.businesses b on b.id = s.business_id
+  -- `left`: una venta de cita o estadía no tiene pedido detrás y debe contar
+  -- en el bruto igualmente.
+  left join public.orders o on o.id = s.order_id
+  where s.status = 'completada'
+    and s.sold_at >= p_from
+    and s.sold_at <  p_to
+    and (p_business_id is null or s.business_id = p_business_id)
+  group by s.business_id
+  order by round(coalesce(sum(o.platform_markup), 0), 2) desc;
+$$;
+
+revoke all on function public.platform_markup_summary(date, date, uuid)
+  from public, anon, authenticated;
+grant execute on function public.platform_markup_summary(date, date, uuid)
+  to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- EL CIERRE DE MES: LA COMISIÓN ENTRA EN LA FACTURA
+-- Migración incremental: migration-2026-08-16-cierre-de-mes.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Pensado para MUCHOS negocios, no para uno. Tres decisiones que con un local
+-- son opinables y con los miles de una ciudad grande no:
+--
+--   1. El cierre es UNA operación por conjuntos, no un bucle. Un bucle haría
+--      una consulta por local: con 5.000 locales, un cierre de minutos que se
+--      cae a la mitad. Aquí es un solo `insert ... on conflict`.
+--   2. Índices para el rango de fechas: `idx_sales_biz_date` empieza por
+--      `business_id` y no sirve para «todas las ventas de agosto».
+--   3. Idempotente por naturaleza: no suma, RECALCULA desde `sales` y escribe
+--      el valor absoluto. Un reintento tras un fallo de red no cobra el doble.
+--
+-- ⚠️ Un mes ya PAGADO no se reescribe jamás: si una venta se anula después de
+-- liquidar, se descuenta del mes SIGUIENTE. Una factura emitida es un hecho.
+--
+-- ⚠️ `billing.amount` sigue siendo LA CUOTA. Sumarle la comisión rompería toda
+-- lectura existente y dejaría al comercio sin distinguir qué paga por el
+-- servicio y qué por sus ventas.
+
+-- ── 1. La comisión en la factura ───────────────────────────────────────────
+alter table public.billing
+  add column if not exists commission_amount    numeric(10,2) not null default 0,
+  add column if not exists commission_orders    integer       not null default 0,
+  add column if not exists commission_closed_at timestamptz;
+
+comment on column public.billing.commission_amount is
+  'Comisión de la plataforma del periodo. `amount` sigue siendo la cuota: el total es la suma.';
+
+
+-- ── 2. Una factura por negocio y mes, declarado ────────────────────────────
+--
+-- La invariante ya existía —`billing_month_claims` tiene esa clave primaria—
+-- pero `billing` no la declaraba, así que ningún camino futuro estaba
+-- obligado a respetarla. Declararla permite además cerrar el mes con
+-- `on conflict`, en UNA operación atómica en vez de leer-y-luego-escribir,
+-- que con dos instancias del servidor es una carrera.
+--
+-- Verificado antes de crearlo: cero duplicados en los datos actuales.
+create unique index if not exists uq_billing_negocio_periodo
+  on public.billing (business_id, period_start);
+
+
+-- ── 3. El índice que hace posible el cierre ────────────────────────────────
+--
+-- El cierre pregunta «todas las ventas completadas de este mes, de TODOS los
+-- negocios». `idx_sales_biz_date` empieza por `business_id` y no sirve para
+-- eso. Parcial sobre `completada` porque las anuladas no se cobran: el índice
+-- queda más pequeño y más rápido.
+create index if not exists idx_sales_cierre
+  on public.sales (sold_at)
+  where status = 'completada';
+
+-- El cruce del cierre contra la factura del periodo.
+create index if not exists idx_billing_periodo
+  on public.billing (period_start);
+
+
+-- ── 4. El cierre ───────────────────────────────────────────────────────────
+--
+-- Devuelve qué hizo, para que la tarea programada pueda registrarlo y el
+-- superadmin vea el resultado sin abrir la base.
+create or replace function public.settle_month_commission(
+  p_period_start date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_fin       date;
+  v_afectadas integer;
+  v_total     numeric(10,2);
+  v_pagadas   integer;
+begin
+  if p_period_start is null or p_period_start <> date_trunc('month', p_period_start)::date then
+    raise exception using
+      errcode = '22023',
+      message = 'El cierre va sobre el primer día de un mes.';
+  end if;
+
+  v_fin := (p_period_start + interval '1 month')::date;
+
+  -- Cuántas facturas de ese mes están pagadas y por tanto NO se tocan. Se
+  -- cuenta ANTES de escribir para poder informarlo: si un mes se cierra tarde
+  -- y ya se cobró, el superadmin tiene que enterarse en vez de creer que
+  -- entró todo.
+  select count(*) into v_pagadas
+  from public.billing
+  where period_start = p_period_start
+    and status = 'paid'
+    and exists (
+      select 1 from public.platform_markup_summary(p_period_start, v_fin, business_id)
+    );
+
+  -- UNA operación: calcula, actualiza lo que existe y crea lo que falta.
+  --
+  -- `insert ... on conflict do update` en vez de leer-y-escribir porque con
+  -- dos instancias del servidor lo segundo es una carrera: las dos leerían
+  -- «no hay factura» y las dos insertarían.
+  with resumen as (
+    select * from public.platform_markup_summary(p_period_start, v_fin, null)
+  )
+  insert into public.billing (
+    business_id, amount, currency, period_start, period_end,
+    status, commission_amount, commission_orders, commission_closed_at
+  )
+  select
+    r.business_id,
+    -- Sin cuota conocida la factura nace en 0 y solo lleva comisión: es
+    -- preferible a que la comisión de ese local no se facture nunca.
+    coalesce(b.monthly_rate, 0),
+    'USD',
+    p_period_start,
+    (v_fin - interval '1 day')::date,
+    'pending',
+    r.margen,
+    r.pedidos,
+    now()
+  from resumen r
+  join public.businesses b on b.id = r.business_id
+  on conflict (business_id, period_start) do update
+  set commission_amount    = excluded.commission_amount,
+      commission_orders    = excluded.commission_orders,
+      commission_closed_at = now()
+  -- ⚠️ Un mes ya pagado NO se reescribe: si una venta se anula después de
+  -- liquidar, se descuenta del mes siguiente. Una factura emitida es un hecho.
+  where public.billing.status <> 'paid';
+
+  get diagnostics v_afectadas = row_count;
+
+  select coalesce(sum(commission_amount), 0) into v_total
+  from public.billing
+  where period_start = p_period_start;
+
+  return jsonb_build_object(
+    'periodo',            p_period_start,
+    'facturas_afectadas', v_afectadas,
+    'comision_total',     v_total,
+    'ya_pagadas',         v_pagadas
+  );
+end;
+$$;
+
+revoke all on function public.settle_month_commission(date)
+  from public, anon, authenticated;
+grant execute on function public.settle_month_commission(date)
+  to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- TRES CASOS LÍMITE DEL MOTOR DE MARGEN
+-- Migración incremental: migration-2026-08-16-margen-casos-limite.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- 1. EL MES TERMINA EN ECUADOR. `sold_at` es timestamptz y las fechas del
+--    cierre llegaban como `date`, comparadas en la zona de la sesión (UTC en
+--    Supabase): una venta del 31 de agosto a las 20:00 en Ecuador son las
+--    01:00 UTC del 1 de septiembre y se facturaba en SEPTIEMBRE. No es un
+--    caso raro: son las cinco últimas horas de CADA día, la franja de más
+--    ventas de un restaurante.
+--
+-- 2. LA COMISIÓN NO SE COBRA SOBRE UN DESCUENTO. El margen salía de
+--    `subtotal`, el precio ANTES del descuento: un pedido de $100 con $20 de
+--    descuento deja $80 al comercio y se le cobraba el 10% de $100.
+--
+-- 3. `on_top` PROMETÍA ALGO QUE NO HACE. El disparador restaba igual, así que
+--    era `absorbed` con otro nombre. El CHECK lo cierra hasta que el catálogo,
+--    el carrito y el resumen pinten el precio con margen. Falla CERRADO, igual
+--    que `scope` con 'category'.
+
+-- ── 1. El mes, en hora de Ecuador ──────────────────────────────────────────
+create or replace function public.platform_markup_summary(
+  p_from        date,
+  p_to          date,
+  p_business_id uuid default null
+)
+returns table (
+  business_id   uuid,
+  business_name text,
+  pedidos       bigint,
+  bruto         numeric,
+  margen        numeric,
+  comercio      numeric
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    s.business_id,
+    max(b.name)                                    as business_name,
+    count(*)                                       as pedidos,
+    round(coalesce(sum(s.total), 0), 2)            as bruto,
+    round(coalesce(sum(o.platform_markup), 0), 2)  as margen,
+    round(coalesce(sum(s.total), 0)
+        - coalesce(sum(o.platform_markup), 0), 2)  as comercio
+  from public.sales s
+  join public.businesses b on b.id = s.business_id
+  left join public.orders o on o.id = s.order_id
+  where s.status = 'completada'
+    -- El día empieza y acaba en Ecuador. Sin esto, las ventas de 19:00 a
+    -- medianoche —la franja de más movimiento— caen en el día siguiente, y
+    -- las del último día del mes, en el mes siguiente.
+    and s.sold_at >= (p_from::timestamp at time zone 'America/Guayaquil')
+    and s.sold_at <  (p_to::timestamp   at time zone 'America/Guayaquil')
+    and (p_business_id is null or s.business_id = p_business_id)
+  group by s.business_id
+  order by round(coalesce(sum(o.platform_markup), 0), 2) desc;
+$$;
+
+revoke all on function public.platform_markup_summary(date, date, uuid)
+  from public, anon, authenticated;
+grant execute on function public.platform_markup_summary(date, date, uuid)
+  to service_role;
+
+
+-- ── 2. El descuento sale de la base antes de calcular ──────────────────────
+create or replace function public.orders_stamp_pricing()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_calc jsonb;
+  v_base numeric(10,2);
+begin
+  -- La base es lo que el comercio cobra POR LOS PRODUCTOS: el subtotal menos
+  -- el descuento. No incluye el envío, que no es suyo, ni la propina.
+  v_base := round(coalesce(new.subtotal, 0) - coalesce(new.discount, 0), 2);
+
+  if v_base <= 0 then
+    return new;
+  end if;
+
+  -- El panel actualiza estos pedidos muchas veces (estado, aviso,
+  -- comprobante); recalcular en cada una sería trabajo tirado.
+  if tg_op = 'UPDATE'
+     and new.subtotal is not distinct from old.subtotal
+     and new.discount is not distinct from old.discount
+     and new.pricing_rule_id is not distinct from old.pricing_rule_id then
+    return new;
+  end if;
+
+  v_calc := public.calculate_platform_markup(
+    new.business_id,
+    v_base,
+    new.pricing_rule_id
+  );
+
+  new.merchant_subtotal    := round(v_base - (v_calc ->> 'markup')::numeric, 2);
+  new.platform_markup      := (v_calc ->> 'markup')::numeric;
+  new.pricing_rule_id      := nullif(v_calc ->> 'rule_id', '')::uuid;
+  new.pricing_rule_version := nullif(v_calc ->> 'rule_version', '')::integer;
+
+  return new;
+end;
+$$;
+
+
+-- ── 3. `on_top` no se puede guardar hasta que exista de verdad ─────────────
+--
+-- Falla CERRADO, igual que `scope` con 'category'. Es preferible que el
+-- superadmin no pueda elegirlo a que lo elija y obtenga otra cosa.
+alter table public.pricing_rules
+  drop constraint if exists pricing_rules_mode_check;
+
+alter table public.pricing_rules
+  add constraint pricing_rules_mode_check
+  check (markup_mode = 'absorbed');
+
+comment on column public.pricing_rules.markup_mode is
+  'Solo `absorbed` por ahora. `on_top` exige que el catálogo, el carrito y el resumen pinten el precio con margen; hasta entonces el CHECK lo impide.';

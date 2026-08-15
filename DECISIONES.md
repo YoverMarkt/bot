@@ -28,6 +28,7 @@ un módulo concreto, no en cada sesión.
 - [Envío, pago y color de la tienda](#envío-pago-y-color-de-la-tienda)
 - [Un pedido entregado es una venta](#un-pedido-entregado-es-una-venta)
 - [Los tres modos de atención](#los-tres-modos-de-atención)
+- [Lo que gana la plataforma](#lo-que-gana-la-plataforma)
 
 ---
 
@@ -212,3 +213,49 @@ Estadía confirmada  → venta
 ### Un agujero que destapó
 
 Al añadir la v2, el guardián de cobertura de RPCs **no la exigía probada**: su extractor buscaba `[a-z_]` y el nombre lleva un dígito. **Cualquier función con número en el nombre se le escapaba.** Corregido a `[a-z0-9_]`, y con eso el guardián reclamó de inmediato que la v2 se ejecutara contra PostgreSQL real, que es justo su trabajo.
+
+
+---
+
+## Lo que gana la plataforma
+
+**El motor de margen (2026-08-16).** Hasta esta fecha el SaaS tenía **una sola fuente de ingreso: la cuota mensual**. Un pedido no dejaba nada y no existía ni una columna que dijera cuánto de lo que pagó el cliente era de la plataforma. El motor calcula, congela, acumula y factura — y se instaló **apagado**: sin reglas cargadas el margen es 0 y nadie paga un centavo de más.
+
+**Por qué es una tabla y no un porcentaje.** Un restaurante y un supermercado no se pueden cobrar igual, y es la razón entera del módulo:
+
+| | Ticket | Margen del comercio | Un 8 % le costaría |
+|---|---|---|---|
+| Restaurante | $15 | Amplio | $1.20 — nadie se inmuta |
+| Supermercado | $80 | 2–5 % | $6.40 — **más de lo que gana** |
+
+De ahí los tres frenos, y cada uno protege a alguien distinto:
+
+- **`max_amount` (techo)** protege al comercio de volumen: «4 %, máximo $3» deja una canasta de $150 en $3 y no en $6.
+- **`min_amount` (piso)** protege a **la plataforma**. No es simetría: cada pedido cuesta mensajes de WhatsApp —Meta los cobra desde el 1 de octubre de 2026— y llamadas de IA. Un pedido de $2 al 8 % deja $0.16 y puede costar más que eso en mensajes, así que **sin piso los pedidos pequeños se atienden a pérdida**. Es la rentabilidad real por pedido, no el ingreso bruto.
+- **`tiered`** cubre lo que no alcanzan los otros dos.
+
+**Dónde se sella, y por qué ahí.** El margen lo escribe el disparador `orders_stamp_pricing`, **no** una versión nueva de `create_storefront_order`. Es el mismo criterio que ya siguió `orders_reject_blocked`: recrear la función del dinero por un añadido pequeño no compensa el riesgo de copiar la versión equivocada desde `schema.sql`, donde conviven varias definiciones. Un disparador cubre además los TRES caminos —tienda, bot y mostrador— y cualquiera que se invente después, sin que nadie tenga que acordarse de llamarlo.
+
+**Falla ABIERTO.** Sin regla aplicable el margen es 0 y el pedido sigue su camino. Equivocarse por defecto cuesta una comisión; equivocarse al revés cuesta el servicio entero de ese día, así que un problema de configuración de precios no puede dejar a una pizzería sin poder vender.
+
+**El pedido congela su regla.** Guarda `pricing_rule_id` y `pricing_rule_version`, así que subir el porcentaje mañana no reescribe el margen de los pedidos de hoy — igual que cambiar un precio no reescribe lo ya cobrado. Reemplazar una regla crea una VERSIÓN nueva y archiva la anterior en vez de editarla en sitio, por lo mismo. Y las archivadas no se borran: un pedido apunta a la suya sin clave foránea, así que borrarla dejaría «¿por qué a este le cobramos $3?» sin respuesta.
+
+**El acumulado se suma sobre `sales`, no sobre `orders`.** Un pedido aceptado o en preparación todavía no es dinero: la venta nace cuando se ENTREGA, que es el estándar que ya seguían todos los reportes del dueño. De ahí salen dos cosas gratis, sin construir nada: un pedido cancelado nunca llega a `sales` y no genera comisión, y una venta anulada deja de contar.
+
+### Tres casos límite que se encontraron auditando
+
+Ninguno había fallado, porque producción seguía sin comisiones — que es exactamente cuándo salen baratos:
+
+1. **El mes terminaba en Londres.** `sold_at` es `timestamptz` y las fechas del cierre llegaban como `date`, comparadas en la zona de la sesión (UTC en Supabase). Una venta del 31 de agosto a las 20:00 en Ecuador son las 01:00 UTC del 1 de septiembre: se facturaba en el mes siguiente. **No es un caso raro — son las cinco últimas horas de CADA día**, la franja de más ventas de un restaurante, así que cada cierre movía la última noche entera. El mismo error vivía en Node: las tres rutas calculaban «el mes actual» en UTC.
+2. **Se cobraba comisión sobre los descuentos.** El margen salía de `subtotal`, el precio ANTES del descuento. Hoy `orders.discount` es siempre 0, pero la columna existe y `create_order_with_items` la acepta: el día que se usara, el error aparecería en silencio y en todos los negocios a la vez.
+3. **`on_top` prometía algo que no hacía.** El disparador restaba igual, así que era `absorbed` con otro nombre. Aplicarlo de verdad exige que el catálogo, el carrito y el resumen pinten el precio con margen, o el cliente descubriría el precio real al confirmar. El CHECK lo cierra hasta entonces — **falla CERRADO, igual que `scope` con `category`: no se puede guardar una regla que el motor no vaya a honrar**. El cálculo se queda escrito y probado en `platform-pricing.ts` para no improvisarlo el día que las tres pantallas estén listas.
+
+### Pensado para ciudades grandes desde el principio
+
+Con un local cualquier cosa funciona; con los miles de una ciudad grande, tres cosas dejan de ser opinables:
+
+- **El cierre es UNA operación por conjuntos, no un bucle.** Un `for negocio in ... loop` haría una consulta por local: con 5.000 son 5.000 idas y vueltas y un cierre que tarda minutos y se cae a la mitad. Es un solo `insert ... on conflict`, todo o nada — que además cierra la carrera de leer-y-luego-escribir con dos instancias del servidor.
+- **Los índices se verifican con `EXPLAIN`, no se suponen.** `idx_sales_biz_date` empieza por `business_id` y no sirve para «todas las ventas de agosto»: se leería la tabla entera. `idx_sales_cierre` va por `sold_at` y solo sobre las completadas, que son las únicas que se cobran.
+- **Idempotente por naturaleza.** El cierre no suma: RECALCULA desde `sales` y escribe el valor absoluto. Correrlo tres veces deja el mismo número, y es lo que permite que exista una tarea diaria sin miedo a cobrar el doble tras un reintento.
+
+⚠️ **Un mes ya `paid` no se reescribe jamás.** Si una venta se anula después de liquidar, se descuenta del mes SIGUIENTE. Un número que el comercio ya vio y pagó no puede cambiar bajo sus pies. Y `billing.amount` sigue siendo la CUOTA: la comisión va en `commission_amount` porque sumarlas dejaría al comercio sin distinguir qué paga por el servicio y qué por sus ventas.

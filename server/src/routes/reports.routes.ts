@@ -6,6 +6,7 @@ type ReportPeriod = 'hoy' | 'semana' | 'mes'
 
 interface ModuloDb {
   getPendingOrders(businessId: string): Promise<unknown>
+  getPlatformMarkupSummary(from: string, to: string, businessId: string | null): Promise<unknown[]>
 }
 const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloReports {
@@ -86,6 +87,43 @@ router.get('/api/client/dashboard', auth.authClient, canViewReports, async (req,
   } catch (error) {
     console.error('❌ dashboard:', (error as Error).message)
     res.status(500).json({ error: 'No se pudo cargar el dashboard' })
+  }
+})
+
+/**
+ * Lo que el comercio lleva acumulado con la plataforma.
+ *
+ * Existe para que la primera factura no se discuta por WhatsApp: el dueño ve
+ * de dónde sale el número antes de que le llegue.
+ *
+ * ⚠️ El `business_id` sale SIEMPRE del JWT (regla inviolable #1). No hay
+ * parámetro de negocio, ni siquiera opcional: con uno, bastaría un id ajeno
+ * en la barra de direcciones para leer la facturación de otro local.
+ */
+router.get('/api/client/platform-fees', auth.authClient, canViewReports, async (req, res) => {
+  // El mes se calcula en ECUADOR, no en UTC: el servidor corre en UTC y a las
+  // 00:30 del día 1 en Londres, aquí sigue siendo el último día del mes
+  // anterior. Sin esto, el acumulado del dueño se reiniciaba cinco horas antes.
+  const mesEnEcuador = (desplazamiento: number): string => {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit',
+    }).formatToParts(new Date())
+    const anio = Number(partes.find(p => p.type === 'year')?.value)
+    const mes = Number(partes.find(p => p.type === 'month')?.value)
+    const d = new Date(Date.UTC(anio, mes - 1 + desplazamiento, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
+  }
+  const desde = mesEnEcuador(0)
+  const hasta = mesEnEcuador(1)
+
+  try {
+    const filas = await db.getPlatformMarkupSummary(desde, hasta, getClientBusinessId(req))
+    // Un mes sin ventas no es un error: es un mes sin ventas. Sin esto la
+    // pantalla tendría que distinguir «no hay datos» de «falló la consulta».
+    res.json(filas[0] || { pedidos: 0, bruto: 0, margen: 0, comercio: 0, desde, hasta })
+  } catch (error) {
+    console.error('❌ comisión acumulada:', (error as Error).message)
+    res.status(500).json({ error: 'No se pudo cargar la comisión acumulada' })
   }
 })
 
