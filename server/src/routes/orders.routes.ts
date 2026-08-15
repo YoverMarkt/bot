@@ -37,6 +37,10 @@ interface ModuloDb {
     payment_proof_url?: string | null
     payment_proof_public_id?: string | null
   } | null>
+  requestNewPaymentProof(
+    businessId: string,
+    orderId: string,
+  ): Promise<{ data?: unknown; error?: { message?: string } | null }>
   setOrderStatus(
     businessId: string,
     orderId: string,
@@ -255,6 +259,52 @@ router.put(
         error instanceof Error ? error.message : 'Error desconocido',
       )
       return res.status(500).json({ error: 'No se pudo confirmar el pago' })
+    }
+  },
+)
+
+// ── Pedir otro comprobante ─────────────────────────────────────────────────
+//
+// Rechazar CIERRA el pedido: `rechazado` es final y al cliente le llega «tu
+// pedido fue cancelado». Sin esto, una foto borrosa costaba una venta entera.
+//
+// Devuelve el pedido a `esperando_pago` y borra el comprobante anterior, que
+// van juntas: sin borrarlo, el buzón de WhatsApp rechazaría la foto siguiente.
+//
+// ⚠️ NO manda ningún WhatsApp, y es deliberado: cada aviso automático es
+// dinero en todos los negocios del SaaS. Aquí no hace falta — el pedido vuelve
+// a esperar pago, así que al cliente le reaparece solo el aviso en la tienda y
+// la pantalla que le dice qué hacer. Si el dueño quiere explicarle, le escribe.
+router.post(
+  '/api/client/orders/:id/request-proof',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    try {
+      const { data, error } = await db.requestNewPaymentProof(
+        businessId, String(req.params.id || ''),
+      )
+      if (error) {
+        console.error('❌ pedir otro comprobante:', error.message || 'Error desconocido')
+        return res.status(500).json({ error: 'No se pudo pedir otro comprobante' })
+      }
+      const resultado = (data || {}) as { result?: string }
+      if (resultado.result === 'not_found') {
+        return res.status(404).json({ error: 'Ese pedido no existe' })
+      }
+      if (resultado.result === 'invalid_transition') {
+        return res.status(409).json({
+          error: 'Solo se puede pedir otro comprobante mientras revisas el pago',
+        })
+      }
+      return res.json({ ok: true })
+    } catch (error) {
+      console.error(
+        '❌ pedir otro comprobante:',
+        error instanceof Error ? error.message : 'Error desconocido',
+      )
+      return res.status(500).json({ error: 'No se pudo pedir otro comprobante' })
     }
   },
 )

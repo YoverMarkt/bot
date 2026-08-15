@@ -107,6 +107,21 @@ const updateOrder = async (
     .eq('id', id)
 }
 
+/**
+ * Devuelve el pedido a «esperando pago» y BORRA el comprobante anterior.
+ *
+ * Las dos cosas van juntas: sin borrarlo, el buzón de WhatsApp rechazaría la
+ * foto siguiente —solo adjunta cuando no hay una ya puesta— y el dueño se
+ * quedaría mirando la borrosa para siempre.
+ */
+const requestNewPaymentProof = async (businessId: string, orderId: string) => {
+  const { data, error } = await db.rpc('request_new_payment_proof', {
+    p_business_id: businessId,
+    p_order_id: orderId,
+  })
+  return { data, error }
+}
+
 const setOrderStatus = async (businessId: string, id: string, status: string) => db.rpc(
   'set_order_status',
   {
@@ -229,6 +244,7 @@ export = {
   variantesDelTelefono,
   updateOrder,
   setOrderStatus,
+  requestNewPaymentProof,
   confirmOrderPayment,
   claimOrderNotification,
 }

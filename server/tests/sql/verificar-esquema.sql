@@ -249,6 +249,68 @@ begin
     end if;
   end;
 
+  -- ── 3 bis. La segunda oportunidad del comprobante ────────────────────────
+  --
+  -- Rechazar CIERRA el pedido —`rechazado` es final y al cliente le llega «tu
+  -- pedido fue cancelado»—, así que una foto borrosa costaba una venta entera.
+  -- Esto la devuelve a esperar pago y BORRA el comprobante anterior: sin eso,
+  -- el buzón de WhatsApp rechazaría la foto siguiente, porque solo adjunta
+  -- cuando no hay una ya puesta.
+  declare
+    v_revision uuid;
+    v_vuelta jsonb;
+  begin
+    insert into public.orders (
+      business_id, contact_phone, contact_name, status, total, source,
+      payment_method, payment_proof_url, payment_proof_public_id,
+      payment_confirmed_at
+    ) values (
+      v_business, '593900000801', 'Con comprobante', 'pago_en_revision', 12.50,
+      'storefront', 'transferencia', 'https://res.cloudinary.com/x/borrosa.jpg',
+      'botpanel/x/borrosa', now()
+    ) returning id into v_revision;
+
+    v_vuelta := public.request_new_payment_proof(v_business, v_revision);
+    if v_vuelta ->> 'result' <> 'updated' then
+      raise exception 'no se pudo pedir otro comprobante: %', v_vuelta;
+    end if;
+
+    if (select status from orders where id = v_revision) <> 'esperando_pago' then
+      raise exception 'el pedido debía volver a esperar el pago';
+    end if;
+
+    -- Las tres marcas del pago anterior se sueltan, o el cliente seguiría
+    -- viendo «Pago confirmado» mientras se le pide otro comprobante.
+    if (select payment_proof_url is not null
+          or payment_proof_public_id is not null
+          or payment_confirmed_at is not null
+        from orders where id = v_revision) then
+      raise exception 'quedó rastro del comprobante anterior';
+    end if;
+
+    -- Queda escrito en el historial, como cualquier cambio de estado.
+    if not exists (
+      select 1 from order_events
+      where order_id = v_revision
+        and from_status = 'pago_en_revision' and to_status = 'esperando_pago'
+    ) then
+      raise exception 'la vuelta atrás no quedó en order_events';
+    end if;
+
+    -- Y desde cualquier otro estado no significa nada: un pedido ya aceptado
+    -- no vuelve a esperar un comprobante.
+    v_vuelta := public.request_new_payment_proof(v_business, v_revision);
+    if v_vuelta ->> 'result' <> 'invalid_transition' then
+      raise exception 'se pidió otro comprobante desde un estado que no toca: %', v_vuelta;
+    end if;
+
+    -- Otro negocio no puede tocarlo.
+    v_vuelta := public.request_new_payment_proof(gen_random_uuid(), v_revision);
+    if v_vuelta ->> 'result' <> 'not_found' then
+      raise exception 'FUGA: otro negocio pidió otro comprobante de este pedido';
+    end if;
+  end;
+
   -- ── 3a. El camino del reparto: preparación → en camino → entregado ────────
   -- Es el flujo diario de una pizzería, y donde engancha la cooperativa.
   declare
