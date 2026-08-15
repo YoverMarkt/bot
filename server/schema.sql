@@ -3076,6 +3076,63 @@ create index if not exists idx_business_customers_bloqueados
   on public.business_customers (business_id, blocked_at)
   where blocked_at is not null;
 
+-- ── Un cliente bloqueado no crea pedidos desde la tienda ──────────────────
+-- El cinturón de la comprobación de la ruta: cierra la carrera y no falla
+-- abierto. Acotado a `source = 'storefront'` — un pedido de mostrador lo
+-- teclea el dueño con la persona delante.
+-- (migration-2026-08-15-bloqueo-en-el-pedido.sql)
+create or replace function public.storefront_customer_blocked(
+  p_business_id uuid,
+  p_customer_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.business_customers
+    where business_id = p_business_id
+      and customer_id = p_customer_id
+      and blocked_at is not null
+  );
+$$;
+
+revoke all on function public.storefront_customer_blocked(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.storefront_customer_blocked(uuid, uuid)
+  to service_role;
+
+-- ── El cinturón ────────────────────────────────────────────────────────────
+--
+-- Va dentro de la MISMA transacción que la inserción, así que cierra también
+-- la carrera: entre la comprobación de la ruta y el `insert` caben
+-- milisegundos, y el dueño puede bloquear justo ahí.
+create or replace function public.orders_reject_blocked()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if coalesce(new.source, '') = 'storefront'
+     and new.customer_id is not null
+     and public.storefront_customer_blocked(new.business_id, new.customer_id) then
+    raise exception using
+      errcode = '42501',
+      message = 'No podemos recibir tu pedido. Comunicate con el local.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_reject_blocked on public.orders;
+create trigger orders_reject_blocked
+  before insert on public.orders
+  for each row execute function public.orders_reject_blocked();
+
 -- Por negocio a propósito: que una pizzería vea a dónde pidió ese cliente en
 -- otro local sería filtrar datos entre negocios.
 create table if not exists public.customer_addresses (

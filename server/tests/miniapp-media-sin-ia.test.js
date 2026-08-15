@@ -32,7 +32,7 @@ function carga(kind) {
   }
 }
 
-function montar(chatMode) {
+function montar(chatMode, extras = {}) {
   const database = {
     getBusinessByChannel: vi.fn().mockResolvedValue({
       id: 'business-a', name: 'Monster Pizza', chat_mode: chatMode,
@@ -48,7 +48,7 @@ function montar(chatMode) {
   const logger = { log: vi.fn(), error: vi.fn() }
   return {
     bot, http, database,
-    procesar: createInboundWebhookProcessor({ database, bot, http, logger }),
+    procesar: createInboundWebhookProcessor({ database, bot, http, logger, ...extras }),
   }
 }
 
@@ -78,6 +78,48 @@ describe('media entrante en modo mini app', () => {
     const n = montar('miniapp')
     await n.procesar(carga('audio'))
     expect(n.bot.handleMessage.mock.calls[0][1]).toBe('[nota de voz]')
+  })
+
+  // ⚠️ Un bloqueado no puede seguir gastando en el negocio que lo bloqueó. El
+  // corte de `bot-conversation` llega tarde: para entonces ya se bajó el
+  // archivo y ya se pagó Whisper o visión.
+  for (const kind of ['image', 'audio']) {
+    const nombre = kind === 'image' ? 'foto' : 'nota de voz'
+    it(`la ${nombre} de un bloqueado no se descarga ni pasa por OpenAI`, async () => {
+      const m = montar('ai', { contactoBloqueado: async () => true })
+
+      await m.procesar(carga(kind))
+
+      expect(m.bot.transcribeAudio, 'Whisper').not.toHaveBeenCalled()
+      expect(m.bot.handleImage, 'visión').not.toHaveBeenCalled()
+      expect(m.http.get, 'descarga del archivo').not.toHaveBeenCalled()
+      // Pero el mensaje SÍ se entrega: ahí se guarda para que el dueño lo lea.
+      // Bloquear no es dejar de ver.
+      expect(m.bot.handleMessage).toHaveBeenCalledTimes(1)
+    })
+  }
+
+  // Sin bloqueo, el camino de siempre. Igual que la prueba de más abajo: la
+  // descarga simulada puede fallar y da igual — lo que se comprueba es que NO
+  // se tomó el atajo del marcador de texto.
+  it('sin bloqueo, un negocio en modo ai sigue su camino de siempre', async () => {
+    const m = montar('ai', { contactoBloqueado: async () => false })
+    await m.procesar(carga('audio')).catch(() => {})
+
+    const porElAtajo = m.bot.handleMessage.mock.calls
+      .some(([, texto]) => texto === '[nota de voz]' || texto === '[foto]')
+    expect(porElAtajo).toBe(false)
+  })
+
+  // Si la consulta del bloqueo falla se ATIENDE, como en el resto: quedarse
+  // sin servicio por un problema nuestro es peor que gastar una transcripción.
+  it('si la consulta del bloqueo revienta, la media se procesa igual', async () => {
+    const m = montar('ai', { contactoBloqueado: async () => { throw new Error('base caída') } })
+    await m.procesar(carga('audio')).catch(() => {})
+
+    const porElAtajo = m.bot.handleMessage.mock.calls
+      .some(([, texto]) => texto === '[nota de voz]' || texto === '[foto]')
+    expect(porElAtajo, 'un fallo del bloqueo no puede saltarse el procesado').toBe(false)
   })
 
   it('un negocio en modo ai NO toma el atajo: sigue su camino de siempre', async () => {

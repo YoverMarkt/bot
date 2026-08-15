@@ -1529,6 +1529,44 @@ begin
       raise exception 'pasado el silencio debía empezar de cero: %', v_r;
     end if;
 
+    -- ⚠️ UN BLOQUEADO NO CREA PEDIDOS, y lo impide la BASE.
+    --
+    -- La ruta ya lo comprueba, pero falla abierto a propósito y deja una
+    -- carrera de milisegundos con el botón del dueño. El trigger va dentro de
+    -- la misma transacción que la inserción, así que no hay hueco.
+    declare
+      v_bloqueado_pedido jsonb;
+      v_rechazado boolean := false;
+    begin
+      update public.business_customers set blocked_at = now()
+      where business_id = v_business and customer_id = v_molesto;
+
+      begin
+        v_bloqueado_pedido := public.create_storefront_order(
+          v_business, v_molesto, '593900000709', 'Molesto', null, 'pickup',
+          jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+        );
+      exception when insufficient_privilege then
+        v_rechazado := true;
+      end;
+
+      if not v_rechazado then
+        raise exception 'un cliente bloqueado consiguió crear un pedido: %', v_bloqueado_pedido;
+      end if;
+
+      -- Y desbloqueado vuelve a poder pedir: el cinturón no se queda puesto.
+      update public.business_customers set blocked_at = null
+      where business_id = v_business and customer_id = v_molesto;
+
+      v_bloqueado_pedido := public.create_storefront_order(
+        v_business, v_molesto, '593900000709', 'Molesto', null, 'pickup',
+        jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1))
+      );
+      if (v_bloqueado_pedido ->> 'order_number') is null then
+        raise exception 'tras desbloquear debía poder pedir: %', v_bloqueado_pedido;
+      end if;
+    end;
+
     -- ⚠️ EL MISMO MENSAJE NO SE CUENTA DOS VECES. La entrada es at-least-once:
     -- si la confirmación no llega, el worker reintenta y el mensaje vuelve a
     -- pasar por aquí. Sin esto, cinco reintentos de un cliente legítimo lo
