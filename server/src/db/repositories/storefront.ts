@@ -590,7 +590,30 @@ const getStorefrontOrder = async (input: {
   return { data: { ...data, events: eventos.data || [] }, error: null }
 }
 
+
+/**
+ * Los métodos de pago que ese negocio acepta HOY.
+ *
+ * Devuelve solo los que el dueño tiene encendidos Y la plataforma sabe
+ * procesar. La app pinta lo que reciba: dejó de tenerlos escritos a mano, que
+ * es lo que hacía que un dueño creyera que elegía y no eligiera nada.
+ */
+const getStorefrontPaymentMethods = async (businessId: string) => {
+  const { data, error } = await db.rpc('storefront_payment_methods', {
+    p_business_id: businessId,
+  })
+  if (error) throw new Error(error.message)
+  return (data || []) as Array<{
+    code: string
+    label: string
+    help_text: string | null
+    is_prepaid: boolean
+    requires_proof: boolean
+  }>
+}
+
 export = {
+  getStorefrontPaymentMethods,
   resolveCustomer,
   claimStorefrontLinkSend,
   claimMiniappReply,

@@ -518,6 +518,12 @@ begin
       raise exception 'una transferencia debía nacer esperando el pago, nació en %', v_estado;
     end if;
 
+    -- Un negocio nuevo nace SOLO con transferencia encendida, así que para
+    -- probar el flujo en efectivo hay que aceptarlo primero. Esto no es
+    -- andamiaje del test: es exactamente lo que hace el dueño en su panel.
+    update public.business_payment_methods set enabled = true
+    where business_id = v_business and method_code in ('efectivo', 'pago_al_retirar');
+
     v_efectivo := public.create_storefront_order(
       v_business, null, '+593900000002', 'Cliente', null, 'pickup',
       jsonb_build_array(jsonb_build_object('product_id', v_producto, 'quantity', 1)),
@@ -762,6 +768,9 @@ begin
     end if;
 
     -- Quien retira en el local NO paga envío.
+    update public.business_payment_methods set enabled = true
+    where business_id = v_business and method_code in ('efectivo', 'pago_al_retirar');
+
     v_pedido := public.create_storefront_order(
       v_business, null, '+593900000002', 'Cliente', null, 'pickup',
       jsonb_build_array(jsonb_build_object(
@@ -2103,6 +2112,44 @@ begin
     update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
     raise exception 'se guardó un modo de margen que el motor no aplica';
   exception when check_violation then null;
+  end;
+
+  -- 14. LOS MÉTODOS DE PAGO son del negocio, no del código.
+  delete from public.orders where business_id = v_biz;
+  insert into public.business_payment_methods (business_id, method_code, enabled)
+  values (v_biz, 'transferencia', true), (v_biz, 'efectivo', true)
+  on conflict (business_id, method_code) do update set enabled = true;
+
+  if (select count(*) from public.storefront_payment_methods(v_biz)) <> 2 then
+    raise exception 'la tienda debería ofrecer los dos métodos activos';
+  end if;
+
+  -- Apagar el efectivo lo quita de la tienda...
+  update public.business_payment_methods set enabled = false
+  where business_id = v_biz and method_code = 'efectivo';
+  if exists (select 1 from public.storefront_payment_methods(v_biz) where code = 'efectivo') then
+    raise exception 'un método apagado sigue ofreciéndose en la tienda';
+  end if;
+
+  -- ...y el cinturón impide pagar con él, cerrando la carrera entre que la
+  -- app lo pinta y el cliente confirma.
+  begin
+    insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source, payment_method)
+    values (v_biz, '593900000941', 'pendiente', 10, 0, 10, 'USD', 'storefront', 'efectivo');
+    raise exception 'se creó un pedido con un método que el local no acepta';
+  exception when sqlstate '22023' then null;
+  end;
+
+  -- El de MOSTRADOR no se toca: lo teclea el dueño con la persona delante.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source, payment_method)
+  values (v_biz, 'mostrador', 'completado', 10, 0, 10, 'USD', 'manual', 'efectivo');
+
+  -- Y no se puede activar lo que la plataforma no sabe procesar.
+  begin
+    insert into public.business_payment_methods (business_id, method_code, enabled)
+    values (v_biz, 'tarjeta', true);
+    raise exception 'se activó un método sin pasarela que lo procese';
+  exception when sqlstate '22023' then null;
   end;
 
   -- ── Limpieza ──────────────────────────────────────────────────────────────

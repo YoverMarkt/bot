@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import MetodosDePago from './MetodosDePago'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
 import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
@@ -275,6 +276,13 @@ export function BusinessForm() {
         {/* ── Tu tienda (mini app) ── */}
         <div className="border-t pt-4 mt-1 space-y-3">
           <p className="text-[13px] font-semibold">Tu tienda</p>
+
+          {/* ── Cómo te pagan ──
+              Hasta el 2026-08-16 esto era un campo de texto que solo veía el
+              bot: el dueño creía que elegía y la tienda ofrecía los tres
+              métodos a todo el mundo. Ahora es el interruptor de verdad, y el
+              servidor lo vuelve a exigir al crear el pedido. */}
+          <MetodosDePago />
 
           <div>
             <Label htmlFor="business-delivery-fee">Costo de envío a domicilio</Label>

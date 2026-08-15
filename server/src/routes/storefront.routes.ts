@@ -47,6 +47,13 @@ interface StorefrontSessionRow {
 }
 
 interface StorefrontRouteDatabase {
+  getStorefrontPaymentMethods(businessId: string): Promise<Array<{
+    code: string
+    label: string
+    help_text: string | null
+    is_prepaid: boolean
+    requires_proof: boolean
+  }>>
   getBusinessBySlug(slug: string): Promise<StorefrontBusiness | null>
   getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
   getStorefrontSessionByHash(tokenHash: string): Promise<StorefrontSessionRow | null>
@@ -189,7 +196,14 @@ router.get('/api/store/:slug', async (req, res) => {
     return res.status(404).json({ error: 'Esta tienda no está disponible' })
   }
   return res.json({
-    business: publicBusiness(business),
+    business: {
+      ...publicBusiness(business),
+      // Los métodos que ESE local acepta. La app los pinta; ya no los lleva
+      // escritos a mano. Si la consulta falla se manda una lista vacía en vez
+      // de romper la portada: el cliente puede mirar la carta igual, y el
+      // checkout lo volverá a comprobar contra la base.
+      paymentMethods: await db.getStorefrontPaymentMethods(business.id).catch(() => []),
+    },
     status,
     canOrder: canOrder(status),
     todaysHours: hours,
@@ -294,7 +308,12 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
   ])
 
   return res.json({
-    business: business ? publicBusiness(business) : null,
+    business: business
+      ? {
+        ...publicBusiness(business),
+        paymentMethods: await db.getStorefrontPaymentMethods(business.id).catch(() => []),
+      }
+      : null,
     status,
     canOrder: canOrder(status),
     todaysHours: hours,

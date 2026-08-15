@@ -26,6 +26,10 @@ type EditableBusinessField = (typeof editableBusinessFields)[number]
 type DatabaseResult = { error?: { message?: string } | null }
 
 interface ModuloDb {
+  getBusinessPaymentMethods(businessId: string): Promise<unknown[]>
+  setBusinessPaymentMethod(
+    businessId: string, methodCode: string, enabled: boolean,
+  ): Promise<{ error?: { message?: string } | null }>
   getClientStats(businessId: string): Promise<unknown>
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
   updateBusiness(
@@ -260,6 +264,56 @@ router.put('/api/client/bot-prompt', auth.authClient, auth.requireOwner, async (
   } catch (error) {
     databaseFailure(res, 'actualizar el prompt', error)
   }
+})
+
+// ── Cómo le pagan a este negocio ───────────────────────────────────────────
+//
+// Hasta hoy el dueño creía que lo elegía —`payment_methods` era texto libre
+// que solo veía el bot— y la tienda ofrecía los tres métodos a todo el mundo.
+// Esto es el interruptor de verdad.
+//
+// ⚠️ El `business_id` sale SIEMPRE del JWT, nunca de la petición.
+router.get('/api/client/payment-methods', auth.authClient, async (req, res) => {
+  try {
+    res.json(await db.getBusinessPaymentMethods(getClientBusinessId(req)))
+  } catch (error) {
+    console.error('❌ métodos de pago:', (error as Error).message)
+    res.status(500).json({ error: 'No se pudieron cargar los métodos de pago' })
+  }
+})
+
+router.put('/api/client/payment-methods/:code', auth.authClient, auth.requireOwner, async (req, res) => {
+  const code = String(req.params.code || '')
+  if (!/^[a-z_]{3,30}$/.test(code)) {
+    return res.status(400).json({ error: 'Método de pago inválido.' })
+  }
+  const enabled = (req.body as { enabled?: unknown } | undefined)?.enabled
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'Indica si se enciende o se apaga.' })
+  }
+
+  // Quedarse sin ningún método activo dejaría la tienda sin poder cobrar, y
+  // el cliente lo descubriría al confirmar el pedido. Se impide aquí porque
+  // es una regla de producto, no de integridad: la base admite cero.
+  if (!enabled) {
+    const actuales = await db.getBusinessPaymentMethods(getClientBusinessId(req))
+    const activos = (actuales as Array<{ method_code: string, enabled: boolean }>)
+      .filter(m => m.enabled && m.method_code !== code)
+    if (activos.length === 0) {
+      return res.status(400).json({
+        error: 'Tiene que quedar al menos un método de pago activo.',
+      })
+    }
+  }
+
+  const { error } = await db.setBusinessPaymentMethod(getClientBusinessId(req), code, enabled)
+  if (error) {
+    // La base rechaza activar un método que la plataforma no procesa todavía.
+    return res.status(400).json({
+      error: 'Ese método de pago todavía no está disponible en la plataforma.',
+    })
+  }
+  res.json({ ok: true })
 })
 
 export = router
