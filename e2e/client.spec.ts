@@ -456,6 +456,28 @@ test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({
   })).toBe(true)
 })
 
+// ⚠️ REGRESIÓN del 2026-08-15. La lista de bloqueados es una petición más de
+// esta pantalla, y cuando devolvió `{}` en vez de una lista, `new Set({})`
+// reventó y se llevó por delante la pantalla ENTERA: el dueño se quedó sin
+// poder leer a sus clientes por un dato accesorio.
+//
+// El caso no es teórico ni de laboratorio: pasa con un 502 del proxy, con un
+// error de la base, o con un despliegue a medias. Un dato de adorno no puede
+// tumbar lo importante.
+test('un fallo en la lista de bloqueados no deja la pantalla en blanco', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+  await page.route('**/api/client/sessions/blocked', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: '{}',
+  }))
+  await page.goto(`${clientUrl}#/conversations`)
+
+  // La conversación se sigue leyendo, que es para lo que existe la pantalla.
+  await expect(page.getByText('Cliente móvil').first()).toBeVisible()
+  await page.getByText('Cliente móvil').first().click()
+  await expect(page.getByText('Hola desde E2E').last()).toBeVisible()
+})
+
 test('el nombre del contacto y las etiquetas se editan en modales', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)

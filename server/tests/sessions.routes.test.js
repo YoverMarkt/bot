@@ -59,11 +59,21 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('rutas de sesiones y conversaciones', () => {
+  // Eran 12; son 14 desde el 2026-08-13, con las dos del bloqueo de números
+  // (leer los bloqueados y cambiar el estado de uno). El número exacto es lo
+  // que obliga a mirar aquí cuando alguien añade una ruta: las tres capas de
+  // cada una —autenticación, permiso y manejador— son lo que de verdad se
+  // protege, y una ruta nueva sin ellas pasaría inadvertida.
   it('protege todos los endpoints con autenticación y permiso conversaciones', async () => {
-    expect(sessionsRouter.stack).toHaveLength(12)
+    expect(sessionsRouter.stack).toHaveLength(14)
     for (const layer of sessionsRouter.stack) {
       expect(layer.route.stack).toHaveLength(3)
     }
+
+    // El bloqueo cambia quién puede pedir y a quién contesta el bot: no puede
+    // quedarse sin el permiso de conversaciones.
+    expect(sessionsRouter.stack.map(layer => layer.route.path))
+      .toContain('/api/client/sessions/:phone/blocked')
 
     expect((await dispatch('get', '/api/client/sessions')).status).toBe(401)
     const employee = authorization({ urole: 'employee', perms: ['ventas'] })

@@ -51,6 +51,8 @@ interface StorefrontRouteDatabase {
   getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
   getStorefrontSessionByHash(tokenHash: string): Promise<StorefrontSessionRow | null>
   bindStorefrontSession(sessionId: string, deviceHash: string): Promise<boolean>
+  /** El bloqueo del dueño es total: quien está bloqueado no puede pedir. */
+  isCustomerBlocked(businessId: string, customerId: string): Promise<boolean>
   getSchedule(businessId: string): Promise<ScheduleRecord[]>
   getStorefrontCategories(businessId: string): Promise<unknown[]>
   getStorefrontProducts(businessId: string): Promise<unknown[]>
@@ -458,6 +460,25 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
   const { status } = await readStatus(business)
 
   const body = (req.body || {}) as Record<string, unknown>
+
+  // ── Bloqueado por el dueño: no pide, ni con su enlace ───────────────────
+  //
+  // El bloqueo del panel es TOTAL por decisión del dueño (2026-08-13): si solo
+  // callara al bot, quien tenga su enlace guardado seguiría metiendo pedidos y
+  // el bloqueo no bloquearía nada.
+  //
+  // Va aquí y no en el middleware a propósito: mirar la carta no molesta a
+  // nadie, y comprobarlo en cada petición de catálogo sería pagar una consulta
+  // por cada persona que abre la tienda para algo que le pasa a casi ninguna.
+  // Lo que hay que impedir es que ENTRE un pedido, y eso pasa por aquí.
+  //
+  // El mensaje no dice «estás bloqueado»: quien molesta busca una reacción, y
+  // el dueño no tiene por qué dar explicaciones desde una pantalla.
+  if (await db.isCustomerBlocked(businessId, customerId).catch(() => false)) {
+    return res.status(403).json({
+      error: 'No podemos recibir tu pedido. Comunícate con el local.',
+    })
+  }
 
   // ── Cerrado: se puede mirar, no pedir ───────────────────────────────────
   //

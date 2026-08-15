@@ -1462,6 +1462,86 @@ begin
     delete from public.customers where id = v_cliente;
   end;
 
+  -- ── 7 ter. Quien escribe por molestar: techo y bloqueo ──────────────────
+  --
+  -- El modo mini app contesta a CADA mensaje desde el 2026-08-12, así que
+  -- quien escribe por molestar recibe una respuesta por mensaje — y desde
+  -- octubre cada una se paga. Esto es lo que decide cuándo se ofrece el
+  -- teléfono del local y cuándo se deja de contestar.
+  declare
+    v_molesto uuid;
+    v_r jsonb;
+    v_i integer;
+  begin
+    insert into public.customers (phone) values ('593900000709')
+    returning id into v_molesto;
+
+    -- Las cuatro primeras son normales.
+    for v_i in 1..4 loop
+      v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+      if (v_r->>'permitido')::boolean is not true or v_r->>'motivo' <> 'ok' then
+        raise exception 'la respuesta % debía ser normal, y fue %', v_i, v_r;
+      end if;
+      if (v_r->>'respuestas')::integer <> v_i then
+        raise exception 'la cuenta debía ir por % y va por %', v_i, v_r->>'respuestas';
+      end if;
+    end loop;
+
+    -- La quinta sigue contestando, pero ofreciendo el teléfono. No cuesta un
+    -- mensaje más: es el mismo con una línea de ayuda.
+    v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+    if (v_r->>'permitido')::boolean is not true or v_r->>'motivo' <> 'con_telefono' then
+      raise exception 'la quinta debía llevar el teléfono, y fue %', v_r;
+    end if;
+
+    -- De la sexta a la décima se sigue contestando.
+    for v_i in 6..10 loop
+      v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+      if (v_r->>'permitido')::boolean is not true then
+        raise exception 'la respuesta % no debía callarse todavía: %', v_i, v_r;
+      end if;
+    end loop;
+
+    -- La undécima calla. Y el silencio dura 24 h: con una ventana que se
+    -- reinicia sola, quien molesta con paciencia pagaría el techo cada hora.
+    v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+    if (v_r->>'permitido')::boolean is not false or v_r->>'motivo' <> 'silenciado' then
+      raise exception 'pasado el tope debía callar, y fue %', v_r;
+    end if;
+
+    -- Aunque la hora se acabe, el silencio sigue en pie.
+    update public.business_customers
+    set reply_window_start = now() - interval '2 hours', reply_count = 0
+    where business_id = v_business and customer_id = v_molesto;
+
+    v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+    if (v_r->>'permitido')::boolean is not false then
+      raise exception 'el silencio de 24 h no puede levantarse al cambiar de hora: %', v_r;
+    end if;
+
+    -- Con el silencio vencido vuelve a contestar desde cero.
+    update public.business_customers
+    set muted_until = now() - interval '1 minute'
+    where business_id = v_business and customer_id = v_molesto;
+
+    v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+    if (v_r->>'permitido')::boolean is not true or (v_r->>'respuestas')::integer <> 1 then
+      raise exception 'pasado el silencio debía empezar de cero: %', v_r;
+    end if;
+
+    -- El bloqueo del dueño manda sobre todo lo demás y no caduca.
+    update public.business_customers
+    set blocked_at = now()
+    where business_id = v_business and customer_id = v_molesto;
+
+    v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24);
+    if (v_r->>'permitido')::boolean is not false or v_r->>'motivo' <> 'bloqueado' then
+      raise exception 'un contacto bloqueado no puede recibir respuesta: %', v_r;
+    end if;
+
+    delete from public.customers where id = v_molesto;
+  end;
+
   -- ── 8. Limpiezas programadas ──────────────────────────────────────────────
   perform public.cleanup_webhook_events();
   perform public.cleanup_platform_errors(30);

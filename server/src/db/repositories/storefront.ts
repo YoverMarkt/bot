@@ -349,6 +349,135 @@ const claimStorefrontLinkSend = async (
   return data === true
 }
 
+// ── Quien escribe por molestar ─────────────────────────────────────────────
+
+/**
+ * ¿Se le contesta a este cliente, y cómo?
+ *
+ * Todo dentro de PostgreSQL y en una sola operación: contar aquí y escribir
+ * después deja una carrera con los mensajes que llegan a la vez, que es justo
+ * lo que hace quien escribe rápido para molestar.
+ *
+ * Nunca lanza hacia arriba con un `permitido: false`: si la base falla se
+ * prefiere contestar. Quedarse callado por un fallo nuestro deja sin atender a
+ * un cliente de verdad, y eso cuesta más que un mensaje de más.
+ */
+const claimMiniappReply = async (
+  businessId: string,
+  customerId: string,
+  limites: { avisoDesde?: number; tope?: number; silencioHoras?: number } = {},
+): Promise<{
+  /** `false` = no se le contesta: está bloqueado o silenciado. */
+  permitido: boolean
+  motivo: 'ok' | 'con_telefono' | 'bloqueado' | 'silenciado'
+  /** Cuántas van en esta hora, con esta incluida. */
+  respuestas: number
+}> => {
+  const { data, error } = await db.rpc('claim_miniapp_reply', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+    p_aviso_desde: limites.avisoDesde ?? 5,
+    p_tope: limites.tope ?? 10,
+    p_silencio_horas: limites.silencioHoras ?? 24,
+  })
+  fail(error, 'No se pudo comprobar el ritmo de respuestas')
+  const respuesta = (data || {}) as {
+    permitido?: boolean
+    motivo?: 'ok' | 'con_telefono' | 'bloqueado' | 'silenciado'
+    respuestas?: number
+  }
+  return {
+    permitido: respuesta.permitido !== false,
+    motivo: respuesta.motivo || 'ok',
+    respuestas: Number(respuesta.respuestas) || 0,
+  }
+}
+
+/**
+ * ¿Este teléfono está bloqueado en este negocio?
+ *
+ * ⚠️ Se normaliza a dígitos porque `customers.phone` se guarda así, y el bot
+ * recibe el número con «+» (`+593…`). Buscar sin normalizar no falla: devuelve
+ * vacío, que aquí significaría «no está bloqueado» — el peor fallo posible
+ * para un bloqueo.
+ */
+const isContactBlocked = async (businessId: string, phone: string): Promise<boolean> => {
+  const digitos = String(phone || '').replace(/\D/g, '')
+  if (!businessId || !digitos) return false
+  const { data, error } = await db
+    .from('business_customers')
+    .select('blocked_at,customers!inner(phone)')
+    .eq('business_id', businessId)
+    .eq('customers.phone', digitos)
+    .maybeSingle()
+  fail(error, 'No se pudo comprobar el bloqueo')
+  return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
+}
+
+/** Lo mismo cuando ya se sabe QUIÉN es: el camino de la mini app. */
+const isCustomerBlocked = async (businessId: string, customerId: string): Promise<boolean> => {
+  if (!businessId || !customerId) return false
+  const { data, error } = await db
+    .from('business_customers')
+    .select('blocked_at')
+    .eq('business_id', businessId)
+    .eq('customer_id', customerId)
+    .maybeSingle()
+  fail(error, 'No se pudo comprobar el bloqueo')
+  return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
+}
+
+/**
+ * Los teléfonos bloqueados de un negocio, para que el panel los marque.
+ *
+ * Se consultan aparte y no dentro de la lista de conversaciones a propósito:
+ * son POCOS —y en casi todos los negocios, ninguno—, mientras que la lista de
+ * chats se pide cada pocos segundos. Un `join` ahí correría sin parar por un
+ * dato que casi siempre está vacío; esta consulta usa el índice parcial
+ * `idx_business_customers_bloqueados`, que solo indexa las filas bloqueadas.
+ */
+const getBlockedPhones = async (businessId: string): Promise<string[]> => {
+  if (!businessId) return []
+  const { data, error } = await db
+    .from('business_customers')
+    .select('customers!inner(phone)')
+    .eq('business_id', businessId)
+    .not('blocked_at', 'is', null)
+  fail(error, 'No se pudieron leer los números bloqueados')
+  const filas = (data || []) as { customers?: { phone?: string | null } | null }[]
+  return filas
+    .map(fila => String(fila.customers?.phone || '').trim())
+    .filter(Boolean)
+}
+
+/**
+ * El dueño bloquea o desbloquea un número desde su panel.
+ *
+ * Crea el cliente si no existía: quien escribe por molestar puede no haber
+ * pedido nunca, y es justo a ese al que hay que poder bloquear.
+ *
+ * Desbloquear limpia TAMBIÉN el silencio automático y el contador: si el dueño
+ * decide dar otra oportunidad, empieza de cero. Dejarle el silencio puesto
+ * haría que el desbloqueo pareciera no funcionar durante horas.
+ */
+const setContactBlocked = async (
+  businessId: string,
+  phone: string,
+  bloqueado: boolean,
+): Promise<{ blocked: boolean }> => {
+  const customer = await resolveCustomer({ businessId, phone })
+  const ahora = new Date().toISOString()
+  const { error } = await db
+    .from('business_customers')
+    .update(bloqueado
+      ? { blocked_at: ahora, updated_at: ahora }
+      : { blocked_at: null, muted_until: null, reply_count: 0, reply_window_start: null, updated_at: ahora })
+    .eq('business_id', businessId)
+    .eq('customer_id', customer.id)
+  fail(error, 'No se pudo actualizar el bloqueo')
+  return { blocked: bloqueado }
+}
+
 /**
  * Ata la sesión a ESTE dispositivo tras confirmar el número.
  *
@@ -457,6 +586,11 @@ const getStorefrontOrder = async (input: {
 export = {
   resolveCustomer,
   claimStorefrontLinkSend,
+  claimMiniappReply,
+  isContactBlocked,
+  isCustomerBlocked,
+  setContactBlocked,
+  getBlockedPhones,
   bindStorefrontSession,
   getBusinessCustomer,
   setCustomerDisplayName,

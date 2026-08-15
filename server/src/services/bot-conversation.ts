@@ -19,6 +19,8 @@ import type {
 } from './bot-media'
 
 interface ConversationBusiness extends ActionBusiness, BotMediaBusiness {
+  /** Para ofrecérselo a quien lleva cinco mensajes y no se aclara con la app. */
+  phone?: string | null
   suspended?: boolean | null
   bot_active?: boolean | null
   ai_provider?: string | null
@@ -87,6 +89,22 @@ interface ConversationDatabase {
     name?: string | null
   }): Promise<{ id: string }>
   claimStorefrontLinkSend(businessId: string, customerId: string): Promise<boolean>
+  /**
+   * ¿El dueño bloqueó este número? Vale para todos los modos.
+   *
+   * ⚠️ OPCIONAL como el resto de capacidades nuevas de esta interfaz. No es
+   * pereza de tipado: quien monte esta conversación con una base parcial —los
+   * arneses de prueba, el simulador— no puede reventar por una función que
+   * todavía no conoce. Sin ella no hay bloqueo, que es exactamente como se
+   * comportaba el bot antes de que existiera.
+   */
+  isContactBlocked?(businessId: string, phone: string): Promise<boolean>
+  /** Cuenta la respuesta y decide si sale, con teléfono, o si toca callar. */
+  claimMiniappReply?(businessId: string, customerId: string): Promise<{
+    permitido: boolean
+    motivo: 'ok' | 'con_telefono' | 'bloqueado' | 'silenciado'
+    respuestas: number
+  }>
 }
 
 interface ConversationReports {
@@ -206,13 +224,13 @@ interface ConversationStorefrontLink {
   storefrontInvite(
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
-    repetido?: boolean,
+    opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
   ): string
   /** El mismo enlace, listo para ir como botón nativo del canal. */
   storefrontInviteButton(
     business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
     url: string,
-    repetido?: boolean,
+    opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
   ): { body: string; url: string; label: string; footer: string }
 }
 
@@ -409,17 +427,20 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     sendLink?: ProcessMessageInput['sendLink']
     /** Ya se le mandó hace poco: cambia el texto, nunca el envío. */
     repetido?: boolean
+    /** A partir de la quinta respuesta en una hora, a quién llamar. */
+    telefonoDeAyuda?: string | null
   }): Promise<string> {
     const { business, url, send, sendLink, repetido = false } = input
+    const opciones = { repetido, telefonoDeAyuda: input.telefonoDeAyuda || null }
     // El texto se redacta siempre, salga o no por él: es lo que se guarda en
     // el historial para que el dueño vea a dónde apuntaba lo que se mandó.
     const texto = storefrontLink
-      ? storefrontLink.storefrontInvite(business, url, repetido)
+      ? storefrontLink.storefrontInvite(business, url, opciones)
       : url
     if (sendLink && storefrontLink) {
       try {
         const enviado = await sendLink(
-          storefrontLink.storefrontInviteButton(business, url, repetido),
+          storefrontLink.storefrontInviteButton(business, url, opciones),
         )
         if (enviado) return texto
       } catch { /* el canal no pudo con el botón: sale el texto */ }
@@ -468,16 +489,26 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     await database.saveMessage(business.id, phone, 'user', text)
 
     let toca = true
+    // Cuántas respuestas lleva en esta hora, y si toca callar. Ante cualquier
+    // fallo se contesta con normalidad: quedarse mudo por un problema NUESTRO
+    // deja sin atender a un cliente de verdad, y eso cuesta más que un mensaje.
+    let reclamo = { permitido: true, motivo: 'ok' as string, respuestas: 0 }
     try {
       const customer = await database.resolveCustomer({
         businessId: business.id,
         phone,
         name: session?.contact_name || null,
       })
-      toca = await database.claimStorefrontLinkSend(business.id, customer.id)
+      if (database.claimMiniappReply) {
+        reclamo = await database.claimMiniappReply(business.id, customer.id)
+      }
+      // El enlace solo se reclama si de verdad se va a contestar: gastar la
+      // ventana de 24 h mientras se está callado dejaría al cliente sin enlace
+      // justo cuando vuelva a escribir en condiciones.
+      if (reclamo.permitido) {
+        toca = await database.claimStorefrontLinkSend(business.id, customer.id)
+      }
     } catch {
-      // Si la base no responde se prefiere mandar el enlace: quedarse callado
-      // deja al cliente sin forma de pedir.
       toca = true
     }
 
@@ -509,6 +540,33 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
+    // ── Se pasó del techo: silencio ───────────────────────────────────────
+    //
+    // ⚠️ Va DESPUÉS del comprobante a propósito. Quien acaba de pagar no es
+    // quien molesta, y dejarle sin confirmación después de transferir es el
+    // peor momento posible para ahorrarse un mensaje.
+    //
+    // El silencio dura 24 h y NO se levanta a la hora siguiente. Con una
+    // ventana que se reinicia sola, quien escribe con paciencia pagaría el
+    // techo entero cada hora — diez mensajes por hora son doscientos al día.
+    //
+    // No se le avisa de que está callado: quien escribe para molestar busca
+    // una reacción, y «te voy a dejar de contestar» es una reacción. Además
+    // cuesta un mensaje, que es justo lo que se está evitando.
+    if (!reclamo.permitido) {
+      await database.upsertSession(business.id, phone, {
+        last_message: text,
+        last_message_at: new Date(now()).toISOString(),
+        // Marcado para el dueño: si alguien llegó hasta aquí, merece que una
+        // persona mire esa conversación y decida si la bloquea.
+        unread_owner: true,
+      })
+      logger.log(
+        `🔇 [${business.name}] ${reclamo.motivo} — mensaje de ${phone} guardado, sin respuesta`,
+      )
+      return
+    }
+
     // `invite` puede venir vacío si el negocio no tiene tienda utilizable —sin
     // catálogo no hay nada que enseñar—. Ahí se recuerda igual, con el
     // teléfono del local, en vez de dejar el mensaje sin respuesta.
@@ -519,7 +577,14 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // conversación.
     if (url) {
       const texto = await enviarInvitacion({
-        business, url, send, sendLink: input.sendLink, repetido: !toca,
+        business,
+        url,
+        send,
+        sendLink: input.sendLink,
+        repetido: !toca,
+        // A partir de la quinta del cliente en esta hora. No cuesta un mensaje
+        // más: es el mismo, con una línea que puede desatascarlo.
+        telefonoDeAyuda: reclamo.motivo === 'con_telefono' ? business.phone : null,
       })
       await database.saveMessage(business.id, phone, 'assistant', texto)
     } else {
@@ -772,6 +837,41 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         unread_owner: true,
       })
       logger.log(`🤚 [${business.name}] modo manual — mensaje de ${phone} guardado para el dueño`)
+      return
+    }
+
+    // ── Bloqueado por el dueño ────────────────────────────────────────────
+    //
+    // Va aquí, junto al modo manual, porque hacen lo mismo con motivos
+    // distintos: el bot calla y el dueño se queda con el mensaje. La
+    // diferencia es que el modo manual espera que una persona conteste, y esto
+    // espera que nadie conteste.
+    //
+    // ⚠️ El mensaje SE GUARDA igual. Bloquear no es dejar de ver: el dueño
+    // tiene que poder leer qué le escriben, y decidir si desbloquea. Borrar la
+    // prueba de lo que pasó es exactamente lo contrario de lo que necesita
+    // quien está aguantando a alguien.
+    //
+    // ⚠️ Y NUNCA se le avisa al bloqueado. Decirle «estás bloqueado» convierte
+    // el bloqueo en un juego con marcador, y quien escribe para molestar busca
+    // precisamente una reacción. El silencio no da nada con lo que jugar.
+    //
+    // Vale para TODOS los modos: en IA, en menú y en mini app. Cuesta una
+    // consulta indexada por mensaje, que al lado de las seis que ya hace el
+    // bot —y de una llamada al modelo— es ruido.
+    const bloqueado = database.isContactBlocked
+      ? await database.isContactBlocked(business.id, phone)
+        .catch(() => false) // si la base falla se atiende: callar por un fallo
+                            // nuestro deja sin servicio a un cliente de verdad
+      : false
+    if (bloqueado) {
+      await database.saveMessage(business.id, phone, 'user', text)
+      await database.upsertSession(business.id, phone, {
+        last_message: text,
+        last_message_at: new Date(now()).toISOString(),
+        unread_owner: true,
+      })
+      logger.log(`⛔ [${business.name}] contacto bloqueado — mensaje de ${phone} guardado, sin respuesta`)
       return
     }
 

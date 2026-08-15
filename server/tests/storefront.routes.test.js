@@ -219,6 +219,10 @@ describe('crear pedido desde la mini app', () => {
   beforeEach(() => {
     vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue(NEGOCIO_ABIERTO)
     vi.spyOn(db, 'getSchedule').mockResolvedValue([])
+    // Sin esto la ruta consulta la base de verdad y la prueba se cuelga cinco
+    // segundos: crear un pedido comprueba antes que el cliente no esté
+    // bloqueado.
+    vi.spyOn(db, 'isCustomerBlocked').mockResolvedValue(false)
   })
   afterEach(() => vi.restoreAllMocks())
 
@@ -226,6 +230,25 @@ describe('crear pedido desde la mini app', () => {
   // hay IA — hay un teléfono, que es aún menos de fiar. Si un precio enviado
   // desde la app llegara a la base, cualquiera compraría una pizza a $0.01
   // abriendo las herramientas del navegador.
+  // ⚠️ El bloqueo del dueño es TOTAL: si solo callara al bot, quien tenga su
+  // enlace guardado seguiría metiendo pedidos y el bloqueo no bloquearía nada.
+  it('un cliente bloqueado no puede pedir, ni con su enlace', async () => {
+    vi.spyOn(db, 'isCustomerBlocked').mockResolvedValue(true)
+    const crear = vi.spyOn(db, 'createStorefrontOrder')
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-a', contactPhone: '593900000001' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'p1', quantity: 1 }], fulfillment: 'pickup' },
+    })
+
+    expect(respuesta.status).toBe(403)
+    // Ni se intenta: el pedido no llega a la base.
+    expect(crear).not.toHaveBeenCalled()
+    // Y no se le dice «estás bloqueado»: quien molesta busca una reacción.
+    expect(respuesta.body.error).not.toMatch(/bloquead/i)
+  })
+
   it('descarta cualquier precio que mande el teléfono', async () => {
     const crear = vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
       data: { id: 'pedido-1', total: 1250 }, error: null,

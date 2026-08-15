@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as convApi from './api'
 import { session } from '../../api/client'
-import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, X, Trash2 } from 'lucide-react'
+import { MessageSquare, RotateCw, HandCoins, Tag as TagIcon, Pencil, Hand, Bot as BotIcon, X, Trash2, Ban } from 'lucide-react'
 import type { Session, Msg, Tag } from './api'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -23,6 +23,7 @@ const POLL_MS = 10_000
 const EMPTY_SESSIONS: Session[] = []
 const EMPTY_MESSAGES: Msg[] = []
 const EMPTY_TAGS: Tag[] = []
+const EMPTY_BLOCKED: string[] = []
 
 // Colores predefinidos de etiquetas (mismos del panel viejo)
 const TAG_COLORS = ['#ef5350','#ff9800','#ffd54f','#66bb6a','#26a69a','#42a5f5','#5c6bc0','#ab47bc','#ec407a','#78909c']
@@ -51,9 +52,22 @@ export default function Conversations() {
   const sessionsQuery = useQuery({ queryKey: ['sessions'], queryFn: convApi.getSessions, refetchInterval: POLL_MS })
   const messagesQuery = useQuery({ queryKey: ['conversations'], queryFn: convApi.getConversations, refetchInterval: POLL_MS })
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: convApi.getTags })
+  // Sin `refetchInterval`: los bloqueos los cambia el dueño desde aquí, así
+  // que la lista se refresca cuando él actúa. Pedirla cada diez segundos sería
+  // pagar egress por un dato que casi siempre está vacío y que solo él mueve.
+  const blockedQuery = useQuery({ queryKey: ['blocked'], queryFn: convApi.getBlocked })
   const sessions = sessionsQuery.data ?? EMPTY_SESSIONS
   const msgs = messagesQuery.data ?? EMPTY_MESSAGES
   const tags = tagsQuery.data ?? EMPTY_TAGS
+  // ⚠️ `Array.isArray` y no `?? []`: si esta petición devolviera cualquier otra
+  // cosa —un `{}` de un error, un 502 con cuerpo HTML—, `new Set` revienta y se
+  // lleva por delante la pantalla ENTERA de conversaciones. Quedarse sin saber
+  // quién está bloqueado es un botón mal pintado; quedarse sin la pantalla es
+  // el dueño sin poder leer a sus clientes. Lo cazó el E2E.
+  const blocked = useMemo(
+    () => new Set(Array.isArray(blockedQuery.data) ? blockedQuery.data : EMPTY_BLOCKED),
+    [blockedQuery.data],
+  )
   const loadError = sessionsQuery.isError || messagesQuery.isError || tagsQuery.isError
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ['sessions'] }); qc.invalidateQueries({ queryKey: ['conversations'] }) }
@@ -79,6 +93,17 @@ export default function Conversations() {
       }
     },
     onSettled: refresh,
+  })
+  const mBlock  = useMutation({
+    mutationFn: (v: { phone: string; blocked: boolean }) => convApi.setBlocked(v.phone, v.blocked),
+    onSuccess: (_data, v) => {
+      toast(v.blocked ? 'Número bloqueado' : 'Número desbloqueado', {
+        description: v.blocked
+          ? 'El bot deja de responderle y no podrá hacer pedidos. Él no recibe ningún aviso.'
+          : 'Vuelve a poder escribir y pedir con normalidad.',
+      })
+    },
+    onSettled: () => { refresh(); qc.invalidateQueries({ queryKey: ['blocked'] }) },
   })
   const mRead   = useMutation({ mutationFn: (phone: string) => convApi.markRead(phone), onSettled: refresh })
   const mRename = useMutation({ mutationFn: (v: { phone: string; name: string }) => convApi.renameContact(v.phone, v.name), onSettled: refresh })
@@ -196,9 +221,11 @@ export default function Conversations() {
                   {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
                 </Button>
                 <div className="text-xs text-muted-foreground/80">
-                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {sess.manual_mode
-                    ? <span className="font-medium text-amber-700 dark:text-amber-300">Modo manual — respondiendo tú</span>
-                    : 'Bot activo'}
+                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {blocked.has(sess.contact_phone)
+                    ? <span className="font-medium text-red-700 dark:text-red-300">Bloqueado — el bot no le responde</span>
+                    : sess.manual_mode
+                      ? <span className="font-medium text-amber-700 dark:text-amber-300">Modo manual — respondiendo tú</span>
+                      : 'Bot activo'}
                 </div>
               </div>
 
@@ -216,6 +243,33 @@ export default function Conversations() {
 
                 {/* Nombre */}
                 <Button variant="outline" size="sm" onClick={() => { setNameDraft(sess.contact_name || ''); setRenaming(true) }}><span className="inline-flex items-center gap-1.5"><Pencil className="w-4 h-4" /> Nombre</span></Button>
+
+                {/* Bloquear: la decisión es del DUEÑO, no de un contador. El
+                    techo automático silencia 24 h a quien se pasa; esto cierra
+                    la puerta y no caduca. Se pide confirmación porque un
+                    bloqueo por error deja a un cliente sin poder comprar. */}
+                {blocked.has(sess.contact_phone) ? (
+                  <Button
+                    variant="outline" size="sm"
+                    className="border-red-500/60 bg-red-500/10 text-red-700 hover:bg-red-500/20 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
+                    onClick={() => mBlock.mutate({ phone: sess.contact_phone, blocked: false })}
+                  >
+                    <span className="inline-flex items-center gap-1.5"><Ban className="w-4 h-4" /> Desbloquear</span>
+                  </Button>
+                ) : (
+                  <ConfirmAction
+                    trigger={(
+                      <Button variant="outline" size="sm">
+                        <span className="inline-flex items-center gap-1.5"><Ban className="w-4 h-4" /> Bloquear</span>
+                      </Button>
+                    )}
+                    title="¿Bloquear este número?"
+                    description="El bot dejará de responderle en el chat y no podrá hacer pedidos desde la tienda, aunque tenga su enlace guardado. Él no recibe ningún aviso, y puedes deshacerlo cuando quieras."
+                    confirmLabel="Bloquear"
+                    destructive
+                    onConfirm={() => mBlock.mutate({ phone: sess.contact_phone, blocked: true })}
+                  />
+                )}
 
                 {/* Tomar control / Activar bot (labels del viejo) */}
                 {sess.manual_mode ? (
