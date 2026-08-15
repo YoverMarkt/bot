@@ -27,6 +27,26 @@ export const getTags          = () => api<Tag[]>('/api/client/tags')
 
 const enc = encodeURIComponent
 
+/**
+ * Los números que este negocio tiene bloqueados.
+ *
+ * Van aparte de la lista de chats porque son pocos —y en casi todos los
+ * negocios, ninguno—, mientras que la lista se pide cada diez segundos.
+ */
+export const getBlocked = () => api<string[]>('/api/client/sessions/blocked')
+
+/**
+ * Bloquear es TOTAL: el bot deja de contestarle en todos los modos y la mini
+ * app le rechaza el pedido aunque tenga su enlace guardado.
+ *
+ * Al bloqueado NUNCA se le avisa: quien escribe para molestar busca una
+ * reacción, y además cada aviso es un mensaje que se paga.
+ */
+export const setBlocked = (phone: string, blocked: boolean) =>
+  api<{ blocked: boolean }>(`/api/client/sessions/${enc(phone)}/blocked`, {
+    method: 'PUT', body: JSON.stringify({ blocked }),
+  })
+
 export const setMode = (phone: string, manual: boolean) =>
   api(`/api/client/sessions/${enc(phone)}/mode`, { method: 'PUT', body: JSON.stringify({ manual }) })
 

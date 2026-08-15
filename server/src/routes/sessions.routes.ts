@@ -25,6 +25,18 @@ interface ModuloDb {
     phone: string,
     data: Record<string, unknown>,
   ): Promise<DatabaseResult>
+  /**
+   * Bloquea o desbloquea un número en ESTE negocio.
+   *
+   * Crea el cliente si no existía: quien escribe por molestar puede no haber
+   * pedido nunca, y es justo a ese al que hay que poder bloquear.
+   */
+  setContactBlocked(
+    businessId: string,
+    phone: string,
+    blocked: boolean,
+  ): Promise<{ blocked: boolean }>
+  getBlockedPhones(businessId: string): Promise<string[]>
   getTags(businessId: string): Promise<unknown[]>
   createTag(businessId: string, data: TagInput): Promise<DatabaseResult>
   updateTag(businessId: string, tagId: string, data: TagInput): Promise<DatabaseResult>
@@ -103,6 +115,66 @@ router.put(
       )
     }
     res.json({ ok: true })
+  },
+)
+
+// Los números bloqueados, para que el panel pinte el botón en su estado. Van
+// aparte de la lista de chats porque son pocos —y en casi todos los negocios,
+// ninguno—, y esa lista se pide cada pocos segundos.
+router.get(
+  '/api/client/sessions/blocked',
+  auth.authClient,
+  canManageConversations,
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    try {
+      return res.json(await db.getBlockedPhones(businessId))
+    } catch (error) {
+      return databaseFailure(
+        res, 'leer números bloqueados',
+        'No se pudieron leer los números bloqueados', error,
+      )
+    }
+  },
+)
+
+// ── Bloquear un número ─────────────────────────────────────────────────────
+//
+// El bloqueo es del DUEÑO, no de un contador: el techo automático silencia 24
+// h a quien se pasa, pero condenar a alguien para siempre es una decisión de
+// persona. Por eso vive aquí y no en el bot.
+//
+// Es TOTAL por decisión del dueño (2026-08-13): el bot deja de contestarle en
+// todos los modos y la mini app le rechaza el pedido aunque tenga su enlace
+// guardado. Si solo callara al bot, el bloqueo no bloquearía nada.
+//
+// ⚠️ Nunca se le avisa al bloqueado. Quien escribe para molestar busca una
+// reacción, y «has sido bloqueado» es una reacción — además de un mensaje que
+// se paga.
+//
+// Desbloquear limpia también el silencio automático y el contador: si el dueño
+// da otra oportunidad, empieza de cero. Dejarle el silencio puesto haría que
+// el desbloqueo pareciera no funcionar durante horas.
+router.put(
+  '/api/client/sessions/:phone/blocked',
+  auth.authClient,
+  canManageConversations,
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    const phone = decodeURIComponent(req.params.phone)
+    const blocked = (req.body as { blocked?: unknown } | null)?.blocked === true
+    try {
+      await db.setContactBlocked(businessId, phone, blocked)
+      // La conversación deja de estar pendiente: el dueño ya la atendió, y
+      // decidir bloquear es atenderla.
+      if (blocked) await db.upsertSession(businessId, phone, { unread_owner: false })
+      return res.json({ blocked })
+    } catch (error) {
+      return databaseFailure(
+        res, 'bloquear contacto',
+        'No se pudo actualizar el bloqueo de este número', error,
+      )
+    }
   },
 )
 

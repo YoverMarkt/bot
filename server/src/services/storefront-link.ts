@@ -109,9 +109,8 @@ const PIE_DEL_ENLACE = 'Tu enlace personal · guárdalo, no vence'
  * el envío, y es además lo que se guarda en el historial para que el dueño vea
  * en su panel qué enlace se mandó.
  */
-export function storefrontInviteButton(
-  business: LinkBusiness,
-  url: string,
+/** Los matices del mensaje. Ninguno cambia si el enlace se manda: solo cómo. */
+export interface OpcionesDeInvitacion {
   /**
    * `true` cuando a este cliente ya se le mandó el enlace hace poco.
    *
@@ -121,7 +120,27 @@ export function storefrontInviteButton(
    * producción, con un cliente pegando la URL de la tienda en el chat dos
    * veces para intentar entrar. Ver `runMiniappMode`.
    */
-  repetido = false,
+  repetido?: boolean
+  /**
+   * A quién llamar, a partir de la quinta respuesta en una hora.
+   *
+   * Quien va por el quinto mensaje o no encuentra lo que busca, o no quiere
+   * usar la app. Ofrecerle el teléfono **no cuesta un mensaje más** —es el
+   * mismo, con una línea— y es lo único que de verdad puede desatascarlo.
+   */
+  telefonoDeAyuda?: string | null
+}
+
+/** «¿Necesitas ayuda? Llama al local: 099…», o nada si no hay teléfono. */
+const lineaDeAyuda = (telefono?: string | null): string => {
+  const limpio = String(telefono || '').trim()
+  return limpio ? `\n\n¿Necesitas ayuda? Llama al local: ${limpio}` : ''
+}
+
+export function storefrontInviteButton(
+  business: LinkBusiness,
+  url: string,
+  opciones: OpcionesDeInvitacion = {},
 ): {
   body: string
   url: string
@@ -132,10 +151,11 @@ export function storefrontInviteButton(
   const primeraVez = alojamiento
     ? '🛏️ Mira las habitaciones y reserva desde aquí 👇'
     : '🛍️ Mira la carta y pide desde aquí 👇'
+  // Se nombra que es «otra vez» para que no parezca que el bot se repite sin
+  // enterarse: reconocerlo es lo que lo hace sonar atento en vez de roto.
+  const cuerpo = opciones.repetido ? '🛍️ Aquí tienes tu enlace otra vez 👇' : primeraVez
   return {
-    // Se nombra que es «otra vez» para que no parezca que el bot se repite sin
-    // enterarse: reconocerlo es lo que lo hace sonar atento en vez de roto.
-    body: repetido ? '🛍️ Aquí tienes tu enlace otra vez 👇' : primeraVez,
+    body: `${cuerpo}${lineaDeAyuda(opciones.telefonoDeAyuda)}`,
     url,
     label: alojamiento ? 'Ver habitaciones' : 'Ver la carta',
     footer: PIE_DEL_ENLACE,
@@ -145,19 +165,19 @@ export function storefrontInviteButton(
 export function storefrontInvite(
   business: LinkBusiness,
   url: string,
-  /** Igual que en el botón: cambia el texto, no el hecho de mandarlo. */
-  repetido = false,
+  /** Los mismos matices que el botón: cambian el texto, no el envío. */
+  opciones: OpcionesDeInvitacion = {},
 ): string {
   const primeraVez = esAlojamiento(business)
     ? '🛏️ Mira las habitaciones y reserva aquí:'
     : '🛍️ Mira la carta y pide aquí:'
-  const compra = repetido ? '🛍️ Aquí tienes tu enlace otra vez:' : primeraVez
+  const compra = opciones.repetido ? '🛍️ Aquí tienes tu enlace otra vez:' : primeraVez
   // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
   // dentro se lee como publicidad y el cliente lo pasa de largo.
   // Ya no se anuncia caducidad porque no la hay. Sí se avisa de que es
   // personal: es lo que evita que el cliente lo reenvíe pensando que hace un
   // favor y acabe mandando a su amigo a una pantalla de "pide el tuyo".
-  return `${compra}\n${url}\n_${PIE_DEL_ENLACE}_`
+  return `${compra}\n${url}\n_${PIE_DEL_ENLACE}_${lineaDeAyuda(opciones.telefonoDeAyuda)}`
 }
 
 export function createStorefrontLinkService(dependencies: {
