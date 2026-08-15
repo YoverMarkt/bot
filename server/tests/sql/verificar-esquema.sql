@@ -1529,6 +1529,38 @@ begin
       raise exception 'pasado el silencio debía empezar de cero: %', v_r;
     end if;
 
+    -- ⚠️ EL MISMO MENSAJE NO SE CUENTA DOS VECES. La entrada es at-least-once:
+    -- si la confirmación no llega, el worker reintenta y el mensaje vuelve a
+    -- pasar por aquí. Sin esto, cinco reintentos de un cliente legítimo lo
+    -- dejaban silenciado 24 h sin haber escrito de más.
+    declare
+      v_antes integer;
+      v_r2 jsonb;
+    begin
+      v_r := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24, 'wamid.ABC');
+      v_antes := (v_r->>'respuestas')::integer;
+
+      v_r2 := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24, 'wamid.ABC');
+      if (v_r2->>'respuestas')::integer <> v_antes then
+        raise exception 'el mismo mensaje contó dos veces: % vs %', v_antes, v_r2;
+      end if;
+      if (v_r2->>'permitido')::boolean is not true then
+        raise exception 'un reintento no puede callar al bot: %', v_r2;
+      end if;
+
+      -- Y un mensaje DISTINTO sí suma: la defensa no puede congelar la cuenta.
+      v_r2 := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24, 'wamid.OTRO');
+      if (v_r2->>'respuestas')::integer <> v_antes + 1 then
+        raise exception 'un mensaje nuevo debía sumar: % vs %', v_antes, v_r2;
+      end if;
+
+      -- Sin id se cuenta como siempre: más vale contar de más que no contar.
+      v_r2 := public.claim_miniapp_reply(v_business, v_molesto, 5, 10, 24, null);
+      if (v_r2->>'respuestas')::integer <> v_antes + 2 then
+        raise exception 'sin id debía contar igualmente: %', v_r2;
+      end if;
+    end;
+
     -- El bloqueo del dueño manda sobre todo lo demás y no caduca.
     update public.business_customers
     set blocked_at = now()

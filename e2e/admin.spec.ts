@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { expectConnectedLabels, mockAdminApi, seedAdminSession } from './helpers'
 
 const adminUrl = 'http://127.0.0.1:4174/app-admin/'
@@ -36,6 +36,39 @@ test('inicia sesión y carga datos administrativos simulados', async ({ page }) 
   await expect(page).toHaveURL(/#\/$/)
   await expect(page.getByText('BotPanel').first()).toBeVisible()
   await expect.poll(() => page.evaluate(() => localStorage.getItem('admin_token'))).toBe('e2e-admin-token')
+})
+
+// ⚠️ NINGUNA prueba abría el dashboard con sesión, así que llevaba roto sin
+// que nadie se enterara: `channel.businesses.length` sobre un `{}` lo dejaba
+// sin renderizar. El fixture que falla ante errores de página no sirve de nada
+// si nadie entra en la pantalla.
+test('el dashboard del superadmin se renderiza entero', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/`)
+
+  // Lo de arriba: las tarjetas de siempre.
+  await expect(page.getByText('Negocios')).toBeVisible()
+  // Y el recuadro que lo tumbaba, con su contenido.
+  await expect(page.getByText('Canal de entrada')).toBeVisible()
+  await expect(page.getByText('Negocio E2E').first()).toBeVisible()
+})
+
+// Y el gemelo del de arriba: con el mock arreglado, la prueba anterior pasa
+// aunque se quite la defensa del componente. Esta devuelve basura a propósito.
+// Es el mismo caso que ya tumbó Conversaciones: un dato secundario no puede
+// llevarse por delante la pantalla entera.
+test('un fallo en la salud del canal no tumba el dashboard', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.route('**/api/admin/channel-health', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: '{}',
+  }))
+  await page.goto(`${adminUrl}#/`)
+
+  // Lo importante sigue en pie; el recuadro del canal simplemente no sale.
+  await expect(page.getByText('Negocios')).toBeVisible()
+  await expect(page.getByText('Canal de entrada')).toHaveCount(0)
 })
 
 test('la tabla de clientes ocupa el contenido y alinea sus acciones', async ({ page }) => {

@@ -23,8 +23,16 @@
 --
 -- Aditiva e idempotente. No toca ni una fila existente: las columnas nacen
 -- nulas, que significa «ni silenciado ni bloqueado».
-
-begin;
+--
+-- ⚠️ SIN `begin`/`commit` propios, y esto no es estilo. El ejecutor
+-- (`tests/migraciones.mjs`) ya abre una transacción por migración y dentro de
+-- ella registra la aplicación en `schema_migrations`. Un `commit` aquí CIERRA
+-- esa transacción antes de tiempo: el registro queda fuera, y si fallara, el
+-- `rollback` del ejecutor no desharía nada — el DDL quedaría aplicado sin
+-- constancia, que es el peor estado posible para una migración.
+--
+-- PostgreSQL hace DDL transaccional, así que no se pierde nada: la migración
+-- sigue entrando entera o no entrando.
 
 alter table public.business_customers
   add column if not exists blocked_at        timestamptz,
@@ -143,5 +151,3 @@ revoke all on function public.claim_miniapp_reply(uuid, uuid, integer, integer, 
   from public, anon, authenticated;
 grant execute on function public.claim_miniapp_reply(uuid, uuid, integer, integer, integer)
   to service_role;
-
-commit;

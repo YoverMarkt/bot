@@ -100,7 +100,9 @@ interface ConversationDatabase {
    */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
   /** Cuenta la respuesta y decide si sale, con teléfono, o si toca callar. */
-  claimMiniappReply?(businessId: string, customerId: string): Promise<{
+  claimMiniappReply?(businessId: string, customerId: string, limites?: {
+    mensajeId?: string | null
+  }): Promise<{
     permitido: boolean
     motivo: 'ok' | 'con_telefono' | 'bloqueado' | 'silenciado'
     respuestas: number
@@ -304,6 +306,15 @@ export interface ProcessMessageInput {
   sendLink?: (
     message: { body: string; url: string; label: string; footer?: string | null },
   ) => Promise<boolean>
+  /**
+   * El id del mensaje ENTRANTE, si el canal lo da.
+   *
+   * Solo se usa para no contar dos veces la misma respuesta en el techo: la
+   * entrada es at-least-once y un reintento del worker vuelve a pasar por
+   * aquí. Sin id se cuenta como antes — el riesgo de contar de más es menor
+   * que el de no contar.
+   */
+  inboundId?: string | null
 }
 
 const PROMPT_PICK_OPTION = 'Elige una opción 👇'
@@ -468,19 +479,22 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     send: (text: string) => Promise<unknown>
     sendTyping?: () => Promise<unknown>
     sendLink?: ProcessMessageInput['sendLink']
+    inboundId?: string | null
   }): Promise<void> {
     const { business, phone, text, session, send } = input
 
-    // El doble check azul. `sendTyping` no solo pinta «escribiendo…»: en
-    // WhatsApp marca el mensaje como LEÍDO, y ambas cosas van juntas en
-    // `integrations/whatsapp.ts`.
+    // ⚠️ El «leído» ya NO es lo primero: primero se decide si se atiende.
     //
-    // Se quedó fuera al escribir este modo, y el efecto era visible desde el
-    // teléfono: el cliente escribía y su mensaje se quedaba en dos checks
-    // grises para siempre, como si nadie lo hubiera visto. En un negocio que
-    // atiende por la app eso es justo lo contrario de lo que se quiere
-    // transmitir. No cuesta ninguna llamada al modelo: es la API del canal.
-    if (input.sendTyping) {
+    // `sendTyping` no solo pinta «escribiendo…», también marca el mensaje como
+    // LEÍDO (van juntas en `integrations/whatsapp.ts`). A quien está silenciado
+    // o bloqueado no se le da ninguna señal: el doble check azul le dice «te
+    // estoy leyendo», que es exactamente la reacción que busca quien escribe
+    // por molestar. Y es una llamada a la API que se ahorra.
+    //
+    // Para el cliente normal no cambia nada perceptible: el reclamo es una
+    // consulta indexada, y el check azul sigue saliendo antes de la respuesta.
+    const marcarLeido = async () => {
+      if (!input.sendTyping) return
       try { await input.sendTyping() } catch { /* best-effort, como en el resto */ }
     }
 
@@ -500,7 +514,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         name: session?.contact_name || null,
       })
       if (database.claimMiniappReply) {
-        reclamo = await database.claimMiniappReply(business.id, customer.id)
+        reclamo = await database.claimMiniappReply(business.id, customer.id, {
+          mensajeId: input.inboundId || null,
+        })
       }
       // El enlace solo se reclama si de verdad se va a contestar: gastar la
       // ventana de 24 h mientras se está callado dejaría al cliente sin enlace
@@ -526,14 +542,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // ahorraba era una fila de sesión, en una tabla que llevaba NUEVE. Ahora
     // solo cambia el texto: «Mira la carta» la primera vez, «Aquí tienes tu
     // enlace otra vez» después.
-    const url = await storefrontUrlFor(business, phone, session?.contact_name, true)
-
     // ⚠️ Si la foto era el comprobante de un pedido que espera pago, ya quedó
     // adjunta (`services/payment-proof-inbox.ts`) y lo que toca decir es otra
     // cosa. Mandarle el enlace a quien acaba de pagar es contestarle a una
     // pregunta que no hizo — y era exactamente lo que pasaba: el cliente
     // mandaba su captura y el bot le respondía «aquí tienes el menú».
     if (esComprobante(text)) {
+      await marcarLeido()
       await send(RESPUESTA_COMPROBANTE)
       await database.saveMessage(business.id, phone, 'assistant', RESPUESTA_COMPROBANTE)
       logger.log(`🧾 [${business.name}] comprobante recibido por el chat de ${phone}`)
@@ -566,6 +581,15 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       )
       return
     }
+
+    // ⚠️ El enlace se crea AQUÍ, y no antes, porque crearlo tiene coste: cada
+    // llamada abre una sesión de tienda con su token. Estaba antes del corte,
+    // así que un silenciado seguía generando una fila por mensaje — justo la
+    // tabla que el techo quería dejar de llenar— y un comprobante generaba una
+    // que nadie iba a usar. El reclamo de 24 h ya se saltaba; la sesión no.
+    const url = await storefrontUrlFor(business, phone, session?.contact_name, true)
+
+    await marcarLeido()
 
     // `invite` puede venir vacío si el negocio no tiene tienda utilizable —sin
     // catálogo no hay nada que enseñar—. Ahí se recuerda igual, con el
@@ -828,17 +852,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
 
     const session = await database.getSession(business.id, phone)
-    if (session?.manual_mode) {
-      await database.saveMessage(business.id, phone, 'user', text)
-      await database.upsertSession(business.id, phone, {
-        manual_mode: true,
-        last_message: text,
-        last_message_at: new Date(now()).toISOString(),
-        unread_owner: true,
-      })
-      logger.log(`🤚 [${business.name}] modo manual — mensaje de ${phone} guardado para el dueño`)
-      return
-    }
 
     // ── Bloqueado por el dueño ────────────────────────────────────────────
     //
@@ -872,6 +885,18 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         unread_owner: true,
       })
       logger.log(`⛔ [${business.name}] contacto bloqueado — mensaje de ${phone} guardado, sin respuesta`)
+      return
+    }
+
+    if (session?.manual_mode) {
+      await database.saveMessage(business.id, phone, 'user', text)
+      await database.upsertSession(business.id, phone, {
+        manual_mode: true,
+        last_message: text,
+        last_message_at: new Date(now()).toISOString(),
+        unread_owner: true,
+      })
+      logger.log(`🤚 [${business.name}] modo manual — mensaje de ${phone} guardado para el dueño`)
       return
     }
 
@@ -948,7 +973,8 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
     if (business.chat_mode === 'miniapp') {
       await runMiniappMode({
-        business, phone, text, session, send, sendTyping, sendLink: input.sendLink,
+        business, phone, text, session, send, sendTyping,
+        sendLink: input.sendLink, inboundId: input.inboundId,
       })
       return
     }

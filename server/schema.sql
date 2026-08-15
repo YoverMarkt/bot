@@ -3060,7 +3060,11 @@ alter table public.business_customers
   add column if not exists blocked_at         timestamptz,
   add column if not exists muted_until        timestamptz,
   add column if not exists reply_window_start timestamptz,
-  add column if not exists reply_count        integer not null default 0;
+  add column if not exists reply_count        integer not null default 0,
+  -- El último mensaje entrante que ya se contó: la entrada es at-least-once y
+  -- un reintento del worker sumaba dos veces
+  -- (migration-2026-08-15-reclamo-idempotente.sql).
+  add column if not exists last_reply_message_id text;
 
 alter table public.business_customers
   drop constraint if exists business_customers_respuestas_check;
@@ -6801,26 +6805,29 @@ grant execute on function public.claim_storefront_link_send(uuid, uuid, integer)
 
 -- ── El reclamo de una respuesta ────────────────────────────────────────────
 --
--- Una sola operación atómica que hace las cuatro preguntas y deja la cuenta
--- puesta. Comprobar primero y escribir después deja una carrera en la que dos
--- mensajes simultáneos del mismo contacto leen el mismo número — que es justo
--- lo que hace quien escribe rápido para molestar.
+-- Una sola operación atómica que hace las preguntas y deja la cuenta puesta.
+-- Comprobar primero y escribir después deja una carrera en la que dos mensajes
+-- simultáneos del mismo contacto leen el mismo número — que es justo lo que
+-- hace quien escribe rápido para molestar.
 --
--- Devuelve:
---   permitido  · false si está bloqueado o silenciado
---   motivo     · 'ok' | 'bloqueado' | 'silenciado'
---   respuestas · cuántas van en esta hora (con esta incluida)
---
--- ⚠️ La ventana es RODANTE POR TRAMOS, no deslizante: se cuenta desde la
--- primera respuesta y se reinicia a la hora. Una ventana deslizante de verdad
--- obligaría a guardar cada marca de tiempo, y el resultado práctico es el
--- mismo para lo que esto decide.
+-- ⚠️ Y es IDEMPOTENTE por id de mensaje: la entrada es at-least-once, así que
+-- un reintento del worker volvía a sumar y podía silenciar a un cliente
+-- legítimo (migration-2026-08-15-reclamo-idempotente.sql).
+-- La firma cambia (un parámetro más), así que la anterior se retira: sin esto
+-- PostgreSQL se queda con las dos y `db.rpc` elegiría por número de argumentos
+-- sin que nadie se entere.
+drop function if exists public.claim_miniapp_reply(uuid, uuid, integer, integer, integer);
+
 create or replace function public.claim_miniapp_reply(
   p_business_id uuid,
   p_customer_id uuid,
   p_aviso_desde integer default 5,
   p_tope        integer default 10,
-  p_silencio_horas integer default 24
+  p_silencio_horas integer default 24,
+  -- El id del mensaje ENTRANTE que provocó esta respuesta. Nulo = no se puede
+  -- identificar (el simulador, Telegram sin id): entonces se cuenta como
+  -- antes, porque el riesgo de contar de más es menor que el de no contar.
+  p_message_id  text default null
 )
 returns jsonb
 language plpgsql
@@ -6836,12 +6843,10 @@ begin
     return jsonb_build_object('permitido', true, 'motivo', 'ok', 'respuestas', 0);
   end if;
 
-  -- La fila puede no existir si el cliente nunca pidió nada.
   insert into public.business_customers (business_id, customer_id)
   values (p_business_id, p_customer_id)
   on conflict (business_id, customer_id) do nothing;
 
-  -- `for update` serializa los mensajes que llegan a la vez del mismo cliente.
   select * into v_fila
   from public.business_customers
   where business_id = p_business_id and customer_id = p_customer_id
@@ -6855,26 +6860,39 @@ begin
     return jsonb_build_object('permitido', false, 'motivo', 'silenciado', 'respuestas', 0);
   end if;
 
-  -- Hora nueva: se reinicia la cuenta. También cuando nunca hubo ninguna.
+  -- ── El mismo mensaje otra vez ────────────────────────────────────────────
+  -- Se devuelve la decisión que le tocaba, recalculada del contador que ya
+  -- tiene, y NO se suma. El motivo se recalcula en vez de guardarse porque
+  -- depende solo de la cuenta: guardarlo sería una segunda fuente de verdad.
+  if p_message_id is not null
+     and v_fila.last_reply_message_id is not distinct from p_message_id then
+    return jsonb_build_object(
+      'permitido', true,
+      'motivo', case when coalesce(v_fila.reply_count, 0) >= p_aviso_desde
+                     then 'con_telefono' else 'ok' end,
+      'respuestas', coalesce(v_fila.reply_count, 0),
+      'repetido', true
+    );
+  end if;
+
   if v_fila.reply_window_start is null
      or v_fila.reply_window_start < v_ahora - interval '1 hour' then
     v_cuenta := 1;
     update public.business_customers
        set reply_window_start = v_ahora,
            reply_count = 1,
+           last_reply_message_id = p_message_id,
            updated_at = v_ahora
      where id = v_fila.id;
   else
     v_cuenta := coalesce(v_fila.reply_count, 0) + 1;
     update public.business_customers
        set reply_count = v_cuenta,
+           last_reply_message_id = p_message_id,
            updated_at = v_ahora
      where id = v_fila.id;
   end if;
 
-  -- Pasado el tope se calla, y el silencio NO se levanta a la hora siguiente:
-  -- con una ventana que se reinicia sola, quien molesta con paciencia pagaría
-  -- el tope entero cada hora, todo el día.
   if v_cuenta > p_tope then
     update public.business_customers
        set muted_until = v_ahora + make_interval(hours => p_silencio_horas),
@@ -6885,17 +6903,15 @@ begin
 
   return jsonb_build_object(
     'permitido', true,
-    -- A partir del aviso, la respuesta lleva además el teléfono del local: no
-    -- cuesta un mensaje más, es el mismo con una línea de ayuda.
     'motivo', case when v_cuenta >= p_aviso_desde then 'con_telefono' else 'ok' end,
     'respuestas', v_cuenta
   );
 end;
 $$;
 
-revoke all on function public.claim_miniapp_reply(uuid, uuid, integer, integer, integer)
+revoke all on function public.claim_miniapp_reply(uuid, uuid, integer, integer, integer, text)
   from public, anon, authenticated;
-grant execute on function public.claim_miniapp_reply(uuid, uuid, integer, integer, integer)
+grant execute on function public.claim_miniapp_reply(uuid, uuid, integer, integer, integer, text)
   to service_role;
 
 -- ════════════════════════════════════════════════════════════════════════

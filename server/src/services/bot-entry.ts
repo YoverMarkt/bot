@@ -244,6 +244,8 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     sendLink?: (
       message: { body: string; url: string; label: string; footer?: string | null },
     ) => Promise<boolean>,
+    /** El id del mensaje entrante: evita contar dos veces un reintento. */
+    inboundId?: string | null,
   ): Promise<void> {
     return conversation.processMessage({
       business,
@@ -255,6 +257,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       sendVideo,
       sendOptions,
       sendLink,
+      inboundId,
     })
   }
 
@@ -339,6 +342,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       // El enlace de la tienda va como botón nativo. Solo aquí: es el camino
       // del mensaje de texto entrante, que es el único que lo manda.
       message => whatsapp.sendLinkButton(business, from, message),
+      options.inboundId,
     )
   }
 
@@ -508,6 +512,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
       (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
       message => whatsapp.sendLinkButton(business, from, message),
+      options.inboundId,
     )
   }
 

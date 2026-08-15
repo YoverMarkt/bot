@@ -365,7 +365,13 @@ const claimStorefrontLinkSend = async (
 const claimMiniappReply = async (
   businessId: string,
   customerId: string,
-  limites: { avisoDesde?: number; tope?: number; silencioHoras?: number } = {},
+  limites: {
+    avisoDesde?: number
+    tope?: number
+    silencioHoras?: number
+    /** El mensaje entrante que provocó la respuesta, para no contarlo dos veces. */
+    mensajeId?: string | null
+  } = {},
 ): Promise<{
   /** `false` = no se le contesta: está bloqueado o silenciado. */
   permitido: boolean
@@ -379,6 +385,7 @@ const claimMiniappReply = async (
     p_aviso_desde: limites.avisoDesde ?? 5,
     p_tope: limites.tope ?? 10,
     p_silencio_horas: limites.silencioHoras ?? 24,
+    p_message_id: limites.mensajeId || null,
   })
   fail(error, 'No se pudo comprobar el ritmo de respuestas')
   const respuesta = (data || {}) as {

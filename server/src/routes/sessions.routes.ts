@@ -163,11 +163,35 @@ router.put(
     const businessId = getClientBusinessId(req)
     const phone = decodeURIComponent(req.params.phone)
     const blocked = (req.body as { blocked?: unknown } | null)?.blocked === true
+
+    // ⚠️ Telegram no se puede bloquear todavía, y callarlo sería peor que
+    // decirlo. `resolveCustomer` guarda a los clientes por dígitos, así que un
+    // `tg_123` se convertiría en el cliente `123` — un número de WhatsApp de
+    // otra persona, que quedaría bloqueada sin haber hecho nada. Hasta que
+    // cada canal tenga su identidad, este camino se cierra.
+    if (phone.startsWith('tg_')) {
+      return res.status(400).json({
+        error: 'Por ahora solo se pueden bloquear números de WhatsApp',
+      })
+    }
+
     try {
       await db.setContactBlocked(businessId, phone, blocked)
-      // La conversación deja de estar pendiente: el dueño ya la atendió, y
-      // decidir bloquear es atenderla.
-      if (blocked) await db.upsertSession(businessId, phone, { unread_owner: false })
+      // ⚠️ Bloquear apaga también el MODO MANUAL, no solo la marca de no
+      // leído. El bot comprueba el modo manual antes que el bloqueo —tiene que
+      // hacerlo, es lo que permite al dueño responder a mano—, así que un
+      // bloqueado en modo manual seguía cortando por esa rama y volviendo a
+      // encender `unread_owner` con cada mensaje: la alarma sonaba una y otra
+      // vez por alguien a quien se acababa de bloquear.
+      //
+      // Y tiene sentido por sí solo: el modo manual significa «yo le
+      // contesto», que es justo lo contrario de bloquear.
+      if (blocked) {
+        await db.upsertSession(businessId, phone, {
+          manual_mode: false,
+          unread_owner: false,
+        })
+      }
       return res.json({ blocked })
     } catch (error) {
       return databaseFailure(
