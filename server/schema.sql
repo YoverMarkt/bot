@@ -12838,3 +12838,196 @@ drop trigger if exists businesses_seed_payment_methods on public.businesses;
 create trigger businesses_seed_payment_methods
   after insert on public.businesses
   for each row execute function public.businesses_seed_payment_methods();
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- LO QUE SE ANULA DESPUÉS DE COBRAR SE DESCUENTA DEL MES SIGUIENTE
+-- Migración incremental: migration-2026-08-16-arrastre-comision.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- El cierre ya respetaba la mitad de la decisión —un mes `paid` no se
+-- reescribe— pero nada arrastraba la diferencia hacia adelante: si un comercio
+-- pagaba agosto y en septiembre se anulaba una venta de agosto, esa comisión
+-- se quedaba cobrada PARA SIEMPRE.
+--
+-- Reescribir hacia atrás cambiaría un número que el comercio vio y pagó, y
+-- obligaría a que toda liquidación fuera reversible — cada cierre dejaría de
+-- estar cerrado. Se ajusta en la siguiente, como cualquier contabilidad.
+--
+-- El ajuste es una resta: lo que el periodo vale HOY menos lo que se cobró.
+-- Negativo = descuento por venta anulada; positivo = venta tardía.
+--
+-- ⚠️ Se RECLAMA por periodo: sin eso, la tarea diaria volvería a arrastrar la
+-- misma diferencia cada día. Mismo patrón que `customer_notified_status`.
+--
+-- ⚠️ Solo meses ya PAGADOS: los `pending` se recalculan enteros en su cierre.
+
+-- ── 1. De dónde viene el ajuste ────────────────────────────────────────────
+create table if not exists public.billing_adjustments (
+  id            uuid primary key default gen_random_uuid(),
+  business_id   uuid not null references public.businesses(id) on delete cascade,
+
+  -- La factura donde se aplica el descuento (el mes siguiente).
+  billing_id    uuid references public.billing(id) on delete set null,
+
+  -- El periodo que se está corrigiendo (el mes ya pagado).
+  source_period date not null,
+
+  amount        numeric(10,2) not null,
+  reason        text not null,
+  created_at    timestamptz not null default now(),
+
+  -- Un periodo se salda UNA vez por negocio. Es lo que impide que el cierre
+  -- diario aplique el mismo descuento treinta veces.
+  constraint billing_adjustments_unicos unique (business_id, source_period),
+
+  constraint billing_adjustments_reason_check
+    check (reason in ('venta_anulada', 'venta_tardia', 'correccion_manual')),
+  constraint billing_adjustments_amount_check
+    check (amount <> 0 and amount between -99999 and 99999)
+);
+
+alter table public.billing_adjustments enable row level security;
+
+create index if not exists idx_billing_adjustments_negocio
+  on public.billing_adjustments (business_id, source_period);
+
+-- Lo que la factura del mes lleva de arrastre, para poder enseñarlo aparte de
+-- la comisión del propio mes. Sumarlo dentro de `commission_amount` haría
+-- imposible explicarle al comercio de dónde sale su número.
+alter table public.billing
+  add column if not exists commission_adjustment numeric(10,2) not null default 0;
+
+comment on column public.billing.commission_adjustment is
+  'Ajuste arrastrado de meses ya pagados. Negativo = se le devuelve. El total es amount + commission_amount + commission_adjustment.';
+
+
+-- ── 2. El arrastre ─────────────────────────────────────────────────────────
+--
+-- Mira los meses PAGADOS anteriores al que se está cerrando, compara lo
+-- cobrado con lo que valen hoy, y aplica la diferencia UNA sola vez.
+create or replace function public.carry_commission_adjustments(
+  p_period_start date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_aplicados integer := 0;
+  v_total     numeric(10,2) := 0;
+  v_fila      record;
+  v_vale_hoy  numeric(10,2);
+  v_ajuste    numeric(10,2);
+begin
+  if p_period_start is null or p_period_start <> date_trunc('month', p_period_start)::date then
+    raise exception using
+      errcode = '22023',
+      message = 'El arrastre va sobre el primer día de un mes.';
+  end if;
+
+  -- Solo meses PAGADOS y anteriores, y solo los que no se hayan saldado ya.
+  for v_fila in
+    select b.business_id, b.period_start, b.commission_amount
+    from public.billing b
+    where b.status = 'paid'
+      and b.period_start < p_period_start
+      and not exists (
+        select 1 from public.billing_adjustments a
+        where a.business_id = b.business_id
+          and a.source_period = b.period_start
+      )
+  loop
+    -- Lo que ese periodo vale HOY, con las ventas tal como están ahora.
+    select coalesce(sum(margen), 0) into v_vale_hoy
+    from public.platform_markup_summary(
+      v_fila.period_start,
+      (v_fila.period_start + interval '1 month')::date,
+      v_fila.business_id
+    );
+
+    v_ajuste := round(v_vale_hoy - coalesce(v_fila.commission_amount, 0), 2);
+
+    -- Sin diferencia no se anota nada: una fila de ajuste con importe cero es
+    -- ruido, y además marcaría el periodo como saldado cuando aún podría
+    -- cambiar.
+    continue when v_ajuste = 0;
+
+    insert into public.billing_adjustments (
+      business_id, source_period, amount, reason
+    ) values (
+      v_fila.business_id,
+      v_fila.period_start,
+      v_ajuste,
+      case when v_ajuste < 0 then 'venta_anulada' else 'venta_tardia' end
+    )
+    on conflict (business_id, source_period) do nothing;
+
+    v_aplicados := v_aplicados + 1;
+    v_total := v_total + v_ajuste;
+  end loop;
+
+  -- Se vuelca sobre la factura del mes que se cierra. Se suma en vez de
+  -- asignar porque puede arrastrar varios periodos a la vez.
+  update public.billing b
+  set commission_adjustment = coalesce(sub.suma, 0)
+  from (
+    select a.business_id, sum(a.amount) as suma
+    from public.billing_adjustments a
+    where a.billing_id is null
+    group by a.business_id
+  ) as sub
+  where b.business_id = sub.business_id
+    and b.period_start = p_period_start
+    and b.status <> 'paid';
+
+  -- Se marca a qué factura fueron, para que no se vuelquen otra vez mañana.
+  update public.billing_adjustments a
+  set billing_id = b.id
+  from public.billing b
+  where a.billing_id is null
+    and b.business_id = a.business_id
+    and b.period_start = p_period_start;
+
+  return jsonb_build_object(
+    'periodo',        p_period_start,
+    'ajustes',        v_aplicados,
+    'total_ajustado', v_total
+  );
+end;
+$$;
+
+revoke all on function public.carry_commission_adjustments(date)
+  from public, anon, authenticated;
+grant execute on function public.carry_commission_adjustments(date)
+  to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- UN AJUSTE NO PUEDE APUNTAR A LA FACTURA DE OTRO NEGOCIO
+-- Migración incremental: migration-2026-08-16-frontera-ajustes.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- `billing_adjustments.billing_id` referenciaba `billing(id)` a secas: el
+-- descuento de una venta anulada en el local A podía acabar restando en la
+-- factura del local B. Lo cazó `verificar-fronteras.sql` — no una prueba de
+-- comportamiento, sino el guardián que busca exactamente esto.
+--
+-- Se cierra con foránea COMPUESTA sobre `(id, business_id)`, el mismo patrón
+-- que `product_variants` y los grupos de opciones.
+
+-- La compuesta necesita un índice único sobre las dos columnas del destino.
+-- No es redundante con la clave primaria: PostgreSQL exige exactamente esta
+-- pareja para poder referenciarla.
+create unique index if not exists uq_billing_id_negocio
+  on public.billing (id, business_id);
+
+alter table public.billing_adjustments
+  drop constraint if exists billing_adjustments_billing_id_fkey;
+
+alter table public.billing_adjustments
+  add constraint billing_adjustments_billing_fkey
+  foreign key (billing_id, business_id)
+  references public.billing (id, business_id)
+  on delete set null;

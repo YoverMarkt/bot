@@ -2152,6 +2152,62 @@ begin
   exception when sqlstate '22023' then null;
   end;
 
+  -- 15. EL ARRASTRE: lo anulado después de cobrar baja del mes siguiente.
+  --
+  -- Una factura emitida es un hecho: no se reescribe. La diferencia se ajusta
+  -- en la siguiente, y se reclama por periodo para que la tarea diaria no
+  -- aplique el mismo descuento cada día.
+  -- Se parte de cero: los bloques anteriores dejaron ventas de este mismo mes
+  -- y sus comisiones se sumarían a la de aquí, midiendo otra cosa.
+  delete from public.sales where business_id = v_biz;
+  delete from public.orders where business_id = v_biz;
+  delete from public.billing_adjustments where business_id = v_biz;
+  update public.billing set commission_amount = 0, commission_adjustment = 0, status = 'pending'
+  where business_id = v_biz;
+  update public.pricing_rules set status = 'archived' where business_id = v_biz;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10);
+
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000951', 'completado', 200, 0, 200, 'USD', 'manual')
+  returning id into v_pedido;
+  insert into public.sales (business_id, order_id, total, status, sold_at)
+  values (v_biz, v_pedido, 200, 'completada', '2026-08-10 12:00-05');
+
+  perform public.settle_month_commission('2026-08-01');
+  update public.billing set status = 'paid'
+  where business_id = v_biz and period_start = '2026-08-01';
+
+  -- Se anula una venta del mes ya pagado.
+  update public.sales set status = 'anulada' where order_id = v_pedido;
+  insert into public.billing (business_id, amount, currency, period_start, period_end, status)
+  values (v_biz, 25, 'USD', '2026-09-01', '2026-09-30', 'pending')
+  on conflict (business_id, period_start) do nothing;
+
+  perform public.carry_commission_adjustments('2026-09-01');
+
+  select commission_amount into v_suma
+  from public.billing where business_id = v_biz and period_start = '2026-08-01';
+  if v_suma <> 20 then
+    raise exception 'se reescribió un mes ya pagado: quedó en %', v_suma;
+  end if;
+
+  select commission_adjustment into v_suma
+  from public.billing where business_id = v_biz and period_start = '2026-09-01';
+  if v_suma <> -20 then
+    raise exception 'el descuento debía arrastrarse como -20.00, fue %', v_suma;
+  end if;
+
+  -- Y no se aplica dos veces, que es lo que haría la tarea diaria sin reclamo.
+  perform public.carry_commission_adjustments('2026-09-01');
+  perform public.carry_commission_adjustments('2026-09-01');
+  select commission_adjustment into v_suma
+  from public.billing where business_id = v_biz and period_start = '2026-09-01';
+  if v_suma <> -20 then
+    raise exception 'el arrastre se aplicó más de una vez: %', v_suma;
+  end if;
+
+
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.
   delete from public.businesses where id = v_biz;

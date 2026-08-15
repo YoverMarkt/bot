@@ -46,6 +46,11 @@ import storefrontRouter = require('./routes/storefront.routes')
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
+  carryCommissionAdjustments(periodStart: string): Promise<{
+    periodo: string
+    ajustes: number
+    total_ajustado: number
+  }>
   settleMonthCommission(periodStart: string): Promise<{
     periodo: string
     facturas_afectadas: number
@@ -362,6 +367,18 @@ async function settleCommissions(): Promise<void> {
       // otro se intenta igual y mañana se reintenta solo.
       console.error(`❌ Cierre de comisión ${periodo}:`, errorMessage(error))
     }
+  }
+
+  // Y lo que cambió en meses YA PAGADOS se descuenta del mes en curso: una
+  // factura emitida no se reescribe. Va DESPUÉS del cierre porque necesita
+  // que la factura del mes exista para volcarle el ajuste.
+  try {
+    const a = await db.carryCommissionAdjustments(primerDia(0))
+    if (a.ajustes > 0) {
+      console.log(`↩️  Ajustes arrastrados: ${a.ajustes}, $${a.total_ajustado}`)
+    }
+  } catch (error) {
+    console.error('❌ Arrastre de comisión:', errorMessage(error))
   }
 }
 
