@@ -1830,6 +1830,7 @@ declare
   v_ped    record;
   v_pedido uuid;
   v_suma   numeric;
+  v_cierre jsonb;
 begin
   -- Cada bloque de este archivo trae su propio negocio y lo borra al terminar.
   -- Reutilizar el de otro bloque no funciona: ese ya se borró en su limpieza.
@@ -1999,6 +2000,58 @@ begin
   if exists (select 1 from public.platform_markup_summary('2000-01-01', '2100-01-01', gen_random_uuid())) then
     raise exception 'el acumulado de un negocio se vio desde otro';
   end if;
+
+  -- 12. EL CIERRE DE MES lleva la comisión a la factura.
+  --
+  -- Es idempotente por naturaleza: no suma, RECALCULA desde `sales`. Correrlo
+  -- dos veces tiene que dar el mismo número, o un reintento tras un fallo de
+  -- red cobraría el doble.
+  update public.sales set status = 'completada' where order_id = v_pedido;
+
+  v_cierre := public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if coalesce(v_suma, -1) <> 10 then
+    raise exception 'el cierre debería dejar 10.00 de comisión, dejó %', v_suma;
+  end if;
+
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma <> 10 then
+    raise exception 'tres cierres seguidos cambiaron el importe: %', v_suma;
+  end if;
+
+  -- La CUOTA no se toca: `amount` es el servicio, la comisión va aparte.
+  select amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma is null then
+    raise exception 'el cierre borró la cuota mensual';
+  end if;
+
+  -- Un mes ya PAGADO no se reescribe: una factura emitida es un hecho.
+  update public.billing set status = 'paid'
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  update public.orders set subtotal = 500, total = 500 where id = v_pedido;
+  update public.sales set total = 500 where order_id = v_pedido;
+  perform public.settle_month_commission(date_trunc('month', now())::date);
+  select commission_amount into v_suma
+  from public.billing
+  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  if v_suma <> 10 then
+    raise exception 'se reescribió un mes ya pagado: quedó en %', v_suma;
+  end if;
+
+  -- Y el cierre solo acepta el primer día de un mes.
+  begin
+    perform public.settle_month_commission('2026-08-15'::date);
+    raise exception 'el cierre aceptó una fecha que no es inicio de mes';
+  exception when sqlstate '22023' then null;
+  end;
 
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.

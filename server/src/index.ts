@@ -46,6 +46,12 @@ import storefrontRouter = require('./routes/storefront.routes')
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
+  settleMonthCommission(periodStart: string): Promise<{
+    periodo: string
+    facturas_afectadas: number
+    comision_total: number
+    ya_pagadas: number
+  }>
   ensureCurrentMonthBilling(): Promise<{
     data: number | null
     error: { message?: string } | null
@@ -324,6 +330,35 @@ async function generateCurrentMonthBilling(): Promise<void> {
   }
 }
 
+/**
+ * Lleva la comisión acumulada a la factura del mes.
+ *
+ * Corre a diario y cierra DOS meses: el actual, para que el comercio vea su
+ * factura al día en vez de un número que aparece de golpe el día 1, y el
+ * anterior, porque un pedido entregado tarde todavía pertenece al mes en que
+ * se vendió. Es idempotente —recalcula desde `sales` y escribe el valor
+ * absoluto— y nunca toca un mes ya pagado.
+ */
+async function settleCommissions(): Promise<void> {
+  const primerDia = (desplazamiento: number): string => {
+    const hoy = new Date()
+    const d = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + desplazamiento, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
+  }
+  for (const periodo of [primerDia(0), primerDia(-1)]) {
+    try {
+      const r = await db.settleMonthCommission(periodo)
+      if (r.facturas_afectadas > 0) {
+        console.log(`💰 Comisión ${periodo}: ${r.facturas_afectadas} factura(s), $${r.comision_total}`)
+      }
+    } catch (error) {
+      // Nunca tumba el arranque ni la tarea siguiente: si un mes falla, el
+      // otro se intenta igual y mañana se reintenta solo.
+      console.error(`❌ Cierre de comisión ${periodo}:`, errorMessage(error))
+    }
+  }
+}
+
 async function cleanupWebhookInbox(): Promise<void> {
   try {
     const result = await db.cleanupWebhookEvents()
@@ -403,6 +438,9 @@ httpServer = app.listen(port, () => {
   webhookInboxWorker.start()
   setTimeout(generateCurrentMonthBilling, 3000)
   setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
+  // Después de generar la cuota: la comisión se escribe sobre esa misma fila.
+  setTimeout(settleCommissions, 12000)
+  setInterval(settleCommissions, 24 * 60 * 60 * 1000)
   setTimeout(cleanupWebhookInbox, 5000)
   setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
   setTimeout(cleanupErrorLog, 7000)

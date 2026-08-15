@@ -12283,3 +12283,157 @@ revoke all on function public.platform_markup_summary(date, date, uuid)
   from public, anon, authenticated;
 grant execute on function public.platform_markup_summary(date, date, uuid)
   to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- EL CIERRE DE MES: LA COMISIÓN ENTRA EN LA FACTURA
+-- Migración incremental: migration-2026-08-16-cierre-de-mes.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Pensado para MUCHOS negocios, no para uno. Tres decisiones que con un local
+-- son opinables y con los miles de una ciudad grande no:
+--
+--   1. El cierre es UNA operación por conjuntos, no un bucle. Un bucle haría
+--      una consulta por local: con 5.000 locales, un cierre de minutos que se
+--      cae a la mitad. Aquí es un solo `insert ... on conflict`.
+--   2. Índices para el rango de fechas: `idx_sales_biz_date` empieza por
+--      `business_id` y no sirve para «todas las ventas de agosto».
+--   3. Idempotente por naturaleza: no suma, RECALCULA desde `sales` y escribe
+--      el valor absoluto. Un reintento tras un fallo de red no cobra el doble.
+--
+-- ⚠️ Un mes ya PAGADO no se reescribe jamás: si una venta se anula después de
+-- liquidar, se descuenta del mes SIGUIENTE. Una factura emitida es un hecho.
+--
+-- ⚠️ `billing.amount` sigue siendo LA CUOTA. Sumarle la comisión rompería toda
+-- lectura existente y dejaría al comercio sin distinguir qué paga por el
+-- servicio y qué por sus ventas.
+
+-- ── 1. La comisión en la factura ───────────────────────────────────────────
+alter table public.billing
+  add column if not exists commission_amount    numeric(10,2) not null default 0,
+  add column if not exists commission_orders    integer       not null default 0,
+  add column if not exists commission_closed_at timestamptz;
+
+comment on column public.billing.commission_amount is
+  'Comisión de la plataforma del periodo. `amount` sigue siendo la cuota: el total es la suma.';
+
+
+-- ── 2. Una factura por negocio y mes, declarado ────────────────────────────
+--
+-- La invariante ya existía —`billing_month_claims` tiene esa clave primaria—
+-- pero `billing` no la declaraba, así que ningún camino futuro estaba
+-- obligado a respetarla. Declararla permite además cerrar el mes con
+-- `on conflict`, en UNA operación atómica en vez de leer-y-luego-escribir,
+-- que con dos instancias del servidor es una carrera.
+--
+-- Verificado antes de crearlo: cero duplicados en los datos actuales.
+create unique index if not exists uq_billing_negocio_periodo
+  on public.billing (business_id, period_start);
+
+
+-- ── 3. El índice que hace posible el cierre ────────────────────────────────
+--
+-- El cierre pregunta «todas las ventas completadas de este mes, de TODOS los
+-- negocios». `idx_sales_biz_date` empieza por `business_id` y no sirve para
+-- eso. Parcial sobre `completada` porque las anuladas no se cobran: el índice
+-- queda más pequeño y más rápido.
+create index if not exists idx_sales_cierre
+  on public.sales (sold_at)
+  where status = 'completada';
+
+-- El cruce del cierre contra la factura del periodo.
+create index if not exists idx_billing_periodo
+  on public.billing (period_start);
+
+
+-- ── 4. El cierre ───────────────────────────────────────────────────────────
+--
+-- Devuelve qué hizo, para que la tarea programada pueda registrarlo y el
+-- superadmin vea el resultado sin abrir la base.
+create or replace function public.settle_month_commission(
+  p_period_start date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_fin       date;
+  v_afectadas integer;
+  v_total     numeric(10,2);
+  v_pagadas   integer;
+begin
+  if p_period_start is null or p_period_start <> date_trunc('month', p_period_start)::date then
+    raise exception using
+      errcode = '22023',
+      message = 'El cierre va sobre el primer día de un mes.';
+  end if;
+
+  v_fin := (p_period_start + interval '1 month')::date;
+
+  -- Cuántas facturas de ese mes están pagadas y por tanto NO se tocan. Se
+  -- cuenta ANTES de escribir para poder informarlo: si un mes se cierra tarde
+  -- y ya se cobró, el superadmin tiene que enterarse en vez de creer que
+  -- entró todo.
+  select count(*) into v_pagadas
+  from public.billing
+  where period_start = p_period_start
+    and status = 'paid'
+    and exists (
+      select 1 from public.platform_markup_summary(p_period_start, v_fin, business_id)
+    );
+
+  -- UNA operación: calcula, actualiza lo que existe y crea lo que falta.
+  --
+  -- `insert ... on conflict do update` en vez de leer-y-escribir porque con
+  -- dos instancias del servidor lo segundo es una carrera: las dos leerían
+  -- «no hay factura» y las dos insertarían.
+  with resumen as (
+    select * from public.platform_markup_summary(p_period_start, v_fin, null)
+  )
+  insert into public.billing (
+    business_id, amount, currency, period_start, period_end,
+    status, commission_amount, commission_orders, commission_closed_at
+  )
+  select
+    r.business_id,
+    -- Sin cuota conocida la factura nace en 0 y solo lleva comisión: es
+    -- preferible a que la comisión de ese local no se facture nunca.
+    coalesce(b.monthly_rate, 0),
+    'USD',
+    p_period_start,
+    (v_fin - interval '1 day')::date,
+    'pending',
+    r.margen,
+    r.pedidos,
+    now()
+  from resumen r
+  join public.businesses b on b.id = r.business_id
+  on conflict (business_id, period_start) do update
+  set commission_amount    = excluded.commission_amount,
+      commission_orders    = excluded.commission_orders,
+      commission_closed_at = now()
+  -- ⚠️ Un mes ya pagado NO se reescribe: si una venta se anula después de
+  -- liquidar, se descuenta del mes siguiente. Una factura emitida es un hecho.
+  where public.billing.status <> 'paid';
+
+  get diagnostics v_afectadas = row_count;
+
+  select coalesce(sum(commission_amount), 0) into v_total
+  from public.billing
+  where period_start = p_period_start;
+
+  return jsonb_build_object(
+    'periodo',            p_period_start,
+    'facturas_afectadas', v_afectadas,
+    'comision_total',     v_total,
+    'ya_pagadas',         v_pagadas
+  );
+end;
+$$;
+
+revoke all on function public.settle_month_commission(date)
+  from public, anon, authenticated;
+grant execute on function public.settle_month_commission(date)
+  to service_role;

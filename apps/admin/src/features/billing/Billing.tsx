@@ -116,20 +116,36 @@ export default function Billing() {
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Mes</TableHead>
-                <TableHead>Monto</TableHead>
+                <TableHead>Cuota</TableHead>
+                <TableHead>Comisión</TableHead>
+                <TableHead>Total</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {!pageData.length && (
-                <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Sin registros para los filtros aplicados</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Sin registros para los filtros aplicados</TableCell></TableRow>
               )}
               {pageData.map(b => (
                 <TableRow key={b.id} className={isFuture(b) ? 'opacity-45' : ''}>
                   <TableCell className="font-medium text-foreground">{b.businesses?.name || '—'}</TableCell>
                   <TableCell className="text-foreground/80 capitalize text-xs">{mesLabel(b.period_start)}</TableCell>
                   <TableCell className="font-mono text-foreground/90 tabular-nums">{money(b.amount)}</TableCell>
+                  {/* La comisión no se suma a la cuota: el comercio tiene que
+                      poder distinguir qué paga por el servicio y qué por sus
+                      ventas. El total va en su propia columna. */}
+                  <TableCell className="font-mono tabular-nums text-primary">
+                    {Number(b.commission_amount || 0) > 0 ? money(b.commission_amount!) : '—'}
+                    {Number(b.commission_orders || 0) > 0 && (
+                      <span className="block text-[11px] text-muted-foreground">
+                        {b.commission_orders} pedidos
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono font-semibold text-foreground tabular-nums">
+                    {money(Number(b.amount || 0) + Number(b.commission_amount || 0))}
+                  </TableCell>
                   <TableCell><StatusPill b={b} /></TableCell>
                   <TableCell className="text-right">
                     {b.status !== 'paid' && (

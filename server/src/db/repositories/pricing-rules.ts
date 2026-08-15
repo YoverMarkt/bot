@@ -95,8 +95,29 @@ const getPlatformMarkupSummary = async (
   return data || []
 }
 
+/**
+ * Cierra un mes: recalcula la comisión y la escribe en la factura.
+ *
+ * Idempotente por naturaleza —no suma, RECALCULA desde `sales` y escribe el
+ * valor absoluto—, así que correrla a diario es seguro y es justo lo que hace
+ * la tarea programada. Un mes ya pagado no se reescribe.
+ */
+const settleMonthCommission = async (periodStart: string) => {
+  const { data, error } = await db.rpc('settle_month_commission', {
+    p_period_start: periodStart,
+  })
+  if (error) throw new Error(error.message)
+  return data as {
+    periodo: string
+    facturas_afectadas: number
+    comision_total: number
+    ya_pagadas: number
+  }
+}
+
 export = {
   listPricingRules,
+  settleMonthCommission,
   createPricingRule,
   archivePricingRule,
   replacePricingRule,
