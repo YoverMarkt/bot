@@ -818,6 +818,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       />
 
       <CartSheet
+        paymentMethods={business.paymentMethods || []}
         abierta={carritoAbierto}
         onCerrar={() => setCarritoAbierto(false)}
         lines={lineas}

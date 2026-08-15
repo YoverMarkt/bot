@@ -5,7 +5,14 @@ import { money } from '../lib/format'
 import { cartTotal, detalleDeLinea, lineTotal, needsAddress, orderTotal } from '../lib/cart'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
 import type { Ubicacion } from '../lib/ubicacion'
-import type { Address, CartLine, Fulfillment, Me, PaymentMethod } from '../lib/types'
+import type { Address, CartLine, Fulfillment, Me, PaymentMethod, StorePaymentMethod } from '../lib/types'
+
+/** Un icono por método. Uno que no esté en la lista cae en el genérico. */
+const ICONO_PAGO: Record<string, typeof Landmark> = {
+  transferencia: Landmark,
+  efectivo: Banknote,
+  pago_al_retirar: ShoppingBag,
+}
 
 // El carrito y el cierre del pedido, en una sola hoja.
 //
@@ -54,7 +61,8 @@ const tieneUbicacion = (direccion: Address): boolean =>
 
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  entrega, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion, onBorrarDireccion,
+  entrega, paymentMethods, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion,
+  onBorrarDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -72,6 +80,13 @@ export default function CartSheet({
    * y el cliente pagaba un envío que había rechazado.
    */
   entrega: Fulfillment
+  /**
+   * Los métodos que ESTE local acepta, tal como los manda el servidor.
+   *
+   * Llega de fuera y no se decide aquí: hasta el 2026-08-16 los tres estaban
+   * escritos en este archivo y el dueño no elegía nada.
+   */
+  paymentMethods: StorePaymentMethod[]
   onEntrega: (entrega: Fulfillment) => void
   onConfirmar: (datos: {
     fulfillment: Fulfillment
@@ -215,31 +230,24 @@ export default function CartSheet({
   // «Pago al retirar» no es cómo paga, es CUÁNDO: al pasar por el local. Solo
   // se ofrece en retiro — prometérselo a quien pidió a domicilio es ofrecer
   // algo que no se puede cumplir. El servidor lo vuelve a comprobar.
-  const opcionesPago = [
-    {
-      id: 'transferencia' as const,
-      icono: Landmark,
-      texto: 'Transferencia bancaria',
-      // Dice lo que va a pasar de verdad desde el 2026-08-12: la cuenta se
-      // enseña en la pantalla siguiente y el comprobante va por el chat. Antes
-      // decía «subes tu comprobante» y prometía un botón que ya no existe.
-      detalle: 'Te mostramos la cuenta y nos envías el comprobante por WhatsApp.',
-    },
-    {
-      id: 'efectivo' as const,
-      icono: Banknote,
-      texto: needsAddress(entrega) ? 'Efectivo al recibir' : 'Efectivo',
-      detalle: needsAddress(entrega)
-        ? 'Pagas cuando llegue tu pedido.'
-        : 'Pagas en efectivo en el local.',
-    },
-    ...(needsAddress(entrega) ? [] : [{
-      id: 'pago_al_retirar' as const,
-      icono: ShoppingBag,
-      texto: 'Pago al retirar',
-      detalle: 'Pagas cuando pases a recogerlo.',
-    }]),
-  ]
+  //
+  // ⚠️ La lista sale del NEGOCIO, no de aquí. Hasta el 2026-08-16 estaban los
+  // tres escritos a mano, así que el dueño creía que elegía cómo le pagan y no
+  // elegía nada. Ahora se pinta lo que el servidor dice que acepta, y el
+  // servidor lo vuelve a exigir al crear el pedido.
+  const opcionesPago = paymentMethods
+    .filter((m: StorePaymentMethod) => m.code !== 'pago_al_retirar' || !needsAddress(entrega))
+    .map((m: StorePaymentMethod) => ({
+      id: m.code as PaymentMethod,
+      icono: ICONO_PAGO[m.code] || Landmark,
+      // El texto del catálogo manda; el matiz de entrega/retiro solo aplica
+      // al efectivo, que es el único que cambia de significado según cómo se
+      // reciba el pedido.
+      texto: m.code === 'efectivo' && !needsAddress(entrega) ? 'Efectivo' : m.label,
+      detalle: m.code === 'efectivo' && !needsAddress(entrega)
+        ? 'Pagas en efectivo en el local.'
+        : m.help_text || '',
+    }))
 
   // Vista previa del envío. El importe que manda es el que calcula el servidor
   // al crear el pedido: aquí solo se anticipa para que nadie se lleve sorpresas.

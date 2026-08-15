@@ -206,7 +206,46 @@ const applyBusinessTemplate = async (businessId: string, template: BusinessTempl
   })
 )
 
+
+/**
+ * Los métodos de pago de un negocio, encendidos y apagados, para su panel.
+ *
+ * Devuelve TODOS los disponibles en la plataforma —no solo los activos— para
+ * que el dueño vea los interruptores que puede tocar. Los que la plataforma
+ * todavía no procesa (tarjeta, pasarela) no salen: no tiene sentido enseñar
+ * un interruptor que la base va a rechazar.
+ */
+const getBusinessPaymentMethods = async (businessId: string) => {
+  const { data, error } = await db
+    .from('business_payment_methods')
+    .select('method_code, enabled, sort, payment_methods!inner(label, help_text, is_prepaid, requires_proof, available)')
+    .eq('business_id', businessId)
+    .eq('payment_methods.available', true)
+    .order('sort')
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
+/**
+ * Enciende o apaga uno.
+ *
+ * ⚠️ El `business_id` sale del JWT del dueño, nunca de la petición. Y la base
+ * vuelve a comprobar que el método esté disponible en la plataforma: apagar
+ * aquí es una preferencia, activar algo que no existe es imposible.
+ */
+const setBusinessPaymentMethod = async (
+  businessId: string,
+  methodCode: string,
+  enabled: boolean,
+) => db
+  .from('business_payment_methods')
+  .update({ enabled, updated_at: new Date().toISOString() })
+  .eq('business_id', businessId)
+  .eq('method_code', methodCode)
+
 export = {
+  getBusinessPaymentMethods,
+  setBusinessPaymentMethod,
   getBusinessById,
   getBusinessBySlug,
   getBusinessByChannel,
