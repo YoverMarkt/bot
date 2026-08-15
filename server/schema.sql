@@ -3045,6 +3045,37 @@ create unique index if not exists uq_business_customers
 create index if not exists idx_business_customers_recientes
   on public.business_customers (business_id, last_order_at desc);
 
+-- ── Modo mini app: cuándo se le mandó el enlace a este cliente ─────────────
+-- Vivía en un `Map` del proceso, así que se perdía al reiniciar y no servía
+-- con dos instancias (migration-2026-08-02-miniapp-enlace-24h.sql).
+alter table public.business_customers
+  add column if not exists storefront_link_sent_at timestamptz;
+
+-- ── Quien escribe por molestar: techo automático y bloqueo del dueño ───────
+-- `muted_until` lo pone SOLO el techo (temporal, 24 h: un contador no puede
+-- condenar a nadie). `blocked_at` lo pone el DUEÑO desde su panel, no caduca y
+-- es total: el bot calla y la mini app le rechaza el pedido.
+-- (migration-2026-08-13-molestias-y-bloqueo.sql)
+alter table public.business_customers
+  add column if not exists blocked_at         timestamptz,
+  add column if not exists muted_until        timestamptz,
+  add column if not exists reply_window_start timestamptz,
+  add column if not exists reply_count        integer not null default 0,
+  -- El último mensaje entrante que ya se contó: la entrada es at-least-once y
+  -- un reintento del worker sumaba dos veces
+  -- (migration-2026-08-15-reclamo-idempotente.sql).
+  add column if not exists last_reply_message_id text;
+
+alter table public.business_customers
+  drop constraint if exists business_customers_respuestas_check;
+alter table public.business_customers
+  add constraint business_customers_respuestas_check
+  check (reply_count >= 0);
+
+create index if not exists idx_business_customers_bloqueados
+  on public.business_customers (business_id, blocked_at)
+  where blocked_at is not null;
+
 -- ── Un cliente bloqueado no crea pedidos desde la tienda ──────────────────
 -- El cinturón de la comprobación de la ruta: cierra la carrera y no falla
 -- abierto. Acotado a `source = 'storefront'` — un pedido de mostrador lo
@@ -3101,37 +3132,6 @@ drop trigger if exists orders_reject_blocked on public.orders;
 create trigger orders_reject_blocked
   before insert on public.orders
   for each row execute function public.orders_reject_blocked();
-
--- ── Modo mini app: cuándo se le mandó el enlace a este cliente ─────────────
--- Vivía en un `Map` del proceso, así que se perdía al reiniciar y no servía
--- con dos instancias (migration-2026-08-02-miniapp-enlace-24h.sql).
-alter table public.business_customers
-  add column if not exists storefront_link_sent_at timestamptz;
-
--- ── Quien escribe por molestar: techo automático y bloqueo del dueño ───────
--- `muted_until` lo pone SOLO el techo (temporal, 24 h: un contador no puede
--- condenar a nadie). `blocked_at` lo pone el DUEÑO desde su panel, no caduca y
--- es total: el bot calla y la mini app le rechaza el pedido.
--- (migration-2026-08-13-molestias-y-bloqueo.sql)
-alter table public.business_customers
-  add column if not exists blocked_at         timestamptz,
-  add column if not exists muted_until        timestamptz,
-  add column if not exists reply_window_start timestamptz,
-  add column if not exists reply_count        integer not null default 0,
-  -- El último mensaje entrante que ya se contó: la entrada es at-least-once y
-  -- un reintento del worker sumaba dos veces
-  -- (migration-2026-08-15-reclamo-idempotente.sql).
-  add column if not exists last_reply_message_id text;
-
-alter table public.business_customers
-  drop constraint if exists business_customers_respuestas_check;
-alter table public.business_customers
-  add constraint business_customers_respuestas_check
-  check (reply_count >= 0);
-
-create index if not exists idx_business_customers_bloqueados
-  on public.business_customers (business_id, blocked_at)
-  where blocked_at is not null;
 
 -- Por negocio a propósito: que una pizzería vea a dónde pidió ese cliente en
 -- otro local sería filtrar datos entre negocios.
