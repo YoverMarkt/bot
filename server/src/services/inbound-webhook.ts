@@ -102,6 +102,13 @@ export interface InboundWebhookDependencies {
    * cuesta tráfico. Sin él, el modo mini app volvería a pagar por cada foto
    * que le manden — que es justo lo que el atajo de abajo evita.
    */
+  /**
+   * ¿El dueño bloqueó este número?
+   *
+   * Opcional como el resto: sin ella no hay corte, que es como se comportaba
+   * antes de que el bloqueo existiera.
+   */
+  contactoBloqueado?: (businessId: string, contactPhone: string) => Promise<boolean>
   esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
   /** Sube la foto y la engancha al pedido. Devuelve el número si lo logró. */
   adjuntarComprobante?: (
@@ -404,6 +411,32 @@ export function createInboundWebhookProcessor(
       return
     }
 
+    // ⚠️ BLOQUEADO: ni se descarga, ni se transcribe, ni se mira.
+    //
+    // Va ANTES del atajo del modo mini app porque vale para los tres modos, y
+    // antes de cualquier descarga porque es justo aquí donde se gasta: bajar
+    // la media cuesta tráfico, Whisper y visión cuestan dinero, y adjuntar un
+    // comprobante cuesta almacenamiento. Un bloqueado no puede seguir gastando
+    // en el negocio que lo bloqueó — es media de las dos razones para bloquear
+    // a alguien.
+    //
+    // El mensaje SÍ se entrega a `handleMessage` con su marcador de texto: ahí
+    // se guarda para que el dueño lo lea, y el corte de `bot-conversation`
+    // impide la respuesta. Bloquear no es dejar de ver.
+    const bloqueado = dependencies.contactoBloqueado
+      ? await dependencies.contactoBloqueado(business.id, payload.from).catch(() => false)
+      : false
+    if (bloqueado) {
+      logger.log(`⛔ [${payload.provider}] media de un contacto bloqueado: no se procesa`)
+      await dependencies.bot.handleMessage(
+        payload.from,
+        payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]',
+        businessIdentifier,
+        options,
+      )
+      return
+    }
+
     // MODO MINI APP: ni se descarga la media, ni se transcribe, ni se mira.
     //
     // Este negocio atiende por su app, así que la respuesta va a ser la misma
@@ -500,6 +533,10 @@ const processor = createInboundWebhookProcessor({
    * Carga diferida como el resto de lo que habla con la base: `require` dentro
    * de la función evita un ciclo de importaciones al arrancar.
    */
+  contactoBloqueado: async (businessId, contactPhone) => {
+    const db = require('../db') as typeof import('../db')
+    return db.isContactBlocked(businessId, contactPhone)
+  },
   esperaComprobante: async (businessId, contactPhone) => {
     const db = require('../db') as typeof import('../db')
     const inbox = require('./payment-proof-inbox') as typeof import('./payment-proof-inbox')
