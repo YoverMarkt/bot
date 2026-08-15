@@ -15,10 +15,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Banknote, Bike, Clock, Landmark, MapPin, Navigation, Receipt, ShoppingBag,
-  Check, X, FileText, Plus,
+  Check, X, FileText, Plus, RotateCcw,
 } from 'lucide-react'
 import {
   ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, confirmOrderPayment, getOrderProof, getOrders, money,
+  requestNewProof,
   setOrderStatus, siguientePaso,
   type Order, type OrderStatus,
 } from './api'
@@ -244,6 +245,24 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   const puedeConfirmarPago = pedido.payment_method === 'transferencia'
     && !pedido.payment_confirmed_at
     && (pedido.status === 'esperando_pago' || pedido.status === 'pago_en_revision')
+
+  const pedirOtroComprobante = async () => {
+    setConfirmando(true)
+    try {
+      await requestNewProof(pedido.id)
+      toast.success('Le pedimos otro comprobante', {
+        description: 'El pedido vuelve a esperar el pago y el cliente lo ve así en la tienda. '
+          + 'La próxima captura que mande por WhatsApp se adjunta sola.',
+      })
+      onRefrescar()
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'No se pudo pedir otro comprobante',
+      )
+    } finally {
+      setConfirmando(false)
+    }
+  }
 
   const confirmarPago = async () => {
     setConfirmando(true)
@@ -549,6 +568,26 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
 
                 Si el dueño quiere darla, la vía es no rechazar: pedirle otro
                 comprobante por WhatsApp y confirmar el pago a mano. */}
+            {/* La salida que NO cierra el pedido. Va antes de rechazar porque
+                es la que se quiere casi siempre: una foto borrosa no debería
+                costar una venta. */}
+            {pedido.status === 'pago_en_revision' && (
+              <ConfirmAction
+                trigger={
+                  <Button variant="outline" size="sm" disabled={ocupado || confirmando}>
+                    <RotateCcw /> Pedir otro comprobante
+                  </Button>
+                }
+                title="Pedir otro comprobante"
+                description={
+                  'El pedido vuelve a esperar el pago y se borra el comprobante actual, así '
+                  + 'que la próxima captura que el cliente mande por WhatsApp se adjunta sola. '
+                  + 'NO se le avisa automáticamente: escríbele tú para decirle qué pasó.'
+                }
+                confirmLabel="Pedir otro"
+                onConfirm={pedirOtroComprobante}
+              />
+            )}
             {pedido.status === 'pago_en_revision' && (
               <ConfirmAction
                 trigger={

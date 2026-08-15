@@ -144,6 +144,20 @@ export const confirmOrderPayment = (id: string) =>
     { method: 'PUT' },
   )
 
+/**
+ * Le pide otro comprobante al cliente sin cerrar el pedido.
+ *
+ * ⚠️ Existe porque rechazar CIERRA: `rechazado` es un estado final y al
+ * cliente le llega «tu pedido fue cancelado». Una foto borrosa costaba una
+ * venta entera.
+ *
+ * Devuelve el pedido a «esperando pago» y borra el comprobante anterior — sin
+ * eso, el buzón de WhatsApp rechazaría la foto siguiente porque solo adjunta
+ * cuando no hay una ya puesta.
+ */
+export const requestNewProof = (id: string) =>
+  api<{ ok: true }>(`/api/client/orders/${id}/request-proof`, { method: 'POST' })
+
 export const money = (n: number | string) => `$${(Number(n) || 0).toFixed(2)}`
 
 export const ESTADO_TEXTO: Record<OrderStatus, string> = {

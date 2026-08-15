@@ -11315,6 +11315,64 @@ revoke all on function public.reorder_options(uuid, uuid, uuid[]) from public, a
 grant execute on function public.reorder_options(uuid, uuid, uuid[]) to service_role;
 
 -- ── La RPC del dinero, copiando el orden ─────────────────────────────────
+-- ── Pedir otro comprobante ────────────────────────────────────────────────
+-- La segunda oportunidad que faltaba: rechazar CIERRA el pedido, así que una
+-- foto borrosa costaba una venta. No recrea `set_order_status` a propósito.
+-- (migration-2026-08-15-otra-oportunidad.sql)
+create or replace function public.request_new_payment_proof(
+  p_business_id uuid,
+  p_order_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_order public.orders%rowtype;
+begin
+  select * into v_order
+  from public.orders
+  where id = p_order_id and business_id = p_business_id
+  for update;
+
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+
+  -- Solo desde «el dueño lo está mirando». Desde cualquier otro estado esto no
+  -- significa nada: un pedido ya aceptado no vuelve a esperar un comprobante.
+  if v_order.status <> 'pago_en_revision' then
+    return jsonb_build_object(
+      'result', 'invalid_transition',
+      'order', to_jsonb(v_order)
+    );
+  end if;
+
+  update public.orders
+  set status = 'esperando_pago',
+      payment_proof_url = null,
+      payment_proof_public_id = null,
+      payment_confirmed_at = null,
+      -- El aviso se reclama por hito y este pedido vuelve atrás: sin soltar la
+      -- marca, el aviso de «en preparación» no saldría cuando por fin arranque.
+      customer_notified_status = null,
+      updated_at = now()
+  where id = p_order_id and business_id = p_business_id
+  returning * into v_order;
+
+  insert into public.order_events (business_id, order_id, from_status, to_status)
+  values (p_business_id, p_order_id, 'pago_en_revision', 'esperando_pago');
+
+  return jsonb_build_object('result', 'updated', 'order', to_jsonb(v_order));
+end;
+$$;
+
+revoke all on function public.request_new_payment_proof(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.request_new_payment_proof(uuid, uuid)
+  to service_role;
+
 create or replace function public.create_storefront_order(
   p_business_id uuid,
   p_customer_id uuid,
