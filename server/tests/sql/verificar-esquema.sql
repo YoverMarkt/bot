@@ -2053,6 +2053,58 @@ begin
   exception when sqlstate '22023' then null;
   end;
 
+  -- 13. LOS TRES CASOS LÍMITE.
+  --
+  -- Los tres son de dinero y los tres se encontraron auditando, no fallando.
+  -- Se parte de cero: los bloques anteriores dejaron ventas de ESTE mes y sus
+  -- comisiones se sumarían a las de aquí, midiendo otra cosa.
+  delete from public.sales where business_id = v_biz;
+  delete from public.orders where business_id = v_biz;
+  update public.pricing_rules set status = 'archived' where business_id = v_biz;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  -- (a) El mes termina en ECUADOR. Una venta del último día a las 20:00 hora
+  -- local son las 01:00 UTC del día siguiente: sin la conversión se facturaba
+  -- en el mes que no era, y son las cinco últimas horas de cada día.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000931', 'completado', 100, 0, 100, 'USD', 'manual')
+  returning id into v_pedido;
+  insert into public.sales (business_id, order_id, total, status, sold_at)
+  values (v_biz, v_pedido, 100, 'completada', '2026-08-31 20:00:00-05');
+
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2026-08-01', '2026-09-01', v_biz);
+  if v_suma <> 10 then
+    raise exception 'la venta del 31 a las 20:00 de Ecuador no cayó en agosto: %', v_suma;
+  end if;
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2026-09-01', '2026-10-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'esa venta se coló en septiembre: %', v_suma;
+  end if;
+  delete from public.sales where order_id = v_pedido;
+  delete from public.orders where id = v_pedido;
+
+  -- (b) El descuento sale de la base: no se cobra comisión sobre dinero que
+  -- el comercio no recibió.
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000932', 'completado', 100, 20, 80, 'USD', 'manual')
+  returning platform_markup, merchant_subtotal into v_ped;
+  if v_ped.platform_markup <> 8.00 then
+    raise exception 'con $20 de descuento la comisión debía ser 8.00, fue %', v_ped.platform_markup;
+  end if;
+  if v_ped.merchant_subtotal <> 72.00 then
+    raise exception 'al comercio debían quedarle 72.00, le quedaron %', v_ped.merchant_subtotal;
+  end if;
+
+  -- (c) `on_top` no se puede guardar mientras el motor no lo honre.
+  begin
+    update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
+    raise exception 'se guardó un modo de margen que el motor no aplica';
+  exception when check_violation then null;
+  end;
+
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.
   delete from public.businesses where id = v_biz;

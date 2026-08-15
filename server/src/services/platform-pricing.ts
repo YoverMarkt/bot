@@ -48,6 +48,13 @@ export type MarkupStrategy = 'percentage' | 'fixed' | 'tiered'
  * · `absorbed` → el cliente paga $10, el comercio recibe $9, la plataforma $1.
  * · `on_top`   → el cliente paga $11, el comercio recibe $10, la plataforma $1.
  *
+ * ⚠️ **`on_top` no se puede guardar todavía**: el CHECK de `pricing_rules` solo
+ * admite `absorbed`, porque aplicarlo de verdad exige que el catálogo, el
+ * carrito y el resumen pinten el precio con margen — si no, el cliente
+ * descubriría el precio real al confirmar. Aquí está implementado y probado a
+ * propósito: el día que esas tres pantallas estén listas, se abre el CHECK y
+ * no hay que escribir este cálculo con prisa.
+ *
  * Mismo cálculo, mismo asiento y misma deuda: lo único que cambia es si el
  * margen se suma al precio del cliente o se absorbe del precio del comercio.
  */

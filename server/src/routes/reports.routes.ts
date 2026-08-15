@@ -101,12 +101,20 @@ router.get('/api/client/dashboard', auth.authClient, canViewReports, async (req,
  * en la barra de direcciones para leer la facturación de otro local.
  */
 router.get('/api/client/platform-fees', auth.authClient, canViewReports, async (req, res) => {
-  const hoy = new Date()
-  const mes = (fecha: Date) => (
-    `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}-01`
-  )
-  const desde = mes(hoy)
-  const hasta = mes(new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1)))
+  // El mes se calcula en ECUADOR, no en UTC: el servidor corre en UTC y a las
+  // 00:30 del día 1 en Londres, aquí sigue siendo el último día del mes
+  // anterior. Sin esto, el acumulado del dueño se reiniciaba cinco horas antes.
+  const mesEnEcuador = (desplazamiento: number): string => {
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit',
+    }).formatToParts(new Date())
+    const anio = Number(partes.find(p => p.type === 'year')?.value)
+    const mes = Number(partes.find(p => p.type === 'month')?.value)
+    const d = new Date(Date.UTC(anio, mes - 1 + desplazamiento, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
+  }
+  const desde = mesEnEcuador(0)
+  const hasta = mesEnEcuador(1)
 
   try {
     const filas = await db.getPlatformMarkupSummary(desde, hasta, getClientBusinessId(req))

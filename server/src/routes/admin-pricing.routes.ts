@@ -49,7 +49,10 @@ const { authAdmin }: ModuloAuth = require('../middleware/auth') as typeof import
 
 const SCOPES = new Set(['global', 'business_type', 'business'])
 const STRATEGIES = new Set(['percentage', 'fixed', 'tiered'])
-const MODES = new Set(['absorbed', 'on_top'])
+// Solo `absorbed`. `on_top` exige que el catálogo, el carrito y el resumen
+// pinten el precio con margen; hasta entonces el CHECK de la base lo impide y
+// aquí se rechaza con un mensaje que se entiende.
+const MODES = new Set(['absorbed'])
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const isRecord = (v: unknown): v is Record<string, unknown> => (
@@ -84,7 +87,7 @@ const sanearRegla = (body: unknown): { error: string } | { rule: ReglaSaneada } 
 
   const markupMode = String(body.markup_mode || 'absorbed').trim()
   if (!MODES.has(markupMode)) {
-    return { error: 'El modo tiene que ser absorbed o on_top.' }
+    return { error: 'Por ahora el margen solo puede salir del precio del comercio.' }
   }
 
   // Cada ámbito exige exactamente sus datos. Sin esto, una regla «de negocio»
@@ -164,10 +167,22 @@ const sanearRegla = (body: unknown): { error: string } | { rule: ReglaSaneada } 
   return { rule: regla }
 }
 
-/** El primer día del mes de una fecha, en texto ISO. */
-const inicioDeMes = (fecha: Date): string => (
-  `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}-01`
-)
+/**
+ * El primer día del mes EN ECUADOR, en texto ISO.
+ *
+ * El servidor corre en UTC: a las 00:30 del 1 de septiembre en Londres, en
+ * Ecuador siguen siendo las 19:30 del 31 de agosto. Calculando el mes en UTC,
+ * el dueño vería su acumulado reiniciarse cinco horas antes de tiempo.
+ */
+const inicioDeMesEnEcuador = (desplazamiento = 0): string => {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit',
+  }).formatToParts(new Date())
+  const anio = Number(partes.find(p => p.type === 'year')?.value)
+  const mes = Number(partes.find(p => p.type === 'month')?.value)
+  const d = new Date(Date.UTC(anio, mes - 1 + desplazamiento, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
+}
 
 const router = createRouter()
 
@@ -249,13 +264,12 @@ router.post('/api/admin/pricing-rules/simulate', authAdmin, async (req, res) => 
 
 /** Cuánto lleva acumulado cada comercio. Sin negocio: todos. */
 router.get('/api/admin/pricing-summary', authAdmin, async (req, res) => {
-  const hoy = new Date()
   const desde = typeof req.query.from === 'string' && req.query.from
     ? req.query.from
-    : inicioDeMes(hoy)
+    : inicioDeMesEnEcuador(0)
   const hasta = typeof req.query.to === 'string' && req.query.to
     ? req.query.to
-    : inicioDeMes(new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1)))
+    : inicioDeMesEnEcuador(1)
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
     return res.status(400).json({ error: 'Las fechas van en formato AAAA-MM-DD.' })

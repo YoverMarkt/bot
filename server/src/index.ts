@@ -340,9 +340,15 @@ async function generateCurrentMonthBilling(): Promise<void> {
  * absoluto— y nunca toca un mes ya pagado.
  */
 async function settleCommissions(): Promise<void> {
+  // En ECUADOR, no en UTC: el día 1 a las 00:30 de Londres aquí es todavía el
+  // último día del mes anterior, y el cierre miraría el mes equivocado.
   const primerDia = (desplazamiento: number): string => {
-    const hoy = new Date()
-    const d = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + desplazamiento, 1))
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit',
+    }).formatToParts(new Date())
+    const anio = Number(partes.find(p => p.type === 'year')?.value)
+    const mes = Number(partes.find(p => p.type === 'month')?.value)
+    const d = new Date(Date.UTC(anio, mes - 1 + desplazamiento, 1))
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
   }
   for (const periodo of [primerDia(0), primerDia(-1)]) {
