@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { getReports, getAlerts, money, type Alert } from './api'
+import { getReports, getAlerts, getPlatformFees, money, type Alert } from './api'
 import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info, Receipt } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
@@ -60,6 +60,9 @@ export default function Reports() {
     placeholderData: keepPreviousData,
   })
   const { data: alertsData } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts, staleTime: 60_000 })
+  // Lo que llevamos con la plataforma este mes. Va aquí y no en su propia
+  // entrada del menú: es un reporte más, y el menú ya tiene doce.
+  const { data: fees } = useQuery({ queryKey: ['platform-fees'], queryFn: getPlatformFees, staleTime: 300_000 })
 
   const show = (g: Cat) => cat === 'todos' || cat === g
 
@@ -79,6 +82,41 @@ export default function Reports() {
           </TabsList>
         </Tabs>
       </div>
+
+      {/* Lo que llevamos con la plataforma. Solo si hay algo que mostrar: un
+          negocio sin comisión configurada no tiene por qué ver una tarjeta en
+          cero preguntándose qué le van a cobrar. */}
+      {fees && Number(fees.margen) > 0 && (
+        <UICard className="mb-5 border-primary/30 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Receipt className="w-4 h-4 text-primary shrink-0" />
+              Comisión de la plataforma este mes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <div className="text-xs text-muted-foreground">Vendiste</div>
+                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.bruto)}</div>
+                <div className="text-xs text-muted-foreground">{fees.pedidos} pedidos entregados</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Te quedas</div>
+                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.comercio)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Comisión</div>
+                <div className="text-xl font-bold tabular-nums text-primary">{money(fees.margen)}</div>
+                <div className="text-xs text-muted-foreground">se suma a tu cuota mensual</div>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Cuenta al ENTREGAR el pedido. Un pedido cancelado no paga comisión, y una venta anulada deja de contar.
+            </p>
+          </CardContent>
+        </UICard>
+      )}
 
       {/* Atajo a reactivar (igual que el viejo) */}
       <div className="mb-4">

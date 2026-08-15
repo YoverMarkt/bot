@@ -25,3 +25,17 @@ export const getReports = (period: string) => api<ReportsData>(`/api/client/repo
 export const getAlerts = () => api<{ count: number; alerts: Alert[] }>('/api/client/alerts')
 
 export const money = (n: number | string) => `$${(Number(n) || 0).toFixed(2)}`   // centavos EXACTOS
+
+// ── Lo que llevamos con la plataforma ────────────────────────────────
+//
+// Existe para que la primera factura no se discuta: el dueño ve de dónde
+// sale el número antes de que le llegue. El importe lo calcula el servidor;
+// aquí solo se pinta.
+export type PlatformFees = {
+  pedidos: number
+  bruto: number
+  margen: number
+  comercio: number
+}
+
+export const getPlatformFees = () => api<PlatformFees>('/api/client/platform-fees')
