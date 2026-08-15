@@ -114,6 +114,9 @@ export async function mockClientApi(page: Page) {
         created_at: '2026-07-12T18:01:00.000Z',
       }])
     }
+    // Los bloqueados son una LISTA de teléfonos, y va antes del comodín por lo
+    // que dice el comentario de abajo: con `{}` el panel se queda en blanco.
+    if (path === '/api/client/sessions/blocked') return json(route, [])
     if (path === '/api/client/tags' || path === '/api/client/bookings' || path === '/api/client/schedule') return json(route, [])
     // Devuelven LISTA, y eso importa: el respaldo de más abajo contesta `{}` a
     // lo que no reconozca, y un `{}` donde el panel espera una lista revienta

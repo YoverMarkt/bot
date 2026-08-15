@@ -59,7 +59,15 @@ export default function Conversations() {
   const sessions = sessionsQuery.data ?? EMPTY_SESSIONS
   const msgs = messagesQuery.data ?? EMPTY_MESSAGES
   const tags = tagsQuery.data ?? EMPTY_TAGS
-  const blocked = useMemo(() => new Set(blockedQuery.data ?? EMPTY_BLOCKED), [blockedQuery.data])
+  // ⚠️ `Array.isArray` y no `?? []`: si esta petición devolviera cualquier otra
+  // cosa —un `{}` de un error, un 502 con cuerpo HTML—, `new Set` revienta y se
+  // lleva por delante la pantalla ENTERA de conversaciones. Quedarse sin saber
+  // quién está bloqueado es un botón mal pintado; quedarse sin la pantalla es
+  // el dueño sin poder leer a sus clientes. Lo cazó el E2E.
+  const blocked = useMemo(
+    () => new Set(Array.isArray(blockedQuery.data) ? blockedQuery.data : EMPTY_BLOCKED),
+    [blockedQuery.data],
+  )
   const loadError = sessionsQuery.isError || messagesQuery.isError || tagsQuery.isError
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ['sessions'] }); qc.invalidateQueries({ queryKey: ['conversations'] }) }
