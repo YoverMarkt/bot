@@ -115,9 +115,25 @@ const settleMonthCommission = async (periodStart: string) => {
   }
 }
 
+/**
+ * Arrastra al mes que se cierra lo que cambió en meses YA PAGADOS.
+ *
+ * Una factura emitida no se reescribe, así que si una venta se anula después
+ * de cobrarla, la diferencia se descuenta aquí. Es idempotente por el reclamo
+ * de `billing_adjustments`: un periodo se salda una sola vez.
+ */
+const carryCommissionAdjustments = async (periodStart: string) => {
+  const { data, error } = await db.rpc('carry_commission_adjustments', {
+    p_period_start: periodStart,
+  })
+  if (error) throw new Error(error.message)
+  return data as { periodo: string, ajustes: number, total_ajustado: number }
+}
+
 export = {
   listPricingRules,
   settleMonthCommission,
+  carryCommissionAdjustments,
   createPricingRule,
   archivePricingRule,
   replacePricingRule,
