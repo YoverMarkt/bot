@@ -62,6 +62,47 @@ El guardián de migraciones también aprendió a **ignorar los literales de cade
 
 Existía en producción un disparador de evento `ensure_rls` con su función `rls_auto_enable` —activa RLS automáticamente en toda tabla nueva de `public`— que **no estaba en `schema.sql`**. Una instalación nueva nacía sin esa red de seguridad. Ya está en el consolidado.
 
+## Los E2E fallan ante un error de la página (2026-08-15)
+
+**Daban 32/32 con el dashboard del superadmin sin renderizar.** React lanzaba
+`Cannot read properties of undefined (reading 'length')` y Playwright ni se
+inmutaba, porque las pruebas miraban la URL, el tema o el token — cosas que
+siguen ahí aunque el contenido no aparezca.
+
+`e2e/fixtures.ts` añade un fixture automático que escucha `pageerror` y los
+`console.error` de React y pone la prueba en rojo. Se ignoran a propósito los
+errores de RED: un `fetch` fallido es cosa de los mocks de cada prueba, y
+hacerlas fallar por eso las volvería ruidosas hasta que alguien las apagara.
+
+⚠️ **Y hacía falta algo más que el fixture: ninguna prueba abría el dashboard
+con sesión.** Un guardián no sirve de nada en una pantalla donde nadie entra.
+Por eso se añadieron dos pruebas — una que lo abre entero, y otra que le
+devuelve basura a la salud del canal y exige que el resto siga en pie.
+
+⚠️ Ese par no es redundante, y comprobarlo cuesta un minuto: **arreglado el
+mock, la primera pasa aunque se quite la defensa del componente**. La que de
+verdad la protege es la que manda `{}` a propósito. Es el mismo patrón que en
+`client.spec.ts` con la lista de bloqueados.
+
+## La transacción de una migración la pone el ejecutor
+
+`tests/migraciones.mjs` abre una transacción por migración y registra dentro de
+ella el `insert` en `schema_migrations`. Una migración con su propio `commit`
+**cierra esa transacción antes de tiempo**: el registro queda fuera y, si
+fallara, el `rollback` no desharía el DDL — esquema cambiado sin constancia,
+que es el peor estado en el que se puede quedar una migración.
+
+Lo vigila `migraciones-guardian.test.js` con una lista de indultados: las 16
+que ya lo llevaban están aplicadas y **un `.sql` aplicado no se edita nunca**
+—cambiaría su huella y el ejecutor las marcaría como modificadas—. La lista no
+puede crecer.
+
+⚠️ Y una lección del mismo día: **aplicar una migración por fuera del ejecutor
+deja el registro desincronizado**. Se aplicó con un cliente `pg` suelto, quedó
+en la base y no en `schema_migrations`. Se reconcilió reejecutándola con
+`npm run migrate` —es idempotente—, que además demuestra que se puede reaplicar
+sin daño.
+
 ## Detector de código muerto (knip)
 
 Corre dentro de `npm run check`, así que el CI lo ejecuta en cada PR. Encuentra **archivos que no importa nadie**, **dependencias declaradas que ya no se usan** y **dependencias que se usan sin declarar**. Comprobado que muerde: un archivo huérfano de prueba lo hace fallar.

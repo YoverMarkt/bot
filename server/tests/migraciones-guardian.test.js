@@ -86,7 +86,59 @@ export function fksSinCascada(sql) {
   return fallos
 }
 
+// ── Las 16 migraciones que YA llevaban su propia transacción ───────────────
+//
+// Están aplicadas y un `.sql` aplicado no se edita nunca: quien lo lea creería
+// que la base dice lo que dice el archivo, y el ejecutor las marcaría como
+// modificadas. Se indultan por eso, no porque estén bien.
+//
+// La lista NO puede crecer. Una migración nueva con `begin`/`commit` propio
+// cierra la transacción del ejecutor antes de tiempo: el `insert` en
+// `schema_migrations` queda fuera y, si fallara, el `rollback` no desharía el
+// DDL. Resultado: esquema cambiado sin constancia, que es el peor estado en el
+// que se puede quedar una migración. Pasó el 2026-08-13.
+const CON_TRANSACCION_PROPIA = new Set([
+  'migration-agrupado-webhooks.sql',
+  'migration-atomicidad-reservas.sql',
+  'migration-catalogo-tienda.sql',
+  'migration-clientes-tienda.sql',
+  'migration-consumo-planes.sql',
+  'migration-eliminar-kapso-retell.sql',
+  'migration-facturacion-planes.sql',
+  'migration-firmas-webhooks.sql',
+  'migration-hospedaje.sql',
+  'migration-identificadores-canales.sql',
+  'migration-inbox-webhooks.sql',
+  'migration-integridad-tenants.sql',
+  'migration-modificadores-menu.sql',
+  'migration-pedidos-tienda.sql',
+  'migration-preparacion-produccion.sql',
+  'migration-registro-errores.sql',
+  // `schema.sql` no es una migración: no lo aplica el ejecutor, se aplica
+  // entero contra una base vacía en el CI. Su transacción es suya.
+  'schema.sql',
+])
+
 describe('guardián de migraciones SQL', () => {
+  describe('la transacción la pone el ejecutor, no el archivo', () => {
+    const nuevas = archivosSql.filter(name => !CON_TRANSACCION_PROPIA.has(name))
+
+    it('hay migraciones nuevas que vigilar (si no, esto no probaría nada)', () => {
+      expect(nuevas.length).toBeGreaterThan(20)
+    })
+
+    it.each(nuevas)('%s no abre su propia transacción', (name) => {
+      const sinComentarios = leer(name)
+        .split('\n')
+        .filter(linea => !linea.trimStart().startsWith('--'))
+        .join('\n')
+      expect(
+        /^\s*(begin|commit)\s*;/im.test(sinComentarios),
+        `${name} abre su propia transacción: el ejecutor ya abre una y el registro quedaría fuera`,
+      ).toBe(false)
+    })
+  })
+
   it('encuentra archivos que revisar', () => {
     expect(archivosSql.length).toBeGreaterThan(20)
     expect(archivosSql).toContain('schema.sql')

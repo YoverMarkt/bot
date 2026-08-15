@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('cliente y superadmin comparten tipografía, labels y botones', async ({ browser }) => {
   const context = await browser.newContext()

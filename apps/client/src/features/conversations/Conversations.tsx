@@ -25,6 +25,29 @@ const EMPTY_MESSAGES: Msg[] = []
 const EMPTY_TAGS: Tag[] = []
 const EMPTY_BLOCKED: string[] = []
 
+/**
+ * La identidad con la que el servidor guarda a un cliente, o `null` si esta
+ * conversación no se puede bloquear.
+ *
+ * ⚠️ Los teléfonos viven en DOS formas: la conversación guarda `+593…` y la
+ * ficha del cliente guarda `593…` (solo dígitos). Comparándolos literalmente,
+ * un número bloqueado volvía a salir como «Bot activo» después de recargar, y
+ * el panel ofrecía «Bloquear» sobre alguien ya bloqueado. Es la misma trampa
+ * del «+» que ya mordió al buscar pedidos por teléfono.
+ *
+ * ⚠️ Y Telegram devuelve `null` a propósito. Un `tg_123` se quedaría en `123`
+ * al quitarle lo que no son dígitos, que es un número de WhatsApp perfectamente
+ * válido de otra persona: bloquear una conversación de Telegram acabaría
+ * bloqueando a un cliente que no tiene nada que ver. Hasta que cada canal tenga
+ * su identidad propia, aquí no se bloquea — y el servidor lo rechaza también.
+ */
+const identidadBloqueable = (contactPhone: string): string | null => {
+  const telefono = String(contactPhone || '')
+  if (telefono.startsWith('tg_')) return null
+  const digitos = telefono.replace(/\D/g, '')
+  return digitos || null
+}
+
 // Colores predefinidos de etiquetas (mismos del panel viejo)
 const TAG_COLORS = ['#ef5350','#ff9800','#ffd54f','#66bb6a','#26a69a','#42a5f5','#5c6bc0','#ab47bc','#ec407a','#78909c']
 
@@ -65,9 +88,18 @@ export default function Conversations() {
   // quién está bloqueado es un botón mal pintado; quedarse sin la pantalla es
   // el dueño sin poder leer a sus clientes. Lo cazó el E2E.
   const blocked = useMemo(
-    () => new Set(Array.isArray(blockedQuery.data) ? blockedQuery.data : EMPTY_BLOCKED),
+    () => new Set(
+      (Array.isArray(blockedQuery.data) ? blockedQuery.data : EMPTY_BLOCKED)
+        .map(telefono => telefono.replace(/\D/g, ''))
+        .filter(Boolean),
+    ),
     [blockedQuery.data],
   )
+  /** ¿Este chat está bloqueado? `false` en los que no se pueden bloquear. */
+  const estaBloqueado = (contactPhone: string) => {
+    const identidad = identidadBloqueable(contactPhone)
+    return identidad !== null && blocked.has(identidad)
+  }
   const loadError = sessionsQuery.isError || messagesQuery.isError || tagsQuery.isError
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ['sessions'] }); qc.invalidateQueries({ queryKey: ['conversations'] }) }
@@ -221,7 +253,7 @@ export default function Conversations() {
                   {sess.contact_name || sess.contact_phone} <Pencil className="w-3 h-3 inline text-muted-foreground/50" />
                 </Button>
                 <div className="text-xs text-muted-foreground/80">
-                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {blocked.has(sess.contact_phone)
+                  {sess.contact_phone.replace('tg_', 'Telegram ')} · {estaBloqueado(sess.contact_phone)
                     ? <span className="font-medium text-red-700 dark:text-red-300">Bloqueado — el bot no le responde</span>
                     : sess.manual_mode
                       ? <span className="font-medium text-amber-700 dark:text-amber-300">Modo manual — respondiendo tú</span>
@@ -248,7 +280,7 @@ export default function Conversations() {
                     techo automático silencia 24 h a quien se pasa; esto cierra
                     la puerta y no caduca. Se pide confirmación porque un
                     bloqueo por error deja a un cliente sin poder comprar. */}
-                {blocked.has(sess.contact_phone) ? (
+                {identidadBloqueable(sess.contact_phone) === null ? null : estaBloqueado(sess.contact_phone) ? (
                   <Button
                     variant="outline" size="sm"
                     className="border-red-500/60 bg-red-500/10 text-red-700 hover:bg-red-500/20 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"

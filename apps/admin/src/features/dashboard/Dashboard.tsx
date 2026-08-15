@@ -81,7 +81,13 @@ export default function Dashboard() {
       </div>
 
       {/* Salud del canal de entrada: ¿siguen llegando mensajes a cada bot? */}
-      {channel && channel.businesses.length > 0 && (
+      {/* ⚠️ `channel?.businesses?.length` y no `channel && channel.businesses`.
+          Una respuesta a medias —un `{}` de un 502, un despliegue con el
+          servidor a mitad— hacía `undefined.length` y tumbaba el dashboard
+          ENTERO: el superadmin se quedaba con una pantalla en blanco por un
+          recuadro secundario. Lo mismo que ya pasó en Conversaciones con la
+          lista de bloqueados. */}
+      {(channel?.businesses?.length ?? 0) > 0 && (
         <Card className="mt-6 gap-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -89,7 +95,7 @@ export default function Dashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {channel.businesses.map(business => (
+            {channel!.businesses.map(business => (
               <div
                 key={business.businessId}
                 className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-0"
@@ -104,14 +110,14 @@ export default function Dashboard() {
               </div>
             ))}
             <p className="mt-3 text-xs text-muted-foreground">
-              Se avisa cuando un bot activo pasa {channel.silenceHours} h sin recibir un solo mensaje.
+              Se avisa cuando un bot activo pasa {channel!.silenceHours} h sin recibir un solo mensaje.
             </p>
-            {channel.recentFailures.length > 0 && (
+            {(channel!.recentFailures?.length ?? 0) > 0 && (
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
                 <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">
                   Entregas rechazadas recientemente
                 </div>
-                {channel.recentFailures.slice(0, 3).map(failure => (
+                {channel!.recentFailures.slice(0, 3).map(failure => (
                   <div key={failure.at} className="mt-1 text-xs text-muted-foreground">
                     {new Date(failure.at).toLocaleString('es-EC')} · {failure.provider} · HTTP {failure.status} — {failure.reason}
                   </div>

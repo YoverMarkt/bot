@@ -205,6 +205,20 @@ export async function mockAdminApi(page: Page) {
       }])
     }
 
+    // ⚠️ La salud del canal es un OBJETO con listas dentro, y el comodín de
+    // abajo devolvía `{}`: el dashboard hacía `undefined.length` y no llegaba
+    // a renderizarse. Las pruebas daban verde porque solo miraban la URL.
+    if (path === '/api/admin/channel-health') {
+      return json(route, {
+        alert: null,
+        silenceHours: 12,
+        businesses: [{
+          businessId: 'biz-e2e', name: 'Negocio E2E', status: 'ok', detail: 'Último mensaje hace 2 h',
+        }],
+        recentFailures: [],
+      })
+    }
+
     return json(route, {})
   })
 }
