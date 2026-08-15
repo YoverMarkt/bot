@@ -478,6 +478,43 @@ test('un fallo en la lista de bloqueados no deja la pantalla en blanco', async (
   await expect(page.getByText('Hola desde E2E').last()).toBeVisible()
 })
 
+// ⚠️ El texto se borraba al enviar y no volvía si el envío fallaba: el dueño
+// escribía media pantalla, el canal fallaba —sin saldo, fuera de la ventana de
+// 24 h, un 500— y su mensaje desaparecía sin decir nada. Escribirlo otra vez
+// de memoria es lo peor que se le puede pedir a quien está atendiendo.
+test('si el envío manual falla, el texto vuelve al campo', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+  await page.route('**/api/client/sessions/**/send', route => route.fulfill({
+    status: 500, contentType: 'application/json', body: '{"error":"Sin saldo en el canal"}',
+  }))
+  // El campo de escribir solo existe en modo manual, así que la conversación
+  // se monta ya así: tomar el control aquí dependería de que el simulador
+  // reflejara el cambio, que es otra prueba distinta.
+  await page.route('**/api/client/sessions', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      contact_phone: '+593999999999',
+      contact_name: 'Cliente móvil',
+      manual_mode: true,
+      unread_owner: false,
+      last_message: 'Hola desde E2E',
+      last_message_at: '2026-07-12T18:00:00.000Z',
+      tags: [],
+    }]),
+  }))
+  await page.goto(`${clientUrl}#/conversations`)
+
+  await page.getByText('Cliente móvil').first().click()
+
+  const campo = page.getByLabel('Mensaje manual')
+  await campo.fill('Su pedido sale en veinte minutos')
+  await page.getByRole('button', { name: 'Enviar' }).click()
+
+  await expect(campo).toHaveValue('Su pedido sale en veinte minutos')
+})
+
 test('el nombre del contacto y las etiquetas se editan en modales', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)

@@ -140,7 +140,25 @@ export default function Conversations() {
   const mRead   = useMutation({ mutationFn: (phone: string) => convApi.markRead(phone), onSettled: refresh })
   const mRename = useMutation({ mutationFn: (v: { phone: string; name: string }) => convApi.renameContact(v.phone, v.name), onSettled: refresh })
   const mTags   = useMutation({ mutationFn: (v: { phone: string; tags: string[] }) => convApi.setSessionTags(v.phone, v.tags), onSettled: refresh })
-  const mSend   = useMutation({ mutationFn: (v: { phone: string; message: string }) => convApi.sendMessage(v.phone, v.message), onSettled: refresh })
+  const mSend   = useMutation({
+    mutationFn: (v: { phone: string; message: string }) => convApi.sendMessage(v.phone, v.message),
+    // ⚠️ Si el envío falla, el texto VUELVE al campo. Se borraba al enviar y
+    // no se recuperaba: el dueño escribía media pantalla, el canal fallaba
+    // —sin saldo, fuera de la ventana de 24 h, un 500— y su mensaje
+    // desaparecía sin decir nada. Escribirlo otra vez de memoria es lo peor
+    // que se le puede pedir a alguien que está atendiendo a un cliente.
+    //
+    // Solo se devuelve si el campo sigue vacío: si el dueño ya empezó a
+    // escribir otra cosa, pisársela sería peor que haber perdido lo anterior.
+    onError: (error, v) => {
+      setDraft(actual => (actual.trim() ? actual : v.message))
+      toast.error(
+        error instanceof Error ? error.message : 'No se pudo enviar el mensaje',
+        { description: 'Tu texto sigue en el campo: puedes reintentarlo.' },
+      )
+    },
+    onSettled: refresh,
+  })
 
   useEffect(() => {
     if (openedFromUrl.current) return
@@ -180,6 +198,9 @@ export default function Conversations() {
   function send() {
     const text = draft.trim()
     if (!text || !selected) return
+    // Se vacía al enviar para que el campo responda al instante; si el envío
+    // falla, `onError` lo devuelve — y solo si el dueño no ha escrito otra
+    // cosa entre medias, que sería peor que perderlo.
     setDraft('')
     mSend.mutate({ phone: selected, message: text })
   }
