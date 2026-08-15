@@ -1829,10 +1829,15 @@ declare
   v_markup numeric;
   v_ped    record;
 begin
-  select id into v_biz from public.businesses where slug = 'alta-verificacion';
-  if v_biz is null then
-    raise exception 'falta el negocio de verificación';
-  end if;
+  -- Cada bloque de este archivo trae su propio negocio y lo borra al terminar.
+  -- Reutilizar el de otro bloque no funciona: ese ya se borró en su limpieza.
+  insert into public.businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number, takes_orders
+  ) values (
+    'verificacion-margen', 'Negocio de margen', 'pizzería',
+    'ycloud', '+593900000920', '+593900000920', true
+  )
+  returning id into v_biz;
 
   -- 1. FALLA ABIERTO: sin regla, margen 0 y el pedido sigue.
   v_calc := public.calculate_platform_markup(v_biz, 50);
@@ -1950,6 +1955,10 @@ begin
     raise exception 'se guardaron dos reglas activas para el mismo negocio';
   exception when unique_violation then null;
   end;
+
+  -- ── Limpieza ──────────────────────────────────────────────────────────────
+  -- Las reglas y los pedidos se van en cascada con el negocio.
+  delete from public.businesses where id = v_biz;
 end;
 $$;
 
