@@ -9,6 +9,13 @@ export interface Capabilities {
 }
 
 export interface Business {
+  /**
+   * Los métodos de pago que este local acepta.
+   *
+   * Los manda el servidor, no los decide la app: hasta el 2026-08-16 estaban
+   * escritos en `CartSheet.tsx` y el dueño no elegía nada.
+   */
+  paymentMethods?: StorePaymentMethod[]
   id: string
   name: string
   slug: string
@@ -320,4 +327,19 @@ export interface StayRequest {
   expiresAt: string
   /** Siempre false: esto es una retención, la confirma el equipo. */
   confirmed: boolean
+}
+
+/**
+ * Un método de pago tal como lo manda el servidor para ESE negocio.
+ *
+ * La app pinta lo que reciba: la lista dejó de estar escrita en el código el
+ * 2026-08-16, cuando se descubrió que el dueño creía que elegía cómo le pagan
+ * y en realidad la tienda ofrecía los tres a todo el mundo.
+ */
+export type StorePaymentMethod = {
+  code: string
+  label: string
+  help_text: string | null
+  is_prepaid: boolean
+  requires_proof: boolean
 }
