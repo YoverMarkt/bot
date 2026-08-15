@@ -80,7 +80,8 @@ export default function CartSheet({
     paymentMethod: PaymentMethod
     deliveryNotes: string | null
   }) => void
-  onNuevaDireccion: (datos: NuevaDireccion) => Promise<void>
+  /** Devuelve el id de la dirección creada: se selecciona sola para ESTE pedido. */
+  onNuevaDireccion: (datos: NuevaDireccion) => Promise<string | null>
   /** Le pone el pin a una dirección ya guardada, que es la que no lo tiene. */
   onUbicarDireccion: (addressId: string, ubicacion: Ubicacion) => Promise<void>
   onBorrarDireccion: (addressId: string) => Promise<void>
@@ -187,12 +188,16 @@ export default function CartSheet({
     if (nueva.address.trim().length < 5) return
     setGuardando(true)
     try {
-      await onNuevaDireccion({
+      const creadaId = await onNuevaDireccion({
         ...nueva,
         latitude: pin?.latitude,
         longitude: pin?.longitude,
         accuracy: pin?.accuracy ?? null,
       })
+      // ⚠️ Queda ELEGIDA. Quien escribe una dirección en el checkout la escribe
+      // para este pedido; sin esto seguía seleccionada la anterior y el pedido
+      // salía a la casa vieja mientras la app decía «guardada».
+      if (creadaId) setDireccionId(creadaId)
       setNueva({ ...DIRECCION_EN_BLANCO })
       setPin(null)
       setAvisoPin(null)

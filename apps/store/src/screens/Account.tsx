@@ -114,7 +114,17 @@ export default function Account({
 
           <div className="space-y-2">
             {(pedidos || []).map((pedido) => {
-              const estado = COMO_VA[pedido.status] || { texto: pedido.status, tono: 'texto-tenue' }
+              // ⚠️ El pago confirmado MANDA sobre el estado mientras el pedido
+              // siga esperando. `payment_confirmed_at` no es un estado —dice
+              // algo que pasó, no dónde está el pedido—, así que un pedido
+              // cobrado seguía leyéndose «Falta tu pago» hasta que el dueño lo
+              // aceptara. El dueño toca «Solo confirmar el pago» precisamente
+              // para que el cliente deje de creer que debe dinero.
+              const cobrado = Boolean(pedido.payment_confirmed_at)
+                && (pedido.status === 'esperando_pago' || pedido.status === 'pago_en_revision')
+              const estado = cobrado
+                ? { texto: 'Pago confirmado', tono: 'text-marca' }
+                : COMO_VA[pedido.status] || { texto: pedido.status, tono: 'texto-tenue' }
               const cuantos = (pedido.order_items || []).length
               return (
                 <div

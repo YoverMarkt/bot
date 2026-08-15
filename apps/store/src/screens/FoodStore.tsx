@@ -13,6 +13,7 @@ import { Aviso, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
 import { money, rangoDeEspera } from '../lib/format'
 import { foto } from '../lib/imagen'
+import { randomId } from '../lib/session'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
 import OrderPlaced from './OrderPlaced'
@@ -240,7 +241,13 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       // —o el cliente toca «Confirmar» dos veces— el servidor devuelve el mismo
       // pedido en vez de crear dos comandas. Se renueva al vaciar el carrito,
       // porque ese ya es otro pedido.
-      if (!claveDelPedido.current) claveDelPedido.current = crypto.randomUUID()
+      // ⚠️ `randomId` y NO `crypto.randomUUID`: esa función no existe en los
+      // WebView viejos de Android —justo los que abre WhatsApp en teléfonos
+      // modestos— y aquí no degradaba, REVENTABA: la excepción salta antes de
+      // llamar al servidor, así que el cliente no podía pedir. El respaldo ya
+      // estaba escrito en `lib/session.ts` para el id de dispositivo; esto
+      // solo lo usa.
+      if (!claveDelPedido.current) claveDelPedido.current = randomId()
       const pedido = await createOrder(slug, {
         lines: lineas, ...datos, idempotencyKey: claveDelPedido.current,
       })
@@ -293,13 +300,24 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
     }
   }, [slug, lineas, business.deliveryFee, onFalloEnlace])
 
+  /**
+   * Guarda una dirección nueva y DEVUELVE su id.
+   *
+   * ⚠️ El id no es un extra: quien acaba de escribir una dirección en el
+   * checkout la está escribiendo para ESTE pedido. Como no se seleccionaba,
+   * seguía elegida la anterior —la marcada por defecto, o la primera de la
+   * lista— y el pedido salía a la casa vieja. La app decía «guardada» y el
+   * repartidor iba a otro sitio.
+   */
   const nuevaDireccion = useCallback(async (datos: NuevaDireccion) => {
     try {
-      await createAddress(slug, datos)
+      const creada = await createAddress(slug, datos)
       setMe(await getMe(slug))
+      return creada?.id || null
     } catch (error) {
-      if (await onFalloEnlace(error)) return
+      if (await onFalloEnlace(error)) return null
       setError('No pudimos guardar la dirección')
+      return null
     }
   }, [slug, onFalloEnlace])
 

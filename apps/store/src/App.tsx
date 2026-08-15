@@ -23,14 +23,22 @@ type Estado =
   | { fase: 'no_disponible' }
   | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
-  // Falta confirmar el número de WhatsApp: no es un error, es la puerta.
-  | { fase: 'confirmar'; business: Business | null }
   | { fase: 'lista'; business: Business; status: StoreStatus }
 
 export default function App() {
   const slug = readSlug()
   const [estado, setEstado] = useState<Estado>({ fase: 'cargando' })
   const [seccion, setSeccion] = useState<'pedido' | 'estadia' | null>(null)
+  /**
+   * Falta confirmar el número de WhatsApp. No es un error: es la puerta.
+   *
+   * ⚠️ Vive APARTE de la fase, y eso es el arreglo. Era una fase más, así que
+   * pedir el número desmontaba la tienda entera y con ella el carrito: el
+   * cliente llenaba su pedido, tocaba confirmar, escribía su número… y volvía
+   * a una tienda vacía. Ahora la confirmación se pinta ENCIMA y al cerrarse
+   * todo sigue donde estaba.
+   */
+  const [confirmando, setConfirmando] = useState<{ business: Business | null } | null>(null)
 
   const cargar = useCallback(async () => {
     if (!slug) return setEstado({ fase: 'no_disponible' })
@@ -79,7 +87,7 @@ export default function App() {
     // 'necesita_telefono' no es un portazo: es que aún no ha demostrado quién
     // es. Se le pide el número en vez de mandarlo a pedir otro enlace.
     if (motivo === 'necesita_telefono') {
-      setEstado({ fase: 'confirmar', business })
+      setConfirmando({ business })
       return true
     }
     setEstado({ fase: 'bloqueada', business, motivo })
@@ -107,21 +115,6 @@ export default function App() {
     return <Gate business={estado.business} motivo={estado.motivo} />
   }
 
-  if (estado.fase === 'confirmar') {
-    return (
-      <Confirmar
-        business={estado.business}
-        onConfirmar={async (telefono) => {
-          const fallo = await confirmarTelefono(slug, telefono)
-          // Al entrar se recarga la tienda: la sesión ya está atada a este
-          // teléfono y el catálogo puede pedirse con normalidad.
-          if (!fallo) await cargar()
-          return fallo
-        }}
-      />
-    )
-  }
-
   const { business, status } = estado
   const { orders, lodging } = business.capabilities
 
@@ -132,25 +125,52 @@ export default function App() {
 
   const volver = orders && lodging ? () => setSeccion(null) : undefined
 
+  // ⚠️ La confirmación va ENCIMA, no en lugar de. Sustituyendo la tienda se
+  // perdía el carrito entero: el cliente lo llenaba, tocaba confirmar,
+  // escribía su número y volvía a una tienda vacía. Lo mismo valía para el
+  // checkout a medio llenar y para una cotización de hospedaje.
+  const puertaDelTelefono = confirmando && (
+    <div className="fixed inset-0 z-[60] overflow-y-auto superficie">
+      <Confirmar
+        business={confirmando.business}
+        onConfirmar={async (telefono) => {
+          const fallo = await confirmarTelefono(slug, telefono)
+          // El catálogo NO se recarga: la sesión ya está atada a este teléfono
+          // y la tienda sigue montada detrás, con su carrito intacto. Volver a
+          // pedirlo todo era justo lo que lo vaciaba.
+          if (!fallo) setConfirmando(null)
+          return fallo
+        }}
+      />
+    </div>
+  )
+
+
   if (seccion === 'estadia' || (lodging && !orders)) {
     return (
-      <Suspense fallback={null}><StayStore
+      <>
+        <Suspense fallback={null}><StayStore
+          slug={slug}
+          business={business}
+          status={status}
+          onVolver={volver}
+          onFalloEnlace={alFallarEnlace}
+        /></Suspense>
+        {puertaDelTelefono}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <FoodStore
         slug={slug}
         business={business}
         status={status}
         onVolver={volver}
         onFalloEnlace={alFallarEnlace}
-      /></Suspense>
-    )
-  }
-
-  return (
-    <FoodStore
-      slug={slug}
-      business={business}
-      status={status}
-      onVolver={volver}
-      onFalloEnlace={alFallarEnlace}
-    />
+      />
+      {puertaDelTelefono}
+    </>
   )
 }
