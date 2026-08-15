@@ -1828,6 +1828,8 @@ declare
   v_calc   jsonb;
   v_markup numeric;
   v_ped    record;
+  v_pedido uuid;
+  v_suma   numeric;
 begin
   -- Cada bloque de este archivo trae su propio negocio y lo borra al terminar.
   -- Reutilizar el de otro bloque no funciona: ese ya se borró en su limpieza.
@@ -1956,8 +1958,50 @@ begin
   exception when unique_violation then null;
   end;
 
+  -- 11. EL ACUMULADO: se suma sobre `sales`, no sobre `orders`.
+  --
+  -- Un pedido aceptado o en preparación todavía no es dinero; la venta nace
+  -- cuando se ENTREGA. Y una venta anulada deja de contar, que es la
+  -- devolución sin construir nada nuevo.
+  update public.pricing_rules set status = 'archived' where business_id = v_biz;
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 10) returning id into v_regla;
+
+  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
+  values (v_biz, '593900000921', 'completado', 100, 0, 100, 'USD', 'manual')
+  returning id into v_pedido;
+
+  -- Sin venta todavía: el pedido existe pero no ha entrado al acumulado.
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'un pedido sin venta no puede acumular comisión, acumuló %', v_suma;
+  end if;
+
+  insert into public.sales (business_id, order_id, total, status, sold_at)
+  values (v_biz, v_pedido, 100, 'completada', now());
+
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 10 then
+    raise exception 'el acumulado debería ser 10.00, fue %', v_suma;
+  end if;
+
+  -- Anular la venta retira su comisión.
+  update public.sales set status = 'anulada' where order_id = v_pedido;
+  select coalesce(sum(margen), 0) into v_suma
+  from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+  if v_suma <> 0 then
+    raise exception 'una venta anulada no puede seguir cobrando, quedó %', v_suma;
+  end if;
+
+  -- Y el acumulado tampoco cruza la frontera entre negocios.
+  if exists (select 1 from public.platform_markup_summary('2000-01-01', '2100-01-01', gen_random_uuid())) then
+    raise exception 'el acumulado de un negocio se vio desde otro';
+  end if;
+
   -- ── Limpieza ──────────────────────────────────────────────────────────────
-  -- Las reglas y los pedidos se van en cascada con el negocio.
+  -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.
   delete from public.businesses where id = v_biz;
 end;
 $$;

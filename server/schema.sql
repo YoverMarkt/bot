@@ -12216,3 +12216,70 @@ drop trigger if exists orders_stamp_pricing on public.orders;
 create trigger orders_stamp_pricing
   before insert or update on public.orders
   for each row execute function public.orders_stamp_pricing();
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- CUÁNTO LLEVA ACUMULADO CADA COMERCIO
+-- Migración incremental: migration-2026-08-16-resumen-de-margen.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Se suma sobre `sales`, NO sobre `orders`: un pedido puede estar aceptado o
+-- en preparación y todavía no ser dinero. La venta nace cuando el pedido se
+-- ENTREGA, que es el estándar que ya siguen todos los reportes del dueño.
+--
+-- Consecuencias deliberadas: un pedido cancelado nunca llega a `sales` y no
+-- genera comisión —no hay que excluirlo, no está—; una venta ANULADA deja de
+-- contar; y las ventas de citas y estadías entran con margen 0, porque
+-- `platform_markup` vive en `orders`.
+--
+-- La fecha que manda es `sold_at` y no `orders.created_at`: un pedido de fin
+-- de mes entregado el día 1 pertenece al mes en que se cobró. Contarlo por la
+-- fecha del pedido haría que cerrar un mes cambiara números ya facturados.
+--
+-- ⚠️ `p_business_id` nulo devuelve TODOS los negocios y existe solo para el
+-- panel del superadmin. La ruta del comercio pasa SIEMPRE su `businessId` del
+-- JWT (regla inviolable #1).
+
+create or replace function public.platform_markup_summary(
+  p_from        date,
+  p_to          date,
+  p_business_id uuid default null
+)
+returns table (
+  business_id   uuid,
+  business_name text,
+  pedidos       bigint,
+  bruto         numeric,
+  margen        numeric,
+  comercio      numeric
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    s.business_id,
+    max(b.name)                                    as business_name,
+    count(*)                                       as pedidos,
+    round(coalesce(sum(s.total), 0), 2)            as bruto,
+    round(coalesce(sum(o.platform_markup), 0), 2)  as margen,
+    round(coalesce(sum(s.total), 0)
+        - coalesce(sum(o.platform_markup), 0), 2)  as comercio
+  from public.sales s
+  join public.businesses b on b.id = s.business_id
+  -- `left`: una venta de cita o estadía no tiene pedido detrás y debe contar
+  -- en el bruto igualmente.
+  left join public.orders o on o.id = s.order_id
+  where s.status = 'completada'
+    and s.sold_at >= p_from
+    and s.sold_at <  p_to
+    and (p_business_id is null or s.business_id = p_business_id)
+  group by s.business_id
+  order by round(coalesce(sum(o.platform_markup), 0), 2) desc;
+$$;
+
+revoke all on function public.platform_markup_summary(date, date, uuid)
+  from public, anon, authenticated;
+grant execute on function public.platform_markup_summary(date, date, uuid)
+  to service_role;

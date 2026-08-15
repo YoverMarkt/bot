@@ -224,3 +224,24 @@ export interface RecommendationRow {
   sort: number
   active: boolean
 }
+
+/**
+ * Una regla de margen ya saneada por la ruta, lista para guardar.
+ *
+ * Vive aquí y no en su repositorio por el motivo de la cabecera: `export =`
+ * no admite `export interface` al lado, y sin poder nombrar el tipo, el
+ * compositor `db/index.ts` no puede inferir el suyo.
+ */
+export interface PricingRuleInput {
+  scope: string
+  strategy: string
+  markup_mode?: string
+  business_id?: string | null
+  target_name?: string | null
+  percentage?: number | null
+  fixed_amount?: number | null
+  tiers?: Array<{ up_to: number | null, amount: number }> | null
+  min_amount?: number | null
+  max_amount?: number | null
+  notes?: string | null
+}
