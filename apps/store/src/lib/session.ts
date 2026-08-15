@@ -12,6 +12,21 @@
 const DEVICE_KEY = 'vz_store_device'
 const TOKEN_KEY = 'vz_store_token'
 
+/**
+ * La clave del token es POR NEGOCIO.
+ *
+ * ⚠️ Era una sola para toda la app, así que abrir la tienda de un segundo
+ * local pisaba el token del primero: el cliente volvía al primero y se
+ * encontraba con «este enlace no es válido», sin haber hecho nada raro. Cada
+ * enlace pertenece a un negocio, y su token también.
+ *
+ * La clave vieja se sigue leyendo como respaldo —ver `readToken`— para no
+ * echar a la calle a quien ya tuviera su sesión guardada.
+ */
+const tokenKeyFor = (slug: string): string => (
+  slug ? `${TOKEN_KEY}:${slug}` : TOKEN_KEY
+)
+
 /** El slug vive en la ruta: /t/<slug>. Sin router: leerlo es una línea. */
 export function readSlug(): string {
   const partes = window.location.pathname.split('/').filter(Boolean)
@@ -24,7 +39,7 @@ export function readSlug(): string {
  * viejos de Android —justo los que abre WhatsApp en teléfonos modestos—, así
  * que hay un camino alternativo antes de rendirse.
  */
-function randomId(): string {
+export function randomId(): string {
   try {
     if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
     const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -82,10 +97,11 @@ export function readToken(): string {
 
   if (token) {
     try {
-      localStorage.setItem(TOKEN_KEY, token)
-      // Restos de la época de sessionStorage: si no se limpia, un token viejo
-      // de esa sesión podría ganarle al nuevo al leer.
+      localStorage.setItem(tokenKeyFor(readSlug()), token)
+      // Restos de la época de sessionStorage y de la clave única: si no se
+      // limpian, un token viejo podría ganarle al nuevo al leer.
       sessionStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(TOKEN_KEY)
     } catch { /* sin almacenamiento: se usa el de memoria */ }
     // Fuera de la barra de direcciones: ya está guardado.
     try {
@@ -97,7 +113,12 @@ export function readToken(): string {
   try {
     // Se mira también el almacén viejo para no echar a la calle a quien tenga
     // la app abierta justo durante el despliegue.
-    return localStorage.getItem(TOKEN_KEY)
+    // El de ESTE negocio primero. Las dos claves viejas quedan de respaldo
+    // para quien ya tuviera su sesión guardada antes de separarlas: si el
+    // token no es de este negocio, el servidor responde 401 y la app lleva a
+    // pedir el enlace, que es lo que habría pasado igualmente.
+    return localStorage.getItem(tokenKeyFor(readSlug()))
+      || localStorage.getItem(TOKEN_KEY)
       || sessionStorage.getItem(TOKEN_KEY)
       || ''
   } catch {
@@ -108,6 +129,7 @@ export function readToken(): string {
 /** Se llama cuando el servidor rechaza la sesión: guardarla ya no sirve. */
 export function clearToken(): void {
   try {
+    localStorage.removeItem(tokenKeyFor(readSlug()))
     localStorage.removeItem(TOKEN_KEY)
     sessionStorage.removeItem(TOKEN_KEY)
   } catch { /* nada que limpiar */ }

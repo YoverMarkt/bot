@@ -503,9 +503,9 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
                 }
                 title="Confirmar el pago sin preparar todavía"
                 description={
-                  'El cliente verá «Pago confirmado», dejará de ver los datos bancarios y '
-                  + 'podrá salir de la pantalla de pago. NO se le avisa por WhatsApp y el '
-                  + 'pedido no arranca: sigue esperando a que lo aceptes.'
+                  'El cliente deja de ver el aviso de pago pendiente y los datos bancarios, '
+                  + 'y en su cuenta aparece «Pago confirmado». NO se le avisa por WhatsApp y '
+                  + 'el pedido no arranca: sigue esperando a que lo aceptes.'
                 }
                 confirmLabel="Ya me llegó el pago"
                 onConfirm={confirmarPago}
@@ -539,10 +539,16 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
                 onConfirm={() => onCambiar('completado')}
               />
             )}
-            {/* Rechazar el COMPROBANTE no es cancelar el pedido: son cosas
-                distintas y el cliente merece saber cuál pasó. `rechazado`
-                significa «el pago no cuadra», y deja la puerta abierta a que
-                mande otro; `cancelado` cierra el pedido. */}
+            {/* ⚠️ Rechazar el comprobante CIERRA el pedido, y el texto lo dice
+                desde el 2026-08-15. Antes prometía «para que mande otro», y era
+                falso por dos motivos: `rechazado` es un estado FINAL —la
+                máquina no permite volver a `esperando_pago`— y desde que los
+                finales avisan, al cliente le llega «tu pedido fue cancelado».
+                Prometer una segunda oportunidad que el sistema no puede dar es
+                peor que no ofrecerla.
+
+                Si el dueño quiere darla, la vía es no rechazar: pedirle otro
+                comprobante por WhatsApp y confirmar el pago a mano. */}
             {pedido.status === 'pago_en_revision' && (
               <ConfirmAction
                 trigger={
@@ -550,8 +556,12 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
                     <X /> Rechazar el pago
                   </Button>
                 }
-                title="Rechazar el comprobante"
-                description="El comprobante no cuadra. Avísale al cliente por WhatsApp para que mande otro."
+                title="Rechazar el comprobante y cerrar el pedido"
+                description={
+                  'El pedido queda CERRADO y al cliente le llega un WhatsApp diciendo que no '
+                  + 'continúa, con tu teléfono para llamarte. Si prefieres darle otra '
+                  + 'oportunidad, no lo rechaces: pídele otro comprobante por WhatsApp.'
+                }
                 confirmLabel="Rechazar el pago"
                 destructive
                 onConfirm={() => onCambiar('rechazado')}

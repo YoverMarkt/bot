@@ -599,6 +599,31 @@ justamente `09:00 – 01:00`, así que este caso no es teórico.
 
 ---
 
+## Lo que no puede perderse por el camino (2026-08-15)
+
+Cuatro fallos de la tienda que solo se ven en un teléfono de verdad:
+
+- **El identificador del pedido usa `randomId`, no `crypto.randomUUID`.** Esa
+  función no existe en los WebView viejos de Android —justo los que abre
+  WhatsApp en teléfonos modestos— y aquí no degradaba, **reventaba**: la
+  excepción salta antes de llamar al servidor, así que el cliente no podía
+  pedir y no había ni error que mirar. El respaldo ya estaba escrito en
+  `lib/session.ts` para el id de dispositivo; solo faltaba usarlo.
+- **La dirección recién escrita queda ELEGIDA.** Como no se seleccionaba,
+  seguía activa la anterior —la marcada por defecto, o la primera de la lista—
+  y el pedido salía a la casa vieja mientras la app decía «guardada». Quien
+  escribe una dirección en el checkout la escribe para ESE pedido.
+- **El token es por negocio** (`vz_store_token:<slug>`). Con una sola clave,
+  abrir la tienda de un segundo local pisaba el token del primero: el cliente
+  volvía y se encontraba «este enlace no es válido» sin haber hecho nada. La
+  clave vieja se sigue leyendo de respaldo para no echar a nadie a la calle.
+- **Confirmar el número va ENCIMA de la tienda, no en lugar de ella.** Era una
+  fase más del armazón, así que pedir el teléfono desmontaba la tienda entera y
+  con ella el carrito: el cliente lo llenaba, tocaba confirmar, escribía su
+  número y volvía a una tienda vacía. Ahora se pinta encima y al cerrarse todo
+  sigue donde estaba — y el catálogo ya no se recarga, que era lo que lo
+  vaciaba.
+
 ## La dirección de la tienda
 
 `/t/<slug>`, y el slug es el nombre del negocio: `monster-pizza`. Viaja en un
