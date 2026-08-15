@@ -13031,3 +13031,160 @@ alter table public.billing_adjustments
   foreign key (billing_id, business_id)
   references public.billing (id, business_id)
   on delete set null;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- EL MARGEN SE CALCULA POR LÍNEA, COMO SE MUESTRA
+-- Migración incremental: migration-2026-08-16-margen-por-linea.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- Cimiento de `on_top`: el dueño pone lo que quiere ganar por su plato, lo
+-- recibe ENTERO, y el margen va encima en el precio del cliente.
+--
+-- Con `on_top` el cliente ve el precio de CADA producto ya con margen, así que
+-- aplicar el porcentaje al subtotal diverge: tres empanadas a $3.33 al 8 %
+-- suman $10.80 producto a producto y $10.79 sobre el subtotal. Un céntimo,
+-- pero es «el cliente ve un número y paga otro» — la regla #8.
+--
+-- ⚠️ `on_top` es INCOMPATIBLE con techo, piso y estrategias que no sean
+-- porcentaje, y no por decisión de producto: una canasta de $150 al 4 % suma
+-- $156 producto a producto, y con techo de $3 el total sería $153 — esos $3 no
+-- tienen dónde aparecer. Encaja con la realidad: el techo es para el
+-- SUPERMERCADO (el cliente compara producto a producto con la tienda física) y
+-- `on_top` para el RESTAURANTE (nadie sabe de memoria el precio en el local).
+--
+-- ⚠️ Los dos caminos de creación: la tienda actualiza el subtotal cuando los
+-- ítems YA existen → por línea. El bot y el mostrador insertan con el importe
+-- y los ítems después → sobre el subtotal, donde nunca se mostró un precio
+-- unitario con margen.
+
+-- ── 1. `on_top` solo con porcentaje y sin límites ──────────────────────────
+alter table public.pricing_rules
+  drop constraint if exists pricing_rules_mode_check;
+
+-- Se ABRE `on_top` aquí, y en esta misma rama se completa lo que lo hace
+-- honesto: que el catálogo sirva los precios con margen. Abrirlo sin eso
+-- mostraría un precio y cobraría otro — la regla #8.
+alter table public.pricing_rules
+  add constraint pricing_rules_mode_check
+  check (
+    markup_mode = 'absorbed'
+    or (
+      markup_mode = 'on_top'
+      and strategy = 'percentage'
+      and min_amount is null
+      and max_amount is null
+    )
+  );
+
+comment on constraint pricing_rules_mode_check on public.pricing_rules is
+  'on_top exige porcentaje sin límites: no se puede mostrar precio por producto y recortar el total a la vez.';
+
+
+-- ── 2. El margen de un pedido, línea por línea ─────────────────────────────
+--
+-- Devuelve null si el pedido todavía no tiene líneas, para que quien llama
+-- sepa que tiene que caer al cálculo sobre el subtotal.
+--
+-- El precio unitario que se marca es `line_total / quantity`: incluye lo que
+-- sumaron las opciones, que es exactamente lo que la app enseñó.
+create or replace function public.order_markup_by_line(
+  p_order_id   uuid,
+  p_percentage numeric
+)
+returns numeric
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select case when count(*) = 0 then null else
+    round(sum(
+      -- Se redondea DONDE se redondea al mostrarlo: en el precio unitario.
+      round((oi.line_total / nullif(oi.quantity, 0)) * (p_percentage / 100.0), 2)
+      * oi.quantity
+    ), 2)
+  end
+  from public.order_items oi
+  where oi.order_id = p_order_id
+    and oi.quantity > 0;
+$$;
+
+revoke all on function public.order_markup_by_line(uuid, numeric) from public, anon, authenticated;
+grant execute on function public.order_markup_by_line(uuid, numeric) to service_role;
+
+
+-- ── 3. El sello, ahora consciente del modo ─────────────────────────────────
+--
+-- ⚠️ Sigue sin recrear `create_storefront_order` ni `set_order_status`. Con
+-- `on_top` además AJUSTA `new.total`, que es lo que hace que el cliente pague
+-- el precio que vio — y se puede porque el disparador es BEFORE.
+create or replace function public.orders_stamp_pricing()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_calc     jsonb;
+  v_base     numeric(10,2);
+  v_modo     text;
+  v_pct      numeric;
+  v_markup   numeric(10,2);
+  v_porlinea numeric(10,2);
+  v_envio    numeric(10,2);
+begin
+  -- Lo que el comercio cobra POR LOS PRODUCTOS: sin envío, sin propina.
+  v_base := round(coalesce(new.subtotal, 0) - coalesce(new.discount, 0), 2);
+
+  if v_base <= 0 then
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE'
+     and new.subtotal is not distinct from old.subtotal
+     and new.discount is not distinct from old.discount
+     and new.pricing_rule_id is not distinct from old.pricing_rule_id then
+    return new;
+  end if;
+
+  v_calc := public.calculate_platform_markup(new.business_id, v_base, new.pricing_rule_id);
+  v_markup := (v_calc ->> 'markup')::numeric;
+  v_modo := coalesce(v_calc ->> 'markup_mode', 'absorbed');
+
+  -- Con `on_top` el precio se muestra por producto, así que el margen se
+  -- calcula por línea o el total no coincidiría con lo que el cliente sumó.
+  -- Si el pedido aún no tiene líneas (bot y mostrador) se queda el del
+  -- subtotal: en esos caminos nunca se mostró un precio unitario con margen.
+  if v_modo = 'on_top' and (v_calc ->> 'strategy') = 'percentage' then
+    v_pct := coalesce((
+      select percentage from public.pricing_rules
+      where id = nullif(v_calc ->> 'rule_id', '')::uuid
+    ), 0);
+    v_porlinea := public.order_markup_by_line(new.id, v_pct);
+    if v_porlinea is not null then
+      v_markup := v_porlinea;
+    end if;
+  end if;
+
+  new.platform_markup      := v_markup;
+  new.pricing_rule_id      := nullif(v_calc ->> 'rule_id', '')::uuid;
+  new.pricing_rule_version := nullif(v_calc ->> 'rule_version', '')::integer;
+
+  if v_modo = 'on_top' then
+    -- El comercio conserva su precio ENTERO: es la promesa del modo.
+    new.merchant_subtotal := v_base;
+    -- Y el margen se suma a lo que paga el cliente. El envío se respeta tal
+    -- como lo dejó la función del dinero.
+    v_envio := round(coalesce(new.total, 0) - v_base, 2);
+    if v_envio < 0 then v_envio := 0; end if;
+    new.total := round(v_base + v_markup + v_envio, 2);
+  else
+    -- `absorbed`: el margen sale del precio del comercio y el cliente paga
+    -- lo mismo. El total no se toca.
+    new.merchant_subtotal := round(v_base - v_markup, 2);
+  end if;
+
+  return new;
+end;
+$$;
