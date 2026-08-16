@@ -109,3 +109,60 @@ pedírselo.
 **Tarjeta de crédito: descartada a propósito.** El diagrama la marca «próximamente» y así
 se queda — la plataforma no procesa cobros (regla inviolable #6) y meter una pasarela
 cambiaría el modelo de negocio entero, no solo una pantalla.
+
+---
+
+## Separar el delivery del agente de IA — decidido 2026-08-16
+
+**Dos aplicaciones distintas**, cada una con su código, su base y su despliegue:
+
+| Producto | Para quién | Qué lleva |
+|---|---|---|
+| **Delivery** | Comida y supermercados | Pedidos, motorizados, comisión por pedido, mini app |
+| **Agente IA** | Barberías, clínicas, hoteles, consultorios, tiendas | Bot, citas, hospedaje, cuota mensual |
+
+Se eligió la opción más cara a conciencia: *«es mejor separar ahora los negocios
+que más adelante, y más con una de domicilios»*. Un delivery arrastra
+repartidores, zonas y dinero de terceros que no tienen nada que ver con un bot
+de barbería.
+
+### ⚠️ Las FAMILIAS son el requisito, no lo siguiente
+
+No se puede separar por familia si el sistema no sabe qué es una familia. Hoy
+hay **52 tipos sueltos** y ~25 son de comida (pizzería, hamburguesería,
+almuerzos, batidos, asadero, sushi…), **cada uno una isla**: una regla para
+`restaurante` NO alcanza a `pizzería`. En `apps/admin/src/features/clients/business-types.ts`
+hay un comentario `── Comida ──` que agrupa **visualmente**, pero no es dato.
+
+Familias propuestas: **Comida · Retail · Hospedaje · Servicios · Salud y
+belleza**. La jerarquía de reglas pasaría a
+`negocio > tipo > FAMILIA > toda la plataforma`.
+
+### Antes de arrancar, definir
+
+1. Qué se lleva cada aplicación y qué se **comparte** — hoy el catálogo, el
+   motor de opciones, los pedidos, la mini app y el motor de margen los usan
+   los dos.
+2. Si comparten base de datos o cada una la suya (afecta a `businesses`,
+   `orders`, `sales`, `billing`).
+3. Qué pasa con un negocio de comida que hoy usa el bot.
+4. Si el motor de margen se duplica o se extrae a un paquete común.
+5. Precios y cuotas distintos por producto.
+
+### El modelo económico, ya cerrado
+
+No volver a abrirlo. Se descartaron dos caminos por el camino:
+
+- **`on_top`** (el margen dentro del precio) → *«lo que está en la app no tiene
+  que subir de valor»*.
+- **Tarifa de servicio visible al cliente** → *«el cliente se quejaría»*.
+
+**El modelo es `absorbed`:** el comercio paga la comisión de su precio, como
+hacen todas las plataformas grandes (15–30 %; aquí mucho menos, y ese es el
+argumento de venta). Si quiere compensarla, **sube su precio en la app** —
+decisión suya, no de la plataforma. Restaurante: porcentaje bajo o monto fijo
+por pedido. Supermercado: porcentaje **con techo**, sin el cual nadie pediría
+por la app.
+
+**Pendiente de UI (fácil):** en el campo del precio del panel del dueño,
+mostrar en vivo «recibes $X · comisión $Y», para que no tenga que hacer cuentas.

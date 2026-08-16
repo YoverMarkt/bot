@@ -2107,37 +2107,18 @@ begin
     raise exception 'al comercio debían quedarle 72.00, le quedaron %', v_ped.merchant_subtotal;
   end if;
 
-  -- (c) `on_top` exige porcentaje SIN límites, y no por gusto: una canasta de
-  -- $150 al 4 % suma $156 producto a producto, y con techo de $3 el total
-  -- sería $153 — esos $3 no tendrían dónde aparecer. No se puede mostrar
-  -- precio por producto y recortar el total a la vez.
-  update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
-
+  -- (c) `on_top` no se puede guardar: el precio del cliente no sube.
+  --
+  -- Descartado por el dueño el 2026-08-16 —«lo que está en la app no tiene que
+  -- subir de valor»— y además exigiría que el catálogo pintara los precios con
+  -- margen. Mientras no exista eso, activarlo mostraría un precio y cobraría
+  -- otro. Falla CERRADO, igual que `scope` con 'category'.
   begin
-    update public.pricing_rules set max_amount = 3 where id = v_regla;
-    raise exception 'se guardó on_top con techo, que no se puede mostrar';
+    update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
+    raise exception 'se guardó on_top, que haría subir el precio del cliente';
   exception when check_violation then null;
   end;
 
-  begin
-    update public.pricing_rules set min_amount = 0.5 where id = v_regla;
-    raise exception 'se guardó on_top con piso, que no se puede mostrar';
-  exception when check_violation then null;
-  end;
-
-  -- Y con `on_top` el comercio conserva su precio ENTERO y el margen se suma
-  -- a lo que paga el cliente: es la promesa del modo.
-  insert into public.orders (business_id, contact_phone, status, subtotal, discount, total, currency, source)
-  values (v_biz, '593900000933', 'completado', 100, 0, 100, 'USD', 'manual')
-  returning platform_markup, merchant_subtotal, total into v_ped;
-  if v_ped.merchant_subtotal <> 100.00 then
-    raise exception 'con on_top el comercio debía conservar 100.00, le quedaron %', v_ped.merchant_subtotal;
-  end if;
-  if v_ped.total <> 110.00 then
-    raise exception 'con on_top el cliente debía pagar 110.00, paga %', v_ped.total;
-  end if;
-
-  update public.pricing_rules set markup_mode = 'absorbed' where id = v_regla;
 
   -- 14. LOS MÉTODOS DE PAGO son del negocio, no del código.
   delete from public.orders where business_id = v_biz;

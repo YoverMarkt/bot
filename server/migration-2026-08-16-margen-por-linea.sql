@@ -55,9 +55,8 @@
 alter table public.pricing_rules
   drop constraint if exists pricing_rules_mode_check;
 
--- Se ABRE `on_top` aquí, y en esta misma rama se completa lo que lo hace
--- honesto: que el catálogo sirva los precios con margen. Abrirlo sin eso
--- mostraría un precio y cobraría otro — la regla #8.
+-- Se mantiene cerrado a `absorbed` hasta que las pantallas pinten el precio
+-- con margen; cuando se abra, esta es la forma que tendrá.
 alter table public.pricing_rules
   add constraint pricing_rules_mode_check
   check (

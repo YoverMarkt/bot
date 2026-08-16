@@ -13065,20 +13065,21 @@ alter table public.pricing_rules
 -- Se ABRE `on_top` aquí, y en esta misma rama se completa lo que lo hace
 -- honesto: que el catálogo sirva los precios con margen. Abrirlo sin eso
 -- mostraría un precio y cobraría otro — la regla #8.
+-- ⚠️ CERRADO a `absorbed` (migration-2026-08-16-cerrar-on-top.sql). El dueño
+-- descartó `on_top` el mismo día: «lo que está en la app no tiene que subir de
+-- valor» y «el cliente se quejaría» de una tarifa visible. El modelo es que el
+-- COMERCIO paga la comisión de su precio, como todas las plataformas grandes.
+--
+-- El disparador ya sabe aplicar `on_top` y `order_markup_by_line` evita el
+-- céntimo de divergencia, pero falta que el catálogo pinte los precios con
+-- margen. Hasta entonces activarlo mostraría un precio y cobraría otro, así
+-- que falla CERRADO — igual que `scope` con 'category'.
 alter table public.pricing_rules
   add constraint pricing_rules_mode_check
-  check (
-    markup_mode = 'absorbed'
-    or (
-      markup_mode = 'on_top'
-      and strategy = 'percentage'
-      and min_amount is null
-      and max_amount is null
-    )
-  );
+  check (markup_mode = 'absorbed');
 
 comment on constraint pricing_rules_mode_check on public.pricing_rules is
-  'on_top exige porcentaje sin límites: no se puede mostrar precio por producto y recortar el total a la vez.';
+  'Solo `absorbed`: el comercio paga la comisión de su precio. `on_top` exigiría que el catálogo pintara los precios con margen.';
 
 
 -- ── 2. El margen de un pedido, línea por línea ─────────────────────────────
