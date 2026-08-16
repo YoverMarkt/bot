@@ -5667,10 +5667,10 @@ begin
       errcode = '22023',
       message = 'La contraseña debe llegar cifrada';
   end if;
-  if v_chat_mode not in ('menu', 'ai') then
+  if v_chat_mode not in ('menu', 'ai', 'miniapp') then
     raise exception using
       errcode = '22023',
-      message = 'El modo de conversación debe ser menu o ai';
+      message = 'El modo de conversación debe ser menu, ai o miniapp';
   end if;
 
   select *
@@ -5729,6 +5729,7 @@ begin
     meta_phone_id,
     telegram_bot_token,
     takes_orders,
+    storefront_enabled,
     chat_mode,
     ai_provider,
     owner_phone,
@@ -5756,6 +5757,7 @@ begin
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
+    coalesce((p_business ->> 'storefront_enabled')::boolean, false),
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
@@ -11213,5 +11215,3 @@ revoke all on function public.calculate_platform_markup(uuid, numeric, uuid)
   from public, anon, authenticated;
 grant execute on function public.calculate_platform_markup(uuid, numeric, uuid)
   to service_role;
-
-

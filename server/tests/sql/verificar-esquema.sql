@@ -34,6 +34,8 @@ begin
       'whatsapp_provider', 'ycloud',
       'ycloud_number', '+593900000900',
       'takes_orders', true,
+      'storefront_enabled', true,
+      'chat_mode', 'miniapp',
       'plan', 'micro',
       'monthly_contact_limit', 50,
       'monthly_outbound_message_limit', 250
@@ -46,6 +48,20 @@ begin
   v_nuevo := (v_alta ->> 'id')::uuid;
   if v_nuevo is null then
     raise exception 'create_business_onboarding no devolvió el negocio creado';
+  end if;
+
+  if v_alta ->> 'chat_mode' is distinct from 'miniapp'
+     or (v_alta ->> 'storefront_enabled')::boolean is distinct from true then
+    raise exception 'El alta no devolvió miniapp con la tienda encendida';
+  end if;
+  if not exists (
+    select 1
+    from businesses
+    where id = v_nuevo
+      and chat_mode = 'miniapp'
+      and storefront_enabled is true
+  ) then
+    raise exception 'El alta no guardó miniapp con storefront_enabled=true';
   end if;
 
   -- El alta es atómica: negocio, dueño, políticas y primera cuota o nada.
