@@ -2107,12 +2107,18 @@ begin
     raise exception 'al comercio debían quedarle 72.00, le quedaron %', v_ped.merchant_subtotal;
   end if;
 
-  -- (c) `on_top` no se puede guardar mientras el motor no lo honre.
+  -- (c) `on_top` no se puede guardar: el precio del cliente no sube.
+  --
+  -- Descartado por el dueño el 2026-08-16 —«lo que está en la app no tiene que
+  -- subir de valor»— y además exigiría que el catálogo pintara los precios con
+  -- margen. Mientras no exista eso, activarlo mostraría un precio y cobraría
+  -- otro. Falla CERRADO, igual que `scope` con 'category'.
   begin
     update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
-    raise exception 'se guardó un modo de margen que el motor no aplica';
+    raise exception 'se guardó on_top, que haría subir el precio del cliente';
   exception when check_violation then null;
   end;
+
 
   -- 14. LOS MÉTODOS DE PAGO son del negocio, no del código.
   delete from public.orders where business_id = v_biz;
