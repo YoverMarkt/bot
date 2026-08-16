@@ -22,9 +22,9 @@
 -- cosas o no entra ninguna.
 --
 -- ⚠️ Igual que en las fases 1 y 2: primero el CÓDIGO, después esta migración.
--- La `create_business_onboarding` que deja viva la fase 2 valida
--- `chat_mode in ('menu','ai')`, así que un alta en modo `miniapp` la rechaza
--- hasta que se recree aquí. El código nuevo ya no ofrece `menu`.
+-- La `create_business_onboarding` que deja viva la fase 2 acepta los tres
+-- modos para que el despliegue mixto sea seguro. Aquí se recrea para apretar
+-- también ese contrato a `ai`/`miniapp`; el código nuevo ya no ofrece `menu`.
 --
 -- Lo que NO toca: pedidos, ventas, catálogo, motor de opciones, motor de
 -- margen, la mini app, el horario ni los avisos de WhatsApp.
@@ -160,6 +160,7 @@ begin
     meta_phone_id,
     telegram_bot_token,
     takes_orders,
+    storefront_enabled,
     chat_mode,
     ai_provider,
     owner_phone,
@@ -187,6 +188,7 @@ begin
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
+    coalesce((p_business ->> 'storefront_enabled')::boolean, false),
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
