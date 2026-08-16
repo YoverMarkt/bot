@@ -214,6 +214,87 @@ describe('servicio de reportes del dueño', () => {
       expect(resultado.reply).toContain('50')
     })
 
+    it('responde "clientes perdidos" con quien preguntó y no compró', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([])
+      vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([])
+      vi.spyOn(db, 'getSessions').mockResolvedValue([
+        { contact_phone: '+593991112233', contact_name: 'Ana' },
+      ])
+      // Escribió y la conversación se quedó ahí: es exactamente el cliente que
+      // el dueño quiere recuperar.
+      vi.spyOn(db, 'getHistoryInRange').mockResolvedValue([
+        {
+          contact_phone: '+593991112233', role: 'user',
+          content: '¿tienen hawaiana?', created_at: '2026-08-10T12:00:00.000Z',
+        },
+      ])
+
+      const resultado = await pedir('clientes perdidos del mes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('Ana')
+    })
+
+    it('responde "menos vendidos" para saber qué hay que liquidar', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+        {
+          contact_phone: '+593991112233', total: 30, sold_at: '2026-08-10T12:00:00.000Z',
+          sale_items: [{ product_id: 'p1', product_name: 'Pizza', quantity: 5, subtotal: 30 }],
+        },
+      ])
+      vi.spyOn(db, 'getProducts').mockResolvedValue([
+        { id: 'p1', name: 'Pizza' },
+        { id: 'p2', name: 'Ensalada que nadie pide' },
+      ])
+
+      const resultado = await pedir('productos con bajo movimiento del mes')
+
+      expect(resultado.handled).toBe(true)
+      // La que no se vendió ninguna vez es la que interesa.
+      expect(resultado.reply).toContain('Ensalada que nadie pide')
+    })
+
+    it('responde "más consultados": lo que preguntan y no siempre compran', async () => {
+      vi.spyOn(db, 'getConsultationsInRange').mockResolvedValue([
+        { product_id: 'p1', products: { name: 'Pizza Familiar' } },
+        { product_id: 'p1', products: { name: 'Pizza Familiar' } },
+        { product_id: 'p2', products: { name: 'Cola' } },
+      ])
+
+      const resultado = await pedir('productos más consultados del mes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply.indexOf('Pizza Familiar'))
+        .toBeLessThan(resultado.reply.indexOf('Cola'))
+    })
+
+    it('responde "mis clientes" con el resumen de la cartera', async () => {
+      vi.spyOn(db, 'getCustomerSales').mockResolvedValue([
+        { contact_phone: '+593991112233', contact_name: 'Ana', total: 10, sold_at: '2026-08-01T12:00:00.000Z' },
+      ])
+      vi.spyOn(db, 'getSessions').mockResolvedValue([])
+
+      const resultado = await pedir('resumen de clientes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toMatch(/cliente/i)
+    })
+
+    it('el reporte de IA junta lo más preguntado y lo que no supo responder', async () => {
+      vi.spyOn(db, 'getUserMessagesInRange').mockResolvedValue([
+        { content: '¿hacen delivery a Cumbayá?' },
+        { content: '¿hacen delivery a Cumbayá?' },
+      ])
+      vi.spyOn(db, 'getAiGaps').mockResolvedValue([
+        { question: '¿tienen opción sin gluten?', reason: 'uncertain' },
+      ])
+
+      const resultado = await pedir('reporte de IA del mes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('gluten')
+    })
+
     it('pide el período cuando el reporte lo necesita y no viene', async () => {
       const sales = vi.spyOn(db, 'getSalesWithItems')
 

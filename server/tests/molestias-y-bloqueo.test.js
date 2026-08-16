@@ -79,7 +79,6 @@ function montar(overrides = {}) {
       processOrderPayload: async () => false,
     },
     media: { sendRequestedProductMedia: async () => false },
-    menuFlow: { advanceMenuFlow: () => ({ reply: 'menú', options: [] }) },
     logger: { log: () => {}, error: () => {} },
     sleep: async () => {},
   })

@@ -146,7 +146,6 @@ function montar(yaSeLeMando = false) {
       processOrderPayload: async () => false,
     },
     media: { sendRequestedProductMedia: async () => false },
-    menuFlow: { advanceMenuFlow: () => ({}) },
     logger: { log: () => {}, error: () => {} },
     sleep: async () => {},
   })

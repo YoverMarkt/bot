@@ -64,7 +64,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ai_provider: c.ai_provider ?? '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
-        chat_mode: ['menu', 'ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
+        chat_mode: ['ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
@@ -174,7 +174,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
       storefront_enabled: f.storefront === 'yes' && f.sales !== 'informa',
-      chat_mode: (['menu', 'ai', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'ai',
+      chat_mode: (['ai', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'ai',
       notes: f.notes || null,
     }
     const officialPlan = planById(f.plan)
@@ -302,13 +302,11 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="miniapp">Mini app (IA + enlace para pedir)</SelectItem>
-                    <SelectItem value="menu">Menú de opciones (sin IA)</SelectItem>
                     <SelectItem value="ai">Conversación con IA</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   <strong>Mini app</strong>: la IA responde dudas y el pedido se hace en la app; es el único modo que envía el enlace.
-                  {' '}<strong>Menú</strong>: el cliente elige entre opciones armadas con los datos reales; nada se inventa ni cuesta IA.
                   {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en los tres.
                 </p>
               </div>

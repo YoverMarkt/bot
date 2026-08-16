@@ -116,13 +116,7 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 
-export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
-
-// ⚠️ Aquí vivía AI_FIRST_KEYWORDS: los negocios donde el cliente no explora un
-// catálogo (farmacia, supermercado, consultoría) y el menú de botones frustra.
-// Distinguía 'ai' de 'menu', y con la agenda fuera ya nadie recomienda 'menu',
-// así que las dos ramas devolvían lo mismo. La fase 3 retira el modo menú
-// entero y con él la última razón de esta lista.
+export type BusinessChatMode = 'ai' | 'miniapp'
 
 // El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
 // manda siempre y nunca se sobrescribe a un negocio existente.
@@ -132,9 +126,7 @@ export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
 // recibían el menú de botones Y el enlace a la vez — dos formas de hacer lo
 // mismo compitiendo en el mismo chat.
 //
-// El modo 'menu' dejó de recomendarse el 2026-08-16: lo pedían las barberías y
-// los consultorios por su lista corta de servicios, y esos negocios salieron
-// con la agenda.
+// El modo 'menu' se retiró el 2026-08-16: la mini app hace lo mismo mejor.
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
   const normalized = normalizeBusinessType(type)
   if (!normalized) return 'ai'

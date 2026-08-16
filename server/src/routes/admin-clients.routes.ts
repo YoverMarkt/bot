@@ -188,11 +188,13 @@ const ALLOWED_BUSINESS_FIELDS = [
   'chat_mode', 'storefront_enabled',
 ] as const
 
-// Los tres modos de atención. Cualquier otro valor lo rechaza la base.
+// Los dos modos de atención. Cualquier otro valor lo rechaza la base.
 //   ai      → conversa con IA, se pide por chat, sin enlace
-//   menu    → botones de código, se pide por el menú, sin enlace
 //   miniapp → la IA resuelve dudas y el enlace es donde se pide
-const CHAT_MODES = ['menu', 'ai', 'miniapp'] as const
+//
+// `menu` (botones armados por código, sin IA) se retiró el 2026-08-16 con la
+// fase 3 de dejar Umbani solo con domicilios: la mini app hace lo mismo mejor.
+const CHAT_MODES = ['ai', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {

@@ -171,16 +171,17 @@ test('el sidebar admin queda fijo y solo se desplaza el contenido', async ({ pag
   expect((await aside.boundingBox())?.y).toBe(topBefore)
 })
 
-test('el simulador conserva los controles y la advertencia dentro del móvil', async ({ page }) => {
+test('el simulador conserva los controles dentro del móvil', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await seedAdminSession(page)
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/simulator`)
 
+  // El interruptor «Modo menú / Modo IA» se retiró con el modo menú
+  // (2026-08-16): el simulador prueba lo único que queda.
   await page.getByRole('combobox', { name: 'Negocio para simular' }).click()
   await page.getByRole('option', { name: 'Negocio E2E' }).click()
-  await page.getByRole('button', { name: 'Modo menú' }).click()
-  await expect(page.getByText(/pero en WhatsApp este negocio usa/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Limpiar chat/ })).toBeVisible()
   await expect.poll(() => page.locator('main').evaluate(element => (
     element.scrollWidth <= element.clientWidth + 1
   ))).toBe(true)

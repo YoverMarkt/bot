@@ -82,10 +82,6 @@ function setup(overrides = {}) {
     sendRequestedProductMedia: vi.fn().mockResolvedValue(false),
     ...overrides.media,
   }
-  const menuFlow = {
-    advanceMenuFlow: vi.fn().mockReturnValue({ reply: 'Menú', options: [] }),
-    ...overrides.menuFlow,
-  }
   const storefrontLink = {
     issueLink: vi.fn().mockResolvedValue(null),
     storefrontInvite: vi.fn((_business, url) => `🛍️ Nuestra tienda:\n${url}`),
@@ -95,7 +91,7 @@ function setup(overrides = {}) {
   const sleep = vi.fn().mockResolvedValue(undefined)
   const now = vi.fn().mockReturnValue(30_000_000)
   const conversation = createBotConversation({
-    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow,
+    database, reports, schedule, ai, prompt, tags, actions, media,
     storefrontLink, logger, sleep, now,
     ...(overrides.priceGuard ? { priceGuard: overrides.priceGuard } : {}),
   })
@@ -105,7 +101,7 @@ function setup(overrides = {}) {
   const sendVideo = vi.fn().mockResolvedValue(undefined)
   return {
     conversation, database, reports, schedule, ai, prompt, tags, actions,
-    media, menuFlow, storefrontLink, logger, sleep, now,
+    media, storefrontLink, logger, sleep, now,
     send, sendImage, sendTyping, sendVideo,
   }
 }
@@ -139,283 +135,6 @@ describe('orquestación de conversaciones del bot', () => {
     }))
     expect(inactive.send).not.toHaveBeenCalled()
     expect(inactive.reports.handleOwnerMessage).not.toHaveBeenCalled()
-  })
-
-  it('en modo menú conduce el código: sin IA y el dinero por el núcleo de siempre', async () => {
-    const current = setup({
-      database: {
-        getPolicies: vi.fn().mockResolvedValue({
-          bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
-        }),
-      },
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '🧾 Resumen de tu pedido',
-          options: ['✅ Confirmar pedido', '🏠 Menú principal'],
-          action: { type: 'order', summary: 'resumen', totalCents: 1950, payload: 'Pizza Hawaiana x2' },
-        }),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: '1',
-    }))
-
-    // La IA NO participa en ningún mensaje del modo menú
-    expect(current.ai.callAI).not.toHaveBeenCalled()
-    expect(current.prompt.buildPrompt).not.toHaveBeenCalled()
-    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledWith(
-      expect.objectContaining({
-        botPrompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
-      }),
-    )
-    expect(current.sendTyping).toHaveBeenCalledTimes(1)
-    expect(current.sendTyping.mock.invocationCallOrder[0]).toBeLessThan(
-      current.menuFlow.advanceMenuFlow.mock.invocationCallOrder[0],
-    )
-    // El total lo sigue calculando money.ts vía processOrderPayload: el menú
-    // solo aporta QUÉ pidió el cliente, nunca un monto
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: 'Pizza Hawaiana x2' }),
-    )
-    // Las opciones salen numeradas para que el cliente pueda responder "1"
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('1. ✅ Confirmar pedido'),
-    )
-  })
-
-  it('continúa el modo menú si marcar el mensaje como leído falla', async () => {
-    const current = setup()
-    current.sendTyping.mockRejectedValueOnce(new Error('YCloud no disponible'))
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'hola',
-    }))
-
-    expect(current.sendTyping).toHaveBeenCalledTimes(1)
-    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith('Menú')
-  })
-
-  it('el modo menú manda botones nativos y cae a texto numerado si el canal no puede', async () => {
-    const flujo = {
-      advanceMenuFlow: vi.fn().mockReturnValue({
-        reply: 'Estas son nuestras habitaciones 👇',
-        options: [{ title: 'Matrimonial', description: '$35.00/noche' }, '⬅️ Volver'],
-      }),
-    }
-
-    // Canal con soporte nativo: no se envía el texto numerado
-    const nativo = setup({ menuFlow: flujo })
-    const sendOptions = vi.fn().mockResolvedValue(true)
-    await nativo.conversation.processMessage(input(nativo, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'hola',
-      sendOptions,
-    }))
-    expect(sendOptions).toHaveBeenCalledWith(
-      'Estas son nuestras habitaciones 👇',
-      [
-        { id: '1', title: 'Matrimonial', description: '$35.00/noche' },
-        { id: '2', title: '⬅️ Volver', description: undefined },
-      ],
-    )
-    expect(nativo.send).not.toHaveBeenCalled()
-
-    // Canal sin soporte (o falla el envío): las opciones van numeradas
-    const texto = setup({ menuFlow: flujo })
-    await texto.conversation.processMessage(input(texto, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'hola',
-      sendOptions: vi.fn().mockResolvedValue(false),
-    }))
-    expect(texto.send).toHaveBeenCalledWith(
-      expect.stringContaining('1. Matrimonial — $35.00/noche'),
-    )
-  })
-
-  it('envía todas las fotos, luego el video y al final el CTA en modo directo', async () => {
-    const media = [
-      ...Array.from({ length: 5 }, (_, index) => ({
-        url: `https://cdn.example.com/foto-${index + 1}.jpg`,
-        isVideo: false,
-      })),
-      { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
-    ]
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
-          options: ['📅 Cotizar estadía'],
-          media,
-        }),
-      },
-    })
-    const events = []
-    const sendImage = vi.fn(async url => { events.push(`image:${url}`) })
-    const sendVideo = vi.fn(async url => { events.push(`video:${url}`) })
-    const sendOptions = vi.fn(async () => {
-      events.push('cta')
-      return true
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: '📷 Ver fotos y videos',
-      sendImage,
-      sendVideo,
-      sendOptions,
-    }))
-
-    expect(events).toEqual([
-      ...media.slice(0, 5).map(item => `image:${item.url}`),
-      `video:${media[5].url}`,
-      'cta',
-    ])
-    for (const [url] of media.slice(0, 5).map(item => [item.url])) {
-      expect(sendImage).toHaveBeenCalledWith(url, undefined, 'direct')
-    }
-    expect(sendVideo).toHaveBeenCalledWith(
-      'https://cdn.example.com/recorrido.mp4',
-      undefined,
-      'direct',
-    )
-    expect(sendOptions).toHaveBeenCalledWith(
-      '📷 Aquí tienes las fotos y el video. ¿Cotizamos tus fechas?',
-      [{ id: '1', title: '📅 Cotizar estadía', description: undefined }],
-      'direct',
-    )
-    expect(current.send).not.toHaveBeenCalled()
-  })
-
-  it('no adelanta el CTA mientras el último video todavía se está enviando', async () => {
-    let releaseVideo
-    const pendingVideo = new Promise(resolve => { releaseVideo = resolve })
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¿Cotizamos tus fechas?',
-          options: ['📅 Cotizar estadía'],
-          media: [
-            { url: 'https://cdn.example.com/foto.jpg', isVideo: false },
-            { url: 'https://cdn.example.com/recorrido.mp4', isVideo: true },
-          ],
-        }),
-      },
-    })
-    const sendOptions = vi.fn().mockResolvedValue(true)
-    const sendVideo = vi.fn().mockReturnValue(pendingVideo)
-
-    const processing = current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: '📷 Ver fotos y videos',
-      sendVideo,
-      sendOptions,
-    }))
-
-    await vi.waitFor(() => expect(sendVideo).toHaveBeenCalledOnce())
-    expect(sendOptions).not.toHaveBeenCalled()
-
-    releaseVideo()
-    await processing
-
-    expect(sendOptions).toHaveBeenCalledOnce()
-    expect(sendVideo.mock.invocationCallOrder[0]).toBeLessThan(
-      sendOptions.mock.invocationCallOrder[0],
-    )
-  })
-
-  it('el modo menú deriva a una persona con la misma ruta que el resto del bot', async () => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '', options: [], action: { type: 'handoff' },
-        }),
-      },
-      actions: { handleConversationOutcome: vi.fn().mockResolvedValue({ handled: true }) },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'asesor',
-    }))
-
-    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ hasHandoffTag: true }),
-    )
-    expect(current.ai.callAI).not.toHaveBeenCalled()
-  })
-
-  it('reemplaza la confirmación optimista del menú cuando el pedido no se creó', async () => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Pedido recibido! 🙌',
-          options: ['🛒 Hacer un pedido', '💬 Hablar con el equipo'],
-          action: {
-            type: 'order',
-            summary: 'resumen',
-            totalCents: 1000,
-            payload: 'Producto A x1',
-            items: [{ name: 'Producto A', qty: 1 }],
-          },
-        }),
-      },
-      actions: { processOrderPayload: vi.fn().mockResolvedValue(false) },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: '✅ Confirmar pedido',
-    }))
-
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('No pude confirmar de forma segura'),
-    )
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('evitar duplicarlo'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('Pedido recibido'),
-    )
-  })
-
-  it('conserva el resumen oficial del pedido sin duplicar una segunda confirmación', async () => {
-    const processOrderPayload = vi.fn().mockImplementation(async ({ send }) => {
-      await send('🧾 Resumen oficial — Total: $10.00')
-      return true
-    })
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Pedido recibido! 🙌',
-          options: ['🛒 Hacer un pedido'],
-          action: {
-            type: 'order',
-            summary: 'resumen',
-            totalCents: 1000,
-            payload: 'Producto A x1',
-            items: [{ name: 'Producto A', qty: 1 }],
-          },
-        }),
-      },
-      actions: { processOrderPayload },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: '✅ Confirmar pedido',
-    }))
-
-    expect(current.send).toHaveBeenCalledWith('🧾 Resumen oficial — Total: $10.00')
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('Pedido recibido'),
-    )
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('¿Necesitas algo más?'),
-    )
   })
 
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {
@@ -866,56 +585,6 @@ describe('el enlace de la mini app', () => {
     storefront_enabled: true,
   }
 
-  // ⚠️ REGRESIÓN REPORTADA: un hostal en modo menú recibía el menú de botones
-  // Y el enlace a la vez — dos formas de hacer lo mismo compitiendo en el
-  // mismo chat. El enlace pertenece SOLO al modo mini app.
-  it('NO acompaña la bienvenida del modo menú', async () => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Hola! 👋',
-          options: ['🛒 Hacer un pedido'],
-          isWelcome: true,
-        }),
-      },
-      storefrontLink: {
-        issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...conTienda, chat_mode: 'menu' },
-      text: 'hola',
-    }))
-
-    const enviado = current.send.mock.calls.map(call => call[0]).join('\n')
-    expect(enviado).toContain('¡Hola! 👋')
-    expect(enviado).not.toContain('http')
-    expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
-  })
-
-  it('no lo repite en cada paso del menú', async () => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: 'Elige un producto',
-          options: ['Pizza'],
-        }),
-      },
-      storefrontLink: {
-        issueLink: vi.fn().mockResolvedValue('https://x.com/t/negocio-a?s=tok'),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...conTienda, chat_mode: 'menu' },
-      text: '1',
-    }))
-
-    expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
-    expect(current.send.mock.calls.map(call => call[0]).join('')).not.toContain('http')
-  })
-
   // En modo IA no hay menú donde colgarlo, así que va como mensaje propio —
   // pero DESPUÉS de que el asistente responda, no antes.
   // Este test decía lo contrario hasta el 2026-08-02: el enlace se mandaba
@@ -981,30 +650,6 @@ describe('el enlace de la mini app', () => {
 
   // Sin tienda, sin BASE_URL o con la base caída, issueLink devuelve null: el
   // bot tiene que atender igual, como antes de que la tienda existiera.
-  it('sin enlace disponible el mensaje sale intacto', async () => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Hola! 👋',
-          options: ['🛒 Hacer un pedido'],
-          isWelcome: true,
-        }),
-      },
-      storefrontLink: { issueLink: vi.fn().mockResolvedValue(null) },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...conTienda, chat_mode: 'menu' },
-      text: 'hola',
-    }))
-
-    const enviado = current.send.mock.calls.map(call => call[0]).join('')
-    expect(enviado).toContain('¡Hola! 👋')
-    expect(enviado).not.toContain('http')
-    // Sin líneas en blanco de más donde iba a ir el enlace.
-    expect(enviado).not.toMatch(/\n{3,}/)
-  })
-
   it('un fallo del enlace no tumba la conversación', async () => {
     const current = setup({
       storefrontLink: {
@@ -1022,28 +667,9 @@ describe('el enlace de la mini app', () => {
 })
 
 describe('el horario del dueño manda sobre todos los modos', () => {
-  // Este test nace de un fallo real: el modo menú salía por su propia rama
-  // ANTES de mirar el reloj, así que un negocio con el menú activado atendía
-  // domingos y de madrugada aunque su horario dijera lo contrario. No se veía
-  // porque el modo IA sí lo respetaba y nadie probó el otro camino.
-  it('en modo menú, fuera de horario NO conduce el menú y manda los horarios', async () => {
-    const current = setup({
-      schedule: {
-        isOutsideHours: vi.fn().mockReturnValue(true),
-        buildScheduleMessage: vi.fn().mockReturnValue('Atendemos de 09:00 a 18:00'),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'hola',
-    }))
-
-    expect(current.menuFlow.advanceMenuFlow).not.toHaveBeenCalled()
-    expect(current.send).toHaveBeenCalledWith('Atendemos de 09:00 a 18:00')
-    expect(current.send).toHaveBeenCalledTimes(1)
-  })
-
+  // Este bloque nace de un fallo real: un modo salía por su propia rama ANTES
+  // de mirar el reloj, así que atendía domingos y de madrugada aunque el
+  // horario dijera lo contrario. La comprobación va delante de TODOS los modos.
   it('en modo IA, fuera de horario tampoco llama a la IA', async () => {
     const current = setup({
       schedule: {
@@ -1075,23 +701,12 @@ describe('el horario del dueño manda sobre todos los modos', () => {
     })
 
     await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu', slug: 'negocio-a', storefront_enabled: true },
+      business: { ...business, chat_mode: 'miniapp', slug: 'negocio-a', storefront_enabled: true },
       text: 'hola',
     }))
 
     expect(current.storefrontLink.issueLink).not.toHaveBeenCalled()
   })
 
-  it('dentro de horario el modo menú funciona con normalidad', async () => {
-    const current = setup()
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, chat_mode: 'menu' },
-      text: 'hola',
-    }))
-
-    expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith('Menú')
-  })
 })
 })

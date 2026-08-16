@@ -133,68 +133,6 @@ describe('simulador del superadmin', () => {
     })
   })
 
-  it('responde el menú de bienvenida con las capacidades reales y sin llamar a la IA', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', name: 'Pizzería Demo', ai_provider: 'groq',
-      takes_orders: true, takes_bookings: false, lodging_enabled: false,
-    })
-    vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
-    const history = vi.spyOn(db, 'getContactHistory')
-    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'Hola, buenas tardes' },
-    })
-
-    expect(callAI).not.toHaveBeenCalled()
-    expect(history).not.toHaveBeenCalled()
-    expect(response.status).toBe(200)
-    expect(response.body.reply).toContain('Pizzería Demo')
-    expect(response.body.options).toEqual([
-      '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
-    ])
-    expect(response.body.actionNote).toContain('sin llamada a la IA')
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      1, 'business-a', 'sim_admin', 'user', 'Hola, buenas tardes',
-    )
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      2, 'business-a', 'sim_admin', 'assistant', expect.stringContaining('🛒 Hacer un pedido'),
-    )
-  })
-
-  it('en modo menú el código conduce todo: bienvenida con opciones y cero llamadas a la IA', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-menu', name: 'Pizzería Menú', ai_provider: 'groq',
-      takes_orders: true, takes_bookings: false, lodging_enabled: false,
-    })
-    vi.spyOn(db, 'getProducts').mockResolvedValue([
-      { id: 'p1', name: 'Pizza Hawaiana', price: 8.5, stock: 'disponible', active: true },
-    ])
-    vi.spyOn(db, 'getPolicies').mockResolvedValue({
-      bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
-    })
-    vi.spyOn(db, 'getMenuModifiers').mockResolvedValue([])
-    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    const history = vi.spyOn(db, 'getContactHistory')
-    vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-menu', message: 'quiero cualquier cosa', mode: 'menu' },
-    })
-
-    expect(callAI).not.toHaveBeenCalled()
-    expect(history).not.toHaveBeenCalled()
-    expect(response.status).toBe(200)
-    expect(response.body.reply).toContain('Pizzería Menú')
-    expect(response.body.options).toContain('🛒 Hacer un pedido')
-    expect(response.body.options).toContain('💬 Hablar con el equipo')
-    expect(saveMessage).toHaveBeenCalledTimes(2)
-  })
-
   it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
     mockBusinessContext()
     vi.spyOn(db, 'getProducts').mockResolvedValue([

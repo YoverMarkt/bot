@@ -102,8 +102,8 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] Cada negocio YCloud tiene su Endpoint ID y signing secret guardados, y una prueba real recibe `YCloud-Signature` válida.
 - [ ] En una base nueva se aplicó `schema.sql` una sola vez; en una base existente **no se usó como upgrade**.
 - [ ] `migration-preparacion-produccion.sql` aplicada antes de las migraciones nuevas.
-- [ ] `migration-modo-menu.sql` aplicada antes de desplegar el modo menú.
-- [ ] `migration-modificadores-menu.sql` aplicada después de modo menú y con RLS/permisos cerrados.
+- [ ] `migration-modo-menu.sql` aplicada (crea `chat_mode`; su modo `menu` se retiró el 2026-08-16).
+- [ ] `migration-modificadores-menu.sql` aplicada después de la anterior y con RLS/permisos cerrados.
 - [ ] `migration-eliminar-kapso-retell.sql` aplicada antes de `migration-identificadores-canales.sql`.
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.

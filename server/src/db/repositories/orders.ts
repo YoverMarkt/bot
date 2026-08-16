@@ -72,10 +72,9 @@ const variantesDelTelefono = (telefono: string): string[] => {
   return [...new Set([crudo, digitos, `+${digitos}`])]
 }
 
-// Último pedido de UN contacto dentro de SU negocio. Alimenta "repetir pedido"
-// y el comprobante que llega por el chat: se leen los ítems para rearmar el
-// carrito, pero los precios NO se reutilizan (se recalculan con el catálogo
-// vigente en bot-menu-flow).
+// Último pedido de UN contacto dentro de SU negocio. Alimenta el comprobante
+// que llega por el chat: se leen los ítems del pedido que espera pago, y los
+// precios NO se reutilizan nunca — los recalcula el catálogo vigente.
 const getLastOrderForContact = async (businessId: string, contactPhone: string) => {
   const { data, error } = await db
     .from('orders')
