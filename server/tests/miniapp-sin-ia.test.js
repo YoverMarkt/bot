@@ -73,8 +73,6 @@ function montar(overrides = {}) {
       createBookingFromTag: async () => ({}),
       handleConversationOutcome: async () => ({ handled: false }),
       processOrderPayload: async () => false,
-      processLodgingQuote: async () => ({}),
-      processLodgingRequest: async () => ({}),
     },
     media: { sendRequestedProductMedia: async () => false },
     menuFlow: { advanceMenuFlow: () => ({}) },

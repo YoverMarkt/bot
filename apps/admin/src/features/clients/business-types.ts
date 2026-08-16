@@ -105,29 +105,21 @@ export function recommendedSalesForBusinessType(type: string): BusinessSalesMode
   )) ? 'vende' : 'informa'
 }
 
-export function isLodgingBusinessType(type: string): boolean {
-  const normalized = normalizeBusinessType(type)
-  return LODGING_KEYWORDS.some(keyword => normalized.includes(keyword))
-}
-
-// El tipo solo propone una configuración inicial. La capacidad persistida
-// `lodging_enabled` sigue siendo la fuente de verdad y puede activarse también
-// para complejos turísticos con un tipo personalizado.
-export function recommendedLodgingForBusinessType(type: string): boolean {
-  return isLodgingBusinessType(type)
-}
-
 // ¿A este negocio le sirve una mini app?
 //
 // La regla no es el tamaño del negocio sino cuánto TARDA el cliente en decidir.
-// Comida y hospedaje se eligen con calma, mirando fotos y comparando: ahí una
-// tienda vende más que una conversación. Una barbería se resuelve en dos
-// mensajes ("¿mañana a las 4?") y montarle una app sería peor experiencia.
+// La comida se elige con calma, mirando fotos y comparando: ahí una tienda
+// vende más que una conversación. Una barbería se resuelve en dos mensajes
+// ("¿mañana a las 4?") y montarle una app sería peor experiencia.
 //
 // Como el resto, esto solo PROPONE al crear: `storefront_enabled` persistido
 // manda siempre y jamás se le sobrescribe a un negocio existente.
+//
+// ⚠️ Hasta el 2026-08-16 los tipos de alojamiento también recomendaban tienda,
+// porque la mini app tenía un flujo de estadías. Con hospedaje retirado, un
+// hotel solo informa y `ClientModal` ya no le deja encenderla: recomendarla
+// dejaría el desplegable diciendo «sí» y el guardado poniendo «no».
 export function recommendedStorefrontForBusinessType(type: string): boolean {
-  if (isLodgingBusinessType(type)) return true
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 

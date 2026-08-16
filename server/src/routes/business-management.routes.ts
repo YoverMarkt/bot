@@ -9,7 +9,6 @@ type Permission =
   | 'citas'
   | 'reportes'
   | 'ventas'
-  | 'hospedaje'
 type DataRecord = Record<string, unknown>
 
 interface UserPayload {
@@ -56,7 +55,6 @@ const validPermissions: Permission[] = [
   'citas',
   'reportes',
   'ventas',
-  'hospedaje',
 ]
 
 function hasValue(value: unknown): boolean {

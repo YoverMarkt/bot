@@ -7,7 +7,6 @@ interface MenuBusiness {
   name?: string | null
   takes_orders?: boolean | null
   takes_bookings?: boolean | null
-  lodging_enabled?: boolean | null
 }
 
 interface WelcomeMenu {
@@ -56,7 +55,6 @@ const buildWelcomeMenu = (business: MenuBusiness, productCount: number): Welcome
   const options: string[] = []
   if (business.takes_orders) options.push('🛒 Hacer un pedido')
   if (business.takes_bookings) options.push('📅 Agendar una cita')
-  if (business.lodging_enabled) options.push('🛏️ Cotizar hospedaje')
   if (productCount > 0) options.push('📋 Ver productos y precios')
   options.push('💬 Otra consulta')
 

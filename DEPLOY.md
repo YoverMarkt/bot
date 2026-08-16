@@ -101,7 +101,6 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] Números/keys de WhatsApp de cada negocio cargados desde el panel admin.
 - [ ] Cada negocio YCloud tiene su Endpoint ID y signing secret guardados, y una prueba real recibe `YCloud-Signature` válida.
 - [ ] En una base nueva se aplicó `schema.sql` una sola vez; en una base existente **no se usó como upgrade**.
-- [ ] `migration-hospedaje.sql` aplicada sin errores.
 - [ ] `migration-preparacion-produccion.sql` aplicada antes de las migraciones nuevas.
 - [ ] `migration-modo-menu.sql` aplicada antes de desplegar el modo menú.
 - [ ] `migration-modificadores-menu.sql` aplicada después de modo menú y con RLS/permisos cerrados.

@@ -1,19 +1,18 @@
 // ── ALARMA INSISTENTE (port fiel del panel viejo) ───────────────────
 // Suena mientras haya pendientes SIN ATENDER (estado en BD):
 //  · chats en modo manual con unread_owner  · reservas pendientes
-//  · solicitudes de hospedaje por confirmar
 //  · pedidos por aceptar Y comprobantes por revisar (ver VIGILADOS)
-// Con: banner fijo, badges, notificación del navegador para reservas,
-// hospedaje y pedidos nuevos, silencio temporal (2 min), tope de 3 min
-// por tanda y parpadeo del título de la pestaña.
+// Con: banner fijo, badges, notificación del navegador para reservas y
+// pedidos nuevos, silencio temporal (2 min), tope de 3 min por tanda y
+// parpadeo del título de la pestaña.
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { BedDouble, Bell, BellOff, Check, Hand, CalendarPlus, ShoppingBag } from 'lucide-react'
+import { Bell, BellOff, Check, Hand, CalendarPlus, ShoppingBag } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
-import type { AttentionBooking, AttentionLodgingRequest, AttentionOrder } from '../hooks/useAttention'
+import type { AttentionBooking, AttentionOrder } from '../hooks/useAttention'
 import { toast as sonnerToast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 
@@ -21,13 +20,11 @@ const ALARM_MAX_MS = 180_000     // 3 minutos seguidos máximo por tanda
 const SILENCE_MS = 120_000       // silenciar = callar 2 minutos
 
 export function AlarmBanner({
-  manual, pending, bookings, lodgingPending, lodgingRequests, ordersPending, ordersLoaded,
+  manual, pending, bookings, ordersPending, ordersLoaded,
 }: {
   manual: Session[]
   pending: { id: string }[]
   bookings: AttentionBooking[]
-  lodgingPending: { id: string }[]
-  lodgingRequests: AttentionLodgingRequest[]
   // Ya llegan filtrados a los estados de `VIGILADOS`: la misma lista suena y
   // avisa. Son DOS —un pedido por aceptar y un comprobante por revisar—, así
   // que aquí no se puede dar por hecho que todos sean lo mismo.
@@ -43,11 +40,10 @@ export function AlarmBanner({
   const beepTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const knownIds = useRef<Set<string> | null>(null)
-  const knownLodgingIds = useRef<Set<string> | null>(null)
   const knownOrderIds = useRef<Set<string> | null>(null)
 
   const shouldRing = manual.length > 0 || pending.length > 0
-    || lodgingPending.length > 0 || ordersPending.length > 0
+    || ordersPending.length > 0
 
   function recheckAfter(milliseconds: number) {
     if (wakeTimer.current) clearTimeout(wakeTimer.current)
@@ -81,21 +77,6 @@ export function AlarmBanner({
       if ('Notification' in window && Notification.permission === 'granted') new Notification('🔔 Nueva reserva', { body: txt })
     }
   }, [bookings])
-
-  useEffect(() => {
-    const ids = new Set(lodgingRequests.map(request => request.id))
-    if (knownLodgingIds.current === null) { knownLodgingIds.current = ids; return }
-    const newRequests = lodgingRequests.filter(request => (
-      !knownLodgingIds.current!.has(request.id) && request.status === 'pending_owner'
-    ))
-    knownLodgingIds.current = ids
-    for (const request of newRequests) {
-      const text = `${request.contact_name || request.contact_phone} · ${request.room_type_name || 'hospedaje'} · ${request.check_in} → ${request.check_out}`
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('🏨 Nueva solicitud de hospedaje', { body: text })
-      }
-    }
-  }, [lodgingRequests])
 
   // Detección de pedidos NUEVOS → notificación del navegador.
   // La base se fija en cuanto la consulta responde, AUNQUE venga vacía: lo
@@ -163,7 +144,6 @@ export function AlarmBanner({
     navigate(
       manual.length ? '/conversations'
       : ordersPending.length ? '/orders'
-      : lodgingPending.length ? '/lodging'
       : '/bookings',
     )
   }
@@ -187,19 +167,17 @@ export function AlarmBanner({
   const porRevisar = ordersPending.filter(order => order.status === 'pago_en_revision')
   const porAceptar = ordersPending.filter(order => order.status !== 'pago_en_revision')
 
-  const title = [manual.length, pending.length, lodgingPending.length, ordersPending.length].filter(Boolean).length > 1
+  const title = [manual.length, pending.length, ordersPending.length].filter(Boolean).length > 1
     ? '¡Tienes pendientes!'
     : manual.length ? '¡Atiende a un cliente!'
     : porRevisar.length && !porAceptar.length ? '¡Comprobante por revisar!'
     : ordersPending.length ? '¡Nuevo pedido!'
-    : lodgingPending.length ? '¡Nueva solicitud de hospedaje!'
     : '¡Nueva reserva!'
   const parts = []
   if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
   if (porAceptar.length) parts.push(`${porAceptar.length} pedido${porAceptar.length !== 1 ? 's' : ''} por confirmar`)
   if (porRevisar.length) parts.push(`${porRevisar.length} comprobante${porRevisar.length !== 1 ? 's' : ''} por revisar`)
   if (pending.length) parts.push(`${pending.length} cita${pending.length !== 1 ? 's' : ''} por confirmar/cancelar`)
-  if (lodgingPending.length) parts.push(`${lodgingPending.length} estadía${lodgingPending.length !== 1 ? 's' : ''} por confirmar`)
 
   return (
     <>
@@ -209,9 +187,7 @@ export function AlarmBanner({
             ? <Hand className="w-5 h-5" />
             : ordersPending.length
               ? <ShoppingBag className="w-5 h-5" />
-              : lodgingPending.length
-                ? <BedDouble className="w-5 h-5" />
-                : <CalendarPlus className="w-5 h-5" />}
+              : <CalendarPlus className="w-5 h-5" />}
           <div>
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>

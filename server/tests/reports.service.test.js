@@ -91,56 +91,6 @@ describe('servicio de reportes del dueño', () => {
     expect(getSales).not.toHaveBeenCalledWith('business-b', expect.anything())
   })
 
-  it('suma los ingresos de hospedaje al resumen cuando el negocio tiene alojamiento', async () => {
-    vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
-      { total: 20, contact_phone: '0991112233', sold_at: new Date().toISOString(), sale_items: [{ quantity: 1 }] },
-    ])
-    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([{ contact_phone: '0991112233', sold_at: new Date().toISOString() }])
-    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(1)
-    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays').mockResolvedValue([
-      { total: 125, nights: 3 },
-      { total: 45, nights: 1 },
-    ])
-
-    const result = await reports.handleOwnerMessage(
-      { id: 'business-a', owner_phone: '+593 99 111 2233', lodging_enabled: true },
-      '593991112233',
-      'reporte de la semana',
-    )
-
-    expect(result.handled).toBe(true)
-    expect(result.reply).toContain('📊 Reporte general')
-    expect(result.reply).toContain('Total vendido: $20.00')
-    expect(result.reply).toContain('🏨 Hospedaje')
-    expect(result.reply).toContain('Ingresos: $170.00') // 125 + 45
-    expect(result.reply).toContain('Estadías: 2 · Noches: 4')
-    expect(result.reply).toContain('Total general (hospedaje + ventas): $190.00') // 170 + 20
-    // Para un hotel, el hospedaje va ANTES que las ventas de productos
-    expect(result.reply.indexOf('🏨 Hospedaje')).toBeLessThan(result.reply.indexOf('🛒 Ventas de productos'))
-    // El pie ofrece pedir cada reporte por separado
-    expect(result.reply).toContain('También puedes pedirme por separado')
-    // El negocio sale del objeto resuelto, nunca de un parámetro manipulable
-    expect(getStays).toHaveBeenCalledWith('business-a', expect.any(String), expect.any(String))
-  })
-
-  it('no agrega hospedaje al resumen de un negocio sin alojamiento', async () => {
-    vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
-      { total: 20, contact_phone: '0991112233', sold_at: new Date().toISOString(), sale_items: [{ quantity: 1 }] },
-    ])
-    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([{ contact_phone: '0991112233', sold_at: new Date().toISOString() }])
-    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(1)
-    const getStays = vi.spyOn(db, 'getConfirmedLodgingStays')
-
-    const result = await reports.handleOwnerMessage(
-      { id: 'business-a', owner_phone: '+593 99 111 2233' },
-      '593991112233',
-      'reporte de la semana',
-    )
-
-    expect(result.reply).not.toContain('Hospedaje')
-    expect(getStays).not.toHaveBeenCalled()
-  })
-
   it('unifica al mismo cliente aunque el teléfono cambie de formato', async () => {
     vi.spyOn(db, 'getCustomerSales').mockResolvedValue([
       { contact_phone: '0991112233', contact_name: 'Ana', total: 10, sold_at: '2026-07-01T12:00:00.000Z' },
@@ -182,6 +132,98 @@ describe('servicio de reportes del dueño', () => {
     expect(result.summary).toBeDefined()
     expect(result.comparison).toBeDefined()
     expect(currentWindowCalls.length).toBeLessThanOrEqual(2)
+  })
+
+  // Los reportes que el dueño de un delivery pide por WhatsApp. Cada comando
+  // recorre su propio cálculo y su propio formateo, y ninguno estaba probado
+  // de punta a punta: se cubrían el resumen y el directorio, que comparten
+  // camino, y el resto vivía de que nadie los tocara.
+  describe('los comandos que el dueño escribe por WhatsApp', () => {
+    const dueño = { id: 'business-a', owner_phone: '+593 99 111 2233' }
+    const pedir = texto => reports.handleOwnerMessage(dueño, '+593 99 111 2233', texto)
+
+    it('responde "productos más vendidos" con el ranking del período', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+        {
+          contact_phone: '+593991112233', total: 30, sold_at: '2026-08-10T12:00:00.000Z',
+          sale_items: [
+            { product_id: 'p1', product_name: 'Pizza Familiar', quantity: 3, subtotal: 30 },
+            { product_id: 'p2', product_name: 'Cola 1L', quantity: 1, subtotal: 2 },
+          ],
+        },
+      ])
+
+      const resultado = await pedir('productos más vendidos del mes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('Pizza Familiar')
+      // El ranking ordena por cantidad: la pizza va antes que la bebida.
+      expect(resultado.reply.indexOf('Pizza Familiar'))
+        .toBeLessThan(resultado.reply.indexOf('Cola 1L'))
+    })
+
+    it('responde "stock bajo" con lo que está por acabarse', async () => {
+      const lowStock = vi.spyOn(db, 'getLowStockProducts').mockResolvedValue([
+        { name: 'Queso mozzarella', stock: 'agotado' },
+      ])
+
+      const resultado = await pedir('stock bajo')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('Queso mozzarella')
+      expect(lowStock).toHaveBeenCalledWith('business-a')
+    })
+
+    it('responde "pedidos pendientes" con quién quedó sin cerrar', async () => {
+      vi.spyOn(db, 'getPendingOrders').mockResolvedValue([
+        { contact_name: 'Ana', contact_phone: '+593991112233', last_message: '¿me lo dejas en $15?' },
+      ])
+
+      const resultado = await pedir('pedidos pendientes')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('Ana')
+    })
+
+    it('responde "clientes frecuentes" ordenando por número de compras', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+        { contact_phone: '+593991112233', contact_name: 'Ana', total: 10, sold_at: '2026-08-10T12:00:00.000Z', sale_items: [] },
+        { contact_phone: '+593991112233', contact_name: 'Ana', total: 12, sold_at: '2026-08-11T12:00:00.000Z', sale_items: [] },
+        { contact_phone: '+593988000000', contact_name: 'Luis', total: 40, sold_at: '2026-08-11T12:00:00.000Z', sale_items: [] },
+      ])
+      vi.spyOn(db, 'getSessions').mockResolvedValue([])
+
+      const resultado = await pedir('clientes frecuentes del mes')
+
+      expect(resultado.handled).toBe(true)
+      // Ana compró dos veces y Luis una: manda la RECURRENCIA, no el monto.
+      expect(resultado.reply.indexOf('Ana')).toBeLessThan(resultado.reply.indexOf('Luis'))
+    })
+
+    it('compara el período con el anterior y dice cuánto creció', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockImplementation((_biz, _desde, hasta) => (
+        // La ventana anterior es la única que llega con fecha de fin.
+        Promise.resolve(hasta
+          ? [{ contact_phone: '+593991112233', total: 100, sold_at: '2026-07-10T12:00:00.000Z', sale_items: [] }]
+          : [{ contact_phone: '+593991112233', total: 150, sold_at: '2026-08-10T12:00:00.000Z', sale_items: [] }])
+      ))
+
+      const resultado = await pedir('comparar con el mes anterior')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('50')
+    })
+
+    it('pide el período cuando el reporte lo necesita y no viene', async () => {
+      const sales = vi.spyOn(db, 'getSalesWithItems')
+
+      const resultado = await pedir('productos más vendidos')
+
+      expect(resultado.handled).toBe(true)
+      expect(resultado.reply).toContain('período')
+      // No se consulta nada hasta saber de qué período habla.
+      expect(sales).not.toHaveBeenCalled()
+    })
   })
 
   it('mantiene una implementación TypeScript verificable', () => {

@@ -64,53 +64,33 @@ describe('la tienda del negocio', () => {
       })).toBe('no_disponible')
     })
 
-    // El caso de la barbería: enciende la tienda sin vender ni alojar nada y
-    // el cliente abriría una app vacía. Mejor no existir que existir rota.
-    it('no disponible si el negocio no vende ni aloja, aunque tenga la tienda activada', () => {
-      const barberia = negocio({ takes_orders: false, lodging_enabled: false })
+    // El caso de la barbería: enciende la tienda sin vender nada y el cliente
+    // abriría una app vacía. Mejor no existir que existir rota.
+    it('no disponible si el negocio no vende, aunque tenga la tienda activada', () => {
+      const barberia = negocio({ takes_orders: false })
       expect(storefrontStatus({ business: barberia, outsideHours: false })).toBe('no_disponible')
-    })
-
-    it('un hostal sin catálogo sí tiene tienda: aloja', () => {
-      const hostal = negocio({ takes_orders: false, lodging_enabled: true })
-      expect(storefrontStatus({ business: hostal, outsideHours: false })).toBe('abierta')
     })
   })
 
-  // La app NO puede adivinar el flujo por el tipo de negocio: un carrito con
-  // "+/− habitaciones" no es una estadía. Manda la bandera, no el `type`.
+  // La app NO adivina el flujo por el tipo de negocio: manda la bandera.
   describe('qué sabe hacer la tienda', () => {
-    it('una pizzería solo hace pedidos', () => {
-      expect(storefrontCapabilities(negocio())).toEqual({ orders: true, lodging: false })
-    })
-
-    it('un hostal solo hace estadías', () => {
-      expect(storefrontCapabilities(negocio({
-        type: 'hotel', takes_orders: false, lodging_enabled: true,
-      }))).toEqual({ orders: false, lodging: true })
-    })
-
-    // Un hostal con restaurante: las dos cosas conviven en la misma tienda.
-    it('un hostal con restaurante hace las dos', () => {
-      expect(storefrontCapabilities(negocio({
-        takes_orders: true, lodging_enabled: true,
-      }))).toEqual({ orders: true, lodging: true })
+    it('una pizzería hace pedidos', () => {
+      expect(storefrontCapabilities(negocio())).toEqual({ orders: true })
     })
 
     it('el tipo de negocio no decide nada por su cuenta', () => {
-      // Tipo hotel pero sin la bandera: no aloja. El dueño manda.
+      // Tipo hotel pero sin vender: no hace pedidos. El dueño manda.
       expect(storefrontCapabilities(negocio({
-        type: 'hotel', lodging_enabled: false,
-      })).lodging).toBe(false)
+        type: 'hotel', takes_orders: false,
+      })).orders).toBe(false)
     })
 
     it('sin negocio no hay capacidades', () => {
-      expect(storefrontCapabilities(null)).toEqual({ orders: false, lodging: false })
+      expect(storefrontCapabilities(null)).toEqual({ orders: false })
     })
 
     it('la portada le dice a la app qué flujo pintar', () => {
-      const publico = publicBusiness(negocio({ lodging_enabled: true }))
-      expect(publico.capabilities).toEqual({ orders: true, lodging: true })
+      expect(publicBusiness(negocio()).capabilities).toEqual({ orders: true })
     })
   })
 
@@ -276,7 +256,7 @@ describe('la tienda del negocio', () => {
         description: null,
         address: null,
         phone: '+593991716574',
-        capabilities: { orders: true, lodging: false },
+        capabilities: { orders: true },
         brandColor: null,
         logoUrl: null,
         coverUrl: null,

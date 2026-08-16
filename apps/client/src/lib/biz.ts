@@ -10,7 +10,6 @@ export type BusinessInfo = {
   address: string | null; phone: string | null; social: string | null
   payment_methods: string | null; suspended: boolean; bot_active: boolean
   takes_bookings: boolean; takes_orders: boolean
-  lodging_enabled: boolean
 }
 
 // El flag persistido es la única fuente de verdad. El tipo puede recomendar el
@@ -20,10 +19,8 @@ export const isBookingBiz = (
   takesBookings?: boolean | null,
 ) => takesBookings === true
 
-export const isLodgingBiz = (lodgingEnabled?: boolean | null) => lodgingEnabled === true
-
 // Pedidos es capacidad propia del negocio (takes_orders), independiente de
-// reservas y hospedaje. El flag vivo manda; el tipo solo lo recomienda al alta.
+// reservas. El flag vivo manda; el tipo solo lo recomienda al alta.
 export const isOrderBiz = (takesOrders?: boolean | null) => takesOrders === true
 
 const normalizeBusinessType = (type?: string | null) => (type ?? '')

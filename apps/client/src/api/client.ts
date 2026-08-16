@@ -12,7 +12,6 @@ export type Business = {
   suspended?: boolean
   bot_active?: boolean
   takes_bookings?: boolean
-  lodging_enabled?: boolean
 }
 
 export type PanelUser = {

@@ -1,16 +1,15 @@
 // Modo MENÚ (estilo banco): toda la conversación la conduce el CÓDIGO con
 // opciones generadas desde los datos reales del negocio. La IA no participa:
-// los textos son plantillas mínimas, los precios salen del catálogo, las
-// habitaciones del inventario y las citas de la agenda. Si el cliente escribe
-// algo fuera del menú, se le vuelve a mostrar el menú (fallo cerrado) o se
-// deriva al equipo. Los totales y cotizaciones los calcula SIEMPRE el servidor.
+// los textos son plantillas mínimas, los precios salen del catálogo y las
+// citas de la agenda. Si el cliente escribe algo fuera del menú, se le vuelve
+// a mostrar el menú (fallo cerrado) o se deriva al equipo. Los totales los
+// calcula SIEMPRE el servidor.
 
 interface FlowBusiness {
   id: string
   name?: string | null
   takes_orders?: boolean | null
   takes_bookings?: boolean | null
-  lodging_enabled?: boolean | null
 }
 
 interface FlowProduct {
@@ -24,18 +23,6 @@ interface FlowProduct {
   image_url?: string | null
   video_url?: string | null
   active?: boolean | null
-}
-
-interface FlowRoomType {
-  id: string
-  name?: string | null
-  description?: string | null
-  amenities?: string[] | null
-  base_rate?: number | string | null
-  pricing_model?: string | null
-  base_occupancy?: number | null
-  max_guests?: number | null
-  media_urls?: string[] | null
 }
 
 interface FlowSlots {
@@ -71,21 +58,11 @@ type FlowView =
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
-  | { kind: 'rooms'; page?: number }
-  | { kind: 'room'; roomTypeId: string; mediaShown?: boolean }
-  | { kind: 'stay'; step: 'dates' | 'adults' | 'children'; roomTypeId?: string; checkIn?: string; checkOut?: string; adults?: number }
-  // Paso posterior a la cotización: sus opciones (solicitar / cotizar otras
-  // fechas / equipo) son una vista propia para que el botón nativo (que envía
-  // el NÚMERO de opción) mapee correcto en el canal real.
-  | { kind: 'stay-result'; roomTypeId?: string }
-  | { kind: 'stay-request' }
   | { kind: 'booking'; step: 'date' | 'time' | 'name'; date?: string; time?: string }
 
 interface FlowState {
   view: FlowView
   cart: CartItem[]
-  // Última cotización emitida: permite "Solicitar esta habitación" después
-  lastStay?: { roomTypeId?: string; checkIn: string; checkOut: string }
   // Modificador elegido (sabor) pendiente de adjuntar al producto/tamaño
   pendingModifier?: string
   updatedAt: number
@@ -100,8 +77,6 @@ type FlowAction =
   // modificador (sabor) para que money.ts calcule el precio por el producto y
   // pliegue el sabor en el nombre visible.
   | { type: 'order'; summary: string; totalCents: number; payload: string; items: { name: string; qty: number; note?: string | null }[] }
-  | { type: 'stay_quote'; quote: { checkIn: string; checkOut: string; roomsCount: number; adults: number; children: number; roomTypeId?: string } }
-  | { type: 'stay_request'; roomTypeId: string; contactName: string }
   | { type: 'booking'; date: string; time: string; name: string }
 
 // Ítems del último pedido del contacto. Solo se reutilizan producto y cantidad:
@@ -121,7 +96,6 @@ export interface MenuFlowInput {
   // respetar el nombre, tono o saludo que configuró el dueño al dar la
   // bienvenida en este flujo determinista.
   botPrompt?: string | null
-  roomTypes?: FlowRoomType[]
   modifiers?: FlowModifier[]
   availableSlots?: FlowSlots
   lastOrderItems?: LastOrderItem[]
@@ -132,7 +106,7 @@ export interface MenuFlowInput {
 // arriba y el detalle debajo (precio, capacidad). Igual que el menú del banco.
 export type MenuOption = string | { title: string; description?: string }
 
-// Archivo de un ítem (habitación o producto) que el bot envía cuando el cliente
+// Archivo de un producto que el bot envía cuando el cliente
 // pide verlo. `isVideo` decide si va por sendVideo o sendImage en el canal real.
 export interface FlowMediaItem {
   url: string
@@ -157,11 +131,7 @@ export interface MenuFlowResult {
 const OPT_ORDER = '🛒 Hacer un pedido'
 const OPT_REPEAT = '🔄 Repetir mi último pedido'
 const OPT_BROWSE = '📋 Ver productos y precios'
-const OPT_ROOMS = '🛏️ Ver habitaciones'
 const OPT_MEDIA = '📷 Ver fotos y videos'
-const OPT_STAY = '📅 Cotizar estadía'
-const OPT_STAY_AGAIN = '📅 Cotizar otras fechas'
-const STAY_REQUEST_OPTION = '🛎️ Solicitar esta habitación'
 const OPT_BOOK = '📅 Agendar una cita'
 const OPT_TEAM = '💬 Hablar con el equipo'
 const OPT_BACK = '⬅️ Volver'
@@ -176,18 +146,11 @@ const OPT_OTHER = '✍️ Otra cantidad'
 const PAGE_SIZE = 6
 // WhatsApp permite 10 filas por lista: 9 opciones + "Ver más" entran justas.
 const CATEGORY_PAGE_SIZE = 9
-// Habitaciones: 8 + "Ver más" + "Volver" = 10, el tope exacto de la lista.
-const ROOM_PAGE_SIZE = 8
 // Modificadores (sabores): 8 + "Ver más" + "Volver" = 10.
 const MODIFIER_PAGE_SIZE = 8
 const FLOW_TTL_MS = 30 * 60 * 1000
 const PROMPT_CHOOSE = 'Elige una opción del menú 👇'
 const NOT_UNDERSTOOD = `🙏 No te entendí. ${PROMPT_CHOOSE}`
-
-// ── Utilidades de texto y fechas (deterministas, zona Ecuador) ────────
-const DAY_MS = 86_400_000
-const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] as const
 
 const normalizeText = (value: string): string => value
   .toLowerCase()
@@ -196,189 +159,6 @@ const normalizeText = (value: string): string => value
   .replace(/[^a-z0-9\s]/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
-
-const todayEcuador = (): string => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' })
-
-const addDays = (iso: string, days: number): string => new Date(
-  new Date(`${iso}T12:00:00Z`).getTime() + days * DAY_MS,
-).toISOString().slice(0, 10)
-
-const nextWeekday = (fromIso: string, weekday: number, strictlyAfter = false): string => {
-  const current = new Date(`${fromIso}T12:00:00Z`).getUTCDay()
-  let delta = ((weekday - current) % 7 + 7) % 7
-  if (delta === 0 && strictlyAfter) delta = 7
-  return addDays(fromIso, delta)
-}
-
-// "viernes 24 de julio" legible para el huésped, con el calendario real
-const formatDateEs = (iso: string): string => new Date(`${iso}T12:00:00Z`)
-  .toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
-
-const validIsoDate = (year: number, month: number, day: number): string | null => {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null
-  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-  return new Date(`${iso}T12:00:00Z`).toISOString().slice(0, 10) === iso ? iso : null
-}
-
-// ── Rango de estadía escrito por el huésped ───────────────────────────
-// El huésped escribe llegada y salida en UN mensaje y el MES es obligatorio
-// ("del 24 al 26 de julio"): "del 24 al 26" a secas se rechaza pidiendo el
-// mes. También se aceptan "del 24 de julio al 2 de agosto", días de semana
-// ("del lunes al miércoles") y "de hoy a mañana" — todo lo resuelve el
-// calendario real, nunca se adivina.
-type StayRange =
-  | { ok: true; checkIn: string; checkOut: string }
-  | { ok: false; reason: 'sin_mes' | 'falta_salida' | 'rango' | 'no_entendi' }
-
-interface DateToken {
-  special?: string
-  weekday?: number
-  day?: number
-  month?: number
-  explicitYear?: number
-  // Mes escrito suelto ("20 al 22 de de julio"): se ata luego al día pelado
-  looseMonth?: number
-}
-
-// Conserva "/" y "-" para poder leer "24/07" (la normalización general los borra)
-const normalizeDateText = (value: string): string => value
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/\p{M}+/gu, '')
-  .replace(/[^a-z0-9/\s-]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim()
-
-const DATE_TOKEN_PATTERN = new RegExp(
-  `\\b(pasado manana|manana|hoy)\\b`
-  + `|\\b(${WEEKDAYS.join('|')})\\b`
-  + `|\\b(\\d{1,2})[/-](\\d{1,2})(?:[/-](\\d{2,4}))?\\b`
-  // El conector "de" puede venir repetido o faltar: "22 de julio", "22 julio", "22 de de julio"
-  + `|\\b(\\d{1,2})(?:\\s*(?:de\\s+)*(${MONTHS.join('|')}))?\\b`
-  + `|\\b(${MONTHS.join('|')})\\b`,
-  'g',
-)
-
-const isoParts = (iso: string): { year: number; month: number } => (
-  { year: Number(iso.slice(0, 4)), month: Number(iso.slice(5, 7)) }
-)
-
-const parseStayRange = (message: string, today: string): StayRange => {
-  // "24-26" con la segunda cifra > 12 es un rango de días, no día-mes
-  const text = normalizeDateText(message)
-    .replace(/\b(\d{1,2})\s*-\s*(1[3-9]|2\d|3[01])\b/g, '$1 al $2')
-  const tokens: DateToken[] = []
-  for (const match of text.matchAll(DATE_TOKEN_PATTERN)) {
-    if (match[1]) tokens.push({ special: match[1] })
-    else if (match[2]) tokens.push({ weekday: WEEKDAYS.indexOf(match[2] as typeof WEEKDAYS[number]) })
-    else if (match[3]) {
-      tokens.push({
-        day: Number(match[3]),
-        month: Number(match[4]),
-        explicitYear: match[5] ? Number(match[5].length === 2 ? `20${match[5]}` : match[5]) : undefined,
-      })
-    } else if (match[6]) {
-      const month = match[7] ? MONTHS.indexOf(match[7] as typeof MONTHS[number]) + 1 : undefined
-      tokens.push({ day: Number(match[6]), month })
-    } else if (match[8]) {
-      tokens.push({ looseMonth: MONTHS.indexOf(match[8] as typeof MONTHS[number]) + 1 })
-    }
-  }
-
-  // Mes suelto por typos o separación ("20 al 22 de de julio", "julio 20 al
-  // 22"): se ata al día pelado más cercano hacia ATRÁS (formato español
-  // "X al Y de MES") o, si no hay, hacia adelante. El resto lo resuelve la
-  // herencia de mes normal.
-  for (let index = 0; index < tokens.length; index += 1) {
-    const loose = tokens[index]
-    if (loose.looseMonth == null) continue
-    let target = -1
-    for (let back = index - 1; back >= 0; back -= 1) {
-      const candidate = tokens[back]
-      if (candidate.day != null && candidate.month == null) { target = back; break }
-    }
-    if (target < 0) {
-      for (let ahead = index + 1; ahead < tokens.length; ahead += 1) {
-        const candidate = tokens[ahead]
-        if (candidate.day != null && candidate.month == null) { target = ahead; break }
-      }
-    }
-    if (target >= 0) tokens[target] = { ...tokens[target], month: loose.looseMonth }
-  }
-  const dateTokens = tokens.filter(token => token.looseMonth == null)
-
-  // Con números de día presentes, los días de semana son decoración
-  // ("el viernes 24 de julio" → cuenta el 24 de julio)
-  const hasDayNumbers = dateTokens.some(token => token.day != null)
-  const relevant = hasDayNumbers ? dateTokens.filter(token => token.weekday == null) : dateTokens
-  if (!relevant.length) return { ok: false, reason: 'no_entendi' }
-  if (relevant.length < 2) return { ok: false, reason: 'falta_salida' }
-  const [first, second] = relevant
-
-  // La regla del dueño: números de día sin mes en NINGUNO de los dos → pedir el mes
-  if (first.day != null && first.month == null && second.day != null && second.month == null) {
-    return { ok: false, reason: 'sin_mes' }
-  }
-
-  const year = Number(today.slice(0, 4))
-  const absolute = (token: DateToken): string | null => {
-    if (token.special === 'hoy') return today
-    if (token.special === 'manana') return addDays(today, 1)
-    if (token.special === 'pasado manana') return addDays(today, 2)
-    if (token.day != null && token.month != null && token.month >= 1 && token.month <= 12) {
-      const candidate = validIsoDate(token.explicitYear ?? year, token.month, token.day)
-      return candidate && !token.explicitYear && candidate < today
-        ? validIsoDate(year + 1, token.month, token.day)
-        : candidate
-    }
-    return null
-  }
-
-  // Llegada
-  let checkIn = absolute(first)
-  if (!checkIn && first.weekday != null) checkIn = nextWeekday(today, first.weekday)
-
-  // Salida (puede heredar el mes de la llegada, o al revés)
-  let checkOut = absolute(second)
-  if (!checkOut && second.weekday != null) {
-    checkOut = checkIn ? nextWeekday(checkIn, second.weekday, true) : null
-  }
-  if (!checkOut && second.day != null && second.month == null && checkIn) {
-    // "del 24 de julio al 26": la salida hereda el mes; si queda antes, es el mes siguiente
-    const parts = isoParts(checkIn)
-    checkOut = validIsoDate(parts.year, parts.month, second.day)
-    if (checkOut && checkOut <= checkIn) {
-      checkOut = parts.month === 12
-        ? validIsoDate(parts.year + 1, 1, second.day)
-        : validIsoDate(parts.year, parts.month + 1, second.day)
-    }
-  }
-  if (!checkIn && first.day != null && first.month == null && checkOut) {
-    // "del 24 al 26 de julio": la llegada hereda el mes de la salida; si queda
-    // después, era el mes anterior
-    const parts = isoParts(checkOut)
-    checkIn = validIsoDate(parts.year, parts.month, first.day)
-    if (checkIn && checkIn >= checkOut) {
-      checkIn = parts.month === 1
-        ? validIsoDate(parts.year - 1, 12, first.day)
-        : validIsoDate(parts.year, parts.month - 1, first.day)
-    }
-  }
-
-  if (!checkIn || !checkOut) return { ok: false, reason: 'no_entendi' }
-  if (checkOut <= checkIn || checkIn < today) return { ok: false, reason: 'rango' }
-  const nights = Math.round((new Date(`${checkOut}T12:00:00Z`).getTime() - new Date(`${checkIn}T12:00:00Z`).getTime()) / DAY_MS)
-  if (nights > 60) return { ok: false, reason: 'rango' }
-  return { ok: true, checkIn, checkOut }
-}
-
-const STAY_RANGE_EXAMPLE = '"del 24 al 26 de julio"'
-const STAY_RANGE_ERRORS: Record<'sin_mes' | 'falta_salida' | 'rango' | 'no_entendi', string> = {
-  sin_mes: `Para no equivocarme con las fechas, escríbeme también el MES 🙏 Por ejemplo: ${STAY_RANGE_EXAMPLE} ✍️`,
-  falta_salida: `Me falta una de las dos fechas 🙏 Escríbeme la llegada y la salida juntas, por ejemplo: ${STAY_RANGE_EXAMPLE} ✍️`,
-  rango: `Esas fechas no me cuadran (la salida debe ser después de la llegada y desde hoy en adelante) 🙏 Inténtalo de nuevo, por ejemplo: ${STAY_RANGE_EXAMPLE} ✍️`,
-  no_entendi: `No entendí las fechas 🙏 Escríbeme la llegada y la salida con el mes, por ejemplo: ${STAY_RANGE_EXAMPLE} ✍️`,
-}
 
 const parseQuantity = (message: string, max: number): number | null => {
   const match = normalizeText(message).match(/^(\d{1,3})\b/)
@@ -515,63 +295,8 @@ const modifiersForTag = (input: MenuFlowInput, tag: string): FlowModifier[] =>
     && canonicalTag(modifier.category_tag) === canonicalTag(tag)
   ))
 
-// Toda habitación muestra su precio: exacto si es por unidad, "desde" si la
-// tarifa depende de las personas (el total oficial lo da la cotización)
-const roomRateText = (room: FlowRoomType): string | null => {
-  const rate = Number(room.base_rate)
-  if (!Number.isFinite(rate) || rate <= 0) return null
-  const desde = room.pricing_model === 'per_unit' ? '' : 'desde '
-  return `${desde}${money(Math.round(rate * 100))}/noche`
-}
-
-const roomLabel = (room: FlowRoomType): string => String(room.name || '').trim()
-
-// La descripción lidera con la capacidad total (lo que el huésped más mira) y
-// luego el precio. Entra en una fila de lista de WhatsApp (máx. 72 caracteres).
-const roomOption = (room: FlowRoomType): MenuOption => {
-  const rate = roomRateText(room)
-  const capacity = room.max_guests
-    ? `Para ${room.max_guests} huésped${room.max_guests === 1 ? '' : 'es'}`
-    : ''
-  const detail = [capacity, rate].filter(Boolean).join(' · ')
-  return { title: roomLabel(room), description: detail }
-}
-
-// Capacidad real de la habitación elegida: acota cuántos adultos/niños se
-// ofrecen. Sin habitación o sin capacidad definida, un tope prudente (8).
-const roomMaxGuests = (input: MenuFlowInput, roomTypeId?: string): number => {
-  const room = (input.roomTypes || []).find(item => item.id === roomTypeId)
-  const value = Number(room?.max_guests)
-  return Number.isInteger(value) && value > 0 ? Math.min(value, 10) : 8
-}
-
-// Ocupación base de la habitación (default 1 como el esquema).
-const roomBaseOccupancy = (room?: FlowRoomType | null): number => {
-  const value = Number(room?.base_occupancy)
-  return Number.isInteger(value) && value > 0 ? value : 1
-}
-
-// Habitación de capacidad FIJA (p. ej. Matrimonial para 2): su tope coincide
-// con su ocupación base, así que no tiene sentido preguntar por personas.
-const roomIsFixedCapacity = (room?: FlowRoomType | null): boolean => {
-  if (!room) return false
-  const max = Number(room.max_guests)
-  if (!Number.isInteger(max) || max <= 0) return false
-  return max <= roomBaseOccupancy(room)
-}
-
-// ── Media de un ítem (fotos + video) para el paso "Ver fotos y videos" ──
-// Cloudinary usa /video/upload/; también aceptamos extensiones comunes.
-const isVideoMedia = (url: string): boolean =>
-  /\/video\/upload\//i.test(url) || /\.(?:mp4|mov|webm|m4v|avi|mkv|ogv)(?:$|[?#])/i.test(url)
+// ── Media de un producto (foto + video) para el paso "Ver fotos y videos" ──
 const isHttps = (url: unknown): url is string => typeof url === 'string' && /^https:\/\//i.test(url.trim())
-
-// Habitación: hasta 5 fotos + 1 video (fotos primero). Solo URLs HTTPS: lo que
-// no se pueda enviar al canal real no se ofrece (fallo cerrado).
-const roomMediaList = (room?: FlowRoomType | null): FlowMediaItem[] => {
-  const all = (room?.media_urls || []).filter(isHttps).map(url => ({ url: url.trim(), isVideo: isVideoMedia(url) }))
-  return [...all.filter(item => !item.isVideo).slice(0, 5), ...all.filter(item => item.isVideo).slice(0, 1)]
-}
 
 // Producto: su imagen y su video del catálogo (foto primero).
 const productMediaList = (product?: FlowProduct | null): FlowMediaItem[] => {
@@ -634,15 +359,6 @@ const configuredWelcome = (input: MenuFlowInput): string => {
 const mainOptions = (input: MenuFlowInput): string[] => {
   const options: string[] = []
   const hasProducts = activeProducts(input.products).length > 0
-  if (input.business.lodging_enabled) {
-    // Decisión del dueño (2026-07-19): el hostal recibe con las habitaciones
-    // al frente; cotizar aparece DESPUÉS de elegir habitación y el equipo
-    // sigue disponible escribiendo "asesor" o tras la cotización
-    options.push(OPT_ROOMS)
-    if (input.business.takes_orders && hasProducts) options.push(OPT_ORDER)
-    if (hasProducts) options.push(OPT_BROWSE)
-    return options
-  }
   if (input.business.takes_orders && hasProducts) {
     options.push(OPT_ORDER)
     // Clientes recurrentes: repetir vale más que navegar todo el catálogo
@@ -753,82 +469,6 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         options: [OPT_CONFIRM, OPT_EMPTY, OPT_HOME],
       }
     }
-    case 'rooms': {
-      const rooms = (input.roomTypes || []).filter(room => String(room.name || '').trim())
-      if (!rooms.length) {
-        return { reply: `Por ahora no tengo habitaciones cargadas para mostrarte 🙏`, options: [OPT_TEAM, OPT_HOME] }
-      }
-      // Paginadas: un hostal puede tener más de las que caben en una lista de
-      // WhatsApp (10 filas). Se muestran de a 8 con "Ver más".
-      const page = view.page || 0
-      const shown = rooms.slice(page * ROOM_PAGE_SIZE, (page + 1) * ROOM_PAGE_SIZE)
-      const hasMore = rooms.length > (page + 1) * ROOM_PAGE_SIZE
-      return {
-        reply: `Estas son nuestras habitaciones 👇`,
-        options: [...shown.map(roomOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
-      }
-    }
-    case 'room': {
-      const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
-      if (!room) return renderView({ kind: 'rooms' }, state, input)
-      const amenities = (room.amenities || []).map(item => String(item).trim()).filter(Boolean)
-      const rate = roomRateText(room)
-      const media = roomMediaList(room)
-      const canShowMedia = media.length > 0 && !view.mediaShown
-      const lines = [
-        `*${String(room.name || '').trim()}*`,
-        room.description ? String(room.description).trim() : '',
-        amenities.length ? `✨ Incluye: ${amenities.join(', ')}` : '',
-        room.max_guests ? `👥 Capacidad: hasta ${room.max_guests} persona(s)` : '',
-        rate ? `💵 Tarifa: ${rate}` : '',
-        canShowMedia
-          ? `¿Quieres ver las fotos y videos de esta habitación? 👇`
-          : `¿Te gustó? Cotiza tus fechas aquí mismo y te doy el total oficial 👇`,
-      ].filter(Boolean)
-      return {
-        reply: lines.join('\n'),
-        options: [...(canShowMedia ? [OPT_MEDIA] : []), OPT_STAY, OPT_BACK, OPT_HOME],
-      }
-    }
-    case 'stay':
-      switch (view.step) {
-        case 'dates': {
-          // La habitación ya está elegida; las que necesite el grupo las
-          // calcula el servidor según capacidad — no se le pregunta al cliente
-          const chosen = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
-          const prefix = chosen ? `¡Buena elección! *${String(chosen.name || '').trim()}* 🙌\n` : ''
-          return {
-            reply: `${prefix}¿Qué días deseas hospedarte? Escríbeme la llegada y la salida CON EL MES, por ejemplo: ${STAY_RANGE_EXAMPLE} ✍️`,
-            options: [OPT_BACK],
-          }
-        }
-        case 'adults': {
-          // Solo hasta la capacidad de la habitación elegida (Matrimonial cap. 2
-          // ofrece 1-2, no 1-4). El total lo calcula igual el servidor.
-          const max = roomMaxGuests(input, view.roomTypeId)
-          const options = Array.from({ length: max }, (_, index) => String(index + 1))
-          return { reply: `¿Cuántos adultos se hospedarán? 👇`, options }
-        }
-        case 'children': {
-          // Solo los niños que aún caben tras los adultos. Si no cabe ninguno,
-          // este paso ni se muestra (se salta y cotiza con 0).
-          const remaining = Math.max(0, roomMaxGuests(input, view.roomTypeId) - (view.adults || 0))
-          const options = Array.from({ length: remaining + 1 }, (_, index) => String(index))
-          return { reply: `¿Cuántos niños? 👇`, options }
-        }
-      }
-      break
-    case 'stay-result': {
-      // Tras la cotización oficial: solicitar la habitación elegida, cotizar
-      // otras fechas o pasar al equipo. Con habitación elegida se ofrece
-      // "Solicitar esta habitación"; sin ella, volver a ver habitaciones.
-      const followUps: MenuOption[] = view.roomTypeId
-        ? [STAY_REQUEST_OPTION, OPT_STAY_AGAIN, OPT_TEAM, OPT_HOME]
-        : [OPT_STAY_AGAIN, OPT_ROOMS, OPT_TEAM, OPT_HOME]
-      return { reply: '', options: followUps }
-    }
-    case 'stay-request':
-      return { reply: `¿A nombre de quién registro la solicitud? ✍️`, options: [OPT_HOME] }
     case 'booking':
       switch (view.step) {
         case 'date': {
@@ -871,35 +511,9 @@ const isGreeting = (text: string): boolean => (
   /^(?:hola+|holi|buen dia|buenos dias|buenas|muy buenas)(?:\s|$)/.test(text)
 )
 
-// En el menú principal también aceptamos cómo habla normalmente un huésped.
-// No hace falta que copie el título exacto del botón: frases como
-// "información de las habitaciones" o "busco un cuarto" llevan al mismo
-// inventario. Se evalúa solo en negocios con hospedaje y solo desde el inicio,
-// por lo que no interfiere con fechas, cantidades ni una cotización en curso.
-const wantsToSeeRooms = (text: string): boolean => (
-  /\b(?:habitacion(?:es)?|cuartos?|hospedaje|alojamiento)\b/.test(text)
-)
-
 const goTo = (state: FlowState, view: FlowView, input: MenuFlowInput): MenuFlowResult => {
   state.view = view
   return renderView(view, state, input)
-}
-
-// Emite la cotización oficial (el servidor la calcula) y deja la conversación
-// en la vista stay-result, cuyos botones el canal real puede mapear por número.
-const emitStayQuote = (
-  state: FlowState,
-  input: MenuFlowInput,
-  params: { checkIn: string; checkOut: string; adults: number; children: number; roomTypeId?: string },
-): MenuFlowResult => {
-  const action: FlowAction = {
-    type: 'stay_quote',
-    // El servidor calcula solas las habitaciones que necesita el grupo
-    // (greatest(1, ceil(huéspedes/capacidad)) en la RPC)
-    quote: { ...params, roomsCount: 1 },
-  }
-  state.lastStay = { roomTypeId: params.roomTypeId, checkIn: params.checkIn, checkOut: params.checkOut }
-  return { ...goTo(state, { kind: 'stay-result', roomTypeId: params.roomTypeId }, input), action }
 }
 
 const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
@@ -921,16 +535,10 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   const view = state.view
   const current = renderView(view, state, input)
   const choice = matchOption(input.message, current.options)
-  const roomIntentFromMain = (
-    view.kind === 'main'
-    && Boolean(input.business.lodging_enabled)
-    && wantsToSeeRooms(text)
-  )
 
   // Una opción real siempre gana: así un producto cuyo nombre empiece por
-  // "Hola" no se confunde con un saludo. La intención natural de ver
-  // habitaciones también gana si llegó fragmentada junto al saludo.
-  if (!choice && !roomIntentFromMain && isGreeting(text)) {
+  // "Hola" no se confunde con un saludo del cliente.
+  if (!choice && isGreeting(text)) {
     state.view = { kind: 'main' }
     return welcomeReply(input)
   }
@@ -975,12 +583,6 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           ...summary,
           reply: `Este es tu último pedido con los precios de hoy 👇${note}\n\n${summary.reply}`,
         }
-      }
-      if (
-        choice === OPT_ROOMS
-        || roomIntentFromMain
-      ) {
-        return goTo(state, { kind: 'rooms' }, input)
       }
       if (choice === OPT_BOOK) return goTo(state, { kind: 'booking', step: 'date' }, input)
       break
@@ -1141,115 +743,6 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       }
       break
     }
-    case 'rooms': {
-      if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
-      if (choice === OPT_MORE) return goTo(state, { kind: 'rooms', page: (view.page || 0) + 1 }, input)
-      if (choice) {
-        const room = (input.roomTypes || []).find(item => roomLabel(item) === choice)
-        if (room) return goTo(state, { kind: 'room', roomTypeId: room.id }, input)
-      }
-      break
-    }
-    case 'room': {
-      const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
-      if (choice === OPT_MEDIA && room) {
-        const media = roomMediaList(room)
-        // Mantener sincronizadas las opciones visibles y la máquina de estado:
-        // tras ver la media, el id 1 de WhatsApp corresponde a Cotizar.
-        const detail = goTo(state, { ...view, mediaShown: true }, input)
-        return {
-          reply: `${mediaCaption(String(room.name || 'esta habitación'), media)} ¿Cotizamos tus fechas?`,
-          options: detail.options,
-          media,
-        }
-      }
-      if (choice === OPT_BACK) return goTo(state, { kind: 'rooms' }, input)
-      if (choice === OPT_STAY) {
-        // La habitación elegida acompaña a la cotización
-        return goTo(state, { kind: 'stay', step: 'dates', roomTypeId: view.roomTypeId }, input)
-      }
-      break
-    }
-    case 'stay': {
-      if (view.step === 'dates') {
-        if (choice === OPT_BACK) return goTo(state, { kind: 'rooms' }, input)
-        const range = parseStayRange(input.message, todayEcuador())
-        if (!range.ok) return { reply: STAY_RANGE_ERRORS[range.reason], options: [OPT_BACK] }
-        // Capacidad fija (Matrimonial para 2): no se pregunta por personas, se
-        // cotiza directo con su capacidad. El servidor calcula el total.
-        const room = (input.roomTypes || []).find(item => item.id === view.roomTypeId)
-        if (roomIsFixedCapacity(room)) {
-          return emitStayQuote(state, input, {
-            checkIn: range.checkIn,
-            checkOut: range.checkOut,
-            adults: roomMaxGuests(input, view.roomTypeId),
-            children: 0,
-            roomTypeId: view.roomTypeId,
-          })
-        }
-        // Se confirma la interpretación con el calendario real antes de seguir
-        const next = goTo(state, { ...view, step: 'adults', checkIn: range.checkIn, checkOut: range.checkOut }, input)
-        return {
-          ...next,
-          reply: `¡Perfecto! Del ${formatDateEs(range.checkIn)} al ${formatDateEs(range.checkOut)} 🙌\n${next.reply}`,
-        }
-      }
-      if (view.step === 'adults') {
-        const max = roomMaxGuests(input, view.roomTypeId)
-        const adults = parseQuantity(input.message, max)
-        if (adults && adults > 0 && view.checkIn && view.checkOut) {
-          // Si la habitación ya se llena con esos adultos, no se pregunta por
-          // niños: se cotiza directo con 0.
-          if (max - adults <= 0) {
-            return emitStayQuote(state, input, {
-              checkIn: view.checkIn, checkOut: view.checkOut, adults, children: 0, roomTypeId: view.roomTypeId,
-            })
-          }
-          return goTo(state, { ...view, step: 'children', adults }, input)
-        }
-        break
-      }
-      if (view.step === 'children') {
-        const remaining = Math.max(0, roomMaxGuests(input, view.roomTypeId) - (view.adults || 0))
-        const children = parseQuantity(input.message, remaining)
-        if (children !== null && view.checkIn && view.checkOut && view.adults) {
-          return emitStayQuote(state, input, {
-            checkIn: view.checkIn, checkOut: view.checkOut, adults: view.adults, children, roomTypeId: view.roomTypeId,
-          })
-        }
-        break
-      }
-      break
-    }
-    case 'stay-result': {
-      if (choice === STAY_REQUEST_OPTION && state.lastStay?.roomTypeId) {
-        return goTo(state, { kind: 'stay-request' }, input)
-      }
-      if (choice === OPT_STAY_AGAIN) {
-        return goTo(state, { kind: 'stay', step: 'dates', roomTypeId: view.roomTypeId }, input)
-      }
-      if (choice === OPT_ROOMS) return goTo(state, { kind: 'rooms' }, input)
-      break
-    }
-    case 'stay-request': {
-      const contactName = input.message.trim()
-      if (/[a-záéíóúñ]{2,}/i.test(contactName) && state.lastStay?.roomTypeId) {
-        const room = (input.roomTypes || []).find(item => item.id === state.lastStay?.roomTypeId)
-        const action: FlowAction = {
-          type: 'stay_request',
-          roomTypeId: state.lastStay.roomTypeId,
-          contactName,
-        }
-        const stayDates = `del ${formatDateEs(state.lastStay.checkIn)} al ${formatDateEs(state.lastStay.checkOut)}`
-        const home = goTo(state, { kind: 'main' }, input)
-        return {
-          reply: `¡Listo, ${contactName}! 🙌 Registré tu solicitud para *${String(room?.name || 'la habitación').trim()}* ${stayDates}. Nuestro equipo te la confirma en breve.\n${home.reply}`,
-          options: home.options,
-          action,
-        }
-      }
-      return { reply: `Escríbeme el nombre completo para la solicitud, por favor ✍️`, options: [OPT_HOME] }
-    }
     case 'booking': {
       if (view.step === 'date') {
         if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
@@ -1286,4 +779,4 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   return { reply: NOT_UNDERSTOOD, options: current.options }
 }
 
-export { advanceMenuFlow, optionTitle, parseStayRange, resetMenuFlow, STAY_REQUEST_OPTION }
+export { advanceMenuFlow, optionTitle, resetMenuFlow }

@@ -135,7 +135,7 @@ Docker y corre en local**.
 
 Resultado: el CI estuvo **verde todo el día** mientras se abrían cuatro
 fronteras nuevas —`sales(order_id)`, `sales(booking_id)`,
-`sales(lodging_request_id)` y `bookings(product_id)`—, todas creadas ese mismo
+`sales(order_id)` y `bookings(product_id)`—, todas creadas ese mismo
 día al construir el estándar de ventas. Las funciones `crear_venta_desde_*` ya
 impedían el cruce, pero eso depende de que nadie escriba nunca por otro camino,
 y **la regla #1 dice que lo impida la base**.

@@ -54,7 +54,6 @@ Plataforma **multi-empresa (SaaS)** para crear y gestionar bots de atención al 
 | 🎙️ Audio | Transcribe notas de voz y las procesa como texto |
 | 🔎 RAG vectorial | Búsqueda inteligente en catálogos de miles de productos |
 | 📅 Citas | Agenda de capacidad única con solicitudes pendientes de confirmación |
-| 🏨 Hospedaje | Habitaciones, noches, cupos, tarifas, fotos/videos y hold transaccional; el equipo autorizado confirma |
 | 💵 Pedidos y cobro manual | Totales oficiales; el dueño confirma y coordina el pago directamente con el cliente |
 | ℹ️ Modo informativo | Responde precios, stock, catálogo y multimedia; deriva la intención de comprar sin crear pedidos ni pagos |
 | 🙋 Traspaso a humano | Modo manual + alarma por groserías, off-topic o ventas |
@@ -107,7 +106,6 @@ existente es:
 
 ```text
 server/migration-atomicidad-reservas.sql
-server/migration-hospedaje.sql
 server/migration-preparacion-produccion.sql
 server/migration-modo-menu.sql
 server/migration-modificadores-menu.sql

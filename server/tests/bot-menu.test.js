@@ -33,9 +33,6 @@ describe('menú guiado de bienvenida', () => {
       '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
     ])
 
-    const hostal = menu.buildWelcomeMenu({ name: 'Hostal Vista Andina', lodging_enabled: true }, 0)
-    expect(hostal.options).toEqual(['🛏️ Cotizar hospedaje', '💬 Otra consulta'])
-
     const barberia = menu.buildWelcomeMenu({ name: 'Barbería', takes_bookings: true }, 3)
     expect(barberia.options).toEqual([
       '📅 Agendar una cita', '📋 Ver productos y precios', '💬 Otra consulta',

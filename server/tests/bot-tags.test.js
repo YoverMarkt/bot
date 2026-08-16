@@ -63,83 +63,14 @@ describe('análisis de etiquetas del bot', () => {
       contactName: 'Ana', bookingDate: '2026-07-20', bookingTime: '09:30',
     })
     expect(parsed.orderPayload).toBe('Shampoo x1')
-    expect(parsed.hasActionConflict).toBe(false)
   })
 
   it('detecta cuando la IA imita el vocabulario exclusivo de los resúmenes oficiales', () => {
-    expect(tags.impersonatesOfficialSummary('🏨 *Opciones de hospedaje*\n1. Doble $120')).toBe(true)
     expect(tags.impersonatesOfficialSummary('💰 *Total oficial: $200.00*')).toBe(true)
     expect(tags.impersonatesOfficialSummary('🧾 *Resumen de su pedido*\nPizza x1')).toBe(true)
     expect(tags.impersonatesOfficialSummary('El Perfume Floral cuesta $12.50 y hay stock 😊')).toBe(false)
     expect(tags.impersonatesOfficialSummary('Con gusto le cotizo, ¿para qué fechas sería?')).toBe(false)
     expect(tags.impersonatesOfficialSummary('')).toBe(false)
-  })
-
-  it('extrae una cotización de hospedaje estricta sin calcular nada', () => {
-    const parsed = tags.parseBotOutput(
-      'Voy a consultar ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##',
-    )
-
-    expect(parsed.finalText).toBe('Voy a consultar')
-    expect(parsed.lodgingQuote).toEqual({
-      checkInRaw: '2026-08-10',
-      checkOutRaw: '2026-08-13',
-      roomsRaw: '2',
-      adultsRaw: '2',
-      childrenRaw: '1',
-      checkIn: '2026-08-10',
-      checkOut: '2026-08-13',
-      roomsCount: 2,
-      adults: 2,
-      children: 1,
-    })
-    expect(parsed.lodgingRequest).toBeNull()
-    expect(parsed.hasActionConflict).toBe(false)
-  })
-
-  it('retira una cotización inválida sin normalizar fechas ni personas', () => {
-    const parsed = tags.parseBotOutput(
-      'Consulto ##STAY_QUOTE:2026-02-30|mañana|0|0|treinta##',
-    )
-
-    expect(parsed.finalText).toBe('Consulto')
-    expect(parsed.lodgingQuote).toMatchObject({
-      checkIn: null,
-      checkOut: null,
-      roomsCount: null,
-      adults: null,
-      children: null,
-    })
-  })
-
-  it('extrae la opción elegida y el contacto para una solicitud pendiente', () => {
-    const parsed = tags.parseBotOutput(
-      'Solicito la opción ##STAY_REQUEST:Habitación Doble|Ana Pérez##',
-    )
-
-    expect(parsed.finalText).toBe('Solicito la opción')
-    expect(parsed.lodgingRequest).toEqual({
-      roomTypeIdOrName: 'Habitación Doble',
-      contactName: 'Ana Pérez',
-    })
-    expect(parsed.hasActionConflict).toBe(false)
-  })
-
-  it('marca STAY como incompatible con otras acciones o handoff', () => {
-    const quoteAndOrder = tags.parseBotOutput(
-      '##STAY_QUOTE:2026-08-10|2026-08-13|1|2|0## '
-      + '##PEDIDO:Habitación Doble x1##',
-    )
-    const requestAndHandoff = tags.parseBotOutput(
-      '##STAY_REQUEST:Habitación Doble|Ana## ##HANDOFF##',
-    )
-    const quoteAndLegacyOrder = tags.parseBotOutput(
-      '##STAY_QUOTE:2026-08-10|2026-08-13|1|2|0## ##PEDIDO##',
-    )
-
-    expect(quoteAndOrder.hasActionConflict).toBe(true)
-    expect(requestAndHandoff.hasActionConflict).toBe(true)
-    expect(quoteAndLegacyOrder.hasActionConflict).toBe(true)
   })
 
   it('conserva cierres legacy y frases inequívocas como respaldo', () => {

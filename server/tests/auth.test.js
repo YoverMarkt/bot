@@ -128,7 +128,7 @@ describe('vigencia de la sesión cliente', () => {
         id: 'user-a', business_id: 'business-a', role: 'employee', permissions: ['citas'],
       }),
       getBusinessById: vi.fn().mockResolvedValue({
-        active: true, suspended: false, takes_bookings: true, lodging_enabled: true,
+        active: true, suspended: false, takes_bookings: true,
       }),
     }
     const guard = auth.createActiveClientGuard({ database })
@@ -142,7 +142,7 @@ describe('vigencia de la sesión cliente', () => {
     expect(result.nextCalled).toBe(true)
     expect(result.req.user).toMatchObject({
       businessId: 'business-a', userId: 'user-a', urole: 'employee',
-      perms: ['citas'], takesBookings: true, lodgingEnabled: true,
+      perms: ['citas'], takesBookings: true,
     })
     expect(database.getClientUserById).toHaveBeenCalledWith('business-a', 'user-a')
   })

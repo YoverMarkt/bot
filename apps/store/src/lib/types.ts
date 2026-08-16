@@ -4,8 +4,6 @@
 export interface Capabilities {
   /** Catálogo con carrito: comida, bebidas, retail. */
   orders: boolean
-  /** Estadías por fechas: hotel, hostal. */
-  lodging: boolean
 }
 
 export interface Business {
@@ -277,56 +275,6 @@ export interface BankAccount {
   holder_id?: string | null
   instructions?: string | null
   [key: string]: unknown
-}
-
-// ── Hospedaje ──────────────────────────────────────────────────────────────
-
-export interface StayOption {
-  roomTypeId: string
-  name: string
-  description: string | null
-  maxGuests: number
-  availableUnits: number
-  unitsRequired: number
-  currency: string
-  pricesIncludeTax: boolean
-  subtotal: number | null
-  tax: number | null
-  fees: number | null
-  total: number | null
-  amenities: string[]
-  mediaUrls: string[]
-}
-
-export interface StayQuote {
-  quoteId: string
-  checkIn: string
-  checkOut: string
-  checkInTime: string
-  checkOutTime: string
-  adults: number
-  children: number
-  roomsCount: number
-  nights: number
-  expiresAt: string
-  options: StayOption[]
-  status: StoreStatus
-  canRequest: boolean
-}
-
-export interface StayRequest {
-  requestId: string
-  roomTypeName: string
-  checkIn: string
-  checkOut: string
-  checkInTime: string
-  checkOutTime: string
-  nights: number
-  total: number
-  currency: string
-  expiresAt: string
-  /** Siempre false: esto es una retención, la confirma el equipo. */
-  confirmed: boolean
 }
 
 /**

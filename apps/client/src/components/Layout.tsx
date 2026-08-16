@@ -2,8 +2,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
-import { useBusinessInfo, isBookingBiz, isLodgingBiz, isOrderBiz, isServiceBiz } from '../lib/biz'
-import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, BedDouble, Receipt } from 'lucide-react'
+import { useBusinessInfo, isBookingBiz, isOrderBiz, isServiceBiz } from '../lib/biz'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { AlarmBanner } from './AlarmSystem'
@@ -31,9 +31,6 @@ export default function Layout() {
     businessType,
     bizInfo?.takes_bookings ?? biz?.takes_bookings,
   )
-  const lodgingBiz = isLodgingBiz(
-    bizInfo?.lodging_enabled ?? biz?.lodging_enabled,
-  )
   // Sin fallback local a propósito: takes_orders no viaja en el login, y el
   // dato vivo del servidor manda si el superadmin activa pedidos hoy mismo.
   const orderBiz = isOrderBiz(bizInfo?.takes_orders)
@@ -54,7 +51,6 @@ export default function Layout() {
   const att = useAttention({
     watchSessions: canSee('conversaciones'),
     watchBookings: bookingBiz && canSee('citas'),
-    watchLodging: lodgingBiz && canSee('hospedaje'),
     watchOrders: orderBiz && canSee('ventas'),
   })
 
@@ -70,7 +66,6 @@ export default function Layout() {
     { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: Bot, perm: 'owner' },
     { to: '/schedule',      label: 'Horarios',          icon: Clock, perm: 'citas' },
     ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: Calendar, perm: 'citas', badge: att.pending.length || undefined }] : []),
-    ...(lodgingBiz ? [{ to: '/lodging', label: 'Hospedaje', icon: BedDouble, perm: 'hospedaje', badge: att.pendingLodging.length || undefined }] : []),
     { to: '/users',         label: 'Usuarios',          icon: UserRound, perm: 'owner' },
     { to: '/settings',      label: 'Ajustes',           icon: Settings, perm: 'owner' },
   ]
@@ -148,13 +143,11 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Alarma global (chats manuales, reservas, hospedaje y pedidos sin atender) */}
+      {/* Alarma global (chats manuales, reservas y pedidos sin atender) */}
       <AlarmBanner
         manual={att.manual}
         pending={att.pending}
         bookings={att.bookings}
-        lodgingPending={att.pendingLodging}
-        lodgingRequests={att.lodgingRequests}
         ordersPending={att.pendingOrders}
         ordersLoaded={att.ordersLoaded}
       />

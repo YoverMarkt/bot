@@ -96,7 +96,6 @@ describe('identidad y políticas del negocio', () => {
       payment_methods: 'Efectivo',
       takes_bookings: true,
       takes_orders: false,
-      lodging_enabled: true,
       suspended: false,
       bot_active: true,
       ycloud_api_key: 'no-debe-salir',
@@ -119,7 +118,6 @@ describe('identidad y políticas del negocio', () => {
     expect(response.body).toMatchObject({
       takes_bookings: true,
       takes_orders: false,
-      lodging_enabled: true,
     })
     expect(db.getBusinessById).toHaveBeenCalledWith('business-a')
   })

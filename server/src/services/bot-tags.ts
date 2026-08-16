@@ -46,56 +46,13 @@ export interface BookingTag {
   bookingTime: string | null
 }
 
-export interface LodgingQuoteTag {
-  checkInRaw: string
-  checkOutRaw: string
-  roomsRaw: string
-  adultsRaw: string
-  childrenRaw: string
-  checkIn: string | null
-  checkOut: string | null
-  roomsCount: number | null
-  adults: number | null
-  children: number | null
-}
-
-export interface LodgingRequestTag {
-  roomTypeIdOrName: string
-  contactName: string
-}
-
 export interface ParsedBotOutput {
   finalText: string
   booking: BookingTag | null
   orderPayload: string | null
-  lodgingQuote: LodgingQuoteTag | null
-  lodgingRequest: LodgingRequestTag | null
   hasSale: boolean
   hasHandoffTag: boolean
   isUncertain: boolean
-  hasActionConflict: boolean
-}
-
-function strictDate(value: string): string | null {
-  const normalized = value.trim()
-  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return null
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  const parsed = new Date(Date.UTC(year, month - 1, day))
-  return parsed.getUTCFullYear() === year
-    && parsed.getUTCMonth() === month - 1
-    && parsed.getUTCDate() === day
-    ? normalized
-    : null
-}
-
-function strictPeople(value: string, minimum: number): number | null {
-  const normalized = value.trim()
-  if (!/^\d{1,3}$/.test(normalized)) return null
-  const parsed = Number(normalized)
-  return parsed >= minimum && parsed <= 100 ? parsed : null
 }
 
 function normalizeWords(text: unknown): string[] {
@@ -112,13 +69,12 @@ function isInsultMessage(text: unknown): boolean {
   ))
 }
 
-// Vocabulario EXCLUSIVO de los resúmenes que construye el servidor (pedidos y
-// hospedaje). Si aparece en texto escrito por la IA, está imitando al sistema
-// con montos o disponibilidad que NADIE calculó: el que llama debe fallar
-// cerrado y jamás enviar ese texto al cliente.
+// Vocabulario EXCLUSIVO de los resúmenes que construye el servidor (pedidos).
+// Si aparece en texto escrito por la IA, está imitando al sistema con montos
+// que NADIE calculó: el que llama debe fallar cerrado y jamás enviar ese texto
+// al cliente.
 const OFFICIAL_SUMMARY_MARKERS = [
   'total oficial',
-  'opciones de hospedaje',
   'resumen de su pedido',
   '💰 *total',
 ] as const
@@ -172,43 +128,6 @@ function parseBotOutput(reply: unknown): ParsedBotOutput {
   const hasSimpleSaleTag = /##\s*(venta|pedido)\s*##/i.test(finalText)
   finalText = finalText.replace(/##\s*(venta|pedido)\s*##/gi, '').trim()
 
-  let lodgingQuote: LodgingQuoteTag | null = null
-  const quoteMatch = finalText.match(
-    /##\s*STAY_QUOTE\s*:\s*([^|#]*)\|([^|#]*)\|([^|#]*)\|([^|#]*)\|([^|#]*)##/i,
-  )
-  if (quoteMatch) {
-    const [, checkInRaw, checkOutRaw, roomsRaw, adultsRaw, childrenRaw] = quoteMatch
-    lodgingQuote = {
-      checkInRaw: checkInRaw.trim(),
-      checkOutRaw: checkOutRaw.trim(),
-      roomsRaw: roomsRaw.trim(),
-      adultsRaw: adultsRaw.trim(),
-      childrenRaw: childrenRaw.trim(),
-      checkIn: strictDate(checkInRaw),
-      checkOut: strictDate(checkOutRaw),
-      roomsCount: strictPeople(roomsRaw, 1),
-      adults: strictPeople(adultsRaw, 1),
-      children: strictPeople(childrenRaw, 0),
-    }
-  }
-  finalText = finalText
-    .replace(/##\s*STAY_QUOTE\s*:[\s\S]*?##/gi, '')
-    .trim()
-
-  let lodgingRequest: LodgingRequestTag | null = null
-  const requestMatch = finalText.match(
-    /##\s*STAY_REQUEST\s*:\s*([^|#]+)\|([^|#]+)##/i,
-  )
-  if (requestMatch) {
-    lodgingRequest = {
-      roomTypeIdOrName: requestMatch[1].trim(),
-      contactName: requestMatch[2].trim(),
-    }
-  }
-  finalText = finalText
-    .replace(/##\s*STAY_REQUEST\s*:[\s\S]*?##/gi, '')
-    .trim()
-
   const normalizedSaleText = finalText.toLowerCase()
   const hasSale = hasSimpleSaleTag
     || Boolean(orderPayload)
@@ -219,25 +138,13 @@ function parseBotOutput(reply: unknown): ParsedBotOutput {
   const isUncertain = hasHandoffTag
     || UNCERTAINTY_PHRASES.some(phrase => normalizedReply.includes(phrase))
 
-  const hasLodgingAction = Boolean(lodgingQuote) || Boolean(lodgingRequest)
-  const hasActionConflict = hasLodgingAction && [
-    Boolean(booking),
-    Boolean(orderPayload),
-    hasSimpleSaleTag,
-    Boolean(lodgingQuote && lodgingRequest),
-    hasHandoffTag,
-  ].some(Boolean)
-
   return {
     finalText,
     booking,
     orderPayload,
-    lodgingQuote,
-    lodgingRequest,
     hasSale,
     hasHandoffTag,
     isUncertain,
-    hasActionConflict,
   }
 }
 

@@ -43,7 +43,6 @@ interface ConsultationRow { product_id?: string | null; products?: { name?: stri
 interface HistoryRow { contact_phone?: string | null; role?: string | null; created_at: string }
 interface UserMessageRow { content?: string | null }
 interface AiGapRow { question?: string | null }
-interface LodgingStayRow { total?: number | string | null; nights?: number | string | null }
 
 interface ReportsDatabase {
   getSalesWithItems(businessId: string, from?: string, to?: string): Promise<SaleRow[]>
@@ -59,10 +58,9 @@ interface ReportsDatabase {
   getCustomerSales(businessId: string): Promise<SaleRow[]>
   getUserMessagesInRange(businessId: string, from?: string, to?: string): Promise<UserMessageRow[]>
   getAiGaps(businessId: string, from?: string, to?: string): Promise<AiGapRow[]>
-  getConfirmedLodgingStays(businessId: string, from?: string | null, to?: string | null): Promise<LodgingStayRow[]>
 }
 
-interface OwnerBusiness { id: string; owner_phone?: string | null; lodging_enabled?: boolean | null }
+interface OwnerBusiness { id: string; owner_phone?: string | null }
 
 const db: ReportsDatabase = require('../db') as typeof import('../db')
 
@@ -171,19 +169,6 @@ async function computeSummary(bizId: string, period?: ReportPeriod | null, prelo
     label, orders: sales.length, total, items, avg: sales.length ? total / sales.length : 0,
     nuevos, recurrentes, conversion, buyers: periodBuyers.size, writers
   }
-}
-
-// Ingresos por estadías confirmadas del período (solo negocios con hospedaje).
-// Base por fecha de CONFIRMACIÓN (confirmed_at): cuenta lo confirmado en el
-// período, igual que la pestaña Ingresos del panel. El monto es el total
-// oficial que ya calculó la RPC, nunca un valor de la IA.
-async function computeLodgingIncome(bizId: string, lodgingEnabled: boolean, period?: ReportPeriod | null) {
-  if (!lodgingEnabled) return null
-  const { start, end } = rangeFor(period)
-  const stays = await db.getConfirmedLodgingStays(bizId, start, end)
-  const total = stays.reduce((s, r) => s + (Number(r.total) || 0), 0)
-  const nights = stays.reduce((s, r) => s + (Number(r.nights) || 0), 0)
-  return { total, stays: stays.length, nights }
 }
 
 async function computeBySeller(bizId: string, period?: ReportPeriod | null, preloadedSales?: SaleRow[]) {
@@ -599,7 +584,6 @@ async function getAllReports(bizId: string, period: ReportPeriod) {
 // ══════════════════════════════════════════════════════════
 
 type SummaryReport = Awaited<ReturnType<typeof computeSummary>>
-type LodgingIncome = NonNullable<Awaited<ReturnType<typeof computeLodgingIncome>>>
 type SellerReport = Awaited<ReturnType<typeof computeBySeller>>
 type ConsultedReport = Awaited<ReturnType<typeof computeMostConsulted>>
 type AbandonedReport = Awaited<ReturnType<typeof computeAbandoned>>
@@ -614,7 +598,7 @@ type CustomerSummaryReport = Awaited<ReturnType<typeof computeCustomerSummary>>
 type FaqReport = Awaited<ReturnType<typeof computeFaq>>
 type UnansweredReport = Awaited<ReturnType<typeof computeUnanswered>>
 
-const fmtSummary = (d: SummaryReport, lodging?: LodgingIncome | null) => {
+const fmtSummary = (d: SummaryReport) => {
   // Pie: el reporte general trae lo global; desde aquí se pide cada detalle.
   const footer = '\n\n💡 También puedes pedirme por separado:\n'
     + '• "productos más vendidos" · "clientes frecuentes"\n'
@@ -624,19 +608,7 @@ const fmtSummary = (d: SummaryReport, lodging?: LodgingIncome | null) => {
     ? 'Sin ventas registradas en el período. 🤷'
     : `💰 Total vendido: ${money(d.total)}\n🧾 Pedidos: ${d.orders}\n📦 Ítems vendidos: ${d.items}\n🎟️ Ticket promedio: ${money(d.avg)}\n🆕 Clientes nuevos: ${d.nuevos}\n🔁 Clientes recurrentes: ${d.recurrentes}\n📈 Conversión: ${d.conversion === null ? 's/d' : d.conversion.toFixed(0) + '%'}`
 
-  // Negocio sin hospedaje: el resumen de ventas de siempre + pie.
-  if (!lodging) {
-    return `📊 Resumen de ventas (${d.label})\n\n${salesBody}${footer}`
-  }
-
-  // Negocio con hospedaje (hotel/hostal): PRIMERO hospedaje, luego ventas y el
-  // total general de ambos.
-  const lodgingBlock = `🏨 Hospedaje\n💰 Ingresos: ${money(lodging.total)}\n🛏️ Estadías: ${lodging.stays} · Noches: ${lodging.nights}`
-  return `📊 Reporte general (${d.label})\n\n`
-    + `${lodgingBlock}\n\n`
-    + `🛒 Ventas de productos\n${salesBody}\n\n`
-    + `💵 Total general (hospedaje + ventas): ${money(lodging.total + d.total)}`
-    + footer
+  return `📊 Resumen de ventas (${d.label})\n\n${salesBody}${footer}`
 }
 
 const fmtBySeller = (d: SellerReport) => !d.rows.length
@@ -731,14 +703,7 @@ async function runReport(biz: OwnerBusiness, intent: ReportIntent) {
   const bizId = biz.id
   const p = intent.period
   switch (intent.report) {
-    case 'summary': {
-      // El resumen suma ventas de productos + ingresos de hospedaje (si aplica)
-      const [summary, lodging] = await Promise.all([
-        computeSummary(bizId, p),
-        computeLodgingIncome(bizId, biz.lodging_enabled === true, p),
-      ])
-      return fmtSummary(summary, lodging)
-    }
+    case 'summary':      return fmtSummary(await computeSummary(bizId, p))
     case 'top':          return fmtTop(await computeTop(bizId, p))
     case 'low_movement': return fmtLowMovement(await computeLowMovement(bizId, p))
     case 'comparison':   return fmtComparison(await computeComparison(bizId, p))
@@ -762,11 +727,7 @@ async function handleOwnerMessage(biz: OwnerBusiness, from: unknown, text: unkno
   // Es el DUEÑO pero no pidió un reporte claro: NO lo tratamos como cliente ni lo
   // derivamos a un humano. Se queda en "modo reportes" y recibe el menú de ayuda.
   if (!intent) {
-    // El hotel/hostal ve primero el comando del reporte general (hospedaje + ventas)
-    const generalLine = biz.lodging_enabled
-      ? '• "reporte de hoy / semana / mes" → todo junto (hospedaje + ventas)'
-      : '• "ventas de hoy / semana / mes"'
-    return { handled: true, reply: `📊 Soy tu asistente de reportes. Pídeme, por ejemplo:\n\n${generalLine}\n• "productos más vendidos"\n• "clientes frecuentes" · "clientes perdidos"\n• "stock bajo" · "pedidos pendientes"\n• "reporte de IA"\n\n(Para probar el bot como cliente, escríbele desde otro número 😉)` }
+    return { handled: true, reply: `📊 Soy tu asistente de reportes. Pídeme, por ejemplo:\n\n• "ventas de hoy / semana / mes"\n• "productos más vendidos"\n• "clientes frecuentes" · "clientes perdidos"\n• "stock bajo" · "pedidos pendientes"\n• "reporte de IA"\n\n(Para probar el bot como cliente, escríbele desde otro número 😉)` }
   }
   if (REPORTS_TIME_BOUND.includes(intent.report) && !intent.period) {
     return { handled: true, reply: '📅 ¿De qué período querés el reporte? Responde: *hoy*, *semana* o *mes*.' }

@@ -443,19 +443,15 @@ export function BusinessForm() {
 // permisos editables en línea + formulario de nuevo empleado al lado.
 // El permiso "citas" también controla la sección Horarios (todos los
 // negocios la tienen); su nombre se adapta al tipo de negocio.
-const permsForBiz = (bookingBiz: boolean, lodgingBiz: boolean) => [
+const permsForBiz = (bookingBiz: boolean) => [
   ['catalogo', 'Catálogo'], ['conversaciones', 'Conversaciones'],
   ['ventas', 'Ventas'], ['reportes', 'Reportes'],
   ['citas', bookingBiz ? 'Citas y horarios' : 'Horarios'],
-  ...(lodgingBiz ? [['hospedaje', 'Hospedaje']] as const : []),
 ] as const
 export function Team() {
   const qc = useQueryClient()
   const { data: bizInfo } = useBusinessInfo()
-  const PERMS = permsForBiz(
-    isBookingBiz(bizInfo?.type, bizInfo?.takes_bookings),
-    bizInfo?.lodging_enabled === true,
-  )
+  const PERMS = permsForBiz(isBookingBiz(bizInfo?.type, bizInfo?.takes_bookings))
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
 

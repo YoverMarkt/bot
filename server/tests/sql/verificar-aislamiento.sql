@@ -221,12 +221,12 @@ begin
 
   -- ── 7. BORRAR EL ORIGEN DE UNA VENTA NO PUEDE REVENTAR ───────────────────
   --
-  -- Las tres foráneas de `sales` hacia pedido, cita y estadía son compuestas
-  -- sobre (id, business_id) para que nadie se cobre lo del vecino. Pero una
-  -- foránea compuesta CORRECTA puede tener una acción de borrado ROTA: con
+  -- Las foráneas de `sales` hacia pedido y cita son compuestas sobre
+  -- (id, business_id) para que nadie se cobre lo del vecino. Pero una foránea
+  -- compuesta CORRECTA puede tener una acción de borrado ROTA: con
   -- `on delete set null` a secas PostgreSQL anula todas las columnas de la
-  -- pareja, incluida `business_id`, que es NOT NULL. Así estuvieron las tres
-  -- hasta el 2026-08-02, y borrar un pedido entregado fallaba con 23502.
+  -- pareja, incluida `business_id`, que es NOT NULL. Así estuvieron hasta el
+  -- 2026-08-02, y borrar un pedido entregado fallaba con 23502.
   --
   -- `verificar-fronteras.sql` no lo veía: mira la FORMA de la foránea, y la
   -- forma era correcta. Por eso aquí se BORRA de verdad.
@@ -281,11 +281,6 @@ begin
       raise exception
         'Borrar la cita dejó la venta sin negocio (business_id = %)', v_negocio_venta;
     end if;
-
-    -- La estadía se comprueba en `verificar-esquema.sql`, sobre el escenario
-    -- real de hospedaje que ya existe allí: `lodging_requests` exige una
-    -- cotización y un tipo de habitación de verdad, y montarlos aquí sería
-    -- duplicar ese escenario entero para probar exactamente lo mismo.
   end;
 
   -- ── 7 bis. MOTOR DE OPCIONES: los grupos y combos no cruzan negocios ─────

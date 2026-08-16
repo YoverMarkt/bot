@@ -645,7 +645,7 @@ y redirigen al slug actual.
 **Y desde el 2026-08-12 el enlace llega como BOTÓN, no como URL pegada en el
 chat** (`interactive.type: 'cta_url'`). Es la misma razón por la que la URL se
 acortó: tres líneas de texto azul se leen como spam y la gente no las toca. El
-botón dice «Ver la carta» —o «Ver habitaciones» en un hotel— bajo una línea de
+botón dice «Ver la carta» bajo una línea de
 texto y el pie de siempre.
 
 ⚠️ **La etiqueta se mide en BYTES, no en caracteres.** El tope de WhatsApp son

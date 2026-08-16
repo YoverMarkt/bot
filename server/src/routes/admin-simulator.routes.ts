@@ -1,14 +1,10 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import type { BusinessRecord } from '../db/types'
-import type { LodgingQuoteTag } from '../services/bot-tags'
-import type { ComputedLodgingQuote, ResolvedStayQuote } from '../services/bot-actions'
 import { buildWelcomeMenu, menuAsHistory, wantsWelcomeMenu } from '../services/bot-menu'
 import {
   advanceMenuFlow,
-  optionTitle,
   resetMenuFlow,
-  STAY_REQUEST_OPTION,
   type MenuFlowInput,
 } from '../services/bot-menu-flow'
 
@@ -28,7 +24,6 @@ const db: {
     content: string,
   ): Promise<DatabaseResult>
   clearSimHistory(businessId: string): Promise<DatabaseResult>
-  getLodgingRoomTypes(businessId: string): Promise<unknown[]>
   getMenuModifiers(businessId: string, categoryTag?: string | null): Promise<unknown[]>
   getAvailableSlots(
     businessId: string,
@@ -62,23 +57,10 @@ const tags: {
     finalText: string
     booking: unknown
     orderPayload: string | null
-    lodgingQuote: LodgingQuoteTag | null
-    lodgingRequest: { roomTypeIdOrName: string; contactName: string } | null
     hasSale: boolean
     hasHandoffTag: boolean
-    hasActionConflict: boolean
   }
 } = require('../services/bot-tags') as typeof import('../services/bot-tags')
-const actions: {
-  guestWroteName(contactName: unknown, guestMessages: unknown[]): boolean
-  computeLodgingQuoteReply(
-    business: BusinessRecord,
-    contactPhone: string,
-    quote: ResolvedStayQuote,
-    guestText?: string | string[],
-    focusRoomTypeId?: string | null,
-  ): Promise<ComputedLodgingQuote>
-} = require('../services/bot-actions') as typeof import('../services/bot-actions')
 const media: {
   sendRequestedProductMedia(input: {
     business: { id: string; name: string }
@@ -121,9 +103,8 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // MODO MENÚ (estilo banco): el CÓDIGO conduce toda la conversación con
     // opciones de los datos reales; la IA no participa en ningún mensaje.
     if (mode === 'menu') {
-      const [products, roomTypes, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
+      const [products, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
         db.getProducts(business.id),
-        business.lodging_enabled === true ? db.getLodgingRoomTypes(business.id) : Promise.resolve([]),
         business.takes_orders !== false ? db.getMenuModifiers(business.id) : Promise.resolve([]),
         business.takes_bookings === true ? db.getAvailableSlots(business.id) : Promise.resolve(null),
         // Paridad con el canal real: el simulador también ofrece repetir pedido
@@ -138,7 +119,6 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         message,
         products: products as MenuFlowInput['products'],
         botPrompt: typeof policies?.bot_prompt === 'string' ? policies.bot_prompt : null,
-        roomTypes: roomTypes as MenuFlowInput['roomTypes'],
         modifiers: modifiers as MenuFlowInput['modifiers'],
         availableSlots: availableSlots || {},
         lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
@@ -152,25 +132,6 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       if (flow.action?.type === 'handoff') {
         reply = HANDOFF_REPLY
         actionNote = '🤚 El cliente pidió una persona: en el canal real la conversación pasa a modo manual y el equipo continúa.'
-      } else if (flow.action?.type === 'stay_quote') {
-        // La cotización oficial la calcula el servidor con cupos y tarifas
-        // reales, centrada en la habitación que el huésped eligió
-        const computed = await actions.computeLodgingQuoteReply(
-          business, SIMULATOR_CONTACT, flow.action.quote, message,
-          flow.action.quote.roomTypeId || null,
-        )
-        // Solo se ofrece solicitar la habitación cuando hubo cotización oficial
-        if (computed.outcome !== 'quoted') {
-          flowOptions = flowOptions.filter(option => optionTitle(option) !== STAY_REQUEST_OPTION)
-        }
-        reply = computed.message
-        // Igual que WhatsApp en modo menú: completar una cotización no vuelve
-        // a mostrar la media. Esa se ofrece únicamente en su paso explícito.
-        actionNote = computed.outcome === 'handoff' || computed.outcome === 'error'
-          ? '🏨 En el canal real esta conversación pasa a un asesor del equipo (la cotización no pudo resolverse automáticamente).'
-          : '🏨 Cotización oficial calculada por el servidor. Datos reunidos SOLO con menús: la IA no participó en ningún mensaje.'
-      } else if (flow.action?.type === 'stay_request') {
-        actionNote = '🛎️ Solicitud reunida 100% con menús: en el canal real el sistema retiene el cupo (hold con vencimiento) y la deja en Hospedaje → Solicitudes para que el equipo la confirme. El simulador no crea retenciones reales.'
       } else if (flow.action?.type === 'order') {
         actionNote = `🛒 Pedido armado 100% con menús y total calculado por el servidor con el catálogo real (${(flow.action.totalCents / 100).toFixed(2)} USD). En el canal real se registraría con la RPC atómica y se avisaría al equipo.`
       } else if (flow.action?.type === 'booking') {
@@ -245,52 +206,18 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // Mismo parser de etiquetas que WhatsApp/Telegram: nada de limpiar a mano
     const imageMatch = rawReply.match(/##IMG##(https?:\/\/[^\s#]+)##/)
     const parsed = tags.parseBotOutput(rawReply)
-    // Lo que escribió el huésped (historial + mensaje actual), igual que el
-    // canal real: fechas relativas de cotizaciones y nombre de solicitudes
-    const guestTexts = [
-      ...(history as { role?: string; content?: string }[])
-        .filter(item => item.role === 'user')
-        .map(item => String(item.content ?? '')),
-      message,
-    ]
     let reply = parsed.finalText
     let actionNote: string | null = null
     let mediaImage: string | null = null
     let mediaVideo: string | null = null
     const mediaNotes: string[] = []
 
-    if (parsed.hasActionConflict) {
-      // Igual que el canal real: acciones incompatibles fallan cerrado
-      reply = HANDOFF_REPLY
-      actionNote = '⚠️ La IA emitió varias acciones incompatibles en una sola respuesta; en el canal real esto falla cerrado y la conversación pasa a un asesor.'
-    } else if (tags.impersonatesOfficialSummary(parsed.finalText)) {
+    if (tags.impersonatesOfficialSummary(parsed.finalText)) {
       // La IA intentó escribir montos/cotización con formato oficial: cifras inventadas
       reply = HANDOFF_REPLY
       actionNote = '⚠️ La IA intentó escribir una cotización o total con formato oficial SIN pasar por el cálculo del servidor (cifras inventadas). Falla cerrado: igual que en WhatsApp/Telegram, el cliente nunca ve montos inventados y la conversación pasa a un asesor.'
     } else if (parsed.hasHandoffTag) {
       reply = HANDOFF_REPLY
-    } else if (parsed.lodgingQuote) {
-      // El huésped real recibe SOLO la cotización oficial del servidor
-      const computed = await actions.computeLodgingQuoteReply(
-        business, SIMULATOR_CONTACT, parsed.lodgingQuote, guestTexts,
-      )
-      reply = computed.message
-      for (const url of (computed.mediaOptions || []).flatMap(option => option.mediaUrls || [])) {
-        if (!/^https:\/\//i.test(url)) continue
-        if (/\.(?:mp4|mov|webm)(?:$|[?#])/i.test(url)) mediaVideo = mediaVideo || url
-        else mediaImage = mediaImage || url
-      }
-      actionNote = computed.outcome === 'handoff' || computed.outcome === 'error'
-        ? '🏨 En el canal real esta conversación pasa a un asesor del equipo (la cotización no pudo resolverse automáticamente).'
-        : '🏨 Respuesta oficial calculada por el servidor con cupos y tarifas reales, igual que en WhatsApp/Telegram.'
-    } else if (parsed.lodgingRequest) {
-      if (!actions.guestWroteName(parsed.lodgingRequest.contactName, guestTexts)) {
-        // Igual que el canal real: nombre no escrito por el cliente → se pide
-        reply = 'Para registrar la solicitud solo me falta el nombre de la persona que se hospedará. ¿Me lo escribes, por favor?'
-        actionNote = '🛎️ La IA intentó registrar la solicitud con un nombre que el cliente nunca escribió. Igual que en WhatsApp/Telegram, se descarta y se pide el nombre antes de crear nada.'
-      } else {
-        actionNote = '🛎️ Solicitud de hospedaje detectada: en el canal real el sistema retiene el cupo y la deja en Hospedaje → Solicitudes para que el equipo la confirme. El simulador no crea retenciones reales.'
-      }
     } else if (parsed.booking) {
       actionNote = '📅 Reserva detectada: en el canal real se crearía la cita pendiente de confirmación del equipo. El simulador no crea citas reales.'
     } else if (parsed.orderPayload || parsed.hasSale) {
@@ -308,8 +235,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // de mandarla por un canal, para que el simulador muestre exactamente lo
     // que el cliente recibiría en WhatsApp/Telegram.
     const { wantsImage, wantsVideo } = tags.detectMediaRequest(message)
-    const skipProductMedia = parsed.hasHandoffTag || parsed.hasActionConflict
-      || Boolean(parsed.lodgingQuote) || Boolean(parsed.lodgingRequest)
+    const skipProductMedia = parsed.hasHandoffTag
     if (!skipProductMedia && (wantsImage || wantsVideo)) {
       await media.sendRequestedProductMedia({
         business: { id: business.id, name: business.name || business.id },

@@ -184,7 +184,7 @@ const ALLOWED_BUSINESS_FIELDS = [
   'owner_phone', 'ycloud_api_key', 'ycloud_number',
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
-  'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
+  'ai_provider', 'takes_bookings', 'takes_orders',
   'chat_mode', 'storefront_enabled',
 ] as const
 
@@ -279,11 +279,6 @@ function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
 
 function requestedPlan(body: Record<string, unknown>, fallback: PlanId): PlanDefinition | null {
   return getPlanDefinition('plan' in body ? body.plan : fallback)
-}
-
-function isActiveLodgingConstraint(error: unknown): boolean {
-  return error instanceof Error
-    && error.message.includes('No se puede deshabilitar hospedaje')
 }
 
 // Dos negocios NUNCA pueden compartir el mismo identificador de canal: el bot
@@ -443,7 +438,6 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       telegram_bot_token: body.telegram_bot_token || null,
       takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
-      lodging_enabled: body.lodging_enabled === true,
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.
       storefront_enabled: body.storefront_enabled === true,
@@ -577,11 +571,6 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     }
     res.json({ ok: true })
   } catch (error) {
-    if (isActiveLodgingConstraint(error)) {
-      return res.status(409).json({
-        error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
-      })
-    }
     const duplicated = duplicateChannelMessage(error)
     if (duplicated) {
       console.error('❌ actualizar el cliente:', errorMessage(error))

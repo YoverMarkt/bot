@@ -3,7 +3,6 @@ import type {
   ActionProduct,
   ActionSession,
   BookingCreationOutcome,
-  LodgingActionOutcome,
 } from './bot-actions'
 import type { BookingTag, ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
@@ -75,7 +74,6 @@ interface ConversationDatabase {
   ): Promise<ConversationProduct[]>
   getProducts(businessId: string): Promise<ConversationProduct[]>
   // Solo los usa el modo menú
-  getLodgingRoomTypes?(businessId: string): Promise<Record<string, unknown>[]>
   getMenuModifiers?(businessId: string, categoryTag?: string | null): Promise<Record<string, unknown>[]>
   getLastOrderForContact?(
     businessId: string,
@@ -179,26 +177,6 @@ interface ConversationActions {
     preFiltered: boolean
     send(message: string): Promise<unknown>
   }): Promise<boolean>
-  processLodgingQuote(input: {
-    business: ActionBusiness
-    phone: string
-    originalText: string
-    quote: ParsedBotOutput['lodgingQuote']
-    guestMessages?: string[]
-    focusRoomTypeId?: string | null
-    includeMedia?: boolean
-    send(message: string): Promise<unknown>
-    sendImage?: (url: string, caption?: string) => Promise<unknown>
-    sendVideo?: (url: string, caption?: string) => Promise<unknown>
-  }): Promise<LodgingActionOutcome>
-  processLodgingRequest(input: {
-    business: ActionBusiness
-    phone: string
-    originalText: string
-    request: ParsedBotOutput['lodgingRequest']
-    guestMessages?: string[]
-    send(message: string): Promise<unknown>
-  }): Promise<LodgingActionOutcome>
 }
 
 interface ConversationMedia {
@@ -217,20 +195,20 @@ interface ConversationMenuFlow {
 interface ConversationStorefrontLink {
   issueLink(input: {
     business: { id: string; slug?: string | null; storefront_enabled?: boolean | null
-      takes_orders?: boolean | null; lodging_enabled?: boolean | null }
+      takes_orders?: boolean | null }
     phone: string
     name?: string | null
     /** Salta el cooldown en memoria: en modo mini app decide la base. */
     force?: boolean
   }): Promise<string | null>
   storefrontInvite(
-    business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
+    business: { takes_orders?: boolean | null },
     url: string,
     opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
   ): string
   /** El mismo enlace, listo para ir como botón nativo del canal. */
   storefrontInviteButton(
-    business: { lodging_enabled?: boolean | null; takes_orders?: boolean | null },
+    business: { takes_orders?: boolean | null },
     url: string,
     opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
   ): { body: string; url: string; label: string; footer: string }
@@ -637,11 +615,8 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     if (input.sendTyping) {
       try { await input.sendTyping() } catch { /* best-effort */ }
     }
-    const [products, roomTypes, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
+    const [products, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
       database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
-      business.lodging_enabled === true && database.getLodgingRoomTypes
-        ? database.getLodgingRoomTypes(business.id).catch(() => [])
-        : Promise.resolve([]),
       business.takes_orders !== false && database.getMenuModifiers
         ? database.getMenuModifiers(business.id).catch(() => [])
         : Promise.resolve([]),
@@ -664,7 +639,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       message: text,
       products: products as MenuFlowInput['products'],
       botPrompt,
-      roomTypes: roomTypes as MenuFlowInput['roomTypes'],
       modifiers: modifiers as MenuFlowInput['modifiers'],
       availableSlots: (availableSlots || {}) as MenuFlowInput['availableSlots'],
       lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
@@ -711,41 +685,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       menuReply = orderProcessed
         ? `¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
         : `No pude confirmar de forma segura si el pedido quedó registrado. Para evitar duplicarlo, no lo envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
-    } else if (action?.type === 'stay_quote') {
-      const lodgingOutcome = await actions.processLodgingQuote({
-        business,
-        phone,
-        originalText: text,
-        quote: action.quote as ParsedBotOutput['lodgingQuote'],
-        guestMessages: [text],
-        // La habitación ya elegida centra la cotización: el huésped ve SOLO su
-        // total, no todas las habitaciones (las demás solo si la suya no tiene cupo).
-        focusRoomTypeId: action.quote.roomTypeId ?? null,
-        // El modo menú ya ofreció la media como un paso explícito. Cotizar no
-        // debe repetir fotos ni videos, aunque el huésped no haya abierto ese paso.
-        includeMedia: false,
-        send,
-      })
-      // La acción ya envió y guardó la cotización o el mensaje seguro de error.
-      // Solo una cotización válida conserva los botones para solicitarla.
-      if (lodgingOutcome !== 'quoted') return
-    } else if (action?.type === 'stay_request') {
-      const lodgingOutcome = await actions.processLodgingRequest({
-        business,
-        phone,
-        originalText: text,
-        request: {
-          roomTypeIdOrName: action.roomTypeId,
-          contactName: action.contactName,
-        } as ParsedBotOutput['lodgingRequest'],
-        guestMessages: [text, action.contactName],
-        send,
-      })
-      // Todos los outcomes de una solicitud real (éxito, retry o handoff) ya
-      // enviaron su mensaje oficial. No duplicar ni contradecir ese resultado.
-      if (lodgingOutcome !== 'none') return
-      menuReply = 'No pude procesar la solicitud de hospedaje. Intenta nuevamente o habla con el equipo 🙏'
-      menuOptions = []
     } else if (action?.type === 'booking') {
       // El día y la hora vienen de la agenda real, ya resueltos por el menú:
       // los campos "raw" y los normalizados coinciden a propósito.
@@ -931,15 +870,13 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       } else {
         logger.log(`🌙 [${business.name}] fuera de horario — silencio (ya avisado) — ${phone}`)
       }
-      // Fuera de horario NADIE atiende: ni el hospedaje, ni el modo menú.
-      // Hubo dos excepciones y las dos convertían el horario del dueño en una
-      // decoración. La segunda era peor porque no se veía: el modo menú salía
+      // Fuera de horario NADIE atiende, tampoco el modo menú. Hubo excepciones
+      // y convertían el horario del dueño en una decoración: el modo menú salía
       // por su propia rama ANTES de mirar el reloj, así que un negocio con el
-      // menú activado —el caso del hostal— atendía domingos y de madrugada
-      // aunque su horario dijera lo contrario. Esta comprobación va delante de
-      // TODOS los modos justamente para que no vuelva a pasar.
-      // Un hostal que quiera cotizar de madrugada configura 00:00–23:59; el
-      // control es suyo, no de una regla escondida aquí.
+      // menú activado atendía domingos y de madrugada aunque su horario dijera
+      // lo contrario. Esta comprobación va delante de TODOS los modos para que
+      // no vuelva a pasar. Quien quiera atender de madrugada configura
+      // 00:00–23:59; el control es suyo, no de una regla escondida aquí.
       await database.saveMessage(business.id, phone, 'user', text)
       await database.upsertSession(business.id, phone, {
         last_message: text,
@@ -1040,7 +977,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       reply = await ai.callAI(
         prompt.buildPrompt(
           business, products, policies, text, availableSlots,
-          outsideHours && business.lodging_enabled === true ? [] : businessSchedule,
+          businessSchedule,
           preFiltered, postSale,
         ),
         history,
@@ -1053,20 +990,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
 
     const parsedOutput = tags.parseBotOutput(reply)
-    if (parsedOutput.hasActionConflict) {
-      logger.error(`❌ [${business.name}] respuesta de IA con acciones incompatibles`)
-      await actions.handleConversationOutcome({
-        business,
-        phone,
-        originalText: text,
-        hasSale: false,
-        hasHandoffTag: parsedOutput.hasHandoffTag,
-        isUncertain: true,
-        wasManual: session?.manual_mode,
-        send,
-      })
-      return
-    }
 
     // La IA jamás escribe montos: si imita el formato de los resúmenes
     // oficiales (cotizaciones/pedidos del servidor) está inventando cifras.
@@ -1115,41 +1038,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         hasHandoffTag: false,
         isUncertain: true,
         wasManual: session?.manual_mode,
-        send,
-      })
-      return
-    }
-
-    // Lo que ESCRIBIÓ el huésped (historial + mensaje actual): de aquí salen
-    // las fechas relativas de las cotizaciones y el nombre de las solicitudes
-    const guestMessages = [
-      ...history
-        .filter(message => message.role === 'user')
-        .map(message => String(message.content ?? '')),
-      text,
-    ]
-
-    if (parsedOutput.lodgingQuote) {
-      await actions.processLodgingQuote({
-        business,
-        phone,
-        originalText: text,
-        quote: parsedOutput.lodgingQuote,
-        guestMessages,
-        send,
-        sendImage,
-        sendVideo,
-      })
-      return
-    }
-
-    if (parsedOutput.lodgingRequest) {
-      await actions.processLodgingRequest({
-        business,
-        phone,
-        originalText: text,
-        request: parsedOutput.lodgingRequest,
-        guestMessages,
         send,
       })
       return

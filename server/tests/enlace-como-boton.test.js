@@ -74,17 +74,14 @@ describe('el mensaje con botón de enlace (cta_url)', () => {
 })
 
 describe('lo que redacta el servicio del enlace', () => {
-  const tienda = { lodging_enabled: false, takes_orders: true }
-  const hotel = { lodging_enabled: true, takes_orders: false }
+  const tienda = { takes_orders: true }
 
-  it('las dos etiquetas caben en los 20 bytes de WhatsApp', () => {
-    for (const negocio of [tienda, hotel]) {
-      const boton = storefrontInviteButton(negocio, 'https://ejemplo.com/s/tok')
-      expect(bytes(boton.label), boton.label).toBeLessThanOrEqual(20)
-      // Sin emoji en la etiqueta: cada uno gasta cuatro de esos veinte bytes.
-      expect(boton.label).toMatch(/^[\w áéíóúñÁÉÍÓÚÑ]+$/)
-      expect(buildCtaUrlPayload(boton)).not.toBeNull()
-    }
+  it('la etiqueta cabe en los 20 bytes de WhatsApp', () => {
+    const boton = storefrontInviteButton(tienda, 'https://ejemplo.com/s/tok')
+    expect(bytes(boton.label), boton.label).toBeLessThanOrEqual(20)
+    // Sin emoji en la etiqueta: cada uno gasta cuatro de esos veinte bytes.
+    expect(boton.label).toMatch(/^[\w áéíóúñÁÉÍÓÚÑ]+$/)
+    expect(buildCtaUrlPayload(boton)).not.toBeNull()
   })
 
   it('el botón y el texto dicen lo mismo, y el pie es el mismo en los dos', () => {
@@ -95,11 +92,6 @@ describe('lo que redacta el servicio del enlace', () => {
     // El cliente puede recibir uno u otro según el canal: no puede leer dos
     // promesas distintas del mismo negocio.
     expect(texto).toContain(boton.footer)
-  })
-
-  it('un hotel invita a ver habitaciones, no una carta', () => {
-    expect(storefrontInviteButton(hotel, 'https://ejemplo.com/s/tok').label)
-      .toBe('Ver habitaciones')
   })
 })
 
@@ -152,8 +144,6 @@ function montar(yaSeLeMando = false) {
       createBookingFromTag: async () => ({}),
       handleConversationOutcome: async () => ({ handled: false }),
       processOrderPayload: async () => false,
-      processLodgingQuote: async () => ({}),
-      processLodgingRequest: async () => ({}),
     },
     media: { sendRequestedProductMedia: async () => false },
     menuFlow: { advanceMenuFlow: () => ({}) },

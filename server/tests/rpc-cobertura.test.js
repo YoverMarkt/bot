@@ -49,9 +49,9 @@ const fuente = archivosFuente(path.join(serverDir, 'src'))
  * la mitad es peor que no contar.
  */
 // ⚠️ El rango incluye DÍGITOS desde 2026-08-02: sin ellos, cualquier función
-// con número en el nombre —`set_lodging_request_status_v2`— se escapaba de la
-// cobertura obligatoria sin que nadie se enterara. Justo el tipo de agujero
-// que este guardián existe para tapar.
+// con número en el nombre se escapaba de la cobertura obligatoria sin que
+// nadie se enterara. Justo el tipo de agujero que este guardián existe para
+// tapar.
 const llamadas = [...fuente.matchAll(/\.rpc\(\s*'([a-z0-9_]+)'/g)]
   .map(coincidencia => coincidencia[1])
 
@@ -77,9 +77,7 @@ describe('cobertura de las funciones de base de datos', () => {
     expect(usadas.length).toBeGreaterThanOrEqual(20)
     expect(usadas).toContain('create_business_onboarding')
     // Ésta se llama con el nombre en otra línea: es el caso que se escapaba.
-    // Desde 2026-08-02 el servidor llama a la v2, que envuelve a la original
-    // para registrar la venta al confirmar sin tocar el anti-sobreventa.
-    expect(usadas).toContain('set_lodging_request_status_v2')
+    expect(usadas).toContain('create_storefront_order')
   })
 
   // El test que impide que vuelva a pasar lo del 2 de agosto.

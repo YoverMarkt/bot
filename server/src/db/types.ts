@@ -69,7 +69,6 @@ export interface BusinessRecord {
   // Capacidades: fuente de verdad de qué sabe hacer el negocio.
   takes_bookings: boolean
   takes_orders: boolean
-  lodging_enabled: boolean
   storefront_enabled: boolean
   chat_mode: string
 }

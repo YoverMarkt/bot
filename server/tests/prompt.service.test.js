@@ -101,59 +101,6 @@ describe('constructor tipado del prompt', () => {
     )
   })
 
-  it('habilita hospedaje sin delegar cálculos ni reutilizar pedidos o citas', () => {
-    const lodgingPrompt = promptService.buildPrompt(
-      {
-        ...business,
-        type: 'hostal',
-        takes_bookings: false,
-        takes_orders: false,
-        lodging_enabled: true,
-      },
-      [product],
-      {},
-    )
-
-    expect(lodgingPrompt).toContain(
-      '##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##',
-    )
-    const hoyEcuador = new Date().toLocaleDateString('en-CA', {
-      timeZone: 'America/Guayaquil',
-    })
-    expect(lodgingPrompt).toContain(`HOY es ${hoyEcuador}`)
-    expect(lodgingPrompt).toContain('fechas FUTURAS a partir de hoy')
-    // El calendario real de los próximos días lo escribe el CÓDIGO: el modelo
-    // no debe calcular qué fecha es "el lunes" o "mañana"
-    const mananaEcuador = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', {
-      timeZone: 'America/Guayaquil',
-    })
-    const diaSemanaManana = new Date(Date.now() + 86_400_000).toLocaleDateString('es-EC', {
-      weekday: 'long', timeZone: 'America/Guayaquil',
-    })
-    expect(lodgingPrompt).toContain('CALENDARIO REAL de los próximos días')
-    expect(lodgingPrompt).toContain(`${diaSemanaManana}=${mananaEcuador}`)
-    expect(lodgingPrompt).toContain('NUNCA la calcules tú')
-    expect(lodgingPrompt).toContain(
-      '##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO##',
-    )
-    expect(lodgingPrompt).toContain(
-      'NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales',
-    )
-    expect(lodgingPrompt).toContain('pendiente del equipo autorizado')
-    expect(lodgingPrompt).toContain(
-      '##STAY_QUOTE## y ##STAY_REQUEST## son excluyentes',
-    )
-    expect(lodgingPrompt).toContain(
-      'incluso si el cliente dice que quiere reservar',
-    )
-    expect(lodgingPrompt).not.toContain(
-      '##PEDIDO:nombre del producto x cantidad##',
-    )
-    expect(lodgingPrompt).not.toContain(
-      '##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##',
-    )
-  })
-
   it('adapta fuera de horario y postventa sin filtrar enlaces', () => {
     const closedSchedule = Array.from({ length: 7 }, (_, day) => ({
       day_of_week: day,

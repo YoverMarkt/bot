@@ -80,7 +80,6 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     payment_methods: business.payment_methods,
     takes_bookings: business.takes_bookings === true,
     takes_orders: business.takes_orders !== false,
-    lodging_enabled: business.lodging_enabled === true,
     // Apariencia y envío de la mini app. El importe oficial del envío lo
     // vuelve a calcular la base al crear el pedido; esto es la configuración.
     delivery_fee: Number(business.delivery_fee) || 0,

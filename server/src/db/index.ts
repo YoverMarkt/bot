@@ -12,7 +12,6 @@ import reporting = require('./repositories/reporting')
 import orders = require('./repositories/orders')
 import stats = require('./repositories/stats')
 import webhookEvents = require('./repositories/webhook-events')
-import lodging = require('./repositories/lodging')
 import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
 import platformErrors = require('./repositories/platform-errors')
@@ -41,7 +40,6 @@ const database = {
   ...orders,
   ...stats,
   ...webhookEvents,
-  ...lodging,
   ...menuModifiers,
   ...usage,
   ...platformErrors,

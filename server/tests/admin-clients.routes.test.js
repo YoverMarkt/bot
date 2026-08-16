@@ -180,14 +180,13 @@ describe('clientes y onboarding del superadmin', () => {
         ycloud_api_key: 'secret',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
-        lodging_enabled: true,
       },
     })
 
     expect(response.status).toBe(201)
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Nueva', whatsapp_number: '+593999000001', lodging_enabled: true,
+        name: 'Nueva', whatsapp_number: '+593999000001',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
       }),
@@ -424,32 +423,6 @@ describe('clientes y onboarding del superadmin', () => {
     expect(response).toEqual({
       status: 500, body: { error: 'No se pudo actualizar el cliente' },
     })
-  })
-
-  it('explica por qué no puede apagar hospedaje con inventario comprometido', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', whatsapp_provider: 'ycloud',
-      whatsapp_number: '+593999000001', ycloud_api_key: 'stored-secret',
-    })
-    vi.spyOn(db, 'updateBusiness').mockResolvedValue({
-      error: {
-        message: 'No se puede deshabilitar hospedaje con solicitudes o estadías activas',
-      },
-    })
-    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling')
-
-    const response = await dispatch('put', '/api/admin/clients/:id', {
-      auth: authorization(), params: { id: 'business-a' },
-      body: { lodging_enabled: false },
-    })
-
-    expect(response).toEqual({
-      status: 409,
-      body: {
-        error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
-      },
-    })
-    expect(updatePlan).not.toHaveBeenCalled()
   })
 
   it('rechaza proveedores no permitidos antes de consultar o modificar el negocio', async () => {

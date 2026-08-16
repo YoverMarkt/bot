@@ -24,7 +24,6 @@ export interface LinkBusiness {
   slug?: string | null
   storefront_enabled?: boolean | null
   takes_orders?: boolean | null
-  lodging_enabled?: boolean | null
 }
 
 interface LinkDatabase {
@@ -49,13 +48,13 @@ export const RESEND_COOLDOWN_MS = 10 * 60 * 1000
 /**
  * ¿Este negocio puede ofrecer tienda?
  *
- * Mismas reglas que la tienda misma: sin catálogo ni hospedaje no hay nada que
- * mostrar, y mandar a alguien a una app vacía es peor que no mandarlo.
+ * Mismas reglas que la tienda misma: sin catálogo no hay nada que mostrar, y
+ * mandar a alguien a una app vacía es peor que no mandarlo.
  */
 export function storefrontAvailable(business: LinkBusiness | null): boolean {
   if (!business?.id || !business.slug) return false
   if (business.storefront_enabled !== true) return false
-  return business.takes_orders === true || business.lodging_enabled === true
+  return business.takes_orders === true
 }
 
 /**
@@ -84,11 +83,6 @@ export function buildStorefrontUrl(input: {
  * El texto que acompaña al enlace. Dice lo que el cliente necesita saber sin
  * prometer nada: que es suyo, y que caduca.
  */
-/** ¿Este negocio vende noches o vende productos? Decide cómo se invita. */
-const esAlojamiento = (business: LinkBusiness): boolean => (
-  business.lodging_enabled === true && business.takes_orders !== true
-)
-
 /** La coletilla, en los dos formatos. Dice que el enlace es SUYO. */
 const PIE_DEL_ENLACE = 'Tu enlace personal · guárdalo, no vence'
 
@@ -147,17 +141,14 @@ export function storefrontInviteButton(
   label: string
   footer: string
 } {
-  const alojamiento = esAlojamiento(business)
-  const primeraVez = alojamiento
-    ? '🛏️ Mira las habitaciones y reserva desde aquí 👇'
-    : '🛍️ Mira la carta y pide desde aquí 👇'
+  const primeraVez = '🛍️ Mira la carta y pide desde aquí 👇'
   // Se nombra que es «otra vez» para que no parezca que el bot se repite sin
   // enterarse: reconocerlo es lo que lo hace sonar atento en vez de roto.
   const cuerpo = opciones.repetido ? '🛍️ Aquí tienes tu enlace otra vez 👇' : primeraVez
   return {
     body: `${cuerpo}${lineaDeAyuda(opciones.telefonoDeAyuda)}`,
     url,
-    label: alojamiento ? 'Ver habitaciones' : 'Ver la carta',
+    label: 'Ver la carta',
     footer: PIE_DEL_ENLACE,
   }
 }
@@ -168,9 +159,7 @@ export function storefrontInvite(
   /** Los mismos matices que el botón: cambian el texto, no el envío. */
   opciones: OpcionesDeInvitacion = {},
 ): string {
-  const primeraVez = esAlojamiento(business)
-    ? '🛏️ Mira las habitaciones y reserva aquí:'
-    : '🛍️ Mira la carta y pide aquí:'
+  const primeraVez = '🛍️ Mira la carta y pide aquí:'
   const compra = opciones.repetido ? '🛍️ Aquí tienes tu enlace otra vez:' : primeraVez
   // Tres líneas y ni una más. En un chat, un bloque de texto con un enlace
   // dentro se lee como publicidad y el cliente lo pasa de largo.

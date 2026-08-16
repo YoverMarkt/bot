@@ -67,11 +67,11 @@ En este proyecto casi toda consulta filtra primero por `business_id`, así que e
 | `where business_id = X order by created_at desc` | `(business_id, created_at desc)` |
 | `where business_id = X and fecha between ...` | `(business_id, fecha)` |
 | columna `jsonb` con `@>` | `using gin (col)` |
-| rangos de fechas que no deben solaparse | `using gist (...)` + `btree_gist` (ver hospedaje) |
+| rangos de fechas que no deben solaparse | `using gist (...)` + `btree_gist` (ver `bookings_no_active_overlap`) |
 | único por negocio (ej. nombre) | `unique (business_id, lower(nombre))` |
 
 - Un índice sin `business_id` delante rara vez sirve aquí: Postgres no lo usará para las consultas reales del SaaS.
-- Índices parciales (`where released_at is null`, `where status = 'pending'`) cuando la consulta caliente solo mira un subconjunto — ya se usan en hospedaje.
+- Índices parciales (`where revoked_at is null`, `where order_id is not null`) cuando la consulta caliente solo mira un subconjunto — ya se usan en `storefront_sessions` y `sales`.
 - No indexar "por si acaso": cada índice encarece cada insert/update. Justifícalo con una consulta real.
 
 > Una migración mal hecha puede borrar datos de TODOS los negocios a la vez. Trátala con ese nivel de cuidado.

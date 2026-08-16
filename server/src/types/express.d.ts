@@ -8,7 +8,6 @@ declare global {
       userId?: string
       email?: string
       takesBookings?: boolean
-      lodgingEnabled?: boolean
     }
 
     interface AdminUserClaims {

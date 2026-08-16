@@ -38,7 +38,6 @@ import bookingsRouter = require('./routes/bookings.routes')
 import productsRouter = require('./routes/products.routes')
 import ordersRouter = require('./routes/orders.routes')
 import webhooksRouter = require('./routes/webhooks.routes')
-import lodgingRouter = require('./routes/lodging.routes')
 import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 import productOptionsRouter = require('./routes/product-options.routes')
 import catalogStructureRouter = require('./routes/catalog-structure.routes')
@@ -234,7 +233,6 @@ app.use(catalogStructureRouter)
 app.use(storefrontRouter)
 app.use(ordersRouter)
 app.use(webhooksRouter)
-app.use(lodgingRouter)
 
 const telegramLimiter = rateLimit({
   windowMs: 60 * 1000,

@@ -160,7 +160,6 @@ describe('POST /api/client/login', () => {
       suspended: false,
       bot_active: true,
       takes_bookings: true,
-      lodging_enabled: true,
     })
 
     const response = await dispatch('/api/client/login', {
@@ -177,7 +176,6 @@ describe('POST /api/client/login', () => {
       urole: 'employee',
       perms: ['citas', 'ventas'],
       takesBookings: true,
-      lodgingEnabled: true,
       email: 'ana@example.com',
     })
     expect(response.body).not.toHaveProperty('password_hash')
@@ -185,7 +183,6 @@ describe('POST /api/client/login', () => {
       name: 'Ana', role: 'employee', permissions: ['citas', 'ventas'],
     })
     expect(response.body.business.takes_bookings).toBe(true)
-    expect(response.body.business.lodging_enabled).toBe(true)
   })
 
   it('convierte fallos internos en respuesta 500 controlada', async () => {
