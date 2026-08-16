@@ -1,109 +1,28 @@
--- ============================================================
--- RETIRAR EL MÓDULO DE HOSPEDAJE
--- Fecha: 2026-08-16 · Fase 1 de «Umbani solo domicilios»
--- ============================================================
+-- ============================================================================
+-- ONBOARDING COMPATIBLE CON MINI APP Y EL INTERRUPTOR DE TIENDA
+-- Fecha: 2026-08-16 · Preparación para «Umbani solo domicilios»
+-- ============================================================================
 --
--- Umbani se queda con domicilios. Hospedaje —inventario de habitaciones,
--- cotizaciones, holds y la estadía como venta— sale entero: no comparte una
--- sola tabla con el pedido, y por eso es lo primero que se retira.
+-- `chat_mode = 'miniapp'` ya es un valor válido de `businesses` y el panel lo
+-- propone al crear negocios con tienda. Sin embargo, la última versión de
+-- `create_business_onboarding` seguía validando únicamente `menu`/`ai`: el
+-- alta fallaba antes de insertar una sola fila. La misma función tampoco
+-- copiaba `storefront_enabled`, por lo que una tienda solicitada como encendida
+-- nacía apagada por el valor por defecto de la columna.
 --
--- ⚠️ ORDEN DE DESPLIEGUE INVERTIDO A PROPÓSITO: primero el CÓDIGO, después
--- esta migración. Es al revés de lo habitual y no es un descuido.
--- `admin-clients.routes.ts` insertaba `lodging_enabled` al crear un negocio,
--- así que si la columna desaparece mientras corre el código viejo, el alta de
--- clientes se rompe en producción — el mismo fallo de agosto de 2026. El
--- código nuevo, en cambio, convive sin problema con estas tablas todavía
--- presentes: simplemente las ignora.
+-- Esta migración es deliberadamente ANTERIOR a las fases `retirar-*`. Durante
+-- el despliegue mixto aún deben convivir los tres modos: código anterior puede
+-- enviar `menu` y código nuevo envía `miniapp`. La fase que retira el modo menú
+-- apretará después el contrato a `ai`/`miniapp`.
 --
--- ⚠️ DESTRUCTIVA E IRREVERSIBLE. Hacer respaldo/PITR antes de aplicarla.
--- Aquí vive el hostal de demostración; sus habitaciones, cotizaciones y holds
--- se pierden. Ningún negocio de comida tiene datos en estas tablas.
+-- La firma no cambia y el cuerpo parte de la última versión vigente, la de
+-- tiempos de preparación. Conserva planes y límites, políticas, siete días de
+-- horario, configuración de hospedaje, usuario dueño, cuota mensual y tiempos
+-- de preparación/entrega.
 --
--- ⚠️ SÍ recrea `create_business_onboarding`, y hace falta. La versión previa
--- a esta fase todavía inserta `lodging_enabled` en `businesses` de forma
--- incondicional. Soltar la columna sin recrearla deja la función compilando
--- pero reventando en ejecución (42703) con el primer negocio que se dé de
--- alta: PostgreSQL no
--- valida cuerpos plpgsql al soltar una columna, así que la migración se
--- aplicaría «con éxito» y el fallo aparecería días después. Es exactamente la
--- cicatriz del alta de clientes de agosto de 2026.
---
--- El cuerpo que se escribe abajo es el VIGENTE con hospedaje quitado y nada
--- más: conserva la validación de plan, los tres modos compatibles durante el
--- despliegue, el interruptor de tienda, `bot_policies`, los siete días de
--- horario, el usuario dueño, la cuota y los tiempos de preparación. Misma
--- firma, así que los `grant`/`revoke` existentes siguen valiendo.
---
--- Lo que NO toca: pedidos, ventas de pedidos y mostrador, citas, catálogo,
--- motor de opciones, motor de margen ni la mini app de comida.
+-- Sin `begin`/`commit` propios: la transacción y el registro de la huella los
+-- controla `tests/migraciones.mjs`.
 
--- ⚠️ SIN `begin;`/`commit;` propios, a propósito. La atomicidad la pone el
--- ejecutor (`npm run migrate`), que envuelve cada archivo en su transacción y
--- anota la huella en `schema_migrations` dentro de ella. Abrirla aquí la
--- cerraría antes de tiempo y el registro quedaría fuera: esquema cambiado sin
--- constancia, que es el peor sitio donde puede quedarse una migración. Lo
--- vigila `tests/migraciones-guardian.test.js` desde el 2026-08-13.
---
--- Consecuencia buena: los seis pasos entran juntos o no entra ninguno, así que
--- no existe el estado intermedio con `sales` ya sin columna y las tablas vivas.
-
--- ── 1. La venta deja de apuntar a una estadía ─────────────────────────────
--- Va PRIMERO porque `sales` es la tabla del dinero y se toca lo mínimo: se
--- suelta la foránea y se retira el puntero. Ningún importe se modifica; una
--- venta que nació de una estadía conserva su total, su fecha y sus ítems.
-alter table public.sales drop constraint if exists fk_sales_estadia_del_negocio;
-alter table public.sales drop constraint if exists sales_lodging_request_id_fkey;
-drop index if exists public.uq_sales_lodging;
-alter table public.sales drop column if exists lodging_request_id;
-
--- ── 2. Los disparadores que cuelgan de tablas que SÍ siguen vivas ─────────
--- `businesses` se queda, así que su disparador hay que retirarlo a mano: sin
--- esto, la columna del punto 4 no se puede soltar. Los que cuelgan de tablas
--- de hospedaje se van solos con ellas en el punto 3.
-drop trigger if exists trg_businesses_lodging_toggle_lock on public.businesses;
-
--- ── 3. Las tablas del módulo ──────────────────────────────────────────────
--- En orden de dependencia. `cascade` alcanza índices y disparadores propios;
--- la única referencia externa era la de `sales`, ya retirada en el punto 1.
-drop table if exists public.lodging_blocks cascade;
-drop table if exists public.lodging_requests cascade;
-drop table if exists public.lodging_quotes cascade;
-drop table if exists public.lodging_rate_overrides cascade;
-drop table if exists public.lodging_room_types cascade;
-drop table if exists public.lodging_settings cascade;
-
--- ── 4. La capacidad ───────────────────────────────────────────────────────
-alter table public.businesses drop column if exists lodging_enabled;
-
--- ── 5. Las funciones que quedaron sin tabla ───────────────────────────────
--- Por NOMBRE y no por firma a propósito: varias tienen argumentos con valores
--- por defecto y una base que haya pasado por versiones intermedias puede
--- conservar sobrecargas. Un `drop function` con la firma equivocada no falla
--- —simplemente no borra— y dejaría funciones muertas apuntando a tablas que
--- ya no existen. Esto las alcanza todas.
-do $$
-declare
-  v_funcion record;
-begin
-  for v_funcion in
-    select p.oid::regprocedure as firma
-    from pg_proc as p
-    join pg_namespace as n on n.oid = p.pronamespace
-    where n.nspname = 'public'
-      and (
-        p.proname like '%lodging%'
-        or p.proname = 'crear_venta_desde_estadia'
-      )
-  loop
-    execute format('drop function if exists %s cascade', v_funcion.firma);
-  end loop;
-end;
-$$;
-
--- ── 6. El onboarding, sin hospedaje ───────────────────────────────────────
--- Va DESPUÉS de soltar la columna: PostgreSQL no comprueba el cuerpo de una
--- función plpgsql al crearla, así que el orden entre ambas da igual mientras
--- entren juntas — y de eso se encarga la transacción del ejecutor.
 create or replace function public.create_business_onboarding(
   p_business jsonb,
   p_client_email text default null,
@@ -124,6 +43,8 @@ declare
   v_client_email text :=
     nullif(btrim(coalesce(p_client_email, '')), '');
   v_password_hash text := nullif(p_password_hash, '');
+  v_lodging_enabled boolean :=
+    coalesce((p_business ->> 'lodging_enabled')::boolean, false);
   v_chat_mode text :=
     coalesce(nullif(btrim(p_business ->> 'chat_mode'), ''), 'ai');
   v_plan text :=
@@ -222,6 +143,7 @@ begin
     takes_bookings,
     takes_orders,
     storefront_enabled,
+    lodging_enabled,
     chat_mode,
     ai_provider,
     owner_phone,
@@ -251,6 +173,7 @@ begin
     coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     coalesce((p_business ->> 'storefront_enabled')::boolean, false),
+    v_lodging_enabled,
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
@@ -262,8 +185,6 @@ begin
     v_monthly_rate,
     v_contact_limit,
     v_outbound_limit,
-    -- Sin valor, el defecto de la columna. El servidor manda el del tipo,
-    -- pero un alta hecha fuera del panel no puede quedarse sin tiempo.
     coalesce((p_business ->> 'prep_time_minutes')::int, 25),
     coalesce((p_business ->> 'delivery_extra_minutes')::int, 10)
   )
@@ -288,6 +209,12 @@ begin
     (v_business.id, 5, '09:00', '18:00', 60, true),
     (v_business.id, 6, '09:00', '13:00', 60, true)
   on conflict (business_id, day_of_week) do nothing;
+
+  if v_lodging_enabled then
+    insert into public.lodging_settings (business_id)
+    values (v_business.id)
+    on conflict (business_id) do nothing;
+  end if;
 
   if v_client_email is not null then
     insert into public.client_users (

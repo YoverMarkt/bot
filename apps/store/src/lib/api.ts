@@ -206,4 +206,3 @@ export async function confirmarTelefono(
 // protegida por sesión, con su límite de peticiones y sus pruebas. No se borró:
 // funciona, no estorba y es la puerta que usaría el Marketplace o una vuelta
 // atrás. Lo que ya no hay es quien la llame desde aquí.
-
