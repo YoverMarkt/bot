@@ -4,6 +4,7 @@ import type {
   ActionSession,
 } from './bot-actions'
 import type { ParsedBotOutput } from './bot-tags'
+import { usaFlujoMiniapp } from './chat-mode'
 // Detector de saludos puros ya probado: "hola", "buenas", "menú". Es una
 // función pura sin base de datos, así que se importa directo.
 import { esSoloUnSaludo } from './saludo'
@@ -698,7 +699,12 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // cualquier llamada al modelo, y ese orden es el punto entero: un negocio
     // en este modo no puede generar coste de OpenAI. Antes el enlace se
     // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
-    if (business.chat_mode === 'miniapp') {
+    //
+    // Compatibilidad del deploy code-first: hasta que la fase 3 convierta las
+    // filas, producción todavía puede entregar `menu`. El motor de menú ya no
+    // existe, pero esa decisión sigue significando «sin IA», así que durante
+    // la transición recorre exactamente el mismo camino que `miniapp`.
+    if (usaFlujoMiniapp(business.chat_mode)) {
       await runMiniappMode({
         business, phone, text, session, send, sendTyping,
         sendLink: input.sendLink, inboundId: input.inboundId,
@@ -902,7 +908,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // Va como mensaje propio DESPUÉS del saludo del asistente: al revés se
     // leería como publicidad antes de siquiera responderle a la persona. Y
     // solo ante un saludo, porque quien ya pregunta algo concreto no lo quiere.
-    if (business.chat_mode === 'miniapp' && esSoloUnSaludo(text)) {
+    if (usaFlujoMiniapp(business.chat_mode) && esSoloUnSaludo(text)) {
       const url = await storefrontUrlFor(business, phone, session?.contact_name)
       if (url) {
         const texto = await enviarInvitacion({

@@ -203,6 +203,21 @@ describe('modo mini app: ni un token de OpenAI', () => {
     expect(enviados).toEqual([MINIAPP_RECORDATORIO])
     expect(m.ai.callAI).not.toHaveBeenCalled()
   })
+
+  it("durante el despliegue, un 'menu' legacy recorre miniapp y nunca IA", async () => {
+    // Con catálogo grande, el camino IA llamaría primero a embeddings y luego
+    // al modelo; así la regresión protege las dos formas de gasto.
+    const m = montar({ database: { countProducts: async () => 50 } })
+    const enviados = await procesar(m, 'quiero hacer un pedido', {
+      ...negocioMiniapp,
+      chat_mode: 'menu',
+    })
+
+    expect(m.ai.callAI).not.toHaveBeenCalled()
+    expect(m.ai.embedText).not.toHaveBeenCalled()
+    expect(enviados).toHaveLength(1)
+    expect(enviados[0]).toContain('https://ejemplo.com/s/tok')
+  })
 })
 
 describe('CASO 5 — los demás negocios siguen igual', () => {

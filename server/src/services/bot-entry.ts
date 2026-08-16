@@ -1,5 +1,6 @@
 import { crearBuzonDeComprobantes, textoDelComprobante } from './payment-proof-inbox'
 import type { ProcessMessageInput } from './bot-conversation'
+import { usaFlujoMiniapp } from './chat-mode'
 import type { ScheduleRecord } from '../db/types'
 import {
   normalizeChannelIdentifier,
@@ -426,9 +427,19 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     // estaba: preguntar a quién pertenece el mensaje cuesta una consulta;
     // describir una imagen cuesta dinero.
     const negocioDeLaFoto = options.channel === 'telegram'
-      ? await database.getBusinessBySlug(options.slug).catch(() => null)
-      : await resolveWhatsAppBusiness(options).catch(() => null)
-    const enMiniapp = negocioDeLaFoto?.chat_mode === 'miniapp'
+      ? await database.getBusinessBySlug(options.slug)
+      : await resolveWhatsAppBusiness(options)
+    if (!negocioDeLaFoto) {
+      logger.log('⚠️  Negocio o contexto de canal no encontrado antes de mirar la foto')
+      if (options.businessId) {
+        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
+      }
+      if (options.channel === 'telegram') {
+        return options.ctx?.reply('❌ Negocio no encontrado')
+      }
+      return undefined
+    }
+    const enMiniapp = usaFlujoMiniapp(negocioDeLaFoto?.chat_mode)
 
     let identified = 'NO_IDENTIFICADO'
     if (enMiniapp) {
@@ -464,8 +475,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     }
 
     if (options.channel === 'telegram') {
-      const business = await database.getBusinessBySlug(options.slug)
-      if (!business) return options.ctx?.reply('❌ Negocio no encontrado')
+      const business = negocioDeLaFoto
       const context = options.ctx
       if (!context) return undefined
       return processMessage(
@@ -494,14 +504,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       )
     }
 
-    const business = await resolveWhatsAppBusiness(options)
-    if (!business) {
-      logger.log('⚠️  Negocio o contexto de canal no encontrado')
-      if (options.businessId) {
-        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
-      }
-      return undefined
-    }
+    const business = negocioDeLaFoto
     return processMessage(
       business,
       from,
