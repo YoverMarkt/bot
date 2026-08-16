@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  archivePricingRule, createPricingRule, getClients, getMarkupSummary,
+  archivePricingRule, createPricingRule, getBusinessFamilies, getClients, getMarkupSummary,
   getPricingRules, replacePricingRule, simulateMarkup,
   type PricingRule, type PricingRuleDraft,
 } from '../clients/api'
@@ -34,6 +34,7 @@ const dinero = (v: number | string) => `$${Number(v || 0).toFixed(2)}`
 
 const ETIQUETA_AMBITO: Record<PricingRule['scope'], string> = {
   business: 'Un negocio',
+  family: 'Una familia',
   business_type: 'Un tipo',
   global: 'Toda la plataforma',
 }
@@ -78,6 +79,7 @@ export default function Finance() {
   const reglas = useQuery({ queryKey: ['adm-pricing-rules'], queryFn: getPricingRules })
   const resumen = useQuery({ queryKey: ['adm-markup-summary'], queryFn: getMarkupSummary })
   const negocios = useQuery({ queryKey: ['adm-clients-min'], queryFn: getClients })
+  const familias = useQuery({ queryKey: ['adm-families'], queryFn: getBusinessFamilies })
 
   // ¿Está la regla lo bastante completa como para poder simularla?
   //
@@ -87,6 +89,7 @@ export default function Finance() {
   const listaParaSimular = (
     (borrador.scope !== 'business' || !!borrador.business_id)
     && (borrador.scope !== 'business_type' || !!borrador.target_name)
+    && (borrador.scope !== 'family' || !!borrador.target_name)
     && (borrador.strategy !== 'percentage' || borrador.percentage != null)
     && (borrador.strategy !== 'fixed' || borrador.fixed_amount != null)
     && subtotal >= 0
@@ -305,6 +308,7 @@ export default function Finance() {
               >
                 <option value="business">Un negocio</option>
                 <option value="business_type">Un tipo de negocio</option>
+                <option value="family">Una familia (agrupa varios tipos)</option>
                 <option value="global">Toda la plataforma</option>
               </select>
             </div>
@@ -323,6 +327,30 @@ export default function Finance() {
                     <option key={n.id} value={n.id}>{n.name}</option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {/* La familia agrupa los 52 tipos en cinco: una regla para
+                «Comida» cubre pizzería, hamburguesería, almuerzos, batidos y
+                veinte más, en vez de veinticuatro reglas iguales. */}
+            {borrador.scope === 'family' && (
+              <div>
+                <Label htmlFor="familia">Familia</Label>
+                <select
+                  id="familia"
+                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={borrador.target_name || ''}
+                  onChange={e => setBorrador({ ...borrador, target_name: e.target.value })}
+                >
+                  <option value="">Elige una…</option>
+                  {(familias.data || []).map(f => (
+                    <option key={f.code} value={f.code}>{f.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Se aplica a todos los tipos de esa familia. Un tipo concreto
+                  puede llevar su propia regla y gana sobre esta.
+                </p>
               </div>
             )}
 
