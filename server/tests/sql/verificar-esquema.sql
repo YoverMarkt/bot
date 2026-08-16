@@ -2214,6 +2214,51 @@ begin
   end if;
 
 
+  -- 16. LAS FAMILIAS: una regla para toda la comida.
+  --
+  -- Antes cada uno de los 52 tipos era una isla y cubrir la comida exigía 24
+  -- reglas iguales. La prioridad va de lo más específico a lo más general.
+  update public.pricing_rules set status = 'archived' where status = 'active';
+  update public.businesses set type = 'pizzería' where id = v_biz;
+
+  insert into public.pricing_rules (scope, target_name, strategy, percentage)
+  values ('family', 'comida', 'percentage', 8);
+  if (public.calculate_platform_markup(v_biz, 100) ->> 'markup')::numeric <> 8 then
+    raise exception 'la pizzería no heredó el margen de la familia comida';
+  end if;
+
+  -- El TIPO gana a la familia...
+  insert into public.pricing_rules (scope, target_name, strategy, percentage)
+  values ('business_type', 'pizzería', 'percentage', 6);
+  if (public.calculate_platform_markup(v_biz, 100) ->> 'markup')::numeric <> 6 then
+    raise exception 'la regla de tipo no ganó a la de familia';
+  end if;
+
+  -- ...y el NEGOCIO gana a todo.
+  insert into public.pricing_rules (scope, business_id, strategy, percentage)
+  values ('business', v_biz, 'percentage', 5);
+  if (public.calculate_platform_markup(v_biz, 100) ->> 'markup')::numeric <> 5 then
+    raise exception 'la regla de negocio no ganó a las demás';
+  end if;
+
+  -- Un tipo SIN familia cae a la global y no rompe nada.
+  update public.pricing_rules set status = 'archived'
+  where scope in ('business', 'business_type', 'family');
+  insert into public.pricing_rules (scope, strategy, percentage)
+  values ('global', 'percentage', 3);
+  update public.businesses set type = 'tipo que nadie clasificó' where id = v_biz;
+  if (public.calculate_platform_markup(v_biz, 100) ->> 'markup')::numeric <> 3 then
+    raise exception 'un tipo sin familia debía caer a la regla global';
+  end if;
+
+  -- Una regla de familia SIN familia se aplicaría a toda la plataforma.
+  begin
+    insert into public.pricing_rules (scope, strategy, percentage)
+    values ('family', 'percentage', 5);
+    raise exception 'se guardó una regla de familia sin familia';
+  exception when check_violation then null;
+  end;
+
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   -- Las reglas, los pedidos y las ventas se van en cascada con el negocio.
   delete from public.businesses where id = v_biz;

@@ -35,6 +35,7 @@ interface RespuestaDb {
 
 interface ModuloDb {
   listPricingRules(): Promise<unknown[]>
+  listBusinessFamilies(): Promise<unknown[]>
   createPricingRule(rule: ReglaSaneada): Promise<RespuestaDb>
   replacePricingRule(id: string, rule: ReglaSaneada): Promise<RespuestaDb>
   archivePricingRule(id: string): Promise<RespuestaDb>
@@ -47,7 +48,9 @@ interface ModuloAuth {
 }
 const { authAdmin }: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
-const SCOPES = new Set(['global', 'business_type', 'business'])
+// `family` agrupa los 52 tipos en cinco: una regla para «comida» cubre 24.
+// Antes había que crear 24 reglas iguales y una más por cada tipo nuevo.
+const SCOPES = new Set(['global', 'family', 'business_type', 'business'])
 const STRATEGIES = new Set(['percentage', 'fixed', 'tiered'])
 // Solo `absorbed`. `on_top` exige que el catálogo, el carrito y el resumen
 // pinten el precio con margen; hasta entonces el CHECK de la base lo impide y
@@ -77,7 +80,7 @@ const sanearRegla = (body: unknown): { error: string } | { rule: ReglaSaneada } 
 
   const scope = String(body.scope || '').trim()
   if (!SCOPES.has(scope)) {
-    return { error: 'El ámbito tiene que ser global, business_type o business.' }
+    return { error: 'El ámbito tiene que ser global, family, business_type o business.' }
   }
 
   const strategy = String(body.strategy || '').trim()
@@ -101,13 +104,17 @@ const sanearRegla = (body: unknown): { error: string } | { rule: ReglaSaneada } 
   if (scope === 'business_type' && !targetName) {
     return { error: 'Una regla por tipo necesita el nombre del tipo de negocio.' }
   }
+  // Sin familia, una regla de familia se aplicaría a TODA la plataforma.
+  if (scope === 'family' && !targetName) {
+    return { error: 'Una regla por familia necesita a qué familia se aplica.' }
+  }
 
   const regla: ReglaSaneada = {
     scope,
     strategy,
     markup_mode: markupMode,
     business_id: scope === 'business' ? businessId : null,
-    target_name: scope === 'business_type' ? targetName.slice(0, 80) : null,
+    target_name: scope === 'business_type' || scope === 'family' ? targetName.slice(0, 80) : null,
     percentage: null,
     fixed_amount: null,
     tiers: null,
@@ -185,6 +192,11 @@ const inicioDeMesEnEcuador = (desplazamiento = 0): string => {
 }
 
 const router = createRouter()
+
+// Las cinco familias, para que el panel las ofrezca en vez de escribirlas.
+router.get('/api/admin/business-families', authAdmin, async (_req, res) => {
+  res.json(await db.listBusinessFamilies())
+})
 
 router.get('/api/admin/pricing-rules', authAdmin, async (_req, res) => {
   res.json(await db.listPricingRules())

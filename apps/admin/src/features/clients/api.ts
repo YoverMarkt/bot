@@ -203,7 +203,7 @@ export type MarkupTier = { up_to: number | null, amount: number }
 export type PricingRule = {
   id: string
   business_id: string | null
-  scope: 'global' | 'business_type' | 'business'
+  scope: 'global' | 'family' | 'business_type' | 'business'
   target_name: string | null
   strategy: 'percentage' | 'fixed' | 'tiered'
   percentage: number | null
@@ -249,6 +249,14 @@ export type MarkupSummaryRow = {
   margen: number
   comercio: number
 }
+
+export type BusinessFamily = { code: string, label: string, sort: number }
+
+/**
+ * Las cinco familias. Agrupan los 52 tipos: una regla para «comida» cubre 24
+ * —pizzería, hamburguesería, almuerzos, batidos…— en vez de 24 reglas iguales.
+ */
+export const getBusinessFamilies = () => api<BusinessFamily[]>('/api/admin/business-families')
 
 export const getPricingRules = () => api<PricingRule[]>('/api/admin/pricing-rules')
 

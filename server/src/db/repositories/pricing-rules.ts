@@ -130,8 +130,19 @@ const carryCommissionAdjustments = async (periodStart: string) => {
   return data as { periodo: string, ajustes: number, total_ajustado: number }
 }
 
+/** Las familias, para el desplegable del panel. */
+const listBusinessFamilies = async () => {
+  const { data, error } = await db
+    .from('business_families')
+    .select('code, label, sort')
+    .order('sort')
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
 export = {
   listPricingRules,
+  listBusinessFamilies,
   settleMonthCommission,
   carryCommissionAdjustments,
   createPricingRule,
