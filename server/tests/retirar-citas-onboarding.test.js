@@ -7,20 +7,21 @@ const sql = readFileSync(
   `${serverDir}/migration-2026-08-16-retirar-citas.sql`,
   'utf8',
 )
+const schema = readFileSync(`${serverDir}/schema.sql`, 'utf8')
 
-function funcionOnboarding() {
-  const inicio = sql.indexOf(
+function funcionOnboarding(contenido, ultima = false) {
+  const inicio = contenido[ultima ? 'lastIndexOf' : 'indexOf'](
     'create or replace function public.create_business_onboarding(',
   )
   expect(inicio, 'falta create_business_onboarding').toBeGreaterThanOrEqual(0)
 
-  const fin = sql.indexOf('\n$$;', inicio)
+  const fin = contenido.indexOf('\n$$;', inicio)
   expect(fin, 'el cuerpo de create_business_onboarding no cierra').toBeGreaterThan(inicio)
-  return sql.slice(inicio, fin + 4)
+  return contenido.slice(inicio, fin + 4)
 }
 
 describe('onboarding después de retirar citas', () => {
-  const funcion = funcionOnboarding()
+  const funcion = funcionOnboarding(sql)
 
   it('mantiene los tres modos durante el despliegue mixto', () => {
     expect(funcion).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
@@ -34,6 +35,13 @@ describe('onboarding después de retirar citas', () => {
     expect(funcion).toMatch(
       /coalesce\(\(p_business ->> 'takes_orders'\)::boolean, true\),\s*coalesce\(\(p_business ->> 'storefront_enabled'\)::boolean, false\),\s*v_chat_mode,/,
     )
+  })
+
+  it('renombra el permiso citas sin duplicar horarios existentes', () => {
+    expect(sql).toContain('with ordinality as elemento(permiso, posicion)')
+    expect(sql).toContain('min(posicion) as primera_posicion')
+    expect(sql).toContain('group by valor')
+    expect(sql).toContain('jsonb_agg(valor order by primera_posicion)')
   })
 
   it('conserva completo el alta transaccional heredada de las fases previas', () => {
@@ -59,5 +67,9 @@ describe('onboarding después de retirar citas', () => {
     )
     expect(sql).toContain('from public, anon, authenticated;')
     expect(sql).toContain('to service_role;')
+  })
+
+  it('deja el esquema consolidado con el mismo contrato que la migración', () => {
+    expect(funcionOnboarding(schema, true)).toBe(funcion)
   })
 })

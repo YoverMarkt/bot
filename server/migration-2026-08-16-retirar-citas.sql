@@ -79,10 +79,21 @@ $$;
 -- horarios en silencio la próxima vez que entrara.
 update public.client_users
 set permissions = (
-  select jsonb_agg(
-    case when valor = '"citas"'::jsonb then '"horarios"'::jsonb else valor end
-  )
-  from jsonb_array_elements(permissions) as valor
+  select jsonb_agg(valor order by primera_posicion)
+  from (
+    select valor, min(posicion) as primera_posicion
+    from (
+      select
+        case
+          when permiso = '"citas"'::jsonb then '"horarios"'::jsonb
+          else permiso
+        end as valor,
+        posicion
+      from jsonb_array_elements(permissions)
+        with ordinality as elemento(permiso, posicion)
+    ) as normalizados
+    group by valor
+  ) as unicos
 )
 where jsonb_typeof(permissions) = 'array'
   and permissions @> '["citas"]'::jsonb;
