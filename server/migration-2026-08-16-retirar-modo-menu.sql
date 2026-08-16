@@ -8,8 +8,8 @@
 -- invente nada», y la mini app lo resuelve mejor: mismo cero-IA en el pedido,
 -- pero con fotos, carrito y el motor de opciones entero.
 --
--- Quedan DOS modos: `ai` (conversa y se pide por chat) y `miniapp` (la IA
--- resuelve dudas y el enlace es donde se pide).
+-- Quedan DOS modos: `ai` (conversa y se pide por chat) y `miniapp` (responde
+-- con el enlace y el pedido se hace en la app, sin IA).
 --
 -- ⚠️ Los negocios que estuvieran en `menu` pasan a `miniapp`, NO a `ai`. Es la
 -- traducción honesta: eligieron que el pedido no lo condujera un modelo, y
@@ -30,6 +30,24 @@
 -- margen, la mini app, el horario ni los avisos de WhatsApp.
 
 -- ── 1. Los negocios en modo menú pasan a mini app ─────────────────────────
+-- Una fila `menu` sin pedidos o sin tienda no tiene traducción segura: pasarla
+-- a miniapp la dejaría sin IA y sin enlace. Se detiene toda la transacción para
+-- que una persona corrija esa configuración de forma explícita.
+do $$
+begin
+  if exists (
+    select 1
+    from public.businesses
+    where chat_mode = 'menu'
+      and (takes_orders is not true or storefront_enabled is not true)
+  ) then
+    raise exception using
+      errcode = '23514',
+      message = 'Hay negocios menu sin pedidos o tienda; corrígelos antes de migrar';
+  end if;
+end;
+$$;
+
 update public.businesses
 set chat_mode = 'miniapp'
 where chat_mode = 'menu';
@@ -102,6 +120,14 @@ begin
     raise exception using
       errcode = '22023',
       message = 'El modo de conversación debe ser ai o miniapp';
+  end if;
+  if v_chat_mode = 'miniapp' and (
+    coalesce((p_business ->> 'takes_orders')::boolean, true) is not true
+    or coalesce((p_business ->> 'storefront_enabled')::boolean, false) is not true
+  ) then
+    raise exception using
+      errcode = '22023',
+      message = 'El modo miniapp requiere pedidos y tienda habilitados';
   end if;
 
   select *

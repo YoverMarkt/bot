@@ -4458,6 +4458,14 @@ begin
       errcode = '22023',
       message = 'El modo de conversación debe ser ai o miniapp';
   end if;
+  if v_chat_mode = 'miniapp' and (
+    coalesce((p_business ->> 'takes_orders')::boolean, true) is not true
+    or coalesce((p_business ->> 'storefront_enabled')::boolean, false) is not true
+  ) then
+    raise exception using
+      errcode = '22023',
+      message = 'El modo miniapp requiere pedidos y tienda habilitados';
+  end if;
 
   select *
   into v_plan_definition
@@ -5670,6 +5678,14 @@ begin
     raise exception using
       errcode = '22023',
       message = 'El modo de conversación debe ser ai o miniapp';
+  end if;
+  if v_chat_mode = 'miniapp' and (
+    coalesce((p_business ->> 'takes_orders')::boolean, true) is not true
+    or coalesce((p_business ->> 'storefront_enabled')::boolean, false) is not true
+  ) then
+    raise exception using
+      errcode = '22023',
+      message = 'El modo miniapp requiere pedidos y tienda habilitados';
   end if;
 
   select *
@@ -11214,5 +11230,3 @@ revoke all on function public.calculate_platform_markup(uuid, numeric, uuid)
   from public, anon, authenticated;
 grant execute on function public.calculate_platform_markup(uuid, numeric, uuid)
   to service_role;
-
-

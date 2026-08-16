@@ -36,7 +36,6 @@ function setup(overrides = {}) {
     sendText: vi.fn().mockResolvedValue(undefined),
     sendImage: vi.fn().mockResolvedValue(undefined),
     sendVideo: vi.fn().mockResolvedValue(undefined),
-    sendInteractive: vi.fn().mockResolvedValue(true),
     ...overrides.whatsapp,
   }
   const media = {
@@ -149,11 +148,6 @@ describe('entrada de canales del bot', () => {
     const input = current.conversation.processMessage.mock.calls[0][0]
     await input.sendImage('https://cdn.example/a.jpg', undefined, 'direct')
     await input.sendVideo('https://cdn.example/a.mp4', undefined, 'direct')
-    await input.sendOptions(
-      '¿Cotizamos tus fechas?',
-      [{ id: '1', title: '📅 Cotizar estadía' }],
-      'direct',
-    )
 
     expect(current.whatsapp.sendImage).toHaveBeenCalledWith(
       businessA,
@@ -166,14 +160,6 @@ describe('entrada de canales del bot', () => {
       businessA,
       '0990000001',
       'https://cdn.example/a.mp4',
-      undefined,
-      'direct',
-    )
-    expect(current.whatsapp.sendInteractive).toHaveBeenCalledWith(
-      businessA,
-      '0990000001',
-      '¿Cotizamos tus fechas?',
-      [{ id: '1', title: '📅 Cotizar estadía' }],
       undefined,
       'direct',
     )

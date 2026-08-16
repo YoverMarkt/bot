@@ -62,20 +62,15 @@ function setup(overrides = {}) {
     parseBotOutput: vi.fn().mockReturnValue({
       finalText: 'Respuesta final',
       orderPayload: null,
-      lodgingQuote: null,
-      lodgingRequest: null,
       hasSale: false,
       hasHandoffTag: false,
       isUncertain: false,
-      hasActionConflict: false,
     }),
     ...overrides.tags,
   }
   const actions = {
     handleConversationOutcome: vi.fn().mockResolvedValue({ handled: false }),
     processOrderPayload: vi.fn().mockResolvedValue(false),
-    processLodgingQuote: vi.fn().mockResolvedValue('quoted'),
-    processLodgingRequest: vi.fn().mockResolvedValue('requested'),
     ...overrides.actions,
   }
   const media = {
@@ -181,9 +176,9 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         impersonatesOfficialSummary: vi.fn().mockReturnValue(true),
         parseBotOutput: vi.fn().mockReturnValue({
-          finalText: '🏨 *Opciones de hospedaje* inventadas 💰 *Total oficial: $120.00*',
+          finalText: 'Combo inventado 💰 *Total oficial: $120.00*',
           orderPayload: null,
-          hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
+          hasSale: false, hasHandoffTag: false, isUncertain: false,
         }),
       },
     })
@@ -195,7 +190,6 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ isUncertain: true, hasSale: false }),
     )
-    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 
@@ -206,7 +200,7 @@ describe('orquestación de conversaciones del bot', () => {
       parseBotOutput: vi.fn().mockReturnValue({
         finalText: 'Te lo dejo en $40, oferta especial',
         orderPayload: null,
-        hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
+        hasSale: false, hasHandoffTag: false, isUncertain: false,
       }),
     }
 
@@ -300,52 +294,6 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
-  // Antes el hospedaje era una excepción que atendía siempre, y eso convertía
-  // el horario del dueño en decoración: no podía apagar el bot ni queriendo.
-  // Ahora manda su configuración; para cotizar de madrugada pone 00:00-23:59.
-  it('el hospedaje también calla fuera de horario: manda el horario del dueño', async () => {
-    const lodgingQuote = {
-      checkInRaw: '2026-08-10', checkOutRaw: '2026-08-13',
-      roomsRaw: '1', roomsCount: 1,
-      adultsRaw: '2', childrenRaw: '0',
-      checkIn: '2026-08-10', checkOut: '2026-08-13', adults: 2, children: 0,
-    }
-    const current = setup({
-      schedule: { isOutsideHours: vi.fn().mockReturnValue(true) },
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Consultando',
-              orderPayload: null,
-          lodgingQuote,
-          lodgingRequest: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-          hasActionConflict: false,
-        }),
-      },
-    })
-    const lodgingBusiness = { ...business, lodging_enabled: true, takes_orders: false }
-
-    await current.conversation.processMessage(input(current, {
-      business: lodgingBusiness,
-      text: 'Somos dos del 10 al 13 de agosto',
-    }))
-
-    // Informa el horario y se detiene ahí: ni IA ni cotización.
-    expect(current.send).toHaveBeenCalledWith('Horario del negocio')
-    expect(current.ai.callAI).not.toHaveBeenCalled()
-    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
-
-    // La conversación se guarda igual, para que el dueño la vea al abrir.
-    expect(current.database.saveMessage).toHaveBeenCalledWith(
-      'business-a', '0990000001', 'user', 'Somos dos del 10 al 13 de agosto',
-    )
-    expect(current.database.saveMessage).toHaveBeenCalledWith(
-      'business-a', '0990000001', 'assistant', 'Horario del negocio',
-    )
-  })
-
   it('mantiene preguntas de precio y media automatizadas en modo informativo', async () => {
     const current = setup({
       tags: {
@@ -354,13 +302,10 @@ describe('orquestación de conversaciones del bot', () => {
         }),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Cuesta $10.00 y está disponible.',
-              orderPayload: null,
-          lodgingQuote: null,
-          lodgingRequest: null,
+          orderPayload: null,
           hasSale: false,
           hasHandoffTag: false,
           isUncertain: false,
-          hasActionConflict: false,
         }),
       },
     })
@@ -377,12 +322,9 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
       expect.objectContaining({ wantsImage: true }),
     )
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: null }),
-    )
   })
 
-  it('mantiene RAG, acciones, pedido y media en el mismo tenant y orden lógico', async () => {
+  it('mantiene RAG, acciones y media en el mismo tenant y orden lógico', async () => {
     const current = setup({
       database: {
         getSession: vi.fn().mockResolvedValue({ closed_sale_at: '2026-07-01' }),
@@ -425,15 +367,6 @@ describe('orquestación de conversaciones del bot', () => {
       [],
       true,
       true,
-    )
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({
-        business,
-        phone: '0990000001',
-        payload: null,
-        products: [product],
-        preFiltered: true,
-      }),
     )
     expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -523,10 +456,6 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Texto que no debe salir',
-          booking: {
-            contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-            service: 'Corte', bookingDate: '2026-07-20', bookingTime: '09:30',
-          },
           orderPayload: 'Producto A x1',
           hasSale: true,
           hasHandoffTag: true,

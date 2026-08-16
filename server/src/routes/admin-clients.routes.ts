@@ -190,7 +190,7 @@ const ALLOWED_BUSINESS_FIELDS = [
 
 // Los dos modos de atención. Cualquier otro valor lo rechaza la base.
 //   ai      → conversa con IA, se pide por chat, sin enlace
-//   miniapp → la IA resuelve dudas y el enlace es donde se pide
+//   miniapp → responde con el enlace y se pide en la app, sin IA
 //
 // `menu` (botones armados por código, sin IA) se retiró el 2026-08-16 con la
 // fase 3 de dejar Umbani solo con domicilios: la mini app hace lo mismo mejor.
@@ -270,6 +270,17 @@ function invalidChatMode(body: Record<string, unknown>): boolean {
   if (!('chat_mode' in body)) return false
   const value = body.chat_mode
   return !CHAT_MODES.some(mode => mode === value)
+}
+
+function miniappConfigurationError(business: Record<string, unknown>): string | null {
+  if (business.chat_mode !== 'miniapp') return null
+  if (business.takes_orders !== true) {
+    return 'El modo miniapp requiere que el negocio cree pedidos'
+  }
+  if (business.storefront_enabled !== true) {
+    return 'El modo miniapp requiere que la tienda esté encendida'
+  }
+  return null
 }
 
 function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
@@ -399,7 +410,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (ai o miniapp)' })
   }
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
@@ -456,6 +467,8 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       monthly_outbound_message_limit:
         usageLimits.monthly_outbound_message_limit,
     }
+    const miniappError = miniappConfigurationError(businessPayload)
+    if (miniappError) return res.status(400).json({ error: miniappError })
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
     const monthlyRate = planDefinition.monthlyRate
     const result = await db.createBusinessOnboarding(
@@ -489,7 +502,7 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
   }
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (ai o miniapp)' })
   }
   if ('plan' in body && !normalizePlanId(body.plan)) {
     return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
@@ -542,6 +555,8 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     }
     const channelError = channelConfigurationError(effectiveBusiness)
     if (channelError) return res.status(400).json({ error: channelError })
+    const miniappError = miniappConfigurationError(effectiveBusiness)
+    if (miniappError) return res.status(400).json({ error: miniappError })
 
     if (Object.keys(businessData).length) {
       const result = await db.updateBusiness(req.params.id, businessData)

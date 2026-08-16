@@ -9,16 +9,10 @@ import { Input } from '@botpanel/ui/components/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 
-// Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
-// Usa el mismo motor que el bot real (POST /api/admin/simulate).
-
-// El servidor manda las opciones como texto simple o como {título, descripción},
-// igual que una fila de lista de WhatsApp.
-type MenuOption = string | { title: string; description?: string }
-const optionTitle = (option: MenuOption) => typeof option === 'string' ? option : option.title
-const optionDetail = (option: MenuOption) => typeof option === 'string' ? '' : (option.description || '')
-
-type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; options?: MenuOption[] | null; at: string }
+// Simulador de bot — prueba la respuesta configurada sin usar un canal real.
+// En miniapp replica el corte sin IA y explica que el enlace personal solo se
+// crea en WhatsApp/Telegram; en modo IA usa el mismo prompt y guardas.
+type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
@@ -38,31 +32,19 @@ export default function Simulator() {
     setMsgs([])
   }
 
-  // fromOption: texto de un botón del menú guiado; tocar uno equivale a escribirlo
-  async function send(fromOption?: string) {
-    const t = (fromOption ?? text).trim()
+  async function send() {
+    const t = text.trim()
     if (!t || !bizId || typing) return
-    if (!fromOption) setText('')
+    setText('')
     setMsgs(m => [...m, { role: 'user', text: t, at: now() }])
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null; video?: string | null; media?: { url: string; isVideo: boolean }[] | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
+      const d = await api<{ reply?: string; image?: string | null; video?: string | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
         body: JSON.stringify({ business_id: bizId, message: t }),
       })
-      // Paso "Ver fotos y videos": los archivos llegan como mensajes separados
-      // ANTES del texto, igual que WhatsApp los envía uno por uno.
-      if (d.media?.length) {
-        setMsgs(m => [...m, ...d.media!.map(item => ({
-          role: 'bot' as const,
-          text: '',
-          image: item.isVideo ? null : item.url,
-          video: item.isVideo ? item.url : null,
-          at: now(),
-        }))])
-      }
-      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, options: d.options, at: now() }])
+      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, at: now() }])
       // La nota de media ("no tengo foto de ese producto…") llega como
       // mensaje aparte, igual que en WhatsApp/Telegram.
       if (d.mediaNote) setMsgs(m => [...m, { role: 'bot', text: d.mediaNote!, at: now() }])
@@ -149,21 +131,6 @@ export default function Simulator() {
               )}
               {m.video && (
                 <video src={m.video} controls className="mt-2 max-w-56 rounded-xl border border-input" />
-              )}
-              {/* Opciones del menú guiado (estilo respuestas rápidas de WhatsApp) */}
-              {!!m.options?.length && (
-                <div className="mt-2 flex max-w-[75%] flex-col items-start gap-1.5">
-                  {m.options.map(o => (
-                    <Button key={optionTitle(o)} variant="outline" size="sm" disabled={typing}
-                      className="h-auto max-w-full flex-col items-start gap-0 rounded-xl border-primary/40 px-3 py-1.5 text-left hover:bg-primary/10"
-                      onClick={() => send(optionTitle(o))}>
-                      <span className="text-xs font-medium text-primary">{optionTitle(o)}</span>
-                      {optionDetail(o) && (
-                        <span className="text-[11px] font-normal text-muted-foreground">{optionDetail(o)}</span>
-                      )}
-                    </Button>
-                  ))}
-                </div>
               )}
               <span className="text-[10px] text-muted-foreground/70 mt-1">{m.at}</span>
             </div>

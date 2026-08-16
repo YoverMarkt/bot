@@ -35,6 +35,15 @@ const EMPTY = {
   client_email: '', client_password: '', notes: '',
 }
 
+// Durante el despliegue code-first la base todavía puede devolver `menu`.
+// Esa elección significaba «pedir sin IA», por lo que en el formulario se
+// representa como miniapp; cargarla como `ai` cambiaría el negocio con solo
+// abrir y guardar el modal.
+const chatModeForForm = (value: unknown): 'ai' | 'miniapp' => {
+  if (value === 'menu' || value === 'miniapp') return 'miniapp'
+  return 'ai'
+}
+
 export default function ClientModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState(EMPTY)
   const [savedCredentials, setSavedCredentials] = useState<Record<string, boolean>>({})
@@ -64,7 +73,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ai_provider: c.ai_provider ?? '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
-        chat_mode: ['ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
+        chat_mode: chatModeForForm(c.chat_mode),
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
@@ -288,7 +297,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <SelectTrigger id="client-sales-mode" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="vende">Crea pedidos con total oficial</SelectItem>
-                    <SelectItem value="informa">Solo informa y deriva</SelectItem>
+                    <SelectItem value="informa" disabled={f.chat_mode === 'miniapp'}>Solo informa y deriva</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
@@ -297,17 +306,28 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 <Label htmlFor="client-chat-mode">Quién conduce la conversación</Label>
                 <Select value={f.chat_mode} onValueChange={value => {
                   setChatModeTouched(true)
-                  setVal('chat_mode')(value)
+                  if (value === 'miniapp') {
+                    setSalesTouched(true)
+                    setStorefrontTouched(true)
+                    setF(prev => ({
+                      ...prev,
+                      chat_mode: 'miniapp',
+                      sales: 'vende',
+                      storefront: 'yes',
+                    }))
+                  } else {
+                    setVal('chat_mode')(value)
+                  }
                 }}>
                   <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="miniapp">Mini app (IA + enlace para pedir)</SelectItem>
+                    <SelectItem value="miniapp">Mini app (enlace para pedir, sin IA)</SelectItem>
                     <SelectItem value="ai">Conversación con IA</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  <strong>Mini app</strong>: la IA responde dudas y el pedido se hace en la app; es el único modo que envía el enlace.
-                  {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en los tres.
+                  <strong>Mini app</strong>: responde con el enlace y el pedido se hace en la app, sin usar IA.
+                  {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en ambos modos.
                 </p>
               </div>
               <div>
@@ -322,14 +342,14 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 >
                   <SelectTrigger id="client-storefront" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="no">Solo chat</SelectItem>
+                    <SelectItem value="no" disabled={f.chat_mode === 'miniapp'}>Solo chat</SelectItem>
                     <SelectItem value="yes">El bot manda su enlace de tienda</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {puedeTenerTienda
                     ? 'El cliente recibe por WhatsApp un enlace personal para armar su pedido. Enciéndela con el catálogo ya cargado: una tienda vacía se ve peor que ninguna.'
-                    : 'Necesita crear pedidos. Un negocio que solo informa —una barbería, por ejemplo— no tendría nada que mostrar en la tienda.'}
+                    : 'Necesita crear pedidos. Un negocio que solo informa no tendría nada que mostrar en la tienda.'}
                 </p>
               </div>
               <div>

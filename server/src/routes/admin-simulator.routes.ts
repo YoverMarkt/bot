@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
 import type { BusinessRecord } from '../db/types'
+import { usaFlujoMiniapp } from '../services/chat-mode'
 
 interface DatabaseResult {
   error?: { message?: string } | null
@@ -18,11 +19,6 @@ const db: {
     content: string,
   ): Promise<DatabaseResult>
   clearSimHistory(businessId: string): Promise<DatabaseResult>
-  getMenuModifiers(businessId: string, categoryTag?: string | null): Promise<unknown[]>
-  getLastOrderForContact(
-    businessId: string,
-    contactPhone: string,
-  ): Promise<{ order_items?: Record<string, unknown>[] } | null>
 } = require('../db') as typeof import('../db')
 const bot: {
   buildPrompt(
@@ -70,6 +66,8 @@ const media: {
 const router = createRouter()
 const SIMULATOR_CONTACT = 'sim_admin'
 const HANDOFF_REPLY = 'Permítame un momento por favor 🙏 enseguida un asesor de nuestro equipo continuará con usted para ayudarle mejor ✨'
+const MINIAPP_REPLY = '🛍️ En el canal real, aquí se envía el enlace personal de la tienda para hacer el pedido.'
+const MINIAPP_NOTE = 'Modo mini app: no se llamó a la IA. El simulador no crea enlaces personales ni pedidos reales.'
 
 function databaseError(result: DatabaseResult, operation: string): void {
   if (!result.error) return
@@ -89,6 +87,29 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
   if (!business) return res.status(404).json({ error: 'Negocio no encontrado' })
 
   try {
+    // El simulador no puede convertir miniapp en una conversación con IA: el
+    // negocio real corta antes del modelo y emite un enlace personal. `menu`
+    // legacy conserva esa misma promesa durante el despliegue code-first.
+    if (usaFlujoMiniapp(business.chat_mode)) {
+      databaseError(
+        await db.saveMessage(business.id, SIMULATOR_CONTACT, 'user', message),
+        'guardar mensaje de prueba',
+      )
+      databaseError(
+        await db.saveMessage(business.id, SIMULATOR_CONTACT, 'assistant', MINIAPP_REPLY),
+        'guardar respuesta de prueba',
+      )
+      console.log(`🧪 [Sim] ${business.name || business.id}: miniapp sin IA`)
+      return res.json({
+        reply: MINIAPP_REPLY,
+        options: null,
+        image: null,
+        video: null,
+        mediaNote: null,
+        actionNote: MINIAPP_NOTE,
+      })
+    }
+
     const [products, policies, history] = await Promise.all([
       db.getProducts(business.id),
       db.getPolicies(business.id),

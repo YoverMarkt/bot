@@ -427,10 +427,10 @@ export function buildStorefrontCatalog(input: {
       recommendations,
       // ⚠️ Un grupo NO puede salir dos veces.
       //
-      // Los extras vienen de `menu_modifiers`, la tabla vieja que el bot sigue
-      // usando; los grupos de opciones son el motor nuevo. Al construir el
-      // motor se COPIARON los modificadores existentes sin retirar los
-      // originales, así que un negocio con las dos cosas mandaba las mismas
+      // Los extras vienen de `menu_modifiers`, la tabla heredada que aún
+      // conserva catálogos antiguos; los grupos de opciones son el motor
+      // nuevo. Al construirlo se COPIARON los modificadores existentes sin
+      // retirar los originales, así que un negocio con las dos cosas mandaba las mismas
       // opciones por los dos campos y la ficha las pintaba dos veces: los 19
       // sabores de Monster Pizza salían repetidos, una vez con radio y otra
       // con casillas.

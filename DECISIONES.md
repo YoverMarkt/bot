@@ -27,14 +27,14 @@ un módulo concreto, no en cada sesión.
 - [Los estados de un pedido](#los-estados-de-un-pedido)
 - [Envío, pago y color de la tienda](#envío-pago-y-color-de-la-tienda)
 - [Un pedido entregado es una venta](#un-pedido-entregado-es-una-venta)
-- [Los tres modos de atención](#los-tres-modos-de-atención)
+- [Los dos modos de atención](#los-dos-modos-de-atención)
 - [Lo que gana la plataforma](#lo-que-gana-la-plataforma)
 
 ---
 
 ## Etiquetas del bot
 
-**Etiquetas del bot** en formato `##NOMBRE##` o `##NOMBRE:datos##`; `server/src/services/bot-entry.ts` agrupa mensajes y resuelve WhatsApp mediante `(provider, identifier_type, canonical_identifier)` o Telegram por slug. Nunca compara sufijos de teléfono. `server/src/services/bot-conversation.ts` coordina el flujo, `server/src/services/bot-tags.ts` detecta y limpia sin acceder a la base, `server/src/services/bot-actions.ts` ejecuta acciones y `server/src/services/bot-media.ts` envía media del catálogo. Todos reciben exclusivamente el `business.id` resuelto por el adaptador de canal. Las vigentes incluyen `##BOOK:nombre|YYYY-MM-DD|HH:MM|servicio##`, `##PEDIDO:producto x cantidad; ...##`, `##STAY_QUOTE:ENTRADA|SALIDA|HABITACIONES|ADULTOS|NIÑOS##`, `##STAY_REQUEST:TIPO_HABITACION|NOMBRE##` y `##HANDOFF##`. Las acciones BOOK, PEDIDO, STAY_QUOTE, STAY_REQUEST y HANDOFF son mutuamente excluyentes; una respuesta conflictiva falla cerrado. `##VENTA##`/`##PEDIDO##` simples se conservan solo como respaldo legacy y `##BOOKING##` se limpia por compatibilidad.
+**Etiquetas del bot** en formato `##NOMBRE##` o `##NOMBRE:datos##`; `server/src/services/bot-entry.ts` agrupa mensajes y resuelve WhatsApp mediante `(provider, identifier_type, canonical_identifier)` o Telegram por slug. Nunca compara sufijos de teléfono. `server/src/services/bot-conversation.ts` coordina el flujo, `server/src/services/bot-tags.ts` detecta y limpia sin acceder a la base, `server/src/services/bot-actions.ts` ejecuta acciones y `server/src/services/bot-media.ts` envía media del catálogo. Todos reciben exclusivamente el `business.id` resuelto por el adaptador de canal. Las vigentes son `##PEDIDO:producto x cantidad; ...##` y `##HANDOFF##`; `##VENTA##`/`##PEDIDO##` simples se conservan solo como respaldo legacy. Las etiquetas retiradas `##BOOK:...##` y `##BOOKING##` únicamente se limpian para que un prompt antiguo no las muestre al cliente: ya no disparan reservas.
 
 ---
 
@@ -56,14 +56,14 @@ traducción honesta: habían elegido que el pedido no lo condujera un modelo, y
 `miniapp` conserva esa promesa mientras que `ai` la rompería justo en lo que
 descartaron. Quedan dos modos.
 
-⚠️ Sobrevive `services/saludo.ts` (`esSoloUnSaludo`), que vivía en `bot-menu.ts`
-pero no era del menú: decide cuándo el modo mini app manda el enlace.
+La mini app manda el enlace sin pasar por IA; ya no queda un detector de saludo
+ni ninguna pieza del modo menú en el flujo de atención.
 
 ---
 
 ## Reportes del dueño
 
-**Reportes del dueño (`server/src/services/reports.ts`):** NO son etiquetas ni function-calling. Son una **capa de intención server-side** que corre en `bot-conversation.ts` ANTES del flujo de atención: si quien escribe es el `owner_phone` del negocio y el texto pide un reporte, se responde el reporte (texto plano WhatsApp) y se corta; si no es el dueño o no es un reporte, devuelve `handled:false` y sigue el flujo normal. Sus cálculos, dashboard y alertas están tipados y todos reciben el `business_id` ya resuelto. Las ventas se registran a mano desde el panel del cliente (tablas `sales` + `sale_items`).
+**Reportes del dueño (`server/src/services/reports.ts`):** NO son etiquetas ni function-calling. Son una **capa de intención server-side** que corre en `bot-conversation.ts` ANTES del flujo de atención: si quien escribe es el `owner_phone` del negocio y el texto pide un reporte, se responde el reporte (texto plano WhatsApp) y se corta; si no es el dueño o no es un reporte, devuelve `handled:false` y sigue el flujo normal. Sus cálculos, dashboard y alertas están tipados y todos reciben el `business_id` ya resuelto. Las ventas nacen de un pedido entregado o de un pedido de mostrador y se consolidan en `sales` + `sale_items`.
 
 ---
 
@@ -190,24 +190,27 @@ que dejó y sigue vigente es el criterio: la conversión se ENVUELVE y cuenta en
 el momento en que el negocio se compromete, no al terminar el servicio.
 
 
-## Los tres modos de atención
+## Los dos modos de atención
 
 **La incoherencia que cerró (2026-08-02):** `chat_mode` solo tenía `'menu'` y `'ai'`, y el enlace de la mini app **se mandaba en los dos**. Un negocio recién creado recibía el menú de botones **y** el enlace a la vez: dos formas de hacer lo mismo compitiendo en el mismo chat. Lo detectó el dueño del SaaS creando negocios nuevos, no un test.
 
-Desde ahora cada negocio atiende de **una** forma, y el enlace **pertenece a un modo concreto**:
+Tras retirar el modo menú el 2026-08-16, cada negocio atiende de **una** de dos formas y el enlace **pertenece a un modo concreto**:
 
 | Modo | Quién conduce | Dónde se pide | ¿Enlace? |
 |---|---|---|---|
 | `ai` | La IA, conversando | Por chat (`##PEDIDO##`) | **No** |
-| `menu` | El código, con botones | Por el menú | **No** |
-| `miniapp` | La IA resuelve dudas | En la mini app | **Sí**, al saludar |
+| `miniapp` | Responde con el enlace, sin IA | En la mini app | **Sí**, en cada respuesta permitida |
 
 - **En modo IA puro tampoco:** ese negocio eligió atender y vender por chat. Mandarle el enlace sería meterle una app que no pidió.
-- **El enlace es lo que DEFINE el modo mini app.** Va como mensaje propio *después* del saludo del asistente —al revés se lee como publicidad antes de responderle a la persona— y **solo ante un saludo**: quien ya pregunta algo concreto quiere su respuesta, no un enlace.
+- **El enlace es lo que DEFINE el modo mini app.** Este modo corta antes de
+  políticas, historial, catálogo, visión y modelo: quien escribe recibe su
+  enlace personal para pedir. Requiere `takes_orders=true` y
+  `storefront_enabled=true`; si falta una de esas capacidades el panel y la RPC
+  rechazan la configuración en vez de dejar un negocio sin IA y sin tienda.
 
-**El modo se propone según el tipo al dar de alta y se puede cambiar siempre.** Con tienda (restaurante, tienda, hotel) → `miniapp`; barbería o consultorio → `menu`, que es más barato y predecible que la IA para elegir de una lista corta; catálogos enormes y consultoría → `ai`. ⚠️ Como el resto de recomendaciones por tipo, **solo PROPONE al crear**: el `chat_mode` persistido manda siempre y jamás se sobrescribe a un negocio existente. Una pizzería que quiera «solo chat» se queda en `ai` o en `menu` aunque tenga tienda.
+**El modo se propone según el tipo al dar de alta y se puede cambiar siempre.** Los negocios que crean pedidos y tienen tienda reciben `miniapp`; los negocios informativos reciben `ai`. ⚠️ Como el resto de recomendaciones por tipo, **solo PROPONE al crear**: el `chat_mode` persistido manda siempre y jamás se sobrescribe a un negocio existente. Una pizzería que quiera atender solo por chat se queda en `ai` aunque tenga tienda.
 
-La migración pasa a `miniapp` los negocios que ya tenían tienda encendida: son exactamente los que estaban recibiendo menú y enlace a la vez.
+La migración pasa a `miniapp` los negocios que estaban en `menu`: conserva la decisión de que el pedido no lo conduzca el modelo sin mantener dos caminos para la misma compra.
 
 ---
 
@@ -220,18 +223,17 @@ confirmada registraba su venta en `sales`, así que los reportes tenían una sol
 fuente de verdad.
 
 Se retiró entero con el módulo de hospedaje, en la fase 1 de dejar Umbani solo
-con domicilios. Quedan **tres** caminos, y el estándar sigue siendo el mismo:
+con domicilios. Tras retirar también las citas quedan **dos** caminos, y el
+estándar sigue siendo el mismo:
 
 ```
 Pedido entregado    → venta
 Pedido de mostrador → venta
-Cita atendida       → venta
 ```
 
-Lo que aquel trabajo dejó y **sigue vigente** es el criterio: la conversión se
-ENVUELVE, no se reescribe (`crear_venta_desde_pedido` y `crear_venta_desde_cita`
-siguen así), y cuenta en el momento en que el negocio se compromete, no al
-terminar el servicio.
+Lo que aquel trabajo dejó y **sigue vigente** es el criterio: la conversión del
+pedido se ENVUELVE, no se reescribe, y cuenta en el momento en que el negocio
+se compromete.
 
 ### Un agujero que destapó
 

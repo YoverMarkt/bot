@@ -54,7 +54,7 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 function mockBusinessContext() {
-  const business = { id: 'business-a', name: 'Demo', ai_provider: 'groq' }
+  const business = { id: 'business-a', name: 'Demo', ai_provider: 'groq', chat_mode: 'ai' }
   vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
   vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
   vi.spyOn(db, 'getPolicies').mockResolvedValue({ bot_prompt: 'Vende bien' })
@@ -132,6 +132,45 @@ describe('simulador del superadmin', () => {
       actionNote: null,
     })
   })
+
+  it.each(['miniapp', 'menu'])(
+    'en %s replica el corte sin IA y no finge una conversación',
+    async chat_mode => {
+      const business = { id: 'business-a', name: 'Demo', chat_mode }
+      vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
+      const getProducts = vi.spyOn(db, 'getProducts')
+      const getPolicies = vi.spyOn(db, 'getPolicies')
+      const getHistory = vi.spyOn(db, 'getContactHistory')
+      const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+      const buildPrompt = vi.spyOn(bot, 'buildPrompt')
+      const callAI = vi.spyOn(bot, 'callAI')
+
+      const response = await dispatch('post', '/api/admin/simulate', {
+        auth: authorization(),
+        body: { business_id: 'business-a', message: 'Quiero pedir' },
+      })
+
+      expect(getProducts).not.toHaveBeenCalled()
+      expect(getPolicies).not.toHaveBeenCalled()
+      expect(getHistory).not.toHaveBeenCalled()
+      expect(buildPrompt).not.toHaveBeenCalled()
+      expect(callAI).not.toHaveBeenCalled()
+      expect(saveMessage).toHaveBeenNthCalledWith(
+        1, 'business-a', 'sim_admin', 'user', 'Quiero pedir',
+      )
+      expect(saveMessage).toHaveBeenNthCalledWith(
+        2,
+        'business-a',
+        'sim_admin',
+        'assistant',
+        expect.stringContaining('enlace personal'),
+      )
+      expect(response.status).toBe(200)
+      expect(response.body.reply).toContain('enlace personal')
+      expect(response.body.actionNote).toContain('no se llamó a la IA')
+      expect(response.body.options).toBeNull()
+    },
+  )
 
   it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
     mockBusinessContext()

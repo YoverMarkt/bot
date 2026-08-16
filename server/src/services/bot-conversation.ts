@@ -5,9 +5,6 @@ import type {
 } from './bot-actions'
 import type { ParsedBotOutput } from './bot-tags'
 import { usaFlujoMiniapp } from './chat-mode'
-// Detector de saludos puros ya probado: "hola", "buenas", "menú". Es una
-// función pura sin base de datos, así que se importa directo.
-import { esSoloUnSaludo } from './saludo'
 import { RESPUESTA_COMPROBANTE, esComprobante } from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
@@ -70,12 +67,6 @@ interface ConversationDatabase {
     limit: number,
   ): Promise<ConversationProduct[]>
   getProducts(businessId: string): Promise<ConversationProduct[]>
-  // Solo los usa el modo menú
-  getMenuModifiers?(businessId: string, categoryTag?: string | null): Promise<Record<string, unknown>[]>
-  getLastOrderForContact?(
-    businessId: string,
-    contactPhone: string,
-  ): Promise<{ order_items?: Record<string, unknown>[] } | null>
   recordConsultations(businessId: string, productIds: string[]): Promise<unknown>
   // Modo mini app: quién es el cliente y si toca mandarle el enlace.
   resolveCustomer(input: {
@@ -256,13 +247,6 @@ export interface ProcessMessageInput {
     caption?: string,
     deliveryMode?: 'queued' | 'direct',
   ) => Promise<unknown>
-  // Menú con botones/listas nativas. Devuelve false si el canal no lo soporta
-  // y entonces las opciones se mandan numeradas como texto.
-  sendOptions?: (
-    body: string,
-    options: { id: string; title: string; description?: string }[],
-    deliveryMode?: 'queued' | 'direct',
-  ) => Promise<boolean>
   // El enlace de la tienda como BOTÓN nativo. Devuelve false si el canal no lo
   // soporta o si el envío falla, y entonces el enlace sale como texto — que es
   // como salía hasta el 2026-08-12.
@@ -900,33 +884,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     }
 
     await humanizedSend(parsedOutput.finalText, send, sendTyping)
-
-    // El enlace es lo que DEFINE el modo mini app: la IA resuelve dudas y la
-    // app es donde se pide. En modo 'ai' puro no se manda — ese negocio eligió
-    // atender y vender por chat.
-    //
-    // Va como mensaje propio DESPUÉS del saludo del asistente: al revés se
-    // leería como publicidad antes de siquiera responderle a la persona. Y
-    // solo ante un saludo, porque quien ya pregunta algo concreto no lo quiere.
-    if (usaFlujoMiniapp(business.chat_mode) && esSoloUnSaludo(text)) {
-      const url = await storefrontUrlFor(business, phone, session?.contact_name)
-      if (url) {
-        const texto = await enviarInvitacion({
-          business, url, send, sendLink: input.sendLink,
-        })
-        await database.saveMessage(business.id, phone, 'assistant', texto)
-      }
-    }
-
-    await actions.processOrderPayload({
-      business,
-      phone,
-      session,
-      payload: parsedOutput.orderPayload,
-      products,
-      preFiltered,
-      send,
-    })
     await media.sendRequestedProductMedia({
       business,
       text,

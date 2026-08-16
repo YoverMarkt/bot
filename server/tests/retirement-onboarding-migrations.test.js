@@ -33,9 +33,8 @@ describe('onboarding durante el retiro por fases', () => {
   const citas = ultimaFuncionOnboarding(
     leer('migration-2026-08-16-retirar-citas.sql'),
   )
-  const menu = ultimaFuncionOnboarding(
-    leer('migration-2026-08-16-retirar-modo-menu.sql'),
-  )
+  const menuSql = leer('migration-2026-08-16-retirar-modo-menu.sql')
+  const menu = ultimaFuncionOnboarding(menuSql)
 
   it('fase 1 conserva citas, tienda y los tres modos del despliegue mixto', () => {
     expect(hospedaje).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
@@ -59,6 +58,14 @@ describe('onboarding durante el retiro por fases', () => {
     expect(menu).not.toMatch(/\btakes_bookings\b/)
     expect(menu).not.toMatch(/\blodging_enabled\b/)
     esperarTiendaPreservada(menu)
+    expect(menu).toContain('El modo miniapp requiere pedidos y tienda habilitados')
+  })
+
+  it('fase 3 se detiene ante un menu legacy sin tienda utilizable', () => {
+    expect(menuSql).toMatch(
+      /where chat_mode = 'menu'\s+and \(takes_orders is not true or storefront_enabled is not true\)/,
+    )
+    expect(menuSql).toContain("errcode = '23514'")
   })
 
   it('el contrato final de schema.sql coincide con la fase 3', () => {

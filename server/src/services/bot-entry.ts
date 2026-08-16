@@ -48,14 +48,6 @@ interface EntryWhatsApp {
     caption?: string,
     deliveryMode?: 'queued' | 'direct',
   ): Promise<void>
-  sendInteractive(
-    business: EntryBusiness,
-    to: string,
-    body: string,
-    options: { id: string; title: string; description?: string }[],
-    listButtonText?: string,
-    deliveryMode?: 'queued' | 'direct',
-  ): Promise<boolean>
   // El enlace de la tienda como botón nativo. false = el canal no puede, y
   // quien llama manda el enlace como texto.
   sendLinkButton(
@@ -237,11 +229,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       caption?: string,
       deliveryMode?: 'queued' | 'direct',
     ) => Promise<unknown>,
-    sendOptions?: (
-      body: string,
-      options: { id: string; title: string; description?: string }[],
-      deliveryMode?: 'queued' | 'direct',
-    ) => Promise<boolean>,
     sendLink?: (
       message: { body: string; url: string; label: string; footer?: string | null },
     ) => Promise<boolean>,
@@ -256,7 +243,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       sendImage,
       sendTyping,
       sendVideo,
-      sendOptions,
       sendLink,
       inboundId,
     })
@@ -330,16 +316,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption, deliveryMode) => deliveryMode
         ? whatsapp.sendVideo(business, from, url, caption, deliveryMode)
         : whatsapp.sendVideo(business, from, url, caption),
-      (body, menuOptions, deliveryMode) => deliveryMode
-        ? whatsapp.sendInteractive(
-            business,
-            from,
-            body,
-            menuOptions,
-            undefined,
-            deliveryMode,
-          )
-        : whatsapp.sendInteractive(business, from, body, menuOptions),
       // El enlace de la tienda va como botón nativo. Solo aquí: es el camino
       // del mensaje de texto entrante, que es el único que lo manda.
       message => whatsapp.sendLinkButton(business, from, message),
@@ -513,7 +489,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption) => whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
-      (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
       message => whatsapp.sendLinkButton(business, from, message),
       options.inboundId,
     )
