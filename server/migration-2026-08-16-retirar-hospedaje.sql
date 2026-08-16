@@ -19,17 +19,18 @@
 -- Aquí vive el hostal de demostración; sus habitaciones, cotizaciones y holds
 -- se pierden. Ningún negocio de comida tiene datos en estas tablas.
 --
--- ⚠️ SÍ recrea `create_business_onboarding`, y hace falta. La versión que corre
--- HOY en producción viene de `migration-2026-08-06-tiempo-de-preparacion.sql`,
--- que inserta `lodging_enabled` en `businesses` de forma incondicional. Soltar
--- la columna sin recrearla deja la función compilando pero reventando en
--- ejecución (42703) con el primer negocio que se dé de alta: PostgreSQL no
+-- ⚠️ SÍ recrea `create_business_onboarding`, y hace falta. La versión previa
+-- a esta fase todavía inserta `lodging_enabled` en `businesses` de forma
+-- incondicional. Soltar la columna sin recrearla deja la función compilando
+-- pero reventando en ejecución (42703) con el primer negocio que se dé de
+-- alta: PostgreSQL no
 -- valida cuerpos plpgsql al soltar una columna, así que la migración se
 -- aplicaría «con éxito» y el fallo aparecería días después. Es exactamente la
 -- cicatriz del alta de clientes de agosto de 2026.
 --
 -- El cuerpo que se escribe abajo es el VIGENTE con hospedaje quitado y nada
--- más: conserva la validación de plan, `bot_policies`, los siete días de
+-- más: conserva la validación de plan, los tres modos compatibles durante el
+-- despliegue, el interruptor de tienda, `bot_policies`, los siete días de
 -- horario, el usuario dueño, la cuota y los tiempos de preparación. Misma
 -- firma, así que los `grant`/`revoke` existentes siguen valiendo.
 --
@@ -157,10 +158,10 @@ begin
       errcode = '22023',
       message = 'La contraseña debe llegar cifrada';
   end if;
-  if v_chat_mode not in ('menu', 'ai') then
+  if v_chat_mode not in ('menu', 'ai', 'miniapp') then
     raise exception using
       errcode = '22023',
-      message = 'El modo de conversación debe ser menu o ai';
+      message = 'El modo de conversación debe ser menu, ai o miniapp';
   end if;
 
   select *
@@ -220,6 +221,7 @@ begin
     telegram_bot_token,
     takes_bookings,
     takes_orders,
+    storefront_enabled,
     chat_mode,
     ai_provider,
     owner_phone,
@@ -248,6 +250,7 @@ begin
     nullif(p_business ->> 'telegram_bot_token', ''),
     coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
+    coalesce((p_business ->> 'storefront_enabled')::boolean, false),
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
