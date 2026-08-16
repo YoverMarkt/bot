@@ -21,6 +21,7 @@
 //   npm run migrate:status                 -- qué hay aplicado y qué falta
 //   npm run migrate:baseline               -- dar por aplicadas las de siempre
 //   npm run migrate                        -- aplicar lo pendiente
+//   npm run migrate -- --solo=archivo.sql  -- aplicar únicamente la primera pendiente
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -39,18 +40,156 @@ const REGISTRO = 'migration-registro-migraciones.sql'
 
 const huella = texto => createHash('sha256').update(texto).digest('hex').slice(0, 16)
 
-const migracionesEnDisco = () => readdirSync(RAIZ)
-  .filter(f => f.startsWith('migration-') && f.endsWith('.sql'))
-  .filter(f => !JAMAS_EJECUTAR.has(f))
-  // Las nuevas se llaman `migration-AAAA-MM-DD-tema.sql`, así que entre ellas
-  // el orden alfabético ya es el cronológico. Las de antes de esta convención
-  // van PRIMERO: son más viejas por definición, y durante la adopción puede
-  // quedar alguna sin aplicar que una nueva dé por hecha.
-  .sort((a, b) => {
+// Algunas migraciones de una misma fecha son fases, no cambios independientes.
+// Declarar la dependencia aquí evita esconderla en un nombre cuya ordenación
+// alfabética puede decir otra cosa.
+const DEPENDENCIAS_POR_MIGRACION = new Map([
+  [
+    'migration-2026-08-16-retirar-citas.sql',
+    ['migration-2026-08-16-retirar-hospedaje.sql'],
+  ],
+  [
+    'migration-2026-08-16-retirar-modo-menu.sql',
+    ['migration-2026-08-16-retirar-citas.sql'],
+  ],
+])
+
+export const ordenarNombresDeMigracion = nombres => {
+  // Las nuevas se llaman `migration-AAAA-MM-DD-tema.sql`, así que el nombre da
+  // el orden cronológico base. Las de antes de esta convención van PRIMERO:
+  // son más viejas por definición, y durante la adopción puede quedar alguna
+  // sin aplicar que una nueva dé por hecha.
+  const pendientes = [...nombres].sort((a, b) => {
     const fechada = name => /^migration-\d{4}-\d{2}-\d{2}-/.test(name)
     if (fechada(a) !== fechada(b)) return fechada(a) ? 1 : -1
     return a.localeCompare(b)
   })
+  const presentes = new Set(pendientes)
+  const ordenadas = new Set()
+  const resultado = []
+
+  for (const [dependiente, requisitos] of DEPENDENCIAS_POR_MIGRACION) {
+    if (!presentes.has(dependiente)) continue
+    const ausente = requisitos.find(requisito => !presentes.has(requisito))
+    if (ausente) {
+      throw new Error(
+        `La migración ${dependiente} depende de un archivo ausente: ${ausente}`,
+      )
+    }
+  }
+
+  // Orden topológico estable: conserva el orden base salvo cuando una
+  // dependencia explícita obliga a adelantar su requisito.
+  while (pendientes.length) {
+    const indice = pendientes.findIndex(name => (
+      DEPENDENCIAS_POR_MIGRACION.get(name) || []
+    ).every(requisito => !presentes.has(requisito) || ordenadas.has(requisito)))
+    if (indice === -1) {
+      throw new Error('Las dependencias declaradas de migraciones contienen un ciclo')
+    }
+    const [siguiente] = pendientes.splice(indice, 1)
+    resultado.push(siguiente)
+    ordenadas.add(siguiente)
+  }
+  return resultado
+}
+
+export const seleccionarMigracionesParaAplicar = (pendientes, solo) => {
+  if (solo === undefined) return pendientes
+  if (!solo) throw new Error('La opción --solo exige el nombre exacto de una migración')
+
+  const objetivo = pendientes.find(migracion => migracion.name === solo)
+  if (!objetivo) {
+    throw new Error(`La migración indicada en --solo no está pendiente: ${solo}`)
+  }
+
+  const primera = pendientes[0]
+  if (primera?.name !== solo) {
+    throw new Error(
+      `No se puede aplicar ${solo}: la primera migración pendiente es ${primera?.name}`,
+    )
+  }
+  return [objetivo]
+}
+
+const COMANDOS = new Set(['status', 'baseline', 'apply'])
+
+export const validarArgumentosCli = argumentos => {
+  const posicionales = argumentos.filter(argumento => !argumento.startsWith('--'))
+  const comando = posicionales[0] || 'status'
+  if (!COMANDOS.has(comando)) throw new Error(`Argumento desconocido: ${comando}`)
+  if (posicionales.length > 1) {
+    throw new Error(`Argumento desconocido: ${posicionales[1]}`)
+  }
+
+  const opciones = argumentos.filter(argumento => argumento.startsWith('--'))
+  const opcionesSolo = opciones.filter(
+    opcion => opcion === '--solo' || opcion.startsWith('--solo='),
+  )
+  if (opcionesSolo.length > 1) {
+    throw new Error('El comando apply solo admite un --solo')
+  }
+  const opcionesExcepto = opciones.filter(opcion => opcion.startsWith('--excepto='))
+  if (opcionesExcepto.length > 1) {
+    throw new Error('El comando baseline solo admite un --excepto con lista separada por comas')
+  }
+
+  const valida = opcion => {
+    if (comando === 'baseline') {
+      return opcion === '--si'
+        || (opcion.startsWith('--excepto=') && opcion.length > '--excepto='.length)
+    }
+    if (comando === 'apply') {
+      return opcion.startsWith('--solo=') && opcion.length > '--solo='.length
+    }
+    return false
+  }
+  const desconocida = opciones.find(opcion => !valida(opcion))
+  if (desconocida) throw new Error(`Argumento desconocido para ${comando}: ${desconocida}`)
+  if (comando === 'baseline' && opcionesExcepto.length) {
+    const nombres = opcionesExcepto[0].slice('--excepto='.length)
+      .split(',').map(nombre => nombre.trim()).filter(Boolean)
+    if (!nombres.length) throw new Error('La opción --excepto exige al menos una migración')
+    if (new Set(nombres).size !== nombres.length) {
+      throw new Error('La opción --excepto no admite migraciones repetidas')
+    }
+  }
+  return comando
+}
+
+export const excepcionesDeBaseline = argumentos => {
+  const opcion = argumentos.find(argumento => argumento.startsWith('--excepto='))
+  if (!opcion) return []
+  return opcion.slice('--excepto='.length)
+    .split(',').map(nombre => nombre.trim()).filter(Boolean)
+}
+
+export const seleccionarMigracionesParaBaseline = (pendientes, excepciones) => {
+  const pendientesPorNombre = new Set(pendientes.map(migracion => migracion.name))
+  const inexistentes = excepciones.filter(nombre => !pendientesPorNombre.has(nombre))
+  if (inexistentes.length) {
+    throw new Error(
+      `No se puede excluir una migración que no está pendiente: ${inexistentes.join(', ')}`,
+    )
+  }
+
+  const excepto = new Set(excepciones)
+  for (const migracion of pendientes) {
+    if (excepto.has(migracion.name)) continue
+    const requisitoPendiente = (DEPENDENCIAS_POR_MIGRACION.get(migracion.name) || [])
+      .find(requisito => excepto.has(requisito))
+    if (requisitoPendiente) {
+      throw new Error(
+        `No se puede marcar ${migracion.name}: queda pendiente su requisito ${requisitoPendiente}`,
+      )
+    }
+  }
+  return pendientes.filter(migracion => !excepto.has(migracion.name))
+}
+
+const migracionesEnDisco = () => ordenarNombresDeMigracion(readdirSync(RAIZ)
+  .filter(f => f.startsWith('migration-') && f.endsWith('.sql'))
+  .filter(f => !JAMAS_EJECUTAR.has(f)))
   .map(name => {
     const sql = readFileSync(path.join(RAIZ, name), 'utf8')
     return { name, sql, checksum: huella(sql) }
@@ -131,12 +270,10 @@ const mostrarEstado = ({ disco, registro, pendientes, editadas, huerfanas }) => 
 }
 
 const baseline = async (client, argumentos) => {
-  const excepto = new Set(
-    (argumentos.find(a => a.startsWith('--excepto='))?.split('=')[1] || '')
-      .split(',').map(s => s.trim()).filter(Boolean),
-  )
+  const excepciones = excepcionesDeBaseline(argumentos)
+  const excepto = new Set(excepciones)
   const { pendientes } = await estado(client)
-  const marcar = pendientes.filter(m => !excepto.has(m.name))
+  const marcar = seleccionarMigracionesParaBaseline(pendientes, excepciones)
 
   if (!marcar.length) {
     console.log('✅ No queda nada por marcar: el registro ya está al día.')
@@ -171,7 +308,7 @@ const baseline = async (client, argumentos) => {
   console.log(`\n✅ ${marcar.length} migraciones registradas como aplicadas (baseline).`)
 }
 
-const aplicar = async client => {
+const aplicar = async (client, argumentos) => {
   const { registro, pendientes, editadas } = await estado(client)
 
   // Si el registro está vacío, o solo tiene el suyo propio, nadie hizo el
@@ -193,13 +330,27 @@ const aplicar = async client => {
     process.exit(1)
   }
 
-  if (!pendientes.length) {
+  const argumentoSolo = argumentos.find(
+    argumento => argumento === '--solo' || argumento.startsWith('--solo='),
+  )
+  let porAplicar
+  try {
+    porAplicar = seleccionarMigracionesParaAplicar(
+      pendientes,
+      argumentoSolo === undefined ? undefined : argumentoSolo.slice('--solo='.length),
+    )
+  } catch (error) {
+    console.error(`\n❌ ${error.message}`)
+    process.exit(1)
+  }
+
+  if (!porAplicar.length) {
     console.log('✅ No hay migraciones pendientes.')
     return
   }
 
-  console.log(`\n🚀 Aplicando ${pendientes.length} migraciones:\n`)
-  for (const m of pendientes) {
+  console.log(`\n🚀 Aplicando ${porAplicar.length} migraciones:\n`)
+  for (const m of porAplicar) {
     process.stdout.write(`   · ${m.name} … `)
     // Cada una en su transacción: si la número 3 falla, las dos primeras
     // quedan aplicadas y registradas, y se reintenta desde la que rompió.
@@ -222,18 +373,24 @@ const aplicar = async client => {
       process.exit(1)
     }
   }
-  console.log(`\n✅ ${pendientes.length} migraciones aplicadas y registradas.`)
+  console.log(`\n✅ ${porAplicar.length} migraciones aplicadas y registradas.`)
 }
 
 const main = async () => {
   const argumentos = process.argv.slice(2)
-  const comando = argumentos.find(a => !a.startsWith('--')) || 'status'
+  let comando
+  try {
+    comando = validarArgumentosCli(argumentos)
+  } catch (error) {
+    console.error(`❌ ${error.message}`)
+    process.exit(1)
+  }
   const client = await conectar()
   try {
     await asegurarRegistro(client)
     if (comando === 'status') mostrarEstado(await estado(client))
     else if (comando === 'baseline') await baseline(client, argumentos)
-    else if (comando === 'apply') await aplicar(client)
+    else if (comando === 'apply') await aplicar(client, argumentos)
     else {
       console.error(`Comando desconocido: ${comando} (status | baseline | apply)`)
       process.exit(1)
@@ -243,7 +400,12 @@ const main = async () => {
   }
 }
 
-main().catch(error => {
-  console.error(`❌ ${error.message}`)
-  process.exit(1)
-})
+const ejecutadoDirectamente = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (ejecutadoDirectamente) {
+  main().catch(error => {
+    console.error(`❌ ${error.message}`)
+    process.exit(1)
+  })
+}
