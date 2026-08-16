@@ -33,9 +33,10 @@ describe('menú guiado de bienvenida', () => {
       '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
     ])
 
-    const barberia = menu.buildWelcomeMenu({ name: 'Barbería', takes_bookings: true }, 3)
-    expect(barberia.options).toEqual([
-      '📅 Agendar una cita', '📋 Ver productos y precios', '💬 Otra consulta',
+    // Sin agenda ni pedidos, solo queda mirar el catálogo y hablar con alguien.
+    const informativo = menu.buildWelcomeMenu({ name: 'Barbería' }, 3)
+    expect(informativo.options).toEqual([
+      '📋 Ver productos y precios', '💬 Otra consulta',
     ])
 
     // Modo informativo sin catálogo: siempre queda la conversación libre

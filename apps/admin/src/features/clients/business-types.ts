@@ -1,3 +1,6 @@
+// `mode` describe si el tipo pedía agenda. La agenda se retiró el 2026-08-16
+// y el campo ya no decide nada; se conserva hasta que la fase 5 borre los
+// tipos que no son de comida ni retail, que es cuando desaparece con ellos.
 export type BusinessMode = 'normal' | 'citas'
 export type BusinessSalesMode = 'vende' | 'informa'
 
@@ -87,16 +90,6 @@ const LODGING_KEYWORDS = [
   'apart hotel',
 ]
 
-const BOOKING_KEYWORDS = BUSINESS_TYPE_OPTIONS
-  .filter(option => option.mode === 'citas')
-  .map(option => normalizeBusinessType(option.value))
-
-export function recommendedModeForBusinessType(type: string): BusinessMode {
-  const normalized = normalizeBusinessType(type)
-  if (LODGING_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'normal'
-  return BOOKING_KEYWORDS.some(keyword => normalized.includes(keyword)) ? 'citas' : 'normal'
-}
-
 export function recommendedSalesForBusinessType(type: string): BusinessSalesMode {
   const normalized = normalizeBusinessType(type)
   if (LODGING_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'informa'
@@ -125,19 +118,11 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
 
 export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
 
-// Negocios donde el cliente NO explora un catálogo, sino que pregunta o manda
-// su lista: catálogos enormes (farmacia, supermercado), consultoría y
-// cotización a medida. Ahí el menú frustra y conviene la IA.
-const AI_FIRST_KEYWORDS = [
-  'farmacia',
-  'supermercado',
-  'inmobiliaria',
-  'taller automotriz',
-  'servicios profesionales',
-  'distribuidora',
-  'mayorista',
-  'consultoria',
-]
+// ⚠️ Aquí vivía AI_FIRST_KEYWORDS: los negocios donde el cliente no explora un
+// catálogo (farmacia, supermercado, consultoría) y el menú de botones frustra.
+// Distinguía 'ai' de 'menu', y con la agenda fuera ya nadie recomienda 'menu',
+// así que las dos ramas devolvían lo mismo. La fase 3 retira el modo menú
+// entero y con él la última razón de esta lista.
 
 // El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
 // manda siempre y nunca se sobrescribe a un negocio existente.
@@ -146,16 +131,16 @@ const AI_FIRST_KEYWORDS = [
 // porque la app YA es donde se pide. Antes esos negocios salían en modo menú y
 // recibían el menú de botones Y el enlace a la vez — dos formas de hacer lo
 // mismo compitiendo en el mismo chat.
+//
+// El modo 'menu' dejó de recomendarse el 2026-08-16: lo pedían las barberías y
+// los consultorios por su lista corta de servicios, y esos negocios salieron
+// con la agenda.
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
   const normalized = normalizeBusinessType(type)
   if (!normalized) return 'ai'
   // Con tienda (restaurante, tienda, hotel) el pedido va por la app y la IA
   // se queda para resolver dudas.
   if (recommendedStorefrontForBusinessType(type)) return 'miniapp'
-  if (AI_FIRST_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'ai'
-  // Barbería, consultorio: no hay mini app, y el cliente elige de una lista
-  // corta. El menú de botones es más barato y más predecible que la IA.
-  if (BOOKING_KEYWORDS.some(keyword => normalized.includes(keyword))) return 'menu'
   return 'ai'
 }
 

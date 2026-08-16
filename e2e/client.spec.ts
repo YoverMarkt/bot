@@ -81,8 +81,10 @@ test('un negocio normal conserva horarios y no puede abrir reservas', async ({ p
 
   await expect(page.getByRole('link', { name: 'Horarios' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Reservas' })).toHaveCount(0)
+  // La agenda salió el 2026-08-16: su ruta ya no existe y cae en el inicio.
   await page.goto(`${clientUrl}#/bookings`)
-  await expect(page).toHaveURL(/#\/schedule$/)
+  await expect(page).toHaveURL(/#\/$/)
+  await page.goto(`${clientUrl}#/schedule`)
   await expect(page.getByRole('heading', { name: 'Horarios de atención' })).toBeVisible()
   await expect(page.getByText('Duración de cada cita')).toHaveCount(0)
 })
@@ -91,7 +93,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería', takes_bookings: true,
+      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
     }))
     localStorage.setItem('client_user', JSON.stringify({
       name: 'Dueño E2E', role: 'owner', permissions: [],
@@ -103,7 +105,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
-      takes_bookings: true, takes_orders: false,
+      takes_orders: false,
     }),
   }))
   await page.route('**/api/client/schedule', route => route.fulfill({
@@ -129,7 +131,7 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica', takes_bookings: false,
+      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
     }))
     localStorage.setItem('client_user', JSON.stringify({
       name: 'Dueño E2E', role: 'owner', permissions: [],
@@ -141,7 +143,7 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
-      takes_bookings: false, takes_orders: false,
+      takes_orders: false,
     }),
   }))
   await page.goto(clientUrl)
@@ -248,7 +250,7 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
-      takes_bookings: false, takes_orders: true,
+      takes_orders: true,
     }),
   }))
   await mockOrdersFilteredByStatus(page, () => orders)
@@ -291,7 +293,7 @@ test('la alarma suena cuando llega el comprobante de una transferencia', async (
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
-      takes_bookings: false, takes_orders: true,
+      takes_orders: true,
     }),
   }))
   await page.route('**/api/client/orders**', route => {
@@ -479,44 +481,45 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
 
 test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {
   await mockClientApi(page)
-  const bizFor = (barberia: boolean) => ({
-    id: barberia ? 'biz-barberia' : 'biz-tienda',
-    name: barberia ? 'Barbería E2E' : 'Tienda E2E',
-    type: barberia ? 'barbería' : 'tienda',
-    takes_bookings: barberia,
-    takes_orders: false,
+  // Pedidos es lo que ahora distingue a un negocio de otro: la agenda, que era
+  // el módulo que separaba a la barbería, se retiró el 2026-08-16.
+  const bizFor = (vende: boolean) => ({
+    id: vende ? 'biz-tienda' : 'biz-informa',
+    name: vende ? 'Tienda E2E' : 'Consultorio E2E',
+    type: vende ? 'tienda' : 'consultorio',
+    takes_orders: vende,
   })
   await page.route('**/api/client/login', route => {
     const { email } = route.request().postDataJSON() as { email: string }
-    const barberia = email.startsWith('barberia')
+    const vende = email.startsWith('tienda')
     return route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
-        token: barberia ? 'token-barberia' : 'token-tienda',
-        business: bizFor(barberia),
+        token: vende ? 'token-tienda' : 'token-informa',
+        business: bizFor(vende),
         user: { name: 'Dueño E2E', role: 'owner', permissions: [] },
       }),
     })
   })
   await page.route('**/api/client/business', route => {
-    const barberia = (route.request().headers().authorization || '').includes('token-barberia')
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(bizFor(barberia)) })
+    const vende = (route.request().headers().authorization || '').includes('token-tienda')
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(bizFor(vende)) })
   })
 
   await page.goto(`${clientUrl}#/login`)
-  await page.getByLabel('Correo').fill('barberia@e2e.test')
-  await page.getByLabel('Contraseña').fill('segura-e2e')
-  await page.getByRole('button', { name: 'Entrar' }).click()
-  await expect(page.getByRole('link', { name: 'Reservas' })).toBeVisible()
-
-  // Cambio de negocio SIN recargar: el panel debe entrar limpio
-  await page.getByRole('button', { name: 'Cerrar sesión' }).click()
   await page.getByLabel('Correo').fill('tienda@e2e.test')
   await page.getByLabel('Contraseña').fill('segura-e2e')
   await page.getByRole('button', { name: 'Entrar' }).click()
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible()
 
-  await expect(page.getByText('Tienda E2E').first()).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Reservas' })).toHaveCount(0)
+  // Cambio de negocio SIN recargar: el panel debe entrar limpio
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click()
+  await page.getByLabel('Correo').fill('informa@e2e.test')
+  await page.getByLabel('Contraseña').fill('segura-e2e')
+  await page.getByRole('button', { name: 'Entrar' }).click()
+
+  await expect(page.getByText('Consultorio E2E').first()).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toHaveCount(0)
 })
 
 test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)', async ({ page }) => {

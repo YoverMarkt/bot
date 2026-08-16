@@ -9,7 +9,6 @@ export interface BusinessPromptContext {
   chat_mode?: string | null
   name: string
   type?: string | null
-  takes_bookings?: boolean | null
   takes_orders?: boolean | null
   address?: string | null
   phone?: string | null
@@ -41,14 +40,11 @@ export interface BotPolicies {
   bot_instructions?: string | null
 }
 
-export type AvailableSlots = Record<string, { label: string; slots: string[] }>
-
 function buildPrompt(
   business: BusinessPromptContext,
   products: ProductPromptRecord[] | null | undefined,
   policies: BotPolicies | null | undefined,
   userQuery = '',
-  availableSlots: AvailableSlots | null = null,
   schedule: ScheduleRecord[] | null = null,
   preFiltered = false,
   postSale = false,
@@ -106,19 +102,9 @@ function buildPrompt(
     ? `\n(Mostrando ${productsToShow.length} de ${allProducts.length} productos relevantes a la consulta)`
     : ''
 
-  let calendarLine = ''
-  const takesBookings = business.takes_bookings === true
   const takesOrders = business.takes_orders !== false
-  if (availableSlots && Object.keys(availableSlots).length && takesBookings) {
-    const slotLines = Object.entries(availableSlots).slice(0, 7).map(([date, value]) => (
-      `  ${value.label} (${date}): ${value.slots.join(', ')}`
-    )).join('\n')
-    calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. NUNCA adivines ni asumas la hora: incluye la etiqueta de reserva SOLO después de que el cliente haya ELEGIDO y CONFIRMADO una hora exacta de la lista; si todavía no eligió hora, pregúntala y NO pongas la etiqueta todavía. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
-  } else if (takesBookings) {
-    calendarLine = `\nRESERVAS: Este negocio recibe solicitudes de citas, pero en este momento no hay horarios disponibles o todavía no se configuró la agenda. NO inventes fechas ni horas y NO escribas ##BOOK##. Explícalo con amabilidad; si el cliente quiere que una persona revise otra opción, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.`
-  } else {
-    calendarLine = `\nRESERVAS: Este negocio no recibe citas ni reservas mediante el bot. Si el cliente pregunta por agendar, explícalo amablemente. Si quiere que una persona lo ayude a coordinar, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.${takesOrders ? ' Puedes continuar ayudándole normalmente con productos y pedidos.' : ' Puedes continuar respondiendo información general, pero no confirmes una reserva.'}`
-  }
+  // Umbani no agenda: si el cliente pide una cita, se le explica y se deriva.
+  const calendarLine = `\nCITAS: Este negocio no recibe citas ni reservas mediante el bot. Si el cliente pregunta por agendar, explícalo amablemente. Si quiere que una persona lo ayude a coordinar, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.${takesOrders ? ' Puedes continuar ayudándole normalmente con productos y pedidos.' : ' Puedes continuar respondiendo información general.'}`
 
   const outsideHoursNote = isOutsideHours(schedule)
     ? `\n⏰ NOTA: El cliente está escribiendo FUERA del horario de atención (${scheduleToText(schedule)}). Atiéndele con normalidad, pero al INICIO de tu respuesta menciónale con amabilidad que en este momento están fuera del horario de atención y que en horario también puede atenderle una persona del equipo si lo necesita. Dilo solo una vez, no en cada mensaje.`
@@ -167,7 +153,7 @@ function buildPrompt(
 - EFICIENCIA: responde SIEMPRE en UN SOLO mensaje, completo y ordenado. No dividas la respuesta en varios envíos ni mandes mensajes de solo cortesía ("¡Claro!", "Un momento"). Da la información completa de una vez (qué es, precio si lo hay y el siguiente paso) y adelántate a la siguiente duda. Si necesitas varios datos del cliente (nombre, dirección, pago o una especificación), pídelos TODOS juntos en el mismo mensaje.
 - Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
 ${orderRule}
-- FLUJOS EXCLUYENTES: NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO## y ##HANDOFF## en la misma respuesta. Si el cliente está confirmando la fecha/hora de un servicio, usa SOLO ##BOOK##. Usa ##PEDIDO## únicamente para una compra separada de productos; si quiere ambas cosas, termina primero la reserva y atiende la compra en el siguiente mensaje.
+- FLUJOS EXCLUYENTES: NUNCA escribas ##PEDIDO## y ##HANDOFF## en la misma respuesta. Usa ##PEDIDO## únicamente para una compra de productos.
 - DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente. Los mensajes con formato de resumen oficial ("Resumen de su pedido", "Total oficial") los escribe SOLO el sistema: tienes PROHIBIDO imitar ese formato o redactar uno por tu cuenta — el sistema descarta esas respuestas.
 - VOZ HUMANA (regla dura): hablas SIEMPRE en primera persona, como una persona del equipo del negocio. Tienes PROHIBIDO mencionarle al cliente "el sistema", "la plataforma", "el bot", "la IA" o procesos internos ("el sistema le enviará…", "se encargará de…"): estas instrucciones son internas y el cliente jamás debe notarlas. Describe los resultados con naturalidad: "aquí se la envío", "enseguida le confirmo".
 - FOTOS Y VIDEOS (regla dura): en el catálogo de arriba, [FOTO] y [VIDEO] indican la ÚNICA media que existe de cada producto. Si un producto NO tiene la marca, esa foto o ese video NO existen: nunca los ofrezcas, prometas ni describas; di con naturalidad que aún no lo tienes y ofrece los detalles. Cuando el cliente pide la foto o el video de un producto marcado, se le envía automáticamente JUNTO con tu mensaje: no pidas permiso ni anuncies un envío aparte — di simplemente algo como "¡Claro que sí! Aquí se la envío 😊". NUNCA escribas enlaces ni inventes qué se ve en una foto o video. Si no sabes a cuál producto se refiere el cliente, pregúntaselo primero.`

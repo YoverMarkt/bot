@@ -44,8 +44,8 @@ const tagsSource = readFileSync(
   `${serverDir}/src/db/repositories/conversation-tags.ts`,
   'utf8',
 )
-const bookingsSource = readFileSync(
-  `${serverDir}/src/db/repositories/bookings.ts`,
+const scheduleSource = readFileSync(
+  `${serverDir}/src/db/repositories/schedule.ts`,
   'utf8',
 )
 const salesSource = readFileSync(
@@ -245,41 +245,22 @@ describe('migración de la capa de datos', () => {
     expect(sessionsSource).toContain('contact_phone: phone')
   })
 
-  it('migra horarios y reservas conservando el contrato público', () => {
-    for (const method of [
-      'getSchedule',
-      'upsertSchedule',
-      'getBookings',
-      'createBooking',
-      'getBookingById',
-      'updateBookingStatus',
-      'getAvailableSlots',
-    ]) {
+  // El horario sobrevivió a la retirada de la agenda porque NO es de la
+  // agenda: decide si la tienda acepta pedidos y si el bot atiende.
+  it('migra el horario conservando el contrato público', () => {
+    for (const method of ['getSchedule', 'upsertSchedule']) {
       expect(db[method]).toBeTypeOf('function')
     }
     expect(facadeSource).not.toMatch(/const getSchedule\s*=/)
-    expect(facadeSource).not.toMatch(/const createBooking\s*=/)
   })
 
-  it('aísla disponibilidad, creación atómica y estados por business_id', () => {
-    // Bajó de 5 a 4 filtros porque el cambio de estado dejó de ser un update
-    // suelto: ahora pasa por `set_booking_status`, que recibe el negocio como
-    // parámetro y filtra dentro. El aislamiento no se relajó, cambió de sitio
-    // — y eso se comprueba justo debajo.
-    expect(bookingsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
-      .toBeGreaterThanOrEqual(4)
-    // El estado va por la RPC y SIEMPRE con el negocio: es lo que impide
-    // cerrar (y cobrar) la cita de otro.
-    expect(bookingsSource).toContain("db.rpc('set_booking_status'")
-    expect(bookingsSource).toContain('p_business_id: businessId')
-    expect(bookingsSource).toContain(
-      'const getBookingById = async (businessId: string, id: string)',
-    )
-    expect(bookingsSource).toContain('delete safe.business_id')
-    expect(bookingsSource).toContain("'create_booking_if_available'")
-    expect(bookingsSource).not.toContain('p_service_product_id')
-    expect(bookingsSource).toContain('p_business_id: businessId')
-    expect(bookingsSource).not.toContain("from('bookings').insert")
+  it('el horario se escribe SIEMPRE bajo el negocio del JWT', () => {
+    expect(scheduleSource).toContain(".eq('business_id', businessId)")
+    // `upsertSchedule` borra el business_id que venga en el cuerpo y pone el
+    // del JWT: sin esto, el dueño de un negocio reescribiría el horario de
+    // otro mandando su id en la petición.
+    expect(scheduleSource).toContain('delete safe.business_id')
+    expect(scheduleSource).toContain('business_id: businessId')
   })
 
   it('migra ventas y datos de reportes conservando el contrato público', () => {

@@ -53,29 +53,6 @@ describe('constructor tipado del prompt', () => {
     )
   })
 
-  it('solo habilita reservas con slots reales y un negocio que acepta citas', () => {
-    const slots = {
-      '2026-07-20': { label: 'Lunes 20', slots: ['09:00', '10:00'] },
-    }
-    const enabled = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, 'reservar', slots,
-    )
-    const disabled = promptService.buildPrompt(
-      { ...business, takes_bookings: false }, [product], {}, 'reservar', slots,
-    )
-    const withoutSlots = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, 'reservar', null,
-    )
-
-    expect(enabled).toContain('Lunes 20 (2026-07-20): 09:00, 10:00')
-    expect(enabled).toContain('##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##')
-    expect(disabled).toContain('no recibe citas ni reservas mediante el bot')
-    expect(disabled).not.toContain('Lunes 20 (2026-07-20)')
-    expect(withoutSlots).toContain('no hay horarios disponibles')
-    expect(withoutSlots).toContain('NO escribas ##BOOK##')
-    expect(withoutSlots).not.toContain('no recibe citas ni reservas mediante el bot')
-  })
-
   it('conserva las reglas duras de dinero y el modo informativo', () => {
     const salesPrompt = promptService.buildPrompt(
       { ...business, takes_orders: true }, [product], {},
@@ -97,7 +74,7 @@ describe('constructor tipado del prompt', () => {
       'Para cerrar una compra, pide nombre, dirección y método de pago',
     )
     expect(salesPrompt).toContain(
-      'NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO##',
+      'NUNCA escribas ##PEDIDO## y ##HANDOFF## en la misma respuesta',
     )
   })
 
@@ -109,7 +86,7 @@ describe('constructor tipado del prompt', () => {
       is_active: true,
     }))
     const closedPrompt = promptService.buildPrompt(
-      business, [product], {}, '', null, closedSchedule, false, true,
+      business, [product], {}, '', closedSchedule, false, true,
     )
 
     expect(closedPrompt).toContain('FUERA del horario de atención')
@@ -142,7 +119,6 @@ describe('constructor tipado del prompt', () => {
   it('mantiene etiquetas y servicio sin comprobaciones anuladas', () => {
     const service = fs.readFileSync(new URL('../src/services/prompt.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')
-    expect(service).toContain('##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##')
     expect(service).toContain('##PEDIDO:nombre del producto x cantidad##')
     expect(service).toContain('##HANDOFF##')
     expect(service).not.toContain('@ts-nocheck')

@@ -61,7 +61,6 @@ function setup(overrides = {}) {
     impersonatesOfficialSummary: vi.fn().mockReturnValue(false),
     parseBotOutput: vi.fn().mockReturnValue({
       finalText: 'Respuesta final',
-      booking: null,
       orderPayload: null,
       lodgingQuote: null,
       lodgingRequest: null,
@@ -73,7 +72,6 @@ function setup(overrides = {}) {
     ...overrides.tags,
   }
   const actions = {
-    createBookingFromTag: vi.fn().mockResolvedValue('none'),
     handleConversationOutcome: vi.fn().mockResolvedValue({ handled: false }),
     processOrderPayload: vi.fn().mockResolvedValue(false),
     processLodgingQuote: vi.fn().mockResolvedValue('quoted'),
@@ -420,47 +418,6 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
-  it.each([
-    ['duplicate', 'ya está registrada'],
-    ['conflict', 'acaba de ocuparse'],
-    ['error', 'No pude confirmar de forma segura si la cita quedó registrada'],
-  ])('reemplaza la confirmación del menú cuando la cita termina en %s', async (
-    bookingOutcome,
-    expectedText,
-  ) => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Listo, Ana! Registré tu solicitud de cita.',
-          options: ['📅 Agendar una cita', '💬 Hablar con el equipo'],
-          action: {
-            type: 'booking',
-            date: '2026-08-10',
-            time: '10:00',
-            name: 'Ana',
-          },
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business,
-        chat_mode: 'menu',
-        takes_bookings: true,
-      },
-      text: 'Ana',
-    }))
-
-    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('Registré tu solicitud de cita'),
-    )
-  })
-
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {
     const current = setup({
       reports: {
@@ -506,7 +463,7 @@ describe('orquestación de conversaciones del bot', () => {
         impersonatesOfficialSummary: vi.fn().mockReturnValue(true),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: '🏨 *Opciones de hospedaje* inventadas 💰 *Total oficial: $120.00*',
-          booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+          orderPayload: null,
           hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
         }),
       },
@@ -529,7 +486,7 @@ describe('orquestación de conversaciones del bot', () => {
     const respuestaConPrecioInventado = {
       parseBotOutput: vi.fn().mockReturnValue({
         finalText: 'Te lo dejo en $40, oferta especial',
-        booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+        orderPayload: null,
         hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
       }),
     }
@@ -639,8 +596,7 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Consultando',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           lodgingQuote,
           lodgingRequest: null,
           hasSale: false,
@@ -679,8 +635,7 @@ describe('orquestación de conversaciones del bot', () => {
         }),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Cuesta $10.00 y está disponible.',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           lodgingQuote: null,
           lodgingRequest: null,
           hasSale: false,
@@ -724,8 +679,7 @@ describe('orquestación de conversaciones del bot', () => {
         }),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Aquí está',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           hasSale: false,
           hasHandoffTag: false,
           isUncertain: false,
@@ -749,13 +703,9 @@ describe('orquestación de conversaciones del bot', () => {
       [product],
       {},
       'La vez pasada vi Perfume Floral Intenso, muéstrame foto',
-      null,
       [],
       true,
       true,
-    )
-    expect(current.actions.createBookingFromTag).toHaveBeenCalledWith(
-      business, '0990000001', null, [product],
     )
     expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -782,130 +732,12 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
-  it.each([
-    ['duplicate', 'ya está registrada'],
-    ['conflict', 'acaba de ocuparse'],
-    ['error', 'de forma segura'],
-  ])('reemplaza una confirmación falsa cuando la reserva termina en %s', async (
-    bookingOutcome,
-    expectedText,
-  ) => {
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Perfecto, tu reserva está confirmada',
-          booking,
-          orderPayload: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true },
-      text: 'Confirmo las 09:30',
-    }))
-
-    expect(current.send).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
-    expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('está confirmada'))
-    expect(current.database.saveMessage).toHaveBeenLastCalledWith(
-      'business-a', '0990000001', 'assistant', expect.stringContaining(expectedText),
-    )
-    expect(current.actions.handleConversationOutcome).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.media.sendRequestedProductMedia).not.toHaveBeenCalled()
-  })
-
-  it('prioriza la reserva y no crea un pedido en la misma respuesta', async () => {
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Corte', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Registré tu solicitud de cita',
-          booking,
-          orderPayload: 'Corte x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue('created'),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true, takes_orders: true },
-      text: 'Confirmo el corte a las 09:30',
-    }))
-
-    expect(current.actions.handleConversationOutcome).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('todavía no procesé la compra'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith(
-      'Registré tu solicitud de cita',
-    )
-    expect(current.logger.log).toHaveBeenCalledWith(
-      expect.stringContaining('##PEDIDO## pospuesto'),
-    )
-  })
-
-  it('ignora una reserva no habilitada y conserva un pedido válido', async () => {
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Reserva y pedido confirmados',
-          booking: {
-            contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-            service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-          },
-          orderPayload: 'Producto A x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        processOrderPayload: vi.fn().mockResolvedValue(true),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: false, takes_orders: true },
-    }))
-
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: 'Producto A x1' }),
-    )
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('Procesé únicamente el pedido'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith('Reserva y pedido confirmados')
-  })
-
   it('deriva una etiqueta de pedido si el negocio es informativo', async () => {
     const current = setup({
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Tu pedido está confirmado',
-          booking: null,
-          orderPayload: 'Producto A x1',
+              orderPayload: 'Producto A x1',
           hasSale: true,
           hasHandoffTag: false,
           isUncertain: false,
@@ -938,8 +770,7 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Tu pedido quedó confirmado',
-          booking: null,
-          orderPayload: 'Producto A x1',
+              orderPayload: 'Producto A x1',
           hasSale: true,
           hasHandoffTag: false,
           isUncertain: false,
@@ -989,10 +820,9 @@ describe('orquestación de conversaciones del bot', () => {
     })
 
     await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true, takes_orders: true },
+      business: { ...business, takes_orders: true },
     }))
 
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 

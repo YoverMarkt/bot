@@ -134,7 +134,7 @@ bot/                                  ← monorepo (npm workspaces)
 | **3.5 Corte y retiro del monolito visual** — ✅ **HECHA 2026-07-11**: se eliminaron `admin/`, `client/` y las rutas `/-legacy`; `/admin` y `/client` quedan como alias compatibles. Ambos paneles consumen `packages/ui`, basado en shadcn/ui | React queda como única interfaz | …ya no existe |
 | **3.6 Seguridad de datos** — ✅ **HECHA 2026-07-11**: RLS de `conversation_tags` aplicado en Supabase, secretos administrativos enmascarados y webhooks con validación estricta | Sin cambios visuales | — |
 | **3.7 Pruebas de navegador** — ✅ **HECHA 2026-07-11**: Playwright valida acceso sin sesión, login cliente/admin, persistencia de sesión, permisos de empleado y navegación móvil; corre en CI sin secretos ni BD | APIs simuladas y deterministas | — |
-| **3.8 Endurecimiento de lanzamiento** — 🟡 **EN PROGRESO 2026-07-14**: Railway usa Railpack; Node 20.19+; entorno falla cerrado; sesiones revalidadas; CSP/HSTS; dinero y stock se revalidan en PostgreSQL; agenda y pedidos son independientes; suite Vitest + Playwright en CI. El cobro se coordina manualmente fuera de la plataforma. | Validar la estabilidad de la plataforma | — |
+| **3.8 Endurecimiento de lanzamiento** — 🟡 **EN PROGRESO 2026-07-14**: Railway usa Railpack; Node 20.19+; entorno falla cerrado; sesiones revalidadas; CSP/HSTS; dinero y stock se revalidan en PostgreSQL; suite Vitest + Playwright en CI. El cobro se coordina manualmente fuera de la plataforma. | Validar la estabilidad de la plataforma | — |
 | **4. Landing Next.js** | La hace el usuario por su cuenta (decidido 2026-07-09) | no existe hoy — todo es ganancia |
 | **5. Escala real** | Redis/colas/workers/Realtime **cuando el volumen lo pida** | — |
 

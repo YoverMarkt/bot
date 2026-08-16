@@ -93,16 +93,16 @@ declare
   v_business uuid;
   v_encolado boolean;
   v_producto uuid;
-  v_reservas integer;
+  v_dias_horario integer;
 begin
   -- ── Preparación ───────────────────────────────────────────────────────────
   insert into businesses (
     slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
-    takes_bookings, takes_orders
+    takes_orders
   ) values (
     'verificacion-esquema', 'Negocio de verificación', 'hotel',
     'ycloud', '+593900000001', '+593900000001',
-    true, true
+    true
   )
   returning id into v_business;
 
@@ -1187,66 +1187,24 @@ begin
     delete from orders where id in (v_pedido_idem, (v_sin_clave ->> 'id')::uuid);
   end;
 
-  -- ── 3e. Una cita atendida es una venta ───────────────────────────────────
-  -- El caso de la barbería: sin esto, atender a alguien no aparecía en ningún
-  -- reporte salvo que el dueño se acordara de registrarlo a mano.
-  declare
-    v_cita uuid;
-    v_resultado jsonb;
-  begin
-    insert into bookings (
-      business_id, contact_phone, contact_name, service, product_id, price,
-      booking_date, booking_time, status
-    ) values (
-      v_business, '+593900000005', 'Cliente', 'Corte', v_producto, 10.50,
-      current_date, '09:00', 'confirmed'
-    ) returning id into v_cita;
+  -- ── 4. El horario por defecto del negocio ─────────────────────────────────
+  -- `business_schedule` sobrevivió a la retirada de la agenda porque decide si
+  -- la tienda acepta pedidos y si el bot atiende. Su trigger llena los 7 días
+  -- al crear el negocio, y sin esa comprobación un alta sin horario pasaría
+  -- desapercibida hasta que un cliente no pudiera pedir.
+  select count(*) into v_dias_horario
+  from business_schedule where business_id = v_business;
+  if v_dias_horario <> 7 then
+    raise exception
+      'El alta del negocio generó % días de horario, esperaba 7', v_dias_horario;
+  end if;
 
-    v_resultado := public.set_booking_status(v_business, v_cita, 'attended');
-    if v_resultado ->> 'result' <> 'updated' then
-      raise exception 'set_booking_status no pudo atender la cita: %', v_resultado;
-    end if;
-    if not exists (select 1 from sales where booking_id = v_cita) then
-      raise exception 'una cita atendida no generó su venta';
-    end if;
-
-    -- Reintentar no duplica el dinero.
-    perform public.set_booking_status(v_business, v_cita, 'attended');
-    if (select count(*) from sales where booking_id = v_cita) <> 1 then
-      raise exception 'atender dos veces duplicó la venta de la cita';
-    end if;
-
-    -- Una cita cerrada no se reabre.
-    v_resultado := public.set_booking_status(v_business, v_cita, 'confirmed');
-    if v_resultado ->> 'result' <> 'invalid_transition' then
-      raise exception 'una cita atendida se pudo reabrir: %', v_resultado;
-    end if;
-
-    -- Otro negocio no puede cobrarse una cita ajena.
-    if public.crear_venta_desde_cita(gen_random_uuid(), v_cita) is not null then
-      raise exception 'FUGA: otro negocio convirtió en venta una cita ajena';
-    end if;
-  end;
-
-  -- ── 4. Reservas: no se puede solapar el mismo hueco ───────────────────────
-  -- El alta del negocio ya crea los 7 días (domingo inactivo, sábado corto).
-  -- Se activa el día de la prueba para que no dependa de cuándo corra el CI.
   update business_schedule
   set is_active = true, open_time = '08:00', close_time = '20:00'
   where business_id = v_business
     and day_of_week = extract(dow from current_date + 1)::int;
-
   if not found then
     raise exception 'El alta del negocio no generó su horario por defecto';
-  end if;
-
-  perform public.create_booking_if_available(
-    v_business, '+593900000002', 'Cliente', 'Servicio',
-    (current_date + 1)::date, '10:00'::time, 60
-  );
-  select count(*) into v_reservas from bookings where business_id = v_business;
-  if v_reservas < 1 then
-    raise exception 'create_booking_if_available no creó la reserva';
   end if;
 
   -- ── 5. Facturación del SaaS ───────────────────────────────────────────────
@@ -1279,19 +1237,16 @@ begin
 
   -- ── 7. El dinero solo nace en el estado correcto ──────────────────────────
   --
-  -- Las tres funciones que crean ventas comprobaban el negocio y la
-  -- idempotencia, pero dos de ellas no miraban el ESTADO del origen. Medido
-  -- contra PostgreSQL real el 2026-08-02:
+  -- Las funciones que crean ventas comprobaban el negocio y la idempotencia,
+  -- pero no el ESTADO del origen. Medido contra PostgreSQL real el 2026-08-02:
   --
   --   ⚠️ crear_venta_desde_pedido cobró un pedido en estado "cancelado"
   --
-  -- Estaban protegidas solo por sus llamadores (`set_order_status` y
-  -- `set_booking_status`), y eso basta hasta que alguien las llame directo:
-  -- son SECURITY DEFINER y están concedidas a `service_role`, que es el rol
-  -- con el que el servidor habla con Supabase.
+  -- Estaba protegida solo por su llamador (`set_order_status`), y eso basta
+  -- hasta que alguien la llame directo: es SECURITY DEFINER y está concedida a
+  -- `service_role`, que es el rol con el que el servidor habla con Supabase.
   declare
     v_pedido_cancelado uuid;
-    v_cita_cancelada uuid;
   begin
     insert into orders (business_id, contact_phone, status, total)
     values (v_business, '+593900000404', 'cancelado', 20.00)
@@ -1300,25 +1255,11 @@ begin
       raise exception 'un pedido cancelado generó venta';
     end if;
 
-    insert into bookings (
-      business_id, contact_phone, service, price, booking_date, booking_time, status
-    ) values (
-      v_business, '+593900000404', 'Corte', 20.00, current_date + 5, '16:00', 'cancelled'
-    ) returning id into v_cita_cancelada;
-    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is not null then
-      raise exception 'una cita cancelada generó venta';
-    end if;
-
     -- Y el camino legítimo sigue funcionando: una cerradura que también deja
     -- fuera al dueño no sirve de nada.
     update orders set status = 'completado' where id = v_pedido_cancelado;
     if public.crear_venta_desde_pedido(v_business, v_pedido_cancelado) is null then
       raise exception 'un pedido completado no generó su venta';
-    end if;
-
-    update bookings set status = 'attended' where id = v_cita_cancelada;
-    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is null then
-      raise exception 'una cita atendida no generó su venta';
     end if;
   end;
 

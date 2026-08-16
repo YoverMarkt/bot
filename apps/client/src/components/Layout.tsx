@@ -2,8 +2,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
-import { useBusinessInfo, isBookingBiz, isOrderBiz, isServiceBiz } from '../lib/biz'
-import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, Calendar, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
+import { useBusinessInfo, isOrderBiz, isServiceBiz } from '../lib/biz'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { AlarmBanner } from './AlarmSystem'
@@ -14,7 +14,6 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 
 // Secciones del panel (mismas reglas del panel viejo):
 // · `perm` controla visibilidad para empleados (el dueño ve todo; el SERVIDOR valida siempre)
-// · Reservas SOLO para negocios de citas (barbería, clínica…) — Mas Pura no la ve
 // · Horarios para TODOS (horario de atención; el bot avisa fuera de horario)
 // · Catálogo se llama "Servicios" en negocios de servicios
 
@@ -27,10 +26,6 @@ export default function Layout() {
   const { data: bizInfo } = useBusinessInfo()
   const businessType = bizInfo?.type ?? biz?.type
 
-  const bookingBiz = isBookingBiz(
-    businessType,
-    bizInfo?.takes_bookings ?? biz?.takes_bookings,
-  )
   // Sin fallback local a propósito: takes_orders no viaja en el login, y el
   // dato vivo del servidor manda si el superadmin activa pedidos hoy mismo.
   const orderBiz = isOrderBiz(bizInfo?.takes_orders)
@@ -50,7 +45,6 @@ export default function Layout() {
 
   const att = useAttention({
     watchSessions: canSee('conversaciones'),
-    watchBookings: bookingBiz && canSee('citas'),
     watchOrders: orderBiz && canSee('ventas'),
   })
 
@@ -64,8 +58,7 @@ export default function Layout() {
     { to: '/customers',     label: 'Clientes',          icon: Users, perm: 'reportes' },
     { to: '/reactivate',    label: 'Reactivar',         icon: RotateCcw, perm: 'reportes' },
     { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: Bot, perm: 'owner' },
-    { to: '/schedule',      label: 'Horarios',          icon: Clock, perm: 'citas' },
-    ...(bookingBiz ? [{ to: '/bookings', label: 'Reservas', icon: Calendar, perm: 'citas', badge: att.pending.length || undefined }] : []),
+    { to: '/schedule',      label: 'Horarios',          icon: Clock, perm: 'horarios' },
     { to: '/users',         label: 'Usuarios',          icon: UserRound, perm: 'owner' },
     { to: '/settings',      label: 'Ajustes',           icon: Settings, perm: 'owner' },
   ]
@@ -143,11 +136,9 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Alarma global (chats manuales, reservas y pedidos sin atender) */}
+      {/* Alarma global (chats manuales y pedidos sin atender) */}
       <AlarmBanner
         manual={att.manual}
-        pending={att.pending}
-        bookings={att.bookings}
         ordersPending={att.pendingOrders}
         ordersLoaded={att.ordersLoaded}
       />

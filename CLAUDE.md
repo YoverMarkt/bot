@@ -35,7 +35,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 > 📐 **Arquitectura objetivo y plan de migración:** ver **`ARQUITECTURA.md`** (decidido 2026-07-06: migración GRADUAL a monorepo con server ordenado en routes/services + paneles en React+Vite+TS; patrón estrangulador, nunca big-bang; regla: todo lo NUEVO nace en la estructura nueva). Leerlo antes de crear archivos o features nuevas.
 
-**BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios como perfumerías, barberías, tiendas y clínicas: cada negocio tiene su propio bot (prompt, catálogo, horarios), su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, agenda citas, vende, y deriva a un humano cuando hace falta.
+**BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios de comida y retail que reparten a domicilio: cada negocio tiene su propio bot (prompt, catálogo, horarios), su mini app, su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, vende, y deriva a un humano cuando hace falta.
 
 ---
 
@@ -74,7 +74,7 @@ bot/
 │   ├── src/db/repositories/conversation-history.ts # Mensajes e historial por contacto
 │   ├── src/db/repositories/sessions.ts # Modo manual, lectura y estado por business_id
 │   ├── src/db/repositories/conversation-tags.ts # Etiquetas aisladas por negocio
-│   ├── src/db/repositories/bookings.ts # Horarios, disponibilidad y reservas tipadas
+│   ├── src/db/repositories/schedule.ts # Horario de atención del negocio (lo usa la tienda)
 │   ├── src/db/repositories/sales.ts # Ventas y detalles mediante RPC atómica
 │   ├── src/db/repositories/reporting.ts # Consultas analíticas aisladas por negocio
 │   ├── src/db/repositories/orders.ts # Pedidos e ítems mediante RPC atómica
@@ -128,7 +128,7 @@ bot/
 │   ├── src/routes/admin-settings.routes.ts # Keys globales enmascaradas y verificables
 │   ├── src/routes/admin-simulator.routes.ts # Pruebas del bot aisladas y persistidas por negocio
 │   ├── src/routes/admin.routes.ts # Composición TypeScript de todos los dominios del superadmin
-│   ├── src/routes/bookings.routes.ts # Horarios y reservas aislados por JWT
+│   ├── src/routes/schedule.routes.ts # Horario de atención aislado por JWT
 │   ├── src/routes/business-profile.routes.ts # Identidad y políticas seguras
 │   ├── src/routes/business-management.routes.ts # Onboarding y equipo seguros
 │   ├── src/routes/business.routes.ts # Composición TypeScript del negocio
@@ -176,6 +176,7 @@ bot/
 │   ├── migration-2026-08-07-pago-al-retirar-rpc.sql # El método también dentro de la RPC, que valida aparte del CHECK
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-2026-08-16-retirar-hospedaje.sql # Umbani solo domicilios: se retira el módulo entero (fase 1)
+│   ├── migration-2026-08-16-retirar-citas.sql # Se retira la agenda; el horario se queda porque lo usa la tienda (fase 2)
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
 │   ├── migration-eliminar-kapso-retell.sql # Limpieza destructiva previa a identificadores
@@ -255,7 +256,8 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Menú guiado híbrido (`server/src/services/bot-menu.ts`):** en modo IA del simulador, los saludos ("hola", "menú") se responden con un menú de bienvenida generado por código según capacidades, y el resto sigue con IA. Quedó como respaldo del modo menú puro.
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
 - **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
-- **Capacidades por negocio:** `businesses.takes_bookings` y `businesses.takes_orders` son fuentes de verdad independientes; el tipo solo recomienda valores al crear y nunca sobrescribe decisiones manuales ni negocios existentes. Pizzería/retail recomienda pedidos; servicios de cita recomiendan agenda e informativo. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
+- **Capacidades por negocio:** `businesses.takes_orders` es la fuente de verdad de si el bot cierra pedidos; el tipo solo la recomienda al crear y nunca sobrescribe decisiones manuales ni negocios existentes. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
+- **Citas: RETIRADAS el 2026-08-16** (`migration-2026-08-16-retirar-citas.sql`), fase 2 de dejar Umbani solo con domicilios. Se fueron la tabla `bookings`, la capacidad `takes_bookings`, la etiqueta `##BOOK##`, la RPC anti-solape `create_booking_if_available`, la conversión de cita en venta y la sección Reservas del panel. ⚠️ **`business_schedule` SE QUEDA**: vivía en el mismo módulo pero no es de citas — decide si la tienda acepta pedidos y si el bot atiende o dice que está cerrado. Por eso el horario se mudó a `routes/schedule.routes.ts` y `db/repositories/schedule.ts` ANTES de borrar el resto. El permiso `citas` pasó a llamarse `horarios`, y la migración lo renombra en `client_users.permissions` para que ningún empleado pierda el acceso en silencio.
 - **Hospedaje: RETIRADO el 2026-08-16** (`migration-2026-08-16-retirar-hospedaje.sql`). Es la fase 1 de dejar Umbani solo con domicilios: se fueron las tablas `lodging_*`, la capacidad `lodging_enabled`, las etiquetas `##STAY_QUOTE##`/`##STAY_REQUEST##`, la pantalla del dueño y el flujo de estadía de la mini app y del modo menú. Con ello se fue también `hasActionConflict`, que solo existía para declarar hospedaje incompatible con las demás acciones. ⚠️ La migración se despliega **DESPUÉS** del código, al revés de lo habitual: el código viejo insertaba `lodging_enabled` al crear un negocio, así que soltar la columna antes rompe el alta de clientes. Si algún día vuelve, el módulo entero está en el historial del PR de esta fase.
 - **Catálogo de arranque (`server/src/services/business-templates.ts`):** al crear un negocio, su tipo decide con qué categorías y grupos de opciones nace —una hamburguesería trae Hamburguesas, Combos, Acompañantes y Bebidas, con Término, Extras y Retira ingredientes ya cargados. Sigue la misma regla que las capacidades: **solo recomienda al crear**. La RPC `apply_business_template` no toca un negocio que ya tenga una categoría o un producto y devuelve `aplicada: false`, así que jamás pisa decisiones manuales ni negocios existentes. Falla en silencio hacia el registro de errores: la plantilla va después del alta y no puede tumbarla. Los nombres de tipo deben existir en el desplegable del panel (`apps/admin/src/features/clients/business-types.ts`) o la plantilla queda muerta — lo vigila `tests/plantillas-negocio.test.js`.
 - **Grupos de opciones:** un grupo cuelga de un **producto** o de una **categoría**, nunca de ambos ni de ninguno (`option_groups_destino_check`). Por categoría es como los 19 sabores los comparten todas las pizzas sin repetirlos, y como una plantilla deja grupos cargados antes de que exista un solo producto. Los dos destinos usan foránea compuesta sobre `(id, business_id)`. La mini app los pinta con tres selectores (`single` radio · `multiple` casillas con tope · `quantity` contador por opción) y bloquea el botón diciendo **qué falta**; `create_storefront_order` lo vuelve a exigir, que es lo único que de verdad manda. **La mini app ya NO usa `menu_modifiers`** — el modo menú del bot y el panel del dueño sí, así que durante esta etapa hay dos sitios donde se editan opciones.
@@ -293,7 +295,6 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Etiquetas del bot** → [DECISIONES.md](DECISIONES.md#etiquetas-del-bot)
 - **Modo menú estilo banco** → [DECISIONES.md](DECISIONES.md#modo-menú-estilo-banco)
 - **Reportes del dueño** → [DECISIONES.md](DECISIONES.md#reportes-del-dueño)
-- **Capacidad de citas** → [DECISIONES.md](DECISIONES.md#capacidad-de-citas)
 - **Salud del canal** → [DECISIONES.md](DECISIONES.md#salud-del-canal)
 - **Evals del bot** → [DECISIONES.md](DECISIONES.md#evals-del-bot)
 - **Vigilante de precios** → [DECISIONES.md](DECISIONES.md#vigilante-de-precios)
@@ -346,7 +347,7 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 **Combinaciones frecuentes:**
 - "Agrega una tabla/campo nuevo" → base-de-datos + arquitecto-saas + tester-saas + documentacion.
 - "Cambia el login / cómo se guardan las keys" → seguridad-saas + arquitecto-saas + tester-saas.
-- "El bot responde mal / no agenda / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
+- "El bot responde mal / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
 - "Revisa esto antes de subirlo" → revisor-pr.
 
 ---

@@ -2,9 +2,8 @@ import type {
   ActionBusiness,
   ActionProduct,
   ActionSession,
-  BookingCreationOutcome,
 } from './bot-actions'
-import type { BookingTag, ParsedBotOutput } from './bot-tags'
+import type { ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 // Detector de saludos puros ya probado: "hola", "buenas", "menú". Es una
 // función pura sin base de datos, así que se importa directo.
@@ -65,7 +64,6 @@ interface ConversationDatabase {
     limit: number,
     after?: string | null,
   ): Promise<ConversationHistory[]>
-  getAvailableSlots(businessId: string): Promise<unknown>
   countProducts(businessId: string): Promise<number>
   searchProductsByVector(
     businessId: string,
@@ -136,7 +134,6 @@ interface ConversationPrompt {
     products: ConversationProduct[],
     policies: unknown,
     userQuery: string,
-    availableSlots: unknown,
     schedule: unknown[],
     preFiltered: boolean,
     postSale: boolean,
@@ -151,12 +148,6 @@ interface ConversationTags {
 }
 
 interface ConversationActions {
-  createBookingFromTag(
-    business: ActionBusiness,
-    phone: string,
-    booking: BookingTag | null,
-    products: ActionProduct[],
-  ): Promise<BookingCreationOutcome>
   handleConversationOutcome(input: {
     business: ActionBusiness
     phone: string
@@ -615,14 +606,11 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     if (input.sendTyping) {
       try { await input.sendTyping() } catch { /* best-effort */ }
     }
-    const [products, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
+    const [products, modifiers, lastOrder, policies] = await Promise.all([
       database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
       business.takes_orders !== false && database.getMenuModifiers
         ? database.getMenuModifiers(business.id).catch(() => [])
         : Promise.resolve([]),
-      business.takes_bookings === true
-        ? database.getAvailableSlots(business.id).catch(() => null)
-        : Promise.resolve(null),
       business.takes_orders !== false && database.getLastOrderForContact
         ? database.getLastOrderForContact(business.id, phone).catch(() => null)
         : Promise.resolve(null),
@@ -640,7 +628,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       products: products as MenuFlowInput['products'],
       botPrompt,
       modifiers: modifiers as MenuFlowInput['modifiers'],
-      availableSlots: (availableSlots || {}) as MenuFlowInput['availableSlots'],
       lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
     })
 
@@ -685,24 +672,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       menuReply = orderProcessed
         ? `¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
         : `No pude confirmar de forma segura si el pedido quedó registrado. Para evitar duplicarlo, no lo envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
-    } else if (action?.type === 'booking') {
-      // El día y la hora vienen de la agenda real, ya resueltos por el menú:
-      // los campos "raw" y los normalizados coinciden a propósito.
-      const bookingOutcome = await actions.createBookingFromTag(business, phone, {
-        contactName: action.name,
-        bookingDateRaw: action.date,
-        bookingTimeRaw: action.time,
-        bookingDate: action.date,
-        bookingTime: action.time,
-        service: 'Cita',
-      }, products)
-      if (bookingOutcome === 'duplicate') {
-        menuReply = `Tu solicitud para ese horario ya está registrada. No necesitas enviarla de nuevo 😊\n¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
-      } else if (bookingOutcome === 'conflict') {
-        menuReply = `Ese horario acaba de ocuparse. No registré la cita; elige otro horario actualizado desde el menú 🙏`
-      } else if (bookingOutcome !== 'created') {
-        menuReply = `No pude confirmar de forma segura si la cita quedó registrada. Para evitar duplicarla, no la envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
-      }
     }
 
     // Media solicitada por el cliente ("Ver fotos y videos"): fotos, video y
@@ -923,14 +892,11 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     const needsMemory = /vez pasada|anterior|última vez|last time|antes|pedí|ordené|compré/i
       .test(text)
     const historyLimit = needsMemory ? 24 : 8
-    const [policies, history, availableSlots, totalProducts] = await Promise.all([
+    const [policies, history, totalProducts] = await Promise.all([
       database.getPolicies(business.id),
       database.getContactHistory(
         business.id, phone, historyLimit, session?.closed_sale_at || null,
       ),
-      business.takes_bookings === true
-        ? database.getAvailableSlots(business.id).catch(() => null)
-        : Promise.resolve(null),
       database.countProducts(business.id).catch(() => 0),
     ])
 
@@ -976,7 +942,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     try {
       reply = await ai.callAI(
         prompt.buildPrompt(
-          business, products, policies, text, availableSlots,
+          business, products, policies, text,
           businessSchedule,
           preFiltered, postSale,
         ),
@@ -1057,48 +1023,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       if (handoffOutcome.handled) return
     }
 
-    const hasBookingTag = Boolean(parsedOutput.booking)
-    const hasOrderTag = Boolean(parsedOutput.orderPayload)
-    const hasTransactionalConflict = hasBookingTag && hasOrderTag
-    const canBook = business.takes_bookings === true
     const canOrder = business.takes_orders !== false
 
-    if (hasTransactionalConflict && !canBook) {
-      await actions.handleConversationOutcome({
-        business,
-        phone,
-        originalText: text,
-        hasSale: true,
-        hasHandoffTag: false,
-        isUncertain: false,
-        wasManual: session?.manual_mode,
-        send,
-      })
-      if (canOrder) {
-        const orderProcessed = await actions.processOrderPayload({
-          business,
-          phone,
-          session,
-          payload: parsedOutput.orderPayload,
-          products,
-          preFiltered,
-          send,
-        })
-        const message = orderProcessed
-          ? 'Procesé únicamente el pedido. No registré una reserva porque este negocio no agenda mediante el bot.'
-          : 'No registré la reserva y tampoco pude procesar el pedido de forma segura. Un asesor continuará contigo 🙏'
-        await database.saveMessage(business.id, phone, 'assistant', message)
-        await send(message)
-        return
-      }
-
-      const message = 'Este negocio no procesa reservas ni pedidos mediante el bot. Un asesor continuará contigo para ayudarte 🙏'
-      await database.saveMessage(business.id, phone, 'assistant', message)
-      await send(message)
-      return
-    }
-
-    if (hasOrderTag && !canOrder && !hasBookingTag) {
+    if (parsedOutput.orderPayload && !canOrder) {
       await actions.handleConversationOutcome({
         business,
         phone,
@@ -1115,68 +1042,11 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
-    const bookingOutcome = await actions.createBookingFromTag(
-      business, phone, parsedOutput.booking, products,
-    )
-    if (
-      bookingOutcome === 'duplicate'
-      || bookingOutcome === 'conflict'
-      || bookingOutcome === 'error'
-    ) {
-      if (hasTransactionalConflict && !canOrder) {
-        await actions.handleConversationOutcome({
-          business,
-          phone,
-          originalText: text,
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-          wasManual: session?.manual_mode,
-          send,
-        })
-      }
-      const purchaseSuffix = hasTransactionalConflict
-        ? canOrder
-          ? ' La compra todavía no fue procesada; confírmame el pedido en tu siguiente mensaje.'
-          : ' La compra tampoco se procesó; un asesor continuará contigo.'
-        : ''
-      const bookingMessage = (bookingOutcome === 'duplicate'
-        ? 'Tu solicitud para ese horario ya está registrada. No necesitas enviarla de nuevo 😊'
-        : bookingOutcome === 'conflict'
-          ? 'Ese horario acaba de ocuparse. Por favor dime otro horario y revisaré la disponibilidad actualizada 🙏'
-          : 'No pude guardar tu solicitud de reserva de forma segura. Por favor intenta nuevamente o espera la ayuda de un asesor 🙏') + purchaseSuffix
-      await database.saveMessage(business.id, phone, 'assistant', bookingMessage)
-      await send(bookingMessage)
-      return
-    }
-
-    if (hasTransactionalConflict) {
-      if (!canOrder) {
-        await actions.handleConversationOutcome({
-          business,
-          phone,
-          originalText: text,
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-          wasManual: session?.manual_mode,
-          send,
-        })
-      }
-      const message = canOrder
-        ? 'Tu solicitud de reserva quedó registrada y está pendiente de confirmación del dueño. Para evitar duplicados, todavía no procesé la compra; confírmame el pedido en tu siguiente mensaje.'
-        : 'Tu solicitud de reserva quedó registrada y está pendiente de confirmación del dueño. La compra no se procesó mediante el bot; un asesor continuará contigo.'
-      logger.log(`⚠️ [${business.name}] ##PEDIDO## pospuesto: la respuesta ya procesó ##BOOK##`)
-      await database.saveMessage(business.id, phone, 'assistant', message)
-      await send(message)
-      return
-    }
-
     const outcome = await actions.handleConversationOutcome({
       business,
       phone,
       originalText: text,
-      hasSale: hasBookingTag ? false : parsedOutput.hasSale,
+      hasSale: parsedOutput.hasSale,
       hasHandoffTag: parsedOutput.hasHandoffTag,
       isUncertain: false,
       wasManual: session?.manual_mode,

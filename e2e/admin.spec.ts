@@ -194,7 +194,6 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
 
   const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
   const businessType = dialog.getByRole('combobox', { name: 'Tipo de negocio' })
-  const bookingMode = dialog.getByRole('combobox', { name: 'Agenda del bot' })
   const salesMode = dialog.getByRole('combobox', { name: 'Ventas por el bot' })
   const selectBusinessType = async (name: string) => {
     await businessType.click()
@@ -204,15 +203,12 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
     await expect(listbox).toBeHidden()
   }
   await selectBusinessType('Hotel')
-  await expect(bookingMode).toContainText('Sin agenda')
   await expect(salesMode).toContainText('Solo informa y deriva')
 
   await selectBusinessType('Pizzería')
-  await expect(bookingMode).toContainText('Sin agenda')
   await expect(salesMode).toContainText('Crea pedidos con total oficial')
 
   await selectBusinessType('Barbería')
-  await expect(bookingMode).toContainText('Solicita citas')
   await expect(salesMode).toContainText('Solo informa y deriva')
   await expect(dialog.getByText(/Se creará un horario inicial/)).toBeVisible()
 

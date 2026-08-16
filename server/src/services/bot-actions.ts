@@ -1,5 +1,3 @@
-import type { BookingTag } from './bot-tags'
-
 interface ErrorLike { message?: string }
 interface MutationResult<T = unknown> {
   data?: T | null
@@ -8,17 +6,9 @@ interface MutationResult<T = unknown> {
   conflict?: boolean
 }
 
-export type BookingCreationOutcome =
-  | 'none'
-  | 'created'
-  | 'duplicate'
-  | 'conflict'
-  | 'error'
-
 export interface ActionBusiness {
   id: string
   name: string
-  takes_bookings?: boolean | null
   takes_orders?: boolean | null
 }
 
@@ -35,7 +25,6 @@ export interface ActionSession { contact_name?: string | null }
 interface SavedOrder { id: string; total?: number }
 
 interface DatabaseActions {
-  createBooking(businessId: string, data: Record<string, unknown>): Promise<MutationResult>
   upsertSession(
     businessId: string,
     phone: string,
@@ -118,68 +107,6 @@ export interface ProcessOrderInput {
 function createBotActions(dependencies: BotActionDependencies) {
   const { database, money } = dependencies
   const logger = dependencies.logger || console
-
-  async function createBookingFromTag(
-    business: ActionBusiness,
-    phone: string,
-    booking: BookingTag | null,
-    products: ActionProduct[],
-  ): Promise<BookingCreationOutcome> {
-    if (!booking) return 'none'
-    if (business.takes_bookings !== true) {
-      logger.log(`🚫 [${business.name}] ##BOOK## ignorado — negocio sin reservas`)
-      return 'error'
-    }
-    const {
-      contactName, bookingDateRaw, bookingTimeRaw, service, bookingDate, bookingTime,
-    } = booking
-    try {
-      if (!bookingDate || !bookingTime) {
-        throw new Error(`formato inválido: fecha="${bookingDateRaw}" hora="${bookingTimeRaw}"`)
-      }
-      const normalizedService = service.trim().toLowerCase()
-      const exactMatch = products.find(product => (
-        product.name?.trim().toLowerCase() === normalizedService
-      ))
-      const partialMatches = products.filter(product => {
-        const productName = product.name?.trim().toLowerCase()
-        return Boolean(productName && (
-          normalizedService.includes(productName)
-          || productName.includes(normalizedService)
-        ))
-      })
-      // Una coincidencia inequívoca permite usar la duración real del servicio.
-      // Si el nombre es ambiguo, la base aplicará la duración de agenda configurada.
-      const matched = exactMatch || (partialMatches.length === 1 ? partialMatches[0] : null)
-      const duration = matched?.duration_minutes || null
-      const result = await database.createBooking(business.id, {
-        contact_phone: phone,
-        contact_name: contactName.trim(),
-        service: service.trim(),
-        booking_date: bookingDate,
-        booking_time: bookingTime,
-        duration_minutes: duration,
-        status: 'pending',
-      })
-      if (result.error) {
-        throw new Error(result.error.message || 'No se pudo crear la reserva')
-      }
-      if (result.conflict) {
-        logger.log(`⚠️ [${business.name}] Horario ocupado durante la reserva — ${bookingDate} ${bookingTime}`)
-        return 'conflict'
-      }
-      if (result.duplicate) {
-        logger.log(`↩️ [${business.name}] Reserva ya registrada — ${bookingDate} ${bookingTime}`)
-        return 'duplicate'
-      }
-      if (!result.data) throw new Error('La base no devolvió la reserva creada')
-      logger.log(`📅 [${business.name}] Reserva creada: ${contactName} — ${service} (${duration || '?'}min) — ${bookingDate} ${bookingTime}`)
-      return 'created'
-    } catch (error) {
-      logger.error('❌ Error creando reserva:', error instanceof Error ? error.message : error)
-      return 'error'
-    }
-  }
 
   async function handleConversationOutcome(
     input: ConversationOutcomeInput,
@@ -282,7 +209,6 @@ function createBotActions(dependencies: BotActionDependencies) {
   }
 
   return {
-    createBookingFromTag,
     handleConversationOutcome,
     processOrderPayload,
   }
@@ -293,7 +219,6 @@ const actions = createBotActions({
   money: require('./money') as MoneyActions,
 })
 
-export const createBookingFromTag = actions.createBookingFromTag
 export const handleConversationOutcome = actions.handleConversationOutcome
 export const processOrderPayload = actions.processOrderPayload
 export { createBotActions }

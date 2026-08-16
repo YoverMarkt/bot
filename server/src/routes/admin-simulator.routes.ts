@@ -25,9 +25,6 @@ const db: {
   ): Promise<DatabaseResult>
   clearSimHistory(businessId: string): Promise<DatabaseResult>
   getMenuModifiers(businessId: string, categoryTag?: string | null): Promise<unknown[]>
-  getAvailableSlots(
-    businessId: string,
-  ): Promise<Record<string, { label?: string; slots?: string[] }> | null>
   getLastOrderForContact(
     businessId: string,
     contactPhone: string,
@@ -55,7 +52,6 @@ const tags: {
   impersonatesOfficialSummary(text: string): boolean
   parseBotOutput(reply: string): {
     finalText: string
-    booking: unknown
     orderPayload: string | null
     hasSale: boolean
     hasHandoffTag: boolean
@@ -103,10 +99,9 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     // MODO MENÚ (estilo banco): el CÓDIGO conduce toda la conversación con
     // opciones de los datos reales; la IA no participa en ningún mensaje.
     if (mode === 'menu') {
-      const [products, modifiers, availableSlots, lastOrder, policies] = await Promise.all([
+      const [products, modifiers, lastOrder, policies] = await Promise.all([
         db.getProducts(business.id),
         business.takes_orders !== false ? db.getMenuModifiers(business.id) : Promise.resolve([]),
-        business.takes_bookings === true ? db.getAvailableSlots(business.id) : Promise.resolve(null),
         // Paridad con el canal real: el simulador también ofrece repetir pedido
         business.takes_orders !== false
           ? db.getLastOrderForContact(business.id, SIMULATOR_CONTACT).catch(() => null)
@@ -120,7 +115,6 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         products: products as MenuFlowInput['products'],
         botPrompt: typeof policies?.bot_prompt === 'string' ? policies.bot_prompt : null,
         modifiers: modifiers as MenuFlowInput['modifiers'],
-        availableSlots: availableSlots || {},
         lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
       })
 
@@ -134,8 +128,6 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         actionNote = '🤚 El cliente pidió una persona: en el canal real la conversación pasa a modo manual y el equipo continúa.'
       } else if (flow.action?.type === 'order') {
         actionNote = `🛒 Pedido armado 100% con menús y total calculado por el servidor con el catálogo real (${(flow.action.totalCents / 100).toFixed(2)} USD). En el canal real se registraría con la RPC atómica y se avisaría al equipo.`
-      } else if (flow.action?.type === 'booking') {
-        actionNote = '📅 Cita reunida con menús desde la agenda real: en el canal real se crearía pendiente de confirmación del equipo.'
       }
 
       databaseError(
@@ -218,8 +210,6 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
       actionNote = '⚠️ La IA intentó escribir una cotización o total con formato oficial SIN pasar por el cálculo del servidor (cifras inventadas). Falla cerrado: igual que en WhatsApp/Telegram, el cliente nunca ve montos inventados y la conversación pasa a un asesor.'
     } else if (parsed.hasHandoffTag) {
       reply = HANDOFF_REPLY
-    } else if (parsed.booking) {
-      actionNote = '📅 Reserva detectada: en el canal real se crearía la cita pendiente de confirmación del equipo. El simulador no crea citas reales.'
     } else if (parsed.orderPayload || parsed.hasSale) {
       actionNote = '🛒 Cierre de venta detectado: en el canal real el sistema calcula el total oficial y avisa al equipo. El simulador no registra pedidos reales.'
     }

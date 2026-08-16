@@ -37,18 +37,8 @@ const SALE_PHRASES = [
   'tu compra quedó registrada', 'su compra quedó registrada',
 ] as const
 
-export interface BookingTag {
-  contactName: string
-  bookingDateRaw: string
-  bookingTimeRaw: string
-  service: string
-  bookingDate: string | null
-  bookingTime: string | null
-}
-
 export interface ParsedBotOutput {
   finalText: string
-  booking: BookingTag | null
   orderPayload: string | null
   hasSale: boolean
   hasHandoffTag: boolean
@@ -101,29 +91,21 @@ function parseBotOutput(reply: unknown): ParsedBotOutput {
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
 
-  let booking: BookingTag | null = null
-  const bookingMatch = finalText.match(/##BOOK:([^|]+)\|([^|]+)\|([^|]+)\|([^#]+)##/)
-  if (bookingMatch) {
-    finalText = finalText.replace(bookingMatch[0], '').trim()
-    const [, contactName, bookingDateRaw, bookingTimeRaw, service] = bookingMatch
-    booking = {
-      contactName,
-      bookingDateRaw,
-      bookingTimeRaw,
-      service,
-      bookingDate: bookingDateRaw.match(/\d{4}-\d{2}-\d{2}/)?.[0] || null,
-      bookingTime: bookingTimeRaw.match(/\d{1,2}:\d{2}/)?.[0] || null,
-    }
-  }
-
-  finalText = finalText.replace('##BOOKING##', '').trim()
-
   let orderPayload: string | null = null
   const orderMatch = finalText.match(/##\s*PEDIDO\s*:\s*([^#]+)##/i)
   if (orderMatch) {
     orderPayload = orderMatch[1].trim()
     finalText = finalText.replace(orderMatch[0], '').trim()
   }
+
+  // ⚠️ Red de la retirada de citas (2026-08-16): `##BOOK##` ya no se procesa,
+  // pero `policies.bot_prompt` lo edita el DUEÑO y se inyecta tal cual. Un
+  // prompt guardado que todavía la mencione haría salir la etiqueta cruda por
+  // WhatsApp. Limpiarla cuesta una línea; que la lea un cliente, una venta.
+  finalText = finalText
+    .replace(/##\s*BOOK\s*:[^#]*##/gi, '')
+    .replace(/##\s*BOOKING\s*##/gi, '')
+    .trim()
 
   const hasSimpleSaleTag = /##\s*(venta|pedido)\s*##/i.test(finalText)
   finalText = finalText.replace(/##\s*(venta|pedido)\s*##/gi, '').trim()
@@ -140,7 +122,6 @@ function parseBotOutput(reply: unknown): ParsedBotOutput {
 
   return {
     finalText,
-    booking,
     orderPayload,
     hasSale,
     hasHandoffTag,

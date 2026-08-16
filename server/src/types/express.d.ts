@@ -7,7 +7,6 @@ declare global {
       perms?: string[]
       userId?: string
       email?: string
-      takesBookings?: boolean
     }
 
     interface AdminUserClaims {

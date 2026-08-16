@@ -124,7 +124,6 @@ export type BusinessDetail = BusinessRow & {
   ycloud_webhook_endpoint_id: string | null
   meta_phone_id: string | null
   ai_provider: string | null
-  takes_bookings: boolean | null
   takes_orders: boolean | null
   storefront_enabled: boolean | null
   chat_mode: 'menu' | 'ai' | 'miniapp' | null

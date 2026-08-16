@@ -81,8 +81,6 @@ create table if not exists businesses (
   -- Integraciones
   calcom_link         text,          -- OBSOLETO (Cal.com retirado); columna huérfana, no se usa
   ai_provider         text,          -- override de IA por negocio (opcional)
-  -- Modo de operación: false = solo venta/atención · true = agenda citas (calendario)
-  takes_bookings      boolean not null default false,
   -- Modo venta: true = el bot cierra pedidos (##PEDIDO## + total oficial) ·
   -- false = solo informativo (asesora y deriva al asesor si quieren comprar)
   takes_orders        boolean not null default true,
@@ -816,7 +814,10 @@ create table if not exists conversation_tags (
 );
 create index if not exists idx_conv_tags_biz on conversation_tags(business_id);
 
--- ── TABLA 7: Horarios de atención (para reservas) ──────────
+-- ── TABLA 7: Horario de atención del negocio ───────────────
+-- Decide si la tienda acepta pedidos y si el bot atiende o dice que está
+-- cerrado. Nació con la agenda de citas y sobrevivió a su retirada porque
+-- nunca fue suya: `slot_duration` es lo único que queda de aquello.
 create table if not exists business_schedule (
   id            uuid primary key default gen_random_uuid(),
   business_id   uuid not null references businesses(id) on delete cascade,
@@ -859,23 +860,6 @@ drop trigger if exists businesses_default_schedule on public.businesses;
 create trigger businesses_default_schedule
 after insert on public.businesses
 for each row execute function public.ensure_business_default_schedule();
-
--- ── TABLA 8: Reservas / citas ──────────────────────────────
-create table if not exists bookings (
-  id              uuid primary key default gen_random_uuid(),
-  business_id     uuid not null references businesses(id) on delete cascade,
-  contact_phone   text not null,
-  contact_name    text,
-  service         text,
-  booking_date    date not null,
-  booking_time    time not null,
-  duration_minutes int not null default 60
-                   check (duration_minutes between 1 and 1440),
-  notes           text,
-  status          text not null default 'pending'
-                  check (status in ('pending','confirmed','cancelled','no_show')),
-  created_at      timestamptz default now()
-);
 
 -- ── TABLA 9: Facturación ───────────────────────────────────
 create table if not exists billing (
@@ -1160,8 +1144,6 @@ create index if not exists idx_history_contact   on conversation_history(busines
 create index if not exists idx_history_date      on conversation_history(business_id, created_at);
 create index if not exists idx_sessions_biz      on conversation_sessions(business_id);
 create index if not exists idx_schedule_biz      on business_schedule(business_id);
-create index if not exists idx_bookings_biz      on bookings(business_id);
-create index if not exists idx_bookings_date     on bookings(business_id, booking_date);
 create index if not exists idx_biz_phone         on businesses(whatsapp_number);
 create index if not exists idx_billing_biz       on billing(business_id);
 create index if not exists idx_sales_biz          on sales(business_id);
@@ -1200,79 +1182,6 @@ create unique index if not exists uq_webhook_inbox_processing_stream
 
 -- Normalización compatible con instalaciones creadas antes de que la duración
 -- y el tenant de las reservas fueran obligatorios.
-update public.bookings as booking
-set duration_minutes = coalesce(
-  (
-    select schedule.slot_duration
-    from public.business_schedule as schedule
-    where schedule.business_id = booking.business_id
-      and schedule.day_of_week = extract(dow from booking.booking_date)::integer
-    limit 1
-  ),
-  60
-)
-where booking.duration_minutes is null
-   or booking.duration_minutes <= 0;
-
-update public.bookings set status = 'pending' where status is null;
-
-do $$
-begin
-  if exists (select 1 from public.bookings where business_id is null) then
-    raise exception using
-      errcode = '23502',
-      message = 'Existen reservas sin negocio. Asígnales un business_id válido antes de continuar.';
-  end if;
-  if exists (select 1 from public.bookings where duration_minutes > 1440) then
-    raise exception using
-      errcode = '23514',
-      message = 'Existen reservas con duración mayor a 1440 minutos. Corrígelas antes de continuar.';
-  end if;
-end;
-$$;
-
-alter table public.bookings
-  alter column business_id set not null,
-  alter column duration_minutes set default 60,
-  alter column duration_minutes set not null,
-  alter column status set default 'pending',
-  alter column status set not null;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.bookings'::regclass
-      and conname = 'bookings_duration_minutes_check'
-  ) then
-    alter table public.bookings
-      add constraint bookings_duration_minutes_check
-      check (duration_minutes between 1 and 1440) not valid;
-  end if;
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.bookings'::regclass
-      and conname = 'bookings_no_active_overlap'
-  ) then
-    alter table public.bookings
-      add constraint bookings_no_active_overlap
-      exclude using gist (
-        business_id with =,
-        tsrange(
-          booking_date + booking_time,
-          booking_date + booking_time
-            + make_interval(mins => duration_minutes),
-          '[)'
-        ) with &&
-      )
-      where (status in ('pending', 'confirmed'));
-  end if;
-end;
-$$;
-
-alter table public.bookings
-  validate constraint bookings_duration_minutes_check;
-
 -- ── FUNCIÓN RAG: búsqueda de productos por significado ─────
 create or replace function match_products(query_embedding vector(1536), biz_id uuid, match_count int)
 returns table (
@@ -1622,148 +1531,6 @@ revoke all on function public.set_order_status(uuid, uuid, text) from public, an
 grant execute on function public.set_order_status(uuid, uuid, text) to service_role;
 
 -- ── FUNCIÓN ATÓMICA: reserva si el intervalo sigue libre ───
-create or replace function public.create_booking_if_available(
-  p_business_id uuid,
-  p_contact_phone text,
-  p_contact_name text,
-  p_service text,
-  p_booking_date date,
-  p_booking_time time,
-  p_duration_minutes integer default null,
-  p_notes text default null
-)
-returns jsonb
-language plpgsql
-set search_path = public, pg_temp
-as $$
-declare
-  v_booking public.bookings%rowtype;
-  v_schedule public.business_schedule%rowtype;
-  v_business_accepts_bookings boolean;
-  v_duration integer;
-  v_local_now timestamp := now() at time zone 'America/Guayaquil';
-begin
-  if p_business_id is null then
-    raise exception using errcode = '22023', message = 'El negocio es obligatorio';
-  end if;
-  if nullif(btrim(p_contact_phone), '') is null then
-    raise exception using errcode = '22023', message = 'El contacto es obligatorio';
-  end if;
-  if p_booking_date is null or p_booking_time is null then
-    raise exception using errcode = '22023', message = 'La fecha y hora son obligatorias';
-  end if;
-  if p_booking_date + p_booking_time <= v_local_now then
-    raise exception using errcode = '22023', message = 'La reserva debe estar en el futuro';
-  end if;
-
-  perform pg_advisory_xact_lock(
-    hashtextextended(p_business_id::text || ':' || p_booking_date::text, 0)
-  );
-
-  select (
-    business.takes_bookings is true
-    and business.active is true
-    and business.suspended is not true
-  )
-  into v_business_accepts_bookings
-  from public.businesses as business
-  where business.id = p_business_id
-  for share;
-
-  if not found then
-    raise exception using errcode = '23503', message = 'El negocio no existe';
-  end if;
-  if v_business_accepts_bookings is distinct from true then
-    raise exception using errcode = '42501', message = 'El negocio no acepta reservas';
-  end if;
-
-  select schedule.*
-  into v_schedule
-  from public.business_schedule as schedule
-  where schedule.business_id = p_business_id
-    and schedule.day_of_week = extract(dow from p_booking_date)::integer
-    and schedule.is_active is true
-  for share;
-
-  if not found then
-    raise exception using errcode = '22023', message = 'El negocio no atiende ese día';
-  end if;
-  if v_schedule.slot_duration not between 1 and 1440 then
-    raise exception using errcode = '22023', message = 'El intervalo del horario es inválido';
-  end if;
-
-  v_duration := coalesce(p_duration_minutes, v_schedule.slot_duration, 60);
-  if v_duration not between 1 and 1440 then
-    raise exception using errcode = '22023', message = 'La duración de la reserva es inválida';
-  end if;
-  if p_booking_date + p_booking_time < p_booking_date + v_schedule.open_time
-     or p_booking_date + p_booking_time + make_interval(mins => v_duration)
-       > p_booking_date + v_schedule.close_time then
-    raise exception using errcode = '22023', message = 'La reserva queda fuera del horario de atención';
-  end if;
-  if mod(
-    extract(epoch from (p_booking_time - v_schedule.open_time)),
-    v_schedule.slot_duration * 60
-  ) <> 0 then
-    raise exception using errcode = '22023', message = 'La hora no corresponde a un intervalo disponible';
-  end if;
-
-  select booking.*
-  into v_booking
-  from public.bookings as booking
-  where booking.business_id = p_business_id
-    and booking.contact_phone = btrim(p_contact_phone)
-    and booking.booking_date = p_booking_date
-    and booking.booking_time = p_booking_time
-    and lower(coalesce(btrim(booking.service), ''))
-      = lower(coalesce(btrim(p_service), ''))
-    and booking.status in ('pending', 'confirmed')
-  order by booking.created_at
-  limit 1;
-
-  if found then
-    return jsonb_build_object(
-      'result', 'duplicate',
-      'booking', to_jsonb(v_booking)
-    );
-  end if;
-
-  if exists (
-    select 1
-    from public.bookings as booking
-    where booking.business_id = p_business_id
-      and booking.booking_date = p_booking_date
-      and booking.status in ('pending', 'confirmed')
-      and p_booking_date + p_booking_time
-        < booking.booking_date + booking.booking_time
-          + make_interval(mins => booking.duration_minutes)
-      and booking.booking_date + booking.booking_time
-        < p_booking_date + p_booking_time + make_interval(mins => v_duration)
-  ) then
-    return jsonb_build_object('result', 'conflict', 'booking', null);
-  end if;
-
-  insert into public.bookings (
-    business_id, contact_phone, contact_name, service,
-    booking_date, booking_time, duration_minutes, notes, status
-  ) values (
-    p_business_id, btrim(p_contact_phone), nullif(btrim(p_contact_name), ''),
-    nullif(btrim(p_service), ''), p_booking_date, p_booking_time, v_duration,
-    nullif(btrim(p_notes), ''), 'pending'
-  ) returning * into v_booking;
-
-  return jsonb_build_object('result', 'created', 'booking', to_jsonb(v_booking));
-exception
-  when exclusion_violation then
-    return jsonb_build_object('result', 'conflict', 'booking', null);
-end;
-$$;
-
-revoke all on function public.create_booking_if_available(uuid, text, text, text, date, time, integer, text) from public;
-revoke all on function public.create_booking_if_available(uuid, text, text, text, date, time, integer, text) from anon;
-revoke all on function public.create_booking_if_available(uuid, text, text, text, date, time, integer, text) from authenticated;
-grant execute on function public.create_booking_if_available(uuid, text, text, text, date, time, integer, text) to service_role;
-
 -- ── FUNCIÓN ATÓMICA: onboarding completo ───────────────────
 -- Crea negocio, políticas, dueño y cuotas en una sola transacción.
 create or replace function public.create_business_onboarding(
@@ -1806,7 +1573,7 @@ begin
     ycloud_api_key, ycloud_number,
     ycloud_webhook_endpoint_id, ycloud_webhook_secret,
     meta_token, meta_phone_id, telegram_bot_token,
-    takes_bookings, takes_orders, ai_provider, owner_phone, plan,
+    takes_orders, ai_provider, owner_phone, plan,
     plan_expires_at, active, bot_active, suspended, notes, monthly_rate
   ) values (
     v_slug,
@@ -1821,7 +1588,6 @@ begin
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
@@ -3209,193 +2975,6 @@ $$;
 create index if not exists idx_orders_cliente
   on public.orders (business_id, customer_id, created_at desc);
 
--- ── CITAS: precio, servicio y estado «atendida» ────────────
--- (migration-2026-08-02-cita-atendida-es-venta.sql)
--- ── 1. La cita sabe qué servicio es y cuánto vale ─────────────────────────
-alter table public.bookings
-  add column if not exists product_id uuid references public.products(id) on delete set null,
-  add column if not exists price numeric(10,2);
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.bookings'::regclass and conname = 'bookings_precio_check'
-  ) then
-    alter table public.bookings add constraint bookings_precio_check check (
-      price is null or (price >= 0 and price <= 99999)
-    );
-  end if;
-end;
-$$;
-
--- El servicio tiene que ser del MISMO negocio que la cita. Clave foránea
--- compuesta, como en el catálogo: que lo impida la base y no el que escriba
--- la próxima ruta.
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.bookings'::regclass and conname = 'fk_bookings_servicio_del_negocio'
-  ) then
-    alter table public.bookings
-      add constraint fk_bookings_servicio_del_negocio
-      foreign key (product_id, business_id)
-      references public.products (id, business_id) on delete set null;
-  end if;
-end;
-$$;
-
--- ── 2. «Atendida»: vino y se le atendió ───────────────────────────────────
-alter table public.bookings drop constraint if exists bookings_status_check;
-alter table public.bookings add constraint bookings_status_check check (
-  status in ('pending', 'confirmed', 'attended', 'cancelled', 'no_show')
-);
-
--- ── 3. La venta sabe de qué cita salió ────────────────────────────────────
-alter table public.sales
-  add column if not exists booking_id uuid references public.bookings(id) on delete set null;
-
--- Una cita, una venta como máximo: lo mismo que protege a los pedidos de
--- duplicar dinero al marcar dos veces.
-create unique index if not exists uq_sales_booking
-  on public.sales (booking_id) where booking_id is not null;
-
--- ── 4. La conversión ──────────────────────────────────────────────────────
-create or replace function public.crear_venta_desde_cita(
-  p_business_id uuid,
-  p_booking_id uuid
-)
-returns uuid
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_booking public.bookings%rowtype;
-  v_sale_id uuid;
-  v_precio numeric(10,2);
-  v_nombre text;
-begin
-  select * into v_booking
-  from public.bookings
-  where id = p_booking_id and business_id = p_business_id;
-  if not found then
-    return null;
-  end if;
-
-  select id into v_sale_id
-  from public.sales
-  where booking_id = p_booking_id and business_id = p_business_id;
-  if found then
-    return v_sale_id;
-  end if;
-
-  -- Solo cuenta lo atendido. Una cita pendiente, cancelada o a la que no vino
-  -- nadie no es dinero. Igual que en pedidos y estadías: hoy quien decide es
-  -- `set_booking_status`, pero esta función está concedida a service_role y no
-  -- puede depender solo de su llamador.
-  if v_booking.status is distinct from 'attended' then
-    return null;
-  end if;
-
-  -- Sin precio no hay venta que registrar, y no es un error: una cita puede
-  -- ser una consulta gratuita o el negocio puede cobrar aparte. Se atiende
-  -- igual, simplemente no suma dinero.
-  v_precio := coalesce(v_booking.price, 0);
-  if v_precio <= 0 then
-    return null;
-  end if;
-
-  v_nombre := coalesce(nullif(btrim(v_booking.service), ''), 'Servicio');
-
-  insert into public.sales (
-    business_id, booking_id, contact_phone, contact_name,
-    total, status, source, sold_at
-  ) values (
-    p_business_id, p_booking_id, v_booking.contact_phone, v_booking.contact_name,
-    v_precio, 'completada', 'cita', now()
-  )
-  returning id into v_sale_id;
-
-  insert into public.sale_items (
-    sale_id, business_id, product_id, product_name, quantity, unit_price, line_total
-  ) values (
-    v_sale_id, p_business_id, v_booking.product_id, v_nombre, 1, v_precio, v_precio
-  );
-
-  return v_sale_id;
-end;
-$$;
-
-revoke all on function public.crear_venta_desde_cita(uuid, uuid)
-  from public, anon, authenticated;
-grant execute on function public.crear_venta_desde_cita(uuid, uuid) to service_role;
-
--- ── 5. Marcar atendida registra la venta, en una sola transacción ─────────
--- `p_price` existe porque la mayoría de las citas las agenda el BOT, y el bot
--- no pregunta precios. El dueño lo confirma al marcar «atendida», en la misma
--- llamada: si fuera un update aparte, una cita podría quedar atendida con el
--- precio a medio guardar.
-create or replace function public.set_booking_status(
-  p_business_id uuid,
-  p_booking_id uuid,
-  p_status text,
-  p_price numeric default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_booking public.bookings%rowtype;
-begin
-  if p_status not in ('pending', 'confirmed', 'attended', 'cancelled', 'no_show') then
-    raise exception using errcode = '22023', message = 'Estado de cita inválido';
-  end if;
-
-  select * into v_booking
-  from public.bookings
-  where id = p_booking_id and business_id = p_business_id
-  for update;
-
-  if not found then
-    return jsonb_build_object('result', 'not_found');
-  end if;
-
-  if v_booking.status = p_status then
-    return jsonb_build_object('result', 'updated', 'booking', to_jsonb(v_booking));
-  end if;
-
-  -- Una cita cerrada no se reabre: se agenda otra. Igual que los pedidos, el
-  -- camino va siempre hacia adelante para que el historial sea auditable.
-  if v_booking.status in ('attended', 'cancelled', 'no_show') then
-    return jsonb_build_object('result', 'invalid_transition', 'booking', to_jsonb(v_booking));
-  end if;
-
-  if p_price is not null and (p_price < 0 or p_price > 99999) then
-    raise exception using errcode = '22023', message = 'El precio de la cita es inválido';
-  end if;
-
-  update public.bookings
-  set status = p_status,
-      price = coalesce(round(p_price, 2), price)
-  where id = p_booking_id and business_id = p_business_id
-  returning * into v_booking;
-
-  if p_status = 'attended' then
-    perform public.crear_venta_desde_cita(p_business_id, p_booking_id);
-  end if;
-
-  return jsonb_build_object('result', 'updated', 'booking', to_jsonb(v_booking));
-end;
-$$;
-
-revoke all on function public.set_booking_status(uuid, uuid, text, numeric)
-  from public, anon, authenticated;
-grant execute on function public.set_booking_status(uuid, uuid, text, numeric) to service_role;
-
 
 -- Un pedido entregado genera su venta: los reportes leen `sales`, así que sin
 -- esto un pedido de la tienda se entregaba y no aparecía en ningún número
@@ -4229,7 +3808,6 @@ alter table conversation_history  enable row level security;
 alter table conversation_sessions enable row level security;
 alter table conversation_tags     enable row level security;
 alter table business_schedule     enable row level security;
-alter table bookings              enable row level security;
 alter table billing               enable row level security;
 alter table server_settings       enable row level security;
 alter table schema_migrations     enable row level security;
@@ -4305,7 +3883,7 @@ begin
     ycloud_api_key, ycloud_number,
     ycloud_webhook_endpoint_id, ycloud_webhook_secret,
     meta_token, meta_phone_id, telegram_bot_token,
-    takes_bookings, takes_orders, ai_provider,
+    takes_orders, ai_provider,
     owner_phone, plan, plan_expires_at,
     active, bot_active, suspended, notes, monthly_rate
   ) values (
@@ -4321,7 +3899,6 @@ begin
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     nullif(p_business ->> 'ai_provider', ''),
     nullif(p_business ->> 'owner_phone', ''),
@@ -4938,7 +4515,6 @@ begin
     meta_token,
     meta_phone_id,
     telegram_bot_token,
-    takes_bookings,
     takes_orders,
     chat_mode,
     ai_provider,
@@ -4964,7 +4540,6 @@ begin
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),
@@ -5059,8 +4634,6 @@ commit;
 -- ── 1. Los destinos necesitan su índice único (id, business_id) ───────────
 create unique index if not exists uq_orders_id_business
   on public.orders (id, business_id);
-create unique index if not exists uq_bookings_id_business
-  on public.bookings (id, business_id);
 
 create or replace function public.claim_storefront_link_send(
   p_business_id uuid,
@@ -5933,25 +5506,8 @@ begin
       references public.orders (id, business_id)
       on delete set null (order_id);
   end if;
-
-  alter table public.sales drop constraint if exists sales_booking_id_fkey;
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.sales'::regclass and conname = 'fk_sales_cita_del_negocio'
-  ) then
-    alter table public.sales
-      add constraint fk_sales_cita_del_negocio
-      foreign key (booking_id, business_id)
-      references public.bookings (id, business_id)
-      on delete set null (booking_id);
-  end if;
 end;
 $$;
-
--- ── 3. La cita ya tenía su foránea compuesta, pero la simple seguía viva ──
--- `add column ... references products(id)` la creó sola, y mientras exista el
--- cruce sigue siendo posible por ella.
-alter table public.bookings drop constraint if exists bookings_product_id_fkey;
 
 -- ── RED DE SEGURIDAD: RLS AUTOMÁTICA EN TABLAS NUEVAS ──────
 -- Existía en la base de producción pero NO en este archivo, así que una
@@ -6172,7 +5728,6 @@ begin
     meta_token,
     meta_phone_id,
     telegram_bot_token,
-    takes_bookings,
     takes_orders,
     chat_mode,
     ai_provider,
@@ -6200,7 +5755,6 @@ begin
     nullif(p_business ->> 'meta_token', ''),
     nullif(p_business ->> 'meta_phone_id', ''),
     nullif(p_business ->> 'telegram_bot_token', ''),
-    coalesce((p_business ->> 'takes_bookings')::boolean, false),
     coalesce((p_business ->> 'takes_orders')::boolean, true),
     v_chat_mode,
     nullif(p_business ->> 'ai_provider', ''),

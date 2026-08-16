@@ -6,7 +6,6 @@
 interface MenuBusiness {
   name?: string | null
   takes_orders?: boolean | null
-  takes_bookings?: boolean | null
 }
 
 interface WelcomeMenu {
@@ -54,7 +53,6 @@ const wantsWelcomeMenu = (text: string): boolean => {
 const buildWelcomeMenu = (business: MenuBusiness, productCount: number): WelcomeMenu => {
   const options: string[] = []
   if (business.takes_orders) options.push('🛒 Hacer un pedido')
-  if (business.takes_bookings) options.push('📅 Agendar una cita')
   if (productCount > 0) options.push('📋 Ver productos y precios')
   options.push('💬 Otra consulta')
 

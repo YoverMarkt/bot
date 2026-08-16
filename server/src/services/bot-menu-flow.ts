@@ -1,7 +1,7 @@
 // Modo MENÚ (estilo banco): toda la conversación la conduce el CÓDIGO con
 // opciones generadas desde los datos reales del negocio. La IA no participa:
-// los textos son plantillas mínimas, los precios salen del catálogo y las
-// citas de la agenda. Si el cliente escribe algo fuera del menú, se le vuelve
+// los textos son plantillas mínimas y los precios salen del catálogo. Si el
+// cliente escribe algo fuera del menú, se le vuelve
 // a mostrar el menú (fallo cerrado) o se deriva al equipo. Los totales los
 // calcula SIEMPRE el servidor.
 
@@ -9,7 +9,6 @@ interface FlowBusiness {
   id: string
   name?: string | null
   takes_orders?: boolean | null
-  takes_bookings?: boolean | null
 }
 
 interface FlowProduct {
@@ -23,10 +22,6 @@ interface FlowProduct {
   image_url?: string | null
   video_url?: string | null
   active?: boolean | null
-}
-
-interface FlowSlots {
-  [date: string]: { label?: string; slots?: string[] }
 }
 
 // Modificador de menú (p. ej. el SABOR de la pizza): opción que el cliente
@@ -58,7 +53,6 @@ type FlowView =
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
-  | { kind: 'booking'; step: 'date' | 'time' | 'name'; date?: string; time?: string }
 
 interface FlowState {
   view: FlowView
@@ -77,7 +71,6 @@ type FlowAction =
   // modificador (sabor) para que money.ts calcule el precio por el producto y
   // pliegue el sabor en el nombre visible.
   | { type: 'order'; summary: string; totalCents: number; payload: string; items: { name: string; qty: number; note?: string | null }[] }
-  | { type: 'booking'; date: string; time: string; name: string }
 
 // Ítems del último pedido del contacto. Solo se reutilizan producto y cantidad:
 // el precio SIEMPRE se recalcula con el catálogo vigente, nunca el histórico.
@@ -97,7 +90,6 @@ export interface MenuFlowInput {
   // bienvenida en este flujo determinista.
   botPrompt?: string | null
   modifiers?: FlowModifier[]
-  availableSlots?: FlowSlots
   lastOrderItems?: LastOrderItem[]
 }
 
@@ -132,7 +124,6 @@ const OPT_ORDER = '🛒 Hacer un pedido'
 const OPT_REPEAT = '🔄 Repetir mi último pedido'
 const OPT_BROWSE = '📋 Ver productos y precios'
 const OPT_MEDIA = '📷 Ver fotos y videos'
-const OPT_BOOK = '📅 Agendar una cita'
 const OPT_TEAM = '💬 Hablar con el equipo'
 const OPT_BACK = '⬅️ Volver'
 const OPT_HOME = '🏠 Menú principal'
@@ -365,9 +356,6 @@ const mainOptions = (input: MenuFlowInput): string[] => {
     if (input.lastOrderItems?.length) options.push(OPT_REPEAT)
   }
   if (hasProducts) options.push(OPT_BROWSE)
-  if (input.business.takes_bookings && Object.keys(input.availableSlots || {}).length > 0) {
-    options.push(OPT_BOOK)
-  }
   options.push(OPT_TEAM)
   return options
 }
@@ -469,23 +457,6 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         options: [OPT_CONFIRM, OPT_EMPTY, OPT_HOME],
       }
     }
-    case 'booking':
-      switch (view.step) {
-        case 'date': {
-          const days = Object.entries(input.availableSlots || {}).slice(0, 6)
-          if (!days.length) {
-            return { reply: `Por ahora no tengo horarios disponibles para agendar 🙏`, options: [OPT_TEAM, OPT_HOME] }
-          }
-          return { reply: `¿Para qué día quieres tu cita? 👇`, options: [...days.map(([date, value]) => value.label || date), OPT_BACK] }
-        }
-        case 'time': {
-          const slots = (input.availableSlots?.[view.date || ''] || {}).slots || []
-          return { reply: `¿A qué hora? 👇`, options: [...slots.slice(0, 8), OPT_BACK] }
-        }
-        case 'name':
-          return { reply: `¿A nombre de quién agendo la cita? ✍️`, options: [] }
-      }
-      break
   }
   return { reply: `¿En qué te ayudamos? ${PROMPT_CHOOSE}`, options: mainOptions(input) }
 }
@@ -584,7 +555,6 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           reply: `Este es tu último pedido con los precios de hoy 👇${note}\n\n${summary.reply}`,
         }
       }
-      if (choice === OPT_BOOK) return goTo(state, { kind: 'booking', step: 'date' }, input)
       break
     }
     case 'categories': {
@@ -740,36 +710,6 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       if (choice === OPT_EMPTY) {
         state.cart = []
         return goTo(state, { kind: 'main' }, input)
-      }
-      break
-    }
-    case 'booking': {
-      if (view.step === 'date') {
-        if (choice === OPT_BACK) return goTo(state, { kind: 'main' }, input)
-        if (choice) {
-          const day = Object.entries(input.availableSlots || {})
-            .find(([date, value]) => (value.label || date) === choice)
-          if (day) return goTo(state, { kind: 'booking', step: 'time', date: day[0] }, input)
-        }
-        break
-      }
-      if (view.step === 'time') {
-        if (choice === OPT_BACK) return goTo(state, { kind: 'booking', step: 'date' }, input)
-        if (choice) return goTo(state, { kind: 'booking', step: 'name', date: view.date, time: choice }, input)
-        break
-      }
-      if (view.step === 'name') {
-        const name = input.message.trim()
-        if (/[a-záéíóúñ]{2,}/i.test(name) && view.date && view.time) {
-          const action: FlowAction = { type: 'booking', date: view.date, time: view.time, name }
-          const home = goTo(state, { kind: 'main' }, input)
-          return {
-            reply: `¡Listo, ${name}! 🙌 Registré tu solicitud de cita para el ${view.date} a las ${view.time}. Nuestro equipo te la confirma en breve.\n${home.reply}`,
-            options: home.options,
-            action,
-          }
-        }
-        return { reply: `Escríbeme el nombre para la cita, por favor ✍️`, options: [OPT_BACK] }
       }
       break
     }

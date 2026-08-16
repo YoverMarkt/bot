@@ -8,9 +8,6 @@ const { createBotActions } = require('../dist/services/bot-actions')
 
 function setup(overrides = {}) {
   const database = {
-    createBooking: vi.fn().mockResolvedValue({
-      data: { id: 'booking-a' }, error: null, duplicate: false, conflict: false,
-    }),
     upsertSession: vi.fn().mockResolvedValue({ error: null }),
     recordAiGap: vi.fn().mockResolvedValue(undefined),
     saveMessage: vi.fn().mockResolvedValue({ error: null }),
@@ -86,143 +83,13 @@ function setup(overrides = {}) {
 }
 
 const business = {
-  id: 'business-a', name: 'Negocio A', takes_bookings: true, takes_orders: true,
+  id: 'business-a', name: 'Negocio A', takes_orders: true,
 }
 const product = {
   id: 'product-a', name: 'Producto A', price: '12.50', duration_minutes: 45,
 }
 
 describe('acciones de etiquetas del bot', () => {
-  it('crea una reserva únicamente dentro del negocio resuelto', async () => {
-    const { actions, database } = setup()
-    const booking = {
-      contactName: ' Ana ',
-      bookingDateRaw: '2026-07-20',
-      bookingTimeRaw: '09:30',
-      service: ' Producto A ',
-      bookingDate: '2026-07-20',
-      bookingTime: '09:30',
-    }
-
-    await expect(actions.createBookingFromTag(
-      business, '0990000001', booking, [product],
-    )).resolves.toBe('created')
-
-    expect(database.createBooking).toHaveBeenCalledWith('business-a', {
-      contact_phone: '0990000001',
-      contact_name: 'Ana',
-      service: 'Producto A',
-      booking_date: '2026-07-20',
-      booking_time: '09:30',
-      duration_minutes: 45,
-      status: 'pending',
-    })
-    expect(database.createBooking).not.toHaveBeenCalledWith(
-      'business-b', expect.anything(),
-    )
-  })
-
-  it('no escribe una reserva con fecha u hora inválida', async () => {
-    const { actions, database, logger } = setup()
-    const invalid = {
-      contactName: 'Ana', bookingDateRaw: 'mañana', bookingTimeRaw: 'tarde',
-      service: 'Producto A', bookingDate: null, bookingTime: null,
-    }
-
-    await expect(actions.createBookingFromTag(
-      business, '0990000001', invalid, [product],
-    )).resolves.toBe('error')
-    expect(database.createBooking).not.toHaveBeenCalled()
-    expect(logger.error).toHaveBeenCalledWith(
-      '❌ Error creando reserva:',
-      'formato inválido: fecha="mañana" hora="tarde"',
-    )
-  })
-
-  it('deja que la agenda resuelva la duración cuando el servicio es ambiguo', async () => {
-    const { actions, database } = setup()
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Consulta', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-
-    await expect(actions.createBookingFromTag(
-      business,
-      '0990000001',
-      booking,
-      [
-        { id: 'service-a', name: 'Consulta inicial', price: 20, duration_minutes: 30 },
-        { id: 'service-b', name: 'Consulta control', price: 15, duration_minutes: 30 },
-      ],
-    )).resolves.toBe('created')
-
-    expect(database.createBooking).toHaveBeenCalledWith('business-a', expect.objectContaining({
-      duration_minutes: null,
-    }))
-  })
-
-  it('ignora una etiqueta de reserva si el negocio no habilitó citas', async () => {
-    const { actions, database, logger } = setup()
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-
-    await expect(actions.createBookingFromTag(
-      { ...business, takes_bookings: false }, '0990000001', booking, [product],
-    )).resolves.toBe('error')
-    expect(database.createBooking).not.toHaveBeenCalled()
-    expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('negocio sin reservas'))
-  })
-
-  it('distingue reintentos, conflictos y fallos sin anunciar una creación', async () => {
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-    const duplicate = setup({
-      database: {
-        createBooking: vi.fn().mockResolvedValue({
-          data: { id: 'booking-a' }, error: null, duplicate: true, conflict: false,
-        }),
-      },
-    })
-    await expect(duplicate.actions.createBookingFromTag(
-      business, '0990000001', booking, [product],
-    )).resolves.toBe('duplicate')
-    expect(duplicate.logger.log).toHaveBeenCalledWith(
-      expect.stringContaining('Reserva ya registrada'),
-    )
-    expect(duplicate.logger.log).not.toHaveBeenCalledWith(
-      expect.stringContaining('Reserva creada:'),
-    )
-
-    const conflict = setup({
-      database: {
-        createBooking: vi.fn().mockResolvedValue({
-          data: null, error: null, duplicate: false, conflict: true,
-        }),
-      },
-    })
-    await expect(conflict.actions.createBookingFromTag(
-      business, '0990000002', booking, [product],
-    )).resolves.toBe('conflict')
-
-    const failure = setup({
-      database: {
-        createBooking: vi.fn().mockResolvedValue({
-          data: null, error: { message: 'sin conexión' },
-        }),
-      },
-    })
-    await expect(failure.actions.createBookingFromTag(
-      business, '0990000003', booking, [product],
-    )).resolves.toBe('error')
-    expect(failure.logger.error).toHaveBeenCalledWith(
-      '❌ Error creando reserva:', 'sin conexión',
-    )
-  })
-
   it('activa handoff por etiqueta explícita aunque la respuesta no sea incierta', async () => {
     const { actions, database } = setup()
     const send = vi.fn().mockResolvedValue(undefined)
@@ -370,7 +237,6 @@ describe('acciones de etiquetas del bot', () => {
     const conversation = fs.readFileSync(new URL('../src/services/bot-conversation.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')
     expect(service).toContain('business_id: business.id')
-    expect(service).toContain('database.createBooking(business.id')
     expect(service).toContain('database.recordAiGap(')
     expect(service).not.toContain('@ts-nocheck')
     expect(conversation).toContain("require('./bot-actions')")

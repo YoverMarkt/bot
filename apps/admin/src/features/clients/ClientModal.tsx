@@ -14,14 +14,13 @@ import {
   businessTypeChoice,
   recommendedChatModeForBusinessType,
   recommendedStorefrontForBusinessType,
-  recommendedModeForBusinessType,
   recommendedSalesForBusinessType,
 } from './business-types'
 import { PLAN_CATALOG, planById } from './plans'
 
 // Modal de crear/editar negocio — paridad con el panel viejo:
 // identidad, canal WhatsApp por proveedor (con verificación real),
-// modos (citas / venta), IA por negocio, plan/tarifa y acceso del dueño.
+// modo de venta, IA por negocio, plan/tarifa y acceso del dueño.
 
 const EMPTY = {
   name: '', type: 'negocio', whatsapp_number: '', owner_phone: '',
@@ -29,7 +28,7 @@ const EMPTY = {
   ycloud_webhook_endpoint_id: '', ycloud_webhook_secret: '',
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
-  ai_provider: '', mode: 'normal', sales: 'informa',
+  ai_provider: '', sales: 'informa',
   chat_mode: 'ai', storefront: 'no',
   plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
@@ -43,7 +42,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [vfy, setVfy] = useState('')
-  const [modeTouched, setModeTouched] = useState(false)
   const [salesTouched, setSalesTouched] = useState(false)
   const [storefrontTouched, setStorefrontTouched] = useState(false)
   const [chatModeTouched, setChatModeTouched] = useState(false)
@@ -64,7 +62,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         meta_token: '', meta_phone_id: c.meta_phone_id ?? '',
         telegram_bot_token: '',
         ai_provider: c.ai_provider ?? '',
-        mode: c.takes_bookings ? 'citas' : 'normal',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
         chat_mode: ['menu', 'ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
@@ -91,9 +88,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     setF(prev => {
       const next = { ...prev, [k]: value }
       // Presugerir el modo según el tipo SOLO al crear (al editar se respeta lo guardado)
-      if (k === 'type' && !id && !modeTouched) {
-        next.mode = recommendedModeForBusinessType(value)
-      }
       if (k === 'type' && !id && !salesTouched) {
         next.sales = recommendedSalesForBusinessType(value)
       }
@@ -113,7 +107,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       return {
         ...prev,
         type,
-        mode: id || modeTouched ? prev.mode : recommendedModeForBusinessType(type),
         sales: id || salesTouched ? prev.sales : recommendedSalesForBusinessType(type),
         chat_mode: id || chatModeTouched
           ? prev.chat_mode
@@ -177,7 +170,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || null,
       meta_phone_id: f.meta_phone_id || null,
       ai_provider: f.ai_provider || null,
-      takes_bookings: f.mode === 'citas',
       takes_orders: f.sales !== 'informa',
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
@@ -287,20 +279,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
             {/* Modos */}
             <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-2">
-              <div>
-                <Label htmlFor="client-booking-mode">Agenda del bot</Label>
-                <Select value={f.mode} onValueChange={value => {
-                  setModeTouched(true)
-                  setVal('mode')(value)
-                }}>
-                  <SelectTrigger id="client-booking-mode" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="normal">Sin agenda — solo atención</SelectItem>
-                    <SelectItem value="citas">Solicita citas — el dueño confirma</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">Agenda simple de un solo recurso; las solicitudes quedan pendientes hasta que el dueño confirme o cancele.</p>
-              </div>
               <div>
                 <Label htmlFor="client-sales-mode">Ventas por el bot</Label>
                 <Select value={f.sales} onValueChange={value => {

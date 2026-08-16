@@ -338,24 +338,4 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(porOpcion.action).toEqual({ type: 'handoff' })
   })
 
-  it('agenda una cita con la agenda real: día, hora y nombre', () => {
-    const barberia = { id: 'barberia-test', name: 'Barbería', takes_orders: false, takes_bookings: true }
-    const slots = {
-      '2099-01-04': { label: 'lunes 4 de enero', slots: ['10:00', '11:00'] },
-      '2099-01-05': { label: 'martes 5 de enero', slots: ['09:00'] },
-    }
-    resetMenuFlow(barberia.id, 'c7')
-    const args = { products: [], availableSlots: slots }
-    const bienvenida = enviar(barberia, 'c7', 'hola', args)
-    expect(titulos(bienvenida.options)).toContain('📅 Agendar una cita')
-
-    const dias = enviar(barberia, 'c7', '📅 Agendar una cita', args)
-    expect(dias.options).toContain('lunes 4 de enero')
-    const horas = enviar(barberia, 'c7', 'lunes 4 de enero', args)
-    expect(horas.options).toContain('10:00')
-    enviar(barberia, 'c7', '10:00', args)
-    const cita = enviar(barberia, 'c7', 'Carlos Pérez', args)
-    expect(cita.action).toEqual({ type: 'booking', date: '2099-01-04', time: '10:00', name: 'Carlos Pérez' })
-    expect(cita.reply).toContain('Carlos Pérez')
-  })
 })

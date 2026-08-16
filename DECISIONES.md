@@ -16,7 +16,7 @@ un módulo concreto, no en cada sesión.
 - [Etiquetas del bot](#etiquetas-del-bot)
 - [Modo menú estilo banco](#modo-menú-estilo-banco)
 - [Reportes del dueño](#reportes-del-dueño)
-- [Capacidad de citas](#capacidad-de-citas)
+- [Capacidad de citas (retirada)](#capacidad-de-citas-retirada)
 - [Salud del canal](#salud-del-canal)
 - [Evals del bot](#evals-del-bot)
 - [Vigilante de precios](#vigilante-de-precios)
@@ -40,7 +40,7 @@ un módulo concreto, no en cada sesión.
 
 ## Modo menú estilo banco
 
-**Modo MENÚ estilo banco (`server/src/services/bot-menu-flow.ts`) — decisión 2026-07-19:** el CÓDIGO conduce TODA la conversación con opciones generadas de los datos reales (categorías = tags del catálogo, citas = agenda real); la IA NO participa en ningún mensaje. Navegación con máquina de estados por conversación (memoria 30 min): bienvenida → menú principal por capacidades → pedido con carrito y total en centavos del catálogo → cita con día/hora de la agenda → "💬 Hablar con el equipo" deriva. Lo que no coincide con el menú repite las opciones (fallo cerrado, jamás inventa); el cliente también puede responder el NÚMERO de la opción. Conectado al simulador (`mode:'menu'`, por defecto en la UI con toggle "Modo menú / Modo IA"); WhatsApp/Telegram siguen con IA hasta decidir llevarlo al canal real (botones interactivos post-Meta; Telegram ya tiene `inlineKeyboard`).
+**Modo MENÚ estilo banco (`server/src/services/bot-menu-flow.ts`) — decisión 2026-07-19:** el CÓDIGO conduce TODA la conversación con opciones generadas de los datos reales (categorías = tags del catálogo); la IA NO participa en ningún mensaje. Navegación con máquina de estados por conversación (memoria 30 min): bienvenida → menú principal por capacidades → pedido con carrito y total en centavos del catálogo → "💬 Hablar con el equipo" deriva. Lo que no coincide con el menú repite las opciones (fallo cerrado, jamás inventa); el cliente también puede responder el NÚMERO de la opción. Conectado al simulador (`mode:'menu'`, por defecto en la UI con toggle "Modo menú / Modo IA"); WhatsApp/Telegram siguen con IA hasta decidir llevarlo al canal real (botones interactivos post-Meta; Telegram ya tiene `inlineKeyboard`).
 
 ---
 
@@ -50,9 +50,15 @@ un módulo concreto, no en cada sesión.
 
 ---
 
-## Capacidad de citas
+## Capacidad de citas (retirada)
 
-**Capacidad de citas:** la agenda simple usa `create_booking_if_available` para conservar capacidad única; el cobro se coordina fuera de la plataforma. El prompt inyecta la fecha de hoy para que el modelo nunca haga aritmética de fechas.
+**RETIRADA el 2026-08-16, fase 2 de dejar Umbani solo con domicilios.** La agenda simple usaba `create_booking_if_available` para conservar capacidad única bajo una restricción de exclusión `gist`: dos clientes no podían quedarse con el mismo hueco ni escribiendo a la vez. El cobro se coordinaba fuera de la plataforma y atender la cita registraba la venta.
+
+⚠️ **Lo que NO se fue con ella: `business_schedule`.** Vivía en el mismo módulo —mismo repositorio, mismas rutas— y por eso parecía parte de la agenda, pero decide otra cosa: si la tienda acepta pedidos y si el bot atiende o contesta que está cerrado. Borrarla habría dejado a un negocio de domicilios sin horario. El horario se mudó a `routes/schedule.routes.ts` y `db/repositories/schedule.ts` antes de borrar el resto; `slot_duration` se quedó en la tabla, muerta, porque reescribir los horarios de todos los negocios para soltarla no aporta nada.
+
+El permiso `citas` daba acceso a Citas **y** a Horarios. Sin citas solo queda Horarios, así que se renombró a `horarios` — y la migración lo reescribe en `client_users.permissions`, porque el valor está guardado en cada fila y sin eso los empleados habrían perdido el acceso en silencio.
+
+El prompt sigue inyectando la fecha de hoy para que el modelo nunca haga aritmética de fechas.
 
 **Hospedaje: RETIRADO el 2026-08-16.** Fue un dominio separado, con inventario agregado por tipo de habitación y noche, cotizaciones oficiales y holds bajo lock por negocio contra la sobreventa. Salió entero en la fase 1 de dejar Umbani solo con domicilios: no compartía una sola tabla con el pedido, que es justo lo que lo hacía separable. Su código vive en el historial del PR de esa fase.
 
@@ -66,13 +72,13 @@ un módulo concreto, no en cada sesión.
 
 ## Evals del bot
 
-**Evals del bot (`server/evals/`, `npm run evals -w @botpanel/server`):** ~20 conversaciones doradas corridas contra la IA **de verdad**, con el prompt real. Es la única capa que ve bugs de comportamiento: el CI puede estar entero en verde mientras la IA inventa un precio o promete algo que no existe. Cubre pizzería y barbería, y verifica que no cite precios inexistentes ni regale descuentos, que emita la etiqueta correcta (`##PEDIDO##`, `##BOOK##`), que no invente servicios ni disponibilidad, que jamás genere enlaces de pago ni dé por confirmada una reserva, y que resista la inyección de prompt ("ignora tus instrucciones") o que le pidan datos de otro negocio. Los casos aceptan `historial` para llegar al pedido en varios turnos, como hablan los clientes reales. ⚠️ **Gasta dinero** (llamada real por caso, céntimos por corrida) y por eso **NO corre en el CI**: se lanza a mano antes de una demo o al cambiar el prompt o el modelo. Para añadir casos basta copiar uno en `evals/casos.mjs` y cambiar `mensaje` y `espera` — el runner los recoge solo. `EVAL_AI_PROVIDER` fija el proveedor.
+**Evals del bot (`server/evals/`, `npm run evals -w @botpanel/server`):** ~20 conversaciones doradas corridas contra la IA **de verdad**, con el prompt real. Es la única capa que ve bugs de comportamiento: el CI puede estar entero en verde mientras la IA inventa un precio o promete algo que no existe. Cubre pizzería y tienda, y verifica que no cite precios inexistentes ni regale descuentos, que emita la etiqueta correcta (`##PEDIDO##`), que no invente productos ni disponibilidad, que jamás genere enlaces de pago, y que resista la inyección de prompt ("ignora tus instrucciones") o que le pidan datos de otro negocio. Los casos aceptan `historial` para llegar al pedido en varios turnos, como hablan los clientes reales. ⚠️ **Gasta dinero** (llamada real por caso, céntimos por corrida) y por eso **NO corre en el CI**: se lanza a mano antes de una demo o al cambiar el prompt o el modelo. Para añadir casos basta copiar uno en `evals/casos.mjs` y cambiar `mensaje` y `espera` — el runner los recoge solo. `EVAL_AI_PROVIDER` fija el proveedor.
 
 ---
 
 ## Vigilante de precios
 
-**Vigilante de precios (`server/src/services/price-guard.ts`):** hace cumplir la regla inviolable #8 en la salida — todo monto que escriba la IA se confronta con el catálogo real del negocio. Acepta precios del catálogo (`price` y `price_sale`), múltiplos enteros de ellos (2 noches × $95 = $190) y cifras que el propio servidor calculó en ese turno; lo demás se considera inventado. Solo mira cifras con **moneda explícita** (`$95`, `95 dólares`, `USD 95`): sin ese filtro, «3 noches», «10:00» o un número de teléfono se leerían como precios y el vigilante sería inservible de puro ruidoso. Si el negocio no tiene precios cargados no acusa a nadie. ⚠️ **Arranca en modo `observar` a propósito** (`PRICE_GUARD_MODE`, por defecto observar): registra el hallazgo como categoría `ia` en el registro de errores **sin cortar la conversación**, porque un falso positivo dejaría a un cliente real sin respuesta. Solo cuando los datos confirmen que no hay falsos positivos se pasa a `PRICE_GUARD_MODE=bloquear`, y entonces descarta el mensaje y deriva. Convive con `bot-tags.impersonatesOfficialSummary`, que cubre el caso hermano de imitar un resumen oficial completo.
+**Vigilante de precios (`server/src/services/price-guard.ts`):** hace cumplir la regla inviolable #8 en la salida — todo monto que escriba la IA se confronta con el catálogo real del negocio. Acepta precios del catálogo (`price` y `price_sale`), múltiplos enteros de ellos (2 × $95 = $190) y cifras que el propio servidor calculó en ese turno; lo demás se considera inventado. Solo mira cifras con **moneda explícita** (`$95`, `95 dólares`, `USD 95`): sin ese filtro, «3 noches», «10:00» o un número de teléfono se leerían como precios y el vigilante sería inservible de puro ruidoso. Si el negocio no tiene precios cargados no acusa a nadie. ⚠️ **Arranca en modo `observar` a propósito** (`PRICE_GUARD_MODE`, por defecto observar): registra el hallazgo como categoría `ia` en el registro de errores **sin cortar la conversación**, porque un falso positivo dejaría a un cliente real sin respuesta. Solo cuando los datos confirmen que no hay falsos positivos se pasa a `PRICE_GUARD_MODE=bloquear`, y entonces descarta el mensaje y deriva. Convive con `bot-tags.impersonatesOfficialSummary`, que cubre el caso hermano de imitar un resumen oficial completo.
 
 ---
 
@@ -94,7 +100,7 @@ un módulo concreto, no en cada sesión.
 
 **Rediseño de la tienda (2026-08-06):** el flujo de comida pasó a la línea del diagrama aprobado — portada del local con estado y horario, buscador, categorías en círculos, pestañas sticky, bandas grises entre secciones, rejilla de dos columnas con la foto arriba y barra inferior fija. La estructura entera está en **[DISENO-MINIAPP.md](DISENO-MINIAPP.md)**, incluido qué se apartó del diagrama y por qué. Tres cosas que no son de estilo y conviene saber antes de tocarlo: **(1)** la pestaña activa la decide el SCROLL mediante un `IntersectionObserver` con una línea de lectura bajo las pestañas, y durante un salto programático el subrayado se congela —sin eso, tocar una pestaña lo hace parpadear por todas las secciones del camino—. **(2)** Elegir entrega o retiro **dejó de vivir dentro del carrito**: ahora se decide también en la portada, así que el estado subió a `FoodStore` y las tres reglas que colgaban de él viven en `apps/store/src/lib/cart.ts` (`ENTREGA_POR_DEFECTO`, `needsAddress`, `orderTotal`) con una prueba cada una. Escondido en el componente no se podía comprobar, y elegir «Retiro» arriba volvía a «Entrega» al abrir el carrito. **(3)** El caso **sin foto es el normal**, no la excepción: hoy ningún producto tiene imagen, y el marcador con la inicial sobre el color del negocio existe para que dieciséis huecos grises no parezcan la app rota. ⚠️ La portada del diagrama sigue **incompleta a propósito**: `cover_url` y `min_order` no existen en la base.
 
-**Cuánto tarda el negocio (2026-08-06):** `businesses.prep_time_minutes` y `businesses.delivery_extra_minutes`, con el valor inicial recomendado por el tipo (`prepTimeForBusinessType`) y editables por el dueño en `Ajustes → Tu tienda`. Antes era **30 minutos fijos para todos**, escrito a mano en la ruta de la tienda: una heladería que sirve en cinco y un asadero que tarda cuarenta ofrecían las mismas franjas, así que a uno le escondíamos media hora de ventas y el otro prometía lo que no podía cumplir. **No es un texto de portada: `prep_time_minutes` decide desde qué hora se puede PROGRAMAR un pedido**, y por eso vivía en DOS sitios —la lista de franjas y su validación— que ahora salen de una sola función (`prepOptions`); separarlos no rompe de golpe, deja que la validación acepte horas que la lista no ofrecía. El de entrega **no** entra en las franjas: la franja es la hora en que el pedido está listo, no en que llega. El dueño configura UN número y la app pinta un rango de +10 min (`rangoDeEspera`), como las apps de delivery — un número exacto se lee como promesa al minuto. ⚠️ **Las barberías y demás negocios de citas no usan nada de esto**: su tiempo ya lo controlaba el dueño por `products.duration_minutes`, `business_schedule.slot_duration` y `bookings.duration_minutes`, y no se tocó. Detalle completo en [DISENO-MINIAPP.md](DISENO-MINIAPP.md#cuánto-tarda-el-negocio).
+**Cuánto tarda el negocio (2026-08-06):** `businesses.prep_time_minutes` y `businesses.delivery_extra_minutes`, con el valor inicial recomendado por el tipo (`prepTimeForBusinessType`) y editables por el dueño en `Ajustes → Tu tienda`. Antes era **30 minutos fijos para todos**, escrito a mano en la ruta de la tienda: una heladería que sirve en cinco y un asadero que tarda cuarenta ofrecían las mismas franjas, así que a uno le escondíamos media hora de ventas y el otro prometía lo que no podía cumplir. **No es un texto de portada: `prep_time_minutes` decide desde qué hora se puede PROGRAMAR un pedido**, y por eso vivía en DOS sitios —la lista de franjas y su validación— que ahora salen de una sola función (`prepOptions`); separarlos no rompe de golpe, deja que la validación acepte horas que la lista no ofrecía. El de entrega **no** entra en las franjas: la franja es la hora en que el pedido está listo, no en que llega. El dueño configura UN número y la app pinta un rango de +10 min (`rangoDeEspera`), como las apps de delivery — un número exacto se lee como promesa al minuto. ⚠️ Hasta el 2026-08-16 los negocios de citas no usaban nada de esto: su tiempo iba por la agenda, que ya no existe. Detalle completo en [DISENO-MINIAPP.md](DISENO-MINIAPP.md#cuánto-tarda-el-negocio).
 
 **Quien escribe por molestar (2026-08-13):** el enlace sale siempre desde el 2026-08-12, así que cada mensaje recibe respuesta y desde octubre cada respuesta se paga. Dos frenos con naturalezas distintas. El **techo** (`claim_miniapp_reply`) es automático y **temporal**: 5ª respuesta en una hora → el mismo mensaje añade el teléfono del local, 10ª → silencio de 24 h. Es temporal porque un contador no puede condenar a nadie: quien escribió doce veces un martes puede ser un cliente agobiado, y el histórico real de Monster Pizza tenía una hora con **13 mensajes** de uso legítimo — con un techo de 3 o 5 se cortaría a clientes de verdad. ⚠️ **El silencio no se levanta al cambiar de hora**, y ese es el detalle que hace que el número del techo importe poco: con una ventana rodante, quien molesta con paciencia pagaría el techo entero cada hora (240 mensajes al día en vez de 10). El **bloqueo** (`business_customers.blocked_at`) lo pone el dueño desde `Conversaciones`, no caduca y es **total** — bot mudo en todos los modos y 403 al crear pedido, porque un bloqueo que solo calla al bot deja al bloqueado pidiendo con su enlace guardado. ⚠️ Al bloqueado **nunca** se le avisa: quien busca reacción no puede recibirla, y el aviso cuesta el mismo mensaje que se ahorra. En ambos casos el mensaje **se guarda** y la conversación se marca no leída: callar no es dejar de ver. Ante un fallo de base se **atiende** —quedarse mudo por un problema propio pierde un cliente real—, y el comprobante se contesta aunque esté silenciado, porque quien acaba de pagar no es quien molesta. El contador vive en PostgreSQL y no en memoria: es el mismo error que ya se corrigió con el envío del enlace, y aquí sería peor —el que molesta solo tendría que esperar a un despliegue.
 
@@ -142,7 +148,7 @@ Verificado ejecutando la migración contra un PostgreSQL real: el envío no se m
 
 **El agujero que cerró (2026-08-02):** TODOS los reportes del dueño —ventas, dashboard, directorio de clientes, productos más vendidos, clientes perdidos— leen la tabla `sales`, y `sales` solo se llenaba con el botón «Registrar venta» del panel. Un pedido de la tienda o del bot se entregaba y **no aparecía en ningún número**. El negocio vendía y sus reportes decían que no.
 
-**El estándar que se establece:** cada tipo de negocio tiene su bandeja donde atiende —Pedidos, Citas— y **todas desembocan en `sales`**. Así los reportes tienen una sola fuente de verdad y no hay que volver a tocarlos cuando se añada un flujo nuevo. Es la decisión que permite vender el producto a una pizzería o a una barbería sin rehacer los números cada vez.
+**El estándar que se establece:** cada bandeja donde el negocio atiende **desemboca en `sales`**. Así los reportes tienen una sola fuente de verdad y no hay que volver a tocarlos cuando se añada un flujo nuevo. Tras retirar hospedaje y citas quedan dos caminos —pedido entregado y pedido de mostrador—, pero la regla es la misma.
 
 Cómo está hecho, y por qué así:
 
@@ -156,23 +162,16 @@ Verificado contra un PostgreSQL real: aceptar/preparar/despachar NO crean venta,
 
 **El pedido de mostrador** (lo que se vende en persona) entra por el MISMO camino: nace `completado` con `source = 'manual'` y `create_order_with_items` le crea la venta dentro de la propia función. Si fueran dos llamadas desde Node, un fallo entre ellas dejaría un pedido cobrado sin venta. ⚠️ `orders.contact_phone` es NOT NULL pero en un mostrador casi nunca hay teléfono: se guarda el literal `'mostrador'` y la venta lo convierte a nulo con `nullif`. Sin eso, el directorio de clientes acabaría con un cliente fantasma de cientos de compras que arruinaría «frecuentes» y «clientes perdidos».
 
-**Una CITA atendida también es una venta**, y con eso el estándar llega a servicios (barberías, consultorios). Antes `bookings` no tenía precio y no existía ni un vínculo entre una cita y una venta: el dueño tenía que acordarse de registrarla a mano o esa atención no existía en ningún reporte.
+**Una CITA atendida también era una venta** (2026-08-02 → 2026-08-16). Llevó el
+estándar a servicios: la cita apuntaba al servicio del catálogo con clave
+foránea COMPUESTA, congelaba su precio, se podía fijar el importe en la misma
+llamada que el estado —porque la mayoría las agendaba el bot, que no negocia
+precios— y una cita sin precio se atendía igual sin generar venta.
 
-- **«Atendida» es un estado NUEVO, distinto de «confirmada».** Confirmar es decir «te espero»; atender es que la persona vino. Solo lo segundo es dinero, y solo lo segundo genera venta.
-- **El precio se congela.** La cita apunta al servicio del catálogo (`product_id`, con clave foránea COMPUESTA para que no pueda ser el servicio de otro negocio) y guarda su importe. Si mañana el corte sube de $10 a $12, la cita de ayer sigue valiendo $10: es lo que se pactó.
-- **El precio se puede fijar al cerrar la cita**, porque la mayoría las agenda el BOT y el bot no negocia precios. Va en la misma llamada que el estado: si fuera un update aparte, una cita podría quedar atendida con el precio a medio guardar.
-- **Una cita sin precio se atiende igual y no genera venta** — una consulta gratuita es un caso legítimo, no un error.
-- **Una cita cerrada no se reabre**, igual que los pedidos: se agenda otra.
+Se retiró con la agenda en la fase 2 de dejar Umbani solo con domicilios. Lo
+que dejó y sigue vigente es el criterio: la conversión se ENVUELVE y cuenta en
+el momento en que el negocio se compromete, no al terminar el servicio.
 
-**«Registrar venta» se retiró el 2026-08-02.** Era el cuarto camino: el único donde alguien escribía dinero a mano sin un pedido ni una cita detrás. Mientras existió, el reporte podía cuadrar por dos vías distintas y había que mantener las dos.
-
-Con él se fueron su ruta (`POST /api/client/sales`), su cotización (`/sessions/:phone/quote`), el wrapper del repositorio y la RPC `create_sale_with_items`, retirada de la base con su migración. ⚠️ **No se borró ni una fila**: las ventas registradas así siguen intactas en `sales` y en los reportes; lo único que desaparece es la forma de crear ventas nuevas sin origen.
-
-Lo que queda en Ventas es el **historial** por contacto y la **anulación**, que sigue haciendo falta: un pedido puede entregarse y luego devolverse.
-
-El guardián de esa zona (`sales-atomicity`) no se borró: **se mudó a las dos funciones que ahora crean ventas**, porque la garantía que protegía —cabecera y detalles en una transacción, aislados por negocio, sin escrituras compensatorias— sigue siendo la misma. Y el test de rutas comprueba ahora que las retiradas **no reaparezcan**.
-
----
 
 ## Los tres modos de atención
 

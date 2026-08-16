@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
 import jwt from 'jsonwebtoken'
 import profileRouter from '../dist/routes/business-profile.routes.js'
-import bookingsRouter from '../dist/routes/bookings.routes.js'
+import scheduleRouter from '../dist/routes/schedule.routes.js'
 
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
@@ -83,7 +83,7 @@ describe('horario: un cuerpo malformado no revienta el servidor', () => {
   for (const [nombre, body] of malos) {
     it(`${nombre} → 400`, async () => {
       const upsert = vi.spyOn(db, 'upsertSchedule')
-      const res = await dispatch(bookingsRouter, 'put', '/api/client/schedule', { body })
+      const res = await dispatch(scheduleRouter, 'put', '/api/client/schedule', { body })
       expect(res.status).toBe(400)
       // Lo importante no es solo el código: la base ni se entera.
       expect(upsert).not.toHaveBeenCalled()
@@ -93,7 +93,7 @@ describe('horario: un cuerpo malformado no revienta el servidor', () => {
   it('un horario válido sí llega a la base', async () => {
     const upsert = vi.spyOn(db, 'upsertSchedule').mockResolvedValue({ error: null })
     const dias = [{ day_of_week: 1, is_active: true, open_time: '09:00', close_time: '18:00' }]
-    const res = await dispatch(bookingsRouter, 'put', '/api/client/schedule', {
+    const res = await dispatch(scheduleRouter, 'put', '/api/client/schedule', {
       body: { days: dias },
     })
     expect(res.status).toBe(200)

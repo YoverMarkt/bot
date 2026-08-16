@@ -105,10 +105,10 @@ describe('autorización por rol y permisos', () => {
       role: 'client',
       businessId: 'business-a',
       urole: 'employee',
-      perms: ['citas'],
+      perms: ['horarios'],
     }
 
-    expect(runWithUser(auth.requirePermission('citas'), user).nextCalled).toBe(true)
+    expect(runWithUser(auth.requirePermission('horarios'), user).nextCalled).toBe(true)
     expect(runWithUser(auth.requirePermission('ventas'), user).status).toBe(403)
     expect(runWithUser(auth.requirePermission('ventas'), { ...user, perms: null }).status).toBe(403)
   })
@@ -125,10 +125,10 @@ describe('vigencia de la sesión cliente', () => {
   it('revalida usuario, negocio y permisos actuales', async () => {
     const database = {
       getClientUserById: vi.fn().mockResolvedValue({
-        id: 'user-a', business_id: 'business-a', role: 'employee', permissions: ['citas'],
+        id: 'user-a', business_id: 'business-a', role: 'employee', permissions: ['horarios'],
       }),
       getBusinessById: vi.fn().mockResolvedValue({
-        active: true, suspended: false, takes_bookings: true,
+        active: true, suspended: false,
       }),
     }
     const guard = auth.createActiveClientGuard({ database })
@@ -142,7 +142,7 @@ describe('vigencia de la sesión cliente', () => {
     expect(result.nextCalled).toBe(true)
     expect(result.req.user).toMatchObject({
       businessId: 'business-a', userId: 'user-a', urole: 'employee',
-      perms: ['citas'], takesBookings: true,
+      perms: ['horarios'],
     })
     expect(database.getClientUserById).toHaveBeenCalledWith('business-a', 'user-a')
   })

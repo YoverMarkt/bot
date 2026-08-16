@@ -17,32 +17,6 @@ describe('análisis de etiquetas del bot', () => {
     expect(parsed.finalText).not.toContain('http')
   })
 
-  it('extrae una reserva válida y retira la etiqueta antes de responder', () => {
-    const parsed = tags.parseBotOutput(
-      'Perfecto ##BOOK: Ana |fecha 2026-07-20|hora 9:30| Corte Premium ##',
-    )
-
-    expect(parsed.finalText).toBe('Perfecto')
-    expect(parsed.booking).toEqual({
-      contactName: ' Ana ',
-      bookingDateRaw: 'fecha 2026-07-20',
-      bookingTimeRaw: 'hora 9:30',
-      service: ' Corte Premium ',
-      bookingDate: '2026-07-20',
-      bookingTime: '9:30',
-    })
-  })
-
-  it('retira reservas inválidas pero no inventa fecha ni hora', () => {
-    const parsed = tags.parseBotOutput(
-      'Lo revisamos ##BOOK:Ana|mañana|en la tarde|Corte## ##BOOKING##',
-    )
-
-    expect(parsed.finalText).toBe('Lo revisamos')
-    expect(parsed.booking.bookingDate).toBeNull()
-    expect(parsed.booking.bookingTime).toBeNull()
-  })
-
   it('extrae el pedido sin montos y lo clasifica como venta', () => {
     const parsed = tags.parseBotOutput(
       'Gracias ## PEDIDO : Producto A x2; Producto B x1 ##',
@@ -51,18 +25,6 @@ describe('análisis de etiquetas del bot', () => {
     expect(parsed.finalText).toBe('Gracias')
     expect(parsed.orderPayload).toBe('Producto A x2; Producto B x1')
     expect(parsed.hasSale).toBe(true)
-  })
-
-  it('reporta ambas acciones para que el orquestador resuelva el conflicto', () => {
-    const parsed = tags.parseBotOutput(
-      'Listo ##BOOK:Ana|2026-07-20|09:30|Corte## ##PEDIDO:Shampoo x1##',
-    )
-
-    expect(parsed.finalText).toBe('Listo')
-    expect(parsed.booking).toMatchObject({
-      contactName: 'Ana', bookingDate: '2026-07-20', bookingTime: '09:30',
-    })
-    expect(parsed.orderPayload).toBe('Shampoo x1')
   })
 
   it('detecta cuando la IA imita el vocabulario exclusivo de los resúmenes oficiales', () => {
@@ -128,7 +90,6 @@ describe('análisis de etiquetas del bot', () => {
     expect(conversation).toContain("require('./bot-tags')")
     expect(conversation).toContain("require('./bot-actions')")
     expect(entry).toContain("require('./bot-conversation')")
-    expect(actions).toContain('database.createBooking(business.id')
     expect(actions).toContain('business_id: business.id')
     expect(actions).toContain('database.recordAiGap(')
     expect(actions).not.toContain('@ts-nocheck')

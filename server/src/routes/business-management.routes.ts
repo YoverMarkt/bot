@@ -6,7 +6,7 @@ import type { BusinessRecord , WriteResult } from '../db/types'
 type Permission =
   | 'catalogo'
   | 'conversaciones'
-  | 'citas'
+  | 'horarios'
   | 'reportes'
   | 'ventas'
 type DataRecord = Record<string, unknown>
@@ -52,7 +52,7 @@ const MIN_PASSWORD_LENGTH = 12
 const validPermissions: Permission[] = [
   'catalogo',
   'conversaciones',
-  'citas',
+  'horarios',
   'reportes',
   'ventas',
 ]

@@ -184,7 +184,7 @@ const ALLOWED_BUSINESS_FIELDS = [
   'owner_phone', 'ycloud_api_key', 'ycloud_number',
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
-  'ai_provider', 'takes_bookings', 'takes_orders',
+  'ai_provider', 'takes_orders',
   'chat_mode', 'storefront_enabled',
 ] as const
 
@@ -436,7 +436,6 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       meta_token: body.meta_token,
       meta_phone_id: body.meta_phone_id,
       telegram_bot_token: body.telegram_bot_token || null,
-      takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.

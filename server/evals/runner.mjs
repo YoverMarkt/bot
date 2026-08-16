@@ -40,9 +40,7 @@ const color = {
 // Cada una devuelve null si pasa, o el motivo del fallo.
 
 const ETIQUETAS = {
-  book: salida => Boolean(salida.booking),
   pedido: salida => Boolean(salida.orderPayload) || salida.hasSale,
-  stayQuote: salida => Boolean(salida.lodgingQuote) || Boolean(salida.lodgingRequest),
   handoff: salida => salida.hasHandoffTag,
 }
 
@@ -95,7 +93,6 @@ async function correrCaso(caso) {
     caso.negocio.products,
     caso.politicas || {},
     caso.mensaje,
-    caso.availableSlots || null,
     caso.schedule || null,
   )
   // `historial` permite probar lo que de verdad hace un cliente: llegar al

@@ -94,7 +94,6 @@ describe('identidad y políticas del negocio', () => {
       phone: '0999000001',
       social: '@demo',
       payment_methods: 'Efectivo',
-      takes_bookings: true,
       takes_orders: false,
       suspended: false,
       bot_active: true,
@@ -116,7 +115,6 @@ describe('identidad y políticas del negocio', () => {
     expect(response.body).not.toHaveProperty('monthly_rate')
     expect(response.body).not.toHaveProperty('plan')
     expect(response.body).toMatchObject({
-      takes_bookings: true,
       takes_orders: false,
     })
     expect(db.getBusinessById).toHaveBeenCalledWith('business-a')

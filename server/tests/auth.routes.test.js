@@ -150,7 +150,7 @@ describe('POST /api/client/login', () => {
       password_hash: 'stored-hash',
       name: 'Ana',
       role: 'employee',
-      permissions: ['citas', 'ventas'],
+      permissions: ['horarios', 'ventas'],
     })
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
       id: 'business-a',
@@ -159,7 +159,6 @@ describe('POST /api/client/login', () => {
       active: true,
       suspended: false,
       bot_active: true,
-      takes_bookings: true,
     })
 
     const response = await dispatch('/api/client/login', {
@@ -174,15 +173,13 @@ describe('POST /api/client/login', () => {
       businessId: 'business-a',
       role: 'client',
       urole: 'employee',
-      perms: ['citas', 'ventas'],
-      takesBookings: true,
+      perms: ['horarios', 'ventas'],
       email: 'ana@example.com',
     })
     expect(response.body).not.toHaveProperty('password_hash')
     expect(response.body.user).toEqual({
-      name: 'Ana', role: 'employee', permissions: ['citas', 'ventas'],
+      name: 'Ana', role: 'employee', permissions: ['horarios', 'ventas'],
     })
-    expect(response.body.business.takes_bookings).toBe(true)
   })
 
   it('convierte fallos internos en respuesta 500 controlada', async () => {

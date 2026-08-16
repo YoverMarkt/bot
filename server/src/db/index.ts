@@ -6,7 +6,7 @@ import products = require('./repositories/products')
 import history = require('./repositories/conversation-history')
 import sessions = require('./repositories/sessions')
 import tags = require('./repositories/conversation-tags')
-import bookings = require('./repositories/bookings')
+import schedule = require('./repositories/schedule')
 import sales = require('./repositories/sales')
 import reporting = require('./repositories/reporting')
 import orders = require('./repositories/orders')
@@ -34,7 +34,7 @@ const database = {
   ...history,
   ...sessions,
   ...tags,
-  ...bookings,
+  ...schedule,
   ...sales,
   ...reporting,
   ...orders,

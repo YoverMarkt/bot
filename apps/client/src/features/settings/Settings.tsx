@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import MetodosDePago from './MetodosDePago'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, session } from '../../api/client'
-import { useBusinessInfo, isBookingBiz } from '../../lib/biz'
 import { MEDIA_LIMITS, fmtMB, uploadMedia } from '../catalog/api'
 import { Crown, Lock } from 'lucide-react'
 import { toast } from 'sonner'
@@ -441,17 +440,16 @@ export function BusinessForm() {
 
 // ── Equipo (propuesta elegida por el usuario 2026-07-10): lista con
 // permisos editables en línea + formulario de nuevo empleado al lado.
-// El permiso "citas" también controla la sección Horarios (todos los
+// El permiso "horarios" controla la sección Horarios (todos los
 // negocios la tienen); su nombre se adapta al tipo de negocio.
-const permsForBiz = (bookingBiz: boolean) => [
+const permsForBiz = () => [
   ['catalogo', 'Catálogo'], ['conversaciones', 'Conversaciones'],
   ['ventas', 'Ventas'], ['reportes', 'Reportes'],
-  ['citas', bookingBiz ? 'Citas y horarios' : 'Horarios'],
+  ['horarios', 'Horarios'],
 ] as const
 export function Team() {
   const qc = useQueryClient()
-  const { data: bizInfo } = useBusinessInfo()
-  const PERMS = permsForBiz(isBookingBiz(bizInfo?.type, bizInfo?.takes_bookings))
+  const PERMS = permsForBiz()
   const { data: users = [], isLoading } = useQuery({ queryKey: ['team'], queryFn: () => api<TeamUser[]>('/api/client/users') })
   const [form, setForm] = useState({ email: '', password: '', name: '', permissions: [] as string[] })
 
