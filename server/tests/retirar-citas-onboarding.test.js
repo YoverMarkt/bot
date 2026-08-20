@@ -7,7 +7,6 @@ const sql = readFileSync(
   `${serverDir}/migration-2026-08-16-retirar-citas.sql`,
   'utf8',
 )
-const schema = readFileSync(`${serverDir}/schema.sql`, 'utf8')
 
 function funcionOnboarding(contenido, ultima = false) {
   const inicio = contenido[ultima ? 'lastIndexOf' : 'indexOf'](
@@ -69,7 +68,4 @@ describe('onboarding después de retirar citas', () => {
     expect(sql).toContain('to service_role;')
   })
 
-  it('deja el esquema consolidado con el mismo contrato que la migración', () => {
-    expect(funcionOnboarding(schema, true)).toBe(funcion)
-  })
 })

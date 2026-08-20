@@ -1,67 +1,28 @@
 -- ============================================================
--- RETIRAR EL MODO MENÚ
--- Fecha: 2026-08-16 · Fase 3 de «Umbani solo domicilios»
+-- EL MODO MINI APP EXIGE PEDIDOS Y TIENDA
+-- Fecha: 2026-08-19
 -- ============================================================
 --
--- El modo menú conducía toda la conversación con botones armados por código,
--- sin IA. Era la respuesta al problema de «pedir por chat sin que el modelo
--- invente nada», y la mini app lo resuelve mejor: mismo cero-IA en el pedido,
--- pero con fotos, carrito y el motor de opciones entero.
+-- Un negocio en `chat_mode = 'miniapp'` responde con el enlace de su tienda y
+-- nada más. Si ese negocio no acepta pedidos o no tiene la tienda encendida,
+-- el cliente recibe un enlace a una app vacía: peor que no recibir nada, y el
+-- dueño no se entera hasta que alguien se queja.
 --
--- Quedan DOS modos: `ai` (conversa y se pide por chat) y `miniapp` (responde
--- con el enlace y el pedido se hace en la app, sin IA).
+-- El panel ya lo impide —elegir mini app enciende pedidos y tienda—, pero el
+-- panel no es la última palabra: `create_business_onboarding` está concedida a
+-- `service_role` y cualquier alta que no pase por ahí se saltaría la regla.
 --
--- ⚠️ Los negocios que estuvieran en `menu` pasan a `miniapp`, NO a `ai`. Es la
--- traducción honesta: eligieron que el pedido no lo condujera un modelo, y
--- `miniapp` conserva esa promesa. Mandarlos a `ai` los pondría a vender por
--- chat, que es justo lo que habían descartado.
+-- ⚠️ Los tres modos siguen vivos. `menu` NO se retira: junto con `ai` es una
+-- de las dos formas de atender que Umbani conserva además de la mini app
+-- (decisión del dueño, 2026-08-19).
 --
--- ⚠️ El orden importa y aquí NO es el habitual tampoco: el `update` de las
--- filas va ANTES de apretar el CHECK, porque apretarlo con filas en `menu`
--- fallaría. Van en la misma transacción del ejecutor, así que o entran las dos
--- cosas o no entra ninguna.
---
--- ⚠️ Igual que en las fases 1 y 2: primero el CÓDIGO, después esta migración.
--- La `create_business_onboarding` que deja viva la fase 2 acepta los tres
--- modos para que el despliegue mixto sea seguro. Aquí se recrea para apretar
--- también ese contrato a `ai`/`miniapp`; el código nuevo ya no ofrece `menu`.
+-- ⚠️ Solo valida ALTAS. Los negocios que ya existan con esa combinación se
+-- quedan como están: apagarles el modo por una migración sería cambiarles la
+-- atención sin avisar, y esto no es una incidencia en curso.
 --
 -- Lo que NO toca: pedidos, ventas, catálogo, motor de opciones, motor de
--- margen, la mini app, el horario ni los avisos de WhatsApp.
+-- margen, el horario ni los avisos de WhatsApp.
 
--- ── 1. Los negocios en modo menú pasan a mini app ─────────────────────────
--- Una fila `menu` sin pedidos o sin tienda no tiene traducción segura: pasarla
--- a miniapp la dejaría sin IA y sin enlace. Se detiene toda la transacción para
--- que una persona corrija esa configuración de forma explícita.
-do $$
-begin
-  if exists (
-    select 1
-    from public.businesses
-    where chat_mode = 'menu'
-      and (takes_orders is not true or storefront_enabled is not true)
-  ) then
-    raise exception using
-      errcode = '23514',
-      message = 'Hay negocios menu sin pedidos o tienda; corrígelos antes de migrar';
-  end if;
-end;
-$$;
-
-update public.businesses
-set chat_mode = 'miniapp'
-where chat_mode = 'menu';
-
--- ── 2. El CHECK deja de admitir el modo retirado ──────────────────────────
-alter table public.businesses drop constraint if exists businesses_chat_mode_check;
-alter table public.businesses
-  add constraint businesses_chat_mode_check
-  check (chat_mode in ('ai', 'miniapp'));
-
--- ── 3. El onboarding acepta los dos modos que quedan ──────────────────────
--- La versión viva validaba `('menu', 'ai')`, así que rechazaba `miniapp` — el
--- modo al que acaban de pasar los negocios del punto 1. Se recrea con el
--- resto del cuerpo intacto.
 create or replace function public.create_business_onboarding(
   p_business jsonb,
   p_client_email text default null,
@@ -116,10 +77,10 @@ begin
       errcode = '22023',
       message = 'La contraseña debe llegar cifrada';
   end if;
-  if v_chat_mode not in ('ai', 'miniapp') then
+  if v_chat_mode not in ('menu', 'ai', 'miniapp') then
     raise exception using
       errcode = '22023',
-      message = 'El modo de conversación debe ser ai o miniapp';
+      message = 'El modo de conversación debe ser menu, ai o miniapp';
   end if;
   if v_chat_mode = 'miniapp' and (
     coalesce((p_business ->> 'takes_orders')::boolean, true) is not true
@@ -288,7 +249,6 @@ begin
   return to_jsonb(v_business);
 end;
 $$;
-
 revoke all on function public.create_business_onboarding(jsonb, text, text, numeric)
   from public, anon, authenticated;
 grant execute on function public.create_business_onboarding(jsonb, text, text, numeric)

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { usaFlujoMiniapp } from './chat-mode'
+import { atiendeSinIA } from './chat-mode'
 import { textoDelComprobante } from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
@@ -39,7 +39,7 @@ export interface InboundWebhookPayload {
 }
 
 interface InboundBusiness {
-  /** Miniapp o `menu` legacy: la respuesta es el enlace, sin procesar media. */
+  /** Menú o mini app: el modelo no corre, así que no se procesa media. */
   chat_mode?: string | null
   id: string
   meta_token?: string | null
@@ -448,7 +448,7 @@ export function createInboundWebhookProcessor(
     //
     // El corte de `bot-conversation` llega DESPUÉS de esto, así que no basta
     // con el que ya hay: aquí el gasto ya se habría hecho.
-    if (usaFlujoMiniapp(business.chat_mode)) {
+    if (atiendeSinIA(business.chat_mode)) {
       // ⚠️ Con UNA excepción: la foto de quien tiene un pedido esperando el
       // comprobante. Ese es el caso más común del modo mini app —se pide por
       // la app, se transfiere desde el banco y se manda la captura por el

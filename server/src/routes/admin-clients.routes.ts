@@ -188,13 +188,11 @@ const ALLOWED_BUSINESS_FIELDS = [
   'chat_mode', 'storefront_enabled',
 ] as const
 
-// Los dos modos de atención. Cualquier otro valor lo rechaza la base.
+// Los tres modos de atención. Cualquier otro valor lo rechaza la base.
 //   ai      → conversa con IA, se pide por chat, sin enlace
+//   menu    → botones armados por código con los datos reales, sin IA
 //   miniapp → responde con el enlace y se pide en la app, sin IA
-//
-// `menu` (botones armados por código, sin IA) se retiró el 2026-08-16 con la
-// fase 3 de dejar Umbani solo con domicilios: la mini app hace lo mismo mejor.
-const CHAT_MODES = ['ai', 'miniapp'] as const
+const CHAT_MODES = ['menu', 'ai', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -410,7 +408,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (ai o miniapp)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
   }
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
@@ -502,7 +500,7 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
   }
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (ai o miniapp)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
   }
   if ('plan' in body && !normalizePlanId(body.plan)) {
     return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })

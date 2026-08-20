@@ -258,7 +258,7 @@ describe('procesador durable de webhooks', () => {
     )
   })
 
-  it("un 'menu' legacy no descarga, transcribe ni envía media a visión", async () => {
+  it("el modo menú no descarga, transcribe ni envía media a visión", async () => {
     const current = setup({
       database: {
         getBusinessByChannel: vi.fn().mockResolvedValue({

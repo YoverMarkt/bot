@@ -133,10 +133,10 @@ describe('simulador del superadmin', () => {
     })
   })
 
-  it.each(['miniapp', 'menu'])(
-    'en %s replica el corte sin IA y no finge una conversación',
-    async chat_mode => {
-      const business = { id: 'business-a', name: 'Demo', chat_mode }
+  it(
+    'en miniapp replica el corte sin IA y no finge una conversación',
+    async () => {
+      const business = { id: 'business-a', name: 'Demo', chat_mode: 'miniapp' }
       vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
       const getProducts = vi.spyOn(db, 'getProducts')
       const getPolicies = vi.spyOn(db, 'getPolicies')
@@ -171,6 +171,35 @@ describe('simulador del superadmin', () => {
       expect(response.body.options).toBeNull()
     },
   )
+
+  it('en menú conduce la máquina de estados y tampoco llama a la IA', async () => {
+    const business = {
+      id: 'business-a', name: 'Demo', chat_mode: 'menu', takes_orders: true,
+    }
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
+    vi.spyOn(db, 'getProducts').mockResolvedValue([
+      { id: 'p1', name: 'Pizza Familiar', price: 10.5, tags: ['pizzas'], stock: 'disponible', active: true },
+    ])
+    vi.spyOn(db, 'getMenuModifiers').mockResolvedValue([])
+    vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
+    vi.spyOn(db, 'getPolicies').mockResolvedValue({})
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    const buildPrompt = vi.spyOn(bot, 'buildPrompt')
+    const callAI = vi.spyOn(bot, 'callAI')
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(),
+      body: { business_id: 'business-a', message: 'hola' },
+    })
+
+    // Lo que define el modo: el código conduce y el modelo no participa.
+    expect(buildPrompt).not.toHaveBeenCalled()
+    expect(callAI).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    // La bienvenida llega con las opciones armadas desde el catálogo real.
+    expect(Array.isArray(response.body.options)).toBe(true)
+    expect(response.body.options.length).toBeGreaterThan(0)
+  })
 
   it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
     mockBusinessContext()

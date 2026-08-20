@@ -177,8 +177,9 @@ test('el simulador conserva los controles dentro del móvil', async ({ page }) =
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/simulator`)
 
-  // El interruptor «Modo menú / Modo IA» se retiró con el modo menú
-  // (2026-08-16): el simulador prueba lo único que queda.
+  // El interruptor «Modo menú / Modo IA» se retiró: el simulador despacha por
+  // el modo REAL del negocio, así que lo que se prueba es lo que recibe su
+  // cliente. Los tres modos siguen vivos.
   await page.getByRole('combobox', { name: 'Negocio para simular' }).click()
   await page.getByRole('option', { name: 'Negocio E2E' }).click()
   await expect(page.getByRole('button', { name: /Limpiar chat/ })).toBeVisible()

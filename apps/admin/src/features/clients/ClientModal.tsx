@@ -35,15 +35,6 @@ const EMPTY = {
   client_email: '', client_password: '', notes: '',
 }
 
-// Durante el despliegue code-first la base todavía puede devolver `menu`.
-// Esa elección significaba «pedir sin IA», por lo que en el formulario se
-// representa como miniapp; cargarla como `ai` cambiaría el negocio con solo
-// abrir y guardar el modal.
-const chatModeForForm = (value: unknown): 'ai' | 'miniapp' => {
-  if (value === 'menu' || value === 'miniapp') return 'miniapp'
-  return 'ai'
-}
-
 export default function ClientModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState(EMPTY)
   const [savedCredentials, setSavedCredentials] = useState<Record<string, boolean>>({})
@@ -73,7 +64,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ai_provider: c.ai_provider ?? '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
-        chat_mode: chatModeForForm(c.chat_mode),
+        chat_mode: ['menu', 'ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
@@ -183,7 +174,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
       storefront_enabled: f.storefront === 'yes' && f.sales !== 'informa',
-      chat_mode: (['ai', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'ai',
+      chat_mode: (['menu', 'ai', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'ai',
       notes: f.notes || null,
     }
     const officialPlan = planById(f.plan)
@@ -322,12 +313,14 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="miniapp">Mini app (enlace para pedir, sin IA)</SelectItem>
+                    <SelectItem value="menu">Menú de opciones (sin IA)</SelectItem>
                     <SelectItem value="ai">Conversación con IA</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   <strong>Mini app</strong>: responde con el enlace y el pedido se hace en la app, sin usar IA.
-                  {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en ambos modos.
+                  {' '}<strong>Menú</strong>: el cliente elige entre opciones armadas con los datos reales; nada se inventa ni cuesta IA.
+                  {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en los tres.
                 </p>
               </div>
               <div>

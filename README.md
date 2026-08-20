@@ -116,8 +116,7 @@ server/migration-agrupado-webhooks.sql
 ```
 
 Ejecuta **solo las pendientes** y en ese orden. `migration-modo-menu.sql` agrega
-`chat_mode` y los índices para repetir pedidos (el modo `menu` que introdujo se
-retiró el 2026-08-16, pero la columna y los índices siguen en uso);
+`chat_mode`, el modo `menu` y los índices para repetir pedidos;
 `migration-modificadores-menu.sql` crea las opciones/sabores con RLS cerrada.
 `migration-eliminar-kapso-retell.sql` es destructiva: después de respaldar
 cualquier dato que quieras conservar fuera del sistema, elimina columnas,

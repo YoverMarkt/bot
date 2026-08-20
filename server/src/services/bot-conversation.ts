@@ -4,7 +4,7 @@ import type {
   ActionSession,
 } from './bot-actions'
 import type { ParsedBotOutput } from './bot-tags'
-import { usaFlujoMiniapp } from './chat-mode'
+import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 import { RESPUESTA_COMPROBANTE, esComprobante } from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
@@ -19,6 +19,7 @@ interface ConversationBusiness extends ActionBusiness, BotMediaBusiness {
   suspended?: boolean | null
   bot_active?: boolean | null
   ai_provider?: string | null
+  // 'menu' → la conversación la conduce bot-menu-flow (sin IA)
   chat_mode?: string | null
   // Para el enlace de la mini app: la URL se arma con el slug real.
   slug?: string | null
@@ -67,6 +68,12 @@ interface ConversationDatabase {
     limit: number,
   ): Promise<ConversationProduct[]>
   getProducts(businessId: string): Promise<ConversationProduct[]>
+  // Solo los usa el modo menú
+  getMenuModifiers?(businessId: string, categoryTag?: string | null): Promise<Record<string, unknown>[]>
+  getLastOrderForContact?(
+    businessId: string,
+    contactPhone: string,
+  ): Promise<{ order_items?: Record<string, unknown>[] } | null>
   recordConsultations(businessId: string, productIds: string[]): Promise<unknown>
   // Modo mini app: quién es el cliente y si toca mandarle el enlace.
   resolveCustomer(input: {
@@ -169,6 +176,10 @@ interface ConversationLogger {
   error(...values: unknown[]): void
 }
 
+interface ConversationMenuFlow {
+  advanceMenuFlow(input: MenuFlowInput): MenuFlowResult
+}
+
 interface ConversationStorefrontLink {
   issueLink(input: {
     business: { id: string; slug?: string | null; storefront_enabled?: boolean | null
@@ -207,6 +218,7 @@ export interface BotConversationDependencies {
   tags: ConversationTags
   actions: ConversationActions
   media: ConversationMedia
+  menuFlow: ConversationMenuFlow
   // Enlace de la mini app. Opcional: sin él el bot atiende igual por chat, que
   // es exactamente como funcionaba antes de que la tienda existiera.
   storefrontLink?: ConversationStorefrontLink
@@ -247,6 +259,13 @@ export interface ProcessMessageInput {
     caption?: string,
     deliveryMode?: 'queued' | 'direct',
   ) => Promise<unknown>
+  // Menú con botones/listas nativas. Devuelve false si el canal no lo soporta
+  // y entonces las opciones se mandan numeradas como texto.
+  sendOptions?: (
+    body: string,
+    options: { id: string; title: string; description?: string }[],
+    deliveryMode?: 'queued' | 'direct',
+  ) => Promise<boolean>
   // El enlace de la tienda como BOTÓN nativo. Devuelve false si el canal no lo
   // soporta o si el envío falla, y entonces el enlace sale como texto — que es
   // como salía hasta el 2026-08-12.
@@ -264,6 +283,7 @@ export interface ProcessMessageInput {
   inboundId?: string | null
 }
 
+const PROMPT_PICK_OPTION = 'Elige una opción 👇'
 const OFF_HOURS_RENOTIFY = 6 * 60 * 60 * 1000
 const defaultSleep = (milliseconds: number) => new Promise<void>(resolve => {
   setTimeout(resolve, milliseconds)
@@ -287,7 +307,7 @@ function mentionedProductIds(products: ConversationProduct[], text: string): str
 
 function createBotConversation(dependencies: BotConversationDependencies) {
   const {
-    database, reports, schedule, ai, prompt, tags, actions, media, storefrontLink,
+    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow, storefrontLink,
   } = dependencies
   const logger = dependencies.logger || console
   const sleep = dependencies.sleep || defaultSleep
@@ -317,6 +337,20 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       await sleep(Math.min(4500, 900 + part.length * 28))
       await send(part)
     }
+  }
+
+  // ── MODO MENÚ (sin IA) ──────────────────────────────────────────────
+  // Las opciones se envían numeradas: hoy WhatsApp solo recibe texto desde
+  // esta integración. El motor acepta tanto el texto exacto como el número,
+  // así que al agregar botones nativos el flujo no cambia.
+  function renderMenuOptions(reply: string, options: MenuFlowResult['options']): string {
+    if (!options.length) return reply
+    const list = options.map((option, index) => {
+      const title = typeof option === 'string' ? option : option.title
+      const detail = typeof option === 'string' ? '' : option.description
+      return detail ? `${index + 1}. ${title} — ${detail}` : `${index + 1}. ${title}`
+    }).join('\n')
+    return reply ? `${reply}\n\n${list}` : list
   }
 
   /**
@@ -554,6 +588,152 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     )
   }
 
+  async function runMenuMode(input: {
+    business: ConversationBusiness
+    phone: string
+    text: string
+    session?: ConversationSession | null
+    send: (message: string) => Promise<unknown>
+    sendImage?: ProcessMessageInput['sendImage']
+    sendTyping?: () => Promise<unknown>
+    sendVideo?: ProcessMessageInput['sendVideo']
+    sendOptions?: ProcessMessageInput['sendOptions']
+  }): Promise<void> {
+    const { business, phone, text, session, send, sendImage } = input
+    if (input.sendTyping) {
+      try { await input.sendTyping() } catch { /* best-effort */ }
+    }
+    const [products, modifiers, lastOrder, policies] = await Promise.all([
+      database.getProducts(business.id).catch(() => [] as ConversationProduct[]),
+      business.takes_orders !== false && database.getMenuModifiers
+        ? database.getMenuModifiers(business.id).catch(() => [])
+        : Promise.resolve([]),
+      business.takes_orders !== false && database.getLastOrderForContact
+        ? database.getLastOrderForContact(business.id, phone).catch(() => null)
+        : Promise.resolve(null),
+      database.getPolicies(business.id).catch(() => null),
+    ])
+    const configuredPrompt = policies && typeof policies === 'object' && 'bot_prompt' in policies
+      ? (policies as { bot_prompt?: unknown }).bot_prompt
+      : null
+    const botPrompt = typeof configuredPrompt === 'string' ? configuredPrompt : null
+
+    const flow = menuFlow.advanceMenuFlow({
+      business: business as MenuFlowInput['business'],
+      contact: phone,
+      message: text,
+      products: products as MenuFlowInput['products'],
+      botPrompt,
+      modifiers: modifiers as MenuFlowInput['modifiers'],
+      lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
+    })
+
+    await database.saveMessage(business.id, phone, 'user', text)
+    const action = flow.action
+    let menuReply = flow.reply
+    let menuOptions = flow.options
+
+    // Derivar a una persona: misma ruta que el resto del bot
+    if (action?.type === 'handoff') {
+      const outcome = await actions.handleConversationOutcome({
+        business,
+        phone,
+        originalText: text,
+        hasSale: false,
+        hasHandoffTag: true,
+        isUncertain: false,
+        wasManual: session?.manual_mode,
+        send,
+      })
+      if (outcome.handled) return
+    }
+
+    // El total oficial lo calcula SIEMPRE money.ts con las RPC atómicas: el
+    // menú solo aporta qué pidió el cliente, nunca un monto.
+    if (action?.type === 'order') {
+      const orderProcessed = await actions.processOrderPayload({
+        business,
+        phone,
+        session,
+        payload: action.payload,
+        // Ítems con su sabor: money.ts resuelve el precio por el tamaño y
+        // pliega el sabor en el nombre de la línea.
+        items: action.items,
+        products,
+        preFiltered: false,
+        send,
+      })
+      // processOrderPayload ya envía el resumen oficial cuando crea el pedido.
+      // El menú solo vuelve a presentar navegación; si falló, reemplaza por
+      // completo la confirmación optimista que produjo la máquina de estados.
+      menuReply = orderProcessed
+        ? `¿Necesitas algo más? ${PROMPT_PICK_OPTION}`
+        : `No pude confirmar de forma segura si el pedido quedó registrado. Para evitar duplicarlo, no lo envíes otra vez por ahora; habla con el equipo para que lo revise 🙏`
+    }
+
+    // Media solicitada por el cliente ("Ver fotos y videos"): fotos, video y
+    // recién después el CTA. YCloud usa envío directo para esta secuencia:
+    // su endpoint normal solo encola y puede adelantar el texto a la media.
+    const requestedMedia = [
+      ...(flow.image ? [{ url: flow.image, isVideo: false }] : []),
+      ...(flow.media || []),
+    ]
+    if (requestedMedia.length) {
+      for (const item of requestedMedia) {
+        try {
+          if (item.isVideo) {
+            if (input.sendVideo) await input.sendVideo(item.url, undefined, 'direct')
+          } else if (sendImage) {
+            await sendImage(item.url, undefined, 'direct')
+          }
+        } catch { /* best-effort */ }
+      }
+    }
+
+    // ⚠️ En modo MENÚ no va enlace, y no es un olvido: el menú de botones YA
+    // es el sitio donde se pide. Mandar además la mini app ponía dos formas de
+    // hacer lo mismo compitiendo en el mismo chat — el negocio que quiera la
+    // app se pone en modo 'miniapp'.
+
+    // El texto propio del menú (bienvenida, listas, confirmaciones) va después
+    // de la acción, que ya envió su propio mensaje oficial cuando corresponde.
+    // Primero se intentan botones/listas nativas; si el canal no los soporta
+    // (Telegram, Meta) se cae a texto numerado, que el motor entiende igual.
+    const message = renderMenuOptions(menuReply, menuOptions)
+    let sentNatively = false
+    if (menuOptions.length && input.sendOptions) {
+      const nativeOptions = menuOptions.map((option, index) => {
+        const title = typeof option === 'string' ? option : option.title
+        // Si la opción ES un número (cantidades, adultos, niños), el id lleva
+        // ese número para que "0 niños" registre 0 y no la posición del botón.
+        const id = /^\d+$/.test(title.trim()) ? title.trim() : String(index + 1)
+        return {
+          id,
+          title,
+          description: typeof option === 'string' ? undefined : option.description,
+        }
+      })
+      try {
+        const body = menuReply.trim() || PROMPT_PICK_OPTION
+        sentNatively = requestedMedia.length
+          ? await input.sendOptions(body, nativeOptions, 'direct')
+          : await input.sendOptions(body, nativeOptions)
+      } catch { /* el fallback de texto cubre cualquier fallo */ }
+      if (sentNatively) {
+        await database.saveMessage(business.id, phone, 'assistant', message)
+      }
+    }
+    if (!sentNatively && message.trim()) {
+      await send(message)
+      await database.saveMessage(business.id, phone, 'assistant', message)
+    }
+    await database.upsertSession(business.id, phone, {
+      last_message: text,
+      last_message_at: new Date(now()).toISOString(),
+    })
+    logger.log(`📋 [${business.name}] modo menú — ${phone}`)
+  }
+
   async function processMessage(input: ProcessMessageInput): Promise<void> {
     const {
       business, phone, text, send, sendImage, sendTyping, sendVideo,
@@ -676,6 +856,17 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
+    // MODO MENÚ: el CÓDIGO conduce toda la conversación con opciones armadas
+    // desde los datos reales. No pasa por IA ni por el parser de etiquetas.
+    // El dinero sigue el mismo camino de siempre (payload → money.ts + RPC).
+    if (business.chat_mode === 'menu') {
+      await runMenuMode({
+        business, phone, text, session, send, sendImage, sendTyping, sendVideo,
+        sendOptions: input.sendOptions,
+      })
+      return
+    }
+
     // MODO MINI APP: WhatsApp es SOLO la puerta de la app, no un canal de
     // atención. Se manda el enlace (o se recuerda que lo use) y se termina.
     //
@@ -683,12 +874,7 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // cualquier llamada al modelo, y ese orden es el punto entero: un negocio
     // en este modo no puede generar coste de OpenAI. Antes el enlace se
     // añadía al FINAL, después de que la IA ya hubiera respondido y cobrado.
-    //
-    // Compatibilidad del deploy code-first: hasta que la fase 3 convierta las
-    // filas, producción todavía puede entregar `menu`. El motor de menú ya no
-    // existe, pero esa decisión sigue significando «sin IA», así que durante
-    // la transición recorre exactamente el mismo camino que `miniapp`.
-    if (usaFlujoMiniapp(business.chat_mode)) {
+    if (business.chat_mode === 'miniapp') {
       await runMiniappMode({
         business, phone, text, session, send, sendTyping,
         sendLink: input.sendLink, inboundId: input.inboundId,
@@ -944,6 +1130,7 @@ const conversation = createBotConversation({
   tags: require('./bot-tags') as ConversationTags,
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
+  menuFlow: require('./bot-menu-flow') as ConversationMenuFlow,
   // Adaptador explícito, sin `as`: los nombres del módulo y los que espera la
   // conversación no coinciden, y un cast a ciegas dejaría pasar la diferencia
   // hasta producción — que es exactamente lo que ocurrió al escribirlo.

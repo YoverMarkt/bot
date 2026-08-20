@@ -95,6 +95,10 @@ export interface ProcessOrderInput {
   phone: string
   session?: ActionSession | null
   payload: string | null
+  // Ítems ya estructurados (modo menú): el nombre resuelve el precio y `note`
+  // es el modificador de la línea (p. ej. el sabor). Si vienen, se usan tal
+  // cual en vez de parsear el string `payload`.
+  items?: { name: string; qty: number; note?: string | null }[]
   products: ActionProduct[]
   preFiltered: boolean
   send(message: string): Promise<unknown>
@@ -166,7 +170,15 @@ function createBotActions(dependencies: BotActionDependencies) {
 
     try {
       const catalog = preFiltered ? await database.getProducts(business.id) : products
-      const parsed = money.parseItems(input.payload)
+      // Modo menú: ítems estructurados con su modificador (sabor). Modo IA:
+      // se parsea el string ##PEDIDO##.
+      const parsed = input.items?.length
+        ? input.items.map(item => ({
+          name: String(item.name || '').trim(),
+          qty: Math.min(Math.max(Number(item.qty) || 1, 1), 99),
+          note: item.note || null,
+        }))
+        : money.parseItems(input.payload)
       const { resolved, unresolved } = money.resolveItems(parsed, catalog)
       if (!parsed.length || unresolved.length) {
         logger.log(`⚠️ [${business.name}] Pedido SIN total oficial — ítems no resueltos: ${unresolved.join(' | ') || '(vacío)'} — pasa al dueño`)

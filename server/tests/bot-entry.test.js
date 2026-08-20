@@ -295,10 +295,10 @@ describe('entrada de canales del bot', () => {
     )
   })
 
-  it("un 'menu' legacy nunca manda la imagen a visión", async () => {
-    const legacy = { ...businessA, chat_mode: 'menu' }
+  it("el modo menú nunca manda la imagen a visión", async () => {
+    const enMenu = { ...businessA, chat_mode: 'menu' }
     const current = setup({
-      database: { getBusinessByChannel: vi.fn().mockResolvedValue(legacy) },
+      database: { getBusinessByChannel: vi.fn().mockResolvedValue(enMenu) },
     })
 
     await current.entry.handleImage(
@@ -309,18 +309,18 @@ describe('entrada de canales del bot', () => {
 
     expect(current.ai.identifyImage).not.toHaveBeenCalled()
     expect(current.conversation.processMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ business: legacy }),
+      expect.objectContaining({ business: enMenu }),
     )
   })
 
-  it("un 'menu' legacy todavía adjunta un comprobante recibido por Telegram", async () => {
-    const legacy = { ...businessA, chat_mode: 'menu' }
+  it("el modo menú adjunta igual un comprobante recibido por Telegram", async () => {
+    const enMenu = { ...businessA, chat_mode: 'menu' }
     const attachPaymentProof = vi.fn().mockResolvedValue({
       adjuntado: true,
       orderNumber: 43,
     })
     const current = setup({
-      database: { getBusinessBySlug: vi.fn().mockResolvedValue(legacy) },
+      database: { getBusinessBySlug: vi.fn().mockResolvedValue(enMenu) },
       attachPaymentProof,
     })
     const ctx = telegramContext()
@@ -335,7 +335,7 @@ describe('entrada de canales del bot', () => {
     expect(attachPaymentProof).toHaveBeenCalledWith('business-a', 'tg_42', foto)
     expect(current.conversation.processMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        business: legacy,
+        business: enMenu,
         text: expect.stringContaining('43'),
       }),
     )

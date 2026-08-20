@@ -175,7 +175,7 @@ bot/
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
 │   ├── migration-2026-08-16-retirar-hospedaje.sql # Umbani solo domicilios: se retira el módulo entero (fase 1)
 │   ├── migration-2026-08-16-retirar-citas.sql # Se retira la agenda; el horario se queda porque lo usa la tienda (fase 2)
-│   ├── migration-2026-08-16-retirar-modo-menu.sql # Se retira el modo menú; quien lo usaba pasa a mini app (fase 3)
+│   ├── migration-2026-08-19-miniapp-exige-tienda.sql # El modo mini app no se enciende sin pedidos ni tienda
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
 │   ├── migration-eliminar-kapso-retell.sql # Limpieza destructiva previa a identificadores
@@ -252,7 +252,11 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Las keys de IA se leen siempre mediante `server/src/services/ai.ts` y `settings.get('...')`** (panel > .env).
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
-- **Modo menú: RETIRADO el 2026-08-16** (`migration-2026-08-16-retirar-modo-menu.sql`), fase 3 de dejar Umbani solo con domicilios. Se fueron `bot-menu.ts`, `bot-menu-flow.ts` y el valor `'menu'` de `chat_mode`; quedan **dos** modos, `ai` y `miniapp`. Los negocios que estaban en menú pasan a **`miniapp`, no a `ai`**: eligieron que el pedido no lo condujera un modelo, y la mini app conserva esa promesa. En miniapp el bot corta antes de la IA y manda el enlace personal para pedir; no queda detector de saludos ni código del menú.
+- **Los TRES modos de atención se conservan** (`chat_mode`, decisión del dueño 2026-08-19). La reducción de Umbani a domicilios retiró hospedaje y citas, pero **NO** el modo menú ni el modo IA: son las dos formas de atender por chat que el producto mantiene junto a la mini app.
+  - `ai` → la IA conversa y el pedido se cierra por chat con `##PEDIDO##`.
+  - `menu` → el CÓDIGO conduce con opciones armadas de los datos reales (`bot-menu-flow.ts`); el modelo no participa en ningún mensaje. **No manda enlace**, y no es un olvido: el menú YA es donde se pide.
+  - `miniapp` → el bot corta antes de la IA y manda el enlace personal de la tienda.
+  ⚠️ `services/chat-mode.ts` (`atiendeSinIA`) agrupa `menu` y `miniapp` para una sola cosa: en ninguno de los dos corre el modelo, así que bajar media, transcribir voz o pasar una foto por visión es dinero tirado. ⚠️ El modo `miniapp` **exige pedidos y tienda encendidos** (`migration-2026-08-19-miniapp-exige-tienda.sql`): sin catálogo el cliente recibiría un enlace a una app vacía.
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
 - **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
 - **Capacidades por negocio:** `businesses.takes_orders` es la fuente de verdad de si el bot cierra pedidos; el tipo solo la recomienda al crear y nunca sobrescribe decisiones manuales ni negocios existentes. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.

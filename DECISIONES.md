@@ -40,24 +40,31 @@ un módulo concreto, no en cada sesión.
 
 ## Modo menú estilo banco
 
-**Modo MENÚ estilo banco — RETIRADO el 2026-08-16** (existió del 2026-07-19 al
-2026-08-16). El CÓDIGO conducía TODA la conversación con opciones generadas de
-los datos reales y la IA no participaba en ningún mensaje: máquina de estados
-por conversación, carrito con total en centavos del catálogo, y lo que no
-coincidía repetía las opciones (fallo cerrado, jamás inventaba).
+**Decisión 2026-07-19, y CONSERVADO** (`server/src/services/bot-menu-flow.ts`).
+El CÓDIGO conduce TODA la conversación con opciones generadas de los datos
+reales —las categorías son los tags del catálogo— y la IA **no participa en
+ningún mensaje**. Navegación con máquina de estados por conversación (memoria
+30 min): bienvenida → menú principal por capacidades → pedido con carrito y
+total en centavos del catálogo → «💬 Hablar con el equipo» deriva.
 
-Era la respuesta a «pedir por chat sin que el modelo invente nada», y la mini
-app resuelve lo mismo mejor: mismo cero-IA en el pedido, pero con fotos,
-carrito y el motor de opciones entero. Salió en la fase 3 de dejar Umbani solo
-con domicilios.
+Lo que no coincide con el menú repite las opciones (fallo cerrado, jamás
+inventa); el cliente también puede responder el NÚMERO de la opción. El total
+oficial lo calcula SIEMPRE `money.ts` con las RPC atómicas: el menú solo aporta
+qué pidió el cliente, nunca un monto.
 
-⚠️ **Los negocios que estaban en `menu` pasaron a `miniapp`, no a `ai`.** Es la
-traducción honesta: habían elegido que el pedido no lo condujera un modelo, y
-`miniapp` conserva esa promesa mientras que `ai` la rompería justo en lo que
-descartaron. Quedan dos modos.
+⚠️ **Estuvo a punto de retirarse el 2026-08-16** —la mini app resuelve lo mismo
+con fotos y motor de opciones— y el dueño lo revirtió el 2026-08-19 antes de
+que se fusionara. Sigue siendo la opción para el negocio que quiere pedir por
+chat sin que un modelo conduzca y sin mandar a nadie a una app.
 
-La mini app manda el enlace sin pasar por IA; ya no queda un detector de saludo
-ni ninguna pieza del modo menú en el flujo de atención.
+⚠️ **En modo menú NO va enlace de la mini app**: el menú ya es el sitio donde se
+pide, y mandar los dos pondría dos formas de hacer lo mismo compitiendo en el
+mismo chat.
+
+⚠️ **Ni menú ni mini app pagan media** (`services/chat-mode.ts`): en los dos, el
+modelo nunca corre, así que una foto o una nota de voz acabarían como texto que
+nadie va a interpretar. Bajarlas, transcribirlas o pasarlas por visión son las
+llamadas más caras del sistema.
 
 ---
 
@@ -190,16 +197,27 @@ que dejó y sigue vigente es el criterio: la conversión se ENVUELVE y cuenta en
 el momento en que el negocio se compromete, no al terminar el servicio.
 
 
-## Los dos modos de atención
+## Los tres modos de atención
 
 **La incoherencia que cerró (2026-08-02):** `chat_mode` solo tenía `'menu'` y `'ai'`, y el enlace de la mini app **se mandaba en los dos**. Un negocio recién creado recibía el menú de botones **y** el enlace a la vez: dos formas de hacer lo mismo compitiendo en el mismo chat. Lo detectó el dueño del SaaS creando negocios nuevos, no un test.
 
-Tras retirar el modo menú el 2026-08-16, cada negocio atiende de **una** de dos formas y el enlace **pertenece a un modo concreto**:
+Cada negocio atiende de **una** de tres formas y el enlace **pertenece a un modo concreto**:
 
 | Modo | Quién conduce | Dónde se pide | ¿Enlace? |
 |---|---|---|---|
 | `ai` | La IA, conversando | Por chat (`##PEDIDO##`) | **No** |
+| `menu` | El CÓDIGO, con opciones de los datos reales | En el propio menú | **No** |
 | `miniapp` | Responde con el enlace, sin IA | En la mini app | **Sí**, en cada respuesta permitida |
+
+⚠️ **El modo menú se CONSERVA** (decisión del dueño, 2026-08-19). La reducción de
+Umbani a domicilios retiró hospedaje y citas, y llegó a plantear retirarlo
+también; se revirtió antes de fusionarse. Junto con el modo IA son las dos
+formas de atender por chat que el producto mantiene.
+
+⚠️ **En modo menú no va enlace, y no es un olvido:** el menú YA es el sitio
+donde se pide. Mandar además la mini app pondría dos formas de hacer lo mismo
+compitiendo en el mismo chat — que es exactamente la incoherencia que se cerró
+el 2026-08-02.
 
 - **En modo IA puro tampoco:** ese negocio eligió atender y vender por chat. Mandarle el enlace sería meterle una app que no pidió.
 - **El enlace es lo que DEFINE el modo mini app.** Este modo corta antes de

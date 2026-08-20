@@ -243,7 +243,7 @@ describe('el bloqueo del dueño', () => {
 
   // ⚠️ También cubre `menu` durante el despliegue code-first: mientras la fila
   // legacy exista, no puede saltarse el bloqueo antes de pasar a miniapp.
-  it('vale igual en IA, menu legacy y mini app', async () => {
+  it('vale igual en los tres modos: IA, menú y mini app', async () => {
     for (const chat_mode of ['ai', 'menu', 'miniapp']) {
       const m = montar({ isContactBlocked: async () => true })
       const enviados = await procesar(m, 'hola', { ...NEGOCIO, chat_mode })

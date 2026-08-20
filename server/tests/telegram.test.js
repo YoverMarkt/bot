@@ -188,18 +188,18 @@ describe('integración Telegram', () => {
     )
   })
 
-  it("un 'menu' legacy evita Whisper y conserva las fotos para comprobantes", async () => {
-    const legacy = { ...businessA, chat_mode: 'menu' }
+  it("el modo menú evita Whisper y conserva las fotos para comprobantes", async () => {
+    const enMenu = { ...businessA, chat_mode: 'menu' }
     const current = setup({
-      database: { getBusinessBySlug: vi.fn().mockResolvedValue(legacy) },
+      database: { getBusinessBySlug: vi.fn().mockResolvedValue(enMenu) },
     })
     await current.integration.setupTelegram(current.app, current.handleMessage)
     await current.handlers.start(createContext({ startPayload: 'negocio-a' }))
     const voice = createContext({
-      message: { voice: { file_id: 'voice-legacy' } },
+      message: { voice: { file_id: 'voice-enMenu' } },
     })
     const photo = createContext({
-      message: { photo: [{ file_id: 'photo-legacy' }] },
+      message: { photo: [{ file_id: 'photo-enMenu' }] },
     })
 
     await current.handlers.events.voice(voice)
@@ -213,7 +213,7 @@ describe('integración Telegram', () => {
 
     await current.handlers.events.photo(photo)
 
-    expect(photo.telegram.getFileLink).toHaveBeenCalledWith('photo-legacy')
+    expect(photo.telegram.getFileLink).toHaveBeenCalledWith('photo-enMenu')
     expect(current.download).toHaveBeenCalledWith('https://telegram/file')
     expect(current.botApi.handleImage).toHaveBeenCalledWith(
       'tg_42', Buffer.from([1, 2, 3]), 'image/jpeg', null,

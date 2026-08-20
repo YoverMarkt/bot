@@ -75,7 +75,7 @@ function montar(overrides = {}) {
       processOrderPayload: async () => false,
     },
     media: { sendRequestedProductMedia: async () => false },
-    menuFlow: { advanceMenuFlow: () => ({}) },
+    menuFlow: { advanceMenuFlow: () => ({ reply: 'Menú', options: ['🛒 Hacer un pedido'] }) },
     logger: { log: () => {}, error: () => {} },
     sleep: async () => {},
     ...overrides.deps,
@@ -204,9 +204,13 @@ describe('modo mini app: ni un token de OpenAI', () => {
     expect(m.ai.callAI).not.toHaveBeenCalled()
   })
 
-  it("durante el despliegue, un 'menu' legacy recorre miniapp y nunca IA", async () => {
+  it('el modo menú conduce por código y tampoco llega al modelo', async () => {
     // Con catálogo grande, el camino IA llamaría primero a embeddings y luego
     // al modelo; así la regresión protege las dos formas de gasto.
+    //
+    // ⚠️ El menú NO manda el enlace, y no es un olvido: el menú YA es el sitio
+    // donde se pide. Mandar además la mini app pondría dos formas de hacer lo
+    // mismo compitiendo en el mismo chat.
     const m = montar({ database: { countProducts: async () => 50 } })
     const enviados = await procesar(m, 'quiero hacer un pedido', {
       ...negocioMiniapp,
@@ -215,8 +219,8 @@ describe('modo mini app: ni un token de OpenAI', () => {
 
     expect(m.ai.callAI).not.toHaveBeenCalled()
     expect(m.ai.embedText).not.toHaveBeenCalled()
-    expect(enviados).toHaveLength(1)
-    expect(enviados[0]).toContain('https://ejemplo.com/s/tok')
+    expect(enviados.join('\n')).not.toContain('https://ejemplo.com/s/tok')
+    expect(enviados.join('\n')).toContain('Menú')
   })
 })
 

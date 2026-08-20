@@ -1,6 +1,6 @@
 import { crearBuzonDeComprobantes, textoDelComprobante } from './payment-proof-inbox'
 import type { ProcessMessageInput } from './bot-conversation'
-import { usaFlujoMiniapp } from './chat-mode'
+import { atiendeSinIA } from './chat-mode'
 import type { ScheduleRecord } from '../db/types'
 import {
   normalizeChannelIdentifier,
@@ -415,7 +415,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       }
       return undefined
     }
-    const enMiniapp = usaFlujoMiniapp(negocioDeLaFoto?.chat_mode)
+    const enMiniapp = atiendeSinIA(negocioDeLaFoto?.chat_mode)
 
     let identified = 'NO_IDENTIFICADO'
     if (enMiniapp) {

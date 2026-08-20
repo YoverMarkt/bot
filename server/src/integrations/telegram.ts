@@ -1,4 +1,4 @@
-import { usaFlujoMiniapp } from '../services/chat-mode'
+import { atiendeSinIA } from '../services/chat-mode'
 
 interface TelegramBusiness {
   id?: string
@@ -241,7 +241,7 @@ function createTelegramIntegration(dependencies: TelegramDependencies) {
         // Resolver el modo ANTES de pedir el archivo: `menu` puede seguir en
         // producción durante el deploy code-first y conserva su promesa sin IA.
         const business = await database.getBusinessBySlug(slug)
-        if (usaFlujoMiniapp(business?.chat_mode)) {
+        if (atiendeSinIA(business?.chat_mode)) {
           logger.log('🛍️  [TG] audio en flujo mini app: no se descarga ni transcribe')
           return handleMessage(from, '[nota de voz]', null, {
             channel: 'telegram', ctx: context, slug,

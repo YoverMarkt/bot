@@ -33,9 +33,9 @@ describe('onboarding durante el retiro por fases', () => {
   const citas = ultimaFuncionOnboarding(
     leer('migration-2026-08-16-retirar-citas.sql'),
   )
-  const menuSql = leer('migration-2026-08-16-retirar-modo-menu.sql')
-  const menu = ultimaFuncionOnboarding(menuSql)
-
+  const miniapp = ultimaFuncionOnboarding(
+    leer('migration-2026-08-19-miniapp-exige-tienda.sql'),
+  )
   it('fase 1 conserva citas, tienda y los tres modos del despliegue mixto', () => {
     expect(hospedaje).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(hospedaje).toMatch(
@@ -52,29 +52,28 @@ describe('onboarding durante el retiro por fases', () => {
     esperarTiendaPreservada(citas)
   })
 
-  it('fase 3 estrecha los modos y sigue copiando storefront_enabled', () => {
-    expect(menu).toContain("v_chat_mode not in ('ai', 'miniapp')")
-    expect(menu).not.toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
-    expect(menu).not.toMatch(/\btakes_bookings\b/)
-    expect(menu).not.toMatch(/\blodging_enabled\b/)
-    esperarTiendaPreservada(menu)
-    expect(menu).toContain('El modo miniapp requiere pedidos y tienda habilitados')
+  // ⚠️ NO hay fase 3. El modo menú se CONSERVA por decisión del dueño
+  // (2026-08-19): junto con el modo IA, son las dos formas de atender que
+  // Umbani mantiene además de la mini app. La retirada llegó hasta las citas.
+  it('la última migración exige tienda al modo miniapp sin tocar los modos', () => {
+    expect(miniapp).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
+    expect(miniapp).toContain('El modo miniapp requiere pedidos y tienda habilitados')
+    expect(miniapp).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
+    esperarTiendaPreservada(miniapp)
   })
 
-  it('fase 3 se detiene ante un menu legacy sin tienda utilizable', () => {
-    expect(menuSql).toMatch(
-      /where chat_mode = 'menu'\s+and \(takes_orders is not true or storefront_enabled is not true\)/,
-    )
-    expect(menuSql).toContain("errcode = '23514'")
-  })
-
-  it('el contrato final de schema.sql coincide con la fase 3', () => {
+  it('el contrato final de schema.sql coincide con la última migración', () => {
     const contratoFinal = ultimaFuncionOnboarding(leer('schema.sql'))
 
-    expect(contratoFinal).toBe(menu)
-    expect(contratoFinal).toContain("v_chat_mode not in ('ai', 'miniapp')")
+    expect(contratoFinal).toBe(miniapp)
+    expect(contratoFinal).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(contratoFinal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
     expect(contratoFinal).toMatch(/\bprep_time_minutes,\s*delivery_extra_minutes/)
     esperarTiendaPreservada(contratoFinal)
+  })
+
+  it('los tres modos siguen siendo válidos en el esquema', () => {
+    const schema = leer('schema.sql')
+    expect(schema).toContain("check (chat_mode in ('menu','ai','miniapp'))")
   })
 })
