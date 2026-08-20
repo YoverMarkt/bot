@@ -50,11 +50,11 @@ export async function mockClientApi(page: Page) {
     if (path === '/api/client/login') {
       return json(route, {
         token: 'e2e-client-token',
-        business: { id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda', takes_bookings: false },
+        business: { id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda' },
         user: { name: 'Dueño E2E', role: 'owner', permissions: [] },
       })
     }
-    if (path === '/api/client/business') return json(route, { id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda', takes_bookings: false })
+    if (path === '/api/client/business') return json(route, { id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda' })
     if (path === '/api/client/stats') return json(route, { totalProducts: 1, totalConversations: 0, totalSales: 0 })
     if (path === '/api/client/dashboard') {
       return json(route, {
@@ -117,13 +117,11 @@ export async function mockClientApi(page: Page) {
     // Los bloqueados son una LISTA de teléfonos, y va antes del comodín por lo
     // que dice el comentario de abajo: con `{}` el panel se queda en blanco.
     if (path === '/api/client/sessions/blocked') return json(route, [])
-    if (path === '/api/client/tags' || path === '/api/client/bookings' || path === '/api/client/schedule') return json(route, [])
+    if (path === '/api/client/tags' || path === '/api/client/schedule') return json(route, [])
     // Devuelven LISTA, y eso importa: el respaldo de más abajo contesta `{}` a
     // lo que no reconozca, y un `{}` donde el panel espera una lista revienta
     // la pantalla al hacer `.map`. Este mock las descubrió así.
     if (path === '/api/client/categories' || path === '/api/client/variants') return json(route, [])
-    // Los listados de hospedaje siempre son arrays (useAttention los filtra)
-    if (path.startsWith('/api/client/lodging')) return json(route, [])
 
     return json(route, {})
   })
@@ -256,7 +254,7 @@ export async function mockOrdersFilteredByStatus(
 export async function seedClientSession(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
-    localStorage.setItem('client_biz', JSON.stringify({ id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda', takes_bookings: false }))
+    localStorage.setItem('client_biz', JSON.stringify({ id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda' }))
     localStorage.setItem('client_user', JSON.stringify({ name: 'Dueño E2E', role: 'owner', permissions: [] }))
   })
 }

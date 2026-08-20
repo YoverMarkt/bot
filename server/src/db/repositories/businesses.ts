@@ -116,13 +116,13 @@ const getAllBusinessesWithSecrets = async (): Promise<BusinessWithSecrets[]> => 
 const getAllBusinesses = async () => {
   const current = await db
     .from('businesses')
-    .select(`${businessListFields},lodging_enabled,chat_mode`)
+    .select(`${businessListFields},chat_mode`)
     .order('created_at', { ascending: false })
   if (!current.error) return current.data || []
 
-  // Permite desplegar el servidor antes de ejecutar migration-hospedaje.sql o
-  // migration-modo-menu.sql. Una base antigua conserva el listado normal.
-  if (/lodging_enabled|chat_mode/.test(current.error.message || '')) {
+  // Permite desplegar el servidor antes de ejecutar migration-modo-menu.sql.
+  // Una base antigua conserva el listado normal.
+  if (/chat_mode/.test(current.error.message || '')) {
     const legacy = await db
       .from('businesses')
       .select(businessListFields)

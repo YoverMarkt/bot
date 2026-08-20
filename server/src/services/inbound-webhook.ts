@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { atiendeSinIA } from './chat-mode'
 import { textoDelComprobante } from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
@@ -38,7 +39,7 @@ export interface InboundWebhookPayload {
 }
 
 interface InboundBusiness {
-  /** 'miniapp' = no se procesa media: la respuesta es siempre el enlace. */
+  /** Menú o mini app: el modelo no corre, así que no se procesa media. */
   chat_mode?: string | null
   id: string
   meta_token?: string | null
@@ -413,7 +414,7 @@ export function createInboundWebhookProcessor(
 
     // ⚠️ BLOQUEADO: ni se descarga, ni se transcribe, ni se mira.
     //
-    // Va ANTES del atajo del modo mini app porque vale para los tres modos, y
+    // Va ANTES del atajo del modo mini app porque vale para los dos modos, y
     // antes de cualquier descarga porque es justo aquí donde se gasta: bajar
     // la media cuesta tráfico, Whisper y visión cuestan dinero, y adjuntar un
     // comprobante cuesta almacenamiento. Un bloqueado no puede seguir gastando
@@ -447,7 +448,7 @@ export function createInboundWebhookProcessor(
     //
     // El corte de `bot-conversation` llega DESPUÉS de esto, así que no basta
     // con el que ya hay: aquí el gasto ya se habría hecho.
-    if (business.chat_mode === 'miniapp') {
+    if (atiendeSinIA(business.chat_mode)) {
       // ⚠️ Con UNA excepción: la foto de quien tiene un pedido esperando el
       // comprobante. Ese es el caso más común del modo mini app —se pide por
       // la app, se transfiere desde el banco y se manda la captura por el

@@ -135,7 +135,7 @@ describe('onboarding y equipo del negocio', () => {
         email: ' empleado@example.com ',
         password: 'clave-segura',
         name: 'Empleado',
-        permissions: ['citas', 'ventas', 'hospedaje', 'admin', 10],
+        permissions: ['horarios', 'ventas', 'reportes', 'admin', 10],
         businessId: 'business-b',
       },
     })
@@ -153,7 +153,7 @@ describe('onboarding y equipo del negocio', () => {
       password_hash: 'password-hash',
       name: 'Empleado',
       role: 'employee',
-      permissions: ['citas', 'ventas', 'hospedaje'],
+      permissions: ['horarios', 'ventas', 'reportes'],
     })
   })
 

@@ -645,7 +645,7 @@ y redirigen al slug actual.
 **Y desde el 2026-08-12 el enlace llega como BOTÓN, no como URL pegada en el
 chat** (`interactive.type: 'cta_url'`). Es la misma razón por la que la URL se
 acortó: tres líneas de texto azul se leen como spam y la gente no las toca. El
-botón dice «Ver la carta» —o «Ver habitaciones» en un hotel— bajo una línea de
+botón dice «Ver la carta» bajo una línea de
 texto y el pie de siempre.
 
 ⚠️ **La etiqueta se mide en BYTES, no en caracteres.** El tope de WhatsApp son
@@ -716,10 +716,9 @@ rompe de golpe: la lista ofrecería las horas buenas y la validación aceptaría
 además las que el negocio no puede cumplir. Por eso hoy los dos salen de
 `prepOptions()`, una sola función.
 
-**Las barberías no usan nada de esto.** Los negocios de citas ya tenían su
-tiempo, y por otro camino: `products.duration_minutes` (cuánto dura ese
-servicio), `business_schedule.slot_duration` (cada cuánto se ofrece cita) y
-`bookings.duration_minutes` (cuánto duró). No se tocó.
+**Hasta el 2026-08-16 los negocios de citas no usaban nada de esto**: su tiempo
+iba por la agenda, que se retiró con la fase 2 de dejar Umbani solo con
+domicilios. Hoy `prep_time_minutes` es el único camino.
 
 ---
 

@@ -33,7 +33,7 @@ No se puede hacer push directo a `main`: todo cambio entra por PR con el CI en v
 
 1. **Multi-tenancy:** toda consulta se filtra por `business_id`, y en endpoints de cliente sale SIEMPRE del JWT (`req.user.businessId`), nunca de un parámetro. Toda tabla nueva nace con `business_id` + RLS. RLS jamás se debilita.
 2. **`SUPABASE_SERVICE_KEY` solo en el servidor.** El frontend nunca habla directo con Supabase.
-3. **La IA conversa, el CÓDIGO calcula.** Ningún monto que vea un cliente sale del modelo: totales y precios solo server-side (`services/money.ts`, `services/lodging.ts`, RPCs). El prompt es cortesía, no seguridad.
+3. **La IA conversa, el CÓDIGO calcula.** Ningún monto que vea un cliente sale del modelo: totales y precios solo server-side (`services/money.ts`, `services/pricing.ts`, RPCs). El prompt es cortesía, no seguridad.
 4. **El bot nunca inventa datos** — precios, stock y horarios salen solo de los datos del negocio.
 5. **Cobro manual:** la plataforma nunca procesa pagos; el equipo del negocio confirma y cobra.
 6. **Toda superficie que procese respuestas de la IA usa el parser central** (`services/bot-tags.ts`). Nada de limpiar etiquetas `##...##` a mano.
@@ -47,7 +47,7 @@ Base de datos, RLS, auth, dinero, etiquetas del bot o multi-tenancy → consulta
 | Dónde | Qué |
 |---|---|
 | `server/src/routes/` | Endpoints Express (auth por JWT en `middleware/auth.ts`) |
-| `server/src/services/` | Lógica del bot, dinero, hospedaje, reportes |
+| `server/src/services/` | Lógica del bot, dinero, pedidos, reportes |
 | `server/src/db/repositories/` | Único punto de acceso a Supabase |
 | `apps/client` · `apps/admin` | Panel del negocio · panel del superadmin |
 | `packages/ui` | Componentes shadcn/ui compartidos |

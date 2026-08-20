@@ -36,7 +36,6 @@ function setup(overrides = {}) {
     sendText: vi.fn().mockResolvedValue(undefined),
     sendImage: vi.fn().mockResolvedValue(undefined),
     sendVideo: vi.fn().mockResolvedValue(undefined),
-    sendInteractive: vi.fn().mockResolvedValue(true),
     ...overrides.whatsapp,
   }
   const media = {
@@ -60,6 +59,7 @@ function setup(overrides = {}) {
     debounceMs: 3000,
     setTimer,
     clearTimer,
+    attachPaymentProof: overrides.attachPaymentProof,
   })
   return {
     entry, database, conversation, ai, whatsapp, media, logger,
@@ -148,11 +148,6 @@ describe('entrada de canales del bot', () => {
     const input = current.conversation.processMessage.mock.calls[0][0]
     await input.sendImage('https://cdn.example/a.jpg', undefined, 'direct')
     await input.sendVideo('https://cdn.example/a.mp4', undefined, 'direct')
-    await input.sendOptions(
-      '¿Cotizamos tus fechas?',
-      [{ id: '1', title: '📅 Cotizar estadía' }],
-      'direct',
-    )
 
     expect(current.whatsapp.sendImage).toHaveBeenCalledWith(
       businessA,
@@ -165,14 +160,6 @@ describe('entrada de canales del bot', () => {
       businessA,
       '0990000001',
       'https://cdn.example/a.mp4',
-      undefined,
-      'direct',
-    )
-    expect(current.whatsapp.sendInteractive).toHaveBeenCalledWith(
-      businessA,
-      '0990000001',
-      '¿Cotizamos tus fechas?',
-      [{ id: '1', title: '📅 Cotizar estadía' }],
       undefined,
       'direct',
     )
@@ -308,6 +295,52 @@ describe('entrada de canales del bot', () => {
     )
   })
 
+  it("el modo menú nunca manda la imagen a visión", async () => {
+    const enMenu = { ...businessA, chat_mode: 'menu' }
+    const current = setup({
+      database: { getBusinessByChannel: vi.fn().mockResolvedValue(enMenu) },
+    })
+
+    await current.entry.handleImage(
+      '0990000001', Buffer.from('foto'), 'image/jpeg', '+593999999999', {
+        channelAddress: ycloudAddress,
+      },
+    )
+
+    expect(current.ai.identifyImage).not.toHaveBeenCalled()
+    expect(current.conversation.processMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ business: enMenu }),
+    )
+  })
+
+  it("el modo menú adjunta igual un comprobante recibido por Telegram", async () => {
+    const enMenu = { ...businessA, chat_mode: 'menu' }
+    const attachPaymentProof = vi.fn().mockResolvedValue({
+      adjuntado: true,
+      orderNumber: 43,
+    })
+    const current = setup({
+      database: { getBusinessBySlug: vi.fn().mockResolvedValue(enMenu) },
+      attachPaymentProof,
+    })
+    const ctx = telegramContext()
+    const foto = Buffer.from('comprobante')
+
+    await current.entry.handleImage(
+      'tg_42', foto, 'image/jpeg', null,
+      { channel: 'telegram', slug: 'negocio-a', ctx },
+    )
+
+    expect(current.ai.identifyImage).not.toHaveBeenCalled()
+    expect(attachPaymentProof).toHaveBeenCalledWith('business-a', 'tg_42', foto)
+    expect(current.conversation.processMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        business: enMenu,
+        text: expect.stringContaining('43'),
+      }),
+    )
+  })
+
   it('no confirma una imagen si el canal cambió de tenant durante el proceso', async () => {
     const current = setup({
       database: {
@@ -322,6 +355,22 @@ describe('entrada de canales del bot', () => {
         businessId: 'business-a', channelAddress: metaAddress,
       },
     )).rejects.toThrow(/ya no pertenece/)
+    expect(current.ai.identifyImage).not.toHaveBeenCalled()
+    expect(current.conversation.processMessage).not.toHaveBeenCalled()
+  })
+
+  it('no envía una foto a visión si el negocio no se puede resolver', async () => {
+    const current = setup({
+      database: { getBusinessByChannel: vi.fn().mockResolvedValue(null) },
+    })
+
+    await expect(current.entry.handleImage(
+      '0990000001', Buffer.from('foto'), 'image/jpeg', '+593999999999', {
+        channelAddress: ycloudAddress,
+      },
+    )).resolves.toBeUndefined()
+
+    expect(current.ai.identifyImage).not.toHaveBeenCalled()
     expect(current.conversation.processMessage).not.toHaveBeenCalled()
   })
 

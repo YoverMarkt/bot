@@ -48,18 +48,10 @@ describe('el enlace de la tienda', () => {
       expect(storefrontAvailable(negocio())).toBe(true)
     })
 
-    it('a un hostal, aunque no venda productos', () => {
-      expect(storefrontAvailable(negocio({
-        takes_orders: false, lodging_enabled: true,
-      }))).toBe(true)
-    })
-
     // Es el caso de la barbería: mandarla a una app vacía es peor que no
     // mandar nada.
-    it('a nadie que no venda ni aloje', () => {
-      expect(storefrontAvailable(negocio({
-        takes_orders: false, lodging_enabled: false,
-      }))).toBe(false)
+    it('a nadie que no venda', () => {
+      expect(storefrontAvailable(negocio({ takes_orders: false }))).toBe(false)
     })
 
     it('a nadie con la tienda apagada', () => {
@@ -136,14 +128,6 @@ describe('el enlace de la tienda', () => {
       const texto = storefrontInvite(negocio(), 'https://x.com/s/z')
       expect(texto).toContain('carta')
       expect(texto).toContain('https://x.com/s/z')
-    })
-
-    it('habla de habitaciones en un hostal', () => {
-      const texto = storefrontInvite(
-        negocio({ takes_orders: false, lodging_enabled: true }),
-        'https://x.com',
-      )
-      expect(texto).toContain('habitaciones')
     })
 
     // El cliente tiene que saber que caduca; si no, volverá con un enlace

@@ -7,13 +7,16 @@ import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { Label } from '@botpanel/ui/components/label'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
-import { isBookingBiz, useBusinessInfo } from '../../lib/biz'
 
-// ── Horario de atención — para TODOS los negocios (igual que el panel
-// viejo): fuera de horario el bot responde la lista UNA vez y calla.
+// ── Horario de atención ───────────────────────────────────────────────────
+// Decide DOS cosas, y por eso sobrevivió a la retirada de la agenda: si la
+// tienda acepta pedidos y si el bot atiende o contesta que está cerrado. Fuera
+// de horario el bot responde la lista UNA vez y calla.
+//
+// `slot_duration` sigue en la tabla —era la duración de cada cita— pero ya no
+// se pinta ni se envía: reescribir esas filas no aporta nada.
 type ScheduleDay = {
   day_of_week: number
   open_time: string
@@ -27,26 +30,24 @@ const ORDER = [1, 2, 3, 4, 5, 6, 0]   // Lunes → Domingo
 
 export default function Schedule() {
   const qc = useQueryClient()
-  const { data: business } = useBusinessInfo()
-  const bookingBiz = isBookingBiz(business?.type, business?.takes_bookings)
   const { data: saved = [], isLoading } = useQuery({
     queryKey: ['schedule'],
     queryFn: () => api<ScheduleDay[]>('/api/client/schedule'),
   })
   const [draft, setDraft] = useState<ScheduleDay[] | null>(null)
-  const [duration, setDuration] = useState<number | null>(null)
 
   const days: ScheduleDay[] = draft ?? ORDER.map(d =>
     saved.find(s => s.day_of_week === d) ??
+    // `slot_duration` viaja aunque el panel ya no lo pinte: la columna es
+    // NOT NULL y un día construido aquí sin ella haría fallar el upsert.
     { day_of_week: d, open_time: '09:00', close_time: '18:00', slot_duration: 60, is_active: false }
   )
 
   const update = (dow: number, patch: Partial<ScheduleDay>) =>
     setDraft(days.map(d => d.day_of_week === dow ? { ...d, ...patch } : d))
 
-  const dur = duration ?? saved.find(d => d.slot_duration)?.slot_duration ?? 60
   const mSave = useMutation({
-    mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days: days.map(d => ({ ...d, slot_duration: dur })) }) }),
+    mutationFn: () => api('/api/client/schedule', { method: 'PUT', body: JSON.stringify({ days }) }),
     onSuccess: () => { toast.success('Horario guardado — el bot ya lo usa (incluido el aviso de fuera de horario)'); setDraft(null); qc.invalidateQueries({ queryKey: ['schedule'] }) },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   })
@@ -71,25 +72,9 @@ export default function Schedule() {
     <div>
       <div className="mb-5">
         <h1 className="text-2xl font-bold text-foreground">Horarios de atención</h1>
-        <p className="text-sm text-muted-foreground">{bookingBiz
-          ? 'Tu horario de atención y las horas en que el bot puede ofrecer reservas o citas.'
-          : 'Tu horario de atención. El bot avisará a quien escriba fuera de estas horas.'}</p>
+        <p className="text-sm text-muted-foreground">Tu horario de atención. Fuera de estas horas la tienda no acepta pedidos y el bot lo avisa.</p>
       </div>
       <Card className="p-5 max-w-xl gap-0">
-        {/* Duración de cada cita (select del viejo) */}
-        {bookingBiz && <div className="mb-4">
-          <Label htmlFor="schedule-duration">Duración de cada cita</Label>
-          <Select value={String(dur)} onValueChange={v => { setDuration(parseInt(v)); if (!draft) setDraft(days) }}>
-            <SelectTrigger id="schedule-duration" className="w-56"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">30 minutos</SelectItem>
-              <SelectItem value="45">45 minutos</SelectItem>
-              <SelectItem value="60">1 hora</SelectItem>
-              <SelectItem value="90">1 hora 30 min</SelectItem>
-              <SelectItem value="120">2 horas</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>}
         {days.map(d => (
           <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
             <Label htmlFor={`schedule-day-${d.day_of_week}-active`} className="mb-0 flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-foreground cursor-pointer">
@@ -108,7 +93,7 @@ export default function Schedule() {
           </div>
         ))}
         <div className="flex justify-end mt-4">
-          <Button onClick={() => mSave.mutate()} disabled={(!draft && duration === null) || mSave.isPending}>
+          <Button onClick={() => mSave.mutate()} disabled={!draft || mSave.isPending}>
             {mSave.isPending ? 'Guardando…' : 'Guardar horario'}
           </Button>
         </div>

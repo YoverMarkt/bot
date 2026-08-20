@@ -54,8 +54,6 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/payment-info',
       '/api/store/:slug/quote',
       '/api/store/:slug/session/verify',
-      '/api/store/:slug/stay/quote',
-      '/api/store/:slug/stay/request',
       '/s/:code',
     ].sort())
   })
@@ -100,8 +98,6 @@ describe('rutas de la mini app', () => {
       '/api/store/:slug/orders/:id',
       '/api/store/:slug/orders/:id/proof',
       '/api/store/:slug/payment-info',
-      '/api/store/:slug/stay/quote',
-      '/api/store/:slug/stay/request',
     ]) {
       expect(middlewareDe(path), path).toBe('exige')
     }
@@ -159,17 +155,6 @@ describe('rutas de la mini app', () => {
     const pedidos = rutas.find(ruta => ruta.path === '/api/store/:slug/orders')
     const catalogo = rutas.find(ruta => ruta.path === '/api/store/:slug/catalog')
     expect(pedidos.handlers).toBeGreaterThan(catalogo.handlers)
-  })
-
-  // Cotizar una estadía dispara una RPC cara y solicitarla crea una retención:
-  // ninguna de las dos puede quedarse solo con el límite general.
-  it('las rutas de hospedaje llevan su propio límite', () => {
-    const catalogo = rutas.find(ruta => ruta.path === '/api/store/:slug/catalog')
-    for (const path of ['/api/store/:slug/stay/quote', '/api/store/:slug/stay/request']) {
-      const ruta = rutas.find(r => r.path === path)
-      expect(ruta, path).toBeTruthy()
-      expect(ruta.handlers, path).toBeGreaterThan(catalogo.handlers)
-    }
   })
 
   it('el router aplica un límite de peticiones a todo /api/store', () => {

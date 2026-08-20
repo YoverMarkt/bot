@@ -1,7 +1,7 @@
 import { clearToken, deviceId, readToken } from './session'
 import type {
   Address, BankAccount, Catalog, Business, CartLine,
-  Fulfillment, Me, OrderResult, PaymentMethod, StayQuote, StayRequest, StoreStatus,
+  Fulfillment, Me, OrderResult, PaymentMethod, StoreStatus,
   TrackedOrder,
 } from './types'
 
@@ -161,26 +161,6 @@ export const createOrder = (slug: string, input: {
   },
 })
 
-// ⚠️ Aquí vivía `uploadPaymentProof`, la subida del comprobante desde la app.
-// Se retiró el 2026-08-12: el comprobante se manda por WhatsApp y la foto se
-// adjunta sola al pedido (`services/payment-proof-inbox.ts`). Era la ÚNICA
-// petición multipart de esta app.
-//
-// La ruta `POST /api/store/:slug/orders/:id/proof` sigue en el servidor,
-// protegida por sesión, con su límite de peticiones y sus pruebas. No se borró:
-// funciona, no estorba y es la puerta que usaría el Marketplace o una vuelta
-// atrás. Lo que ya no hay es quien la llame desde aquí.
-
-// ── Hospedaje ──────────────────────────────────────────────────────────────
-
-export const quoteStay = (slug: string, input: {
-  checkIn: string; checkOut: string; adults: number; children: number; rooms: number
-}) => request<StayQuote>(`/${slug}/stay/quote`, { method: 'POST', body: input })
-
-export const requestStay = (slug: string, input: {
-  roomTypeId: string; name: string; notes?: string
-}) => request<StayRequest>(`/${slug}/stay/request`, { method: 'POST', body: input })
-
 /**
  * Confirma el número de WhatsApp y ata la sesión a ESTE teléfono.
  *
@@ -216,3 +196,13 @@ export async function confirmarTelefono(
     return 'No pudimos comprobarlo. Revisa tu conexión e inténtalo otra vez.'
   }
 }
+
+// ⚠️ Aquí vivía `uploadPaymentProof`, la subida del comprobante desde la app.
+// Se retiró el 2026-08-12: el comprobante se manda por WhatsApp y la foto se
+// adjunta sola al pedido (`services/payment-proof-inbox.ts`). Era la ÚNICA
+// petición multipart de esta app.
+//
+// La ruta `POST /api/store/:slug/orders/:id/proof` sigue en el servidor,
+// protegida por sesión, con su límite de peticiones y sus pruebas. No se borró:
+// funciona, no estorba y es la puerta que usaría el Marketplace o una vuelta
+// atrás. Lo que ya no hay es quien la llame desde aquí.

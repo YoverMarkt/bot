@@ -8,7 +8,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 | Documento | Cuándo leerlo |
 |---|---|
-| **[DECISIONES.md](DECISIONES.md)** | Antes de tocar la tienda, el modo menú, hospedaje, el registro de errores, la vigilancia del canal… Casi cada apartado existe porque algo falló: lo que parece complejidad de más suele ser una cicatriz. |
+| **[DECISIONES.md](DECISIONES.md)** | Antes de tocar la tienda, el registro de errores, la vigilancia del canal… Casi cada apartado existe porque algo falló: lo que parece complejidad de más suele ser una cicatriz. |
 | **[VERIFICACION.md](VERIFICACION.md)** | Antes de tocar el CI, el esquema o las migraciones. Qué comprueba cada capa, qué **no**, y de qué incidente nació. |
 | **[PENDIENTE.md](PENDIENTE.md)** | Cuando surja "¿y si añadimos…?". Lista de módulos futuros y de decisiones de **no** construir todavía. |
 | **[ARQUITECTURA.md](ARQUITECTURA.md)** | Antes de crear archivos o features nuevas. |
@@ -35,7 +35,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 > 📐 **Arquitectura objetivo y plan de migración:** ver **`ARQUITECTURA.md`** (decidido 2026-07-06: migración GRADUAL a monorepo con server ordenado en routes/services + paneles en React+Vite+TS; patrón estrangulador, nunca big-bang; regla: todo lo NUEVO nace en la estructura nueva). Leerlo antes de crear archivos o features nuevas.
 
-**BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios como perfumerías, barberías, tiendas y clínicas: cada negocio tiene su propio bot (prompt, catálogo, horarios), su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, agenda citas, vende, y deriva a un humano cuando hace falta.
+**BotPanel** es un SaaS **multi-empresa** que ofrece bots de atención al cliente con IA en **WhatsApp y Telegram**. Sirve a negocios de comida y retail que reparten a domicilio: cada negocio tiene su propio bot (prompt, catálogo, horarios), su mini app, su panel de cliente, y un panel de administración central (el dueño del SaaS) gestiona todos los negocios, sus credenciales y la facturación. El bot responde texto, voz e imágenes, vende, y deriva a un humano cuando hace falta.
 
 ---
 
@@ -74,11 +74,10 @@ bot/
 │   ├── src/db/repositories/conversation-history.ts # Mensajes e historial por contacto
 │   ├── src/db/repositories/sessions.ts # Modo manual, lectura y estado por business_id
 │   ├── src/db/repositories/conversation-tags.ts # Etiquetas aisladas por negocio
-│   ├── src/db/repositories/bookings.ts # Horarios, disponibilidad y reservas tipadas
+│   ├── src/db/repositories/schedule.ts # Horario de atención del negocio (lo usa la tienda)
 │   ├── src/db/repositories/sales.ts # Ventas y detalles mediante RPC atómica
 │   ├── src/db/repositories/reporting.ts # Consultas analíticas aisladas por negocio
 │   ├── src/db/repositories/orders.ts # Pedidos e ítems mediante RPC atómica
-│   ├── src/db/repositories/lodging.ts # Habitaciones, tarifas, cotizaciones, holds y bloqueos
 │   ├── src/db/repositories/stats.ts # Métricas admin/cliente con aislamiento
 │   ├── src/db/repositories/webhook-events.ts # Reclamos SHA-256 persistentes
 │   ├── src/services/secrets.ts  # Saneamiento tipado de credenciales de negocios
@@ -90,11 +89,9 @@ bot/
 │   ├── src/services/prompt.ts  # Catálogo, políticas, variables y reglas técnicas del prompt
 │   ├── src/services/media.ts   # Data URLs y descarga binaria con timeout
 │   ├── src/services/channel-resolution.ts # Resolución coherente de aliases exactos por proveedor
-│   ├── src/services/bot-tags.ts # Parser puro de reservas, pedidos, handoff y media
-│   ├── src/services/bot-actions.ts # Acciones tipadas y multi-tenant de reservas, sesiones y pedidos
+│   ├── src/services/bot-tags.ts # Parser puro de pedidos, handoff y media
+│   ├── src/services/bot-actions.ts # Acciones tipadas y multi-tenant de sesiones y pedidos
 │   ├── src/services/bot-media.ts # Selección estricta y envío tipado de media por negocio
-│   ├── src/services/bot-menu.ts # Menú guiado de bienvenida por capacidades (hoy solo simulador)
-│   ├── src/services/bot-menu-flow.ts # Modo menú estilo banco: máquina de estados sin IA (hoy solo simulador)
 │   ├── src/services/bot-conversation.ts # Flujo central tipado, desde sesión hasta respuesta
 │   ├── src/services/bot-entry.ts # Debounce, resolución de negocio y adaptadores WA/TG tipados
 │   ├── src/services/business-templates.ts # Con qué catálogo nace cada tipo de negocio (solo recomienda al crear)
@@ -104,7 +101,6 @@ bot/
 │   ├── src/services/platform-pricing.ts # Espejo TS del margen para SIMULAR; la base es la que cobra
 │   ├── src/db/repositories/pricing-rules.ts # Reglas de margen y acumulado por negocio
 │   ├── src/routes/admin-pricing.routes.ts # Reglas, simulador y acumulado (solo superadmin)
-│   ├── src/services/lodging.ts # Contratos y normalización del núcleo de hospedaje
 │   ├── src/services/channel-health.ts # Vigilancia del canal de entrada: silencio por negocio y fallos del webhook
 │   ├── src/services/order-notify.ts # El ÚNICO aviso saliente del pedido: confirmado y en preparación
 │   ├── src/services/payment-proof-inbox.ts # El comprobante que llega por el chat se adjunta al pedido
@@ -130,7 +126,7 @@ bot/
 │   ├── src/routes/admin-settings.routes.ts # Keys globales enmascaradas y verificables
 │   ├── src/routes/admin-simulator.routes.ts # Pruebas del bot aisladas y persistidas por negocio
 │   ├── src/routes/admin.routes.ts # Composición TypeScript de todos los dominios del superadmin
-│   ├── src/routes/bookings.routes.ts # Horarios y reservas aislados por JWT
+│   ├── src/routes/schedule.routes.ts # Horario de atención aislado por JWT
 │   ├── src/routes/business-profile.routes.ts # Identidad y políticas seguras
 │   ├── src/routes/business-management.routes.ts # Onboarding y equipo seguros
 │   ├── src/routes/business.routes.ts # Composición TypeScript del negocio
@@ -138,7 +134,6 @@ bot/
 │   ├── src/routes/products-media.routes.ts # Upload multipart validado
 │   ├── src/routes/products.routes.ts # Composición TypeScript del catálogo
 │   ├── src/routes/product-options.routes.ts # CRUD del motor de opciones para el dueño (grupos, opciones, plantillas)
-│   ├── src/routes/lodging.routes.ts # Hospedaje aislado por JWT, capacidad y permiso
 │   ├── src/types/express.d.ts   # Claims compartidos de autenticación Express
 │   ├── src/types/channels.ts    # Provider, tipo y normalización exacta de identificadores
 │   ├── schema.sql             # Esquema consolidado y ACTUALIZADO (referencia única — ver sección 4)
@@ -153,7 +148,6 @@ bot/
 │   ├── migration-2026-08-02-cita-atendida-es-venta.sql # Servicios: la cita lleva precio y al atenderla se registra la venta
 │   ├── migration-2026-08-02-modo-miniapp.sql # Tercer modo de atención: el enlace pertenece solo al modo mini app
 │   ├── migration-2026-08-02-retirar-venta-manual.sql # Se retira el alta manual: toda venta nace de un pedido o una cita
-│   ├── migration-2026-08-02-estadia-confirmada-es-venta.sql # Hospedaje entra al mismo reporte que el resto
 │   ├── migration-2026-08-04-motor-de-opciones.sql # Grupos obligatorios, mínimos, selección por cantidad y combos
 │   ├── migration-2026-08-05-grupos-por-categoria.sql # El grupo cuelga de un producto O de una categoría, nunca de ambos
 │   ├── migration-2026-08-05-plantillas-de-negocio.sql # El catálogo de arranque del tipo, que no pisa negocios con catálogo
@@ -179,7 +173,9 @@ bot/
 │   ├── migration-2026-08-07-checkout.sql # Instrucciones del pedido y el tercer método de pago
 │   ├── migration-2026-08-07-pago-al-retirar-rpc.sql # El método también dentro de la RPC, que valida aparte del CHECK
 │   ├── migration-atomicidad-reservas.sql # Lock + exclusión de intervalos activos por negocio
-│   ├── migration-hospedaje.sql # Inventario, cotizaciones y holds de alojamiento transaccionales
+│   ├── migration-2026-08-16-retirar-hospedaje.sql # Umbani solo domicilios: se retira el módulo entero (fase 1)
+│   ├── migration-2026-08-16-retirar-citas.sql # Se retira la agenda; el horario se queda porque lo usa la tienda (fase 2)
+│   ├── migration-2026-08-19-miniapp-exige-tienda.sql # El modo mini app no se enciende sin pedidos ni tienda
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
 │   ├── migration-eliminar-kapso-retell.sql # Limpieza destructiva previa a identificadores
@@ -211,7 +207,6 @@ bot/
 6. **Cobro manual.** El bot calcula el total oficial y el negocio coordina el cobro directamente fuera de esta plataforma.
 7. **El bot nunca inventa datos.** Precios, productos y horarios salen solo de los datos del negocio inyectados en el prompt.
 8. **La IA conversa, el CÓDIGO calcula (núcleo de dinero).** Ningún monto que vea el cliente sale del modelo: totales, precios de pedidos y descuentos se calculan SOLO server-side (`server/src/services/money.ts` + tablas `orders`/`order_items`). El prompt es cortesía, no seguridad. Si un ítem del pedido no se resuelve con certeza contra el catálogo, NO se envía total (pasa al dueño). Los descuentos, si algún día existen, serán regla de código/panel — jamás decisión de la IA.
-9. **Hospedaje no es una cita ni un pedido.** Fechas, noches, cantidad de habitaciones, huéspedes, disponibilidad, impuestos y total salen de `server/src/services/lodging.ts` y las RPC PostgreSQL. `##STAY_QUOTE##` solo consulta; `##STAY_REQUEST##` crea un hold temporal pendiente. Nunca confirma ni cobra automáticamente: el equipo confirma y coordina el pago manualmente.
 
 > 🔍 **Las capas de verificación (qué comprueba cada una, qué NO, y de qué incidente nació) están en [VERIFICACION.md](VERIFICACION.md).** Léelo antes de tocar el CI, el esquema o las migraciones.
 
@@ -257,12 +252,18 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Las keys de IA se leen siempre mediante `server/src/services/ai.ts` y `settings.get('...')`** (panel > .env).
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
-- **Menú guiado híbrido (`server/src/services/bot-menu.ts`):** en modo IA del simulador, los saludos ("hola", "menú") se responden con un menú de bienvenida generado por código según capacidades, y el resto sigue con IA. Quedó como respaldo del modo menú puro.
+- **Los TRES modos de atención se conservan** (`chat_mode`, decisión del dueño 2026-08-19). La reducción de Umbani a domicilios retiró hospedaje y citas, pero **NO** el modo menú ni el modo IA: son las dos formas de atender por chat que el producto mantiene junto a la mini app.
+  - `ai` → la IA conversa y el pedido se cierra por chat con `##PEDIDO##`.
+  - `menu` → el CÓDIGO conduce con opciones armadas de los datos reales (`bot-menu-flow.ts`); el modelo no participa en ningún mensaje. **No manda enlace**, y no es un olvido: el menú YA es donde se pide.
+  - `miniapp` → el bot corta antes de la IA y manda el enlace personal de la tienda.
+  ⚠️ `services/chat-mode.ts` (`atiendeSinIA`) agrupa `menu` y `miniapp` para una sola cosa: en ninguno de los dos corre el modelo, así que bajar media, transcribir voz o pasar una foto por visión es dinero tirado. ⚠️ El modo `miniapp` **exige pedidos y tienda encendidos** (`migration-2026-08-19-miniapp-exige-tienda.sql`): sin catálogo el cliente recibiría un enlace a una app vacía.
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
 - **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
-- **Capacidades por negocio:** `businesses.takes_bookings`, `businesses.takes_orders` y `businesses.lodging_enabled` son fuentes de verdad independientes; el tipo solo recomienda valores al crear y nunca sobrescribe decisiones manuales ni negocios existentes. Pizzería/retail recomienda pedidos; servicios de cita recomiendan agenda e informativo; hotel/hostal/alojamiento recomienda hospedaje sin reutilizar citas ni pedidos. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
+- **Capacidades por negocio:** `businesses.takes_orders` es la fuente de verdad de si el bot cierra pedidos; el tipo solo la recomienda al crear y nunca sobrescribe decisiones manuales ni negocios existentes. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
+- **Citas: RETIRADAS el 2026-08-16** (`migration-2026-08-16-retirar-citas.sql`), fase 2 de dejar Umbani solo con domicilios. Se fueron la tabla `bookings`, la capacidad `takes_bookings`, la etiqueta `##BOOK##`, la RPC anti-solape `create_booking_if_available`, la conversión de cita en venta y la sección Reservas del panel. ⚠️ **`business_schedule` SE QUEDA**: vivía en el mismo módulo pero no es de citas — decide si la tienda acepta pedidos y si el bot atiende o dice que está cerrado. Por eso el horario se mudó a `routes/schedule.routes.ts` y `db/repositories/schedule.ts` ANTES de borrar el resto. El permiso `citas` pasó a llamarse `horarios`, y la migración lo renombra en `client_users.permissions` para que ningún empleado pierda el acceso en silencio.
+- **Hospedaje: RETIRADO el 2026-08-16** (`migration-2026-08-16-retirar-hospedaje.sql`). Es la fase 1 de dejar Umbani solo con domicilios: se fueron las tablas `lodging_*`, la capacidad `lodging_enabled`, las etiquetas `##STAY_QUOTE##`/`##STAY_REQUEST##`, la pantalla del dueño y el flujo de estadía de la mini app. Con ello se fue también `hasActionConflict`, que solo existía para declarar hospedaje incompatible con las demás acciones. ⚠️ La migración se despliega **DESPUÉS** del código, al revés de lo habitual: el código viejo insertaba `lodging_enabled` al crear un negocio, así que soltar la columna antes rompe el alta de clientes. Si algún día vuelve, el módulo entero está en el historial del PR de esta fase.
 - **Catálogo de arranque (`server/src/services/business-templates.ts`):** al crear un negocio, su tipo decide con qué categorías y grupos de opciones nace —una hamburguesería trae Hamburguesas, Combos, Acompañantes y Bebidas, con Término, Extras y Retira ingredientes ya cargados. Sigue la misma regla que las capacidades: **solo recomienda al crear**. La RPC `apply_business_template` no toca un negocio que ya tenga una categoría o un producto y devuelve `aplicada: false`, así que jamás pisa decisiones manuales ni negocios existentes. Falla en silencio hacia el registro de errores: la plantilla va después del alta y no puede tumbarla. Los nombres de tipo deben existir en el desplegable del panel (`apps/admin/src/features/clients/business-types.ts`) o la plantilla queda muerta — lo vigila `tests/plantillas-negocio.test.js`.
-- **Grupos de opciones:** un grupo cuelga de un **producto** o de una **categoría**, nunca de ambos ni de ninguno (`option_groups_destino_check`). Por categoría es como los 19 sabores los comparten todas las pizzas sin repetirlos, y como una plantilla deja grupos cargados antes de que exista un solo producto. Los dos destinos usan foránea compuesta sobre `(id, business_id)`. La mini app los pinta con tres selectores (`single` radio · `multiple` casillas con tope · `quantity` contador por opción) y bloquea el botón diciendo **qué falta**; `create_storefront_order` lo vuelve a exigir, que es lo único que de verdad manda. **La mini app ya NO usa `menu_modifiers`** — el modo menú del bot y el panel del dueño sí, así que durante esta etapa hay dos sitios donde se editan opciones.
+- **Grupos de opciones:** un grupo cuelga de un **producto** o de una **categoría**, nunca de ambos ni de ninguno (`option_groups_destino_check`). Por categoría es como los 19 sabores los comparten todas las pizzas sin repetirlos, y como una plantilla deja grupos cargados antes de que exista un solo producto. Los dos destinos usan foránea compuesta sobre `(id, business_id)`. La mini app los pinta con tres selectores (`single` radio · `multiple` casillas con tope · `quantity` contador por opción) y bloquea el botón diciendo **qué falta**; `create_storefront_order` lo vuelve a exigir, que es lo único que de verdad manda. **La mini app ya NO usa `menu_modifiers`** — los sigue editando el panel del dueño, así que durante esta etapa hay dos sitios donde se editan opciones.
 - **Motor universal de productos:** `products.product_type` (simple·configurable·combo·daily_menu·weighted) NO es un `if` disfrazado — la app nunca pregunta «¿es pizza?», pregunta «¿este producto se arma eligiendo otros?». Un combo de hamburguesas y uno de pizzas recorren el mismo camino. **El importe se calcula POR GRUPO, no opción a opción** — es la única forma de responder «¿cuál es la más cara?». `option_groups.pricing_strategy` decide cómo cobra un grupo: `sum` (lo normal), `highest_selected` (**la pizza mitad y mitad**: media Suprema $10 + media Hawaiana $9 cuesta $10, no $19), `included`, `included_up_to_limit`, `extra_after_limit` con `free_selections`, y `fixed`/`lowest_selected`/`average`. Las **plantillas** (`option_templates` + `option_template_items`) se REFERENCIAN, no se copian: «Sabores de pizza» se define una vez y sirve a la primera pizza, la segunda, la tercera y las dos mitades — añadir un sabor lo añade en los cinco sitios. Prohibido crear columnas rígidas (`pizza_1`, `first_half`, `drink`): todo sale de grupos configurables. **Los combos no son un tipo aparte**: un producto `combo` es uno cuyos grupos tienen opciones con `references_product_id`, y la mini app los pinta como pasos numerados («1 Elige tu pizza», «2 Elige tu bebida») sin que exista ningún `ComboProductPage`. La opción que ES un producto hereda su foto y su descripción, para que el dueño no suba dos veces la misma imagen. **Tres motores calculan lo mismo y solo uno cobra**: `create_storefront_order` (la autoridad, regla #8), `server/src/services/pricing.ts` y `apps/store/src/lib/cart.ts` — la app tiene que pintar lo que se va a cobrar o el cliente se entera del precio real al confirmar. Los tres comparten los mismos ocho casos de prueba a propósito. Dos reglas que no son obvias: `highest_selected` mira el precio UNITARIO (dos medias pizzas son una), y las estrategias con límite descuentan las opciones MÁS CARAS, nunca por orden de clic — si dependiera del clic, dos clientes con lo mismo en el carrito pagarían distinto.
 - **El dueño configura, la mini app obedece:** el motor de opciones se administra desde `Catálogo → Personalización` (`apps/client/src/features/catalog/OptionsManager.tsx` sobre `product-options.routes.ts`). Todo lo que el dueño cree ahí —grupos, opciones, plantillas, estrategias de precio— sale en su mini app **sin tocar código**: esa es la promesa entera del motor. El saneamiento de la ruta replica los CHECK de la base a propósito, para que el dueño lea «el máximo tiene que ser 1» en vez de un error de restricción de PostgreSQL. Verificado de punta a punta: crear un grupo obligatorio en el panel y verlo aparecer en `/api/store/:slug/catalog`.
 - **Un doble toque no crea dos pedidos:** la mini app genera una clave POR CARRITO (`orders.idempotency_key`, única por negocio) y la repite si reintenta; `create_storefront_order` devuelve el pedido existente con `repetido: true` en vez de crear otro. Sin clave el comportamiento es el de siempre —cada envío, un pedido—, que es como pide el bot. Cada cambio de estado deja rastro en `order_events` (de dónde venía y a dónde fue): sin él, «¿cuándo se confirmó?» solo se responde mirando `updated_at`, que se pisa con cada cambio. Los estados son **doce y en español**: a los siete de siempre se suman `esperando_pago`, `pago_en_revision`, `aceptado`, `listo_para_retiro` y `rechazado`. `completado`, `cancelado`, `rechazado` y `expirado` son finales — de ahí no se sale, así que «cancelado → preparacion» queda fuera por no estar listado. ⚠️ El CHECK que MANDA es el `alter table` de más abajo en `schema.sql`, no el del `create table`: añadir un estado solo arriba lo deja fuera igualmente — lo vigila `tests/estados-pedido.test.js`, que además exige que el panel del dueño conozca **exactamente** los mismos estados que la base. Separarlos no rompe de golpe, rompe a medias: un estado que la base guarda y el panel no conoce deja al dueño con un hueco sin etiqueta ni botón para mover ese pedido.
@@ -278,7 +279,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Los dos botones del pago NO hacen lo mismo.** «Solo confirmar el pago» anota `payment_confirmed_at` y **no mueve el pedido ni avisa al cliente**; «Aceptar el pago y preparar» anota el pago, arranca la cocina **y manda el WhatsApp**. El primero existe para el rato en que el dueño ya vio la transferencia pero no va a encender la cocina —y desde el 2026-08-11 hace algo más importante: es lo ÚNICO que libera al cliente de la pantalla de pago cuando mandó el comprobante por WhatsApp. Se llaman así porque con «Marcar pago recibido» el dueño no distinguía uno de otro.
 - **El comprobante NO es público:** un movimiento bancario con el nombre y la cuenta de un cliente no puede vivir en una URL permanente. Se sube a Cloudinary como `authenticated` (`uploadPrivateMedia`) y solo se ve con una firma temporal de 10 minutos (`signedMediaUrl`), que el servidor genera al tocar el enlace —no al pintar la lista— y solo para el dueño del negocio del pedido. Si la firma falla se responde 503: **nunca** se cae de vuelta a la URL pública. Los comprobantes subidos antes de esto no tienen `payment_proof_public_id` y se siguen viendo tal cual, avisando `firmada: false` — romperles el acceso escondería el pago de un pedido en curso, que es peor que una fuga que ya ocurrió. Subir el comprobante mueve el pedido a `pago_en_revision` y lo anota en `order_events`: antes se quedaba en «pendiente» con una imagen colgada y nada avisaba al dueño.
 - **El horario puede CRUZAR LA MEDIANOCHE.** «09:00 a 01:00» es el horario normal de media hostelería: se abre por la mañana y se cierra a la una de la madrugada siguiente. Comparando `abre <= ahora < cierra` a secas, esos negocios salían **cerrados las 24 horas** —la condición no se cumple nunca cuando el cierre es un número menor que la apertura—, así que el bot respondía «estamos fuera de horario» siempre y la tienda no dejaba pedir a nadie. Lo arregla `dentroDelTramo` en `services/schedule.ts`, que además mira el turno de la VÍSPERA: a las 00:30 de un jueves, quien sigue abierto es el turno del miércoles. ⚠️ El cruce es con cierre **estrictamente menor** que la apertura: «00:00 a 00:00» es un tramo de duración cero —ese día no se abre—, y tratarlo como cruce lo volvería un negocio abierto siempre.
-- **Cuánto tarda el negocio:** `businesses.prep_time_minutes` (listo) y `businesses.delivery_extra_minutes` (llevarlo) los pone **el dueño**; el tipo solo recomienda el valor de arranque (`prepTimeForBusinessType`: heladería 10, pizzería 25, asadero 40), igual que las plantillas y las capacidades — y **jamás pisa a un negocio existente**. ⚠️ No es un texto de portada: `prep_time_minutes` decide **desde qué hora se puede programar**, y por eso la lista de franjas y su validación salen de la MISMA función (`prepOptions` en `storefront.routes.ts`). Estaba fijo en 30 para todos; separar los dos usos deja que la validación acepte horas que la lista no ofrecía. Las **barberías no usan nada de esto**: su tiempo ya va por `products.duration_minutes` y `business_schedule.slot_duration`.
+- **Cuánto tarda el negocio:** `businesses.prep_time_minutes` (listo) y `businesses.delivery_extra_minutes` (llevarlo) los pone **el dueño**; el tipo solo recomienda el valor de arranque (`prepTimeForBusinessType`: heladería 10, pizzería 25, asadero 40), igual que las plantillas y las capacidades — y **jamás pisa a un negocio existente**. ⚠️ No es un texto de portada: `prep_time_minutes` decide **desde qué hora se puede programar**, y por eso la lista de franjas y su validación salen de la MISMA función (`prepOptions` en `storefront.routes.ts`). Estaba fijo en 30 para todos; separar los dos usos deja que la validación acepte horas que la lista no ofrecía.
 - **Pedidos programados: RETIRADOS el 2026-08-07.** El «¿Para cuándo?» del checkout, `scheduleSlots` e `isValidSlot` se eliminaron por decisión del dueño — no están en el diagrama de referencia. **Consecuencia deliberada: con el local `cerrada` ya NO se puede pedir**, ni siquiera para más tarde; la tienda solo acepta pedidos inmediatos. La columna `orders.scheduled_for` y el parámetro `p_scheduled_for` de `create_storefront_order` siguen en la base (la ruta manda `null`): quitarlos obligaría a recrear la función del dinero por un campo que ya nadie llena. Si algún día vuelven, el motor está en el historial del PR #177.
 - **Lo que gana la plataforma (`pricing_rules` + `calculate_platform_markup`):** hasta 2026-08-16 el SaaS solo cobraba la cuota mensual y un pedido no le dejaba nada. El margen es una TABLA y no un porcentaje porque **un restaurante y un supermercado no se pueden cobrar igual**: el segundo trabaja al 2–5 %, así que el 8 % de una canasta de $80 le costaría más de lo que gana. De ahí los tres frenos, y cada uno protege a alguien distinto — `max_amount` (techo) al comercio de volumen, `min_amount` (piso) a **nosotros** (cada pedido cuesta mensajes de WhatsApp y llamadas de IA: sin piso, los pequeños se atienden a pérdida) y `tiered` lo que no alcanzan los otros dos. La prioridad es negocio → tipo → global. ⚠️ **No se recrean `create_storefront_order` ni `set_order_status`**: lo sella el disparador `orders_stamp_pricing`, mismo criterio que `orders_reject_blocked`, y así cubre tienda, bot y mostrador de una vez. **Falla ABIERTO**: sin regla aplicable el margen es 0 y el pedido sigue — un problema de configuración de precios no puede dejar a una pizzería sin vender. El pedido **congela qué regla y qué versión** le aplicaron, así que subir el porcentaje mañana no reescribe lo de hoy. La base del cálculo es `subtotal − discount`: cobrar sobre un descuento sería cobrar sobre dinero que el comercio no recibió. ⚠️ `markup_mode` admite hoy **solo `absorbed`**; `on_top` está escrito y probado en `platform-pricing.ts` pero el CHECK lo impide hasta que el catálogo, el carrito y el resumen pinten el precio con margen — si no, el cliente descubriría el precio real al confirmar. Igual que `scope`, que aún no admite `category` ni `product`: **no se puede guardar una regla que el motor no vaya a honrar**.
 - **El acumulado y el cierre de mes (`platform_markup_summary`, `settle_month_commission`):** se suma sobre **`sales` y no sobre `orders`** — un pedido aceptado todavía no es dinero, la venta nace al ENTREGAR. De ahí salen dos cosas gratis: un pedido cancelado nunca llega a `sales` y no genera comisión, y una venta anulada deja de contar. ⚠️ **El mes termina en Ecuador, no en UTC**: `sold_at` es `timestamptz` y sin `at time zone 'America/Guayaquil'` una venta de las 20:00 del día 31 se facturaba en el mes siguiente — son las cinco últimas horas de cada día, la franja de más ventas. El cierre corre solo a diario (mes actual y anterior), es **idempotente porque RECALCULA y escribe el valor absoluto**, y **nunca reescribe un mes ya `paid`**: si una venta se anula después de liquidar, se descuenta del siguiente. `billing.amount` sigue siendo la CUOTA; la comisión va en `commission_amount` y el total es la suma. ⚠️ Pensado para muchos negocios: es **una operación por conjuntos, no un bucle** —con 5.000 locales un bucle son 5.000 idas y vueltas— y `idx_sales_cierre` existe porque el índice anterior empieza por `business_id` y no sirve para un rango de fechas global.
@@ -297,7 +298,6 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Etiquetas del bot** → [DECISIONES.md](DECISIONES.md#etiquetas-del-bot)
 - **Modo menú estilo banco** → [DECISIONES.md](DECISIONES.md#modo-menú-estilo-banco)
 - **Reportes del dueño** → [DECISIONES.md](DECISIONES.md#reportes-del-dueño)
-- **Capacidad de citas y hospedaje** → [DECISIONES.md](DECISIONES.md#capacidad-de-citas-y-hospedaje)
 - **Salud del canal** → [DECISIONES.md](DECISIONES.md#salud-del-canal)
 - **Evals del bot** → [DECISIONES.md](DECISIONES.md#evals-del-bot)
 - **Vigilante de precios** → [DECISIONES.md](DECISIONES.md#vigilante-de-precios)
@@ -343,14 +343,14 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 | Sacar un cambio a producción: migraciones, despliegue, humo, salud del canal | **ship** |
 | Hay un error, bug o comportamiento inesperado | **debugging** |
 | Crear feature/endpoint/etiqueta nueva o cambiar comportamiento que otros consumen | **documentacion** |
-| Crear o editar el system prompt de un bot de cliente (perfumería, barbería, clínica…) | **prompts-de-bots** |
+| Crear o editar el system prompt de un bot de cliente (pizzería, perfumería, supermercado…) | **prompts-de-bots** |
 | Crear o modificar gráficos, dashboards, KPIs o visualizaciones en el panel | **graficos-dashboard** (usa la bundled **dataviz**) |
 | Crear, migrar o revisar pantallas React y componentes del sistema visual | **shadcn-ui** |
 
 **Combinaciones frecuentes:**
 - "Agrega una tabla/campo nuevo" → base-de-datos + arquitecto-saas + tester-saas + documentacion.
 - "Cambia el login / cómo se guardan las keys" → seguridad-saas + arquitecto-saas + tester-saas.
-- "El bot responde mal / no agenda / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
+- "El bot responde mal / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
 - "Revisa esto antes de subirlo" → revisor-pr.
 
 ---

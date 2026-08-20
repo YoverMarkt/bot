@@ -17,13 +17,13 @@ type MediaRouter = Router & {
 const router = createRouter() as MediaRouter
 router.multipartFileSize = MEDIA_LIMITS.multipart
 
-// El mismo uploader sirve al catálogo y al módulo de hospedaje. El archivo
-// siempre se guarda bajo el business_id del JWT; nunca se acepta un tenant del body.
+// El uploader del catálogo. El archivo siempre se guarda bajo el business_id
+// del JWT; nunca se acepta un tenant del body.
 const canUploadBusinessMedia: RequestHandler = (req, res, next) => {
   const user = req.user as Express.ClientUserClaims | undefined
   if (user?.urole === 'owner') return next()
   const permissions = Array.isArray(user?.perms) ? user.perms : []
-  if (permissions.includes('catalogo') || permissions.includes('hospedaje')) return next()
+  if (permissions.includes('catalogo')) return next()
   return res.status(403).json({ error: 'No tienes permiso para subir archivos' })
 }
 

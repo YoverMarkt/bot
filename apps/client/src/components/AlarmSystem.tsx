@@ -1,19 +1,18 @@
 // ── ALARMA INSISTENTE (port fiel del panel viejo) ───────────────────
 // Suena mientras haya pendientes SIN ATENDER (estado en BD):
-//  · chats en modo manual con unread_owner  · reservas pendientes
-//  · solicitudes de hospedaje por confirmar
+//  · chats en modo manual con unread_owner
 //  · pedidos por aceptar Y comprobantes por revisar (ver VIGILADOS)
-// Con: banner fijo, badges, notificación del navegador para reservas,
-// hospedaje y pedidos nuevos, silencio temporal (2 min), tope de 3 min
-// por tanda y parpadeo del título de la pestaña.
+// Con: banner fijo, badges, notificación del navegador para pedidos nuevos,
+// silencio temporal (2 min), tope de 3 min por tanda y parpadeo del título de
+// la pestaña.
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { BedDouble, Bell, BellOff, Check, Hand, CalendarPlus, ShoppingBag } from 'lucide-react'
+import { Bell, BellOff, Check, Hand, ShoppingBag } from 'lucide-react'
 import * as snd from '../lib/alarm'
 import type { Session } from '../features/conversations/api'
-import type { AttentionBooking, AttentionLodgingRequest, AttentionOrder } from '../hooks/useAttention'
+import type { AttentionOrder } from '../hooks/useAttention'
 import { toast as sonnerToast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 
@@ -21,13 +20,9 @@ const ALARM_MAX_MS = 180_000     // 3 minutos seguidos máximo por tanda
 const SILENCE_MS = 120_000       // silenciar = callar 2 minutos
 
 export function AlarmBanner({
-  manual, pending, bookings, lodgingPending, lodgingRequests, ordersPending, ordersLoaded,
+  manual, ordersPending, ordersLoaded,
 }: {
   manual: Session[]
-  pending: { id: string }[]
-  bookings: AttentionBooking[]
-  lodgingPending: { id: string }[]
-  lodgingRequests: AttentionLodgingRequest[]
   // Ya llegan filtrados a los estados de `VIGILADOS`: la misma lista suena y
   // avisa. Son DOS —un pedido por aceptar y un comprobante por revisar—, así
   // que aquí no se puede dar por hecho que todos sean lo mismo.
@@ -42,12 +37,9 @@ export function AlarmBanner({
   const startedAt = useRef(0)
   const beepTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const knownIds = useRef<Set<string> | null>(null)
-  const knownLodgingIds = useRef<Set<string> | null>(null)
   const knownOrderIds = useRef<Set<string> | null>(null)
 
-  const shouldRing = manual.length > 0 || pending.length > 0
-    || lodgingPending.length > 0 || ordersPending.length > 0
+  const shouldRing = manual.length > 0 || ordersPending.length > 0
 
   function recheckAfter(milliseconds: number) {
     if (wakeTimer.current) clearTimeout(wakeTimer.current)
@@ -68,34 +60,6 @@ export function AlarmBanner({
     document.addEventListener('visibilitychange', onVisible)
     return () => { window.removeEventListener('pointerdown', unlock); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
-
-  // Detección de reservas NUEVAS → notificación del navegador (primera carga no notifica)
-  useEffect(() => {
-    if (!bookings.length && knownIds.current === null) return
-    const ids = new Set(bookings.map(b => b.id))
-    if (knownIds.current === null) { knownIds.current = ids; return }
-    const nuevos = bookings.filter(b => !knownIds.current!.has(b.id) && b.status !== 'cancelled')
-    knownIds.current = ids
-    for (const b of nuevos) {
-      const txt = `${b.contact_name || b.contact_phone} · ${b.service || 'cita'} · ${b.booking_date} ${(b.booking_time || '').slice(0, 5)}`
-      if ('Notification' in window && Notification.permission === 'granted') new Notification('🔔 Nueva reserva', { body: txt })
-    }
-  }, [bookings])
-
-  useEffect(() => {
-    const ids = new Set(lodgingRequests.map(request => request.id))
-    if (knownLodgingIds.current === null) { knownLodgingIds.current = ids; return }
-    const newRequests = lodgingRequests.filter(request => (
-      !knownLodgingIds.current!.has(request.id) && request.status === 'pending_owner'
-    ))
-    knownLodgingIds.current = ids
-    for (const request of newRequests) {
-      const text = `${request.contact_name || request.contact_phone} · ${request.room_type_name || 'hospedaje'} · ${request.check_in} → ${request.check_out}`
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('🏨 Nueva solicitud de hospedaje', { body: text })
-      }
-    }
-  }, [lodgingRequests])
 
   // Detección de pedidos NUEVOS → notificación del navegador.
   // La base se fija en cuanto la consulta responde, AUNQUE venga vacía: lo
@@ -160,12 +124,7 @@ export function AlarmBanner({
     qc.invalidateQueries({ queryKey: ['sessions-watch'] })
     // Llevar a lo que necesita atención. El pedido sigue «pendiente» en BD
     // hasta que el dueño lo confirme allí: la alarma insiste a propósito.
-    navigate(
-      manual.length ? '/conversations'
-      : ordersPending.length ? '/orders'
-      : lodgingPending.length ? '/lodging'
-      : '/bookings',
-    )
+    navigate(manual.length ? '/conversations' : '/orders')
   }
 
   function silence() {
@@ -187,31 +146,21 @@ export function AlarmBanner({
   const porRevisar = ordersPending.filter(order => order.status === 'pago_en_revision')
   const porAceptar = ordersPending.filter(order => order.status !== 'pago_en_revision')
 
-  const title = [manual.length, pending.length, lodgingPending.length, ordersPending.length].filter(Boolean).length > 1
+  const title = manual.length && ordersPending.length
     ? '¡Tienes pendientes!'
     : manual.length ? '¡Atiende a un cliente!'
     : porRevisar.length && !porAceptar.length ? '¡Comprobante por revisar!'
-    : ordersPending.length ? '¡Nuevo pedido!'
-    : lodgingPending.length ? '¡Nueva solicitud de hospedaje!'
-    : '¡Nueva reserva!'
+    : '¡Nuevo pedido!'
   const parts = []
   if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
   if (porAceptar.length) parts.push(`${porAceptar.length} pedido${porAceptar.length !== 1 ? 's' : ''} por confirmar`)
   if (porRevisar.length) parts.push(`${porRevisar.length} comprobante${porRevisar.length !== 1 ? 's' : ''} por revisar`)
-  if (pending.length) parts.push(`${pending.length} cita${pending.length !== 1 ? 's' : ''} por confirmar/cancelar`)
-  if (lodgingPending.length) parts.push(`${lodgingPending.length} estadía${lodgingPending.length !== 1 ? 's' : ''} por confirmar`)
 
   return (
     <>
       {ringing && (
         <div className="fixed inset-x-3 bottom-4 z-50 mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-3 rounded-2xl bg-red-600 px-4 py-3 text-white shadow-2xl animate-pulse motion-reduce:animate-none sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:flex-nowrap sm:px-5">
-          {manual.length
-            ? <Hand className="w-5 h-5" />
-            : ordersPending.length
-              ? <ShoppingBag className="w-5 h-5" />
-              : lodgingPending.length
-                ? <BedDouble className="w-5 h-5" />
-                : <CalendarPlus className="w-5 h-5" />}
+          {manual.length ? <Hand className="w-5 h-5" /> : <ShoppingBag className="w-5 h-5" />}
           <div>
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>

@@ -6,7 +6,6 @@ import simulatorRouter from '../dist/routes/admin-simulator.routes.js'
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
 const bot = require('../dist/services/bot-entry')
-const actions = require('../dist/services/bot-actions')
 const JWT_SECRET = 'admin-simulator-test-secret'
 let originalJwtSecret
 
@@ -55,7 +54,7 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 function mockBusinessContext() {
-  const business = { id: 'business-a', name: 'Demo', ai_provider: 'groq' }
+  const business = { id: 'business-a', name: 'Demo', ai_provider: 'groq', chat_mode: 'ai' }
   vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
   vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
   vi.spyOn(db, 'getPolicies').mockResolvedValue({ bot_prompt: 'Vende bien' })
@@ -134,81 +133,72 @@ describe('simulador del superadmin', () => {
     })
   })
 
-  it('responde el menú de bienvenida con las capacidades reales y sin llamar a la IA', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', name: 'Pizzería Demo', ai_provider: 'groq',
-      takes_orders: true, takes_bookings: false, lodging_enabled: false,
-    })
-    vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
-    const history = vi.spyOn(db, 'getContactHistory')
-    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
+  it(
+    'en miniapp replica el corte sin IA y no finge una conversación',
+    async () => {
+      const business = { id: 'business-a', name: 'Demo', chat_mode: 'miniapp' }
+      vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
+      const getProducts = vi.spyOn(db, 'getProducts')
+      const getPolicies = vi.spyOn(db, 'getPolicies')
+      const getHistory = vi.spyOn(db, 'getContactHistory')
+      const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+      const buildPrompt = vi.spyOn(bot, 'buildPrompt')
+      const callAI = vi.spyOn(bot, 'callAI')
 
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'Hola, buenas tardes' },
-    })
+      const response = await dispatch('post', '/api/admin/simulate', {
+        auth: authorization(),
+        body: { business_id: 'business-a', message: 'Quiero pedir' },
+      })
 
-    expect(callAI).not.toHaveBeenCalled()
-    expect(history).not.toHaveBeenCalled()
-    expect(response.status).toBe(200)
-    expect(response.body.reply).toContain('Pizzería Demo')
-    expect(response.body.options).toEqual([
-      '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
-    ])
-    expect(response.body.actionNote).toContain('sin llamada a la IA')
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      1, 'business-a', 'sim_admin', 'user', 'Hola, buenas tardes',
-    )
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      2, 'business-a', 'sim_admin', 'assistant', expect.stringContaining('🛒 Hacer un pedido'),
-    )
-  })
+      expect(getProducts).not.toHaveBeenCalled()
+      expect(getPolicies).not.toHaveBeenCalled()
+      expect(getHistory).not.toHaveBeenCalled()
+      expect(buildPrompt).not.toHaveBeenCalled()
+      expect(callAI).not.toHaveBeenCalled()
+      expect(saveMessage).toHaveBeenNthCalledWith(
+        1, 'business-a', 'sim_admin', 'user', 'Quiero pedir',
+      )
+      expect(saveMessage).toHaveBeenNthCalledWith(
+        2,
+        'business-a',
+        'sim_admin',
+        'assistant',
+        expect.stringContaining('enlace personal'),
+      )
+      expect(response.status).toBe(200)
+      expect(response.body.reply).toContain('enlace personal')
+      expect(response.body.actionNote).toContain('no se llamó a la IA')
+      expect(response.body.options).toBeNull()
+    },
+  )
 
-  it('en modo menú el código conduce todo: bienvenida con opciones y cero llamadas a la IA', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-menu', name: 'Pizzería Menú', ai_provider: 'groq',
-      takes_orders: true, takes_bookings: false, lodging_enabled: false,
-    })
+  it('en menú conduce la máquina de estados y tampoco llama a la IA', async () => {
+    const business = {
+      id: 'business-a', name: 'Demo', chat_mode: 'menu', takes_orders: true,
+    }
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
     vi.spyOn(db, 'getProducts').mockResolvedValue([
-      { id: 'p1', name: 'Pizza Hawaiana', price: 8.5, stock: 'disponible', active: true },
+      { id: 'p1', name: 'Pizza Familiar', price: 10.5, tags: ['pizzas'], stock: 'disponible', active: true },
     ])
-    vi.spyOn(db, 'getPolicies').mockResolvedValue({
-      bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
-    })
     vi.spyOn(db, 'getMenuModifiers').mockResolvedValue([])
-    const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    const history = vi.spyOn(db, 'getContactHistory')
     vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('no debería llamarse')
+    vi.spyOn(db, 'getPolicies').mockResolvedValue({})
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+    const buildPrompt = vi.spyOn(bot, 'buildPrompt')
+    const callAI = vi.spyOn(bot, 'callAI')
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-menu', message: 'quiero cualquier cosa', mode: 'menu' },
+      body: { business_id: 'business-a', message: 'hola' },
     })
 
+    // Lo que define el modo: el código conduce y el modelo no participa.
+    expect(buildPrompt).not.toHaveBeenCalled()
     expect(callAI).not.toHaveBeenCalled()
-    expect(history).not.toHaveBeenCalled()
     expect(response.status).toBe(200)
-    expect(response.body.reply).toContain('Pizzería Menú')
-    expect(response.body.options).toContain('🛒 Hacer un pedido')
-    expect(response.body.options).toContain('💬 Hablar con el equipo')
-    expect(saveMessage).toHaveBeenCalledTimes(2)
-  })
-
-  it('ofrece cotizar hospedaje en el menú cuando el negocio es de alojamiento', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', name: 'Hostal Demo', ai_provider: 'groq',
-      takes_orders: false, takes_bookings: false, lodging_enabled: true,
-    })
-    vi.spyOn(db, 'getProducts').mockResolvedValue([])
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(), body: { business_id: 'business-a', message: 'menú' },
-    })
-
-    expect(response.body.options).toEqual(['🛏️ Cotizar hospedaje', '💬 Otra consulta'])
+    // La bienvenida llega con las opciones armadas desde el catálogo real.
+    expect(Array.isArray(response.body.options)).toBe(true)
+    expect(response.body.options.length).toBeGreaterThan(0)
   })
 
   it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
@@ -235,92 +225,22 @@ describe('simulador del superadmin', () => {
     })
   })
 
-  it('ejecuta ##STAY_QUOTE## con el cálculo oficial y nunca filtra la etiqueta', async () => {
+  it('descarta totales inventados por la IA con formato oficial y falla cerrado', async () => {
     mockBusinessContext()
     vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
     vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
     vi.spyOn(bot, 'callAI').mockResolvedValue(
-      'Perfecto, consulto 🏔️ ##STAY_QUOTE:2026-07-20|2026-07-21|1|2|0##',
+      '🧾 *Resumen de su pedido*\nPizza Familiar x1\n💰 *Total oficial: $16.83*',
     )
-    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply').mockResolvedValue({
-      outcome: 'quoted',
-      message: '🏨 *Opciones de hospedaje* — total oficial $45.00',
-      mediaOptions: [{ mediaUrls: ['https://cdn.example.com/habitacion.jpg'] }],
-    })
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: 'quiero una habitación para mañana' },
+      body: { business_id: 'business-a', message: 'quiero una pizza familiar' },
     })
 
-    // El historial del huésped viaja completo: las fechas relativas se
-    // resuelven con el mensaje más reciente que hable de fechas
-    expect(compute).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'business-a' }),
-      'sim_admin',
-      expect.objectContaining({ checkIn: '2026-07-20', checkOut: '2026-07-21' }),
-      ['Antes', 'quiero una habitación para mañana'],
-    )
-    expect(response.body.reply).toBe('🏨 *Opciones de hospedaje* — total oficial $45.00')
-    expect(response.body.reply).not.toContain('##')
-    expect(response.body.image).toBe('https://cdn.example.com/habitacion.jpg')
-    expect(response.body.actionNote).toContain('Respuesta oficial calculada por el servidor')
-  })
-
-  it('descarta cotizaciones inventadas por la IA con formato oficial y falla cerrado', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue(
-      '🏨 *Opciones de hospedaje*\n*1. Habitación Doble*\nAlojamiento: $120.00\n💰 *Total oficial por habitación: $120.00*',
-    )
-    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'del lunes al miércoles, 2 habitaciones, 2 adultos y 3 niños' },
-    })
-
-    expect(compute).not.toHaveBeenCalled()
     expect(response.body.reply).not.toContain('Total oficial')
     expect(response.body.reply).toContain('un asesor de nuestro equipo')
     expect(response.body.actionNote).toContain('cifras inventadas')
-  })
-
-  it('limpia ##STAY_REQUEST## y explica la acción sin crear retenciones reales', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue(
-      'Registro su solicitud 🙌 ##STAY_REQUEST:Matrimonial|Yover##',
-    )
-    const compute = vi.spyOn(actions, 'computeLodgingQuoteReply')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'quiero la matrimonial, soy Yover' },
-    })
-
-    expect(compute).not.toHaveBeenCalled()
-    expect(response.body.reply).toBe('Registro su solicitud 🙌')
-    expect(response.body.reply).not.toContain('##')
-    expect(response.body.actionNote).toContain('Solicitudes')
-  })
-
-  it('pide el nombre cuando la IA lo inventa en la solicitud de hospedaje', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue('##STAY_REQUEST:Suite Familiar|Familia García##')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'si por favor' },
-    })
-
-    expect(response.body.reply).toContain('solo me falta el nombre')
-    expect(response.body.reply).not.toContain('##')
-    expect(response.body.actionNote).toContain('nunca escribió')
   })
 
   it('avisa como mensaje aparte cuando el producto pedido no tiene media', async () => {

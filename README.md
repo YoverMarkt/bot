@@ -7,8 +7,8 @@ Plataforma **multi-empresa (SaaS)** para crear y gestionar bots de atención al 
 ## ✨ ¿Qué hace?
 
 - **El admin** (tú) crea empresas/clientes, cada uno con su número de WhatsApp y su bot
-- Al crear una empresa, el tipo recomienda dos capacidades independientes: agenda pendiente de confirmación y pedidos con total oficial. El admin puede ajustar ambas sin que el tipo las imponga
-- **El bot** atiende clientes 24/7 con IA: responde dudas, vende, agenda citas, reconoce fotos y entiende audios
+- Al crear una empresa, el tipo recomienda si el bot cierra pedidos con total oficial. El admin puede ajustarlo sin que el tipo lo imponga
+- **El bot** atiende clientes 24/7 con IA: responde dudas, vende, reconoce fotos y entiende audios
 - **El dueño del negocio** configura desde su panel: la personalidad del bot (prompt), su catálogo, horarios y ve sus conversaciones
 - **Traspaso a humano** automático cuando hay groserías, temas fuera del negocio o se concreta una venta
 - **Facturación** automática por plan y monto de cada cliente
@@ -53,8 +53,6 @@ Plataforma **multi-empresa (SaaS)** para crear y gestionar bots de atención al 
 | 📸 Visión | Reconoce productos desde una foto y los busca en el catálogo |
 | 🎙️ Audio | Transcribe notas de voz y las procesa como texto |
 | 🔎 RAG vectorial | Búsqueda inteligente en catálogos de miles de productos |
-| 📅 Citas | Agenda de capacidad única con solicitudes pendientes de confirmación |
-| 🏨 Hospedaje | Habitaciones, noches, cupos, tarifas, fotos/videos y hold transaccional; el equipo autorizado confirma |
 | 💵 Pedidos y cobro manual | Totales oficiales; el dueño confirma y coordina el pago directamente con el cliente |
 | ℹ️ Modo informativo | Responde precios, stock, catálogo y multimedia; deriva la intención de comprar sin crear pedidos ni pagos |
 | 🙋 Traspaso a humano | Modo manual + alarma por groserías, off-topic o ventas |
@@ -107,7 +105,6 @@ existente es:
 
 ```text
 server/migration-atomicidad-reservas.sql
-server/migration-hospedaje.sql
 server/migration-preparacion-produccion.sql
 server/migration-modo-menu.sql
 server/migration-modificadores-menu.sql
@@ -119,7 +116,7 @@ server/migration-agrupado-webhooks.sql
 ```
 
 Ejecuta **solo las pendientes** y en ese orden. `migration-modo-menu.sql` agrega
-el modo por negocio y los índices para repetir pedidos;
+`chat_mode`, el modo `menu` y los índices para repetir pedidos;
 `migration-modificadores-menu.sql` crea las opciones/sabores con RLS cerrada.
 `migration-eliminar-kapso-retell.sql` es destructiva: después de respaldar
 cualquier dato que quieras conservar fuera del sistema, elimina columnas,
@@ -274,7 +271,7 @@ Cobras una **mensualidad por empresa** según su volumen. Con IA gratis (Groq) y
 ## 📞 Roadmap
 
 - ✅ WhatsApp + Telegram con texto, voz e imágenes
-- ✅ Reservas, facturación, multi-IA (Groq/Gemini/OpenAI/Claude)
+- ✅ Facturación, multi-IA (Groq/Gemini/OpenAI/Claude)
 - 🔜 Integración financiera futura, solo cuando el producto base esté estable
 - 🔜 RAG con embeddings gratis (Gemini/Groq)
 

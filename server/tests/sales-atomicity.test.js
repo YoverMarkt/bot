@@ -22,7 +22,7 @@ const funcion = nombre => schema
   .split('$$;')[0]
 
 describe('atomicidad de las ventas que nacen solas', () => {
-  for (const nombre of ['crear_venta_desde_pedido', 'crear_venta_desde_cita']) {
+  for (const nombre of ['crear_venta_desde_pedido']) {
     describe(nombre, () => {
       it('mete cabecera y detalles en la misma transacción', () => {
         const cuerpo = funcion(nombre)
@@ -57,9 +57,8 @@ describe('atomicidad de las ventas que nacen solas', () => {
     })
   }
 
-  it('un pedido y una cita tienen su propio índice único de venta', () => {
+  it('el pedido tiene su propio índice único de venta', () => {
     expect(schema).toContain('uq_sales_order')
-    expect(schema).toContain('uq_sales_booking')
   })
 
   // Lo retirado no puede volver por la puerta de atrás: si alguien reintroduce

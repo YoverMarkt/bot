@@ -9,8 +9,10 @@ import { Input } from '@botpanel/ui/components/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 
-// Simulador de bot — prueba el bot de cualquier negocio SIN WhatsApp real.
-// Usa el mismo motor que el bot real (POST /api/admin/simulate).
+// Simulador de bot — prueba la respuesta configurada sin usar un canal real.
+// Despacha por el modo REAL del negocio: en menú corre la máquina de estados,
+// en miniapp replica el corte sin IA y explica que el enlace personal solo se
+// crea en WhatsApp/Telegram, y en modo IA usa el mismo prompt y guardas.
 
 // El servidor manda las opciones como texto simple o como {título, descripción},
 // igual que una fila de lista de WhatsApp.
@@ -28,24 +30,14 @@ export default function Simulator() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
-  // Arranca en el modo REAL del negocio para que probar sea igual a lo que
-  // recibe el cliente. El interruptor queda para comparar a propósito.
-  const [mode, setMode] = useState<'menu' | 'ai'>('ai')
   const endRef = useRef<HTMLDivElement>(null)
 
   const biz = clients.find(c => c.id === bizId)
   const scroll = () => setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
 
-  // Modo configurado del negocio (lo que de verdad usa en WhatsApp)
-  const realMode: 'menu' | 'ai' = biz?.chat_mode === 'menu' ? 'menu' : 'ai'
-  const testingOtherMode = Boolean(biz) && mode !== realMode
-
   function selectBiz(id: string) {
     setBizId(id)
     setMsgs([])
-    // Al elegir negocio se adopta SU modo real: lo que pruebas es lo que recibe
-    const chosen = clients.find(c => c.id === id)
-    setMode(chosen?.chat_mode === 'menu' ? 'menu' : 'ai')
   }
 
   // fromOption: texto de un botón del menú guiado; tocar uno equivale a escribirlo
@@ -59,7 +51,7 @@ export default function Simulator() {
     try {
       const d = await api<{ reply?: string; image?: string | null; video?: string | null; media?: { url: string; isVideo: boolean }[] | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
         method: 'POST',
-        body: JSON.stringify({ business_id: bizId, message: t, mode }),
+        body: JSON.stringify({ business_id: bizId, message: t }),
       })
       // Paso "Ver fotos y videos": los archivos llegan como mensajes separados
       // ANTES del texto, igual que WhatsApp los envía uno por uno.
@@ -99,19 +91,6 @@ export default function Simulator() {
           <p className="text-sm text-muted-foreground">Prueba el bot de cualquier negocio sin WhatsApp real</p>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
-          {/* Modo de conversación: menú guiado (sin IA) o IA conversacional */}
-          {/* El modo configurado del negocio lleva un punto: si pruebas el otro,
-              se avisa para no confundir la prueba con lo que recibe el cliente */}
-          <div className="flex overflow-hidden rounded-lg border border-border">
-            {(['menu', 'ai'] as const).map(option => (
-              <button key={option} type="button" onClick={() => setMode(option)}
-                title={realMode === option ? 'Modo configurado de este negocio' : 'Solo para comparar: no es el modo real'}
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${mode === option ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}>
-                {option === 'menu' ? 'Modo menú' : 'Modo IA'}
-                {biz && realMode === option && <span className="ml-1.5">•</span>}
-              </button>
-            ))}
-          </div>
           <Select value={bizId} onValueChange={selectBiz}>
             <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="w-full min-w-0 sm:w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
             <SelectContent>
@@ -141,11 +120,6 @@ export default function Simulator() {
             <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>
             <div className="text-xs text-muted-foreground">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
           </div>
-          {testingOtherMode && (
-            <div className="w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-600 sm:ml-auto sm:w-auto dark:text-amber-400">
-              ⚠️ Estás probando <strong>{mode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>, pero en WhatsApp este negocio usa <strong>{realMode === 'menu' ? 'Modo menú' : 'Modo IA'}</strong>
-            </div>
-          )}
         </div>
 
         {/* Mensajes */}
@@ -178,7 +152,6 @@ export default function Simulator() {
               {m.video && (
                 <video src={m.video} controls className="mt-2 max-w-56 rounded-xl border border-input" />
               )}
-              {/* Opciones del menú guiado (estilo respuestas rápidas de WhatsApp) */}
               {!!m.options?.length && (
                 <div className="mt-2 flex max-w-[75%] flex-col items-start gap-1.5">
                   {m.options.map(o => (

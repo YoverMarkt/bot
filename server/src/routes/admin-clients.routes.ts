@@ -184,14 +184,14 @@ const ALLOWED_BUSINESS_FIELDS = [
   'owner_phone', 'ycloud_api_key', 'ycloud_number',
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
-  'ai_provider', 'takes_bookings', 'takes_orders', 'lodging_enabled',
+  'ai_provider', 'takes_orders',
   'chat_mode', 'storefront_enabled',
 ] as const
 
 // Los tres modos de atención. Cualquier otro valor lo rechaza la base.
 //   ai      → conversa con IA, se pide por chat, sin enlace
-//   menu    → botones de código, se pide por el menú, sin enlace
-//   miniapp → la IA resuelve dudas y el enlace es donde se pide
+//   menu    → botones armados por código con los datos reales, sin IA
+//   miniapp → responde con el enlace y se pide en la app, sin IA
 const CHAT_MODES = ['menu', 'ai', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
@@ -270,6 +270,17 @@ function invalidChatMode(body: Record<string, unknown>): boolean {
   return !CHAT_MODES.some(mode => mode === value)
 }
 
+function miniappConfigurationError(business: Record<string, unknown>): string | null {
+  if (business.chat_mode !== 'miniapp') return null
+  if (business.takes_orders !== true) {
+    return 'El modo miniapp requiere que el negocio cree pedidos'
+  }
+  if (business.storefront_enabled !== true) {
+    return 'El modo miniapp requiere que la tienda esté encendida'
+  }
+  return null
+}
+
 function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
   return {
     monthly_contact_limit: plan.monthlyContactLimit,
@@ -279,11 +290,6 @@ function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
 
 function requestedPlan(body: Record<string, unknown>, fallback: PlanId): PlanDefinition | null {
   return getPlanDefinition('plan' in body ? body.plan : fallback)
-}
-
-function isActiveLodgingConstraint(error: unknown): boolean {
-  return error instanceof Error
-    && error.message.includes('No se puede deshabilitar hospedaje')
 }
 
 // Dos negocios NUNCA pueden compartir el mismo identificador de canal: el bot
@@ -402,7 +408,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
   }
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
@@ -441,9 +447,7 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       meta_token: body.meta_token,
       meta_phone_id: body.meta_phone_id,
       telegram_bot_token: body.telegram_bot_token || null,
-      takes_bookings: body.takes_bookings === true,
       takes_orders: body.takes_orders !== false,
-      lodging_enabled: body.lodging_enabled === true,
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.
       storefront_enabled: body.storefront_enabled === true,
@@ -461,6 +465,8 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       monthly_outbound_message_limit:
         usageLimits.monthly_outbound_message_limit,
     }
+    const miniappError = miniappConfigurationError(businessPayload)
+    if (miniappError) return res.status(400).json({ error: miniappError })
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
     const monthlyRate = planDefinition.monthlyRate
     const result = await db.createBusinessOnboarding(
@@ -494,7 +500,7 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
   }
   if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu o ai)' })
+    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
   }
   if ('plan' in body && !normalizePlanId(body.plan)) {
     return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
@@ -547,6 +553,8 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     }
     const channelError = channelConfigurationError(effectiveBusiness)
     if (channelError) return res.status(400).json({ error: channelError })
+    const miniappError = miniappConfigurationError(effectiveBusiness)
+    if (miniappError) return res.status(400).json({ error: miniappError })
 
     if (Object.keys(businessData).length) {
       const result = await db.updateBusiness(req.params.id, businessData)
@@ -577,11 +585,6 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     }
     res.json({ ok: true })
   } catch (error) {
-    if (isActiveLodgingConstraint(error)) {
-      return res.status(409).json({
-        error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
-      })
-    }
     const duplicated = duplicateChannelMessage(error)
     if (duplicated) {
       console.error('❌ actualizar el cliente:', errorMessage(error))

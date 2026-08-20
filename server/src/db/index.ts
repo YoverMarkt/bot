@@ -6,13 +6,12 @@ import products = require('./repositories/products')
 import history = require('./repositories/conversation-history')
 import sessions = require('./repositories/sessions')
 import tags = require('./repositories/conversation-tags')
-import bookings = require('./repositories/bookings')
+import schedule = require('./repositories/schedule')
 import sales = require('./repositories/sales')
 import reporting = require('./repositories/reporting')
 import orders = require('./repositories/orders')
 import stats = require('./repositories/stats')
 import webhookEvents = require('./repositories/webhook-events')
-import lodging = require('./repositories/lodging')
 import menuModifiers = require('./repositories/menu-modifiers')
 import usage = require('./repositories/usage')
 import platformErrors = require('./repositories/platform-errors')
@@ -35,13 +34,12 @@ const database = {
   ...history,
   ...sessions,
   ...tags,
-  ...bookings,
+  ...schedule,
   ...sales,
   ...reporting,
   ...orders,
   ...stats,
   ...webhookEvents,
-  ...lodging,
   ...menuModifiers,
   ...usage,
   ...platformErrors,

@@ -81,8 +81,10 @@ test('un negocio normal conserva horarios y no puede abrir reservas', async ({ p
 
   await expect(page.getByRole('link', { name: 'Horarios' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Reservas' })).toHaveCount(0)
+  // La agenda salió el 2026-08-16: su ruta ya no existe y cae en el inicio.
   await page.goto(`${clientUrl}#/bookings`)
-  await expect(page).toHaveURL(/#\/schedule$/)
+  await expect(page).toHaveURL(/#\/$/)
+  await page.goto(`${clientUrl}#/schedule`)
   await expect(page.getByRole('heading', { name: 'Horarios de atención' })).toBeVisible()
   await expect(page.getByText('Duración de cada cita')).toHaveCount(0)
 })
@@ -91,7 +93,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería', takes_bookings: true,
+      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
     }))
     localStorage.setItem('client_user', JSON.stringify({
       name: 'Dueño E2E', role: 'owner', permissions: [],
@@ -103,7 +105,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
-      takes_bookings: true, takes_orders: false,
+      takes_orders: false,
     }),
   }))
   await page.route('**/api/client/schedule', route => route.fulfill({
@@ -129,7 +131,7 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica', takes_bookings: false,
+      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
     }))
     localStorage.setItem('client_user', JSON.stringify({
       name: 'Dueño E2E', role: 'owner', permissions: [],
@@ -141,7 +143,7 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
-      takes_bookings: false, takes_orders: false,
+      takes_orders: false,
     }),
   }))
   await page.goto(clientUrl)
@@ -149,115 +151,6 @@ test('un negocio de servicios conserva su nombre aunque no habilite agenda', asy
   await expect(page.getByRole('link', { name: /Servicios/ })).toBeVisible()
   await expect(page.getByRole('link', { name: /Catálogo/ })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Reservas' })).toHaveCount(0)
-})
-
-test('hospedaje muestra configuración segura y conserva controles accesibles', async ({ page }) => {
-  let settingsPayload: Record<string, unknown> | null = null
-  let availabilityPayload: Record<string, unknown> | null = null
-  let roomPayload: Record<string, unknown> | null = null
-  const roomMediaUrls = [
-    'https://cdn.example.com/cabana.jpg',
-    'https://res.cloudinary.com/demo/video/upload/cabana-recorrido.mp4',
-    'https://cdn.example.com/cabana-vista.webm',
-  ]
-  await page.addInitScript(() => {
-    localStorage.setItem('client_token', 'e2e-client-token')
-    localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Complejo E2E', type: 'hotel',
-      takes_bookings: false, lodging_enabled: true,
-    }))
-    localStorage.setItem('client_user', JSON.stringify({
-      name: 'Dueño E2E', role: 'owner', permissions: [],
-    }))
-  })
-  await mockClientApi(page)
-  await page.route('**/api/client/business', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      id: 'biz-e2e', name: 'Complejo E2E', type: 'hotel',
-      takes_bookings: false, takes_orders: false, lodging_enabled: true,
-    }),
-  }))
-  await page.route('**/api/client/lodging/**', route => {
-    const path = new URL(route.request().url()).pathname
-    const method = route.request().method()
-    if (path.endsWith('/settings') && method === 'PUT') {
-      settingsPayload = route.request().postDataJSON() as Record<string, unknown>
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(settingsPayload) })
-    }
-    if (path.endsWith('/availability') && method === 'POST') {
-      availabilityPayload = route.request().postDataJSON() as Record<string, unknown>
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          nights: 2,
-          options: [{
-            roomTypeId: 'room-e2e', name: 'Cabaña familiar',
-            availableUnits: 3, unitsRequired: 2, maxGuests: 4,
-            pricingModel: 'per_unit', currency: 'USD',
-            subtotal: 320, tax: 0, fees: 0, total: 320,
-          }],
-        }),
-      })
-    }
-    if (path.endsWith('/room-types/room-e2e') && method === 'PUT') {
-      roomPayload = route.request().postDataJSON() as Record<string, unknown>
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ id: 'room-e2e', ...roomPayload }),
-      })
-    }
-    const data = path.endsWith('/settings') ? {
-      currency: 'USD', check_in_time: '15:00', check_out_time: '11:00',
-      quote_expiry_minutes: 15, hold_minutes: 45, tax_rate: 0,
-      service_fee: 0, prices_include_tax: true,
-    } : path.endsWith('/room-types') ? [{
-      id: 'room-e2e', name: 'Cabaña familiar', description: 'Frente al lago',
-      amenities: ['Wi-Fi'], media_urls: roomMediaUrls, total_units: 3, max_guests: 4,
-      pricing_model: 'per_unit', base_occupancy: 4, base_rate: 80,
-      weekend_rate: 95, extra_adult_rate: 0, child_rate: 0, active: true,
-    }] : []
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
-  })
-  await page.goto(`${clientUrl}#/lodging`)
-
-  await expect(page.getByRole('heading', { name: 'Hospedaje' })).toBeVisible()
-  await expect(page.getByText('El bot cotiza; el equipo confirma')).toBeVisible()
-  await page.getByRole('tab', { name: 'Habitaciones' }).click()
-  await expect(page.getByText('Cabaña familiar')).toBeVisible()
-  await page.getByRole('button', { name: 'Editar Cabaña familiar' }).click()
-  await expect(page.getByText('2 videos conservados')).toBeVisible()
-  await page.getByRole('button', { name: 'Guardar habitación' }).click()
-  await expect.poll(() => roomPayload).not.toBeNull()
-  expect(roomPayload).toMatchObject({ media_urls: roomMediaUrls })
-  await page.getByRole('tab', { name: 'Configuración' }).click()
-  await expect(page.getByLabel('Retener por (minutos)')).toHaveValue('45')
-  await page.getByLabel('Impuesto (%)').fill('12')
-  await page.getByRole('button', { name: 'Guardar reglas' }).click()
-  await expect.poll(() => settingsPayload).not.toBeNull()
-  expect(settingsPayload).toMatchObject({ currency: 'USD', tax_rate: 0.12 })
-
-  await page.getByRole('tab', { name: 'Disponibilidad' }).click()
-  await page.getByLabel('Entrada', { exact: true }).fill('2026-08-10')
-  await page.getByLabel('Salida', { exact: true }).fill('2026-08-12')
-  await page.getByRole('spinbutton', { name: 'Habitaciones', exact: true }).fill('2')
-  await page.getByRole('spinbutton', { name: 'Adultos', exact: true }).fill('2')
-  await page.getByRole('spinbutton', { name: 'Niños', exact: true }).fill('1')
-  await page.getByRole('button', { name: 'Consultar disponibilidad' }).click()
-  await expect.poll(() => availabilityPayload).not.toBeNull()
-  expect(availabilityPayload).toEqual({
-    check_in: '2026-08-10', check_out: '2026-08-12',
-    rooms: 2, adults: 2, children: 1,
-  })
-  await expect(page.getByText('necesita 2')).toBeVisible()
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  const mainOverflow = await page.locator('main').evaluate(element => element.scrollWidth - element.clientWidth)
-  expect(mainOverflow).toBeLessThanOrEqual(1)
-  await expectConnectedLabels(page.locator('main'))
 })
 
 test('el sidebar cliente queda fijo y solo se desplaza el contenido', async ({ page }) => {
@@ -357,7 +250,7 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
-      takes_bookings: false, takes_orders: true,
+      takes_orders: true,
     }),
   }))
   await mockOrdersFilteredByStatus(page, () => orders)
@@ -400,7 +293,7 @@ test('la alarma suena cuando llega el comprobante de una transferencia', async (
     contentType: 'application/json',
     body: JSON.stringify({
       id: 'biz-e2e', name: 'Pizzería E2E', type: 'pizzería',
-      takes_bookings: false, takes_orders: true,
+      takes_orders: true,
     }),
   }))
   await page.route('**/api/client/orders**', route => {
@@ -588,45 +481,45 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
 
 test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {
   await mockClientApi(page)
-  const bizFor = (hostal: boolean) => ({
-    id: hostal ? 'biz-hostal' : 'biz-tienda',
-    name: hostal ? 'Hostal E2E' : 'Tienda E2E',
-    type: hostal ? 'hostal' : 'tienda',
-    takes_bookings: false,
-    takes_orders: false,
-    lodging_enabled: hostal,
+  // Pedidos es lo que ahora distingue a un negocio de otro: la agenda, que era
+  // el módulo que separaba a la barbería, se retiró el 2026-08-16.
+  const bizFor = (vende: boolean) => ({
+    id: vende ? 'biz-tienda' : 'biz-informa',
+    name: vende ? 'Tienda E2E' : 'Consultorio E2E',
+    type: vende ? 'tienda' : 'consultorio',
+    takes_orders: vende,
   })
   await page.route('**/api/client/login', route => {
     const { email } = route.request().postDataJSON() as { email: string }
-    const hostal = email.startsWith('hostal')
+    const vende = email.startsWith('tienda')
     return route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
-        token: hostal ? 'token-hostal' : 'token-tienda',
-        business: bizFor(hostal),
+        token: vende ? 'token-tienda' : 'token-informa',
+        business: bizFor(vende),
         user: { name: 'Dueño E2E', role: 'owner', permissions: [] },
       }),
     })
   })
   await page.route('**/api/client/business', route => {
-    const hostal = (route.request().headers().authorization || '').includes('token-hostal')
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(bizFor(hostal)) })
+    const vende = (route.request().headers().authorization || '').includes('token-tienda')
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(bizFor(vende)) })
   })
 
   await page.goto(`${clientUrl}#/login`)
-  await page.getByLabel('Correo').fill('hostal@e2e.test')
-  await page.getByLabel('Contraseña').fill('segura-e2e')
-  await page.getByRole('button', { name: 'Entrar' }).click()
-  await expect(page.getByRole('link', { name: 'Hospedaje' })).toBeVisible()
-
-  // Cambio de negocio SIN recargar: el panel debe entrar limpio
-  await page.getByRole('button', { name: 'Cerrar sesión' }).click()
   await page.getByLabel('Correo').fill('tienda@e2e.test')
   await page.getByLabel('Contraseña').fill('segura-e2e')
   await page.getByRole('button', { name: 'Entrar' }).click()
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible()
 
-  await expect(page.getByText('Tienda E2E').first()).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Hospedaje' })).toHaveCount(0)
+  // Cambio de negocio SIN recargar: el panel debe entrar limpio
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click()
+  await page.getByLabel('Correo').fill('informa@e2e.test')
+  await page.getByLabel('Contraseña').fill('segura-e2e')
+  await page.getByRole('button', { name: 'Entrar' }).click()
+
+  await expect(page.getByText('Consultorio E2E').first()).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Pedidos' })).toHaveCount(0)
 })
 
 test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)', async ({ page }) => {

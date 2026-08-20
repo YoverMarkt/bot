@@ -56,13 +56,13 @@ describe('subida de media', () => {
     })
   })
 
-  it('permite subir media a catálogo u hospedaje sin aceptar otros permisos', async () => {
+  it('permite subir media con permiso de catálogo sin aceptar otros', async () => {
     const route = mediaRouter.stack.find(layer => layer.route?.path === '/api/client/media')
     const permission = route.route.stack[1].handle
     const next = vi.fn()
     const response = { status: vi.fn().mockReturnThis(), json: vi.fn() }
 
-    await permission({ user: { urole: 'employee', perms: ['hospedaje'] } }, response, next)
+    await permission({ user: { urole: 'employee', perms: ['catalogo'] } }, response, next)
     expect(next).toHaveBeenCalledTimes(1)
 
     next.mockClear()

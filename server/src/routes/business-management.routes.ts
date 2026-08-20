@@ -6,10 +6,9 @@ import type { BusinessRecord , WriteResult } from '../db/types'
 type Permission =
   | 'catalogo'
   | 'conversaciones'
-  | 'citas'
+  | 'horarios'
   | 'reportes'
   | 'ventas'
-  | 'hospedaje'
 type DataRecord = Record<string, unknown>
 
 interface UserPayload {
@@ -53,10 +52,9 @@ const MIN_PASSWORD_LENGTH = 12
 const validPermissions: Permission[] = [
   'catalogo',
   'conversaciones',
-  'citas',
+  'horarios',
   'reportes',
   'ventas',
-  'hospedaje',
 ]
 
 function hasValue(value: unknown): boolean {

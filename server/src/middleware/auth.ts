@@ -11,8 +11,6 @@ interface ActiveClientUser {
 interface ActiveBusiness {
   active?: boolean | null
   suspended?: boolean | null
-  takes_bookings?: boolean | null
-  lodging_enabled?: boolean | null
 }
 
 interface SessionDatabase {
@@ -125,8 +123,6 @@ export function createActiveClientGuard(
         perms: Array.isArray(user.permissions)
           ? user.permissions.filter((value): value is string => typeof value === 'string')
           : [],
-        takesBookings: business.takes_bookings === true,
-        lodgingEnabled: business.lodging_enabled === true,
       }
       cache.set(cacheKey, { user: current, expiresAt: now() + cacheTtlMs })
       req.user = current

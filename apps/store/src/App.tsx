@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
@@ -8,15 +8,11 @@ import Confirmar from './screens/Confirmar'
 import Gate from './screens/Gate'
 import DesktopGate from './screens/DesktopGate'
 import FoodStore from './screens/FoodStore'
-const StayStore = lazy(() => import('./screens/StayStore'))
-import Picker from './screens/Picker'
 
 // Armazón de la tienda.
 //
 // La decisión que se toma aquí es la importante: QUÉ flujo se pinta. No se
-// mira el tipo de negocio, se miran sus capacidades. Un carrito con "+/−
-// habitaciones" no es una estadía, y una estadía por fechas no sirve para
-// vender pizzas. Un hostal con restaurante tiene las dos y elige el cliente.
+// mira el tipo de negocio, se miran sus capacidades.
 
 type Estado =
   | { fase: 'cargando' }
@@ -28,7 +24,6 @@ type Estado =
 export default function App() {
   const slug = readSlug()
   const [estado, setEstado] = useState<Estado>({ fase: 'cargando' })
-  const [seccion, setSeccion] = useState<'pedido' | 'estadia' | null>(null)
   /**
    * Falta confirmar el número de WhatsApp. No es un error: es la puerta.
    *
@@ -116,19 +111,11 @@ export default function App() {
   }
 
   const { business, status } = estado
-  const { orders, lodging } = business.capabilities
-
-  // Las dos cosas: el cliente decide si viene a comer o a dormir.
-  if (orders && lodging && !seccion) {
-    return <Picker business={business} onElegir={setSeccion} />
-  }
-
-  const volver = orders && lodging ? () => setSeccion(null) : undefined
 
   // ⚠️ La confirmación va ENCIMA, no en lugar de. Sustituyendo la tienda se
   // perdía el carrito entero: el cliente lo llenaba, tocaba confirmar,
   // escribía su número y volvía a una tienda vacía. Lo mismo valía para el
-  // checkout a medio llenar y para una cotización de hospedaje.
+  // checkout a medio llenar.
   const puertaDelTelefono = confirmando && (
     <div className="fixed inset-0 z-[60] overflow-y-auto superficie">
       <Confirmar
@@ -146,28 +133,12 @@ export default function App() {
   )
 
 
-  if (seccion === 'estadia' || (lodging && !orders)) {
-    return (
-      <>
-        <Suspense fallback={null}><StayStore
-          slug={slug}
-          business={business}
-          status={status}
-          onVolver={volver}
-          onFalloEnlace={alFallarEnlace}
-        /></Suspense>
-        {puertaDelTelefono}
-      </>
-    )
-  }
-
   return (
     <>
       <FoodStore
         slug={slug}
         business={business}
         status={status}
-        onVolver={volver}
         onFalloEnlace={alFallarEnlace}
       />
       {puertaDelTelefono}

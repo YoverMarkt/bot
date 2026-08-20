@@ -1,8 +1,11 @@
+import { atiendeSinIA } from '../services/chat-mode'
+
 interface TelegramBusiness {
   id?: string
   slug?: string | null
   name?: string | null
   active?: boolean | null
+  chat_mode?: string | null
 }
 
 interface TelegramDatabase {
@@ -235,6 +238,15 @@ function createTelegramIntegration(dependencies: TelegramDependencies) {
 
       const from = `tg_${chatId}`
       try {
+        // Resolver el modo ANTES de pedir el archivo: `menu` puede seguir en
+        // producción durante el deploy code-first y conserva su promesa sin IA.
+        const business = await database.getBusinessBySlug(slug)
+        if (atiendeSinIA(business?.chat_mode)) {
+          logger.log('🛍️  [TG] audio en flujo mini app: no se descarga ni transcribe')
+          return handleMessage(from, '[nota de voz]', null, {
+            channel: 'telegram', ctx: context, slug,
+          })
+        }
         const fileId = context.message.voice?.file_id
           || context.message.audio?.file_id
         if (!fileId) return undefined
@@ -267,6 +279,9 @@ function createTelegramIntegration(dependencies: TelegramDependencies) {
       if (!slug) return showBusinessList(context)
       const from = `tg_${chatId}`
       try {
+        // Las fotos sí llegan a `handleImage`: allí miniapp/menu omiten visión,
+        // pero todavía pueden adjuntarse como comprobante de un pedido. Cortar
+        // aquí ahorraría la descarga a costa de perder pagos por Telegram.
         const photos = context.message.photo || []
         const fileId = photos[photos.length - 1]?.file_id
         if (!fileId) return undefined

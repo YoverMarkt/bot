@@ -74,14 +74,10 @@ function montar(overrides = {}) {
       parseBotOutput: () => ({ finalText: 'respuesta del modelo', orderPayload: null }),
     },
     actions: {
-      createBookingFromTag: async () => ({}),
       handleConversationOutcome: async () => ({ handled: false }),
       processOrderPayload: async () => false,
-      processLodgingQuote: async () => ({}),
-      processLodgingRequest: async () => ({}),
     },
     media: { sendRequestedProductMedia: async () => false },
-    menuFlow: { advanceMenuFlow: () => ({ reply: 'menú', options: [] }) },
     logger: { log: () => {}, error: () => {} },
     sleep: async () => {},
   })
@@ -245,10 +241,9 @@ describe('el bloqueo del dueño', () => {
     expect(m.sesiones.some(s => s.unread_owner === true)).toBe(true)
   })
 
-  // ⚠️ En TODOS los modos. Un bloqueo que solo valga en mini app deja al
-  // bloqueado conversando con la IA —que además cuesta tokens— o navegando el
-  // menú como si nada.
-  it('vale igual en modo IA y en modo menú', async () => {
+  // ⚠️ También cubre `menu` durante el despliegue code-first: mientras la fila
+  // legacy exista, no puede saltarse el bloqueo antes de pasar a miniapp.
+  it('vale igual en los tres modos: IA, menú y mini app', async () => {
     for (const chat_mode of ['ai', 'menu', 'miniapp']) {
       const m = montar({ isContactBlocked: async () => true })
       const enviados = await procesar(m, 'hola', { ...NEGOCIO, chat_mode })

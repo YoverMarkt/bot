@@ -180,14 +180,13 @@ describe('clientes y onboarding del superadmin', () => {
         ycloud_api_key: 'secret',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
-        lodging_enabled: true,
       },
     })
 
     expect(response.status).toBe(201)
     expect(createOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Nueva', whatsapp_number: '+593999000001', lodging_enabled: true,
+        name: 'Nueva', whatsapp_number: '+593999000001',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
       }),
@@ -426,32 +425,6 @@ describe('clientes y onboarding del superadmin', () => {
     })
   })
 
-  it('explica por qué no puede apagar hospedaje con inventario comprometido', async () => {
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
-      id: 'business-a', whatsapp_provider: 'ycloud',
-      whatsapp_number: '+593999000001', ycloud_api_key: 'stored-secret',
-    })
-    vi.spyOn(db, 'updateBusiness').mockResolvedValue({
-      error: {
-        message: 'No se puede deshabilitar hospedaje con solicitudes o estadías activas',
-      },
-    })
-    const updatePlan = vi.spyOn(db, 'updateBusinessPlanBilling')
-
-    const response = await dispatch('put', '/api/admin/clients/:id', {
-      auth: authorization(), params: { id: 'business-a' },
-      body: { lodging_enabled: false },
-    })
-
-    expect(response).toEqual({
-      status: 409,
-      body: {
-        error: 'No puedes deshabilitar hospedaje mientras existan solicitudes pendientes o estadías activas.',
-      },
-    })
-    expect(updatePlan).not.toHaveBeenCalled()
-  })
-
   it('rechaza proveedores no permitidos antes de consultar o modificar el negocio', async () => {
     const getBusiness = vi.spyOn(db, 'getBusinessById')
     const updateBusiness = vi.spyOn(db, 'updateBusiness')
@@ -599,6 +572,8 @@ describe('clientes y onboarding del superadmin', () => {
         ycloud_api_key: 'secret',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
+        chat_mode: 'miniapp',
+        takes_orders: true,
         storefront_enabled: true,
       },
     })
@@ -608,6 +583,32 @@ describe('clientes y onboarding del superadmin', () => {
       expect.objectContaining({ storefront_enabled: true }),
       expect.any(String), expect.any(String), expect.any(Number),
     )
+  })
+
+  it.each([
+    [{ takes_orders: false, storefront_enabled: true }, 'cree pedidos'],
+    [{ takes_orders: true, storefront_enabled: false }, 'tienda esté encendida'],
+  ])('rechaza un alta miniapp sin sus capacidades (%j)', async (capacidades, mensaje) => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding')
+
+    const response = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Tienda incompleta',
+        whatsapp_number: '+593999000099',
+        client_email: 'incompleta@example.com',
+        client_password: 'safe-password-12',
+        ycloud_api_key: 'secret',
+        ycloud_webhook_endpoint_id: 'endpoint-new',
+        ycloud_webhook_secret: 'signing-secret-new',
+        chat_mode: 'miniapp',
+        ...capacidades,
+      },
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error).toContain(mensaje)
+    expect(createOnboarding).not.toHaveBeenCalled()
   })
 
   // Nace apagada: encenderla sin catálogo cargado le daría al cliente final una
@@ -673,5 +674,33 @@ describe('clientes y onboarding del superadmin', () => {
       'business-a',
       expect.objectContaining({ storefront_enabled: false }),
     )
+  })
+
+  it('no permite apagar la única atención de un negocio miniapp', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'business-a',
+      name: 'Pizzería',
+      plan: 'micro',
+      whatsapp_provider: 'ycloud',
+      whatsapp_number: '+593999000001',
+      ycloud_number: '+593999000001',
+      ycloud_api_key: 'secret',
+      ycloud_webhook_endpoint_id: 'endpoint',
+      ycloud_webhook_secret: 'signing',
+      chat_mode: 'miniapp',
+      takes_orders: true,
+      storefront_enabled: true,
+    })
+    const updateBusiness = vi.spyOn(db, 'updateBusiness')
+
+    const response = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(),
+      params: { id: 'business-a' },
+      body: { storefront_enabled: false },
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.body.error).toContain('tienda esté encendida')
+    expect(updateBusiness).not.toHaveBeenCalled()
   })
 })

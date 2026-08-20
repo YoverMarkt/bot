@@ -61,7 +61,6 @@ function setup(overrides = {}) {
     impersonatesOfficialSummary: vi.fn().mockReturnValue(false),
     parseBotOutput: vi.fn().mockReturnValue({
       finalText: 'Respuesta final',
-      booking: null,
       orderPayload: null,
       lodgingQuote: null,
       lodgingRequest: null,
@@ -73,7 +72,6 @@ function setup(overrides = {}) {
     ...overrides.tags,
   }
   const actions = {
-    createBookingFromTag: vi.fn().mockResolvedValue('none'),
     handleConversationOutcome: vi.fn().mockResolvedValue({ handled: false }),
     processOrderPayload: vi.fn().mockResolvedValue(false),
     processLodgingQuote: vi.fn().mockResolvedValue('quoted'),
@@ -420,181 +418,6 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
-  it('preserva la cotización oficial y solo después ofrece sus acciones válidas', async () => {
-    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
-      await send('🏨 Cotización oficial — Total: $90.00')
-      return 'quoted'
-    })
-    const sendImage = vi.fn().mockResolvedValue(undefined)
-    const sendVideo = vi.fn().mockResolvedValue(undefined)
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '',
-          options: ['🛎️ Solicitar esta habitación', '📅 Cotizar otras fechas'],
-          action: {
-            type: 'stay_quote',
-            quote: {
-              checkIn: '2026-08-10',
-              checkOut: '2026-08-13',
-              roomsCount: 1,
-              adults: 2,
-              children: 0,
-              roomTypeId: 'room-a',
-            },
-          },
-        }),
-      },
-      actions: { processLodgingQuote },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business,
-        chat_mode: 'menu',
-        lodging_enabled: true,
-        takes_orders: false,
-      },
-      text: '2 adultos',
-      sendImage,
-      sendVideo,
-    }))
-
-    expect(current.send).toHaveBeenCalledWith('🏨 Cotización oficial — Total: $90.00')
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('1. 🛎️ Solicitar esta habitación'),
-    )
-    const quoteInput = processLodgingQuote.mock.calls[0][0]
-    expect(quoteInput.includeMedia).toBe(false)
-    expect(quoteInput.sendImage).toBeUndefined()
-    expect(quoteInput.sendVideo).toBeUndefined()
-    expect(sendImage).not.toHaveBeenCalled()
-    expect(sendVideo).not.toHaveBeenCalled()
-  })
-
-  it('no ofrece solicitar una habitación cuando la cotización pidió reintentar', async () => {
-    const processLodgingQuote = vi.fn().mockImplementation(async ({ send }) => {
-      await send('No hay disponibilidad; indícame otras fechas.')
-      return 'retry'
-    })
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '',
-          options: ['🛎️ Solicitar esta habitación'],
-          action: {
-            type: 'stay_quote',
-            quote: {
-              checkIn: '2026-08-10',
-              checkOut: '2026-08-13',
-              roomsCount: 1,
-              adults: 2,
-              children: 0,
-            },
-          },
-        }),
-      },
-      actions: { processLodgingQuote },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business,
-        chat_mode: 'menu',
-        lodging_enabled: true,
-        takes_orders: false,
-      },
-    }))
-
-    expect(current.send).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith(
-      'No hay disponibilidad; indícame otras fechas.',
-    )
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('Solicitar esta habitación'),
-    )
-  })
-
-  it('no duplica ni contradice el mensaje oficial de una solicitud de hospedaje', async () => {
-    const processLodgingRequest = vi.fn().mockImplementation(async ({ send }) => {
-      await send('✅ Solicitud de hospedaje registrada — pendiente de confirmación')
-      return 'requested'
-    })
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Listo! Registré tu solicitud.',
-          options: ['🏠 Menú principal'],
-          action: {
-            type: 'stay_request',
-            roomTypeId: 'room-a',
-            contactName: 'Ana Pérez',
-          },
-        }),
-      },
-      actions: { processLodgingRequest },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business,
-        chat_mode: 'menu',
-        lodging_enabled: true,
-        takes_orders: false,
-      },
-      text: 'Ana Pérez',
-    }))
-
-    expect(current.send).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith(
-      '✅ Solicitud de hospedaje registrada — pendiente de confirmación',
-    )
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('¡Listo! Registré'),
-    )
-  })
-
-  it.each([
-    ['duplicate', 'ya está registrada'],
-    ['conflict', 'acaba de ocuparse'],
-    ['error', 'No pude confirmar de forma segura si la cita quedó registrada'],
-  ])('reemplaza la confirmación del menú cuando la cita termina en %s', async (
-    bookingOutcome,
-    expectedText,
-  ) => {
-    const current = setup({
-      menuFlow: {
-        advanceMenuFlow: vi.fn().mockReturnValue({
-          reply: '¡Listo, Ana! Registré tu solicitud de cita.',
-          options: ['📅 Agendar una cita', '💬 Hablar con el equipo'],
-          action: {
-            type: 'booking',
-            date: '2026-08-10',
-            time: '10:00',
-            name: 'Ana',
-          },
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business,
-        chat_mode: 'menu',
-        takes_bookings: true,
-      },
-      text: 'Ana',
-    }))
-
-    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
-    expect(current.send).not.toHaveBeenCalledWith(
-      expect.stringContaining('Registré tu solicitud de cita'),
-    )
-  })
-
   it('atiende el reporte del dueño antes de leer una sesión de cliente', async () => {
     const current = setup({
       reports: {
@@ -640,7 +463,7 @@ describe('orquestación de conversaciones del bot', () => {
         impersonatesOfficialSummary: vi.fn().mockReturnValue(true),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: '🏨 *Opciones de hospedaje* inventadas 💰 *Total oficial: $120.00*',
-          booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+          orderPayload: null,
           hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
         }),
       },
@@ -663,7 +486,7 @@ describe('orquestación de conversaciones del bot', () => {
     const respuestaConPrecioInventado = {
       parseBotOutput: vi.fn().mockReturnValue({
         finalText: 'Te lo dejo en $40, oferta especial',
-        booking: null, orderPayload: null, lodgingQuote: null, lodgingRequest: null,
+        orderPayload: null,
         hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
       }),
     }
@@ -773,8 +596,7 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Consultando',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           lodgingQuote,
           lodgingRequest: null,
           hasSale: false,
@@ -813,8 +635,7 @@ describe('orquestación de conversaciones del bot', () => {
         }),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Cuesta $10.00 y está disponible.',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           lodgingQuote: null,
           lodgingRequest: null,
           hasSale: false,
@@ -837,123 +658,8 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
       expect.objectContaining({ wantsImage: true }),
     )
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: null }),
-    )
-  })
-
-  it('procesa una cotización STAY sin ejecutar pedidos ni citas', async () => {
-    const lodgingQuote = {
-      checkInRaw: '2026-08-10', checkOutRaw: '2026-08-13',
-      roomsRaw: '1', roomsCount: 1,
-      adultsRaw: '2', childrenRaw: '1',
-      checkIn: '2026-08-10', checkOut: '2026-08-13', adults: 2, children: 1,
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Texto de IA que no debe salir',
-          booking: null,
-          orderPayload: null,
-          lodgingQuote,
-          lodgingRequest: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-          hasActionConflict: false,
-        }),
-      },
-    })
-    const lodgingBusiness = { ...business, lodging_enabled: true, takes_orders: false }
-
-    await current.conversation.processMessage(input(current, {
-      business: lodgingBusiness,
-    }))
-
-    expect(current.actions.processLodgingQuote).toHaveBeenCalledWith(
-      expect.objectContaining({
-        business: lodgingBusiness,
-        quote: lodgingQuote,
-      }),
-    )
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.send).not.toHaveBeenCalledWith('Texto de IA que no debe salir')
-  })
-
-  it('procesa la opción STAY elegida y deja el handoff a la acción segura', async () => {
-    const lodgingRequest = {
-      roomTypeIdOrName: 'Habitación Doble', contactName: 'Ana Pérez',
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Reserva confirmada',
-          booking: null,
-          orderPayload: null,
-          lodgingQuote: null,
-          lodgingRequest,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-          hasActionConflict: false,
-        }),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, lodging_enabled: true, takes_orders: false },
-    }))
-
-    expect(current.actions.processLodgingRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        request: lodgingRequest,
-        // El nombre solo puede validarse contra lo que escribió el huésped
-        guestMessages: expect.arrayContaining(['¿Tienen Perfume Floral Intenso?']),
-      }),
-    )
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.send).not.toHaveBeenCalledWith('Reserva confirmada')
-  })
-
-  it('rechaza STAY combinado con BOOK, PEDIDO o HANDOFF sin efectos', async () => {
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Acciones mezcladas',
-          booking: null,
-          orderPayload: 'Producto A x1',
-          lodgingQuote: {
-            checkInRaw: '2026-08-10', checkOutRaw: '2026-08-13',
-            roomsRaw: '1', roomsCount: 1,
-            adultsRaw: '2', childrenRaw: '0',
-            checkIn: '2026-08-10', checkOut: '2026-08-13', adults: 2, children: 0,
-          },
-          lodgingRequest: null,
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-          hasActionConflict: true,
-        }),
-      },
-      actions: {
-        handleConversationOutcome: vi.fn().mockResolvedValue({ handled: true }),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: {
-        ...business, lodging_enabled: true, takes_bookings: true, takes_orders: true,
-      },
-    }))
-
-    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ hasSale: false, isUncertain: true }),
-    )
-    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
-    expect(current.actions.processLodgingRequest).not.toHaveBeenCalled()
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
+    // Sin ##PEDIDO## no se toca el núcleo de dinero: antes se le llamaba con
+    // `payload: null` en CADA mensaje, que era trabajo por nada.
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 
@@ -973,8 +679,7 @@ describe('orquestación de conversaciones del bot', () => {
         }),
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Aquí está',
-          booking: null,
-          orderPayload: null,
+              orderPayload: null,
           hasSale: false,
           hasHandoffTag: false,
           isUncertain: false,
@@ -998,23 +703,12 @@ describe('orquestación de conversaciones del bot', () => {
       [product],
       {},
       'La vez pasada vi Perfume Floral Intenso, muéstrame foto',
-      null,
       [],
       true,
       true,
     )
-    expect(current.actions.createBookingFromTag).toHaveBeenCalledWith(
-      business, '0990000001', null, [product],
-    )
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({
-        business,
-        phone: '0990000001',
-        payload: null,
-        products: [product],
-        preFiltered: true,
-      }),
-    )
+    // Esta respuesta no lleva ##PEDIDO##, así que el núcleo de dinero no entra.
+    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
     expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
       expect.objectContaining({
         business,
@@ -1031,130 +725,12 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
-  it.each([
-    ['duplicate', 'ya está registrada'],
-    ['conflict', 'acaba de ocuparse'],
-    ['error', 'de forma segura'],
-  ])('reemplaza una confirmación falsa cuando la reserva termina en %s', async (
-    bookingOutcome,
-    expectedText,
-  ) => {
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Perfecto, tu reserva está confirmada',
-          booking,
-          orderPayload: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue(bookingOutcome),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true },
-      text: 'Confirmo las 09:30',
-    }))
-
-    expect(current.send).toHaveBeenCalledTimes(1)
-    expect(current.send).toHaveBeenCalledWith(expect.stringContaining(expectedText))
-    expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('está confirmada'))
-    expect(current.database.saveMessage).toHaveBeenLastCalledWith(
-      'business-a', '0990000001', 'assistant', expect.stringContaining(expectedText),
-    )
-    expect(current.actions.handleConversationOutcome).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.media.sendRequestedProductMedia).not.toHaveBeenCalled()
-  })
-
-  it('prioriza la reserva y no crea un pedido en la misma respuesta', async () => {
-    const booking = {
-      contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-      service: 'Corte', bookingDate: '2026-07-20', bookingTime: '09:30',
-    }
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Registré tu solicitud de cita',
-          booking,
-          orderPayload: 'Corte x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        createBookingFromTag: vi.fn().mockResolvedValue('created'),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true, takes_orders: true },
-      text: 'Confirmo el corte a las 09:30',
-    }))
-
-    expect(current.actions.handleConversationOutcome).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('todavía no procesé la compra'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith(
-      'Registré tu solicitud de cita',
-    )
-    expect(current.logger.log).toHaveBeenCalledWith(
-      expect.stringContaining('##PEDIDO## pospuesto'),
-    )
-  })
-
-  it('ignora una reserva no habilitada y conserva un pedido válido', async () => {
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Reserva y pedido confirmados',
-          booking: {
-            contactName: 'Ana', bookingDateRaw: '2026-07-20', bookingTimeRaw: '09:30',
-            service: 'Producto A', bookingDate: '2026-07-20', bookingTime: '09:30',
-          },
-          orderPayload: 'Producto A x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        processOrderPayload: vi.fn().mockResolvedValue(true),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: false, takes_orders: true },
-    }))
-
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: 'Producto A x1' }),
-    )
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('Procesé únicamente el pedido'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith('Reserva y pedido confirmados')
-  })
-
   it('deriva una etiqueta de pedido si el negocio es informativo', async () => {
     const current = setup({
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Tu pedido está confirmado',
-          booking: null,
-          orderPayload: 'Producto A x1',
+              orderPayload: 'Producto A x1',
           hasSale: true,
           hasHandoffTag: false,
           isUncertain: false,
@@ -1187,8 +763,7 @@ describe('orquestación de conversaciones del bot', () => {
       tags: {
         parseBotOutput: vi.fn().mockReturnValue({
           finalText: 'Tu pedido quedó confirmado',
-          booking: null,
-          orderPayload: 'Producto A x1',
+              orderPayload: 'Producto A x1',
           hasSale: true,
           hasHandoffTag: false,
           isUncertain: false,
@@ -1238,10 +813,9 @@ describe('orquestación de conversaciones del bot', () => {
     })
 
     await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_bookings: true, takes_orders: true },
+      business: { ...business, takes_orders: true },
     }))
 
-    expect(current.actions.createBookingFromTag).not.toHaveBeenCalled()
     expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
   })
 

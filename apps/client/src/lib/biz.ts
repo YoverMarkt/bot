@@ -1,6 +1,5 @@
 // ── Capacidades y tipo de negocio ─────────────────────────────────
-// Reservas es una capacidad explícita del negocio. El nombre del catálogo,
-// en cambio, depende de si el tipo describe productos o servicios.
+// El nombre del catálogo depende de si el tipo describe productos o servicios.
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 
@@ -9,21 +8,11 @@ export type BusinessInfo = {
   slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null
   payment_methods: string | null; suspended: boolean; bot_active: boolean
-  takes_bookings: boolean; takes_orders: boolean
-  lodging_enabled: boolean
+  takes_orders: boolean
 }
 
-// El flag persistido es la única fuente de verdad. El tipo puede recomendar el
-// modo durante el alta, pero nunca habilita Reservas por sí solo en el cliente.
-export const isBookingBiz = (
-  _type?: string | null,
-  takesBookings?: boolean | null,
-) => takesBookings === true
-
-export const isLodgingBiz = (lodgingEnabled?: boolean | null) => lodgingEnabled === true
-
 // Pedidos es capacidad propia del negocio (takes_orders), independiente de
-// reservas y hospedaje. El flag vivo manda; el tipo solo lo recomienda al alta.
+// reservas. El flag vivo manda; el tipo solo lo recomienda al alta.
 export const isOrderBiz = (takesOrders?: boolean | null) => takesOrders === true
 
 const normalizeBusinessType = (type?: string | null) => (type ?? '')

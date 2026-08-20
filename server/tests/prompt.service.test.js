@@ -53,29 +53,6 @@ describe('constructor tipado del prompt', () => {
     )
   })
 
-  it('solo habilita reservas con slots reales y un negocio que acepta citas', () => {
-    const slots = {
-      '2026-07-20': { label: 'Lunes 20', slots: ['09:00', '10:00'] },
-    }
-    const enabled = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, 'reservar', slots,
-    )
-    const disabled = promptService.buildPrompt(
-      { ...business, takes_bookings: false }, [product], {}, 'reservar', slots,
-    )
-    const withoutSlots = promptService.buildPrompt(
-      { ...business, takes_bookings: true }, [product], {}, 'reservar', null,
-    )
-
-    expect(enabled).toContain('Lunes 20 (2026-07-20): 09:00, 10:00')
-    expect(enabled).toContain('##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##')
-    expect(disabled).toContain('no recibe citas ni reservas mediante el bot')
-    expect(disabled).not.toContain('Lunes 20 (2026-07-20)')
-    expect(withoutSlots).toContain('no hay horarios disponibles')
-    expect(withoutSlots).toContain('NO escribas ##BOOK##')
-    expect(withoutSlots).not.toContain('no recibe citas ni reservas mediante el bot')
-  })
-
   it('conserva las reglas duras de dinero y el modo informativo', () => {
     const salesPrompt = promptService.buildPrompt(
       { ...business, takes_orders: true }, [product], {},
@@ -97,60 +74,7 @@ describe('constructor tipado del prompt', () => {
       'Para cerrar una compra, pide nombre, dirección y método de pago',
     )
     expect(salesPrompt).toContain(
-      'NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO##',
-    )
-  })
-
-  it('habilita hospedaje sin delegar cálculos ni reutilizar pedidos o citas', () => {
-    const lodgingPrompt = promptService.buildPrompt(
-      {
-        ...business,
-        type: 'hostal',
-        takes_bookings: false,
-        takes_orders: false,
-        lodging_enabled: true,
-      },
-      [product],
-      {},
-    )
-
-    expect(lodgingPrompt).toContain(
-      '##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##',
-    )
-    const hoyEcuador = new Date().toLocaleDateString('en-CA', {
-      timeZone: 'America/Guayaquil',
-    })
-    expect(lodgingPrompt).toContain(`HOY es ${hoyEcuador}`)
-    expect(lodgingPrompt).toContain('fechas FUTURAS a partir de hoy')
-    // El calendario real de los próximos días lo escribe el CÓDIGO: el modelo
-    // no debe calcular qué fecha es "el lunes" o "mañana"
-    const mananaEcuador = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', {
-      timeZone: 'America/Guayaquil',
-    })
-    const diaSemanaManana = new Date(Date.now() + 86_400_000).toLocaleDateString('es-EC', {
-      weekday: 'long', timeZone: 'America/Guayaquil',
-    })
-    expect(lodgingPrompt).toContain('CALENDARIO REAL de los próximos días')
-    expect(lodgingPrompt).toContain(`${diaSemanaManana}=${mananaEcuador}`)
-    expect(lodgingPrompt).toContain('NUNCA la calcules tú')
-    expect(lodgingPrompt).toContain(
-      '##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO##',
-    )
-    expect(lodgingPrompt).toContain(
-      'NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales',
-    )
-    expect(lodgingPrompt).toContain('pendiente del equipo autorizado')
-    expect(lodgingPrompt).toContain(
-      '##STAY_QUOTE## y ##STAY_REQUEST## son excluyentes',
-    )
-    expect(lodgingPrompt).toContain(
-      'incluso si el cliente dice que quiere reservar',
-    )
-    expect(lodgingPrompt).not.toContain(
-      '##PEDIDO:nombre del producto x cantidad##',
-    )
-    expect(lodgingPrompt).not.toContain(
-      '##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##',
+      'NUNCA escribas ##PEDIDO## y ##HANDOFF## en la misma respuesta',
     )
   })
 
@@ -162,7 +86,7 @@ describe('constructor tipado del prompt', () => {
       is_active: true,
     }))
     const closedPrompt = promptService.buildPrompt(
-      business, [product], {}, '', null, closedSchedule, false, true,
+      business, [product], {}, '', closedSchedule, false, true,
     )
 
     expect(closedPrompt).toContain('FUERA del horario de atención')
@@ -195,7 +119,6 @@ describe('constructor tipado del prompt', () => {
   it('mantiene etiquetas y servicio sin comprobaciones anuladas', () => {
     const service = fs.readFileSync(new URL('../src/services/prompt.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')
-    expect(service).toContain('##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##')
     expect(service).toContain('##PEDIDO:nombre del producto x cantidad##')
     expect(service).toContain('##HANDOFF##')
     expect(service).not.toContain('@ts-nocheck')

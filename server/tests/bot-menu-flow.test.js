@@ -2,39 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { advanceMenuFlow, parseStayRange, resetMenuFlow } = require('../dist/services/bot-menu-flow')
-
-const hoyEcuador = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' })
-const masDias = (iso, dias) => new Date(new Date(`${iso}T12:00:00Z`).getTime() + dias * 86_400_000)
-  .toISOString().slice(0, 10)
+const { advanceMenuFlow, resetMenuFlow } = require('../dist/services/bot-menu-flow')
 
 const pizzeria = {
   id: 'pizzeria-test',
   name: 'Pizzería Don Luigi',
   takes_orders: true,
   takes_bookings: false,
-  lodging_enabled: false,
 }
 
 const productos = [
   { id: 'p1', name: 'Pizza Hawaiana', price: 8.5, tags: ['pizzas'], stock: 'disponible', active: true },
   { id: 'p2', name: 'Pizza Pepperoni', price: 9, price_sale: 7.5, tags: ['pizzas'], stock: 'disponible', active: true },
   { id: 'p3', name: 'Coca Cola 1.5L', price: 2.5, tags: ['bebidas'], stock: 'disponible', active: true },
-]
-
-const hostal = {
-  id: 'hostal-test',
-  name: 'Hostal Vista Andina',
-  takes_orders: false,
-  takes_bookings: false,
-  lodging_enabled: true,
-}
-
-const habitaciones = [
-  { id: 'r1', name: 'Matrimonial', description: 'Cama queen con vista', amenities: ['wifi', 'desayuno', 'baño privado'], base_rate: 45, pricing_model: 'per_unit', max_guests: 2 },
-  { id: 'r2', name: 'Familiar', description: 'Dos ambientes', base_rate: 70, pricing_model: 'per_person', max_guests: 4 },
-  // Capacidad FIJA: ocupación base = tope (una doble para exactamente 2)
-  { id: 'r3', name: 'Doble Estándar', base_rate: 40, pricing_model: 'per_unit', base_occupancy: 2, max_guests: 2 },
 ]
 
 // Las opciones pueden ser texto simple o {title, description}: para las
@@ -224,9 +204,8 @@ describe('modo menú estilo banco (sin IA)', () => {
 
   it('responde los saludos naturales con una bienvenida cordial y el nombre del negocio', () => {
     const args = {
-      products: [],
-      roomTypes: habitaciones,
-      botPrompt: 'Eres Andrea, la recepcionista virtual de {{nombre_negocio}}, un hostal acogedor.',
+      products: productos,
+      botPrompt: 'Eres Andrea, la asistente virtual de {{nombre_negocio}}, una pizzería de barrio.',
     }
     const saludos = [
       'Hola buenas tardes',
@@ -237,280 +216,28 @@ describe('modo menú estilo banco (sin IA)', () => {
 
     saludos.forEach((saludo, index) => {
       const contact = `saludo-${index}`
-      resetMenuFlow(hostal.id, contact)
-      enviar(hostal, contact, 'hola', args)
-      enviar(hostal, contact, '🛏️ Ver habitaciones', args)
+      resetMenuFlow(pizzeria.id, contact)
+      enviar(pizzeria, contact, 'hola', args)
+      enviar(pizzeria, contact, '🛒 Hacer un pedido', args)
 
-      const respuesta = enviar(hostal, contact, saludo, args)
+      const respuesta = enviar(pizzeria, contact, saludo, args)
       expect(respuesta.reply).toContain('¡Hola! 👋')
       expect(respuesta.reply).toContain('Soy Andrea')
-      expect(respuesta.reply).toContain('recepcionista virtual de Hostal')
+      expect(respuesta.reply).toContain('asistente virtual de Pizzería')
       expect(respuesta.reply).not.toContain('No te entendí')
-      expect(titulos(respuesta.options)).toEqual(['🛏️ Ver habitaciones'])
+      expect(titulos(respuesta.options)).toContain('🛒 Hacer un pedido')
     })
 
-    resetMenuFlow(hostal.id, 'saludo-configurado')
-    const configurado = enviar(hostal, 'saludo-configurado', 'hola', {
+    resetMenuFlow(pizzeria.id, 'saludo-configurado')
+    const configurado = enviar(pizzeria, 'saludo-configurado', 'hola', {
       ...args,
       botPrompt: 'Saludo inicial: "Bienvenido a {{nombre_negocio}}. Es un placer atenderle."',
     })
-    expect(configurado.reply).toContain('Bienvenido a Hostal Vista Andina. Es un placer atenderle.')
-  })
-
-  it('entiende frases naturales sobre habitaciones desde el menú principal', () => {
-    const args = { products: [], roomTypes: habitaciones }
-    const mensajes = [
-      'De las habitaciones',
-      'Necesito información de una habitación',
-      'Quiero ver los cuartos',
-      'Información del hospedaje',
-      'Busco alojamiento',
-      'Hola\nNecesito\nInformación\nDe las habitaciones',
-    ]
-
-    mensajes.forEach((message, index) => {
-      const contact = `intencion-habitaciones-${index}`
-      resetMenuFlow(hostal.id, contact)
-      enviar(hostal, contact, 'hola', args)
-
-      const respuesta = enviar(hostal, contact, message, args)
-      expect(respuesta.reply).toBe('Estas son nuestras habitaciones 👇')
-      expect(respuesta.reply).not.toContain('No te entendí')
-      expect(titulos(respuesta.options)).toContain('Matrimonial')
-      expect(titulos(respuesta.options)).toContain('Familiar')
-      expect(respuesta.action).toBeUndefined()
-    })
-  })
-
-  it('recibe al huésped SOLO con habitaciones y cotiza desde la habitación elegida', () => {
-    resetMenuFlow(hostal.id, 'c4')
-    const args = { products: [], roomTypes: habitaciones }
-    const bienvenida = enviar(hostal, 'c4', 'hola', args)
-    // Decisión del dueño: primero las habitaciones, sin cotizar ni equipo
-    expect(titulos(bienvenida.options)).toEqual(['🛏️ Ver habitaciones'])
-
-    const cuartos = enviar(hostal, 'c4', '🛏️ Ver habitaciones', args)
-    expect(titulos(cuartos.options)).toContain('Matrimonial')
-    expect(detalle(cuartos.options, 'Matrimonial')).toContain('$45.00/noche')
-    // La descripción lidera con la capacidad total de la habitación
-    expect(detalle(cuartos.options, 'Matrimonial')).toContain('Para 2 huésped')
-    // Tarifa por persona: se muestra "desde", el total exacto lo da la cotización
-    expect(detalle(cuartos.options, 'Familiar')).toContain('desde $70.00/noche')
-
-    const detalleHab = enviar(hostal, 'c4', 'Matrimonial', args)
-    expect(detalleHab.reply).toContain('Matrimonial')
-    expect(detalleHab.reply).toContain('Incluye: wifi, desayuno, baño privado')
-    expect(detalleHab.reply).toContain('hasta 2 persona(s)')
-    expect(detalleHab.reply).toContain('Tarifa: $45.00/noche')
-    // El botón de cotizar aparece recién al elegir la habitación
-    expect(titulos(detalleHab.options)).toContain('📅 Cotizar estadía')
-
-    // Fechas escritas por el huésped CON MES, confirmadas con el calendario real
-    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    const entrada = masDias(hoyEcuador(), 40)
-    const salida = masDias(entrada, 2)
-    const dia = iso => Number(iso.slice(8, 10))
-    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
-    const frase = mes(entrada) === mes(salida)
-      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
-      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
-
-    const fechas = enviar(hostal, 'c4', '📅 Cotizar estadía', args)
-    // La habitación elegida acompaña la cotización y NO se pregunta cuántas
-    // habitaciones: eso lo calcula el servidor según personas y capacidad
-    expect(fechas.reply).toContain('Matrimonial')
-    expect(fechas.reply).toContain('CON EL MES')
-
-    // Sin mes → se rechaza y se pide el mes
-    const sinMes = enviar(hostal, 'c4', 'del 24 al 26', args)
-    expect(sinMes.reply).toContain('MES')
-    expect(sinMes.action).toBeUndefined()
-
-    const confirmadas = enviar(hostal, 'c4', frase, args)
-    expect(confirmadas.reply).toContain('¡Perfecto! Del')
-    expect(confirmadas.reply).toContain('adultos')
-    expect(confirmadas.reply).not.toContain('habitaciones')
-
-    // Matrimonial (cap. 2): con 2 adultos ya se llena, así que NO pregunta
-    // niños; cotiza directo con 0 (la habitación acota las opciones)
-    const cotizacion = enviar(hostal, 'c4', '2', args)
-
-    // La cotización viaja con la habitación elegida para que el servidor
-    // muestre SOLO esa habitación (las demás, únicamente si no hay cupo)
-    expect(cotizacion.action).toEqual({
-      type: 'stay_quote',
-      quote: {
-        checkIn: entrada,
-        checkOut: salida,
-        roomsCount: 1,
-        adults: 2,
-        children: 0,
-        roomTypeId: 'r1',
-      },
-    })
-    expect(titulos(cotizacion.options)).toContain('🛎️ Solicitar esta habitación')
-
-    // Cierre del flujo: solicitar la habitación con el nombre del huésped
-    const nombre = enviar(hostal, 'c4', '🛎️ Solicitar esta habitación', args)
-    expect(nombre.reply).toContain('nombre')
-    const solicitud = enviar(hostal, 'c4', 'Carlos Pérez', args)
-    expect(solicitud.action).toEqual({ type: 'stay_request', roomTypeId: 'r1', contactName: 'Carlos Pérez' })
-    expect(solicitud.reply).toContain('Matrimonial')
-    expect(solicitud.reply).toContain('Carlos Pérez')
-  })
-
-  it('registra la solicitud al tocar el botón nativo por NÚMERO tras la cotización', () => {
-    // En WhatsApp el botón envía el NÚMERO de opción, no el título. Tras la
-    // cotización, "1" debe ser "Solicitar esta habitación" (no la opción 1 del
-    // menú principal): antes se perdía y el hold nunca se creaba.
-    resetMenuFlow(hostal.id, 'nativo')
-    const args = { products: [], roomTypes: habitaciones }
-    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    const entrada = masDias(hoyEcuador(), 45)
-    const salida = masDias(entrada, 1)
-    const dia = iso => Number(iso.slice(8, 10))
-    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
-    const frase = mes(entrada) === mes(salida)
-      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
-      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
-
-    enviar(hostal, 'nativo', 'hola', args)
-    enviar(hostal, 'nativo', '🛏️ Ver habitaciones', args)
-    enviar(hostal, 'nativo', 'Matrimonial', args)
-    enviar(hostal, 'nativo', '📅 Cotizar estadía', args)
-    enviar(hostal, 'nativo', frase, args)
-    const cotizacion = enviar(hostal, 'nativo', '2', args) // 2 adultos (cap. 2) → cotiza
-    // La opción 1 tras la cotización es "Solicitar esta habitación"
-    expect(titulos(cotizacion.options)[0]).toBe('🛎️ Solicitar esta habitación')
-
-    // El cliente TOCA el botón → el canal manda el número "1", no el título
-    const nombre = enviar(hostal, 'nativo', '1', args)
-    expect(nombre.reply).toContain('nombre')
-    const solicitud = enviar(hostal, 'nativo', 'Ana Torres', args)
-    expect(solicitud.action).toEqual({ type: 'stay_request', roomTypeId: 'r1', contactName: 'Ana Torres' })
-  })
-
-  it('acota adultos y niños a la capacidad real de la habitación', () => {
-    resetMenuFlow(hostal.id, 'cap')
-    const args = { products: [], roomTypes: habitaciones }
-    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    const entrada = masDias(hoyEcuador(), 50)
-    const salida = masDias(entrada, 2)
-    const dia = iso => Number(iso.slice(8, 10))
-    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
-    const frase = mes(entrada) === mes(salida)
-      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
-      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
-
-    enviar(hostal, 'cap', 'hola', args)
-    enviar(hostal, 'cap', '🛏️ Ver habitaciones', args)
-    enviar(hostal, 'cap', 'Familiar', args) // capacidad 4
-    enviar(hostal, 'cap', '📅 Cotizar estadía', args)
-    const adultos = enviar(hostal, 'cap', frase, args)
-    // Familiar (cap. 4): ofrece 1..4 adultos, nunca más que la capacidad
-    expect(titulos(adultos.options)).toEqual(['1', '2', '3', '4'])
-
-    // Con 1 adulto todavía caben 3 → sí pregunta niños, hasta 3
-    const ninos = enviar(hostal, 'cap', '1', args)
-    expect(titulos(ninos.options)).toEqual(['0', '1', '2', '3'])
-    expect(ninos.action).toBeUndefined()
-
-    // 2 niños → cotiza 1 adulto + 2 niños con la habitación elegida
-    const cotizacion = enviar(hostal, 'cap', '2', args)
-    expect(cotizacion.action).toEqual({
-      type: 'stay_quote',
-      quote: { checkIn: entrada, checkOut: salida, roomsCount: 1, adults: 1, children: 2, roomTypeId: 'r2' },
-    })
-  })
-
-  it('pagina la lista de habitaciones cuando pasan de 8, respetando el tope de WhatsApp', () => {
-    // 11 habitaciones: no caben en una lista de WhatsApp (máximo 10 filas)
-    const muchas = Array.from({ length: 11 }, (_, index) => ({
-      id: `h${index}`,
-      name: `Habitación ${index}`,
-      base_rate: 30 + index,
-      pricing_model: 'per_unit',
-      base_occupancy: 1,
-      max_guests: 2,
-    }))
-    resetMenuFlow(hostal.id, 'pagcuartos')
-    const args = { products: [], roomTypes: muchas }
-    enviar(hostal, 'pagcuartos', 'hola', args)
-
-    const pagina1 = enviar(hostal, 'pagcuartos', '🛏️ Ver habitaciones', args)
-    const t1 = titulos(pagina1.options)
-    // 8 habitaciones + Ver más + Volver = 10 filas, justo el tope de WhatsApp
-    expect(t1.filter(x => x.startsWith('Habitación')).length).toBe(8)
-    expect(t1).toContain('➡️ Ver más')
-    expect(t1).toContain('⬅️ Volver')
-    expect(pagina1.options.length).toBe(10)
-
-    const pagina2 = enviar(hostal, 'pagcuartos', '➡️ Ver más', args)
-    const t2 = titulos(pagina2.options)
-    expect(t2.filter(x => x.startsWith('Habitación')).length).toBe(3)
-    expect(t2).not.toContain('➡️ Ver más')
-
-    // Se puede elegir una habitación de la segunda página
-    const detalleHab = enviar(hostal, 'pagcuartos', 'Habitación 10', args)
-    expect(detalleHab.reply).toContain('Habitación 10')
-  })
-
-  it('en una habitación de capacidad fija no pregunta por personas: cotiza directo', () => {
-    resetMenuFlow(hostal.id, 'fija')
-    const args = { products: [], roomTypes: habitaciones }
-    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    const entrada = masDias(hoyEcuador(), 55)
-    const salida = masDias(entrada, 1)
-    const dia = iso => Number(iso.slice(8, 10))
-    const mes = iso => MESES[Number(iso.slice(5, 7)) - 1]
-    const frase = mes(entrada) === mes(salida)
-      ? `del ${dia(entrada)} al ${dia(salida)} de ${mes(entrada)}`
-      : `del ${dia(entrada)} de ${mes(entrada)} al ${dia(salida)} de ${mes(salida)}`
-
-    enviar(hostal, 'fija', 'hola', args)
-    enviar(hostal, 'fija', '🛏️ Ver habitaciones', args)
-    enviar(hostal, 'fija', 'Doble Estándar', args) // base 2 = tope 2 → fija
-    enviar(hostal, 'fija', '📅 Cotizar estadía', args)
-    // Escritas las fechas, cotiza al toque con la capacidad (2), sin preguntar
-    const cotizacion = enviar(hostal, 'fija', frase, args)
-    expect(cotizacion.action).toEqual({
-      type: 'stay_quote',
-      quote: { checkIn: entrada, checkOut: salida, roomsCount: 1, adults: 2, children: 0, roomTypeId: 'r3' },
-    })
-    // Ya ofrece solicitar la habitación (no preguntó adultos ni niños)
-    expect(titulos(cotizacion.options)).toContain('🛎️ Solicitar esta habitación')
-  })
-
-  it('entiende los formatos reales de fechas y exige el mes cuando falta', () => {
-    const hoy = '2026-07-19'
-    // El caso canónico del dueño
-    expect(parseStayRange('del 24 al 26 de julio', hoy)).toEqual({ ok: true, checkIn: '2026-07-24', checkOut: '2026-07-26' })
-    // Día de semana decorativo y meses distintos
-    expect(parseStayRange('el viernes 24 de julio al 2 de agosto', hoy)).toEqual({ ok: true, checkIn: '2026-07-24', checkOut: '2026-08-02' })
-    // La salida hereda el mes; si queda antes, es el mes siguiente
-    expect(parseStayRange('del 30 de julio al 2', hoy)).toEqual({ ok: true, checkIn: '2026-07-30', checkOut: '2026-08-02' })
-    // Cruce de año: enero ya pasó este año → el próximo
-    expect(parseStayRange('del 30 de diciembre al 2 de enero', hoy)).toEqual({ ok: true, checkIn: '2026-12-30', checkOut: '2027-01-02' })
-    // Días de semana puros y relativos, resueltos por el calendario
-    expect(parseStayRange('del lunes al miercoles', hoy)).toEqual({ ok: true, checkIn: '2026-07-20', checkOut: '2026-07-22' })
-    expect(parseStayRange('de hoy a mañana', hoy)).toEqual({ ok: true, checkIn: '2026-07-19', checkOut: '2026-07-20' })
-    // Numérico con mes incluido y rango con guion
-    expect(parseStayRange('del 24/07 al 26/07', hoy)).toEqual({ ok: true, checkIn: '2026-07-24', checkOut: '2026-07-26' })
-    expect(parseStayRange('24-26 de julio', hoy)).toEqual({ ok: true, checkIn: '2026-07-24', checkOut: '2026-07-26' })
-    // Typos y variantes reales: "de de" repetido, sin "de", mes adelante
-    expect(parseStayRange('20 al 22 de de julio', hoy)).toEqual({ ok: true, checkIn: '2026-07-20', checkOut: '2026-07-22' })
-    expect(parseStayRange('del 20 al 22 julio', hoy)).toEqual({ ok: true, checkIn: '2026-07-20', checkOut: '2026-07-22' })
-    expect(parseStayRange('del 30 al 2 de de agosto', hoy)).toEqual({ ok: true, checkIn: '2026-07-30', checkOut: '2026-08-02' })
-    expect(parseStayRange('julio 20 al 22', hoy)).toEqual({ ok: true, checkIn: '2026-07-20', checkOut: '2026-07-22' })
-    // Rechazos: sin mes, falta una fecha, rango imposible
-    expect(parseStayRange('del 24 al 26', hoy)).toEqual({ ok: false, reason: 'sin_mes' })
-    expect(parseStayRange('el 24 de julio', hoy)).toEqual({ ok: false, reason: 'falta_salida' })
-    expect(parseStayRange('del 26 de julio al 26 de julio', hoy)).toEqual({ ok: false, reason: 'rango' })
-    expect(parseStayRange('no se todavia', hoy)).toEqual({ ok: false, reason: 'no_entendi' })
+    expect(configurado.reply).toContain('Bienvenido a Pizzería Don Luigi. Es un placer atenderle.')
   })
 
   it('pizza: elige SABOR (con ingredientes) y luego TAMAÑO, precio exacto y sabor pegado', () => {
-    const pizzeria2 = { id: 'monster-pizza', name: 'Monster Pizza', takes_orders: true, takes_bookings: false, lodging_enabled: false }
+    const pizzeria2 = { id: 'monster-pizza', name: 'Monster Pizza', takes_orders: true, takes_bookings: false }
     const pizzaProducts = [
       { id: 'ps1', name: 'Pizza Personal', price: 2.75, tags: ['pizzas'], stock: 'disponible', active: true },
       { id: 'ps2', name: 'Pizza Familiar', price: 10.50, tags: ['pizzas'], stock: 'disponible', active: true },
@@ -561,55 +288,8 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(bebidas.reply).not.toContain('sabor')
   })
 
-  it('hospedaje: ofrece "Ver fotos y videos" solo si la habitación tiene media y las envía (fotos primero, video al final)', () => {
-    resetMenuFlow(hostal.id, 'media-hab')
-    const conMedia = [
-      {
-        id: 'rm1', name: 'Suite Vista', base_rate: 60, pricing_model: 'per_unit', max_guests: 2,
-        media_urls: [
-          'https://res.cloudinary.com/demo/image/upload/foto1.jpg',
-          'https://res.cloudinary.com/demo/video/upload/tour.mp4',
-          'https://res.cloudinary.com/demo/image/upload/foto2.jpg',
-        ],
-      },
-      // Sin media: no debe ofrecer el paso de fotos
-      { id: 'rm2', name: 'Sencilla', base_rate: 30, pricing_model: 'per_unit', max_guests: 1 },
-    ]
-    const args = { products: [], roomTypes: conMedia }
-    enviar(hostal, 'media-hab', 'hola', args)
-    enviar(hostal, 'media-hab', '🛏️ Ver habitaciones', args)
-
-    const conFotos = enviar(hostal, 'media-hab', 'Suite Vista', args)
-    expect(titulos(conFotos.options)).toContain('📷 Ver fotos y videos')
-    expect(conFotos.reply).toContain('¿Quieres ver las fotos y videos')
-
-    const enviadas = enviar(hostal, 'media-hab', '📷 Ver fotos y videos', args)
-    // Fotos primero, el video al final; solo URLs HTTPS
-    expect(enviadas.media).toEqual([
-      { url: 'https://res.cloudinary.com/demo/image/upload/foto1.jpg', isVideo: false },
-      { url: 'https://res.cloudinary.com/demo/image/upload/foto2.jpg', isVideo: false },
-      { url: 'https://res.cloudinary.com/demo/video/upload/tour.mp4', isVideo: true },
-    ])
-    // Tras enviarlas, el cliente puede seguir con la cotización (sin repetir el botón de fotos)
-    expect(titulos(enviadas.options)).toContain('📅 Cotizar estadía')
-    expect(titulos(enviadas.options)).not.toContain('📷 Ver fotos y videos')
-
-    // WhatsApp devuelve el id numérico del botón. Después de ver media, "1"
-    // es Cotizar (ya no Media) y debe avanzar a fechas sin reenviar archivos.
-    const fechas = enviar(hostal, 'media-hab', '1', args)
-    expect(fechas.reply).toContain('¿Qué días deseas hospedarte?')
-    expect(fechas.reply).toContain('Suite Vista')
-    expect(fechas.media).toBeUndefined()
-    expect(titulos(fechas.options)).toEqual(['⬅️ Volver'])
-
-    // Volver a la lista y abrir la habitación SIN media: no ofrece el paso de fotos
-    enviar(hostal, 'media-hab', '⬅️ Volver', args)
-    const sinFotos = enviar(hostal, 'media-hab', 'Sencilla', args)
-    expect(titulos(sinFotos.options)).not.toContain('📷 Ver fotos y videos')
-  })
-
   it('pedido: un producto con foto pasa por su detalle para ver qué comprará; sin foto va directo a la cantidad', () => {
-    const pizzeria3 = { id: 'pizza-media', name: 'Pizza Media', takes_orders: true, takes_bookings: false, lodging_enabled: false }
+    const pizzeria3 = { id: 'pizza-media', name: 'Pizza Media', takes_orders: true, takes_bookings: false }
     const conFoto = [
       { id: 'pm1', name: 'Pizza Deluxe', price: 12, tags: ['pizzas'], stock: 'disponible', active: true, image_url: 'https://res.cloudinary.com/demo/image/upload/deluxe.jpg', video_url: 'https://res.cloudinary.com/demo/video/upload/deluxe.mp4' },
       { id: 'pm2', name: 'Pizza Simple', price: 8, tags: ['pizzas'], stock: 'disponible', active: true },
@@ -658,24 +338,4 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(porOpcion.action).toEqual({ type: 'handoff' })
   })
 
-  it('agenda una cita con la agenda real: día, hora y nombre', () => {
-    const barberia = { id: 'barberia-test', name: 'Barbería', takes_orders: false, takes_bookings: true }
-    const slots = {
-      '2099-01-04': { label: 'lunes 4 de enero', slots: ['10:00', '11:00'] },
-      '2099-01-05': { label: 'martes 5 de enero', slots: ['09:00'] },
-    }
-    resetMenuFlow(barberia.id, 'c7')
-    const args = { products: [], availableSlots: slots }
-    const bienvenida = enviar(barberia, 'c7', 'hola', args)
-    expect(titulos(bienvenida.options)).toContain('📅 Agendar una cita')
-
-    const dias = enviar(barberia, 'c7', '📅 Agendar una cita', args)
-    expect(dias.options).toContain('lunes 4 de enero')
-    const horas = enviar(barberia, 'c7', 'lunes 4 de enero', args)
-    expect(horas.options).toContain('10:00')
-    enviar(barberia, 'c7', '10:00', args)
-    const cita = enviar(barberia, 'c7', 'Carlos Pérez', args)
-    expect(cita.action).toEqual({ type: 'booking', date: '2099-01-04', time: '10:00', name: 'Carlos Pérez' })
-    expect(cita.reply).toContain('Carlos Pérez')
-  })
 })

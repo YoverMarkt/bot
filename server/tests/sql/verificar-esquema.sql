@@ -109,16 +109,16 @@ declare
   v_business uuid;
   v_encolado boolean;
   v_producto uuid;
-  v_reservas integer;
+  v_dias_horario integer;
 begin
   -- ── Preparación ───────────────────────────────────────────────────────────
   insert into businesses (
     slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
-    takes_bookings, takes_orders
+    takes_orders
   ) values (
     'verificacion-esquema', 'Negocio de verificación', 'hotel',
     'ycloud', '+593900000001', '+593900000001',
-    true, true
+    true
   )
   returning id into v_business;
 
@@ -1203,66 +1203,24 @@ begin
     delete from orders where id in (v_pedido_idem, (v_sin_clave ->> 'id')::uuid);
   end;
 
-  -- ── 3e. Una cita atendida es una venta ───────────────────────────────────
-  -- El caso de la barbería: sin esto, atender a alguien no aparecía en ningún
-  -- reporte salvo que el dueño se acordara de registrarlo a mano.
-  declare
-    v_cita uuid;
-    v_resultado jsonb;
-  begin
-    insert into bookings (
-      business_id, contact_phone, contact_name, service, product_id, price,
-      booking_date, booking_time, status
-    ) values (
-      v_business, '+593900000005', 'Cliente', 'Corte', v_producto, 10.50,
-      current_date, '09:00', 'confirmed'
-    ) returning id into v_cita;
+  -- ── 4. El horario por defecto del negocio ─────────────────────────────────
+  -- `business_schedule` sobrevivió a la retirada de la agenda porque decide si
+  -- la tienda acepta pedidos y si el bot atiende. Su trigger llena los 7 días
+  -- al crear el negocio, y sin esa comprobación un alta sin horario pasaría
+  -- desapercibida hasta que un cliente no pudiera pedir.
+  select count(*) into v_dias_horario
+  from business_schedule where business_id = v_business;
+  if v_dias_horario <> 7 then
+    raise exception
+      'El alta del negocio generó % días de horario, esperaba 7', v_dias_horario;
+  end if;
 
-    v_resultado := public.set_booking_status(v_business, v_cita, 'attended');
-    if v_resultado ->> 'result' <> 'updated' then
-      raise exception 'set_booking_status no pudo atender la cita: %', v_resultado;
-    end if;
-    if not exists (select 1 from sales where booking_id = v_cita) then
-      raise exception 'una cita atendida no generó su venta';
-    end if;
-
-    -- Reintentar no duplica el dinero.
-    perform public.set_booking_status(v_business, v_cita, 'attended');
-    if (select count(*) from sales where booking_id = v_cita) <> 1 then
-      raise exception 'atender dos veces duplicó la venta de la cita';
-    end if;
-
-    -- Una cita cerrada no se reabre.
-    v_resultado := public.set_booking_status(v_business, v_cita, 'confirmed');
-    if v_resultado ->> 'result' <> 'invalid_transition' then
-      raise exception 'una cita atendida se pudo reabrir: %', v_resultado;
-    end if;
-
-    -- Otro negocio no puede cobrarse una cita ajena.
-    if public.crear_venta_desde_cita(gen_random_uuid(), v_cita) is not null then
-      raise exception 'FUGA: otro negocio convirtió en venta una cita ajena';
-    end if;
-  end;
-
-  -- ── 4. Reservas: no se puede solapar el mismo hueco ───────────────────────
-  -- El alta del negocio ya crea los 7 días (domingo inactivo, sábado corto).
-  -- Se activa el día de la prueba para que no dependa de cuándo corra el CI.
   update business_schedule
   set is_active = true, open_time = '08:00', close_time = '20:00'
   where business_id = v_business
     and day_of_week = extract(dow from current_date + 1)::int;
-
   if not found then
     raise exception 'El alta del negocio no generó su horario por defecto';
-  end if;
-
-  perform public.create_booking_if_available(
-    v_business, '+593900000002', 'Cliente', 'Servicio',
-    (current_date + 1)::date, '10:00'::time, 60
-  );
-  select count(*) into v_reservas from bookings where business_id = v_business;
-  if v_reservas < 1 then
-    raise exception 'create_booking_if_available no creó la reserva';
   end if;
 
   -- ── 5. Facturación del SaaS ───────────────────────────────────────────────
@@ -1293,177 +1251,18 @@ begin
 
   perform public.get_admin_monthly_usage(current_date);
 
-  -- ── 6. Hospedaje: bloqueos y confirmación ────────────────────────────────
-  declare
-    v_room uuid;
-    v_block jsonb;
-    v_sobra jsonb;
-  begin
-    update businesses set lodging_enabled = true where id = v_business;
-    insert into lodging_settings (business_id) values (v_business);
-    insert into lodging_room_types (
-      business_id, name, total_units, base_occupancy, max_guests,
-      pricing_model, base_rate
-    ) values (
-      v_business, 'Habitación de verificación', 2, 2, 3, 'per_unit', 40
-    )
-    returning id into v_room;
-
-    -- Un bloqueo manual (mantenimiento, reserva de otro canal) descuenta cupo.
-    v_block := public.upsert_lodging_block_if_available(
-      v_business, v_room, 'maintenance',
-      (current_date + 10)::date, (current_date + 12)::date, 1, 'Verificación'
-    );
-    if v_block ->> 'result' is distinct from 'created' then
-      raise exception 'upsert_lodging_block_if_available rechazó un bloqueo válido: %', v_block;
-    end if;
-
-    -- No se puede bloquear más unidades de las que existen.
-    v_sobra := public.upsert_lodging_block_if_available(
-      v_business, v_room, 'maintenance',
-      (current_date + 10)::date, (current_date + 12)::date, 99, null
-    );
-    if v_sobra ->> 'result' <> 'unavailable' then
-      raise exception 'La base aceptó bloquear más habitaciones de las que hay: %', v_sobra;
-    end if;
-
-    -- ── La cadena completa de una estadía ─────────────────────────────────
-    -- Cotizar → solicitar → confirmar es lo que vive un huésped de verdad, y
-    -- lo que pulsa el dueño en su panel. Se ejercita entera: si un eslabón
-    -- revienta, la habitación queda en el limbo y nadie se entera.
-    declare
-      v_cotizacion jsonb;
-      v_quote uuid;
-      v_solicitud jsonb;
-      v_request uuid;
-      v_estado jsonb;
-    begin
-      v_cotizacion := public.quote_lodging_options(
-        v_business, '+593900000003', 'Huésped de prueba',
-        (current_date + 20)::date, (current_date + 22)::date, 2, 0, 1, null
-      );
-      if v_cotizacion ->> 'result' is distinct from 'quoted' then
-        raise exception 'quote_lodging_options no cotizó: %', v_cotizacion;
-      end if;
-      v_quote := ((v_cotizacion -> 'quote') ->> 'id')::uuid;
-      if v_quote is null then
-        raise exception 'La cotización no devolvió su identificador: %', v_cotizacion;
-      end if;
-
-      v_solicitud := public.create_lodging_request_if_available(
-        v_business, v_quote, v_room, '+593900000003', 'Huésped de prueba',
-        repeat('d', 64), 'Verificación'
-      );
-      if v_solicitud ->> 'result' is distinct from 'created' then
-        raise exception 'create_lodging_request_if_available no creó el hold: %', v_solicitud;
-      end if;
-      v_request := ((v_solicitud -> 'request') ->> 'id')::uuid;
-
-      -- Nace PENDIENTE del equipo: nunca confirmada sola.
-      if (select status from lodging_requests where id = v_request) <> 'pending_owner' then
-        raise exception 'La solicitud no nació pendiente del dueño';
-      end if;
-
-      -- Pendiente NO es dinero: mientras no se confirme, no hay venta.
-      -- Sus dos hermanas, `crear_venta_desde_pedido` y `crear_venta_desde_cita`,
-      -- no comprobaban esto hasta el 2026-08-02: cobraban un pedido cancelado.
-      -- La comprobación de las tres está en el bloque 7.
-      if public.crear_venta_desde_estadia(v_business, v_request) is not null then
-        raise exception 'una solicitud pendiente generó venta';
-      end if;
-
-      -- La v2 es la que llama el servidor: confirma y registra la venta en la
-      -- misma transacción, sin tocar el anti-sobreventa de la original.
-      v_estado := public.set_lodging_request_status_v2(v_business, v_request, 'confirmed');
-      if (select status from lodging_requests where id = v_request) <> 'confirmed' then
-        raise exception 'set_lodging_request_status_v2 no confirmó la solicitud: %', v_estado;
-      end if;
-
-      -- CONFIRMADA = VENDIDA. Sin esto, el ingreso de un hostal vivía en un
-      -- reporte aparte y no se juntaba nunca con sus ventas.
-      if not exists (select 1 from sales where lodging_request_id = v_request) then
-        raise exception 'una estadía confirmada no generó su venta';
-      end if;
-      if (select s.total from sales s where s.lodging_request_id = v_request)
-         <> (select r.total from lodging_requests r where r.id = v_request) then
-        raise exception 'la venta de la estadía no heredó su total';
-      end if;
-
-      -- Reintentar no duplica el dinero.
-      perform public.crear_venta_desde_estadia(v_business, v_request);
-      if (select count(*) from sales where lodging_request_id = v_request) <> 1 then
-        raise exception 'confirmar dos veces duplicó la venta de la estadía';
-      end if;
-
-      -- Otro negocio no puede cobrarse una estadía ajena.
-      if public.crear_venta_desde_estadia(gen_random_uuid(), v_request) is not null then
-        raise exception 'FUGA: otro negocio se cobró una estadía ajena';
-      end if;
-
-      -- Un negocio no puede tocar la solicitud de otro.
-      v_estado := public.set_lodging_request_status(
-        gen_random_uuid(), v_request, 'cancelled'
-      );
-      if (select status from lodging_requests where id = v_request) <> 'confirmed' then
-        raise exception 'FUGA: otro negocio cambió el estado de esta solicitud';
-      end if;
-
-      -- Los holds vencidos dejan de ocupar cupo por su cuenta.
-      perform public.expire_lodging_holds(v_business);
-
-      -- Y el bloqueo manual se puede levantar.
-      v_estado := public.release_lodging_block(
-        v_business, (v_block -> 'block' ->> 'id')::uuid
-      );
-      if v_estado ->> 'result' is distinct from 'released' then
-        raise exception 'release_lodging_block no liberó el bloqueo: %', v_estado;
-      end if;
-
-      -- ── Borrar la estadía no puede reventar por su propia venta ─────────
-      -- Va al final a propósito: se lleva por delante la solicitud, así que
-      -- nada de lo anterior podría seguir usándola.
-      --
-      -- La foránea de `sales` hacia `lodging_requests` es compuesta sobre
-      -- (id, business_id) para que nadie se cobre lo del vecino. Pero con
-      -- `on delete set null` a secas PostgreSQL anulaba TAMBIÉN `business_id`,
-      -- que es NOT NULL, y el borrado moría con 23502 (2026-08-02).
-      -- `verificar-fronteras.sql` no lo veía: vigila la FORMA de la foránea,
-      -- y la forma era correcta; lo roto era la ACCIÓN de borrado.
-      declare
-        v_venta_estadia uuid;
-        v_negocio_venta uuid;
-      begin
-        select id into v_venta_estadia
-        from sales where lodging_request_id = v_request;
-
-        delete from lodging_requests where id = v_request;
-
-        select business_id into v_negocio_venta
-        from sales where id = v_venta_estadia;
-        if v_negocio_venta is distinct from v_business then
-          raise exception
-            'Borrar la estadía dejó su venta sin negocio (business_id = %)',
-            v_negocio_venta;
-        end if;
-      end;
-    end;
-  end;
-
   -- ── 7. El dinero solo nace en el estado correcto ──────────────────────────
   --
-  -- Las tres funciones que crean ventas comprobaban el negocio y la
-  -- idempotencia, pero dos de ellas no miraban el ESTADO del origen. Medido
-  -- contra PostgreSQL real el 2026-08-02:
+  -- Las funciones que crean ventas comprobaban el negocio y la idempotencia,
+  -- pero no el ESTADO del origen. Medido contra PostgreSQL real el 2026-08-02:
   --
   --   ⚠️ crear_venta_desde_pedido cobró un pedido en estado "cancelado"
   --
-  -- Estaban protegidas solo por sus llamadores (`set_order_status` y
-  -- `set_booking_status`), y eso basta hasta que alguien las llame directo:
-  -- son SECURITY DEFINER y están concedidas a `service_role`, que es el rol
-  -- con el que el servidor habla con Supabase.
+  -- Estaba protegida solo por su llamador (`set_order_status`), y eso basta
+  -- hasta que alguien la llame directo: es SECURITY DEFINER y está concedida a
+  -- `service_role`, que es el rol con el que el servidor habla con Supabase.
   declare
     v_pedido_cancelado uuid;
-    v_cita_cancelada uuid;
   begin
     insert into orders (business_id, contact_phone, status, total)
     values (v_business, '+593900000404', 'cancelado', 20.00)
@@ -1472,25 +1271,11 @@ begin
       raise exception 'un pedido cancelado generó venta';
     end if;
 
-    insert into bookings (
-      business_id, contact_phone, service, price, booking_date, booking_time, status
-    ) values (
-      v_business, '+593900000404', 'Corte', 20.00, current_date + 5, '16:00', 'cancelled'
-    ) returning id into v_cita_cancelada;
-    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is not null then
-      raise exception 'una cita cancelada generó venta';
-    end if;
-
     -- Y el camino legítimo sigue funcionando: una cerradura que también deja
     -- fuera al dueño no sirve de nada.
     update orders set status = 'completado' where id = v_pedido_cancelado;
     if public.crear_venta_desde_pedido(v_business, v_pedido_cancelado) is null then
       raise exception 'un pedido completado no generó su venta';
-    end if;
-
-    update bookings set status = 'attended' where id = v_cita_cancelada;
-    if public.crear_venta_desde_cita(v_business, v_cita_cancelada) is null then
-      raise exception 'una cita atendida no generó su venta';
     end if;
   end;
 

@@ -6,7 +6,6 @@ import { queryClient } from './lib/queryClient'
 import Login from './features/auth/Login'
 import Layout from './components/Layout'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
-import { isBookingBiz, isLodgingBiz, useBusinessInfo } from './lib/biz'
 
 const Dashboard = lazy(() => import('./features/dashboard/Dashboard'))
 const Conversations = lazy(() => import('./features/conversations/Conversations'))
@@ -16,35 +15,14 @@ const Orders = lazy(() => import('./features/orders/Orders'))
 const Reports = lazy(() => import('./features/reports/Reports'))
 const Customers = lazy(() => import('./features/customers/Customers'))
 const Reactivar = lazy(() => import('./features/customers/Reactivar'))
-const Bookings = lazy(() => import('./features/bookings/Bookings'))
-const Schedule = lazy(() => import('./features/bookings/Schedule'))
+const Schedule = lazy(() => import('./features/schedule/Schedule'))
 const Settings = lazy(() => import('./features/settings/Settings'))
 const BotPrompt = lazy(() => import('./features/settings/BotPrompt'))
 const Users = lazy(() => import('./features/settings/Users'))
-const Lodging = lazy(() => import('./features/lodging/Lodging'))
 
 // Solo entra quien tiene sesión; si no, al login.
 function RequireAuth() {
   return session.token ? <Outlet /> : <Navigate to="/login" replace />
-}
-
-function RequireBookings() {
-  const { data, isLoading } = useBusinessInfo()
-  if (isLoading) return <Skeleton className="h-64 w-full" />
-  return isBookingBiz(data?.type, data?.takes_bookings)
-    ? <Outlet />
-    : <Navigate to="/schedule" replace />
-}
-
-function RequireLodging() {
-  const { data, isLoading } = useBusinessInfo()
-  if (isLoading) return <Skeleton className="h-64 w-full" />
-  const canManage = session.user?.role === 'owner'
-    || session.user?.permissions.includes('hospedaje')
-  return isLodgingBiz(data?.lodging_enabled)
-    && canManage
-    ? <Outlet />
-    : <Navigate to="/" replace />
 }
 
 const PageLoader = () => (
@@ -81,12 +59,6 @@ export default function App() {
               <Route path="/bot-prompt" element={<BotPrompt />} />
               <Route path="/policies" element={<Navigate to="/bot-prompt" replace />} />
               <Route path="/users" element={<Users />} />
-              <Route element={<RequireLodging />}>
-                <Route path="/lodging" element={<Lodging />} />
-              </Route>
-              <Route element={<RequireBookings />}>
-                <Route path="/bookings" element={<Bookings />} />
-              </Route>
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />

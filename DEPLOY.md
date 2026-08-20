@@ -101,10 +101,10 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] Números/keys de WhatsApp de cada negocio cargados desde el panel admin.
 - [ ] Cada negocio YCloud tiene su Endpoint ID y signing secret guardados, y una prueba real recibe `YCloud-Signature` válida.
 - [ ] En una base nueva se aplicó `schema.sql` una sola vez; en una base existente **no se usó como upgrade**.
-- [ ] `migration-hospedaje.sql` aplicada sin errores.
 - [ ] `migration-preparacion-produccion.sql` aplicada antes de las migraciones nuevas.
-- [ ] `migration-modo-menu.sql` aplicada antes de desplegar el modo menú.
-- [ ] `migration-modificadores-menu.sql` aplicada después de modo menú y con RLS/permisos cerrados.
+- [ ] `migration-modo-menu.sql` aplicada (crea `chat_mode` y el modo `menu`, que sigue vivo).
+- [ ] `migration-2026-08-19-miniapp-exige-tienda.sql` aplicada: el modo mini app deja de poder encenderse sin pedidos ni tienda.
+- [ ] `migration-modificadores-menu.sql` aplicada después de la anterior y con RLS/permisos cerrados.
 - [ ] `migration-eliminar-kapso-retell.sql` aplicada antes de `migration-identificadores-canales.sql`.
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.

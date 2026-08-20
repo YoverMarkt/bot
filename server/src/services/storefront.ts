@@ -29,7 +29,6 @@ export interface StorefrontBusiness {
   suspended?: boolean | null
   storefront_enabled?: boolean | null
   takes_orders?: boolean | null
-  lodging_enabled?: boolean | null
   delivery_fee?: number | string | null
   brand_color?: string | null
   logo_url?: string | null
@@ -149,9 +148,7 @@ export interface CatalogRecommendation {
 export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspendida'
 
 /**
- * Qué sabe hacer esta tienda. NO es lo mismo vender comida que alojar gente, y
- * la app no puede adivinarlo: un hostal con carrito de "+/− habitaciones" sería
- * un producto roto, porque una estadía se pide por fechas, no por unidades.
+ * Qué sabe hacer esta tienda.
  *
  * Manda la bandera del negocio, nunca su `type`: el tipo solo recomienda
  * valores al crearlo y el dueño puede cambiarlos a mano.
@@ -159,8 +156,6 @@ export type StorefrontStatus = 'abierta' | 'cerrada' | 'no_disponible' | 'suspen
 export interface StorefrontCapabilities {
   /** Catálogo con carrito: comida, bebidas, retail. */
   orders: boolean
-  /** Estadías por fechas: hotel, hostal, alojamiento. */
-  lodging: boolean
 }
 
 export function storefrontCapabilities(
@@ -168,7 +163,6 @@ export function storefrontCapabilities(
 ): StorefrontCapabilities {
   return {
     orders: business?.takes_orders === true,
-    lodging: business?.lodging_enabled === true,
   }
 }
 
@@ -192,11 +186,10 @@ export function storefrontStatus(input: {
   if (!business || business.active === false) return 'no_disponible'
   if (business.suspended === true) return 'suspendida'
   if (business.storefront_enabled !== true) return 'no_disponible'
-  // Una tienda que no vende ni aloja no tiene nada que mostrar. Es el caso de
-  // la barbería: enciende la tienda por error y el cliente abre una app vacía.
-  // Mejor no existir que existir rota; la barbería se queda con el agente.
+  // Una tienda que no vende no tiene nada que mostrar: se enciende por error y
+  // el cliente abre una app vacía. Mejor no existir que existir rota.
   const capacidades = storefrontCapabilities(business)
-  if (!capacidades.orders && !capacidades.lodging) return 'no_disponible'
+  if (!capacidades.orders) return 'no_disponible'
   return input.outsideHours ? 'cerrada' : 'abierta'
 }
 
@@ -434,10 +427,10 @@ export function buildStorefrontCatalog(input: {
       recommendations,
       // ⚠️ Un grupo NO puede salir dos veces.
       //
-      // Los extras vienen de `menu_modifiers`, la tabla vieja que el bot sigue
-      // usando; los grupos de opciones son el motor nuevo. Al construir el
-      // motor se COPIARON los modificadores existentes sin retirar los
-      // originales, así que un negocio con las dos cosas mandaba las mismas
+      // Los extras vienen de `menu_modifiers`, la tabla heredada que aún
+      // conserva catálogos antiguos; los grupos de opciones son el motor
+      // nuevo. Al construirlo se COPIARON los modificadores existentes sin
+      // retirar los originales, así que un negocio con las dos cosas mandaba las mismas
       // opciones por los dos campos y la ficha las pintaba dos veces: los 19
       // sabores de Monster Pizza salían repetidos, una vez con radio y otra
       // con casillas.

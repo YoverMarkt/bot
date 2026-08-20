@@ -1,5 +1,6 @@
 import { crearBuzonDeComprobantes, textoDelComprobante } from './payment-proof-inbox'
 import type { ProcessMessageInput } from './bot-conversation'
+import { atiendeSinIA } from './chat-mode'
 import type { ScheduleRecord } from '../db/types'
 import {
   normalizeChannelIdentifier,
@@ -47,14 +48,6 @@ interface EntryWhatsApp {
     caption?: string,
     deliveryMode?: 'queued' | 'direct',
   ): Promise<void>
-  sendInteractive(
-    business: EntryBusiness,
-    to: string,
-    body: string,
-    options: { id: string; title: string; description?: string }[],
-    listButtonText?: string,
-    deliveryMode?: 'queued' | 'direct',
-  ): Promise<boolean>
   // El enlace de la tienda como botón nativo. false = el canal no puede, y
   // quien llama manda el enlace como texto.
   sendLinkButton(
@@ -236,11 +229,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       caption?: string,
       deliveryMode?: 'queued' | 'direct',
     ) => Promise<unknown>,
-    sendOptions?: (
-      body: string,
-      options: { id: string; title: string; description?: string }[],
-      deliveryMode?: 'queued' | 'direct',
-    ) => Promise<boolean>,
     sendLink?: (
       message: { body: string; url: string; label: string; footer?: string | null },
     ) => Promise<boolean>,
@@ -255,7 +243,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       sendImage,
       sendTyping,
       sendVideo,
-      sendOptions,
       sendLink,
       inboundId,
     })
@@ -329,16 +316,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption, deliveryMode) => deliveryMode
         ? whatsapp.sendVideo(business, from, url, caption, deliveryMode)
         : whatsapp.sendVideo(business, from, url, caption),
-      (body, menuOptions, deliveryMode) => deliveryMode
-        ? whatsapp.sendInteractive(
-            business,
-            from,
-            body,
-            menuOptions,
-            undefined,
-            deliveryMode,
-          )
-        : whatsapp.sendInteractive(business, from, body, menuOptions),
       // El enlace de la tienda va como botón nativo. Solo aquí: es el camino
       // del mensaje de texto entrante, que es el único que lo manda.
       message => whatsapp.sendLinkButton(business, from, message),
@@ -426,9 +403,19 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     // estaba: preguntar a quién pertenece el mensaje cuesta una consulta;
     // describir una imagen cuesta dinero.
     const negocioDeLaFoto = options.channel === 'telegram'
-      ? await database.getBusinessBySlug(options.slug).catch(() => null)
-      : await resolveWhatsAppBusiness(options).catch(() => null)
-    const enMiniapp = negocioDeLaFoto?.chat_mode === 'miniapp'
+      ? await database.getBusinessBySlug(options.slug)
+      : await resolveWhatsAppBusiness(options)
+    if (!negocioDeLaFoto) {
+      logger.log('⚠️  Negocio o contexto de canal no encontrado antes de mirar la foto')
+      if (options.businessId) {
+        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
+      }
+      if (options.channel === 'telegram') {
+        return options.ctx?.reply('❌ Negocio no encontrado')
+      }
+      return undefined
+    }
+    const enMiniapp = atiendeSinIA(negocioDeLaFoto?.chat_mode)
 
     let identified = 'NO_IDENTIFICADO'
     if (enMiniapp) {
@@ -464,8 +451,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
     }
 
     if (options.channel === 'telegram') {
-      const business = await database.getBusinessBySlug(options.slug)
-      if (!business) return options.ctx?.reply('❌ Negocio no encontrado')
+      const business = negocioDeLaFoto
       const context = options.ctx
       if (!context) return undefined
       return processMessage(
@@ -494,14 +480,7 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       )
     }
 
-    const business = await resolveWhatsAppBusiness(options)
-    if (!business) {
-      logger.log('⚠️  Negocio o contexto de canal no encontrado')
-      if (options.businessId) {
-        throw new Error('El canal ya no pertenece al negocio que recibió el webhook')
-      }
-      return undefined
-    }
+    const business = negocioDeLaFoto
     return processMessage(
       business,
       from,
@@ -510,7 +489,6 @@ function createBotEntry(dependencies: BotEntryDependencies) {
       (url, caption) => whatsapp.sendImage(business, from, url, caption),
       () => whatsapp.sendTyping(business, options.inboundId),
       (url, caption) => whatsapp.sendVideo(business, from, url, caption),
-      (body, menuOptions) => whatsapp.sendInteractive(business, from, body, menuOptions),
       message => whatsapp.sendLinkButton(business, from, message),
       options.inboundId,
     )

@@ -88,8 +88,6 @@ router.post('/api/client/login', loginLimiter, async (req, res) => {
       role: 'client',
       urole: userRole,
       perms: permissions,
-      takesBookings: business.takes_bookings === true,
-      lodgingEnabled: business.lodging_enabled === true,
       email,
     }, JWT(), { expiresIn: '7d' })
 
@@ -106,8 +104,6 @@ router.post('/api/client/login', loginLimiter, async (req, res) => {
         type: business.type,
         suspended: business.suspended,
         bot_active: business.bot_active,
-        takes_bookings: business.takes_bookings === true,
-        lodging_enabled: business.lodging_enabled === true,
       },
     })
   } catch (error) {

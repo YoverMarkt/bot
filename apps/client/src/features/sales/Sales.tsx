@@ -23,7 +23,7 @@ export default function Sales() {
         <h1 className="text-2xl font-bold text-foreground">Ventas</h1>
         <p className="text-sm text-muted-foreground">
           El historial de lo ya cobrado. Cada venta nace sola al entregar un pedido
-          o atender una cita: no hay que registrar nada a mano.
+          El dueño no registra nada a mano.
         </p>
       </div>
       <SalesByContact prefillPhone={prefillPhone} />

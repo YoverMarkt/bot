@@ -171,16 +171,18 @@ test('el sidebar admin queda fijo y solo se desplaza el contenido', async ({ pag
   expect((await aside.boundingBox())?.y).toBe(topBefore)
 })
 
-test('el simulador conserva los controles y la advertencia dentro del móvil', async ({ page }) => {
+test('el simulador conserva los controles dentro del móvil', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await seedAdminSession(page)
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/simulator`)
 
+  // El interruptor «Modo menú / Modo IA» se retiró: el simulador despacha por
+  // el modo REAL del negocio, así que lo que se prueba es lo que recibe su
+  // cliente. Los tres modos siguen vivos.
   await page.getByRole('combobox', { name: 'Negocio para simular' }).click()
   await page.getByRole('option', { name: 'Negocio E2E' }).click()
-  await page.getByRole('button', { name: 'Modo menú' }).click()
-  await expect(page.getByText(/pero en WhatsApp este negocio usa/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Limpiar chat/ })).toBeVisible()
   await expect.poll(() => page.locator('main').evaluate(element => (
     element.scrollWidth <= element.clientWidth + 1
   ))).toBe(true)
@@ -194,9 +196,7 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
 
   const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
   const businessType = dialog.getByRole('combobox', { name: 'Tipo de negocio' })
-  const bookingMode = dialog.getByRole('combobox', { name: 'Agenda del bot' })
   const salesMode = dialog.getByRole('combobox', { name: 'Ventas por el bot' })
-  const lodgingMode = dialog.getByRole('combobox', { name: 'Hospedaje' })
   const selectBusinessType = async (name: string) => {
     await businessType.click()
     const listbox = page.getByRole('listbox')
@@ -205,20 +205,13 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
     await expect(listbox).toBeHidden()
   }
   await selectBusinessType('Hotel')
-  await expect(bookingMode).toContainText('Sin agenda')
   await expect(salesMode).toContainText('Solo informa y deriva')
-  await expect(lodgingMode).toContainText('Cotiza habitaciones')
-  await expect(dialog.getByText('Módulo de hospedaje independiente')).toBeVisible()
 
   await selectBusinessType('Pizzería')
-  await expect(bookingMode).toContainText('Sin agenda')
   await expect(salesMode).toContainText('Crea pedidos con total oficial')
-  await expect(lodgingMode).toContainText('Sin cotización')
 
   await selectBusinessType('Barbería')
-  await expect(bookingMode).toContainText('Solicita citas')
   await expect(salesMode).toContainText('Solo informa y deriva')
-  await expect(lodgingMode).toContainText('Sin cotización')
   await expect(dialog.getByText(/Se creará un horario inicial/)).toBeVisible()
 
   await dialog.getByRole('combobox', { name: 'Plan' }).click()
@@ -232,47 +225,6 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
   await expect(dialog.getByLabel('Tarifa mensual ($)')).toHaveAttribute('readonly', '')
   await expect(dialog.getByLabel('Plan vence')).toHaveCount(0)
   await expectConnectedLabels(dialog)
-})
-
-test('crea un hotel con hospedaje separado de citas y pedidos', async ({ page }) => {
-  await seedAdminSession(page)
-  await mockAdminApi(page)
-  let payload: Record<string, unknown> | null = null
-  await page.route('**/api/admin/clients', async route => {
-    if (route.request().method() !== 'POST') return route.fallback()
-    payload = route.request().postDataJSON() as Record<string, unknown>
-    return route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({ id: 'hotel-e2e', ...payload }),
-    })
-  })
-
-  await page.goto(`${adminUrl}#/clients`)
-  await page.getByRole('button', { name: 'Nuevo cliente' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
-  await dialog.getByLabel('Nombre *').fill('Hostal E2E')
-  await dialog.getByRole('combobox', { name: 'Tipo de negocio' }).click()
-  await page.getByRole('option', { name: 'Hotel' }).click()
-  await dialog.getByLabel('WhatsApp del negocio *').fill('+593999000111')
-  await dialog.getByLabel('YCloud API Key').fill('ycloud-e2e-key')
-  await dialog.getByLabel('Correo del dueño (panel)').fill('dueno@e2e.test')
-  await dialog.getByLabel('Contraseña del panel').fill('segura-e2e-123')
-  await dialog.getByRole('button', { name: 'Crear negocio' }).click()
-
-  await expect.poll(() => payload).not.toBeNull()
-  expect(payload).toMatchObject({
-    name: 'Hostal E2E',
-    type: 'hotel',
-    lodging_enabled: true,
-    takes_bookings: false,
-    takes_orders: false,
-    plan: 'micro',
-    monthly_rate: 25,
-    monthly_contact_limit: 50,
-    monthly_outbound_message_limit: 250,
-  })
-  expect(payload).not.toHaveProperty('plan_expires_at')
 })
 
 test('Facturación muestra la cuota automática y conserva el cobro manual del pago', async ({ page }) => {

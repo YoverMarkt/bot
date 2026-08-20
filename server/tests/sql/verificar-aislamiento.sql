@@ -30,18 +30,18 @@ begin
   -- ── Dos negocios distintos, cada uno con lo suyo ─────────────────────────
   insert into businesses (
     slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
-    takes_bookings, takes_orders
+    takes_orders
   ) values (
     'aislamiento-a', 'Negocio A', 'tienda',
-    'ycloud', '+593900001111', '+593900001111', true, true
+    'ycloud', '+593900001111', '+593900001111', true
   ) returning id into v_a;
 
   insert into businesses (
     slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
-    takes_bookings, takes_orders
+    takes_orders
   ) values (
     'aislamiento-b', 'Negocio B', 'tienda',
-    'ycloud', '+593900002222', '+593900002222', true, true
+    'ycloud', '+593900002222', '+593900002222', true
   ) returning id into v_b;
 
   insert into products (business_id, name, price, stock, active)
@@ -68,10 +68,9 @@ begin
 
   -- Lo mismo por el camino de las ventas. El alta manual se retiró el
   -- 2026-08-02, así que la frontera se comprueba donde ahora nace el dinero:
-  -- nadie puede cobrarse el pedido ni la cita de otro negocio.
+  -- nadie puede cobrarse el pedido de otro negocio.
   declare
     v_pedido_a uuid;
-    v_cita_a uuid;
   begin
     insert into orders (business_id, contact_phone, status, total)
     values (v_a, '+593900009999', 'completado', 50.00)
@@ -81,15 +80,6 @@ begin
       raise exception 'FUGA: el negocio B se cobró un pedido del negocio A';
     end if;
 
-    insert into bookings (
-      business_id, contact_phone, service, price, booking_date, booking_time, status
-    ) values (
-      v_a, '+593900009999', 'Servicio', 30.00, current_date, '10:00', 'confirmed'
-    ) returning id into v_cita_a;
-
-    if public.crear_venta_desde_cita(v_b, v_cita_a) is not null then
-      raise exception 'FUGA: el negocio B se cobró una cita del negocio A';
-    end if;
   end;
 
   -- Con su propio producto sí funciona: la barrera no rompe el uso legítimo.
@@ -137,25 +127,6 @@ begin
   );
   if (select count(*) from platform_errors where fingerprint = repeat('c', 64)) <> 2 then
     raise exception 'FUGA: el error de un negocio se mezcló con el de otro';
-  end if;
-
-  -- ── 5. RESERVAS: la agenda de A no ocupa la de B ─────────────────────────
-  update business_schedule
-  set is_active = true, open_time = '08:00', close_time = '20:00'
-  where business_id in (v_a, v_b)
-    and day_of_week = extract(dow from current_date + 1)::int;
-
-  perform public.create_booking_if_available(
-    v_a, '+593900009999', 'Cliente', 'Servicio',
-    (current_date + 1)::date, '10:00'::time, 60
-  );
-  -- B debe poder reservar EXACTAMENTE el mismo hueco: son agendas distintas.
-  perform public.create_booking_if_available(
-    v_b, '+593900008888', 'Otro cliente', 'Servicio',
-    (current_date + 1)::date, '10:00'::time, 60
-  );
-  if (select count(*) from bookings where business_id = v_b) <> 1 then
-    raise exception 'FUGA: la reserva del negocio A bloqueó la agenda de B';
   end if;
 
   -- ── 6. CATÁLOGO: el de A no se engancha al de B ──────────────────────────
@@ -221,18 +192,17 @@ begin
 
   -- ── 7. BORRAR EL ORIGEN DE UNA VENTA NO PUEDE REVENTAR ───────────────────
   --
-  -- Las tres foráneas de `sales` hacia pedido, cita y estadía son compuestas
-  -- sobre (id, business_id) para que nadie se cobre lo del vecino. Pero una
-  -- foránea compuesta CORRECTA puede tener una acción de borrado ROTA: con
+  -- La foránea de `sales` hacia el pedido es compuesta sobre
+  -- (id, business_id) para que nadie se cobre lo del vecino. Pero una foránea
+  -- compuesta CORRECTA puede tener una acción de borrado ROTA: con
   -- `on delete set null` a secas PostgreSQL anula todas las columnas de la
-  -- pareja, incluida `business_id`, que es NOT NULL. Así estuvieron las tres
-  -- hasta el 2026-08-02, y borrar un pedido entregado fallaba con 23502.
+  -- pareja, incluida `business_id`, que es NOT NULL. Así estuvieron hasta el
+  -- 2026-08-02, y borrar un pedido entregado fallaba con 23502.
   --
   -- `verificar-fronteras.sql` no lo veía: mira la FORMA de la foránea, y la
   -- forma era correcta. Por eso aquí se BORRA de verdad.
   declare
     v_pedido_venta uuid;
-    v_cita_venta uuid;
     v_estadia uuid;
     v_venta uuid;
     v_negocio_venta uuid;
@@ -262,30 +232,6 @@ begin
         'Borrar el pedido dejó la venta sin negocio (business_id = %)', v_negocio_venta;
     end if;
 
-    -- Cita ATENDIDA → venta → borrar la cita. 'attended', no 'confirmed':
-    -- una cita confirmada todavía no es dinero.
-    insert into bookings (
-      business_id, contact_phone, service, price, booking_date, booking_time, status
-    ) values (
-      v_b, '+593900007777', 'Servicio', 15.00, current_date + 2, '09:00', 'attended'
-    ) returning id into v_cita_venta;
-    v_venta := public.crear_venta_desde_cita(v_b, v_cita_venta);
-    if v_venta is null then
-      raise exception 'La cita atendida no generó venta: no hay nada que borrar';
-    end if;
-
-    delete from bookings where id = v_cita_venta;
-
-    select business_id into v_negocio_venta from sales where id = v_venta;
-    if v_negocio_venta is distinct from v_b then
-      raise exception
-        'Borrar la cita dejó la venta sin negocio (business_id = %)', v_negocio_venta;
-    end if;
-
-    -- La estadía se comprueba en `verificar-esquema.sql`, sobre el escenario
-    -- real de hospedaje que ya existe allí: `lodging_requests` exige una
-    -- cotización y un tipo de habitación de verdad, y montarlos aquí sería
-    -- duplicar ese escenario entero para probar exactamente lo mismo.
   end;
 
   -- ── 7 bis. MOTOR DE OPCIONES: los grupos y combos no cruzan negocios ─────
@@ -522,9 +468,6 @@ begin
   end if;
   if (select count(*) from orders where business_id = v_b) <> v_pedidos_b then
     raise exception 'FUGA GRAVE: borrar el negocio A alteró los pedidos de B';
-  end if;
-  if not exists (select 1 from bookings where business_id = v_b) then
-    raise exception 'FUGA GRAVE: borrar el negocio A eliminó la reserva de B';
   end if;
 
   -- ── 9. RLS activa en todas las tablas de negocio ─────────────────────────

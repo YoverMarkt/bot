@@ -3,8 +3,8 @@ import { ChevronLeft, X } from 'lucide-react'
 import { foto } from '../lib/imagen'
 import type { AnchoDeFoto } from '../lib/imagen'
 
-// Piezas compartidas por los dos flujos (comida y hospedaje). Deliberadamente
-// pocas y sin librería de componentes: la tienda vive de cargar rápido.
+// Piezas compartidas de la tienda. Deliberadamente pocas y sin librería de
+// componentes: la tienda vive de cargar rápido.
 
 export function Boton({ children, onClick, disabled, variante = 'principal', type = 'button' }: {
   children: ReactNode

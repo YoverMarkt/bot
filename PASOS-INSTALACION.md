@@ -21,7 +21,7 @@ transaccional de ventas, `server/migration-atomicidad-onboarding.sql` crea
 negocio, políticas, usuario dueño y facturación en una única transacción,
 `server/migration-atomicidad-pedidos.sql` crea pedidos atómicos y
 `server/migration-deduplicacion-webhooks.sql` instala deduplicación persistente.
-Hospedaje usa `server/migration-hospedaje.sql`. Ejecuta después, en este orden:
+Ejecuta después, en este orden:
 `server/migration-preparacion-produccion.sql`,
 `server/migration-modo-menu.sql`,
 `server/migration-modificadores-menu.sql`,

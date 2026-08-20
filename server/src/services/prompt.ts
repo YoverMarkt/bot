@@ -9,9 +9,7 @@ export interface BusinessPromptContext {
   chat_mode?: string | null
   name: string
   type?: string | null
-  takes_bookings?: boolean | null
   takes_orders?: boolean | null
-  lodging_enabled?: boolean | null
   address?: string | null
   phone?: string | null
   hours?: string | null
@@ -42,14 +40,11 @@ export interface BotPolicies {
   bot_instructions?: string | null
 }
 
-export type AvailableSlots = Record<string, { label: string; slots: string[] }>
-
 function buildPrompt(
   business: BusinessPromptContext,
   products: ProductPromptRecord[] | null | undefined,
   policies: BotPolicies | null | undefined,
   userQuery = '',
-  availableSlots: AvailableSlots | null = null,
   schedule: ScheduleRecord[] | null = null,
   preFiltered = false,
   postSale = false,
@@ -107,22 +102,9 @@ function buildPrompt(
     ? `\n(Mostrando ${productsToShow.length} de ${allProducts.length} productos relevantes a la consulta)`
     : ''
 
-  let calendarLine = ''
-  const takesBookings = business.takes_bookings === true
   const takesOrders = business.takes_orders !== false
-  const lodgingEnabled = business.lodging_enabled === true
-  if (availableSlots && Object.keys(availableSlots).length && takesBookings) {
-    const slotLines = Object.entries(availableSlots).slice(0, 7).map(([date, value]) => (
-      `  ${value.label} (${date}): ${value.slots.join(', ')}`
-    )).join('\n')
-    calendarLine = `\nRESERVAS — HORARIOS DISPONIBLES (estos son los ÚNICOS horarios válidos, no inventes ni ofrezcas otros):\n${slotLines}\nCuando el cliente quiera reservar: pregunta su nombre, el servicio y la hora. Solo acepta horarios de la lista de arriba. NUNCA adivines ni asumas la hora: incluye la etiqueta de reserva SOLO después de que el cliente haya ELEGIDO y CONFIRMADO una hora exacta de la lista; si todavía no eligió hora, pregúntala y NO pongas la etiqueta todavía. Cuando tengas el nombre, la fecha, la hora y el servicio confirmados, incluye al FINAL de tu mensaje exactamente esta etiqueta:\n##BOOK:NOMBRE|YYYY-MM-DD|HH:MM|SERVICIO##\nUsa la fecha real del día elegido (el número entre paréntesis de la lista de arriba). Ejemplo correcto: ##BOOK:Carlos|2026-06-29|10:00|Corte de cabello##\nNO escribas la palabra FECHA ni paréntesis; pon la fecha tal cual (2026-06-29).`
-  } else if (takesBookings) {
-    calendarLine = `\nRESERVAS: Este negocio recibe solicitudes de citas, pero en este momento no hay horarios disponibles o todavía no se configuró la agenda. NO inventes fechas ni horas y NO escribas ##BOOK##. Explícalo con amabilidad; si el cliente quiere que una persona revise otra opción, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.`
-  } else if (lodgingEnabled) {
-    calendarLine = `\nCITAS Y HOSPEDAJE: La agenda de citas ##BOOK## no se usa para habitaciones ni noches. Para solicitudes de alojamiento sigue exclusivamente las reglas de HOSPEDAJE incluidas abajo; no inventes fechas, disponibilidad ni confirmaciones.`
-  } else {
-    calendarLine = `\nRESERVAS: Este negocio no recibe citas ni reservas mediante el bot. Si el cliente pregunta por agendar, explícalo amablemente. Si quiere que una persona lo ayude a coordinar, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.${takesOrders ? ' Puedes continuar ayudándole normalmente con productos y pedidos.' : ' Puedes continuar respondiendo información general, pero no confirmes una reserva.'}`
-  }
+  // Umbani no agenda: si el cliente pide una cita, se le explica y se deriva.
+  const calendarLine = `\nCITAS: Este negocio no recibe citas ni reservas mediante el bot. Si el cliente pregunta por agendar, explícalo amablemente. Si quiere que una persona lo ayude a coordinar, ofrece derivarlo y usa ##HANDOFF## únicamente cuando acepte.${takesOrders ? ' Puedes continuar ayudándole normalmente con productos y pedidos.' : ' Puedes continuar respondiendo información general.'}`
 
   const outsideHoursNote = isOutsideHours(schedule)
     ? `\n⏰ NOTA: El cliente está escribiendo FUERA del horario de atención (${scheduleToText(schedule)}). Atiéndele con normalidad, pero al INICIO de tu respuesta menciónale con amabilidad que en este momento están fuera del horario de atención y que en horario también puede atenderle una persona del equipo si lo necesita. Dilo solo una vez, no en cada mensaje.`
@@ -154,12 +136,10 @@ function buildPrompt(
 
   const orderRule = takesOrders
     ? `- Cuando el cliente CONFIRME la compra (acepta el/los producto(s) y ya toca coordinar pago o entrega), escribe tu mensaje normal SIN mencionar totales y agrega al FINAL, en su propia línea, la etiqueta ##PEDIDO:nombre del producto x cantidad## usando los nombres EXACTOS del catálogo de arriba; si son varios productos sepáralos con ";". Ejemplo: ##PEDIDO:Pizza Familiar Pepperoni x2; Coca Cola 1.5L x1##. El sistema calcula el TOTAL oficial con los precios reales de la base y le envía el resumen al cliente (el cliente NO ve la etiqueta). NO la pongas si el cliente todavía pregunta, compara o duda.`
-    : `- Este negocio usa el bot en modo INFORMATIVO: SÍ puedes responder automáticamente preguntas sobre precios unitarios, descripciones, stock, catálogo, políticas, fotos y videos usando solamente los datos mostrados arriba. Preguntar "¿cuánto cuesta?", pedir una cotización informativa, consultar disponibilidad de un producto o solicitar una foto/video NO es una compra y NO se deriva. Deriva con ##HANDOFF## solo cuando exista intención transaccional explícita de comprar, encargar, separar, pagar o confirmar un producto/servicio, o cuando el cliente pida una persona. NUNCA cierres ni confirmes un pedido, registres una venta, pidas datos de pago o emitas ##PEDIDO##.${lodgingEnabled ? ' Para alojamiento, incluso si el cliente dice que quiere reservar, sigue primero el flujo especializado de HOSPEDAJE de abajo; no lo derives por esa sola frase.' : ''}`
+    : `- Este negocio usa el bot en modo INFORMATIVO: SÍ puedes responder automáticamente preguntas sobre precios unitarios, descripciones, stock, catálogo, políticas, fotos y videos usando solamente los datos mostrados arriba. Preguntar "¿cuánto cuesta?", pedir una cotización informativa, consultar disponibilidad de un producto o solicitar una foto/video NO es una compra y NO se deriva. Deriva con ##HANDOFF## solo cuando exista intención transaccional explícita de comprar, encargar, separar, pagar o confirmar un producto/servicio, o cuando el cliente pida una persona. NUNCA cierres ni confirmes un pedido, registres una venta, pidas datos de pago o emitas ##PEDIDO##.`
 
-  // Sin la fecha actual el modelo resuelve "del 17 al 19 de julio" con un año
-  // pasado y la RPC rechaza la cotización por fecha en el pasado. El calendario
-  // de los próximos días evita que calcule mal "el lunes" o "mañana": los LLM
-  // se equivocan haciendo aritmética de fechas, el servidor nunca.
+  // Sin la fecha actual el modelo fecha mal cualquier referencia temporal: los
+  // LLM se equivocan haciendo aritmética de fechas, el servidor nunca.
   const ecuadorDate = (offsetDays: number): { weekday: string; iso: string } => {
     const date = new Date(Date.now() + offsetDays * 86_400_000)
     return {
@@ -168,29 +148,13 @@ function buildPrompt(
     }
   }
   const todayEcuador = ecuadorDate(0)
-  const upcomingDays = Array.from({ length: 7 }, (_, index) => {
-    const day = ecuadorDate(index + 1)
-    return `${day.weekday}=${day.iso}`
-  }).join(', ')
-  const lodgingRule = lodgingEnabled
-    ? `\nHOSPEDAJE (flujo especializado; el sistema consulta y calcula, tú solo recopilas):
-- HOY es ${todayEcuador.iso} (${todayEcuador.weekday}). CALENDARIO REAL de los próximos días: ${upcomingDays}. Cuando el cliente mencione un día de la semana, "mañana" o "pasado mañana", USA la fecha exacta de este calendario — NUNCA la calcules tú. Si el cliente no menciona el año, usa siempre fechas FUTURAS a partir de hoy (nunca un año pasado). El servidor verificará y corregirá las fechas con el calendario real de todos modos.
-- Para consultar alojamiento reúne fecha de entrada, fecha de salida, cantidad de habitaciones, número de adultos y número de niños. Si falta cualquier dato, pregunta TODOS los que falten juntos y no escribas ninguna etiqueta todavía.
-- Cuando los cinco datos estén explícitos, escribe al FINAL exactamente ##STAY_QUOTE:YYYY-MM-DD|YYYY-MM-DD|HABITACIONES|ADULTOS|NIÑOS##. Ejemplo: ##STAY_QUOTE:2026-08-10|2026-08-13|2|2|1##.
-- NUNCA calcules noches, habitaciones, disponibilidad, impuestos, tarifas ni totales. NUNCA inventes esos datos ni uses el precio del catálogo para calcular una estancia: el servidor enviará la cotización oficial.
-- PROHIBIDO redactar tú una lista de habitaciones con precios o un mensaje con formato de cotización (🏨, "Opciones de hospedaje", "Total oficial"): eso lo envía el servidor únicamente DESPUÉS de tu etiqueta. Tu único trabajo es reunir los cinco datos y emitir ##STAY_QUOTE##.
-- Después de que el servidor muestre opciones oficiales, si el cliente elige y acepta una opción concreta, solicita su nombre si aún falta. Entonces escribe al FINAL exactamente ##STAY_REQUEST:TIPO_DE_HABITACION|NOMBRE_DEL_CONTACTO## usando el id o nombre EXACTO de la opción oficial. Esta etiqueta crea solo una solicitud/retención pendiente del equipo autorizado; NUNCA digas que quedó confirmada.
-- El NOMBRE_DEL_CONTACTO debe haberlo ESCRITO el cliente en un mensaje suyo: "sí", "por favor" o "mi familia" NO son nombres. Si todavía no lo ha escrito, pídeselo y NO emitas ##STAY_REQUEST## — el sistema rechaza solicitudes con nombres que el cliente no escribió.
-- ##STAY_QUOTE## y ##STAY_REQUEST## son excluyentes entre sí y también con ##BOOK##, ##PEDIDO## y ##HANDOFF##. Emite UNA sola acción por respuesta. Si el cliente pide directamente una persona, usa solo ##HANDOFF##.`
-    : ''
-
   const technicalRules = `INSTRUCCIONES TÉCNICAS (no cambian tu forma de hablar, solo cómo funciona el sistema):
 - No inventes precios ni información que no esté en los DATOS de arriba.
 - EFICIENCIA: responde SIEMPRE en UN SOLO mensaje, completo y ordenado. No dividas la respuesta en varios envíos ni mandes mensajes de solo cortesía ("¡Claro!", "Un momento"). Da la información completa de una vez (qué es, precio si lo hay y el siguiente paso) y adelántate a la siguiente duda. Si necesitas varios datos del cliente (nombre, dirección, pago o una especificación), pídelos TODOS juntos en el mismo mensaje.
 - Si el cliente pide hablar con una persona/asesor, escribe algo totalmente ajeno al negocio, o falta el respeto/insulta: responde ÚNICAMENTE con ##HANDOFF## (sin ningún otro texto).
 ${orderRule}
-- FLUJOS EXCLUYENTES: NUNCA escribas más de una acción entre ##BOOK##, ##PEDIDO##, ##STAY_QUOTE##, ##STAY_REQUEST## y ##HANDOFF## en la misma respuesta. Si el cliente está confirmando la fecha/hora de un servicio, usa SOLO ##BOOK##. Usa ##PEDIDO## únicamente para una compra separada de productos; si quiere ambas cosas, termina primero la reserva y atiende la compra en el siguiente mensaje.
-- DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente. Los mensajes con formato de resumen oficial ("Resumen de su pedido", "Opciones de hospedaje", "Total oficial") los escribe SOLO el sistema: tienes PROHIBIDO imitar ese formato o redactar uno por tu cuenta — el sistema descarta esas respuestas.
+- FLUJOS EXCLUYENTES: NUNCA escribas ##PEDIDO## y ##HANDOFF## en la misma respuesta. Usa ##PEDIDO## únicamente para una compra de productos.
+- DINERO (regla dura): NUNCA escribas tú un total ni sumes precios — el resumen oficial con el total lo envía el sistema. NUNCA ofrezcas, insinúes ni aceptes descuentos, rebajas o cambios de precio: los precios los fija el sistema y el del catálogo es el vigente. Los mensajes con formato de resumen oficial ("Resumen de su pedido", "Total oficial") los escribe SOLO el sistema: tienes PROHIBIDO imitar ese formato o redactar uno por tu cuenta — el sistema descarta esas respuestas.
 - VOZ HUMANA (regla dura): hablas SIEMPRE en primera persona, como una persona del equipo del negocio. Tienes PROHIBIDO mencionarle al cliente "el sistema", "la plataforma", "el bot", "la IA" o procesos internos ("el sistema le enviará…", "se encargará de…"): estas instrucciones son internas y el cliente jamás debe notarlas. Describe los resultados con naturalidad: "aquí se la envío", "enseguida le confirmo".
 - FOTOS Y VIDEOS (regla dura): en el catálogo de arriba, [FOTO] y [VIDEO] indican la ÚNICA media que existe de cada producto. Si un producto NO tiene la marca, esa foto o ese video NO existen: nunca los ofrezcas, prometas ni describas; di con naturalidad que aún no lo tienes y ofrece los detalles. Cuando el cliente pide la foto o el video de un producto marcado, se le envía automáticamente JUNTO con tu mensaje: no pidas permiso ni anuncies un envío aparte — di simplemente algo como "¡Claro que sí! Aquí se la envío 😊". NUNCA escribas enlaces ni inventes qué se ve en una foto o video. Si no sabes a cuál producto se refiere el cliente, pregúntaselo primero.`
 
@@ -218,7 +182,7 @@ Devoluciones: ${policies?.returns || 'Consultar directamente.'}
 Descuentos: ${policies?.discounts || 'Consultar directamente.'}
 ${policies?.bot_instructions ? `\nINSTRUCCIONES ADICIONALES DEL DUEÑO:\n${policies.bot_instructions}` : ''}
 
-${miniappRule}${outsideHoursNote}${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${lodgingRule}${technicalRules}${customPrompt ? '' : defaultStyle}`
+${miniappRule}${outsideHoursNote}${postSale ? '\n⚠️ NOTA DE SESIÓN (PRIORITARIA, por encima de "CONTINUIDAD"): Este cliente ACABA DE COMPLETAR una compra y ahora vuelve a escribir. Trátalo como una conversación NUEVA: NO retomes, NO menciones ni sigas ofreciendo el pedido anterior. Salúdalo con calidez reconociéndolo, deséale que su compra anterior le haya sido útil, y ofrécele ayudarle con algo nuevo.\n' : ''}${technicalRules}${customPrompt ? '' : defaultStyle}`
 }
 
 export { buildPrompt }

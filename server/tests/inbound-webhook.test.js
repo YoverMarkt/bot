@@ -258,6 +258,44 @@ describe('procesador durable de webhooks', () => {
     )
   })
 
+  it("el modo menú no descarga, transcribe ni envía media a visión", async () => {
+    const current = setup({
+      database: {
+        getBusinessByChannel: vi.fn().mockResolvedValue({
+          id: 'business-a',
+          chat_mode: 'menu',
+          meta_token: 'meta-token-a',
+          ycloud_api_key: 'ycloud-key-a',
+        }),
+      },
+    })
+
+    await current.process(payload({
+      provider: 'ycloud',
+      channelAddress: ycloudAddress,
+      content: {
+        kind: 'audio',
+        media: {
+          url: 'https://api.ycloud.com/v2/whatsapp/media/download/audio-a',
+          mimeType: 'audio/ogg',
+        },
+      },
+    }))
+    await current.process(payload({
+      content: { kind: 'image', media: { id: 'image-a', mimeType: 'image/jpeg' } },
+    }))
+
+    expect(current.http.get).not.toHaveBeenCalled()
+    expect(current.bot.transcribeAudio).not.toHaveBeenCalled()
+    expect(current.bot.handleImage).not.toHaveBeenCalled()
+    expect(current.bot.handleMessage).toHaveBeenNthCalledWith(
+      1, '+593988000001', '[nota de voz]', '593999000001', expect.any(Object),
+    )
+    expect(current.bot.handleMessage).toHaveBeenNthCalledWith(
+      2, '+593988000001', '[foto]', 'meta-phone-a', expect.any(Object),
+    )
+  })
+
   it('falla para que el worker reintente si cambió el tenant o la media es insegura', async () => {
     const changed = setup({
       database: { getBusinessByChannel: vi.fn().mockResolvedValue({ id: 'business-b' }) },
