@@ -128,7 +128,11 @@ const respaldar = () => {
   // producción. stderr se captura para sanearla antes de mostrar cualquier
   // diagnóstico, y stdout conserva el volcado binario.
   const salida = docker([
-    'run', '--rm', '-i', IMAGEN,
+    // `--network host` no es un capricho: el host de Supabase resuelve SOLO a
+    // IPv6, y un contenedor con la red por defecto no lo alcanza («Network is
+    // unreachable»). El respaldo fallaba entero por esto y solo se veía el día
+    // que hacía falta, que es justo lo que este archivo intenta evitar.
+    'run', '--rm', '-i', '--network', 'host', IMAGEN,
     'pg_dump', '--format=custom', '--no-owner', '--no-privileges', url,
   ], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'buffer' })
 
