@@ -38,6 +38,69 @@ if (!url) {
   process.exit(1)
 }
 
+const redactarCredenciales = valor => {
+  let texto = Buffer.isBuffer(valor) ? valor.toString('utf8') : String(valor || '')
+  const secretos = new Set([url])
+
+  try {
+    const parsed = new URL(url)
+    secretos.add(parsed.password)
+    try { secretos.add(decodeURIComponent(parsed.password)) } catch { /* URI mal codificada */ }
+    try { secretos.add(decodeURIComponent(url)) } catch { /* URI mal codificada */ }
+  } catch { /* pg_dump dará el diagnóstico de una URI inválida */ }
+
+  for (const secreto of [...secretos].filter(Boolean).sort((a, b) => b.length - a.length)) {
+    texto = texto.split(secreto).join('[REDACTADO]')
+  }
+
+  return texto
+    .replace(/postgres(?:ql)?:\/\/[^\s'"`]+/gi, '[URI DE POSTGRES REDACTADA]')
+    .replace(
+      /\b((?:postgres_password|pgpassword|password)\s*(?:=|:)\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      '$1[REDACTADO]',
+    )
+}
+
+const tieneContenido = valor => Buffer.isBuffer(valor)
+  ? valor.toString('utf8').trim().length > 0
+  : String(valor || '').trim().length > 0
+
+const detalleSeguro = error => redactarCredenciales(
+  tieneContenido(error?.stderr) ? error.stderr : error?.message || '',
+)
+
+const ERRORES_VAULT_ESPERADOS = [
+  'extension "supabase_vault" is not available',
+  'extension "supabase_vault" does not exist',
+  'relation "vault.secrets" does not exist',
+]
+
+const soloFaltaVault = error => {
+  if (error?.status !== 1 || error?.signal != null || error?.killed === true) return false
+  if (tieneContenido(error?.stdout) || !tieneContenido(error?.stderr)) return false
+
+  const detalle = redactarCredenciales(error.stderr)
+  const lineas = detalle.replace(/\r\n/g, '\n').split('\n').map(linea => linea.trim())
+    .filter(Boolean)
+  const errores = lineas.filter(linea => /^pg_restore: error:/i.test(linea))
+  const avisos = lineas.filter(linea => /^pg_restore: warning:/i.test(linea))
+  const diagnosticos = lineas.filter(linea => /^pg_restore: (?:error|warning|fatal):/i.test(linea))
+  const salidaPropiaDePgRestore = lineas.every(linea => [
+    /^pg_restore: (?:error:|warning:|while PROCESSING TOC:|from TOC entry )/i,
+    /^(?:DETAIL|HINT|Command was):/i,
+  ].some(patron => patron.test(linea)))
+
+  return salidaPropiaDePgRestore
+    && diagnosticos.length === ERRORES_VAULT_ESPERADOS.length + 1
+    && errores.length === ERRORES_VAULT_ESPERADOS.length
+    && ERRORES_VAULT_ESPERADOS.every(
+      firma => errores.filter(linea => linea.includes(firma)).length === 1,
+    )
+    && errores.every(linea => ERRORES_VAULT_ESPERADOS.some(firma => linea.includes(firma)))
+    && avisos.length === 1
+    && /^pg_restore: warning: errors ignored on restore: 3$/i.test(avisos[0])
+}
+
 const docker = (args, opciones = {}) => execFileSync('docker', args, {
   stdio: opciones.silencioso ? ['ignore', 'pipe', 'pipe'] : 'inherit',
   encoding: 'utf8',
@@ -61,12 +124,15 @@ const respaldar = () => {
   console.log(`\n💾 Respaldando producción…`)
   // Formato `custom` (-Fc): comprimido y restaurable con pg_restore, que además
   // permite recuperar UNA tabla suelta sin tragarse el volcado entero.
+  // `execFileSync` repite sus argumentos al fallar; uno de ellos es la URI de
+  // producción. stderr se captura para sanearla antes de mostrar cualquier
+  // diagnóstico, y stdout conserva el volcado binario.
   const salida = docker([
     'run', '--rm', '-i', IMAGEN,
     'pg_dump', '--format=custom', '--no-owner', '--no-privileges', url,
-  ], { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'buffer' })
+  ], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'buffer' })
 
-  writeFileSync(archivo, salida)
+  writeFileSync(archivo, salida, { mode: 0o600 })
   const mb = (statSync(archivo).size / 1024 / 1024).toFixed(2)
   console.log(`✅ Guardado: ${archivo}  (${mb} MB)`)
   console.log('\n⚠️  Un respaldo en la MISMA máquina no protege de perder la máquina.')
@@ -98,11 +164,17 @@ const verificar = archivo => {
     }
 
     docker(['cp', archivo, `${contenedor}:/tmp/r.dump`], { silencioso: true })
-    // Sin --exit-on-error a propósito: un volcado de Supabase trae referencias a
-    // roles y extensiones que aquí no existen, y esos avisos son esperados. Lo
-    // que importa es si los DATOS llegaron, y eso se comprueba contándolos.
-    docker(['exec', contenedor, 'pg_restore', '-U', 'postgres', '-d', 'restaurado',
-      '--no-owner', '--no-privileges', '/tmp/r.dump'], { silencioso: true })
+    // Sin --exit-on-error a propósito: Supabase incluye referencias a su Vault
+    // incluso cuando está vacío, pero la imagen local solo trae pgvector. Solo
+    // esos tres errores exactos pueden continuar; cualquier otro fallo detiene
+    // la prueba antes de declarar que el respaldo sirve.
+    try {
+      docker(['exec', contenedor, 'pg_restore', '-U', 'postgres', '-d', 'restaurado',
+        '--no-owner', '--no-privileges', '/tmp/r.dump'], { silencioso: true })
+    } catch (error) {
+      if (!soloFaltaVault(error)) throw error
+      console.log('   Avisos esperados: la imagen local no incluye Supabase Vault.')
+    }
 
     const contar = consulta => docker(
       ['exec', contenedor, 'psql', '-U', 'postgres', '-d', 'restaurado', '-tAc', consulta],
@@ -119,16 +191,27 @@ const verificar = archivo => {
       console.error('   Este respaldo NO sirve para recuperarse tal cual.')
       console.error('   Causa habitual: el destino no tiene `pgvector` y `products`')
       console.error('   —que guarda embeddings— no se puede crear sin esa extensión.')
-      process.exit(1)
+      throw new Error('La restauración no contiene el esquema completo.')
     }
 
-    // Lo que de verdad importa no es que haya tablas, sino que haya CONTENIDO.
+    // El total no basta: las tablas núcleo deben existir. Pueden tener cero
+    // filas porque una instalación nueva y válida todavía puede estar vacía.
+    const tablasNucleoFaltantes = []
     for (const tabla of ['businesses', 'products', 'orders', 'client_users']) {
       const existe = contar(
-        `select count(*) from information_schema.tables where table_schema='public' and table_name='${tabla}'`,
+        `select count(*) from information_schema.tables where table_schema='public' and table_name='${tabla}' and table_type='BASE TABLE'`,
       )
-      const filas = existe === '1' ? contar(`select count(*) from public.${tabla}`) : 'no existe'
+      if (existe !== '1') {
+        tablasNucleoFaltantes.push(tabla)
+        console.log(`   ${tabla.padEnd(14)} no existe`)
+        continue
+      }
+      const filas = contar(`select count(*) from public.${tabla}`)
       console.log(`   ${tabla.padEnd(14)} ${filas} fila(s)`)
+    }
+
+    if (tablasNucleoFaltantes.length) {
+      throw new Error(`Faltan tablas núcleo: ${tablasNucleoFaltantes.join(', ')}`)
     }
 
     console.log('\n✅ El respaldo se restaura y trae el esquema completo.')
@@ -138,7 +221,17 @@ const verificar = archivo => {
   }
 }
 
-asegurarDocker()
-const comando = process.argv[2] === 'verify' ? 'verify' : 'backup'
-if (comando === 'verify') verificar(process.argv[3])
-else verificar(respaldar())
+try {
+  asegurarDocker()
+  const comando = process.argv[2] === 'verify' ? 'verify' : 'backup'
+  if (comando === 'verify') verificar(process.argv[3])
+  else verificar(respaldar())
+} catch (error) {
+  // Nunca imprimir el objeto de `execFileSync`: incluye todos sus argumentos y
+  // pg_dump recibe DATABASE_URL como uno de ellos.
+  console.error('\n❌ No se pudo completar el respaldo ni su restauración de prueba.')
+  console.error('   DATABASE_URL y su contraseña se mantuvieron ocultas.')
+  const detalle = detalleSeguro(error)
+  if (detalle.trim()) console.error(`\n${detalle.trim()}`)
+  process.exit(1)
+}
