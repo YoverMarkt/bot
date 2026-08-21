@@ -36,7 +36,7 @@ export interface MarketplaceBusiness {
 
 /** Dónde está el cliente dentro del menú. Se guarda en `flow_state`. */
 export interface MarketplaceView {
-  vista: 'categorias' | 'negocios'
+  vista: 'categorias' | 'negocios' | 'confirmando_reinicio'
   categoria?: string
   pagina: number
 }
@@ -206,4 +206,124 @@ export function paso(input: PasoInput): MarketplaceReply {
   }
   const repetir = verCategorias(categorias, vista.pagina)
   return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL COMANDO MENÚ Y EL BLOQUEO DE FLUJO
+//
+// Un cliente atiende UN pedido a la vez. Si está en El Puerto y escribe «ahora
+// quiero pizza», cambiarlo de local en silencio le tira lo que llevaba: la
+// mini app de El Puerto se le queda abierta con un carrito que ya no lleva a
+// ninguna parte.
+//
+// ⚠️ El bloqueo NO es un muro: se le dice qué tiene abierto y cómo salir. Un
+// «no puedes» sin salida es peor que no bloquear.
+//
+// ⚠️ MENÚ se comprueba ANTES que ninguna otra intención, siempre. Es la única
+// forma que tiene el cliente de salir de donde esté, así que no puede depender
+// de en qué vista se encuentre — que es justo lo que lo volvería inútil el día
+// que se atasque.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const COMANDOS_MENU = [
+  'menu', 'menú', 'inicio', 'empezar', 'empezar de nuevo', 'volver al menu',
+  'volver al menú', 'reiniciar', 'cancelar', 'salir',
+]
+
+export const SI_REINICIAR = '✅ Sí, empezar de nuevo'
+export const NO_CONTINUAR = '↩️ No, seguir con mi pedido'
+
+/**
+ * ¿Es el comando global de volver al menú?
+ *
+ * Se compara sobre el texto normalizado —sin tildes, sin signos— porque quien
+ * escribe «MENÚ!» o «menu» quiere exactamente lo mismo.
+ */
+export function esComandoMenu(mensaje: string): boolean {
+  const texto = normalizar(mensaje).replace(/[^a-z0-9 ]/g, '').trim()
+  if (!texto) return false
+  return COMANDOS_MENU.some(comando => (
+    normalizar(comando).replace(/[^a-z0-9 ]/g, '') === texto
+  ))
+}
+
+export interface EstadoDeCompra {
+  /** El local en el que está, si eligió uno. */
+  negocio?: { name: string; slug: string } | null
+  bloqueado: boolean
+}
+
+/**
+ * Lo que se responde a MENÚ.
+ *
+ * ⚠️ Con un pedido en marcha NO se borra nada sin preguntar. El cliente pudo
+ * escribir «menú» buscando ayuda, no queriendo tirar lo que llevaba — y la
+ * mini app de ese local sigue abierta en su teléfono.
+ */
+export function responderAlMenu(
+  estado: EstadoDeCompra,
+  categorias: MarketplaceCategory[],
+): MarketplaceReply {
+  if (estado.bloqueado && estado.negocio) {
+    return {
+      reply: `Tienes un pedido en proceso en *${estado.negocio.name}*.\n\n`
+        + 'Si vuelves al menú, ese pedido se queda sin terminar.\n\n'
+        + '¿Qué prefieres?',
+      options: [SI_REINICIAR, NO_CONTINUAR],
+      vista: { vista: 'confirmando_reinicio', pagina: 0 },
+    }
+  }
+  return verCategorias(categorias, 0)
+}
+
+/**
+ * Lo que se responde a quien intenta empezar otra cosa con un pedido abierto.
+ *
+ * Se le dice DÓNDE lo tiene y CÓMO salir, en el mismo mensaje: cada respuesta
+ * se paga, así que no se gasta una en decir solo «no».
+ */
+export function recordarPedidoEnProceso(
+  negocio: { name: string },
+): MarketplaceReply {
+  return {
+    reply: `Tienes un pedido en proceso en *${negocio.name}*.\n\n`
+      + 'Termínalo o, si prefieres empezar de nuevo, escribe *MENÚ*.',
+    options: [],
+    vista: { vista: 'negocios', pagina: 0 },
+  }
+}
+
+/** La respuesta a la confirmación de reinicio. */
+export function resolverReinicio(
+  mensaje: string,
+  estado: EstadoDeCompra,
+  categorias: MarketplaceCategory[],
+): { reinicia: boolean; respuesta: MarketplaceReply } {
+  const elegida = elegir(mensaje, [SI_REINICIAR, NO_CONTINUAR])
+
+  if (elegida === SI_REINICIAR) {
+    return { reinicia: true, respuesta: verCategorias(categorias, 0) }
+  }
+  if (elegida === NO_CONTINUAR) {
+    return {
+      reinicia: false,
+      respuesta: {
+        reply: estado.negocio
+          ? `Perfecto, sigues en *${estado.negocio.name}*. Termina tu pedido cuando quieras 👍`
+          : 'Perfecto 👍',
+        options: [],
+        vista: { vista: 'negocios', pagina: 0 },
+      },
+    }
+  }
+  // No entendió: se repite la pregunta, no se decide por él. Tirar un carrito
+  // por un «ok» ambiguo es lo único que no tiene vuelta atrás.
+  return {
+    reinicia: false,
+    respuesta: {
+      reply: `${NO_ENTENDI}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
+      options: [SI_REINICIAR, NO_CONTINUAR],
+      vista: { vista: 'confirmando_reinicio', pagina: 0 },
+    },
+  }
 }
