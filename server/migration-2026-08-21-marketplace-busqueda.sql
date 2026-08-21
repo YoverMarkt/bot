@@ -1,6 +1,17 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- BUSCAR SIN IA
 --
+-- ⚠️ EL NOMBRE DE ESTE ARCHIVO NO ES DECORATIVO. El ejecutor aplica las
+-- migraciones por ORDEN ALFABÉTICO, y esta depende de
+-- `migration-2026-08-21-categorias-del-marketplace.sql`: sus alias tienen una
+-- foránea a `marketplace_categories`. Se llamó «busqueda-del-marketplace» y
+-- así ordenaba ANTES que las categorías — aplicada contra producción habría
+-- fallado con «relation public.marketplace_categories does not exist».
+--
+-- Renombrada a «marketplace-busqueda» para que la 'm' ordene después de la
+-- 'c'. Si algún día se renombra «para que quede más claro», hay que comprobar
+-- que siga ordenando después. Lo vigila `tests/sql/ensayo-de-migraciones.sh`.
+--
 -- «Quiero ceviche» tiene que encontrar locales aunque «ceviche» no esté en el
 -- menú principal. Hoy la única búsqueda que existe es `match_products`, que
 -- necesita un embedding —una llamada de IA de pago— y además solo mira DENTRO

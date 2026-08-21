@@ -17,7 +17,7 @@ const cliente = require('../dist/db/client')
 // ═══════════════════════════════════════════════════════════════════════════
 
 const serverDir = fileURLToPath(new URL('..', import.meta.url))
-const SQL = readFileSync(`${serverDir}/migration-2026-08-21-busqueda-del-marketplace.sql`, 'utf8')
+const SQL = readFileSync(`${serverDir}/migration-2026-08-21-marketplace-busqueda.sql`, 'utf8')
 const SCHEMA = readFileSync(`${serverDir}/schema.sql`, 'utf8')
 const sinComentarios = sql => sql.replace(/--[^\n]*/g, '')
 
