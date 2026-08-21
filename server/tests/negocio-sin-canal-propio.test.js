@@ -34,11 +34,25 @@ const SCHEMA = leer('schema.sql')
  *  explicativo de la migración dispara falsos positivos — pasó al escribirla. */
 const sinComentarios = sql => sql.replace(/--[^\n]*/g, '')
 
+const entornoPrevio = {}
 beforeEach(() => {
   process.env.JWT_SECRET = JWT_SECRET
+  // YCloud exige secreto y endpoint del webhook antes de guardar. Se ponen
+  // aquí para que las pruebas del camino CON canal propio comprueben lo suyo
+  // y no fallen por configuración ausente.
+  for (const clave of ['YCLOUD_WEBHOOK_SECRET', 'YCLOUD_WEBHOOK_ENDPOINT_ID', 'YCLOUD_API_KEY']) {
+    entornoPrevio[clave] = process.env[clave]
+    process.env[clave] = `${clave.toLowerCase()}-de-prueba`
+  }
   vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue(null)
 })
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => {
+  vi.restoreAllMocks()
+  for (const [clave, valor] of Object.entries(entornoPrevio)) {
+    if (valor === undefined) delete process.env[clave]
+    else process.env[clave] = valor
+  }
+})
 
 const authorization = () => `Bearer ${jwt.sign({ role: 'admin' }, JWT_SECRET)}`
 
@@ -70,6 +84,9 @@ const altaBase = {
   client_email: 'duenio@ceviche.test',
   client_password: 'contrasena-larga-12',
   plan: 'micro',
+  // Obligatorio en el marketplace desde el 2026-08-21: es el único número que
+  // tiene el local, y con el que su dueño pide los reportes.
+  owner_phone: '+593990111222',
 }
 
 describe('el alta de un negocio del marketplace', () => {
@@ -114,6 +131,76 @@ describe('el alta de un negocio del marketplace', () => {
     expect(onboarding).not.toHaveBeenCalled()
   })
 
+  it('exige el WhatsApp del dueño: es el único número que tendrá', async () => {
+    const onboarding = vi.spyOn(db, 'createBusinessOnboarding')
+
+    const respuesta = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        ...altaBase, name: 'Cevichería', whatsapp_provider: 'marketplace',
+        owner_phone: '',
+      },
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(respuesta.body.error).toMatch(/WhatsApp del dueño/)
+    expect(onboarding).not.toHaveBeenCalled()
+  })
+
+  it('rechaza un teléfono del dueño mal escrito antes de crear nada', async () => {
+    // Sin esto, un dedazo deja al dueño sin reportes y no se descubre hasta
+    // que los pide.
+    const onboarding = vi.spyOn(db, 'createBusinessOnboarding')
+
+    const respuesta = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        ...altaBase, name: 'Cevichería', whatsapp_provider: 'marketplace',
+        owner_phone: '099011',
+      },
+    })
+
+    expect(respuesta.status).toBe(400)
+    expect(respuesta.body.error).toMatch(/E\.164/)
+    expect(onboarding).not.toHaveBeenCalled()
+  })
+
+  it('con el teléfono del dueño, el alta pasa', async () => {
+    const onboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'biz-ceviche' }, error: null,
+    })
+
+    const respuesta = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        ...altaBase, name: 'Cevichería', whatsapp_provider: 'marketplace',
+        owner_phone: '+593990111222',
+      },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(onboarding.mock.calls[0][0].owner_phone).toBe('+593990111222')
+  })
+
+  it('un negocio con canal propio NO necesita el teléfono del dueño', async () => {
+    // La regla es solo del marketplace: para los demás sigue siendo opcional,
+    // como lo era antes.
+    const onboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'biz-ycloud' }, error: null,
+    })
+
+    const respuesta = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        ...altaBase, name: 'Con canal', whatsapp_provider: 'ycloud',
+        whatsapp_number: '+593999000001', ycloud_api_key: 'clave-de-prueba',
+      },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(onboarding).toHaveBeenCalled()
+  })
+
   it('los negocios con canal propio siguen exigiendo credenciales', async () => {
     const onboarding = vi.spyOn(db, 'createBusinessOnboarding')
     const previo = process.env.YCLOUD_API_KEY
@@ -130,6 +217,20 @@ describe('el alta de un negocio del marketplace', () => {
     expect(respuesta.status).toBe(400)
     expect(onboarding).not.toHaveBeenCalled()
     if (previo !== undefined) process.env.YCLOUD_API_KEY = previo
+  })
+})
+
+describe('el panel del superadmin', () => {
+  it('un local nuevo nace en el marketplace, no en YCloud', () => {
+    // Si naciera en YCloud, el alta pediría credenciales de una cuenta que ese
+    // local no va a tener nunca, y habría que acordarse de cambiarlo cada vez.
+    const modal = readFileSync(
+      `${serverDir}/../apps/admin/src/features/clients/ClientModal.tsx`, 'utf8',
+    )
+    const inicial = modal.slice(modal.indexOf('const EMPTY = {'), modal.indexOf('ycloud_api_key'))
+    expect(inicial).toMatch(/whatsapp_provider: 'marketplace'/)
+    // Al EDITAR se lee el proveedor guardado: ningún negocio existente se pisa.
+    expect(modal).toMatch(/whatsapp_provider: c\.whatsapp_provider \?\? 'ycloud'/)
   })
 })
 

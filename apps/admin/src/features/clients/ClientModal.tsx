@@ -24,7 +24,14 @@ import { PLAN_CATALOG, planById } from './plans'
 
 const EMPTY = {
   name: '', type: 'negocio', whatsapp_number: '', owner_phone: '',
-  whatsapp_provider: 'ycloud', ycloud_api_key: '',
+  // Un local NUEVO nace en el marketplace: se atiende por el número de la
+  // plataforma y no necesita cuenta de YCloud. Era 'ycloud' hasta el
+  // 2026-08-21, y eso obligaba a acordarse de cambiarlo — si no, el alta pedía
+  // credenciales de una cuenta que ese local no va a tener nunca.
+  //
+  // ⚠️ Solo afecta al alta. Al EDITAR se lee el proveedor guardado (más abajo),
+  // así que ningún negocio con canal propio se ve reescrito.
+  whatsapp_provider: 'marketplace', ycloud_api_key: '',
   ycloud_webhook_endpoint_id: '', ycloud_webhook_secret: '',
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
@@ -161,6 +168,13 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     const sinCanalPropio = f.whatsapp_provider === 'marketplace'
     if (!f.name.trim()) { setError('El nombre es obligatorio'); return }
     if (!sinCanalPropio && !f.whatsapp_number.trim()) { setError('El número de WhatsApp es obligatorio'); return }
+    // En el marketplace es el ÚNICO número del negocio, y es lo que le deja
+    // pedir sus reportes por WhatsApp. Sin él, el local nace sin forma de que
+    // su dueño lo alcance desde el chat.
+    if (sinCanalPropio && !id && !f.owner_phone.trim()) {
+      setError('El WhatsApp del dueño es obligatorio: es con lo que pide sus reportes')
+      return
+    }
     if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('Selecciona un plan con una tarifa mensual válida'); return }
     if (!id && (!f.client_email.trim() || !f.client_password)) { setError('El correo y la contraseña del dueño son obligatorios al crear'); return }
     const payload: BusinessPayload = {
@@ -287,7 +301,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               {f.whatsapp_provider !== 'marketplace' && (
                 <div><Label htmlFor="client-whatsapp-number">WhatsApp del negocio *</Label><Input id="client-whatsapp-number" value={f.whatsapp_number} onChange={set('whatsapp_number')} placeholder="+593…" /></div>
               )}
-              <div><Label htmlFor="client-owner-phone">WhatsApp del dueño (reportes)</Label><Input id="client-owner-phone" value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
+              <div><Label htmlFor="client-owner-phone">WhatsApp del dueño (reportes){f.whatsapp_provider === 'marketplace' ? ' *' : ''}</Label><Input id="client-owner-phone" value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
             </div>
 
             {/* Modos */}
