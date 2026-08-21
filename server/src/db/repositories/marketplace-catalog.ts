@@ -30,4 +30,60 @@ const getMarketplaceBusinesses = async (
   return (data || []) as MarketplaceBusiness[]
 }
 
-export { getMarketplaceCategories, getMarketplaceBusinesses }
+export interface MarketplaceHit {
+  id: string
+  slug: string
+  name: string
+  type: string
+  /** Por qué salió: 'categoria' | 'producto' | 'parecido' | 'local'. */
+  motivo: string
+  orden: number
+}
+
+/**
+ * Buscar locales en TODO el marketplace. Sin IA.
+ *
+ * ⚠️ Se usa solo antes de elegir local. Con local elegido el ámbito es ese
+ * local y va por `searchMarketplaceProducts`: traerle la Coca Cola de otro
+ * negocio metería en el carrito un producto que no puede estar ahí.
+ */
+const searchMarketplaceBusinesses = async (
+  query: string,
+  limite = 8,
+): Promise<MarketplaceHit[]> => {
+  const { data, error } = await db.rpc('marketplace_buscar_negocios', {
+    p_query: query,
+    p_limite: limite,
+  })
+  if (error) throw new Error(error.message)
+  return (data || []) as MarketplaceHit[]
+}
+
+export interface MarketplaceProductHit {
+  id: string
+  name: string
+  price: number
+  orden: number
+}
+
+/** Buscar DENTRO del local elegido. El filtro por negocio lo pone la base. */
+const searchMarketplaceProducts = async (
+  businessId: string,
+  query: string,
+  limite = 8,
+): Promise<MarketplaceProductHit[]> => {
+  const { data, error } = await db.rpc('marketplace_buscar_productos', {
+    p_business_id: businessId,
+    p_query: query,
+    p_limite: limite,
+  })
+  if (error) throw new Error(error.message)
+  return (data || []) as MarketplaceProductHit[]
+}
+
+export {
+  getMarketplaceCategories,
+  getMarketplaceBusinesses,
+  searchMarketplaceBusinesses,
+  searchMarketplaceProducts,
+}

@@ -1617,6 +1617,59 @@ begin
     raise notice 'MENÚ DEL MARKETPLACE: verificado';
   end;
 
+  -- ── La búsqueda del marketplace ──────────────────────────────────────────
+  declare
+    v_local_busq uuid;
+  begin
+    -- El normalizador es lo que hace que «quiero ceviche» encuentre algo.
+    if public.marketplace_normalizar_consulta('hola, quisiera un ceviche') <> 'ceviche' then
+      raise exception 'El normalizador no extrae el plato: %',
+        public.marketplace_normalizar_consulta('hola, quisiera un ceviche');
+    end if;
+    if public.marketplace_normalizar_consulta('quiero') <> '' then
+      raise exception 'Una frase sin plato debería quedar vacía';
+    end if;
+
+    insert into public.businesses (
+      slug, name, type, whatsapp_provider, takes_orders, storefront_enabled
+    ) values (
+      'verificacion-busqueda', 'Cevichería de verificación', 'marisquería',
+      'marketplace', true, true
+    )
+    returning id into v_local_busq;
+
+    insert into public.products (business_id, name, description, price, active)
+    values (v_local_busq, 'Ceviche mixto', 'Camarón y concha', 8.50, true);
+
+    -- Por alias: «cebiche» no casa por texto con «ceviche», y aun así encuentra.
+    if not exists (
+      select 1 from public.marketplace_buscar_negocios('quiero cebiche')
+      where id = v_local_busq
+    ) then
+      raise exception 'La búsqueda no encuentra el local por alias';
+    end if;
+
+    -- Dentro del local: solo sus productos.
+    if not exists (
+      select 1 from public.marketplace_buscar_productos(v_local_busq, 'ceviche')
+    ) then
+      raise exception 'La búsqueda dentro del local no encuentra su producto';
+    end if;
+
+    -- Suspendido desaparece: encontrar un local que no puede atender es peor
+    -- que no encontrar ninguno, porque el cliente ya eligió.
+    update public.businesses set suspended = true where id = v_local_busq;
+    if exists (
+      select 1 from public.marketplace_buscar_negocios('ceviche')
+      where id = v_local_busq
+    ) then
+      raise exception 'Un local suspendido sigue saliendo en la búsqueda';
+    end if;
+
+    delete from public.businesses where id = v_local_busq;
+    raise notice 'BÚSQUEDA DEL MARKETPLACE: verificada';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
