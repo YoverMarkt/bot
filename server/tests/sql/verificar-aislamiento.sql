@@ -16,6 +16,7 @@
 
 do $$
 declare
+  v_rol text;
   v_a uuid;              -- negocio A
   v_b uuid;              -- negocio B
   v_producto_a uuid;
@@ -477,6 +478,36 @@ begin
   where n.nspname = 'public' and c.relkind = 'r';
   if v_ok is not true then
     raise exception 'Hay tablas sin RLS habilitada';
+  end if;
+
+  -- ── 10. La conversación del marketplace no la ve ningún negocio ─────────
+  --
+  -- Es la única tabla sin `business_id`, porque la conversación ABARCA varios
+  -- negocios. Lo que no puede pasar es que una pizzería llegue a saber que su
+  -- cliente está pidiendo en la competencia: se cierra quitando el acceso, no
+  -- partiendo la tabla. Sin esto, el día que alguien añada una política
+  -- permisiva nadie se enteraría.
+  for v_rol in select unnest(array['anon', 'authenticated']) loop
+    if has_table_privilege(v_rol, 'public.marketplace_conversations', 'select') then
+      raise exception
+        'FUGA GRAVE: el rol % puede leer marketplace_conversations, y ahí se ve en qué local está comprando cada cliente',
+        v_rol;
+    end if;
+  end loop;
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'marketplace_conversations'
+  ) then
+    raise exception
+      'marketplace_conversations no debería tener políticas RLS: su protección es no dar acceso a nadie salvo service_role';
+  end if;
+
+  -- Y borrar un negocio no puede llevarse la conversación del cliente con la
+  -- plataforma: la reinicia, que es distinto.
+  if exists (
+    select 1 from marketplace_conversations where selected_business_id = v_a
+  ) then
+    raise exception 'Borrar el negocio A dejó conversaciones apuntándolo';
   end if;
 
   -- ── Limpieza ─────────────────────────────────────────────────────────────

@@ -109,6 +109,7 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] `migration-firmas-webhooks.sql` aplicada después de identificadores y antes del despliegue.
 - [ ] `migration-inbox-webhooks.sql` aplicada después de firmas y antes de habilitar el worker.
 - [ ] `migration-agrupado-webhooks.sql` aplicada después del inbox; en una actualización activa, después de retirar la réplica anterior.
+- [ ] `migration-2026-08-20-conversacion-del-marketplace.sql` aplicada: solo AÑADE una tabla, un disparador y una función nuevas; no depende de ninguna otra migración y ninguna la sobrescribe.
 - [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
 

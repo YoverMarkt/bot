@@ -73,17 +73,44 @@ export function tablasSinRls(sql) {
   return fallos
 }
 
+// ── La única foránea a businesses que NO cascadea, y por qué ──────────────
+//
+// La regla existe para que borrar un negocio se lleve SUS datos y no deje
+// huérfanos. `marketplace_conversations.selected_business_id` es lo contrario:
+// no dice de quién son los datos, dice dónde está el CLIENTE ahora mismo. La
+// conversación es suya y de la plataforma, no del local — si un negocio cierra,
+// el cliente no puede perder su conversación con Umbani.
+//
+// Por eso va `on delete set null` y hay un disparador
+// (`businesses_reset_marketplace_conversations`) que la reinicia antes del
+// borrado. La excepción se nombra aquí, con su columna exacta, para que no
+// pueda cubrir a ninguna otra por descuido.
+const CASCADA_NO_APLICA = new Set([
+  'marketplace_conversations.selected_business_id',
+])
+
 /** Claves foráneas a businesses que no borran en cascada. */
-export function fksSinCascada(sql) {
+export function fksSinCascada(sql, excepciones = CASCADA_NO_APLICA) {
   const fallos = []
+  for (const match of sql.matchAll(
+    /(?:^|\n)\s*([a-z_]+)\s+uuid[^\n]*references\s+(?:public\.)?businesses\s*\([^)]*\)([^,;\n]*)/gi,
+  )) {
+    const [, columna, resto] = match
+    if (/on\s+delete\s+cascade/i.test(resto)) continue
+    // La excepción se declara por tabla.columna, no por columna suelta.
+    if ([...excepciones].some(clave => clave.endsWith(`.${columna}`))) continue
+    fallos.push(match[0].replace(/\s+/g, ' ').trim().slice(0, 60))
+  }
+  // Las referencias en línea que el patrón de arriba no captura (una sola
+  // línea, sin salto) se revisan igual: perder una sería peor que un falso
+  // positivo.
   for (const match of sql.matchAll(
     /references\s+(?:public\.)?businesses\s*\([^)]*\)([^,;\n]*)/gi,
   )) {
-    if (!/on\s+delete\s+cascade/i.test(match[1])) {
-      fallos.push(match[0].replace(/\s+/g, ' ').slice(0, 60))
-    }
+    if (/on\s+delete\s+(cascade|set\s+null)/i.test(match[1])) continue
+    fallos.push(match[0].replace(/\s+/g, ' ').slice(0, 60))
   }
-  return fallos
+  return [...new Set(fallos)]
 }
 
 // ── Las 16 migraciones que YA llevaban su propia transacción ───────────────
@@ -209,6 +236,26 @@ describe('guardián de migraciones SQL', () => {
   describe('borrar un negocio se lleva sus datos', () => {
     it.each(archivosSql)('%s referencia businesses con on delete cascade', name => {
       expect(fksSinCascada(leer(name))).toEqual([])
+    })
+
+    // La excepción de `marketplace_conversations` abrió una puerta; esto
+    // comprueba que sigue siendo del tamaño de una sola columna.
+    it('caza cualquier otra columna que no cascadee', () => {
+      expect(fksSinCascada(
+        'create table x (\n  otra_cosa uuid references public.businesses(id) on delete set null\n);',
+      )).not.toEqual([])
+      expect(fksSinCascada(
+        'create table x (\n  algo_id uuid references public.businesses(id)\n);',
+      )).not.toEqual([])
+    })
+
+    it('perdona solo la columna nombrada, y solo por su nombre', () => {
+      expect(fksSinCascada(
+        'create table x (\n  selected_business_id uuid references public.businesses(id) on delete set null\n);',
+      )).toEqual([])
+      expect(fksSinCascada(
+        'create table x (\n  business_id uuid not null references public.businesses(id) on delete cascade\n);',
+      )).toEqual([])
     })
   })
 
