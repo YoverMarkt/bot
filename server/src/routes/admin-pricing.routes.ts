@@ -48,8 +48,8 @@ interface ModuloAuth {
 }
 const { authAdmin }: ModuloAuth = require('../middleware/auth') as typeof import('../middleware/auth')
 
-// `family` agrupa los 52 tipos en cinco: una regla para «comida» cubre 24.
-// Antes había que crear 24 reglas iguales y una más por cada tipo nuevo.
+// `family` agrupa los 30 tipos clasificados en dos: una regla para «comida»
+// cubre 24. Antes había que crear 24 reglas iguales y una más por cada tipo.
 const SCOPES = new Set(['global', 'family', 'business_type', 'business'])
 const STRATEGIES = new Set(['percentage', 'fixed', 'tiered'])
 // Solo `absorbed`. `on_top` exige que el catálogo, el carrito y el resumen
@@ -193,7 +193,9 @@ const inicioDeMesEnEcuador = (desplazamiento = 0): string => {
 
 const router = createRouter()
 
-// Las cinco familias, para que el panel las ofrezca en vez de escribirlas.
+// Las familias, para que el panel las ofrezca en vez de escribirlas. Desde el
+// 2026-08-20 son dos —comida y retail—: las otras tres se fueron con los tipos
+// de hospedaje, servicios y salud que colgaban de ellas.
 router.get('/api/admin/business-families', authAdmin, async (_req, res) => {
   res.json(await db.listBusinessFamilies())
 })

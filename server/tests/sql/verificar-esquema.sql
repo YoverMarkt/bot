@@ -116,7 +116,7 @@ begin
     slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
     takes_orders
   ) values (
-    'verificacion-esquema', 'Negocio de verificación', 'hotel',
+    'verificacion-esquema', 'Negocio de verificación', 'pizzería',
     'ycloud', '+593900000001', '+593900000001',
     true
   )
