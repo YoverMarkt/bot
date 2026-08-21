@@ -179,7 +179,7 @@ bot/
 │   ├── migration-2026-08-20-negocio-sin-canal-propio.sql # Un negocio puede existir sin número propio: lo atiende el del marketplace
 │   ├── migration-2026-08-20-conversacion-del-marketplace.sql # Dónde está cada cliente: la única tabla sin business_id, y blindada
 │   ├── migration-2026-08-21-categorias-del-marketplace.sql # Las 15 categorías del menú y a qué tipo pertenece cada una
-│   ├── migration-2026-08-21-busqueda-del-marketplace.sql # «Quiero ceviche» encuentra locales sin pagar una llamada de IA
+│   ├── migration-2026-08-21-marketplace-busqueda.sql # ⚠️ se llama así para ordenar DESPUÉS de las categorías, de las que depende # «Quiero ceviche» encuentra locales sin pagar una llamada de IA
 │   ├── migration-2026-08-20-retirar-tipos-no-delivery.sql # Solo comida y retail: fuera los 21 tipos de hospedaje, servicios y salud
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
