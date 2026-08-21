@@ -112,7 +112,8 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] `migration-2026-08-20-negocio-sin-canal-propio.sql` aplicada **después** de `migration-identificadores-canales.sql` y de `migration-2026-08-19-miniapp-exige-tienda.sql`: recrea las funciones de esas dos, así que aplicadas al revés la sobrescribirían y volvería a exigirse número al dar de alta.
 - [ ] `migration-2026-08-20-conversacion-del-marketplace.sql` aplicada: solo AÑADE una tabla, un disparador y una función nuevas; no depende de ninguna otra migración y ninguna la sobrescribe.
 - [ ] `migration-2026-08-21-categorias-del-marketplace.sql` aplicada: solo AÑADE dos tablas de catálogo y dos funciones de lectura; no depende de ninguna otra.
-- [ ] `migration-2026-08-21-busqueda-del-marketplace.sql` aplicada **después** de las categorías (sus alias apuntan a ellas). Crea `pg_trgm` y `unaccent` en el esquema `extensions`.
+- [ ] `migration-2026-08-21-marketplace-busqueda.sql` aplicada **después** de las categorías (sus alias apuntan a ellas). Crea `pg_trgm` y `unaccent` en el esquema `extensions`.
+- [ ] **ENSAYO antes de aplicar nada:** `bash server/tests/sql/ensayo-de-migraciones.sh <commit-vivo> server/migration-AAAA-MM-DD-*.sql`. El CI aplica `schema.sql` sobre una base vacía y NUNCA reproduce la cadena, así que sale verde sobre una ficción. Este ensayo parte del esquema que hay aplicado hoy y corre lo pendiente **en el orden alfabético real del ejecutor** — que ya ha roto dos veces: `retirar-citas` antes que `retirar-hospedaje` (2026-08-20) y `busqueda-del-marketplace` antes que `categorias-del-marketplace` (2026-08-21).
 - [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
 
