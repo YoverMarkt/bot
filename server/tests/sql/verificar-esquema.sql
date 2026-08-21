@@ -1492,6 +1492,78 @@ begin
   -- ── Limpieza ──────────────────────────────────────────────────────────────
   delete from businesses where id = v_business;
 
+  -- ── La conversación del marketplace ──────────────────────────────────────
+  --
+  -- PostgreSQL no valida el cuerpo de una función plpgsql al crearla: un error
+  -- ahí dentro solo aparece al EJECUTARLA. Por eso se ejecuta, y con los casos
+  -- que de verdad pueden romperla.
+  declare
+    v_cliente uuid;
+    v_local   uuid;
+    v_conv    jsonb;
+  begin
+    insert into public.customers (phone, name)
+    values ('593999000123', 'Cliente de verificación')
+    returning id into v_cliente;
+
+    insert into public.businesses (
+      slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number
+    ) values (
+      'verificacion-marketplace', 'Local de verificación', 'pizzería',
+      'ycloud', '+593900000123', '+593900000123'
+    )
+    returning id into v_local;
+
+    -- 1. El primer mensaje crea la conversación.
+    v_conv := public.advance_marketplace_conversation(v_cliente);
+    if (v_conv ->> 'conflicto')::boolean is not false
+       or (v_conv ->> 'current_state') <> 'inicio' then
+      raise exception 'La conversación no nace en «inicio»: %', v_conv;
+    end if;
+
+    -- 2. Elige local y empieza a pedir.
+    v_conv := public.advance_marketplace_conversation(
+      v_cliente, (v_conv ->> 'version')::integer, 'en_negocio', v_local, false, true
+    );
+    if (v_conv ->> 'shopping_locked')::boolean is not true then
+      raise exception 'El bloqueo de compra no se aplicó: %', v_conv;
+    end if;
+
+    -- 3. Bloqueo optimista: una versión vieja NO pisa lo que hay.
+    if (public.advance_marketplace_conversation(v_cliente, 1, 'otro_estado')
+         ->> 'conflicto')::boolean is not true then
+      raise exception 'El bloqueo optimista dejó pisar con una versión vieja';
+    end if;
+    if (select current_state from public.marketplace_conversations
+        where customer_id = v_cliente) <> 'en_negocio' then
+      raise exception 'FUGA: un conflicto llegó a modificar la conversación';
+    end if;
+
+    -- 4. Estar bloqueado sin local es imposible.
+    begin
+      update public.marketplace_conversations
+         set selected_business_id = null
+       where customer_id = v_cliente;
+      raise exception 'Se pudo dejar a un cliente bloqueado en ningún negocio';
+    exception when check_violation then null;
+    end;
+
+    -- 5. Borrar el local reinicia la conversación, no la rompe ni la borra.
+    delete from public.businesses where id = v_local;
+    if not exists (
+      select 1 from public.marketplace_conversations
+      where customer_id = v_cliente
+        and selected_business_id is null
+        and shopping_locked = false
+        and current_state = 'inicio'
+    ) then
+      raise exception 'Borrar el local no reinició la conversación del cliente';
+    end if;
+
+    delete from public.customers where id = v_cliente;
+    raise notice 'CONVERSACIÓN DEL MARKETPLACE: verificada';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;

@@ -1,0 +1,93 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+// LA CONVERSACIÓN DEL MARKETPLACE
+//
+// Dónde está cada cliente dentro del marketplace: en qué local, en qué paso, y
+// si ya empezó un pedido. Con un solo número para toda la plataforma, esto es
+// lo que sustituye a «el teléfono dice de qué negocio es el mensaje».
+//
+// ⚠️ Es la única tabla sin `business_id`, porque la conversación ABARCA varios
+// negocios. Por eso NUNCA se expone a una ruta de cliente: ahí se ve en qué
+// local está comprando alguien, y una pizzería no puede saber que su cliente
+// está pidiendo en la competencia. La base lo impide —solo `service_role`
+// tiene acceso— y `tests/sql/verificar-aislamiento.sql` lo comprueba.
+
+const db: SupabaseClient = require('../client') as typeof import('../client')
+
+export interface MarketplaceConversation {
+  id: string
+  customer_id: string
+  current_state: string
+  selected_business_id: string | null
+  shopping_locked: boolean
+  flow_state: Record<string, unknown> | null
+  version: number
+  last_message_at: string
+  expires_at: string | null
+}
+
+/** Lo que se quiere cambiar. Lo que no se nombra, no se toca. */
+export interface ConversationPatch {
+  state?: string
+  businessId?: string
+  /** Soltar el local: suelta también el bloqueo, que sin negocio no significa nada. */
+  clearBusiness?: boolean
+  shoppingLocked?: boolean
+  flowState?: Record<string, unknown>
+  clearFlow?: boolean
+}
+
+const getConversation = async (
+  customerId: string,
+): Promise<MarketplaceConversation | null> => {
+  const { data, error } = await db
+    .from('marketplace_conversations')
+    .select('*')
+    .eq('customer_id', customerId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data as MarketplaceConversation | null) ?? null
+}
+
+/**
+ * Avanza la conversación en UNA operación, creándola si es el primer mensaje.
+ *
+ * `expectedVersion` es el bloqueo optimista: si otro proceso la movió mientras
+ * tanto, devuelve `conflicto: true` y NO pisa nada — el llamador vuelve a leer
+ * y decide. Sin versión, gana el último en escribir, que con dos mensajes
+ * simultáneos del mismo cliente es una moneda al aire.
+ */
+const advanceConversation = async (
+  customerId: string,
+  patch: ConversationPatch = {},
+  expectedVersion?: number,
+): Promise<{ conflicto: true } | (MarketplaceConversation & { conflicto: false })> => {
+  const { data, error } = await db.rpc('advance_marketplace_conversation', {
+    p_customer_id: customerId,
+    p_expected_version: expectedVersion ?? null,
+    p_state: patch.state ?? null,
+    p_business_id: patch.businessId ?? null,
+    p_clear_business: patch.clearBusiness === true,
+    p_shopping_locked: patch.shoppingLocked ?? null,
+    p_flow_state: patch.flowState ?? null,
+    p_clear_flow: patch.clearFlow === true,
+  })
+  if (error) throw new Error(error.message)
+  return data as { conflicto: true } | (MarketplaceConversation & { conflicto: false })
+}
+
+/**
+ * El ámbito de búsqueda se DERIVA, no se guarda.
+ *
+ * Un campo aparte podría contradecir a `selected_business_id`, y entonces
+ * habría que decidir cuál de los dos miente.
+ */
+export type SearchScope = 'global' | 'current_business'
+
+const searchScopeFor = (
+  conversation: Pick<MarketplaceConversation, 'selected_business_id'> | null,
+): SearchScope => (
+  conversation?.selected_business_id ? 'current_business' : 'global'
+)
+
+export { getConversation, advanceConversation, searchScopeFor }
