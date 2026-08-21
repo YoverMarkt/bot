@@ -54,11 +54,13 @@ create table if not exists businesses (
   -- WhatsApp personal del dueño: solo este número puede pedir reportes por WhatsApp
   owner_phone         text,
   whatsapp_number     text unique,
-  -- Proveedor de mensajería activo: 'ycloud' | 'meta' | 'telegram'
+  -- Proveedor de mensajería activo: 'ycloud' | 'meta' | 'telegram' | 'marketplace'
   whatsapp_provider   text default 'ycloud'
+                      -- 'marketplace' = no tiene canal propio; lo atiende el
+                      -- número de la plataforma (2026-08-20).
                       constraint businesses_whatsapp_provider_check check (
                         nullif(btrim(coalesce(whatsapp_provider, '')), '') is null
-                        or btrim(whatsapp_provider) in ('ycloud', 'meta', 'telegram')
+                        or btrim(whatsapp_provider) in ('ycloud', 'meta', 'telegram', 'marketplace')
                       ),
   -- YCloud
   ycloud_api_key      text,
@@ -105,6 +107,23 @@ create table if not exists businesses (
   notes               text,
   created_at          timestamptz default now()
 );
+
+-- 'marketplace' significa «lo atiende el número de la plataforma». Si además
+-- guardara un teléfono suyo habría dos respuestas a «¿de quién es este número?»
+-- y el enrutado dependería de cuál se mirara primero. El estado imposible se
+-- prohíbe aquí, igual que en `option_groups_destino_check`.
+alter table public.businesses
+  drop constraint if exists businesses_marketplace_sin_canal_check;
+
+alter table public.businesses
+  add constraint businesses_marketplace_sin_canal_check check (
+    btrim(coalesce(whatsapp_provider, '')) is distinct from 'marketplace'
+    or (
+      nullif(btrim(coalesce(whatsapp_number, '')), '') is null
+      and nullif(btrim(coalesce(ycloud_number, '')), '') is null
+      and nullif(btrim(coalesce(meta_phone_id, '')), '') is null
+    )
+  );
 
 -- ── Identificadores exactos de canales externos ───────────
 -- Tabla derivada de businesses. La clave no incluye business_id a propósito:
@@ -232,7 +251,17 @@ begin
     nullif(btrim(coalesce(v_business.whatsapp_provider, '')), ''),
     'ycloud'
   );
-  if v_whatsapp_provider not in ('meta', 'ycloud', 'telegram') then
+  -- El negocio del marketplace no tiene canal propio: lo atiende el número de
+  -- la plataforma. No se le crea ningún identificador —crearlo sería declarar
+  -- que un teléfono le pertenece— y se sale antes de las validaciones que
+  -- exigen credenciales, que para él no aplican.
+  if v_whatsapp_provider = 'marketplace' then
+    delete from public.business_channel_identifiers
+    where business_id = p_business_id;
+    return;
+  end if;
+
+  if v_whatsapp_provider not in ('meta', 'ycloud', 'telegram', 'marketplace') then
     raise exception using
       errcode = '22023',
       message = 'El proveedor WhatsApp configurado es inválido',
@@ -241,6 +270,9 @@ begin
       );
   end if;
 
+  -- Un proveedor activo sin su identificador autoritativo dejaría el webhook
+  -- sin una forma segura de determinar el tenant. Se rechaza la configuración
+  -- en vez de crear un mapeo parcial o recurrir a coincidencias aproximadas.
   if v_whatsapp_provider in ('meta', 'ycloud') then
     v_whatsapp_phone := public.normalize_business_channel_identifier(
       'phone', v_business.whatsapp_number
@@ -270,6 +302,8 @@ begin
       detail = format('business_id=%s provider=meta', p_business_id);
   end if;
 
+  -- El borrado y las inserciones viven en la misma transacción que el cambio
+  -- de businesses. Una colisión revierte todo y conserva el mapeo anterior.
   delete from public.business_channel_identifiers
   where business_id = p_business_id;
 
@@ -308,6 +342,8 @@ begin
       candidates.provider
   loop
     if v_candidate.identifier_type = 'phone' then
+      -- Un teléfono completo tiene un único dueño incluso durante un cambio de
+      -- proveedor. El advisory lock cierra la carrera entre dos altas paralelas.
       perform pg_advisory_xact_lock(hashtextextended(
         'business-channel-phone:' || v_candidate.canonical_identifier,
         0
@@ -5640,6 +5676,8 @@ declare
   v_slug text := btrim(coalesce(p_business ->> 'slug', ''));
   v_whatsapp_number text :=
     btrim(coalesce(p_business ->> 'whatsapp_number', ''));
+  v_whatsapp_provider text :=
+    coalesce(nullif(btrim(p_business ->> 'whatsapp_provider'), ''), 'ycloud');
   v_client_email text :=
     nullif(btrim(coalesce(p_client_email, '')), '');
   v_password_hash text := nullif(p_password_hash, '');
@@ -5661,10 +5699,19 @@ begin
       errcode = '22023',
       message = 'Los datos del negocio son inválidos';
   end if;
-  if v_name = '' or v_slug = '' or v_whatsapp_number = '' then
+  if v_name = '' or v_slug = '' then
     raise exception using
       errcode = '22023',
-      message = 'Nombre, slug y número son obligatorios';
+      message = 'Nombre y slug son obligatorios';
+  end if;
+  -- El número deja de ser obligatorio SOLO para el negocio del marketplace,
+  -- que se atiende por el número de la plataforma. Para los demás sigue
+  -- siéndolo: sin él, el webhook no tendría forma de saber de quién es el
+  -- mensaje que acaba de llegar.
+  if v_whatsapp_provider <> 'marketplace' and v_whatsapp_number = '' then
+    raise exception using
+      errcode = '22023',
+      message = 'Un negocio con canal propio necesita su número';
   end if;
   if (v_client_email is null) <> (v_password_hash is null) then
     raise exception using
@@ -5765,8 +5812,8 @@ begin
     v_slug,
     v_name,
     coalesce(nullif(p_business ->> 'type', ''), 'negocio'),
-    v_whatsapp_number,
-    coalesce(nullif(p_business ->> 'whatsapp_provider', ''), 'ycloud'),
+    nullif(v_whatsapp_number, ''),
+    v_whatsapp_provider,
     nullif(p_business ->> 'ycloud_api_key', ''),
     nullif(p_business ->> 'ycloud_number', ''),
     nullif(btrim(p_business ->> 'ycloud_webhook_endpoint_id'), ''),

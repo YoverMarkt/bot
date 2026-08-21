@@ -107,7 +107,10 @@ const bcrypt = require('bcryptjs') as {
 
 const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12
-const ALLOWED_MESSAGING_PROVIDERS = ['ycloud', 'meta', 'telegram'] as const
+// 'marketplace' = el negocio no tiene canal propio y lo atiende el número de
+// la plataforma. Es el único proveedor que no exige credenciales, porque no
+// hay ninguna cuenta suya que configurar (2026-08-20).
+const ALLOWED_MESSAGING_PROVIDERS = ['ycloud', 'meta', 'telegram', 'marketplace'] as const
 type MessagingProvider = (typeof ALLOWED_MESSAGING_PROVIDERS)[number]
 type UsageLimits = {
   monthly_contact_limit: number
@@ -173,6 +176,21 @@ function channelConfigurationError(body: Record<string, unknown>): string | null
   if (provider === 'telegram' && !configuredText(body.telegram_bot_token)
     && !configuredText(process.env.TELEGRAM_BOT_TOKEN)) {
     return 'Telegram requiere un Bot Token antes de guardar el negocio'
+  }
+  // El marketplace no pide credenciales —no hay cuenta suya que configurar—
+  // pero tampoco admite un número propio: la base lo rechaza con
+  // `businesses_marketplace_sin_canal_check`, y aquí se dice por qué en vez de
+  // dejar que el superadmin lea una violación de restricción.
+  if (provider === 'marketplace') {
+    for (const [field, label] of [
+      ['whatsapp_number', 'un número de WhatsApp'],
+      ['ycloud_number', 'un número YCloud'],
+      ['meta_phone_id', 'un Phone ID de Meta'],
+    ] as const) {
+      if (configuredText(body[field])) {
+        return `Un negocio del marketplace se atiende por el número de la plataforma, así que no puede tener ${label}`
+      }
+    }
   }
   return null
 }
@@ -384,7 +402,13 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   const whatsappNumber = typeof body.whatsapp_number === 'string'
     ? body.whatsapp_number.trim()
     : ''
-  if (!name || !whatsappNumber) {
+  // El número solo es obligatorio para quien tiene canal propio: el negocio
+  // del marketplace se atiende por el número de la plataforma, y pedirle uno
+  // suyo sería pedirle algo que la base le prohíbe tener.
+  if (!name) {
+    return res.status(400).json({ error: 'Nombre requerido' })
+  }
+  if (!whatsappNumber && configuredWhatsAppProvider(body) !== 'marketplace') {
     return res.status(400).json({ error: 'Nombre y número requeridos' })
   }
 
@@ -517,6 +541,20 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   }
   if ('whatsapp_provider' in businessData) {
     businessData.whatsapp_provider = configuredWhatsAppProvider(body)
+  }
+  // Los identificadores de canal se guardan como NULL cuando llegan vacíos.
+  //
+  // ⚠️ `whatsapp_number` es UNIQUE. Guardando la cadena vacía, el PRIMER
+  // negocio convertido a marketplace se guardaría y el SEGUNDO chocaría contra
+  // el índice único — y el mensaje diría «ese número ya está asignado a otro
+  // negocio» sobre un negocio que no tiene número. El alta ya lo evita dentro
+  // de la RPC; la edición no pasa por ella, y convertir un negocio existente
+  // es justo el camino esperado al montar el marketplace.
+  for (const field of ['whatsapp_number', 'ycloud_number', 'meta_phone_id'] as const) {
+    if (field in businessData && typeof businessData[field] === 'string'
+      && !String(businessData[field]).trim()) {
+      businessData[field] = null
+    }
   }
 
   try {

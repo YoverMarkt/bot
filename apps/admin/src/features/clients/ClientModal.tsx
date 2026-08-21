@@ -158,17 +158,19 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (!f.name.trim() || !f.whatsapp_number.trim()) { setError('Nombre y número de WhatsApp son obligatorios'); return }
+    const sinCanalPropio = f.whatsapp_provider === 'marketplace'
+    if (!f.name.trim()) { setError('El nombre es obligatorio'); return }
+    if (!sinCanalPropio && !f.whatsapp_number.trim()) { setError('El número de WhatsApp es obligatorio'); return }
     if (!id && !(parseFloat(f.monthly_rate) > 0)) { setError('Selecciona un plan con una tarifa mensual válida'); return }
     if (!id && (!f.client_email.trim() || !f.client_password)) { setError('El correo y la contraseña del dueño son obligatorios al crear'); return }
     const payload: BusinessPayload = {
       name: f.name.trim(), type: f.type.trim() || 'negocio',
-      whatsapp_number: f.whatsapp_number.trim(),
+      whatsapp_number: sinCanalPropio ? null : f.whatsapp_number.trim(),
       owner_phone: f.owner_phone.trim() || null,
       whatsapp_provider: f.whatsapp_provider as BusinessPayload['whatsapp_provider'],
-      ycloud_number: f.whatsapp_number.trim() || null,
-      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || null,
-      meta_phone_id: f.meta_phone_id || null,
+      ycloud_number: sinCanalPropio ? null : (f.whatsapp_number.trim() || null),
+      ycloud_webhook_endpoint_id: sinCanalPropio ? null : (f.ycloud_webhook_endpoint_id.trim() || null),
+      meta_phone_id: sinCanalPropio ? null : (f.meta_phone_id || null),
       ai_provider: f.ai_provider || null,
       takes_orders: f.sales !== 'informa',
       // Un negocio que deja de vender no puede quedarse con la tienda
@@ -201,7 +203,13 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     // Un negocio nuevo no debe quedar activo con un canal que no funciona.
     // Al editar se conserva la posibilidad de guardar otros cambios aunque el
     // proveedor esté temporalmente fuera de línea.
-    if (f.whatsapp_provider !== 'telegram' || f.telegram_bot_token || (id && savedCredentials.telegram_bot_token)) {
+    //
+    // ⚠️ El marketplace se salta la verificación porque no tiene credenciales
+    // que verificar. Sin esta condición el alta era IMPOSIBLE: el verificador
+    // no conoce el proveedor, responde `ok:false`, y al crear eso aborta el
+    // guardado con «No se creó el negocio: Proveedor no reconocido».
+    if (!sinCanalPropio
+      && (f.whatsapp_provider !== 'telegram' || f.telegram_bot_token || (id && savedCredentials.telegram_bot_token))) {
       setVfy('Verificando credenciales…')
       try {
         const vr = await requestVerification()
@@ -273,7 +281,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <Input id="client-custom-business-type" aria-label="Otro tipo de negocio" className="mt-2" value={f.type} onChange={set('type')} placeholder="Ej: centro de yoga" />
                 )}
               </div>
-              <div><Label htmlFor="client-whatsapp-number">WhatsApp del negocio *</Label><Input id="client-whatsapp-number" value={f.whatsapp_number} onChange={set('whatsapp_number')} placeholder="+593…" /></div>
+              {/* El negocio del marketplace se atiende por el número de la
+                  plataforma, así que no tiene uno propio que pedirle. El campo
+                  se oculta en vez de quedarse vacío: la base lo rechazaría. */}
+              {f.whatsapp_provider !== 'marketplace' && (
+                <div><Label htmlFor="client-whatsapp-number">WhatsApp del negocio *</Label><Input id="client-whatsapp-number" value={f.whatsapp_number} onChange={set('whatsapp_number')} placeholder="+593…" /></div>
+              )}
               <div><Label htmlFor="client-owner-phone">WhatsApp del dueño (reportes)</Label><Input id="client-owner-phone" value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
             </div>
 
@@ -369,6 +382,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 <Select value={f.whatsapp_provider} onValueChange={setVal('whatsapp_provider')}>
                   <SelectTrigger id="client-whatsapp-provider" aria-labelledby="client-whatsapp-provider-label" className="w-44"><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="marketplace">Marketplace (sin número propio)</SelectItem>
                     <SelectItem value="ycloud">YCloud</SelectItem>
                     <SelectItem value="meta">Meta (oficial)</SelectItem>
                     <SelectItem value="telegram">Solo Telegram</SelectItem>
@@ -388,15 +402,26 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   <div><Label htmlFor="client-meta-phone-id">Phone ID</Label><Input id="client-meta-phone-id" value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
                 </div>
               )}
-              <div className="mt-3">
-                <div><Label htmlFor="client-telegram-token">Telegram Bot Token {savedCredentials.telegram_bot_token ? '— guardado' : '(opcional)'}</Label><Input id="client-telegram-token" type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} placeholder={savedCredentials.telegram_bot_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-              </div>
-              <div className="flex items-center gap-3 mt-3">
-                <Button variant="outline" size="sm" type="button" onClick={verify} >
-                  <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar credenciales</span>
-                </Button>
-                {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
-              </div>
+              {/* Sin canal propio no hay credenciales que guardar ni que
+                  verificar: el verificador consultaría una cuenta que no
+                  existe y devolvería un fallo que no significa nada. */}
+              {f.whatsapp_provider === 'marketplace' ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Este negocio se atiende por el número del marketplace. No necesita número propio, cuenta de YCloud ni webhook.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-3">
+                    <div><Label htmlFor="client-telegram-token">Telegram Bot Token {savedCredentials.telegram_bot_token ? '— guardado' : '(opcional)'}</Label><Input id="client-telegram-token" type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} placeholder={savedCredentials.telegram_bot_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
+                  </div>
+                  <div className="flex items-center gap-3 mt-3">
+                    <Button variant="outline" size="sm" type="button" onClick={verify} >
+                      <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar credenciales</span>
+                    </Button>
+                    {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Plan y facturación */}
