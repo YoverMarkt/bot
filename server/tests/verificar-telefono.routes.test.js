@@ -132,11 +132,11 @@ describe('confirmar el número para entrar', () => {
   })
 
   it('token de OTRO negocio → 401, sin revelar que existe', async () => {
-    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-2', slug: 'hostal' })
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-2', slug: 'panaderia' })
     vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue(sesionDeJuan)
     const bind = vi.spyOn(db, 'bindStorefrontSession')
 
-    const r = await llamar({ slug: 'hostal', body: { phone: '593999111222' } })
+    const r = await llamar({ slug: 'panaderia', body: { phone: '593999111222' } })
 
     expect(r.status).toBe(401)
     expect(bind).not.toHaveBeenCalled()

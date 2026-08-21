@@ -128,15 +128,20 @@ de barbería.
 
 ### ⚠️ Las FAMILIAS son el requisito, no lo siguiente
 
-No se puede separar por familia si el sistema no sabe qué es una familia. Hoy
-hay **52 tipos sueltos** y ~25 son de comida (pizzería, hamburguesería,
-almuerzos, batidos, asadero, sushi…), **cada uno una isla**: una regla para
-`restaurante` NO alcanza a `pizzería`. En `apps/admin/src/features/clients/business-types.ts`
-hay un comentario `── Comida ──` que agrupa **visualmente**, pero no es dato.
+✅ **Las familias ya existen** (`business_families` + `business_type_families`,
+2026-08-16) y la jerarquía de reglas es `negocio > tipo > FAMILIA > toda la
+plataforma`. Antes había 52 tipos sueltos y cada uno era una isla: una regla
+para `restaurante` NO alcanzaba a `pizzería`.
 
-Familias propuestas: **Comida · Retail · Hospedaje · Servicios · Salud y
-belleza**. La jerarquía de reglas pasaría a
-`negocio > tipo > FAMILIA > toda la plataforma`.
+⚠️ **Pero la separación por familia ya no se puede hacer como estaba pensada.**
+La fase 5 (2026-08-20) dejó Umbani solo con comida y retail: los tipos de
+hospedaje, servicios y salud/belleza se retiraron del desplegable y sus tres
+familias se borraron. La tabla de arriba describe un Agente IA que hoy **no
+tiene dónde vivir en este repositorio** — habría que reintroducir esos tipos en
+la aplicación nueva, no recuperarlos aquí.
+
+Familias que llegaron a existir: **Comida · Retail · Hospedaje · Servicios ·
+Salud y belleza**. Hoy quedan las dos primeras.
 
 ### Antes de arrancar, definir
 

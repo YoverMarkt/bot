@@ -38,7 +38,12 @@ const panelTypes = () => {
 describe('plantillas por tipo de negocio', () => {
   it('encuentra los tipos del panel (si no, todo lo demás pasaría en falso)', () => {
     const tipos = panelTypes()
-    expect(tipos.length).toBeGreaterThanOrEqual(30)
+    // Tras la fase 5 el desplegable son 31: 24 de comida, 6 de retail y el
+    // genérico. El umbral va al total REAL, no a un número redondo por debajo:
+    // holgura de tres significa que pueden desaparecer tres tipos del panel sin
+    // que nada avise. Retirar un tipo es un acto deliberado y debe bajar este
+    // número a mano; añadir uno no lo rompe.
+    expect(tipos.length).toBeGreaterThanOrEqual(31)
     expect(tipos).toContain('hamburgueseria')
   })
 
@@ -92,7 +97,9 @@ describe('plantillas por tipo de negocio', () => {
   })
 
   it('los negocios sin carta no reciben ninguna', () => {
-    for (const tipo of ['ferretería', 'perfumería', 'barbería', 'hotel', 'inmobiliaria']) {
+    // Los tres primeros están en el desplegable y no tienen carta; el último
+    // es un tipo escrito a mano que no se parece a ninguno con plantilla.
+    for (const tipo of ['ferretería', 'perfumería', 'negocio', 'lavandería']) {
       expect(templateForBusinessType(tipo), `${tipo} no debería traer carta`).toBeNull()
     }
     expect(templateForBusinessType('')).toBeNull()
@@ -167,9 +174,9 @@ describe('tiempo de preparación por tipo de negocio', () => {
     expect(prepTimeForBusinessType('heladería')).toBe(10)
     expect(prepTimeForBusinessType('pizzería')).toBe(25)
     expect(prepTimeForBusinessType('asadero')).toBe(40)
-    // Sin tipo, con un tipo desconocido o con una barbería —que no usa esto—
+    // Sin tipo, o con uno escrito a mano que no se parece a ninguno conocido,
     // se cae al defecto en vez de inventar.
-    expect(prepTimeForBusinessType('barbería')).toBe(PREP_TIME_POR_DEFECTO)
+    expect(prepTimeForBusinessType('lavandería')).toBe(PREP_TIME_POR_DEFECTO)
     expect(prepTimeForBusinessType('')).toBe(PREP_TIME_POR_DEFECTO)
     expect(prepTimeForBusinessType(null)).toBe(PREP_TIME_POR_DEFECTO)
   })

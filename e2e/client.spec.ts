@@ -93,7 +93,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-client-token')
     localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
+      id: 'biz-e2e', name: 'Panadería E2E', type: 'panadería',
     }))
     localStorage.setItem('client_user', JSON.stringify({
       name: 'Dueño E2E', role: 'owner', permissions: [],
@@ -104,7 +104,7 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
-      id: 'biz-e2e', name: 'Barbería E2E', type: 'barbería',
+      id: 'biz-e2e', name: 'Panadería E2E', type: 'panadería',
       takes_orders: false,
     }),
   }))
@@ -127,31 +127,11 @@ test('horarios expone nombres accesibles en controles dinámicos', async ({ page
   await expectConnectedLabels(page.locator('main'))
 })
 
-test('un negocio de servicios conserva su nombre aunque no habilite agenda', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('client_token', 'e2e-client-token')
-    localStorage.setItem('client_biz', JSON.stringify({
-      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
-    }))
-    localStorage.setItem('client_user', JSON.stringify({
-      name: 'Dueño E2E', role: 'owner', permissions: [],
-    }))
-  })
-  await mockClientApi(page)
-  await page.route('**/api/client/business', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      id: 'biz-e2e', name: 'Clínica E2E', type: 'clínica',
-      takes_orders: false,
-    }),
-  }))
-  await page.goto(clientUrl)
-
-  await expect(page.getByRole('link', { name: /Servicios/ })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Catálogo/ })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Reservas' })).toHaveCount(0)
-})
+// El test que vivía aquí comprobaba que una clínica veía «Servicios» en vez de
+// «Catálogo». Se fue el 2026-08-20 con `isServiceBiz`: retirados los tipos de
+// servicios, salud y hospedaje, todo negocio de Umbani tiene catálogo. Lo que
+// sí se sigue probando está repartido: que la barra lateral lleva a «Catálogo»
+// en la primera prueba del archivo, y que no ofrece Reservas en la de horarios.
 
 test('el sidebar cliente queda fijo y solo se desplaza el contenido', async ({ page }) => {
   await seedClientSession(page)
@@ -482,11 +462,11 @@ test('el recordatorio de venta solo aparece en conversaciones con actividad reci
 test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {
   await mockClientApi(page)
   // Pedidos es lo que ahora distingue a un negocio de otro: la agenda, que era
-  // el módulo que separaba a la barbería, se retiró el 2026-08-16.
+  // el otro módulo que los separaba, se retiró el 2026-08-16.
   const bizFor = (vende: boolean) => ({
     id: vende ? 'biz-tienda' : 'biz-informa',
-    name: vende ? 'Tienda E2E' : 'Consultorio E2E',
-    type: vende ? 'tienda' : 'consultorio',
+    name: vende ? 'Tienda E2E' : 'Negocio E2E',
+    type: vende ? 'tienda' : 'negocio',
     takes_orders: vende,
   })
   await page.route('**/api/client/login', route => {
@@ -518,7 +498,7 @@ test('cambiar de sesión no hereda módulos ni datos del negocio anterior', asyn
   await page.getByLabel('Contraseña').fill('segura-e2e')
   await page.getByRole('button', { name: 'Entrar' }).click()
 
-  await expect(page.getByText('Consultorio E2E').first()).toBeVisible()
+  await expect(page.getByText('Negocio E2E').first()).toBeVisible()
   await expect(page.getByRole('link', { name: 'Pedidos' })).toHaveCount(0)
 })
 
