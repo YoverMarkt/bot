@@ -187,3 +187,79 @@ describe('el reparto de tipos en categorías', () => {
     }
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL COMANDO MENÚ Y EL BLOQUEO DE FLUJO (fase 5)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('el comando MENÚ', () => {
+  it('se reconoce escrito como sea', async () => {
+    const { esComandoMenu } = await import('../dist/services/marketplace-menu.js')
+    for (const forma of ['menu', 'menú', 'MENU', 'MENÚ', 'Menú', '  menu  ', 'MENÚ!', 'inicio', 'cancelar']) {
+      expect(esComandoMenu(forma), forma).toBe(true)
+    }
+  })
+
+  it('no se dispara con un mensaje que solo lo contiene', async () => {
+    const { esComandoMenu } = await import('../dist/services/marketplace-menu.js')
+    // «quiero ver el menu de pizzas» es una búsqueda, no el comando global.
+    for (const frase of ['quiero ver el menu de pizzas', 'menu del dia', '', 'menudo lio']) {
+      expect(esComandoMenu(frase), frase).toBe(false)
+    }
+  })
+})
+
+describe('volver al menú con un pedido en marcha', () => {
+  it('NO borra nada sin preguntar', async () => {
+    const { responderAlMenu, SI_REINICIAR, NO_CONTINUAR } =
+      await import('../dist/services/marketplace-menu.js')
+    // El cliente pudo escribir «menú» buscando ayuda, no queriendo tirar lo
+    // que llevaba — y la mini app de ese local sigue abierta en su teléfono.
+    const r = responderAlMenu(
+      { bloqueado: true, negocio: { name: 'El Puerto', slug: 'el-puerto' } },
+      CATEGORIAS,
+    )
+    expect(r.vista.vista).toBe('confirmando_reinicio')
+    expect(r.reply).toContain('El Puerto')
+    expect(r.options).toEqual([SI_REINICIAR, NO_CONTINUAR])
+  })
+
+  it('sin pedido en marcha, vuelve al menú directo', async () => {
+    const { responderAlMenu } = await import('../dist/services/marketplace-menu.js')
+    const r = responderAlMenu({ bloqueado: false, negocio: null }, CATEGORIAS)
+    expect(r.vista.vista).toBe('categorias')
+    expect(r.options).toContain('🍕 Pizzerías')
+  })
+
+  it('«sí» reinicia y «no» conserva el pedido', async () => {
+    const { resolverReinicio, SI_REINICIAR, NO_CONTINUAR } =
+      await import('../dist/services/marketplace-menu.js')
+    const estado = { bloqueado: true, negocio: { name: 'El Puerto', slug: 'el-puerto' } }
+
+    expect(resolverReinicio(SI_REINICIAR, estado, CATEGORIAS).reinicia).toBe(true)
+    expect(resolverReinicio('1', estado, CATEGORIAS).reinicia).toBe(true)
+
+    const no = resolverReinicio(NO_CONTINUAR, estado, CATEGORIAS)
+    expect(no.reinicia).toBe(false)
+    expect(no.respuesta.reply).toContain('El Puerto')
+  })
+
+  it('ante una respuesta ambigua NO decide por el cliente', async () => {
+    const { resolverReinicio } = await import('../dist/services/marketplace-menu.js')
+    // Tirar un carrito por un «ok» ambiguo es lo único que no tiene vuelta
+    // atrás: se repite la pregunta.
+    const r = resolverReinicio('ok', { bloqueado: true, negocio: { name: 'X', slug: 'x' } }, CATEGORIAS)
+    expect(r.reinicia).toBe(false)
+    expect(r.respuesta.vista.vista).toBe('confirmando_reinicio')
+  })
+})
+
+describe('intentar empezar otra cosa con un pedido abierto', () => {
+  it('dice dónde lo tiene y cómo salir, en el mismo mensaje', async () => {
+    const { recordarPedidoEnProceso } = await import('../dist/services/marketplace-menu.js')
+    // ⚠️ Cada respuesta se paga: no se gasta un mensaje en decir solo «no».
+    const r = recordarPedidoEnProceso({ name: 'El Puerto' })
+    expect(r.reply).toContain('El Puerto')
+    expect(r.reply).toMatch(/MENÚ/)
+  })
+})
