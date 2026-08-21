@@ -330,9 +330,9 @@ export default function Finance() {
               </div>
             )}
 
-            {/* La familia agrupa los 52 tipos en cinco: una regla para
-                «Comida» cubre pizzería, hamburguesería, almuerzos, batidos y
-                veinte más, en vez de veinticuatro reglas iguales. */}
+            {/* La familia agrupa los tipos: una regla para «Comida» cubre
+                pizzería, hamburguesería, almuerzos, batidos y veinte más, en
+                vez de veinticuatro reglas iguales. */}
             {borrador.scope === 'family' && (
               <div>
                 <Label htmlFor="familia">Familia</Label>

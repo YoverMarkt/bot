@@ -106,7 +106,7 @@ describe('quién puede entrar a la tienda', () => {
     vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-2' })
     vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue(SESION)
 
-    const r = await pasar({ slug: 'hostal' })
+    const r = await pasar({ slug: 'panaderia' })
 
     expect(r.siguio).toBe(false)
     expect(r.body.reason).toBe('otro_negocio')

@@ -11029,12 +11029,12 @@ create table if not exists public.business_families (
 
 alter table public.business_families enable row level security;
 
+-- Umbani reparte comida y producto a domicilio, así que sus familias son dos.
+-- Hasta el 2026-08-20 había cinco: hospedaje, servicios y salud/belleza salieron
+-- con los tipos que colgaban de ellas, que ya no se pueden dar de alta.
 insert into public.business_families (code, label, sort) values
   ('comida',        'Comida',            10),
-  ('retail',        'Tiendas y retail',  20),
-  ('hospedaje',     'Hospedaje',         30),
-  ('servicios',     'Servicios',         40),
-  ('salud_belleza', 'Salud y belleza',   50)
+  ('retail',        'Tiendas y retail',  20)
 on conflict (code) do nothing;
 
 
@@ -11050,8 +11050,13 @@ alter table public.business_type_families enable row level security;
 create index if not exists idx_business_type_families_familia
   on public.business_type_families (family_code);
 
--- Los 52 tipos del desplegable, clasificados. Si mañana se añade uno al panel
+-- Los 30 tipos del desplegable, clasificados. Si mañana se añade uno al panel
 -- y no se clasifica aquí, cae a la regla global: no rompe nada, solo no hereda.
+--
+-- ⚠️ `negocio` («Otro / negocio genérico») SÍ está en el desplegable y a
+-- propósito NO está aquí: un tipo genérico no puede heredar el margen de una
+-- familia que nadie eligió por él. Sin mapeo cae a la global, que es lo que
+-- significa «no sé qué es esto».
 insert into public.business_type_families (business_type, family_code) values
   -- Comida preparada: 24 tipos que hasta hoy necesitaban 24 reglas iguales.
   ('pizzería','comida'), ('restaurante','comida'), ('cafetería','comida'),
@@ -11067,21 +11072,7 @@ insert into public.business_type_families (business_type, family_code) values
   -- porque se comporta como tienda —se venden ingredientes al peso— y no como
   -- cocina, aunque el producto sea comida.
   ('tienda','retail'), ('perfumería','retail'), ('farmacia','retail'),
-  ('ferretería','retail'), ('supermercado','retail'), ('carnicería','retail'),
-
-  ('hotel','hospedaje'), ('hostal','hospedaje'), ('alojamiento','hospedaje'),
-  ('complejo turístico','hospedaje'), ('resort','hospedaje'), ('cabañas','hospedaje'),
-
-  ('negocio','servicios'), ('inmobiliaria','servicios'),
-  ('taller automotriz','servicios'), ('servicios profesionales','servicios'),
-  ('gimnasio','servicios'),
-
-  ('barbería','salud_belleza'), ('peluquería','salud_belleza'),
-  ('salón de belleza','salud_belleza'), ('spa','salud_belleza'),
-  ('centro de estética','salud_belleza'), ('clínica','salud_belleza'),
-  ('consultorio','salud_belleza'), ('odontología','salud_belleza'),
-  ('psicología','salud_belleza'), ('fisioterapia','salud_belleza'),
-  ('masajes','salud_belleza')
+  ('ferretería','retail'), ('supermercado','retail'), ('carnicería','retail')
 on conflict (business_type) do nothing;
 
 
