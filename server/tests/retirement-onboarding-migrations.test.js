@@ -36,6 +36,13 @@ describe('onboarding durante el retiro por fases', () => {
   const miniapp = ultimaFuncionOnboarding(
     leer('migration-2026-08-19-miniapp-exige-tienda.sql'),
   )
+  // ⚠️ La versión que MANDA es la de la última migración que redefine la
+  // función, no la de `schema.sql`. Al añadir una nueva hay que traerla aquí,
+  // o este guardián seguiría comparando el esquema con una versión anterior y
+  // daría por bueno un desfase.
+  const sinCanal = ultimaFuncionOnboarding(
+    leer('migration-2026-08-20-negocio-sin-canal-propio.sql'),
+  )
   it('fase 1 conserva citas, tienda y los tres modos del despliegue mixto', () => {
     expect(hospedaje).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(hospedaje).toMatch(
@@ -62,10 +69,20 @@ describe('onboarding durante el retiro por fases', () => {
     esperarTiendaPreservada(miniapp)
   })
 
+  it('la fase 1 del marketplace libera el número sin tocar modos ni tienda', () => {
+    expect(sinCanal).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
+    expect(sinCanal).toContain('El modo miniapp requiere pedidos y tienda habilitados')
+    expect(sinCanal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
+    // El número deja de ser obligatorio SOLO para el marketplace.
+    expect(sinCanal).toContain('Un negocio con canal propio necesita su número')
+    expect(sinCanal).toMatch(/nullif\(v_whatsapp_number, ''\)/)
+    esperarTiendaPreservada(sinCanal)
+  })
+
   it('el contrato final de schema.sql coincide con la última migración', () => {
     const contratoFinal = ultimaFuncionOnboarding(leer('schema.sql'))
 
-    expect(contratoFinal).toBe(miniapp)
+    expect(contratoFinal).toBe(sinCanal)
     expect(contratoFinal).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(contratoFinal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
     expect(contratoFinal).toMatch(/\bprep_time_minutes,\s*delivery_extra_minutes/)
