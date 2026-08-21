@@ -119,7 +119,8 @@ export const setBotActive = (id: string, active: boolean) =>
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
 export type BusinessDetail = BusinessRow & {
   owner_phone: string | null
-  whatsapp_provider: 'ycloud' | 'meta' | 'telegram' | null
+  // 'marketplace' = sin canal propio; lo atiende el número de la plataforma.
+  whatsapp_provider: 'ycloud' | 'meta' | 'telegram' | 'marketplace' | null
   ycloud_number: string | null
   ycloud_webhook_endpoint_id: string | null
   meta_phone_id: string | null

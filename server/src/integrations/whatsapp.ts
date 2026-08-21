@@ -65,6 +65,12 @@ function providerFor(business: WhatsAppBusiness): WhatsAppProvider {
   if (provider === 'telegram') {
     throw new Error('El negocio opera solo por Telegram: no hay canal WhatsApp para este envío')
   }
+  // El negocio del marketplace se atiende por el número de la plataforma, que
+  // todavía no envía por cuenta de nadie. Se dice cuál es la causa en vez de
+  // «proveedor no soportado», que haría pensar en una configuración rota.
+  if (provider === 'marketplace') {
+    throw new Error('El negocio se atiende por el número del marketplace: todavía no hay canal propio para este envío')
+  }
   throw new Error(`Proveedor WhatsApp no soportado: ${provider}`)
 }
 const ycloudKeyFor = (business: WhatsAppBusiness) => (
