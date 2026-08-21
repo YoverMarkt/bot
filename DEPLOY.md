@@ -111,6 +111,7 @@ La URL del webhook cambia a tu dominio fijo (ya no cambia en cada reinicio 🎉)
 - [ ] `migration-agrupado-webhooks.sql` aplicada después del inbox; en una actualización activa, después de retirar la réplica anterior.
 - [ ] `migration-2026-08-20-negocio-sin-canal-propio.sql` aplicada **después** de `migration-identificadores-canales.sql` y de `migration-2026-08-19-miniapp-exige-tienda.sql`: recrea las funciones de esas dos, así que aplicadas al revés la sobrescribirían y volvería a exigirse número al dar de alta.
 - [ ] `migration-2026-08-20-conversacion-del-marketplace.sql` aplicada: solo AÑADE una tabla, un disparador y una función nuevas; no depende de ninguna otra migración y ninguna la sobrescribe.
+- [ ] `migration-2026-08-21-categorias-del-marketplace.sql` aplicada: solo AÑADE dos tablas de catálogo y dos funciones de lectura; no depende de ninguna otra.
 - [ ] Alerta de logs configurada para `Inbox webhook [dead:`; esos eventos requieren revisión antes de que venza su retención de 7 días.
 - [ ] Cobro manual verificado; el bot no envía enlaces automáticamente.
 

@@ -1,0 +1,209 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// EL MENÚ DEL MARKETPLACE
+//
+// Lo que ve quien escribe al número de Umbani: categorías → locales → y de ahí
+// al enlace de la tienda de ese local.
+//
+// ⚠️ Termina en el ENLACE a propósito. La mini app ya sabe hacer productos,
+// opciones, carrito, dirección, pago y seguimiento: rehacer todo eso en
+// botones de WhatsApp sería una segunda implementación del mismo camino, y
+// dos sitios donde el precio puede divergir. El menú solo lleva al cliente
+// hasta la puerta del local correcto.
+//
+// ⚠️ Función PURA, como `bot-menu-flow.ts`: recibe los datos ya consultados y
+// devuelve texto y opciones. Nada de base de datos aquí — así se prueba entera
+// sin levantar nada, que es lo que permite confiar en ella.
+//
+// ⚠️ La paginación es de NUEVE, no diez. Una lista de WhatsApp admite diez
+// filas y la última se la lleva «Ver más»; con diez opciones más el botón, la
+// última se perdería sin que nada avisara.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface MarketplaceCategory {
+  code: string
+  label: string
+  emoji: string | null
+  locales: number
+}
+
+export interface MarketplaceBusiness {
+  id: string
+  slug: string
+  name: string
+  type: string
+  prep_min: number | null
+}
+
+/** Dónde está el cliente dentro del menú. Se guarda en `flow_state`. */
+export interface MarketplaceView {
+  vista: 'categorias' | 'negocios'
+  categoria?: string
+  pagina: number
+}
+
+export interface MarketplaceReply {
+  reply: string
+  options: string[]
+  /** Cuando el cliente eligió local: a partir de aquí manda la tienda. */
+  negocioElegido?: MarketplaceBusiness
+  vista: MarketplaceView
+}
+
+export const VER_MAS = '➡️ Ver más'
+export const VOLVER = '⬅️ Volver'
+export const PAGINA = 9
+
+const SALUDO = '👋 ¡Hola! Bienvenido a *Umbani*.'
+const PREGUNTA = '¿Qué deseas pedir?'
+const NO_ENTENDI = '🙏 No te entendí. Elige una opción de la lista 👇'
+
+/** Sin acentos ni mayúsculas: el cliente escribe «pizzerias» y también vale. */
+const normalizar = (valor: string): string => String(valor || '')
+  .trim()
+  .toLocaleLowerCase('es')
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+
+const etiquetaCategoria = (categoria: MarketplaceCategory): string => (
+  categoria.emoji ? `${categoria.emoji} ${categoria.label}` : categoria.label
+)
+
+const etiquetaNegocio = (negocio: MarketplaceBusiness): string => negocio.name
+
+/** El trozo de lista que toca, más «Ver más» si queda algo detrás. */
+function paginar<T>(todos: T[], pagina: number, etiqueta: (item: T) => string) {
+  const desde = pagina * PAGINA
+  const mostrados = todos.slice(desde, desde + PAGINA)
+  const hayMas = todos.length > desde + PAGINA
+  return { mostrados, hayMas, opciones: mostrados.map(etiqueta) }
+}
+
+/**
+ * Casa lo que escribió el cliente contra las opciones ofrecidas.
+ *
+ * Acepta el texto exacto, el texto sin emoji, y el número de la fila — la app
+ * de WhatsApp devuelve el título, pero mucha gente responde «3».
+ */
+export function elegir(mensaje: string, opciones: string[]): string | null {
+  const texto = normalizar(mensaje)
+  if (!texto) return null
+
+  const posicion = Number.parseInt(texto, 10)
+  if (Number.isInteger(posicion) && posicion >= 1 && posicion <= opciones.length) {
+    return opciones[posicion - 1]
+  }
+  const exacta = opciones.find(opcion => normalizar(opcion) === texto)
+  if (exacta) return exacta
+  // Sin el emoji delante: «pizzerias» debe encontrar «🍕 Pizzerías».
+  return opciones.find((opcion) => {
+    const limpia = normalizar(opcion).replace(/[^a-z0-9 ]/g, '').trim()
+    return limpia === texto || (limpia.length > 2 && limpia.includes(texto))
+  }) || null
+}
+
+/** La portada: las categorías que hoy tienen locales detrás. */
+export function verCategorias(
+  categorias: MarketplaceCategory[],
+  pagina = 0,
+  saludar = false,
+): MarketplaceReply {
+  if (!categorias.length) {
+    return {
+      reply: '😔 Ahora mismo no tenemos locales disponibles. Vuelve a escribirnos en un rato.',
+      options: [],
+      vista: { vista: 'categorias', pagina: 0 },
+    }
+  }
+  const { hayMas, opciones } = paginar(categorias, pagina, etiquetaCategoria)
+  return {
+    reply: `${saludar ? `${SALUDO}\n\n` : ''}${PREGUNTA}`,
+    options: [...opciones, ...(hayMas ? [VER_MAS] : [])],
+    vista: { vista: 'categorias', pagina },
+  }
+}
+
+/** Los locales de una categoría. */
+export function verNegocios(
+  categoria: MarketplaceCategory,
+  negocios: MarketplaceBusiness[],
+  pagina = 0,
+): MarketplaceReply {
+  if (!negocios.length) {
+    // No debería pasar —la consulta solo devuelve categorías con locales—,
+    // pero el último local pudo cerrar entre el menú y esta respuesta.
+    return {
+      reply: `😔 Justo ahora no hay locales abiertos en ${categoria.label}. Elige otra categoría 👇`,
+      options: [VOLVER],
+      vista: { vista: 'negocios', categoria: categoria.code, pagina: 0 },
+    }
+  }
+  const { hayMas, opciones } = paginar(negocios, pagina, etiquetaNegocio)
+  return {
+    reply: `${etiquetaCategoria(categoria)}\n\nElige un local 👇`,
+    options: [...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER],
+    vista: { vista: 'negocios', categoria: categoria.code, pagina },
+  }
+}
+
+export interface PasoInput {
+  mensaje: string
+  vista: MarketplaceView
+  categorias: MarketplaceCategory[]
+  /** Los locales de `vista.categoria`. El llamador los consulta. */
+  negocios: MarketplaceBusiness[]
+}
+
+/**
+ * Un paso del menú: qué contesta el bot ante este mensaje.
+ *
+ * Devuelve `negocioElegido` cuando el cliente llegó a un local; a partir de
+ * ahí el llamador emite el enlace de su tienda.
+ */
+export function paso(input: PasoInput): MarketplaceReply {
+  const { mensaje, vista, categorias, negocios } = input
+
+  if (vista.vista === 'negocios' && vista.categoria) {
+    const categoria = categorias.find(c => c.code === vista.categoria)
+    // La categoría dejó de tener locales mientras el cliente miraba.
+    if (!categoria) return verCategorias(categorias, 0)
+
+    const { mostrados, hayMas, opciones } = paginar(negocios, vista.pagina, etiquetaNegocio)
+    const elegida = elegir(mensaje, [
+      ...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER,
+    ])
+
+    if (elegida === VOLVER) return verCategorias(categorias, 0)
+    if (elegida === VER_MAS) return verNegocios(categoria, negocios, vista.pagina + 1)
+
+    const negocio = mostrados.find(n => etiquetaNegocio(n) === elegida)
+    if (negocio) {
+      return {
+        reply: '',
+        options: [],
+        negocioElegido: negocio,
+        vista: { vista: 'negocios', categoria: categoria.code, pagina: vista.pagina },
+      }
+    }
+    const repetir = verNegocios(categoria, negocios, vista.pagina)
+    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
+  }
+
+  // Estamos en la portada.
+  const { mostrados, hayMas, opciones } = paginar(categorias, vista.pagina, etiquetaCategoria)
+  const elegida = elegir(mensaje, [...opciones, ...(hayMas ? [VER_MAS] : [])])
+
+  if (elegida === VER_MAS) return verCategorias(categorias, vista.pagina + 1)
+
+  const categoria = mostrados.find(c => etiquetaCategoria(c) === elegida)
+  if (categoria) {
+    // El llamador aún no trae los locales de ESTA categoría: los pide y
+    // vuelve a llamar. Se devuelve la vista para que sepa cuál consultar.
+    return {
+      reply: '',
+      options: [],
+      vista: { vista: 'negocios', categoria: categoria.code, pagina: 0 },
+    }
+  }
+  const repetir = verCategorias(categorias, vista.pagina)
+  return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
+}

@@ -1564,6 +1564,59 @@ begin
     raise notice 'CONVERSACIÓN DEL MARKETPLACE: verificada';
   end;
 
+  -- ── El menú del marketplace ──────────────────────────────────────────────
+  declare
+    v_local_menu uuid;
+    v_categorias integer;
+  begin
+    -- Sin locales disponibles, el menú está vacío. No es un error: es lo que
+    -- ve un marketplace recién montado.
+    select count(*) into v_categorias from public.marketplace_categories_disponibles();
+
+    insert into public.businesses (
+      slug, name, type, whatsapp_provider, takes_orders, storefront_enabled
+    ) values (
+      'verificacion-menu', 'Pizzería de verificación', 'pizzería',
+      'marketplace', true, true
+    )
+    returning id into v_local_menu;
+
+    -- Ahora Pizzerías tiene algo detrás y DEBE aparecer.
+    if not exists (
+      select 1 from public.marketplace_categories_disponibles() where code = 'pizzerias'
+    ) then
+      raise exception 'El menú no ofrece una categoría que sí tiene locales';
+    end if;
+    if not exists (
+      select 1 from public.marketplace_negocios_de_categoria('pizzerias')
+      where id = v_local_menu
+    ) then
+      raise exception 'El local no aparece dentro de su categoría';
+    end if;
+
+    -- Suspenderlo lo saca del menú: ofrecerlo sería una calle sin salida.
+    update public.businesses set suspended = true where id = v_local_menu;
+    if exists (
+      select 1 from public.marketplace_negocios_de_categoria('pizzerias')
+      where id = v_local_menu
+    ) then
+      raise exception 'Un local suspendido sigue saliendo en el menú';
+    end if;
+
+    -- Y apagarle la tienda también: el menú termina mandando su enlace.
+    update public.businesses set suspended = false, storefront_enabled = false
+     where id = v_local_menu;
+    if exists (
+      select 1 from public.marketplace_negocios_de_categoria('pizzerias')
+      where id = v_local_menu
+    ) then
+      raise exception 'Un local sin tienda sigue saliendo en el menú';
+    end if;
+
+    delete from public.businesses where id = v_local_menu;
+    raise notice 'MENÚ DEL MARKETPLACE: verificado';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
