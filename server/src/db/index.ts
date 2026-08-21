@@ -6,6 +6,7 @@ import products = require('./repositories/products')
 import history = require('./repositories/conversation-history')
 import sessions = require('./repositories/sessions')
 import marketplaceConversations = require('./repositories/marketplace-conversations')
+import marketplaceCatalog = require('./repositories/marketplace-catalog')
 import tags = require('./repositories/conversation-tags')
 import schedule = require('./repositories/schedule')
 import sales = require('./repositories/sales')
@@ -35,6 +36,7 @@ const database = {
   ...history,
   ...sessions,
   ...marketplaceConversations,
+  ...marketplaceCatalog,
   ...tags,
   ...schedule,
   ...sales,
