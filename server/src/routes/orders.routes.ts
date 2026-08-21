@@ -24,6 +24,14 @@ const ESTADOS_PEDIDO = [
 const ESTADOS_DESTINO = ESTADOS_PEDIDO.filter(estado => estado !== 'pendiente')
 
 interface ModuloDb {
+  // La cola de avisos: encolar antes de enviar y cerrar si salió.
+  enqueueOutboxEvent(input: {
+    businessId: string
+    eventType: string
+    aggregateId: string
+    payload: Record<string, unknown>
+  }): Promise<string | null>
+  completeOutboxEvent(id: string, token: string | null): Promise<boolean>
   createOrder(
     order: Record<string, unknown>,
     items: Record<string, unknown>[],
@@ -89,9 +97,26 @@ const avisarAlCliente = async (
     const pedido = await db.claimOrderNotification(businessId, orderId, status)
     if (!pedido) return
 
+    // ⚠️ Se ENCOLA antes de enviar, no después. El reclamo de arriba ya se
+    // consumió: si el proceso muriera entre el reclamo y el envío, o si el
+    // envío fallara —fuera de la ventana de 24 h, sin saldo, canal caído—,
+    // ese aviso no volvería a intentarse nunca. Encolado, se reintenta.
+    //
+    // Encolar no puede impedir el aviso: si la cola falla, se envía igual.
+    const evento = await db.enqueueOutboxEvent({
+      businessId, eventType: 'order_status_notice',
+      aggregateId: orderId, payload: { status },
+    }).catch(() => null)
+
     const negocio = await db.getBusinessById(businessId)
     if (!negocio) return
-    await notificarCambioDePedido(negocio, pedido, status)
+    const enviado = await notificarCambioDePedido(negocio, pedido, status)
+
+    // Salió: se cierra el evento y el worker no lo tocará. Si no salió, se
+    // deja en la cola y el worker lo reintentará pasada su ventana.
+    if (enviado && evento) {
+      await db.completeOutboxEvent(evento, null).catch(() => { /* lo reintentará */ })
+    }
   } catch (error) {
     console.error(
       '⚠️  aviso de pedido en preparación:',

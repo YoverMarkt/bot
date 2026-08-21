@@ -1670,6 +1670,60 @@ begin
     raise notice 'BÚSQUEDA DEL MARKETPLACE: verificada';
   end;
 
+  -- ── La cola de avisos ────────────────────────────────────────────────────
+  declare
+    v_neg_out uuid;
+    v_ped_out uuid := gen_random_uuid();
+    v_ev      uuid;
+    v_tok     uuid;
+  begin
+    insert into public.businesses (slug, name, type, whatsapp_provider)
+    values ('verificacion-outbox', 'Local outbox', 'pizzería', 'marketplace')
+    returning id into v_neg_out;
+
+    -- Encolar el mismo hito dos veces crea UNO. Cada mensaje se paga.
+    v_ev := public.enqueue_outbox_event(
+      v_neg_out, 'order_status_notice', v_ped_out, '{"status":"preparacion"}'::jsonb
+    );
+    if v_ev is null then raise exception 'No se pudo encolar el aviso'; end if;
+    if public.enqueue_outbox_event(
+      v_neg_out, 'order_status_notice', v_ped_out, '{"status":"preparacion"}'::jsonb
+    ) is not null then
+      raise exception 'El mismo hito se encoló dos veces: el cliente recibiría dos mensajes';
+    end if;
+
+    -- Dentro de su ventana, el worker NO lo toma: el envío inmediato va en
+    -- vuelo y tomarlo ahora costaría un segundo mensaje.
+    if exists (select 1 from public.lease_outbox_events('verificacion', 10)) then
+      raise exception 'El worker tomó un aviso dentro de su ventana de gracia';
+    end if;
+
+    -- El envío inmediato cierra su propio evento, sin lease.
+    if public.complete_outbox_event(v_ev, null) is not true then
+      raise exception 'El envío inmediato no pudo cerrar su evento';
+    end if;
+
+    -- Uno que falla: vuelve a la cola con espera, NO se pierde.
+    v_ev := public.enqueue_outbox_event(
+      v_neg_out, 'order_status_notice', v_ped_out, '{"status":"en_camino"}'::jsonb, 'order', 0
+    );
+    select lease_token into v_tok
+    from public.lease_outbox_events('verificacion', 10) limit 1;
+    if v_tok is null then raise exception 'El worker no pudo tomar el aviso vencido'; end if;
+    if public.fail_outbox_event(v_ev, v_tok, 'canal caido') <> 'reintentar' then
+      raise exception 'Un aviso fallido no volvió a la cola';
+    end if;
+    if not exists (
+      select 1 from public.outbox_events
+      where id = v_ev and status = 'pending' and available_at > now()
+    ) then
+      raise exception 'El reintento no espera antes de volver a intentarlo';
+    end if;
+
+    delete from public.businesses where id = v_neg_out;
+    raise notice 'COLA DE AVISOS: verificada';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
