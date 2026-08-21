@@ -130,7 +130,7 @@ const carryCommissionAdjustments = async (periodStart: string) => {
   return data as { periodo: string, ajustes: number, total_ajustado: number }
 }
 
-/** Las familias, para el desplegable del panel. */
+/** Las familias —comida y retail—, para el desplegable del panel. */
 const listBusinessFamilies = async () => {
   const { data, error } = await db
     .from('business_families')

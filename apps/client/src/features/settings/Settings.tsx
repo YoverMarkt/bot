@@ -267,8 +267,8 @@ export function BusinessForm() {
   return (
     <Card className="p-5 max-w-2xl gap-0">
       <div className="space-y-3">
-        <div><Label htmlFor="business-name">Nombre del negocio</Label><Input id="business-name" value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Barbería El Corte" /></div>
-        <div><Label htmlFor="business-slogan">Slogan / Lema</Label><Input id="business-slogan" value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: El mejor corte de la ciudad" /></div>
+        <div><Label htmlFor="business-name">Nombre del negocio</Label><Input id="business-name" value={f.name ?? ''} onChange={set('name')} placeholder="Ej: Pizzería El Horno" /></div>
+        <div><Label htmlFor="business-slogan">Slogan / Lema</Label><Input id="business-slogan" value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: La mejor pizza de la ciudad" /></div>
         <div><Label htmlFor="business-description">Descripción corta</Label><Textarea id="business-description" rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
         <div><Label htmlFor="business-payment-methods">Métodos de pago</Label><Input id="business-payment-methods" value={f.payment_methods ?? ''} onChange={set('payment_methods')} placeholder="Ej: transferencia, efectivo, tarjeta" /></div>
 

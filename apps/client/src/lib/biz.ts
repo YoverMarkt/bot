@@ -1,5 +1,10 @@
-// ── Capacidades y tipo de negocio ─────────────────────────────────
-// El nombre del catálogo depende de si el tipo describe productos o servicios.
+// ── Capacidades del negocio ───────────────────────────────────────
+//
+// ⚠️ Hasta el 2026-08-20 vivía aquí `isServiceBiz`, treinta expresiones
+// regulares que reconocían barberías, clínicas, hoteles, gimnasios o abogados
+// para que la barra lateral dijera «Servicios» en vez de «Catálogo». Se fue con
+// los tipos que las alimentaban: Umbani reparte a domicilio y todo negocio que
+// atiende por aquí tiene un catálogo de productos.
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 
@@ -14,39 +19,6 @@ export type BusinessInfo = {
 // Pedidos es capacidad propia del negocio (takes_orders), independiente de
 // reservas. El flag vivo manda; el tipo solo lo recomienda al alta.
 export const isOrderBiz = (takesOrders?: boolean | null) => takesOrders === true
-
-const normalizeBusinessType = (type?: string | null) => (type ?? '')
-  .toLocaleLowerCase('es')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9]+/g, ' ')
-  .trim()
-
-// Categorías de servicios comunes y textos personalizados del superadmin.
-// Se comparan ya sin acentos para cubrir, por ejemplo, "clínica"/"clinica".
-const SERVICE_BIZ_PATTERNS = [
-  /\bservicios?\b/,
-  /\bhoteles?\b/, /\bhostales?\b/, /\balojamientos?\b/,
-  /\bcomplejos? turisticos?\b/, /\bresorts?\b/, /\bcabanas?\b/,
-  /\bbarberias?\b/, /\bpeluquerias?\b/, /\bsalones? de belleza\b/,
-  /\bspa\b/, /\bestetica\b/, /\bmasajes?\b/, /\bunas\b/, /\bmaquillaje\b/,
-  /\bclinicas?\b/, /\bconsultorios?\b/, /\bmedic(?:o|a|os|as)\b/,
-  /\bodontolog(?:ia|os?|as?)\b/,
-  /\bdentistas?\b/, /\bpsicolog(?:ia|os?|as?)\b/, /\bfisioterapia\b/,
-  /\bveterinari(?:a|o|as|os)\b/,
-  /\bgimnasios?\b/, /\bgym\b/, /\bentrenadores?\b/, /\byoga\b/, /\bpilates\b/,
-  /\btaller(?:es)?\b/, /\binmobiliarias?\b/,
-  /\bconsultor(?:ia|ios?|as?)?\b/, /\basesor(?:ia|es|as?)?\b/,
-  /\babogad(?:o|a|os|as)\b/, /\bestudio (?:juridico|contable)\b/,
-  /\bagencias?\b/, /\bacademias?\b/, /\bescuelas?\b/,
-] as const
-
-// Los negocios de servicios dicen "Servicios" aunque no manejen reservas.
-export const isServiceBiz = (type?: string | null) => {
-  const normalized = normalizeBusinessType(type)
-  return normalized.length > 0
-    && SERVICE_BIZ_PATTERNS.some(pattern => pattern.test(normalized))
-}
 
 export function useBusinessInfo() {
   return useQuery({

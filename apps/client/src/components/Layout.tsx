@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
-import { useBusinessInfo, isOrderBiz, isServiceBiz } from '../lib/biz'
+import { useBusinessInfo, isOrderBiz } from '../lib/biz'
 import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 // Secciones del panel (mismas reglas del panel viejo):
 // · `perm` controla visibilidad para empleados (el dueño ve todo; el SERVIDOR valida siempre)
 // · Horarios para TODOS (horario de atención; el bot avisa fuera de horario)
-// · Catálogo se llama "Servicios" en negocios de servicios
+// · Catálogo se llama siempre así: desde el 2026-08-20 no hay negocios de servicios
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -24,7 +24,6 @@ export default function Layout() {
   const user = session.user
   const biz = session.business
   const { data: bizInfo } = useBusinessInfo()
-  const businessType = bizInfo?.type ?? biz?.type
 
   // Sin fallback local a propósito: takes_orders no viaja en el login, y el
   // dato vivo del servidor manda si el superadmin activa pedidos hoy mismo.
@@ -51,7 +50,7 @@ export default function Layout() {
   // Menú IDÉNTICO al panel viejo (mismo orden, mismas secciones)
   const SECTIONS: { to: string; label: string; icon: React.ComponentType<{ className?: string }>; perm: string | null; badge?: string | number; badgeTone?: 'alert' | 'count' }[] = [
     { to: '/',              label: 'Inicio',            icon: Home, perm: null },
-    { to: '/catalog',       label: isServiceBiz(businessType) ? 'Servicios' : 'Catálogo', icon: Package, perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
+    { to: '/catalog',       label: 'Catálogo', icon: Package, perm: 'catalogo', badge: quick?.totalProducts || undefined, badgeTone: 'count' as const },
     { to: '/conversations', label: 'Conversaciones',    icon: MessageSquare, perm: 'conversaciones', badge: att.manual.length ? '!' : undefined },
     ...(orderBiz ? [{ to: '/orders', label: 'Pedidos', icon: Receipt, perm: 'ventas', badge: att.pendingOrders.length || undefined }] : []),
     { to: '/reports',       label: 'Reportes',          icon: BarChart3, perm: 'reportes' },

@@ -252,8 +252,9 @@ export type MarkupSummaryRow = {
 export type BusinessFamily = { code: string, label: string, sort: number }
 
 /**
- * Las cinco familias. Agrupan los 52 tipos: una regla para «comida» cubre 24
- * —pizzería, hamburguesería, almuerzos, batidos…— en vez de 24 reglas iguales.
+ * Las familias —hoy comida y retail—. Agrupan los 30 tipos clasificados: una
+ * regla para «comida» cubre 24 —pizzería, hamburguesería, almuerzos, batidos…—
+ * en vez de 24 reglas iguales.
  */
 export const getBusinessFamilies = () => api<BusinessFamily[]>('/api/admin/business-families')
 

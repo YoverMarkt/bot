@@ -204,13 +204,22 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
     await listbox.getByRole('option', { name, exact: true }).click()
     await expect(listbox).toBeHidden()
   }
-  await selectBusinessType('Hotel')
-  await expect(salesMode).toContainText('Solo informa y deriva')
-
+  // El desplegable quedó en comida y retail el 2026-08-20, así que el único
+  // tipo que no vende es el genérico. Antes este recorrido usaba Hotel y
+  // Barbería, que ya no se pueden elegir.
+  //
+  // ⚠️ El genérico va el ÚLTIMO a propósito: lo que hay que probar es que la
+  // recomendación VUELVE a «informa» después de un tipo que vende. Con los dos
+  // que venden al final, una recomendación que se quedara pegada —un
+  // `sales || recomendado` de más— daría de alta un negocio que solo informa
+  // con pedidos y tienda encendidos, y esta prueba no se enteraría.
   await selectBusinessType('Pizzería')
   await expect(salesMode).toContainText('Crea pedidos con total oficial')
 
-  await selectBusinessType('Barbería')
+  await selectBusinessType('Supermercado')
+  await expect(salesMode).toContainText('Crea pedidos con total oficial')
+
+  await selectBusinessType('Otro / negocio genérico')
   await expect(salesMode).toContainText('Solo informa y deriva')
   await expect(dialog.getByText(/Se creará un horario inicial/)).toBeVisible()
 

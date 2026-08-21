@@ -79,9 +79,10 @@ describe('la tienda del negocio', () => {
     })
 
     it('el tipo de negocio no decide nada por su cuenta', () => {
-      // Tipo hotel pero sin vender: no hace pedidos. El dueño manda.
+      // Una pizzería es lo más «vende» que hay y aun así no hace pedidos si el
+      // dueño no los activó: la bandera manda sobre el tipo, siempre.
       expect(storefrontCapabilities(negocio({
-        type: 'hotel', takes_orders: false,
+        type: 'pizzería', takes_orders: false,
       })).orders).toBe(false)
     })
 
