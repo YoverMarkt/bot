@@ -191,6 +191,14 @@ function channelConfigurationError(body: Record<string, unknown>): string | null
         return `Un negocio del marketplace se atiende por el número de la plataforma, así que no puede tener ${label}`
       }
     }
+    // El teléfono del dueño es el ÚNICO número que tiene un local del
+    // marketplace, y es lo que le deja pedir sus reportes por WhatsApp. Se
+    // valida el formato solo aquí: ningún negocio anterior es de marketplace,
+    // así que esto no puede romper la edición de los que ya existen.
+    if (configuredText(body.owner_phone)
+      && !normalizeChannelIdentifier('phone', String(body.owner_phone))) {
+      return 'El WhatsApp del dueño debe usar formato internacional E.164 con 8 a 15 dígitos'
+    }
   }
   return null
 }
@@ -410,6 +418,15 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   }
   if (!whatsappNumber && configuredWhatsAppProvider(body) !== 'marketplace') {
     return res.status(400).json({ error: 'Nombre y número requeridos' })
+  }
+  // Un local del marketplace nace sin número de canal, así que el del dueño es
+  // el único que tiene. Sin él nace incapaz de que su dueño lo alcance por
+  // WhatsApp, y eso no se ve hasta que el dueño lo intenta.
+  if (configuredWhatsAppProvider(body) === 'marketplace'
+    && !configuredText(body.owner_phone)) {
+    return res.status(400).json({
+      error: 'El WhatsApp del dueño es obligatorio: es con lo que pide sus reportes',
+    })
   }
 
   const clientEmail = typeof body.client_email === 'string'
