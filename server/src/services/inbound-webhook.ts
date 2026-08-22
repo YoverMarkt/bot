@@ -626,10 +626,32 @@ const processor = createInboundWebhookProcessor({
     const entry = require('./marketplace-entry') as typeof import('./marketplace-entry')
     const link = require('./storefront-link') as typeof import('./storefront-link')
     const platform = require('./platform-channel') as typeof import('./platform-channel')
+    const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
+    const acciones = require('./bot-actions') as typeof import('./bot-actions')
+    const settings = require('./settings') as typeof import('./settings')
     await entry.handleMarketplaceMessage({ from, text }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
+      // El umbral vive en `server_settings` para moverlo sin desplegar: el
+      // número bueno se sabrá viendo pedidos reales, no antes.
+      maxProductosEnChat: async () => {
+        const valor = Number(await settings.get('marketplace_menu_max_productos'))
+        return Number.isFinite(valor) && valor > 0 ? valor : 20
+      },
+      avanzarMenu: menu.advanceMenuFlowConEstado,
+      // El MISMO camino del dinero que usa el canal propio: `money.ts` y las
+      // RPC atómicas. El marketplace no abre una vía de cobro paralela.
+      crearPedido: entrada => acciones.processOrderPayload({
+        business: entrada.business as unknown as Parameters<typeof acciones.processOrderPayload>[0]['business'],
+        phone: entrada.phone,
+        session: null,
+        payload: entrada.payload,
+        items: entrada.items,
+        products: entrada.products as Parameters<typeof acciones.processOrderPayload>[0]['products'],
+        preFiltered: false,
+        send: entrada.send,
+      }),
       logger: console,
     })
   },
