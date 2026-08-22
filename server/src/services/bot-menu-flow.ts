@@ -703,4 +703,49 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   return { reply: NOT_UNDERSTOOD, options: current.options }
 }
 
-export { advanceMenuFlow, optionTitle, resetMenuFlow }
+/**
+ * Igual que `advanceMenuFlow`, pero con el estado FUERA: lo carga y lo guarda
+ * el llamador.
+ *
+ * Existe para el marketplace, donde la conversación vive en
+ * `marketplace_conversations.flow_state` y tiene que sobrevivir a un
+ * despliegue. El `Map` de arriba nació como «prototipo del simulador» y sigue
+ * sirviendo al camino de siempre —un negocio con su propio número—, pero se
+ * pierde en cada arranque y con dos instancias lleva dos cuentas del mismo
+ * carrito.
+ *
+ * ⚠️ Presta el `Map` durante la llamada en vez de duplicar las ~230 líneas de
+ * la máquina de estados. Es seguro porque `advanceMenuFlow` es **síncrona**:
+ * sin un `await` en medio, Node no puede intercalar otra petición entre el
+ * préstamo y la devolución, así que ninguna otra conversación llega a ver
+ * este estado. Duplicar la máquina sería un segundo sitio donde arreglar cada
+ * bug del menú.
+ *
+ * ⚠️ `updatedAt` se conserva tal cual, no se refresca: el TTL de 30 minutos
+ * tiene que seguir venciendo una conversación abandonada igual que antes.
+ */
+const advanceMenuFlowConEstado = (
+  input: MenuFlowInput,
+  estadoPrevio: FlowState | null,
+): { resultado: MenuFlowResult; estado: FlowState | null } => {
+  const key = stateKey(input.business.id, input.contact)
+  const prestado = flowStates.get(key)
+  if (estadoPrevio) flowStates.set(key, estadoPrevio)
+  else flowStates.delete(key)
+  try {
+    const resultado = advanceMenuFlow(input)
+    const estado = flowStates.get(key)
+    return { resultado, estado: estado ? { ...estado } : null }
+  } finally {
+    if (prestado) flowStates.set(key, prestado)
+    else flowStates.delete(key)
+  }
+}
+
+export type { FlowState }
+export {
+  advanceMenuFlow,
+  advanceMenuFlowConEstado,
+  optionTitle,
+  resetMenuFlow,
+}
