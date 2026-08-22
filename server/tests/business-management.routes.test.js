@@ -84,7 +84,7 @@ describe('onboarding y equipo del negocio', () => {
   it('calcula onboarding únicamente con datos del negocio autenticado', async () => {
     vi.spyOn(db, 'countProducts').mockResolvedValue(2)
     vi.spyOn(db, 'getPolicies').mockResolvedValue({
-      bot_prompt: 'Prompt listo',
+      welcome_message: '¡Hola! Bienvenido 👋',
       shipping: 'Envíos nacionales',
     })
     vi.spyOn(db, 'getSchedule').mockResolvedValue([{ is_active: true }])

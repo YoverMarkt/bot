@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, session } from '../api/client'
 import { queryClient } from '../lib/queryClient'
 import { useBusinessInfo, isOrderBiz } from '../lib/biz'
-import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, Bot, Clock, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
+import { Home, Package, MessageSquare, BarChart3, Users, RotateCcw, MessageCircle, Clock, UserRound, Settings, LogOut, Sun, Moon, Menu, Receipt } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, toggleTheme } from '../lib/theme'
 import { AlarmBanner } from './AlarmSystem'
@@ -56,7 +56,7 @@ export default function Layout() {
     { to: '/reports',       label: 'Reportes',          icon: BarChart3, perm: 'reportes' },
     { to: '/customers',     label: 'Clientes',          icon: Users, perm: 'reportes' },
     { to: '/reactivate',    label: 'Reactivar',         icon: RotateCcw, perm: 'reportes' },
-    { to: '/bot-prompt',    label: 'Prompt del Bot',    icon: Bot, perm: 'owner' },
+    { to: '/bienvenida',    label: 'Bienvenida',        icon: MessageCircle, perm: 'owner' },
     { to: '/schedule',      label: 'Horarios',          icon: Clock, perm: 'horarios' },
     { to: '/users',         label: 'Usuarios',          icon: UserRound, perm: 'owner' },
     { to: '/settings',      label: 'Ajustes',           icon: Settings, perm: 'owner' },

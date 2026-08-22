@@ -145,7 +145,7 @@ describe('orquestación de conversaciones del bot', () => {
     const current = setup({
       database: {
         getPolicies: vi.fn().mockResolvedValue({
-          bot_prompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+          welcome_message: '¡Hola! 👋 Soy Pía, de {{negocio}}.',
         }),
       },
       menuFlow: {
@@ -162,12 +162,11 @@ describe('orquestación de conversaciones del bot', () => {
       text: '1',
     }))
 
-    // La IA NO participa en ningún mensaje del modo menú
-    expect(current.ai.callAI).not.toHaveBeenCalled()
-    expect(current.prompt.buildPrompt).not.toHaveBeenCalled()
+    // El saludo que escribió el dueño llega TAL CUAL al flujo: ya no se mina
+    // un prompt con expresiones regulares para sacarlo.
     expect(current.menuFlow.advanceMenuFlow).toHaveBeenCalledWith(
       expect.objectContaining({
-        botPrompt: 'Eres Pía, la asistente virtual de {{nombre_negocio}}.',
+        welcomeMessage: '¡Hola! 👋 Soy Pía, de {{negocio}}.',
       }),
     )
     expect(current.sendTyping).toHaveBeenCalledTimes(1)

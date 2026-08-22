@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as adm from './api'
 import type { BusinessRow } from './api'
 import ClientModal from './ClientModal'
-import { ViewModal, PromptModal } from './ClientTools'
+import { ViewModal, BienvenidaModal } from './ClientTools'
 import { Check, Trash2, Bot as BotIcon, Plus, Eye, Pencil, MoreHorizontal, TriangleAlert, Pause, Play } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -190,7 +190,7 @@ export default function Clients() {
         />
       )}
       {viewing && <ViewModal c={viewing} onClose={() => setViewing(null)} />}
-      {prompting && <PromptModal c={prompting} onClose={() => setPrompting(null)} />}
+      {prompting && <BienvenidaModal c={prompting} onClose={() => setPrompting(null)} />}
       <ConfirmAction
         open={pausing !== null}
         onOpenChange={open => { if (!open) setPausing(null) }}

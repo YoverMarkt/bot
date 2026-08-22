@@ -66,7 +66,7 @@ describe('identidad y políticas del negocio', () => {
       ['put', '/api/client/business', 3],
       ['get', '/api/client/policies', 3],
       ['put', '/api/client/policies', 3],
-      ['put', '/api/client/bot-prompt', 3],
+      ['put', '/api/client/welcome-message', 3],
       ['get', '/api/client/bank-account', 3],
       ['put', '/api/client/bank-account', 3],
     ]
@@ -205,16 +205,16 @@ describe('identidad y políticas del negocio', () => {
 
     const read = await dispatch('get', '/api/client/policies', { auth })
     await dispatch('put', '/api/client/policies', { auth, body: policies })
-    await dispatch('put', '/api/client/bot-prompt', {
+    await dispatch('put', '/api/client/welcome-message', {
       auth,
-      body: { bot_prompt: 'Responde brevemente', businessId: 'business-b' },
+      body: { welcome_message: '¡Hola! Bienvenido', businessId: 'business-b' },
     })
 
     expect(read.body).toEqual(policies)
     expect(getPolicies).toHaveBeenCalledWith('business-a')
     expect(upsertPolicies).toHaveBeenNthCalledWith(1, 'business-a', policies)
     expect(upsertPolicies).toHaveBeenNthCalledWith(2, 'business-a', {
-      bot_prompt: 'Responde brevemente',
+      welcome_message: '¡Hola! Bienvenido',
     })
   })
 
