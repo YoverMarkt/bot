@@ -91,6 +91,48 @@ const getLastOrderForContact = async (businessId: string, contactPhone: string) 
   return (data || null) as OrderData | null
 }
 
+/**
+ * Los pedidos de UN CLIENTE que esperan comprobante, en cualquier local.
+ *
+ * ⚠️ Existe porque `getLastOrderForContact` decide el local por el NÚMERO al
+ * que llegó el mensaje, y en el marketplace todos los clientes escriben al
+ * mismo. Ahí el número no dice nada: el local sale del PEDIDO, nunca al revés.
+ * Sin esto, el comprobante de una pizzería podía adjuntarse al pedido abierto
+ * de una cevichería — dinero atribuido al local equivocado, y el cliente que
+ * sí pagó esperando.
+ *
+ * `businessId` es un filtro OPCIONAL: cuando el negocio tiene número propio, el
+ * canal SÍ desambigua y conviene usarlo. Cuando no lo tiene, se busca en todos
+ * y quien llama decide qué hacer si hay más de uno.
+ */
+const pedidosEsperandoComprobante = async (
+  contactPhone: string,
+  businessId?: string | null,
+) => {
+  let consulta = db
+    .from('orders')
+    .select('id, business_id, order_number, total, contact_phone, created_at, businesses(name)')
+    .eq('status', 'esperando_pago')
+    .is('payment_proof_url', null)
+    .is('payment_confirmed_at', null)
+    // El mismo número vive con y sin el `+` según por dónde entró el pedido.
+    .in('contact_phone', variantesDelTelefono(contactPhone))
+    .order('created_at', { ascending: false })
+    .limit(10)
+  if (businessId) consulta = consulta.eq('business_id', businessId)
+
+  const { data, error } = await consulta
+  if (error) throw new Error(error.message)
+  return (data || []) as Array<{
+    id: string
+    business_id: string
+    order_number: number | null
+    total: number | null
+    contact_phone: string | null
+    businesses?: { name?: string | null } | null
+  }>
+}
+
 const updateOrder = async (
   businessId: string,
   id: string,
@@ -247,4 +289,5 @@ export = {
   requestNewPaymentProof,
   confirmOrderPayment,
   claimOrderNotification,
+  pedidosEsperandoComprobante,
 }

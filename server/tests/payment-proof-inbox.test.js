@@ -25,8 +25,13 @@ const FOTO = Buffer.from('una captura del banco')
 
 /** Un buzón con todo funcionando, y los espías a mano para comprobarlos. */
 const montar = (pedido = PEDIDO_ESPERANDO) => {
+  // ⚠️ Desde el 2026-08-21 la búsqueda es por CLIENTE y devuelve una lista: el
+  // local sale del pedido, no del número al que llegó la foto.
+  const pedidos = pedido ? [{ ...pedido, business_id: 'negocio-1', businesses: { name: 'El Puerto' } }] : []
   const espias = {
-    ultimoPedido: vi.fn().mockResolvedValue(pedido),
+    pedidosEsperando: vi.fn().mockResolvedValue(
+      pedidos.filter(p => esperaComprobante(p)),
+    ),
     subirPrivado: vi.fn().mockResolvedValue({ url: 'https://nube/x.jpg', public_id: 'x' }),
     adjuntar: vi.fn().mockResolvedValue({ data: {}, error: null }),
     registrarError: vi.fn().mockResolvedValue(undefined),
@@ -75,11 +80,14 @@ describe('adjuntar el comprobante que llegó por el chat', () => {
     const resultado = await adjuntar('negocio-a', '+593990978367', FOTO)
 
     expect(resultado).toEqual({ adjuntado: true, orderNumber: 43 })
-    expect(espias.subirPrivado).toHaveBeenCalledWith(FOTO, 'negocio-a')
+    // ⚠️ El local sale del PEDIDO ('negocio-1'), no del canal por el que llegó
+    // la foto ('negocio-a'). Con un solo número para todo el marketplace, ese
+    // canal no dice de quién es el pago.
+    expect(espias.subirPrivado).toHaveBeenCalledWith(FOTO, 'negocio-1')
     // La MISMA puerta que usa la mini app: mismo estado, misma alarma, mismo
     // «Ver comprobante» con firma temporal.
     expect(espias.adjuntar).toHaveBeenCalledWith({
-      businessId: 'negocio-a',
+      businessId: 'negocio-1',
       orderId: 'pedido-1',
       // ⚠️ El del PEDIDO, SIN el «+». La RPC compara exacto: mandarle el del
       // canal la haría rechazar un comprobante legítimo. Fue el segundo tramo
@@ -172,5 +180,92 @@ describe('el texto del comprobante', () => {
     expect(RESPUESTA_COMPROBANTE).toContain('Recibimos tu comprobante')
     expect(RESPUESTA_COMPROBANTE.toLowerCase()).not.toContain('menú')
     expect(RESPUESTA_COMPROBANTE).not.toContain('http')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUANDO NO SE SABE DE QUÉ LOCAL ES EL PAGO
+//
+// Con un solo número para todo el marketplace, el teléfono ya no dice de quién
+// es un comprobante. Y el mismo cliente puede tener pedidos abiertos en dos
+// locales a la vez. Adjuntarlo al más reciente sería dar por cobrado a uno lo
+// que pagó el otro: el dueño equivocado prepara sin haber cobrado, y el cliente
+// que sí pagó sigue viendo la pantalla de espera.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const dosLocales = () => {
+  const espias = {
+    pedidosEsperando: vi.fn().mockResolvedValue([
+      {
+        id: 'pedido-puerto', business_id: 'negocio-puerto', order_number: 43,
+        contact_phone: '593990978367', businesses: { name: 'Cevichería El Puerto' },
+      },
+      {
+        id: 'pedido-pizza', business_id: 'negocio-pizza', order_number: 12,
+        contact_phone: '593990978367', businesses: { name: 'Pizza Uno' },
+      },
+    ]),
+    subirPrivado: vi.fn().mockResolvedValue({ url: 'https://nube/x.jpg', public_id: 'x' }),
+    adjuntar: vi.fn().mockResolvedValue({ data: {}, error: null }),
+    registrarError: vi.fn().mockResolvedValue(undefined),
+  }
+  return { adjuntar: crearBuzonDeComprobantes(espias), espias }
+}
+
+describe('un comprobante con pagos pendientes en dos locales', () => {
+  it('NO lo adjunta a ninguno ni sube la foto', async () => {
+    const { adjuntar, espias } = dosLocales()
+
+    const resultado = await adjuntar('negocio-a', '+593990978367', FOTO)
+
+    expect(resultado.adjuntado).toBe(false)
+    // Ni un byte a Cloudinary hasta saber de quién es el pago: se cobraría
+    // almacenamiento por una foto que puede acabar en otro local.
+    expect(espias.subirPrivado).not.toHaveBeenCalled()
+    expect(espias.adjuntar).not.toHaveBeenCalled()
+  })
+
+  it('devuelve los locales para poder preguntar cuál es', async () => {
+    const { adjuntar } = dosLocales()
+
+    const resultado = await adjuntar('negocio-a', '+593990978367', FOTO)
+
+    expect(resultado.ambiguos).toEqual([
+      { orderId: 'pedido-puerto', orderNumber: 43, businessName: 'Cevichería El Puerto' },
+      { orderId: 'pedido-pizza', orderNumber: 12, businessName: 'Pizza Uno' },
+    ])
+  })
+
+  it('la pregunta nombra los locales y no pide datos técnicos', async () => {
+    const { preguntaDeQueLocal } = require('../dist/services/payment-proof-inbox')
+    const texto = preguntaDeQueLocal([
+      { orderId: 'a', orderNumber: 43, businessName: 'Cevichería El Puerto' },
+      { orderId: 'b', orderNumber: null, businessName: 'Pizza Uno' },
+    ])
+
+    expect(texto).toContain('Cevichería El Puerto')
+    expect(texto).toContain('#43')
+    expect(texto).toContain('Pizza Uno')
+    // Sin número de pedido no se escribe un «#» huérfano.
+    expect(texto).not.toMatch(/Pizza Uno\* \(pedido #\)/)
+    // Nada de ids internos ni jerga: lo lee un cliente.
+    expect(texto).not.toMatch(/business_id|order_id|pedido-/)
+  })
+
+  it('el marcador viaja con los nombres y se reconoce', async () => {
+    const {
+      textoDelComprobanteAmbiguo, esComprobanteAmbiguo, esComprobante,
+    } = require('../dist/services/payment-proof-inbox')
+    const marca = textoDelComprobanteAmbiguo([
+      { orderId: 'a', orderNumber: 43, businessName: 'Cevichería El Puerto' },
+      { orderId: 'b', orderNumber: 12, businessName: 'Pizza Uno' },
+    ])
+
+    expect(esComprobanteAmbiguo(marca)).toBe(true)
+    expect(marca).toContain('Cevichería El Puerto / Pizza Uno')
+    // No puede confundirse con el comprobante que SÍ se adjuntó: la respuesta
+    // es distinta y mezclarlas le diría al cliente que su pago quedó registrado.
+    expect(esComprobante(marca)).toBe(false)
+    expect(esComprobanteAmbiguo('[foto]')).toBe(false)
   })
 })

@@ -5,7 +5,9 @@ import type {
 } from './bot-actions'
 import type { ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
-import { RESPUESTA_COMPROBANTE, esComprobante } from './payment-proof-inbox'
+import {
+  RESPUESTA_COMPROBANTE, esComprobante, esComprobanteAmbiguo, preguntaDeQueLocal,
+} from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
   BotMediaHistoryMessage,
@@ -497,6 +499,27 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       await send(RESPUESTA_COMPROBANTE)
       await database.saveMessage(business.id, phone, 'assistant', RESPUESTA_COMPROBANTE)
       logger.log(`🧾 [${business.name}] comprobante recibido por el chat de ${phone}`)
+      return
+    }
+
+    // ⚠️ Comprobante con pagos pendientes en MÁS DE UN local: se pregunta a
+    // cuál corresponde y no se adjunta a ninguno mientras tanto. Adivinar sería
+    // dar por cobrado a un local lo que pagó otro — y el cliente que sí pagó
+    // seguiría viendo la pantalla de espera.
+    if (esComprobanteAmbiguo(text)) {
+      await marcarLeido()
+      // Los nombres viajan dentro del propio marcador: quien lo escribió ya
+      // consultó la base, y volver a consultarla aquí sería pagar dos veces
+      // por la misma respuesta.
+      const locales = String(text).split(': ').slice(1).join(': ').replace(/\]$/, '')
+      const pregunta = preguntaDeQueLocal(
+        locales.split(' / ').filter(Boolean).map(businessName => ({
+          orderId: '', orderNumber: null, businessName,
+        })),
+      )
+      await send(pregunta)
+      await database.saveMessage(business.id, phone, 'assistant', pregunta)
+      logger.log(`🧾 [${business.name}] comprobante ambiguo: se preguntó el local a ${phone}`)
       return
     }
 

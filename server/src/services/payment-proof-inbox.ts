@@ -63,7 +63,23 @@ const ESPERANDO_PAGO = 'esperando_pago'
 
 export interface ComprobanteDependencias {
   /** El último pedido de ese contacto en ese negocio. */
-  ultimoPedido(businessId: string, contactPhone: string): Promise<PedidoEsperandoPago | null>
+  /**
+   * Los pedidos del CLIENTE que esperan comprobante.
+   *
+   * ⚠️ El local sale del pedido, nunca del número al que llegó la foto. Con un
+   * solo número para todo el marketplace, ese número no dice de quién es el
+   * pago — y el mismo cliente puede tener pedidos abiertos en dos locales.
+   */
+  pedidosEsperando(
+    contactPhone: string,
+    businessId?: string | null,
+  ): Promise<Array<{
+    id: string
+    business_id: string
+    order_number: number | null
+    contact_phone: string | null
+    businesses?: { name?: string | null } | null
+  }>>
   subirPrivado(buffer: Buffer, businessId: string): Promise<{ url: string; public_id: string }>
   adjuntar(input: {
     businessId: string
@@ -85,6 +101,18 @@ export interface ResultadoComprobante {
   adjuntado: boolean
   /** El número, para poder nombrarlo en la respuesta al cliente. */
   orderNumber?: number | null
+  /**
+   * Más de un pedido esperando pago: hay que PREGUNTAR a cuál corresponde.
+   *
+   * No se adjunta a ninguno mientras tanto. Elegir el más reciente sería
+   * atribuir el pago a un local al azar, y eso es peor que pedir una
+   * aclaración: el dueño equivocado daría por cobrado lo que no cobró.
+   */
+  ambiguos?: Array<{
+    orderId: string
+    orderNumber: number | null
+    businessName: string
+  }>
 }
 
 /**
@@ -108,22 +136,40 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
     imagen: Buffer,
   ): Promise<ResultadoComprobante> {
     try {
-      const pedido = await dependencias.ultimoPedido(businessId, contactPhone)
+      const pedidos = await dependencias.pedidosEsperando(contactPhone, businessId)
       // Sin pedido esperando pago no se sube NADA: ni un byte a Cloudinary.
-      if (!esperaComprobante(pedido)) return { adjuntado: false }
+      if (!pedidos.length) return { adjuntado: false }
 
-      const subida = await dependencias.subirPrivado(imagen, businessId)
+      // ⚠️ Con más de uno NO se adivina. Adjuntarlo al más reciente sería
+      // atribuir el pago a un local al azar entre dos que lo están esperando;
+      // el dueño equivocado daría por cobrado lo que no cobró y el otro
+      // seguiría esperando. Se devuelve la lista y quien llama pregunta.
+      if (pedidos.length > 1) {
+        return {
+          adjuntado: false,
+          ambiguos: pedidos.map(pedido => ({
+            orderId: pedido.id,
+            orderNumber: pedido.order_number ?? null,
+            businessName: String(pedido.businesses?.name || '').trim() || 'un local',
+          })),
+        }
+      }
+
+      // El local sale del PEDIDO. Nunca del número por el que llegó la foto.
+      const [pedido] = pedidos
+      const localDelPedido = pedido.business_id
+      const subida = await dependencias.subirPrivado(imagen, localDelPedido)
       const { error } = await dependencias.adjuntar({
-        businessId,
-        orderId: String(pedido!.id),
+        businessId: localDelPedido,
+        orderId: String(pedido.id),
         // El del PEDIDO, no el del canal: ver el comentario del tipo.
-        contactPhone: String(pedido!.contact_phone || contactPhone),
+        contactPhone: String(pedido.contact_phone || contactPhone),
         url: subida.url,
         publicId: subida.public_id,
       })
       if (error) throw new Error(error.message || 'La base rechazó el comprobante')
 
-      return { adjuntado: true, orderNumber: pedido!.order_number ?? null }
+      return { adjuntado: true, orderNumber: pedido.order_number ?? null }
     } catch (error) {
       // El cliente recibe su respuesta igual: esto es una mejora del camino,
       // no el camino. Callarlo sería peor —el dueño creería tener un
@@ -157,3 +203,37 @@ export const esComprobante = (texto: string): boolean =>
 export const RESPUESTA_COMPROBANTE =
   'Recibimos tu comprobante 🙌 El local lo está revisando y te avisamos '
   + 'en cuanto empiece a prepararlo.'
+
+/** Marcador de que la foto era un comprobante pero no se sabe de qué local. */
+export const MARCA_COMPROBANTE_AMBIGUO = 'un comprobante sin local claro'
+
+export const textoDelComprobanteAmbiguo = (
+  ambiguos: NonNullable<ResultadoComprobante['ambiguos']>,
+): string => `[el cliente envió ${MARCA_COMPROBANTE_AMBIGUO}: ${
+  ambiguos.map(p => p.businessName).join(' / ')
+}]`
+
+export const esComprobanteAmbiguo = (texto: unknown): boolean =>
+  String(texto || '').includes(MARCA_COMPROBANTE_AMBIGUO)
+
+/**
+ * Lo que se le pregunta al cliente cuando tiene pagos pendientes en más de un
+ * local y manda una foto sin decir de cuál es.
+ *
+ * ⚠️ Se PREGUNTA en vez de adivinar. Con un solo número para todo el
+ * marketplace, el teléfono ya no dice de quién es el pago; adjuntarlo al más
+ * reciente daría por cobrado a un local lo que pagó otro, y el cliente que sí
+ * pagó seguiría en la pantalla de espera. Un mensaje de más es más barato que
+ * un pago mal atribuido.
+ */
+export const preguntaDeQueLocal = (
+  ambiguos: NonNullable<ResultadoComprobante['ambiguos']>,
+): string => {
+  const lineas = ambiguos.map((pedido) => {
+    const numero = pedido.orderNumber ? ` (pedido #${pedido.orderNumber})` : ''
+    return `• *${pedido.businessName}*${numero}`
+  })
+  return '🧾 Recibimos tu comprobante, pero tienes pagos pendientes en más de un local.\n\n'
+    + `${lineas.join('\n')}\n\n`
+    + 'Respóndenos con el nombre del local al que corresponde y lo registramos.'
+}
