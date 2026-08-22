@@ -179,8 +179,11 @@ router.get('/api/client/policies', auth.authClient, auth.requireOwner, async (re
 // multi-tenant —`business_id` se fija después desde el JWT y siempre gana—,
 // pero sí una entrada sin filtrar llegando a la base, y un fallo del cliente
 // contado como fallo del servidor.
+// `bot_prompt` y `bot_instructions` se fueron con la IA el 2026-08-21. En su
+// lugar queda `welcome_message`: el saludo que escribe el dueño y que se manda
+// TAL CUAL, sin pasar por ningún modelo.
 const CAMPOS_DE_POLITICAS = [
-  'bot_prompt', 'shipping', 'returns', 'discounts', 'bot_instructions',
+  'welcome_message', 'shipping', 'returns', 'discounts',
 ] as const
 
 router.put('/api/client/policies', auth.authClient, auth.requireOwner, async (req, res) => {
@@ -252,11 +255,13 @@ router.put('/api/client/bank-account', auth.authClient, auth.requireOwner, async
   }
 })
 
-router.put('/api/client/bot-prompt', auth.authClient, auth.requireOwner, async (req, res) => {
+router.put('/api/client/welcome-message', auth.authClient, auth.requireOwner, async (req, res) => {
   try {
     assertDatabaseResult(
-      await db.upsertPolicies(getClientBusinessId(req), { bot_prompt: req.body.bot_prompt }),
-      'actualizar el prompt',
+      await db.upsertPolicies(getClientBusinessId(req), {
+        welcome_message: req.body.welcome_message,
+      }),
+      'actualizar el mensaje de bienvenida',
     )
     res.json({ ok: true })
   } catch (error) {

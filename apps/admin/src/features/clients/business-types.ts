@@ -93,7 +93,7 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 
-export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
+export type BusinessChatMode = 'menu' | 'miniapp'
 
 // El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
 // manda siempre y nunca se sobrescribe a un negocio existente.
@@ -108,12 +108,13 @@ export type BusinessChatMode = 'menu' | 'ai' | 'miniapp'
 // mini app. Dejó de proponerse solo cuando salieron las citas, que eran los
 // negocios con la lista corta de servicios donde encajaba.
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
-  const normalized = normalizeBusinessType(type)
-  if (!normalized) return 'ai'
-  // Con tienda (restaurante, supermercado, farmacia) el pedido va por la app y
-  // la IA se queda para resolver dudas.
-  if (recommendedStorefrontForBusinessType(type)) return 'miniapp'
-  return 'ai'
+  // Con tienda (restaurante, supermercado, farmacia) el pedido va por la app.
+  // Sin ella, el menú de botones: atiende con cualquier catálogo.
+  //
+  // ⚠️ El defecto era `ai` hasta el 2026-08-21, cuando se retiró la IA. Ahora
+  // es `menu` — y no `miniapp`, que exige pedidos Y tienda encendidos y
+  // dejaría mudo a un negocio sin ellos.
+  return recommendedStorefrontForBusinessType(type) ? 'miniapp' : 'menu'
 }
 
 export function businessTypeChoice(type: string): string {

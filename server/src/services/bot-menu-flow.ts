@@ -88,7 +88,8 @@ export interface MenuFlowInput {
   // El prompt no decide precios, disponibilidad ni transiciones. Solo permite
   // respetar el nombre, tono o saludo que configuró el dueño al dar la
   // bienvenida en este flujo determinista.
-  botPrompt?: string | null
+  /** El saludo que escribió el dueño. Se muestra TAL CUAL. */
+  welcomeMessage?: string | null
   modifiers?: FlowModifier[]
   lastOrderItems?: LastOrderItem[]
 }
@@ -305,43 +306,26 @@ const mediaCaption = (name: string, media: FlowMediaItem[]): string => {
   return `📷 Aquí tienes ${what} de *${name.trim()}* 👇`
 }
 
-const cleanPromptGreeting = (value: string): string => value
-  .replace(/##[^#\n]{0,200}##/g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .slice(0, 280)
-
-const personalizePrompt = (value: string, businessName: string): string => value
+const personalizarBienvenida = (valor: string, businessName: string): string => valor
   .replace(/\{\{\s*(?:nombre_negocio|negocio)\s*\}\}/gi, businessName)
-  .replace(/\[(?:tu negocio|nombre del negocio|negocio)\]/gi, businessName)
-  .replace(/\[nombre\]/gi, 'Asistente')
+  .trim()
 
-// El modo menú no entrega decisiones comerciales a la IA, pero la bienvenida
-// sí respeta el prompt del dueño. Primero usa un saludo explícito entre comillas
-// y, si no existe, toma la identidad declarada como "Eres Andrea, la...".
+// La bienvenida la escribe el DUEÑO y se muestra tal cual.
+//
+// ⚠️ Hasta el 2026-08-21 esto MINABA el prompt de la IA con expresiones
+// regulares: buscaba `saludo inicial: "..."` y, si no, la identidad declarada
+// («Eres Andrea, la asistente de...») para armar un saludo con ella. Tenía
+// sentido mientras el dueño escribía instrucciones para un modelo; retirada la
+// IA, escribe el saludo y punto.
+//
+// El valor por defecto sigue existiendo porque un negocio recién creado no ha
+// escrito nada, y quedarse sin saludar sería peor que saludar genérico.
 const configuredWelcome = (input: MenuFlowInput): string => {
   const businessName = String(input.business.name || '').trim()
-  const rawPrompt = String(input.botPrompt || '').trim()
-  const customPrompt = personalizePrompt(rawPrompt, businessName)
-
-  const explicitGreeting = customPrompt.match(
-    /(?:saludo\s+inicial|siempre\s+saluda\s+con)\s*:?\s*["“']([^"”'\n]{1,280})["”']/i,
-  )?.[1]
-  if (explicitGreeting) {
-    const greeting = cleanPromptGreeting(explicitGreeting)
-    if (greeting) return greeting
-  }
-
-  const persona = customPrompt.match(
-    /(?:^|\n)\s*eres\s+([^,\n.]{2,40}),\s+((?:el|la)\s+[^,\n.]{2,140})/im,
+  const escrito = personalizarBienvenida(
+    String(input.welcomeMessage || '').trim(), businessName,
   )
-  if (persona) {
-    const assistantName = cleanPromptGreeting(persona[1] || '')
-    const role = cleanPromptGreeting(persona[2] || '')
-    if (assistantName && role) {
-      return `¡Hola! 👋 Soy ${assistantName}, ${role}. Es un gusto atenderle 😊`
-    }
-  }
+  if (escrito) return escrito
 
   return `¡Hola! 👋 ${businessName ? `Gracias por escribir a ${businessName}` : 'Gracias por escribirnos'} 😊`
 }

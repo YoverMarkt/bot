@@ -61,25 +61,20 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
 }
 
 // Mismas plantillas del admin viejo
-const BPM_TEMPLATES: Record<string, string> = {
-  formal: `Eres [Nombre], el asistente virtual oficial de [Negocio].\nTu tono es profesional y cortés. Siempre trata al cliente de "usted".\n\nSaludo: "Bienvenido/a a [Negocio], ¿en qué puedo asistirle hoy?"\nDespedida: "Ha sido un placer atenderle. Que tenga un excelente día."`,
-  casual: `Eres [Nombre], el asistente de [Negocio] 😊\nTu tono es cercano y entusiasta. Usa emojis con moderación.\n\nSaludo: "¡Hola! 👋 Bienvenido/a a [Negocio], ¿en qué te puedo ayudar?"\nDespedida: "¡Fue un gusto ayudarte! Escríbenos cuando quieras"`,
-  luxury: `Eres [Nombre], asesor/a de lujo de [Negocio].\nTu tono es elegante y sofisticado. Cuida cada palabra.\n\nSaludo: "Bienvenido/a. En [Negocio] nos complace asesorarle personalmente."\nDespedida: "Ha sido un honor. Quedamos a su disposición."\n\nDestaca la exclusividad de cada producto. Nunca menciones precios sin antes presentar el valor.`,
-}
 
-export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => void }) {
-  const [prompt, setPrompt] = useState('')
+export function BienvenidaModal({ c, onClose }: { c: BusinessRow; onClose: () => void }) {
+  const [saludo, setSaludo] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    adm.getClientPolicies(c.id).then(d => setPrompt(d.bot_prompt || '')).catch(() => {})
+    adm.getClientPolicies(c.id).then(d => setSaludo(d.welcome_message || '')).catch(() => {})
   }, [c.id])
 
   async function save() {
     setSaving(true)
     try {
-      await adm.saveClientPolicies(c.id, { bot_prompt: prompt })
-      toast.success('Prompt guardado')
+      await adm.saveClientPolicies(c.id, { welcome_message: saludo.trim() || null })
+      toast.success('Saludo guardado')
       setTimeout(onClose, 800)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Error') }
     setSaving(false)
@@ -89,24 +84,28 @@ export function PromptModal({ c, onClose }: { c: BusinessRow; onClose: () => voi
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Prompt del Bot</DialogTitle>
-          <DialogDescription>Revisa y ajusta las instrucciones principales del asistente.</DialogDescription>
+          <DialogTitle>Mensaje de bienvenida</DialogTitle>
+          <DialogDescription>Lo primero que lee el cliente. Se manda tal cual.</DialogDescription>
           <p className="text-sm text-muted-foreground">{c.name}</p>
         </DialogHeader>
-        <div className="flex gap-2 mb-2">
-          {Object.keys(BPM_TEMPLATES).map(t => (
-            <Button variant="outline" size="sm" key={t} onClick={() => setPrompt(BPM_TEMPLATES[t])}>
-              Plantilla {t}
-            </Button>
-          ))}
-        </div>
-        <Textarea id="client-bot-prompt" aria-label="Prompt del bot" value={prompt} onChange={e => setPrompt(e.target.value)} rows={14} className="w-full text-xs font-mono"
-          placeholder="Eres el asistente virtual de…" />
-        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1"><TriangleAlert className="w-3 h-3 shrink-0" /> El prompt es la personalidad; precios y totales SIEMPRE los calcula el sistema.</p>
+        <Textarea
+          id="client-welcome-message"
+          aria-label="Mensaje de bienvenida"
+          value={saludo}
+          onChange={e => setSaludo(e.target.value)}
+          rows={3}
+          maxLength={280}
+          className="w-full"
+          placeholder="¡Hola! 👋 Bienvenido a {{negocio}}. ¿Qué se te antoja hoy?"
+        />
+        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+          <TriangleAlert className="w-3 h-3 shrink-0" />
+          {280 - saludo.length} caracteres disponibles. Vacío = saludo estándar con el nombre del negocio.
+        </p>
         <DialogFooter className="mx-0 mb-0 mt-3 px-0 pb-0">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? 'Guardando…' : 'Guardar prompt'}
+            {saving ? 'Guardando…' : 'Guardar saludo'}
           </Button>
         </DialogFooter>
       </DialogContent>

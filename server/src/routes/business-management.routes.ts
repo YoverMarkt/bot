@@ -81,7 +81,7 @@ router.get('/api/client/onboarding', auth.authClient, async (req, res) => {
       hasValue(policies.shipping)
       || hasValue(policies.returns)
       || hasValue(policies.discounts)
-      || hasValue(policies.bot_instructions)
+      
     )
     const scheduleReady = schedule.some(day => day.is_active) || hasValue(business?.hours)
     const whatsappNumber = business?.whatsapp_number
@@ -96,7 +96,7 @@ router.get('/api/client/onboarding', auth.authClient, async (req, res) => {
       {
         key: 'prompt',
         label: 'Personaliza el prompt del bot',
-        done: hasValue(policies?.bot_prompt),
+        done: hasValue(policies?.welcome_message),
         page: 'botprompt',
       },
       {

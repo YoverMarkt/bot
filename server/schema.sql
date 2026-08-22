@@ -814,11 +814,18 @@ create unique index if not exists uq_menu_modifiers_business_tag_name
 create table if not exists bot_policies (
   id                uuid primary key default gen_random_uuid(),
   business_id       uuid not null references businesses(id) on delete cascade unique,
-  bot_prompt        text,               -- personalidad/prompt del bot
+  -- El saludo que escribe el DUEÑO y se manda TAL CUAL, sin pasar por ningún
+  -- modelo. Admite {{negocio}}. Vacío = saludo por defecto con el nombre.
+  --
+  -- ⚠️ Era `bot_prompt` —instrucciones para una IA de las que el código pescaba
+  -- un saludo con expresiones regulares— hasta el 2026-08-21. `bot_instructions`
+  -- se fue con la IA: nada más lo leía.
+  welcome_message   text
+                    constraint bot_policies_welcome_check
+                    check (welcome_message is null or char_length(welcome_message) <= 280),
   shipping          text,
   returns           text,
   discounts         text,
-  bot_instructions  text,
   updated_at        timestamptz default now()
 );
 
