@@ -440,11 +440,18 @@ describe('entrada de canales del bot', () => {
     expect(service).toContain('database.getBusinessByChannel(options.channelAddress)')
     expect(service).not.toContain('@ts-nocheck')
     for (const name of [
-      'handleMessage', 'handleImage', 'drainPendingMessages', 'processMessage', 'buildPrompt', 'callAI',
+      'handleMessage', 'handleImage', 'drainPendingMessages', 'processMessage',
       'sendWhatsAppMessage', 'transcribeAudio', 'embedText', 'indexProduct',
       'isOutsideHours', 'buildScheduleMessage',
     ]) {
       expect(exported[name]).toBeTypeOf('function')
+    }
+
+    // ⚠️ `buildPrompt` y `callAI` se retiraron el 2026-08-21 con la IA
+    // conversacional. Se comprueba que NO vuelvan: si alguien los reexporta,
+    // es que ha vuelto a entrar un modelo por la puerta de atrás.
+    for (const name of ['buildPrompt', 'callAI']) {
+      expect(exported[name], `${name} debería haberse ido con la IA`).toBeUndefined()
     }
   })
 })

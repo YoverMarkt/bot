@@ -225,18 +225,22 @@ describe('modo mini app: ni un token de OpenAI', () => {
 })
 
 describe('CASO 5 — los demás negocios siguen igual', () => {
-  it('un negocio en modo ai SÍ llega al modelo', async () => {
+  // ⚠️ Aquí había dos pruebas que comprobaban que el modo `ai` SÍ llegaba al
+  // modelo — eran el contraste que daba sentido a las de arriba. La IA se
+  // retiró el 2026-08-21, así que el contraste ya no existe: ahora NADA llega
+  // a un modelo, y eso es justo lo que hay que vigilar.
+  it('un modo que ya no existe no responde nada', async () => {
     const m = montar()
-    await procesar(m, 'hola', { ...negocioMiniapp, chat_mode: 'ai' })
+    const enviados = await procesar(m, 'hola', { ...negocioMiniapp, chat_mode: 'ai' })
 
-    expect(m.ai.callAI).toHaveBeenCalled()
-    // Y no se le pregunta a la base por el enlace: no es asunto suyo.
+    // Ni enlace, ni respuesta inventada: es una configuración rota, y callar
+    // deja que se vea en vez de taparla con un mensaje genérico.
+    expect(enviados).toEqual([])
     expect(m.database.claimStorefrontLinkSend).not.toHaveBeenCalled()
   })
 
-  it('un negocio sin chat_mode (por defecto) también llega al modelo', async () => {
+  it('un negocio sin chat_mode tampoco inventa una respuesta', async () => {
     const m = montar()
-    await procesar(m, 'hola', { ...negocioMiniapp, chat_mode: null })
-    expect(m.ai.callAI).toHaveBeenCalled()
+    expect(await procesar(m, 'hola', { ...negocioMiniapp, chat_mode: null })).toEqual([])
   })
 })

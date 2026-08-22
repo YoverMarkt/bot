@@ -43,6 +43,9 @@ describe('onboarding durante el retiro por fases', () => {
   const sinCanal = ultimaFuncionOnboarding(
     leer('migration-2026-08-20-negocio-sin-canal-propio.sql'),
   )
+  const sinIA = ultimaFuncionOnboarding(
+    leer('migration-2026-08-21-retirar-el-modo-ia.sql'),
+  )
   it('fase 1 conserva citas, tienda y los tres modos del despliegue mixto', () => {
     expect(hospedaje).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(hospedaje).toMatch(
@@ -79,18 +82,33 @@ describe('onboarding durante el retiro por fases', () => {
     esperarTiendaPreservada(sinCanal)
   })
 
+  it('la retirada de la IA deja dos modos y no toca nada más', () => {
+    expect(sinIA).toContain("v_chat_mode not in ('menu', 'miniapp')")
+    expect(sinIA).not.toMatch(/'ai'/)
+    // El defecto era 'ai'. Pasa a 'menu' y no a 'miniapp': el menú atiende con
+    // cualquier catálogo, la mini app exige pedidos Y tienda.
+    expect(sinIA).toContain("'chat_mode'), ''), 'menu')")
+    expect(sinIA).toContain('El modo miniapp requiere pedidos y tienda habilitados')
+    expect(sinIA).toContain('Un negocio con canal propio necesita su número')
+    esperarTiendaPreservada(sinIA)
+  })
+
   it('el contrato final de schema.sql coincide con la última migración', () => {
     const contratoFinal = ultimaFuncionOnboarding(leer('schema.sql'))
 
-    expect(contratoFinal).toBe(sinCanal)
-    expect(contratoFinal).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
+    expect(contratoFinal).toBe(sinIA)
+    expect(contratoFinal).toContain("v_chat_mode not in ('menu', 'miniapp')")
     expect(contratoFinal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
     expect(contratoFinal).toMatch(/\bprep_time_minutes,\s*delivery_extra_minutes/)
     esperarTiendaPreservada(contratoFinal)
   })
 
-  it('los tres modos siguen siendo válidos en el esquema', () => {
+  it('quedan DOS modos, y el defecto ya no es la IA', () => {
+    // ⚠️ El 2026-08-19 el dueño CONSERVÓ el modo IA junto al menú. El
+    // 2026-08-21 decidió lo contrario: todo lo que ve el cliente lo escribe el
+    // código. Si alguien vuelve a meter 'ai' aquí, esto lo caza.
     const schema = leer('schema.sql')
-    expect(schema).toContain("check (chat_mode in ('menu','ai','miniapp'))")
+    expect(schema).toContain("check (chat_mode in ('menu','miniapp'))")
+    expect(schema).toContain("chat_mode           text not null default 'menu'")
   })
 })

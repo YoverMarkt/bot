@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
+import fs from 'node:fs'
 import jwt from 'jsonwebtoken'
 import simulatorRouter from '../dist/routes/admin-simulator.routes.js'
 
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
-const bot = require('../dist/services/bot-entry')
 const JWT_SECRET = 'admin-simulator-test-secret'
 let originalJwtSecret
 
@@ -87,51 +87,34 @@ describe('simulador del superadmin', () => {
     expect(getBusiness).toHaveBeenCalledOnce()
   })
 
-  it('usa y persiste únicamente el contexto del negocio seleccionado', async () => {
-    const business = mockBusinessContext()
-    const saveMessage = vi.spyOn(db, 'saveMessage')
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: null })
-    const buildPrompt = vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt del negocio')
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue(
-      'Respuesta final ##IMG##https://img.example.com/producto.jpg##',
-    )
+  // ⚠️ Aquí vivían SIETE pruebas del modo IA del simulador: el prompt que se
+  // armaba, el parser de etiquetas, el descarte de totales inventados y el
+  // HANDOFF. Se fueron con la IA el 2026-08-21. Lo que queda en su lugar es lo
+  // único que importa ahora: que no haya forma de llegar a un modelo.
+  it('un modo no reconocido avisa de la configuración en vez de inventar', async () => {
+    mockBusinessContext()
+    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: '  Quiero comprar  ' },
+      // No un saludo: «hola» lo atiende antes el menú de bienvenida, que
+      // sigue vivo y no depende de la IA.
+      body: { business_id: 'business-a', message: 'quiero comprar algo' },
     })
 
-    expect(db.getProducts).toHaveBeenCalledWith('business-a')
-    expect(db.getPolicies).toHaveBeenCalledWith('business-a')
-    expect(db.getContactHistory).toHaveBeenCalledWith('business-a', 'sim_admin', 8)
-    expect(buildPrompt).toHaveBeenCalledWith(
-      business,
-      [{ id: 'product-a' }],
-      { bot_prompt: 'Vende bien' },
-      'Quiero comprar',
-    )
-    expect(callAI).toHaveBeenCalledWith(
-      'prompt del negocio',
-      [{ role: 'user', content: 'Antes' }],
-      'Quiero comprar',
-      'groq',
-    )
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      1, 'business-a', 'sim_admin', 'user', 'Quiero comprar',
-    )
-    expect(saveMessage).toHaveBeenNthCalledWith(
-      2, 'business-a', 'sim_admin', 'assistant', 'Respuesta final',
-    )
-    expect(response.body).toEqual({
-      reply: 'Respuesta final',
-      options: null,
-      image: 'https://img.example.com/producto.jpg',
-      video: null,
-      mediaNote: null,
-      actionNote: null,
-    })
+    expect(response.status).toBe(200)
+    expect(response.body.actionNote).toMatch(/modo de conversación/i)
+    expect(response.body.reply).toMatch(/no tiene un modo/i)
   })
+
+  it('el simulador ya no puede llamar a un modelo', async () => {
+    // Si alguien reintroduce la IA por aquí, esto lo caza.
+    const fuente = fs.readFileSync(
+      new URL('../src/routes/admin-simulator.routes.ts', import.meta.url), 'utf8',
+    )
+    expect(fuente).not.toMatch(/callAI|buildPrompt/)
+  })
+
 
   it(
     'en miniapp replica el corte sin IA y no finge una conversación',
@@ -142,8 +125,6 @@ describe('simulador del superadmin', () => {
       const getPolicies = vi.spyOn(db, 'getPolicies')
       const getHistory = vi.spyOn(db, 'getContactHistory')
       const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-      const buildPrompt = vi.spyOn(bot, 'buildPrompt')
-      const callAI = vi.spyOn(bot, 'callAI')
 
       const response = await dispatch('post', '/api/admin/simulate', {
         auth: authorization(),
@@ -153,8 +134,6 @@ describe('simulador del superadmin', () => {
       expect(getProducts).not.toHaveBeenCalled()
       expect(getPolicies).not.toHaveBeenCalled()
       expect(getHistory).not.toHaveBeenCalled()
-      expect(buildPrompt).not.toHaveBeenCalled()
-      expect(callAI).not.toHaveBeenCalled()
       expect(saveMessage).toHaveBeenNthCalledWith(
         1, 'business-a', 'sim_admin', 'user', 'Quiero pedir',
       )
@@ -184,8 +163,6 @@ describe('simulador del superadmin', () => {
     vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
     vi.spyOn(db, 'getPolicies').mockResolvedValue({})
     vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    const buildPrompt = vi.spyOn(bot, 'buildPrompt')
-    const callAI = vi.spyOn(bot, 'callAI')
 
     const response = await dispatch('post', '/api/admin/simulate', {
       auth: authorization(),
@@ -193,127 +170,10 @@ describe('simulador del superadmin', () => {
     })
 
     // Lo que define el modo: el código conduce y el modelo no participa.
-    expect(buildPrompt).not.toHaveBeenCalled()
-    expect(callAI).not.toHaveBeenCalled()
     expect(response.status).toBe(200)
     // La bienvenida llega con las opciones armadas desde el catálogo real.
     expect(Array.isArray(response.body.options)).toBe(true)
     expect(response.body.options.length).toBeGreaterThan(0)
-  })
-
-  it('muestra la foto real del catálogo cuando el cliente la pide, sin canal externo', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'getProducts').mockResolvedValue([
-      { id: 'product-a', name: 'Filtro Azul Premium', image_url: 'https://cdn.example.com/filtro.jpg' },
-    ])
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue('Con gusto, permítame y se lo muestro 😊')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: '¿Tienes fotos del Filtro Azul Premium?' },
-    })
-
-    expect(response.body).toEqual({
-      reply: 'Con gusto, permítame y se lo muestro 😊',
-      options: null,
-      image: 'https://cdn.example.com/filtro.jpg',
-      video: null,
-      mediaNote: null,
-      actionNote: null,
-    })
-  })
-
-  it('descarta totales inventados por la IA con formato oficial y falla cerrado', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue(
-      '🧾 *Resumen de su pedido*\nPizza Familiar x1\n💰 *Total oficial: $16.83*',
-    )
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'quiero una pizza familiar' },
-    })
-
-    expect(response.body.reply).not.toContain('Total oficial')
-    expect(response.body.reply).toContain('un asesor de nuestro equipo')
-    expect(response.body.actionNote).toContain('cifras inventadas')
-  })
-
-  it('avisa como mensaje aparte cuando el producto pedido no tiene media', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'getProducts').mockResolvedValue([
-      { id: 'product-a', name: 'Filtro Azul Premium', image_url: null, video_url: null },
-    ])
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue('Con gusto, permítame y se lo muestro 😊')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'muéstrame una foto del Filtro Azul Premium' },
-    })
-
-    expect(response.body.image).toBeNull()
-    expect(response.body.video).toBeNull()
-    expect(response.body.mediaNote).toContain('todavía no tengo foto ni video')
-  })
-
-  it('convierte HANDOFF en respuesta segura y retira etiquetas internas', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue('Texto interno ##HANDOFF## ##BOOKING##')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'Necesito ayuda' },
-    })
-
-    expect(response.body.reply).toContain('un asesor de nuestro equipo')
-    expect(response.body.reply).not.toContain('##')
-  })
-
-  it('no llama a la IA si el mensaje del usuario no pudo guardarse', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({
-      error: { message: 'insert rechazado' },
-    })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    const callAI = vi.spyOn(bot, 'callAI').mockResolvedValue('Respuesta')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'Quiero comprar' },
-    })
-
-    expect(response).toEqual({
-      status: 500,
-      body: { error: 'No se pudo completar la simulación' },
-    })
-    expect(callAI).not.toHaveBeenCalled()
-  })
-
-  it('no responde éxito si la respuesta del bot no pudo persistirse', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage')
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: { message: 'fallo respuesta' } })
-    vi.spyOn(bot, 'buildPrompt').mockReturnValue('prompt')
-    vi.spyOn(bot, 'callAI').mockResolvedValue('Respuesta')
-
-    const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      body: { business_id: 'business-a', message: 'Quiero comprar' },
-    })
-
-    expect(response.status).toBe(500)
-    expect(response.body).toEqual({ error: 'No se pudo completar la simulación' })
   })
 
   it('comprueba el resultado al limpiar el historial del negocio', async () => {
@@ -331,5 +191,4 @@ describe('simulador del superadmin', () => {
       status: 500,
       body: { error: 'No se pudo limpiar el historial' },
     })
-  })
-})
+  })})

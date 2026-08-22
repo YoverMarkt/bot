@@ -457,95 +457,9 @@ describe('orquestación de conversaciones del bot', () => {
     expect(current.ai.callAI).not.toHaveBeenCalled()
   })
 
-  it('descarta y deriva cuando la IA imita un resumen oficial con cifras propias', async () => {
-    const current = setup({
-      tags: {
-        impersonatesOfficialSummary: vi.fn().mockReturnValue(true),
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: '🏨 *Opciones de hospedaje* inventadas 💰 *Total oficial: $120.00*',
-          orderPayload: null,
-          hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
-        }),
-      },
-    })
-
-    await current.conversation.processMessage(input(current))
-
-    // El texto inventado JAMÁS llega al cliente; se falla cerrado derivando
-    expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('Total oficial'))
-    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ isUncertain: true, hasSale: false }),
-    )
-    expect(current.actions.processLodgingQuote).not.toHaveBeenCalled()
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-  })
 
   // Vigilante de precios (regla inviolable #8). Arranca en modo observación a
   // propósito: un falso positivo cortaría la conversación de un cliente real.
-  describe('cuando la IA cita un precio que no existe en el catálogo', () => {
-    const respuestaConPrecioInventado = {
-      parseBotOutput: vi.fn().mockReturnValue({
-        finalText: 'Te lo dejo en $40, oferta especial',
-        orderPayload: null,
-        hasSale: false, hasHandoffTag: false, isUncertain: false, hasActionConflict: false,
-      }),
-    }
-
-    const guard = (mode, onInvented) => ({
-      check: () => ({ ok: false, invented: [40], quoted: [40] }),
-      mode: () => mode,
-      onInvented,
-    })
-
-    it('en modo observación lo registra pero NO corta la conversación', async () => {
-      const onInvented = vi.fn()
-      const current = setup({
-        tags: respuestaConPrecioInventado,
-        priceGuard: guard('observar', onInvented),
-      })
-
-      await current.conversation.processMessage(input(current))
-
-      expect(onInvented).toHaveBeenCalledWith(
-        expect.objectContaining({ invented: [40] }),
-      )
-      expect(current.logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('precios que no existen'),
-      )
-      // El cliente sigue recibiendo respuesta: todavía no se bloquea nada.
-      expect(current.send).toHaveBeenCalled()
-    })
-
-    it('en modo bloquear descarta el mensaje y deriva', async () => {
-      const current = setup({
-        tags: respuestaConPrecioInventado,
-        priceGuard: guard('bloquear', vi.fn()),
-      })
-
-      await current.conversation.processMessage(input(current))
-
-      expect(current.send).not.toHaveBeenCalledWith(expect.stringContaining('$40'))
-      expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-        expect.objectContaining({ isUncertain: true, hasSale: false }),
-      )
-    })
-
-    it('no molesta cuando todos los precios son reales', async () => {
-      const onInvented = vi.fn()
-      const current = setup({
-        priceGuard: {
-          check: () => ({ ok: true, invented: [], quoted: [95] }),
-          mode: () => 'bloquear',
-          onInvented,
-        },
-      })
-
-      await current.conversation.processMessage(input(current))
-
-      expect(onInvented).not.toHaveBeenCalled()
-      expect(current.send).toHaveBeenCalled()
-    })
-  })
 
   it('deriva insultos sin invocar IA ni consultar el catálogo', async () => {
     const current = setup({
@@ -627,170 +541,15 @@ describe('orquestación de conversaciones del bot', () => {
     )
   })
 
-  it('mantiene preguntas de precio y media automatizadas en modo informativo', async () => {
-    const current = setup({
-      tags: {
-        detectMediaRequest: vi.fn().mockReturnValue({
-          wantsImage: true, wantsVideo: false,
-        }),
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Cuesta $10.00 y está disponible.',
-              orderPayload: null,
-          lodgingQuote: null,
-          lodgingRequest: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-          hasActionConflict: false,
-        }),
-      },
-    })
 
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_orders: false },
-      text: '¿Cuánto cuesta? Muéstrame una foto',
-    }))
 
-    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ hasSale: false, isUncertain: false }),
-    )
-    expect(current.send).toHaveBeenCalledWith('Cuesta $10.00 y está disponible.')
-    expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
-      expect.objectContaining({ wantsImage: true }),
-    )
-    // Sin ##PEDIDO## no se toca el núcleo de dinero: antes se le llamaba con
-    // `payload: null` en CADA mensaje, que era trabajo por nada.
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-  })
 
-  it('mantiene RAG, acciones, pedido y media en el mismo tenant y orden lógico', async () => {
-    const current = setup({
-      database: {
-        getSession: vi.fn().mockResolvedValue({ closed_sale_at: '2026-07-01' }),
-        getContactHistory: vi.fn().mockResolvedValue([
-          { role: 'user', content: 'Antes hablamos del perfume' },
-        ]),
-        countProducts: vi.fn().mockResolvedValue(50),
-        searchProductsByVector: vi.fn().mockResolvedValue([product]),
-      },
-      tags: {
-        detectMediaRequest: vi.fn().mockReturnValue({
-          wantsImage: true, wantsVideo: false,
-        }),
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Aquí está',
-              orderPayload: null,
-          hasSale: false,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-    })
+  // ⚠️ Aquí vivían las pruebas del MODO IA: el resumen oficial imitado, el
+  // vigilante de precios, el RAG, las etiquetas de pedido del modelo y las
+  // confirmaciones antes de validar. Se fueron con la IA el 2026-08-21.
+  // Lo que protegían —que ningún monto salga sin pasar por el servidor—
+  // ahora es estructural: no queda nada capaz de escribir un precio.
 
-    await current.conversation.processMessage(input(current, {
-      text: 'La vez pasada vi Perfume Floral Intenso, muéstrame foto',
-    }))
-
-    expect(current.database.getContactHistory).toHaveBeenCalledWith(
-      'business-a', '0990000001', 24, '2026-07-01',
-    )
-    expect(current.database.searchProductsByVector).toHaveBeenCalledWith(
-      'business-a', [0.1, 0.2], 12,
-    )
-    expect(current.database.getProducts).not.toHaveBeenCalled()
-    expect(current.prompt.buildPrompt).toHaveBeenCalledWith(
-      business,
-      [product],
-      {},
-      'La vez pasada vi Perfume Floral Intenso, muéstrame foto',
-      [],
-      true,
-      true,
-    )
-    // Esta respuesta no lleva ##PEDIDO##, así que el núcleo de dinero no entra.
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.media.sendRequestedProductMedia).toHaveBeenCalledWith(
-      expect.objectContaining({
-        business,
-        products: [product],
-        preFiltered: true,
-        wantsImage: true,
-      }),
-    )
-    expect(current.database.recordConsultations).toHaveBeenCalledWith(
-      'business-a', ['product-a'],
-    )
-    expect(current.database.saveMessage).toHaveBeenLastCalledWith(
-      'business-a', '0990000001', 'assistant', 'Aquí está',
-    )
-  })
-
-  it('deriva una etiqueta de pedido si el negocio es informativo', async () => {
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Tu pedido está confirmado',
-              orderPayload: 'Producto A x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_orders: false },
-    }))
-
-    expect(current.actions.processOrderPayload).not.toHaveBeenCalled()
-    expect(current.actions.handleConversationOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ hasSale: true }),
-    )
-    expect(current.send).toHaveBeenCalledWith(
-      expect.stringContaining('Un asesor continuará'),
-    )
-    expect(current.send).not.toHaveBeenCalledWith('Tu pedido está confirmado')
-  })
-
-  it.each([
-    [true, null],
-    [false, 'No pude registrar el pedido'],
-  ])('no envía confirmaciones de IA antes de validar un pedido (%s)', async (
-    orderProcessed,
-    expectedServerText,
-  ) => {
-    const current = setup({
-      tags: {
-        parseBotOutput: vi.fn().mockReturnValue({
-          finalText: 'Tu pedido quedó confirmado',
-              orderPayload: 'Producto A x1',
-          hasSale: true,
-          hasHandoffTag: false,
-          isUncertain: false,
-        }),
-      },
-      actions: {
-        processOrderPayload: vi.fn().mockResolvedValue(orderProcessed),
-      },
-    })
-
-    await current.conversation.processMessage(input(current, {
-      business: { ...business, takes_orders: true },
-    }))
-
-    expect(current.actions.processOrderPayload).toHaveBeenCalledWith(
-      expect.objectContaining({ payload: 'Producto A x1' }),
-    )
-    expect(current.send).not.toHaveBeenCalledWith('Tu pedido quedó confirmado')
-    expect(current.database.saveMessage).not.toHaveBeenCalledWith(
-      'business-a', '0990000001', 'assistant', 'Tu pedido quedó confirmado',
-    )
-    if (expectedServerText) {
-      expect(current.send).toHaveBeenCalledWith(
-        expect.stringContaining(expectedServerText),
-      )
-    }
-  })
 
   it('prioriza handoff y no ejecuta acciones transaccionales', async () => {
     const current = setup({
@@ -847,8 +606,12 @@ describe('orquestación de conversaciones del bot', () => {
     const service = fs.readFileSync(new URL('../src/services/bot-conversation.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')
     expect(service).toContain('database.getSession(business.id, phone)')
-    expect(service).toContain('database.searchProductsByVector(')
     expect(service).not.toContain('@ts-nocheck')
+    // ⚠️ El RAG (`searchProductsByVector`) se fue con la IA el 2026-08-21.
+    // Se comprueba que NO vuelva: era la vía por la que el catálogo entraba
+    // en un prompt.
+    expect(service).not.toContain('database.searchProductsByVector(')
+    expect(service).not.toMatch(/callAI|buildPrompt/)
     expect(entry).toContain("require('./bot-conversation')")
   })
 
@@ -1006,11 +769,13 @@ describe('el enlace de la mini app', () => {
     })
 
     await expect(current.conversation.processMessage(input(current, {
-      business: conTienda,
+      business: { ...conTienda, chat_mode: 'miniapp' },
       text: 'hola',
     }))).resolves.not.toThrow()
 
-    expect(current.send.mock.calls.map(call => call[0]).join('')).toContain('Respuesta final')
+    // ⚠️ Antes aquí se comprobaba que la IA respondía igualmente. Con la IA
+    // retirada lo que importa es que el fallo no tumbe el proceso: el cliente
+    // se queda sin enlace, pero el error queda registrado y nada revienta.
   })
 })
 
