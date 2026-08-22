@@ -107,14 +107,52 @@ export type BusinessChatMode = 'menu' | 'miniapp'
 // elige a mano el superadmin para el negocio que quiere pedir sin IA y sin
 // mini app. Dejó de proponerse solo cuando salieron las citas, que eran los
 // negocios con la lista corta de servicios donde encajaba.
+/**
+ * Los tipos cuyo catálogo típico NO cabe en una lista de WhatsApp.
+ *
+ * Se lista la EXCEPCIÓN y no la regla: son ocho frente a veintidós, y así
+ * añadir un tipo de comida nuevo cae solo en el lado correcto sin que nadie
+ * tenga que acordarse de clasificarlo.
+ *
+ * El criterio es cuántos PRODUCTOS distintos maneja el negocio, no cuántas
+ * opciones: los diecinueve sabores de una pizzería son opciones de un mismo
+ * producto, así que una pizzería tiene catálogo corto aunque su carta parezca
+ * larga. Un supermercado tiene cientos de productos de verdad.
+ */
+const CATALOGO_LARGO = [
+  // Retail: cientos de SKU, imposible de recorrer hablando.
+  'tienda', 'perfumería', 'farmacia', 'ferretería', 'supermercado',
+  'panadería',
+  // Comida de carta larga.
+  'restaurante', 'pastelería', 'sushi', 'comida china', 'marisquería',
+]
+
+/**
+ * Con qué modo NACE un negocio. Solo PROPONE al crear: `chat_mode` persistido
+ * manda siempre y jamás se sobrescribe a un negocio existente.
+ *
+ * ⚠️ Hasta el 2026-08-21 esto era `vende ? 'miniapp' : 'menu'`, o sea que
+ * TODO lo que vendía nacía en mini app — y con el desplegable reducido a
+ * comida y retail, eso era todo menos el genérico. Una almuercería con cuatro
+ * platos del día salía «Mini app», que es justo al revés de lo que conviene:
+ * cuatro opciones se eligen mejor en el chat que abriendo un enlace.
+ *
+ * ⚠️ Es una RECOMENDACIÓN, no la última palabra. Dentro del marketplace, lo
+ * que decide de verdad es el catálogo REAL contado al elegir el local (la
+ * regla de los 20): un tipo mal clasificado aquí se corrige solo en cuanto
+ * el negocio tiene productos. Esto solo evita que el alta muestre un valor
+ * que contradice lo que va a pasar después.
+ */
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
-  // Con tienda (restaurante, supermercado, farmacia) el pedido va por la app.
-  // Sin ella, el menú de botones: atiende con cualquier catálogo.
-  //
-  // ⚠️ El defecto era `ai` hasta el 2026-08-21, cuando se retiró la IA. Ahora
-  // es `menu` — y no `miniapp`, que exige pedidos Y tienda encendidos y
-  // dejaría mudo a un negocio sin ellos.
-  return recommendedStorefrontForBusinessType(type) ? 'miniapp' : 'menu'
+  // Sin pedidos no hay menú de compra que conducir: el genérico y lo que se
+  // teclee a mano caen aquí.
+  if (recommendedSalesForBusinessType(type) !== 'vende') return 'menu'
+
+  const normalized = normalizeBusinessType(type)
+  const largo = CATALOGO_LARGO.some(candidato => (
+    normalized.includes(normalizeBusinessType(candidato))
+  ))
+  return largo ? 'miniapp' : 'menu'
 }
 
 export function businessTypeChoice(type: string): string {
