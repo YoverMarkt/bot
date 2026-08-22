@@ -35,7 +35,7 @@ const EMPTY = {
   ycloud_webhook_endpoint_id: '', ycloud_webhook_secret: '',
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
-  ai_provider: '', sales: 'informa',
+  sales: 'informa',
   chat_mode: 'menu', storefront: 'no',
   plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
@@ -68,7 +68,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ycloud_webhook_secret: '',
         meta_token: '', meta_phone_id: c.meta_phone_id ?? '',
         telegram_bot_token: '',
-        ai_provider: c.ai_provider ?? '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
         chat_mode: ['menu', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'menu',
@@ -185,7 +184,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       ycloud_number: sinCanalPropio ? null : (f.whatsapp_number.trim() || null),
       ycloud_webhook_endpoint_id: sinCanalPropio ? null : (f.ycloud_webhook_endpoint_id.trim() || null),
       meta_phone_id: sinCanalPropio ? null : (f.meta_phone_id || null),
-      ai_provider: f.ai_provider || null,
       takes_orders: f.sales !== 'informa',
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
@@ -320,6 +318,13 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
               </div>
+              {/* ⚠️ Solo al EDITAR. En el alta el modo lo deduce el tipo de
+                  negocio (`recommendedChatModeForBusinessType`), y dentro del
+                  marketplace lo decide el tamaño del catálogo al elegir el
+                  local. Preguntarlo aquí sería pedir una decisión que en ese
+                  momento nadie puede tomar con datos: un negocio recién
+                  creado tiene CERO productos. */}
+              {id && (
               <div>
                 <Label htmlFor="client-chat-mode">Quién conduce la conversación</Label>
                 <Select value={f.chat_mode} onValueChange={value => {
@@ -344,11 +349,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  <strong>Mini app</strong>: responde con el enlace y el pedido se hace en la app, sin usar IA.
-                  {' '}<strong>Menú</strong>: el cliente elige entre opciones armadas con los datos reales; nada se inventa ni cuesta IA.
-                  {' '}<strong>IA</strong>: conversa libre y pide por chat. El servidor calcula los totales en los tres.
+                  <strong>Mini app</strong>: responde con el enlace y el pedido se hace en la app.
+                  {' '}<strong>Menú</strong>: el cliente elige entre opciones armadas con los datos reales.
+                  {' '}El servidor calcula los totales en los dos, y ninguno usa IA.
                 </p>
               </div>
+              )}
               <div>
                 <Label htmlFor="client-storefront">Mini app de la tienda</Label>
                 <Select
@@ -371,24 +377,16 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                     : 'Necesita crear pedidos. Un negocio que solo informa no tendría nada que mostrar en la tienda.'}
                 </p>
               </div>
-              <div>
-                <Label htmlFor="client-ai-provider">IA de este negocio</Label>
-                {/* Radix no permite value="" en un item → centinela 'global' ↔ '' */}
-                <Select value={f.ai_provider || 'global'} onValueChange={v => setVal('ai_provider')(v === 'global' ? '' : v)}>
-                  <SelectTrigger id="client-ai-provider" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="global">Global del servidor</SelectItem>
-                    <SelectItem value="groq">Groq (Llama)</SelectItem>
-                    <SelectItem value="deepseek">DeepSeek</SelectItem>
-                    <SelectItem value="gemini">Gemini</SelectItem>
-                    <SelectItem value="claude">Claude</SelectItem>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
-            {/* Canal WhatsApp */}
+            {/* Canal WhatsApp — ⚠️ Solo al EDITAR.
+                Un local NACE en el marketplace: se atiende por el número de
+                la plataforma y no tiene credenciales que pedir ni verificar.
+                Un negocio con número propio es hoy el caso raro —queda uno en
+                producción y ya existe—, así que se configura aquí, al editar,
+                en vez de gastar siete campos del alta en algo que casi nadie
+                rellena. Nada se pierde: todo esto sigue vivo e intacto. */}
+            {id && (
             <div className="rounded-xl border p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <span id="client-whatsapp-provider-label" className="inline-flex items-center gap-1.5"><RadioTower className="w-4 h-4" /> Canal de WhatsApp</span>
@@ -436,6 +434,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </>
               )}
             </div>
+            )}
 
             {/* Plan y facturación */}
             <div className="mb-4 rounded-lg border border-border/70 p-3">
@@ -457,33 +456,19 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="client-monthly-rate">Tarifa mensual ($)</Label>
-                <Input id="client-monthly-rate" type="number" step="0.01" value={f.monthly_rate} readOnly aria-describedby="client-plan-help" />
-              </div>
-              <div>
-                <Label htmlFor="client-contact-limit">Contactos al mes</Label>
-                <Input
-                  id="client-contact-limit"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={f.monthly_contact_limit}
-                  readOnly
-                  aria-describedby="client-plan-help"
-                />
-              </div>
-              <div>
-                <Label htmlFor="client-outbound-limit">Mensajes enviados al mes</Label>
-                <Input
-                  id="client-outbound-limit"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={f.monthly_outbound_message_limit}
-                  readOnly
-                  aria-describedby="client-plan-help"
-                />
+              {/* ⚠️ Eran tres inputs `readOnly`: tres campos que ocupaban
+                  media pantalla y que nadie podía tocar, porque los tres
+                  salen del plan elegido arriba. Como resumen dicen lo mismo
+                  ocupando una línea. El payload no cambia: se siguen enviando
+                  los mismos valores. */}
+              <div className="self-end text-sm text-muted-foreground" data-testid="client-plan-summary">
+                {planById(f.plan)
+                  ? <>
+                      <strong className="text-foreground">${f.monthly_rate}/mes</strong>
+                      {' · '}{Number(f.monthly_contact_limit || 0).toLocaleString('es-EC')} contactos
+                      {' · '}{Number(f.monthly_outbound_message_limit || 0).toLocaleString('es-EC')} mensajes
+                    </>
+                  : 'Selecciona un plan'}
               </div>
               </div>
               <p id="client-plan-help" className="mt-3 text-xs text-muted-foreground">

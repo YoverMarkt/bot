@@ -228,11 +228,21 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
   await expect(planListbox.getByRole('option')).toHaveCount(6)
   await planListbox.getByRole('option', { name: /Pro — \$99\/mes/ }).click()
   await expect(planListbox).toBeHidden()
-  await expect(dialog.getByLabel('Tarifa mensual ($)')).toHaveValue('99')
-  await expect(dialog.getByLabel('Contactos al mes')).toHaveValue('400')
-  await expect(dialog.getByLabel('Mensajes enviados al mes')).toHaveValue('2000')
-  await expect(dialog.getByLabel('Tarifa mensual ($)')).toHaveAttribute('readonly', '')
+  // ⚠️ Eran tres inputs `readOnly`. Se leen igual de bien —y ocupando una
+  // línea en vez de media pantalla— en el resumen del plan: lo que importa
+  // sigue siendo que elegir el plan fije tarifa y cupos, no que haya tres
+  // campos que nadie puede tocar.
+  const resumen = dialog.getByTestId('client-plan-summary')
+  await expect(resumen).toContainText('$99/mes')
+  await expect(resumen).toContainText('400 contactos')
+  await expect(resumen).toContainText('2.000 mensajes')
   await expect(dialog.getByLabel('Plan vence')).toHaveCount(0)
+
+  // El alta ya no pide el canal ni el modo: un local nace en el marketplace y
+  // el modo lo deduce el tipo. Todo eso sigue vivo al EDITAR.
+  await expect(dialog.getByText('Canal de WhatsApp')).toHaveCount(0)
+  await expect(dialog.getByLabel('Quién conduce la conversación')).toHaveCount(0)
+  await expect(dialog.getByLabel('IA de este negocio')).toHaveCount(0)
   await expectConnectedLabels(dialog)
 })
 

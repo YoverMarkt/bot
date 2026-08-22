@@ -210,15 +210,20 @@ const ALLOWED_BUSINESS_FIELDS = [
   'owner_phone', 'ycloud_api_key', 'ycloud_number',
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
-  'ai_provider', 'takes_orders',
+  'takes_orders',
   'chat_mode', 'storefront_enabled',
 ] as const
 
-// Los tres modos de atención. Cualquier otro valor lo rechaza la base.
-//   ai      → conversa con IA, se pide por chat, sin enlace
+// Los DOS modos de atención. Cualquier otro valor lo rechaza la base.
 //   menu    → botones armados por código con los datos reales, sin IA
 //   miniapp → responde con el enlace y se pide en la app, sin IA
-const CHAT_MODES = ['menu', 'ai', 'miniapp'] as const
+//
+// ⚠️ `'ai'` se retiró el 2026-08-21 con la IA conversacional, y esta lista se
+// quedó atrás: el CHECK de la base ya solo acepta ('menu','miniapp'). Mientras
+// tanto, un alta que no mandara `chat_mode` caía al valor por defecto `'ai'`
+// de más abajo y la RPC la rechazaba entera — el negocio no se creaba. Desde
+// el panel no saltó porque el modal siempre manda uno válido; por API, sí.
+const CHAT_MODES = ['menu', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -492,10 +497,12 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.
       storefront_enabled: body.storefront_enabled === true,
+      // El defecto es `menu` y no `miniapp` porque el menú atiende con
+      // cualquier catálogo, mientras que la mini app exige pedidos Y tienda
+      // encendidos y dejaría mudo a un negocio sin ellos.
       chat_mode: CHAT_MODES.includes(body.chat_mode as typeof CHAT_MODES[number])
         ? body.chat_mode as string
-        : 'ai',
-      ai_provider: body.ai_provider || null,
+        : 'menu',
       owner_phone: body.owner_phone || null,
       plan: planDefinition.id,
       active: true,
