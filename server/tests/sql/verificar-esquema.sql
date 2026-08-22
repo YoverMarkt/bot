@@ -1724,6 +1724,98 @@ begin
     raise notice 'COLA DE AVISOS: verificada';
   end;
 
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- EL CANAL DE LA PLATAFORMA: encolar un mensaje SIN local
+  -- ═══════════════════════════════════════════════════════════════════════
+  --
+  -- ⚠️ Estas comprobaciones necesitan DATOS. Con la tabla vacía todas pasan
+  -- solas y esconderían justo lo que vienen a cazar: en SQL dos NULL no son
+  -- iguales, así que los índices únicos que empiezan por `business_id` no
+  -- deduplican nada cuando el negocio es nulo, y el FIFO por conversación
+  -- desaparece. Los dos fallos solo aparecen con más de una fila.
+  declare
+    v_neg_plat uuid;
+    v_hash_a text := repeat('a', 64);
+    v_hash_b text := repeat('b', 64);
+    v_stream text := repeat('c', 64);
+    v_leased integer;
+  begin
+    -- 1. Se puede encolar sin negocio: el cliente aún no eligió local.
+    --    Se usa MEDIA y no texto porque un texto entra con la ventana de
+    --    debounce de 3 s del agrupado, y entonces el punto 4 no mediría el
+    --    FIFO sino la espera.
+    if public.enqueue_webhook_event(
+      null, 'ycloud', v_hash_a, v_stream,
+      '{"version":1,"content":{"kind":"image","media":{"url":"a"}}}'::jsonb
+    ) is not true then
+      raise exception 'No se pudo encolar un mensaje del marketplace';
+    end if;
+
+    -- 2. El MISMO mensaje reentregado no crea otra fila. La entrada es
+    --    at-least-once: sin esto el cliente recibiría la respuesta dos veces.
+    --    ⚠️ Es lo que el índice único de siempre NO puede hacer con NULL.
+    if public.enqueue_webhook_event(
+      null, 'ycloud', v_hash_a, v_stream,
+      '{"version":1,"content":{"kind":"image","media":{"url":"a"}}}'::jsonb
+    ) is not false then
+      raise exception 'Un mensaje del marketplace se encoló dos veces';
+    end if;
+
+    -- 3. Un segundo mensaje del MISMO cliente sí entra…
+    if public.enqueue_webhook_event(
+      null, 'ycloud', v_hash_b, v_stream,
+      '{"version":1,"content":{"kind":"image","media":{"url":"b"}}}'::jsonb
+    ) is not true then
+      raise exception 'El segundo mensaje del marketplace no se encoló';
+    end if;
+
+    -- 4. …pero el worker toma UNO SOLO: el FIFO por conversación. Con la
+    --    comparación `=` en vez de `is not distinct from`, aquí salían los
+    --    dos y el cliente que escribe «1» y luego «2» recibía las respuestas
+    --    al revés.
+    select count(*) into v_leased
+    from public.lease_webhook_events('verificacion-plataforma', 10, 60);
+    if v_leased <> 1 then
+      raise exception 'El FIFO del marketplace dejó salir % mensajes a la vez', v_leased;
+    end if;
+
+    -- 4b. El agrupado de textos SIGUE VIVO sin negocio: un texto entra con
+    --     su ventana de gracia, así que el worker no lo toma de inmediato.
+    --     Sin las comparaciones `is not distinct from` del agrupado, el
+    --     debounce no vería dos mensajes del mismo cliente como del mismo
+    --     stream y cada palabra suelta sería una respuesta pagada.
+    if public.enqueue_webhook_event(
+      null, 'ycloud', repeat('d', 64), repeat('e', 64),
+      '{"version":1,"content":{"kind":"text","text":"hola"}}'::jsonb
+    ) is not true then
+      raise exception 'No se pudo encolar un texto del marketplace';
+    end if;
+    if exists (
+      select 1 from public.webhook_inbound_events
+      where business_id is null and message_id_hash = repeat('d', 64)
+        and available_at <= now()
+    ) then
+      raise exception 'El texto del marketplace no esperó su ventana de agrupado';
+    end if;
+
+    -- 5. Y un negocio CON número propio sigue encolando como siempre, sin
+    --    que el camino nuevo le haya cambiado nada.
+    insert into public.businesses (slug, name, type, whatsapp_provider, whatsapp_number)
+    values ('verificacion-plataforma', 'Local con número', 'pizzería', 'ycloud', '593200000123')
+    returning id into v_neg_plat;
+
+    if public.enqueue_webhook_event(
+      v_neg_plat, 'ycloud', v_hash_a, v_stream,
+      '{"version":1,"content":{"kind":"text","text":"hola"}}'::jsonb
+    ) is not true then
+      raise exception 'El mismo hash de otro negocio debería ser un mensaje distinto';
+    end if;
+
+    delete from public.businesses where id = v_neg_plat;
+    delete from public.webhook_inbound_events where business_id is null;
+    raise notice 'CANAL DE LA PLATAFORMA: encolado, deduplicación y FIFO verificados';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;

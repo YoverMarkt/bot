@@ -5,6 +5,7 @@ import webhooksRouter from '../dist/routes/webhooks.routes.js'
 
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
+const settings = require('../dist/services/settings')
 
 const originalEnvironment = {
   NODE_ENV: process.env.NODE_ENV,
@@ -25,6 +26,10 @@ beforeEach(() => {
     ycloud_webhook_secret: 'ycloud-signing-secret-a',
   })
   vi.spyOn(db, 'enqueueWebhookEvent').mockResolvedValue({ data: true, error: null })
+  // Sin número de marketplace configurado: es el estado de una instalación
+  // que no lo usa, y deja estos tests comprobando exactamente lo de siempre.
+  // Los del número de plataforma lo sobrescriben.
+  vi.spyOn(settings, 'get').mockResolvedValue(null)
 })
 
 afterEach(() => {
@@ -584,5 +589,104 @@ describe('webhooks WhatsApp', () => {
 
     expect(response.status).toBe(200)
     expect(db.enqueueWebhookEvent).not.toHaveBeenCalled()
+  })
+
+  // ═════════════════════════════════════════════════════════════════════
+  // EL NÚMERO DE LA PLATAFORMA (Umbani)
+  //
+  // El mismo camino de arriba —canal sin negocio— pero cuando ese número
+  // ES el del marketplace. Antes se descartaba igual que un desconocido;
+  // ahora se encola SIN negocio, porque el cliente todavía no eligió local.
+  // ═════════════════════════════════════════════════════════════════════
+  describe('el número del marketplace', () => {
+    const PLATAFORMA = '593200000099'
+    const secretoDePlataforma = 'whsec_plataforma'
+
+    const configurarPlataforma = (overrides = {}) => {
+      const valores = {
+        platform_ycloud_api_key: 'ycloud-plataforma',
+        platform_ycloud_number: PLATAFORMA,
+        platform_webhook_secret: secretoDePlataforma,
+        platform_webhook_endpoint_id: 'endpoint-plataforma',
+        ...overrides,
+      }
+      settings.get.mockImplementation(async key => valores[key] ?? null)
+    }
+
+    const mensajeAlMarketplace = () => {
+      const body = ycloudPayload('evento-mkt-a', 'mensaje-mkt-a')
+      body.whatsappInboundMessage.to = `+${PLATAFORMA}`
+      return body
+    }
+
+    beforeEach(() => {
+      db.getBusinessByChannel.mockResolvedValue(null)
+    })
+
+    it('lo encola sin negocio en vez de descartarlo', async () => {
+      configurarPlataforma()
+      const body = mensajeAlMarketplace()
+      const response = await dispatch('post', '/webhook/ycloud', {
+        body,
+        ...signedYCloudRequest(body, {
+          secret: secretoDePlataforma, endpointId: 'endpoint-plataforma',
+        }),
+      })
+
+      expect(response.status).toBe(200)
+      // ⚠️ El primer argumento es el negocio: null porque aún no hay local.
+      expect(db.enqueueWebhookEvent).toHaveBeenCalledWith(
+        null,
+        'ycloud',
+        expect.any(String),
+        expect.stringContaining('plataforma'),
+        expect.objectContaining({ businessId: null }),
+      )
+    })
+
+    it('rechaza una firma inválida igual de estricto que con negocio', async () => {
+      configurarPlataforma()
+      const body = mensajeAlMarketplace()
+      const response = await dispatch('post', '/webhook/ycloud', {
+        body,
+        ...signedYCloudRequest(body, {
+          secret: 'otro-secreto', endpointId: 'endpoint-plataforma',
+        }),
+      })
+
+      // Un mensaje sin negocio NO es un mensaje sin comprobar.
+      expect(response.status).toBe(401)
+      expect(db.enqueueWebhookEvent).not.toHaveBeenCalled()
+    })
+
+    it('en producción sin signing secret responde 503, no lo acepta', async () => {
+      process.env.NODE_ENV = 'production'
+      delete process.env.BASE_URL
+      delete process.env.YCLOUD_WEBHOOK_SECRET
+      configurarPlataforma({ platform_webhook_secret: null })
+      const body = mensajeAlMarketplace()
+      const response = await dispatch('post', '/webhook/ycloud', {
+        body,
+        ...signedYCloudRequest(body, {
+          secret: secretoDePlataforma, endpointId: 'endpoint-plataforma',
+        }),
+      })
+
+      expect(response.status).toBe(503)
+      expect(db.enqueueWebhookEvent).not.toHaveBeenCalled()
+    })
+
+    it('un número desconocido se sigue descartando', async () => {
+      configurarPlataforma()
+      const body = ycloudPayload('evento-mkt-b', 'mensaje-mkt-b')
+      body.whatsappInboundMessage.to = '+593200000077'
+      const response = await dispatch('post', '/webhook/ycloud', {
+        body,
+        ...signedYCloudRequest(body),
+      })
+
+      expect(response.status).toBe(200)
+      expect(db.enqueueWebhookEvent).not.toHaveBeenCalled()
+    })
   })
 })

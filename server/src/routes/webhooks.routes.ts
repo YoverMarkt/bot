@@ -10,6 +10,10 @@ import {
 } from '../services/inbound-webhook'
 import { recordWebhookFailure } from '../services/channel-health'
 import { verifyYCloudSignature } from '../services/webhook-signatures'
+import {
+  esNumeroDePlataforma,
+  getPlatformChannel,
+} from '../services/platform-channel'
 import type {
   ChannelAddress,
   ChannelIdentifierType,
@@ -69,7 +73,8 @@ interface YCloudWebhookBody {
 const db: {
   getBusinessByChannel(address: ChannelAddress): Promise<BusinessRecord | null>
   enqueueWebhookEvent(
-    businessId: string,
+    // Nulo = mensaje al número del marketplace, sin local elegido todavía.
+    businessId: string | null,
     provider: WebhookProvider,
     messageId: string,
     conversationKey: string,
@@ -128,10 +133,17 @@ function firstIdentifier(
   return typeof value === 'string' ? value : undefined
 }
 
-interface ResolvedInbound {
-  business: BusinessRecord
-  address: WhatsAppChannelAddress
-}
+/**
+ * A dónde llegó el mensaje.
+ *
+ * Hasta el 2026-08-21 solo existía el primer caso: el número era la llave y
+ * un mensaje sin negocio se descartaba. `platform` es el número único del
+ * marketplace, donde todavía no hay local que resolver — lo elegirá el
+ * cliente durante la conversación.
+ */
+type ResolvedInbound =
+  | { business: BusinessRecord; address: WhatsAppChannelAddress }
+  | { business: null; address: WhatsAppChannelAddress }
 
 async function enqueueResolvedInbound(
   provider: WebhookProvider,
@@ -140,7 +152,7 @@ async function enqueueResolvedInbound(
   payload: InboundWebhookPayload,
 ): Promise<'accepted' | 'duplicate'> {
   const { data, error } = await db.enqueueWebhookEvent(
-    resolved.business.id,
+    resolved.business?.id ?? null,
     provider,
     messageId,
     inboundConversationKey(payload),
@@ -240,7 +252,7 @@ function durablePayload(
   return {
     version: 1,
     provider,
-    businessId: resolved.business.id,
+    businessId: resolved.business?.id ?? null,
     from: message.from || '',
     inboundId,
     channelAddress: resolved.address,
@@ -332,14 +344,40 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     recordWebhookFailure('ycloud', 503, 'No se pudo resolver el negocio del canal')
     return res.sendStatus(503)
   }
-  if (!resolved) {
-    console.warn('⚠️  [YCloud] canal sin negocio exacto — mensaje ignorado')
-    return res.sendStatus(200)
+  // Sin negocio exacto quedan dos casos, y solo uno se descarta: el número
+  // desconocido, y el número de la PLATAFORMA — donde el cliente todavía no
+  // eligió local, así que no hay negocio que resolver ni debe haberlo.
+  //
+  // ⚠️ Las credenciales del número de plataforma NO pueden salir de un
+  // negocio: ese número no es de ninguno. Salen de `server_settings`, y la
+  // firma se valida con ellas exactamente igual de estricto que antes — un
+  // mensaje sin negocio no es un mensaje sin comprobar.
+  let target: ResolvedInbound
+  let configuredEndpointId: string | undefined
+  let signingSecret: string | undefined
+
+  if (resolved) {
+    target = resolved
+    configuredEndpointId = resolved.business.ycloud_webhook_endpoint_id?.trim()
+      || process.env.YCLOUD_WEBHOOK_ENDPOINT_ID?.trim()
+    signingSecret = resolved.business.ycloud_webhook_secret?.trim()
+      || process.env.YCLOUD_WEBHOOK_SECRET?.trim()
+  } else {
+    const platform = await getPlatformChannel()
+    const platformAddress = platform
+      ? addresses.find(address => esNumeroDePlataforma([address], platform.number))
+      : undefined
+    if (!platform || !platformAddress) {
+      console.warn('⚠️  [YCloud] canal sin negocio exacto — mensaje ignorado')
+      return res.sendStatus(200)
+    }
+    console.log('🏬 [YCloud] mensaje al número del marketplace — sin local aún')
+    target = { business: null, address: platformAddress }
+    configuredEndpointId = platform.endpointId || undefined
+    signingSecret = platform.webhookSecret || undefined
   }
 
   const endpointId = headerText(req.headers['x-webhook-endpoint-id'])
-  const configuredEndpointId = resolved.business.ycloud_webhook_endpoint_id?.trim()
-    || process.env.YCLOUD_WEBHOOK_ENDPOINT_ID?.trim()
   if (!configuredEndpointId && isProduction()) {
     console.error('❌ Webhook YCloud: falta configurar el Endpoint ID')
     recordWebhookFailure('ycloud', 503, 'Falta configurar el Endpoint ID del webhook')
@@ -350,8 +388,6 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
     recordWebhookFailure('ycloud', 401, 'Endpoint ID inválido')
     return res.sendStatus(401)
   }
-  const signingSecret = resolved.business.ycloud_webhook_secret?.trim()
-    || process.env.YCLOUD_WEBHOOK_SECRET?.trim()
   if (!signingSecret) {
     if (isProduction()) {
       console.error('❌ Webhook YCloud: falta el signing secret oficial')
@@ -375,10 +411,7 @@ router.post('/webhook/ycloud', webhookLimiter, async (req, res) => {
   }
 
   try {
-    const durableResolved = {
-      business: resolved.business,
-      address: resolved.address,
-    }
+    const durableResolved = target
     const payload = durablePayload(
       'ycloud',
       message,
