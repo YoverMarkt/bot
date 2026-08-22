@@ -141,9 +141,9 @@ export interface BotEntryDependencies {
  * arranque del bot.
  */
 const adjuntarComprobante = crearBuzonDeComprobantes({
-  ultimoPedido: (businessId, contactPhone) => {
+  pedidosEsperando: (contactPhone, businessId) => {
     const db = require('../db') as typeof import('../db')
-    return db.getLastOrderForContact(businessId, contactPhone)
+    return db.pedidosEsperandoComprobante(contactPhone, businessId)
   },
   subirPrivado: (buffer, businessId) => {
     const nube = require('../integrations/cloudinary') as typeof import('../integrations/cloudinary')

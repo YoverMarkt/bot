@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { atiendeSinIA } from './chat-mode'
-import { textoDelComprobante } from './payment-proof-inbox'
+import { textoDelComprobante, textoDelComprobanteAmbiguo } from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
   normalizeChannelIdentifier,
@@ -116,7 +116,11 @@ export interface InboundWebhookDependencies {
     businessId: string,
     contactPhone: string,
     imagen: Buffer,
-  ) => Promise<{ adjuntado: boolean; orderNumber?: number | null }>
+  ) => Promise<{
+    adjuntado: boolean
+    orderNumber?: number | null
+    ambiguos?: Array<{ orderId: string; orderNumber: number | null; businessName: string }>
+  }>
 }
 
 export interface InboundWebhookExpectation {
@@ -480,11 +484,26 @@ export function createInboundWebhookProcessor(
       const comprobante = await dependencies.adjuntarComprobante!(
         business.id, payload.from, foto.data,
       )
+      // Pagos pendientes en más de un local: se PREGUNTA cuál, y la foto no
+      // se adjunta a ninguno mientras tanto. Adivinar sería dar por cobrado a
+      // un local lo que pagó otro.
+      if (comprobante.ambiguos?.length) {
+        logger.log(
+          `🧾 [${payload.provider}] comprobante ambiguo: ${comprobante.ambiguos.length} pedidos esperando pago`,
+        )
+      }
+
       await dependencies.bot.handleMessage(
         payload.from,
-        // Si no se pudo adjuntar se sigue como siempre: el cliente recibe su
-        // respuesta de siempre en vez de quedarse sin nada.
-        comprobante.adjuntado ? textoDelComprobante(comprobante.orderNumber) : '[foto]',
+        // Tres casos, y el del medio es el nuevo: se adjuntó, no se supo a
+        // cuál de varios locales, o no había pedido esperando pago. Si no se
+        // pudo adjuntar se sigue como siempre y el cliente recibe su respuesta
+        // de siempre en vez de quedarse sin nada.
+        comprobante.adjuntado
+          ? textoDelComprobante(comprobante.orderNumber)
+          : comprobante.ambiguos?.length
+            ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
+            : '[foto]',
         businessIdentifier,
         options,
       )
