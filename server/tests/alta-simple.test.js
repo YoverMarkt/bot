@@ -148,3 +148,51 @@ describe('lo que el alta SIGUE pidiendo', () => {
     }
   })
 })
+
+describe('con qué modo NACE cada tipo de negocio', () => {
+  const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')
+
+  it('una almuercería nace en MENÚ, no en mini app', () => {
+    // ⚠️ El fallo que se corrige: hasta el 2026-08-21 la regla era
+    // `vende ? 'miniapp' : 'menu'`, y con el desplegable reducido a comida y
+    // retail eso significaba TODO menos el genérico. Una almuercería con
+    // cuatro platos del día salía «Mini app», que es justo al revés: cuatro
+    // opciones se eligen mejor en el chat que abriendo un enlace.
+    expect(tipos).not.toMatch(
+      /return recommendedStorefrontForBusinessType\(type\) \? 'miniapp' : 'menu'/,
+    )
+    expect(tipos).toContain('CATALOGO_LARGO')
+    // Los de catálogo corto NO están en la lista de excepciones.
+    for (const corto of ['almuerzos', 'desayunos', 'jugos', 'pizzería']) {
+      const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
+      expect(lista, `${corto} no debería estar en CATALOGO_LARGO`)
+        .not.toContain(`'${corto}'`)
+    }
+  })
+
+  it('un supermercado sí nace en mini app', () => {
+    const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
+    for (const largo of ['supermercado', 'farmacia', 'ferretería', 'restaurante']) {
+      expect(lista, `${largo} debería estar en CATALOGO_LARGO`).toContain(`'${largo}'`)
+    }
+  })
+
+  it('se lista la EXCEPCIÓN, no la regla', () => {
+    // Son ocho frente a veintidós: así un tipo de comida nuevo cae solo en el
+    // lado correcto sin que nadie tenga que acordarse de clasificarlo.
+    const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
+    const cuantos = (lista.match(/'/g) || []).length / 2
+    const total = (tipos.match(/\{ value: '/g) || []).length
+    expect(cuantos).toBeLessThan(total / 2)
+  })
+
+  it('sin pedidos no hay menú de compra: el genérico cae en `menu`', () => {
+    expect(tipos).toMatch(/recommendedSalesForBusinessType\(type\) !== 'vende'\) return 'menu'/)
+  })
+
+  it('sigue siendo solo una RECOMENDACIÓN al crear', () => {
+    // Dentro del marketplace manda el catálogo real contado al elegir local:
+    // un tipo mal clasificado aquí se corrige solo en cuanto hay productos.
+    expect(tipos).toMatch(/solo PROPONE al crear/i)
+  })
+})
