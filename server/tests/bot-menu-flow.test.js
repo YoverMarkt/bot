@@ -203,9 +203,12 @@ describe('modo menú estilo banco (sin IA)', () => {
   })
 
   it('responde los saludos naturales con una bienvenida cordial y el nombre del negocio', () => {
+    // ⚠️ Antes esto era un PROMPT de IA del que el código pescaba un saludo con
+    // expresiones regulares. Desde el 2026-08-21 el dueño escribe el saludo y
+    // se manda tal cual — `{{negocio}}` es lo único que se sustituye.
     const args = {
       products: productos,
-      botPrompt: 'Eres Andrea, la asistente virtual de {{nombre_negocio}}, una pizzería de barrio.',
+      welcomeMessage: '¡Hola! 👋 Soy Andrea, la asistente virtual de {{negocio}}.',
     }
     const saludos = [
       'Hola buenas tardes',
@@ -231,9 +234,17 @@ describe('modo menú estilo banco (sin IA)', () => {
     resetMenuFlow(pizzeria.id, 'saludo-configurado')
     const configurado = enviar(pizzeria, 'saludo-configurado', 'hola', {
       ...args,
-      botPrompt: 'Saludo inicial: "Bienvenido a {{nombre_negocio}}. Es un placer atenderle."',
+      welcomeMessage: 'Bienvenido a {{negocio}}. Es un placer atenderle.',
     })
     expect(configurado.reply).toContain('Bienvenido a Pizzería Don Luigi. Es un placer atenderle.')
+
+    // Sin saludo escrito, uno por defecto con el nombre: quedarse callado sería
+    // peor que saludar genérico.
+    resetMenuFlow(pizzeria.id, 'sin-saludo')
+    const porDefecto = enviar(pizzeria, 'sin-saludo', 'hola', {
+      products: productos, welcomeMessage: null,
+    })
+    expect(porDefecto.reply).toContain('Pizzería Don Luigi')
   })
 
   it('pizza: elige SABOR (con ingredientes) y luego TAMAÑO, precio exacto y sabor pegado', () => {

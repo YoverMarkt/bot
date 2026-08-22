@@ -17,7 +17,7 @@ const Customers = lazy(() => import('./features/customers/Customers'))
 const Reactivar = lazy(() => import('./features/customers/Reactivar'))
 const Schedule = lazy(() => import('./features/schedule/Schedule'))
 const Settings = lazy(() => import('./features/settings/Settings'))
-const BotPrompt = lazy(() => import('./features/settings/BotPrompt'))
+const Bienvenida = lazy(() => import('./features/settings/Bienvenida'))
 const Users = lazy(() => import('./features/settings/Users'))
 
 // Solo entra quien tiene sesión; si no, al login.
@@ -56,8 +56,10 @@ export default function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/reactivate" element={<Reactivar />} />
-              <Route path="/bot-prompt" element={<BotPrompt />} />
-              <Route path="/policies" element={<Navigate to="/bot-prompt" replace />} />
+              <Route path="/bienvenida" element={<Bienvenida />} />
+              <Route path="/policies" element={<Navigate to="/bienvenida" replace />} />
+              {/* El enlace viejo sigue funcionando: alguien puede tenerlo guardado. */}
+              <Route path="/bot-prompt" element={<Navigate to="/bienvenida" replace />} />
               <Route path="/users" element={<Users />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />

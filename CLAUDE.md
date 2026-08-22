@@ -182,6 +182,7 @@ bot/
 │   ├── migration-2026-08-21-marketplace-busqueda.sql # ⚠️ se llama así para ordenar DESPUÉS de las categorías, de las que depende
 │   ├── migration-2026-08-21-outbox-de-avisos.sql # El aviso que falla se reintenta en vez de perderse
 │   ├── migration-2026-08-21-retirar-el-modo-ia.sql # Se retira la IA: todo lo que ve el cliente lo escribe el código
+│   ├── migration-2026-08-21-mensaje-de-bienvenida.sql # El dueño escribe su saludo, no un prompt del que se pesca uno
 │   ├── migration-2026-08-20-retirar-tipos-no-delivery.sql # Solo comida y retail: fuera los 21 tipos de hospedaje, servicios y salud
 │   ├── migration-preparacion-produccion.sql # Retiro seguro de cobros automáticos + horarios iniciales
 │   ├── migration-deduplicacion-webhooks.sql # Reclamos atómicos de eventos por negocio
@@ -259,6 +260,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Las keys de IA se leen siempre mediante `server/src/services/ai.ts` y `settings.get('...')`** (panel > .env).
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
+- **El dueño escribe una BIENVENIDA, no un prompt** (`bot_policies.welcome_message`, 2026-08-21). Hasta esta fecha el modo menú sacaba su saludo MINANDO el prompt de la IA con expresiones regulares: buscaba `saludo inicial: "..."` y, si no, la identidad declarada («Eres Andrea, la asistente de…») para armar uno con ella. Tenía sentido mientras el dueño escribía instrucciones para un modelo; retirada la IA, escribe el saludo y se manda **tal cual**. ⚠️ **La conversión NO copió el prompt entero**: un prompt son párrafos de instrucciones y, puesto de saludo, el cliente recibiría el manual del bot como primer mensaje. La migración corre las MISMAS dos reglas que corría el código —así nadie ve un saludo distinto al de ayer— y lo que no dé un saludo se queda nulo, que cae al de por defecto. ⚠️ **El límite de repetición de una regex en PostgreSQL es 255**: con `{1,280}` la conversión reventaba con «invalid repetition count(s)», **y solo con datos** — sin filas que casen el `where`, la expresión ni se evalúa, así que un ensayo sobre una base vacía lo da por bueno. ⚠️ `bot_instructions` se fue sin conversión: era exclusivamente para la IA. `shipping`, `returns` y `discounts` **se quedan** — son texto del dueño que se muestra tal cual. ⚠️ La pantalla pasó de «Prompt del Bot» a «Bienvenida», con `/bot-prompt` redirigiendo para no romper un enlace guardado.
 - **Quedan DOS modos de atención** (`chat_mode`, decisión del dueño 2026-08-21). Se retiró la IA conversacional: **todo lo que ve el cliente lo escribe el CÓDIGO**, con datos de la base y nada redactado por un modelo.
   - `menu` → el CÓDIGO conduce con opciones armadas de los datos reales (`bot-menu-flow.ts`).
   - `miniapp` → el bot manda el enlace personal de la tienda y ahí se pide.

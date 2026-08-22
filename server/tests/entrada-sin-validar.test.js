@@ -106,13 +106,13 @@ describe('políticas: solo se escriben las columnas que existen', () => {
     const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
     const res = await dispatch(profileRouter, 'put', '/api/client/policies', {
       body: {
-        bot_prompt: 'Hola',
+        welcome_message: '¡Hola! 👋',
         delivery_info: 'columna que no existe',
         payment_info: 'otra que tampoco',
       },
     })
     expect(res.status).toBe(200)
-    expect(upsert).toHaveBeenCalledWith('business-a', { bot_prompt: 'Hola' })
+    expect(upsert).toHaveBeenCalledWith('business-a', { welcome_message: '¡Hola! 👋' })
   })
 
   it('un cuerpo sin ninguna columna conocida → 400, sin tocar la base', async () => {
@@ -129,10 +129,10 @@ describe('políticas: solo se escriben las columnas que existen', () => {
     // ni siquiera salga de la ruta lo deja fuera de discusión.
     const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
     await dispatch(profileRouter, 'put', '/api/client/policies', {
-      body: { bot_prompt: 'Hola', business_id: 'business-de-otro', id: 'fila-de-otro' },
+      body: { welcome_message: '¡Hola! 👋', business_id: 'business-de-otro', id: 'fila-de-otro' },
     })
     const [, datos] = upsert.mock.calls[0]
-    expect(datos).toEqual({ bot_prompt: 'Hola' })
+    expect(datos).toEqual({ welcome_message: '¡Hola! 👋' })
     expect(datos).not.toHaveProperty('business_id')
     expect(datos).not.toHaveProperty('id')
   })
@@ -140,7 +140,8 @@ describe('políticas: solo se escriben las columnas que existen', () => {
   it('acepta todas las columnas que el panel sí edita', async () => {
     const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
     const todas = {
-      bot_prompt: 'a', shipping: 'b', returns: 'c', discounts: 'd', bot_instructions: 'e',
+      // `bot_prompt` y `bot_instructions` se fueron con la IA el 2026-08-21.
+      welcome_message: 'a', shipping: 'b', returns: 'c', discounts: 'd',
     }
     await dispatch(profileRouter, 'put', '/api/client/policies', { body: todas })
     expect(upsert).toHaveBeenCalledWith('business-a', todas)

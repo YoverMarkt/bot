@@ -36,7 +36,7 @@ const EMPTY = {
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
   ai_provider: '', sales: 'informa',
-  chat_mode: 'ai', storefront: 'no',
+  chat_mode: 'menu', storefront: 'no',
   plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
@@ -71,7 +71,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ai_provider: c.ai_provider ?? '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
-        chat_mode: ['menu', 'ai', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'ai',
+        chat_mode: ['menu', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'menu',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
@@ -190,7 +190,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
       storefront_enabled: f.storefront === 'yes' && f.sales !== 'informa',
-      chat_mode: (['menu', 'ai', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'ai',
+      chat_mode: (['menu', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'menu',
       notes: f.notes || null,
     }
     const officialPlan = planById(f.plan)
@@ -339,9 +339,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 }}>
                   <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="miniapp">Mini app (enlace para pedir, sin IA)</SelectItem>
-                    <SelectItem value="menu">Menú de opciones (sin IA)</SelectItem>
-                    <SelectItem value="ai">Conversación con IA</SelectItem>
+                    <SelectItem value="miniapp">Mini app (enlace para pedir)</SelectItem>
+                    <SelectItem value="menu">Menú de opciones en el chat</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">

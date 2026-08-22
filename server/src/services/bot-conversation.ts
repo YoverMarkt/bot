@@ -592,17 +592,17 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         : Promise.resolve(null),
       database.getPolicies(business.id).catch(() => null),
     ])
-    const configuredPrompt = policies && typeof policies === 'object' && 'bot_prompt' in policies
-      ? (policies as { bot_prompt?: unknown }).bot_prompt
+    const saludoConfigurado = policies && typeof policies === 'object' && 'welcome_message' in policies
+      ? (policies as { welcome_message?: unknown }).welcome_message
       : null
-    const botPrompt = typeof configuredPrompt === 'string' ? configuredPrompt : null
+    const welcomeMessage = typeof saludoConfigurado === 'string' ? saludoConfigurado : null
 
     const flow = menuFlow.advanceMenuFlow({
       business: business as MenuFlowInput['business'],
       contact: phone,
       message: text,
       products: products as MenuFlowInput['products'],
-      botPrompt,
+      welcomeMessage,
       modifiers: modifiers as MenuFlowInput['modifiers'],
       lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
     })

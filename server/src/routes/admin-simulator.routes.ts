@@ -77,7 +77,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
         contact: SIMULATOR_CONTACT,
         message,
         products: products as MenuFlowInput['products'],
-        botPrompt: typeof policies?.bot_prompt === 'string' ? policies.bot_prompt : null,
+        welcomeMessage: typeof policies?.welcome_message === 'string' ? policies.welcome_message : null,
         modifiers: modifiers as MenuFlowInput['modifiers'],
         lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
       })
