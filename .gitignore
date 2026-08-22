@@ -15,3 +15,6 @@ coverage/
 # Respaldos de la base (nunca a git: contienen datos de clientes)
 respaldos/
 *.dump
+
+# Permisos personales de Claude Code (incluye despliegue a producción)
+.claude/settings.local.json
