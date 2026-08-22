@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { metaGraphUrl } from '../config/meta-graph'
 import { recordError } from '../services/error-log'
+import { getPlatformChannel } from '../services/platform-channel'
 import type { WhatsAppProvider } from '../types/channels'
 import {
   recordOutboundUsage,
@@ -65,13 +66,43 @@ function providerFor(business: WhatsAppBusiness): WhatsAppProvider {
   if (provider === 'telegram') {
     throw new Error('El negocio opera solo por Telegram: no hay canal WhatsApp para este envío')
   }
-  // El negocio del marketplace se atiende por el número de la plataforma, que
-  // todavía no envía por cuenta de nadie. Se dice cuál es la causa en vez de
-  // «proveedor no soportado», que haría pensar en una configuración rota.
+  // El negocio del marketplace envía por el número de la PLATAFORMA, y a
+  // esta función debe llegar ya resuelto por `conCanalDePlataforma`. Si
+  // llega sin resolver es un error de programación —alguien añadió un
+  // camino de envío nuevo y se saltó la resolución—, así que se dice eso y
+  // no «proveedor no soportado», que haría buscar en el sitio equivocado.
   if (provider === 'marketplace') {
-    throw new Error('El negocio se atiende por el número del marketplace: todavía no hay canal propio para este envío')
+    throw new Error('Envío de marketplace sin resolver: falta pasar por conCanalDePlataforma')
   }
   throw new Error(`Proveedor WhatsApp no soportado: ${provider}`)
+}
+
+/**
+ * Cambia un negocio de marketplace por su canal real de salida: el número de
+ * la plataforma.
+ *
+ * Devuelve una COPIA y no toca el original: el objeto del negocio se usa
+ * después para registrar consumo y errores, y `business.id` tiene que seguir
+ * siendo el del local —quien envía es la plataforma, pero quien gasta es él—.
+ *
+ * Los negocios con número propio salen por aquí sin tocarse.
+ */
+async function conCanalDePlataforma(
+  business: WhatsAppBusiness,
+): Promise<WhatsAppBusiness> {
+  if (String(business.whatsapp_provider || '').trim() !== 'marketplace') {
+    return business
+  }
+  const platform = await getPlatformChannel()
+  if (!platform) {
+    throw new Error('El número del marketplace no está configurado: ponlo en Ajustes del servidor')
+  }
+  return {
+    ...business,
+    whatsapp_provider: 'ycloud',
+    ycloud_api_key: platform.apiKey,
+    ycloud_number: platform.number,
+  }
 }
 const ycloudKeyFor = (business: WhatsAppBusiness) => (
   business.ycloud_api_key || process.env.YCLOUD_API_KEY
@@ -117,15 +148,21 @@ async function sendTyping(
   inboundId?: string | null,
 ): Promise<void> {
   let provider: WhatsAppProvider
+  let canal: WhatsAppBusiness
   try {
-    provider = providerFor(business)
+    // ⚠️ Dentro del try: resolver el canal consulta `server_settings` y puede
+    // lanzar si el número del marketplace no está configurado. Fuera, un
+    // negocio sin plataforma tumbaría la respuesta entera por no poder poner
+    // el «escribiendo…», que es justo lo que este best-effort evita.
+    canal = await conCanalDePlataforma(business)
+    provider = providerFor(canal)
   } catch {
     // La lectura es best-effort y nunca debe interrumpir la respuesta.
     return
   }
   if (provider !== 'ycloud' || !inboundId) return
 
-  const apiKey = ycloudKeyFor(business)
+  const apiKey = ycloudKeyFor(canal)
   // Ambas operaciones marcan como leído. Se ejecutan en paralelo para que un
   // timeout del indicador no retrase otros 8 segundos la respuesta del bot.
   const [readResult, typingResult] = await Promise.allSettled([
@@ -150,11 +187,12 @@ async function sendText(
   to: string,
   text: string,
 ): Promise<void> {
-  const provider = providerFor(business)
+  const canal = await conCanalDePlataforma(business)
+  const provider = providerFor(canal)
   try {
     if (provider === 'meta') {
       await axios.post(
-        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
+        metaGraphUrl(String(canal.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -164,7 +202,7 @@ async function sendText(
         },
         {
           headers: {
-            Authorization: `Bearer ${business.meta_token}`,
+            Authorization: `Bearer ${canal.meta_token}`,
             'Content-Type': 'application/json',
           },
           timeout: OUTBOUND_TIMEOUT_MS,
@@ -172,8 +210,8 @@ async function sendText(
       )
     } else {
       await ycloud.sendText(
-        ycloudKeyFor(business),
-        ycloudNumberFor(business),
+        ycloudKeyFor(canal),
+        ycloudNumberFor(canal),
         to,
         text,
       )
@@ -193,11 +231,12 @@ async function sendImage(
   caption = '',
   deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
-  const provider = providerFor(business)
+  const canal = await conCanalDePlataforma(business)
+  const provider = providerFor(canal)
   try {
     if (provider === 'meta') {
       await axios.post(
-        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
+        metaGraphUrl(String(canal.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -207,7 +246,7 @@ async function sendImage(
         },
         {
           headers: {
-            Authorization: `Bearer ${business.meta_token}`,
+            Authorization: `Bearer ${canal.meta_token}`,
             'Content-Type': 'application/json',
           },
           timeout: OUTBOUND_TIMEOUT_MS,
@@ -215,8 +254,8 @@ async function sendImage(
       )
     } else {
       await ycloud.sendImage(
-        ycloudKeyFor(business),
-        ycloudNumberFor(business),
+        ycloudKeyFor(canal),
+        ycloudNumberFor(canal),
         to,
         imageUrl,
         caption,
@@ -238,11 +277,12 @@ async function sendVideo(
   caption = '',
   deliveryMode: DeliveryMode = 'queued',
 ): Promise<void> {
-  const provider = providerFor(business)
+  const canal = await conCanalDePlataforma(business)
+  const provider = providerFor(canal)
   try {
     if (provider === 'meta') {
       await axios.post(
-        metaGraphUrl(String(business.meta_phone_id || ''), 'messages'),
+        metaGraphUrl(String(canal.meta_phone_id || ''), 'messages'),
         {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -252,7 +292,7 @@ async function sendVideo(
         },
         {
           headers: {
-            Authorization: `Bearer ${business.meta_token}`,
+            Authorization: `Bearer ${canal.meta_token}`,
             'Content-Type': 'application/json',
           },
           timeout: OUTBOUND_TIMEOUT_MS,
@@ -260,8 +300,8 @@ async function sendVideo(
       )
     } else {
       await ycloud.sendVideo(
-        ycloudKeyFor(business),
-        ycloudNumberFor(business),
+        ycloudKeyFor(canal),
+        ycloudNumberFor(canal),
         to,
         videoUrl,
         caption,
@@ -287,11 +327,12 @@ async function sendInteractive(
   listButtonText?: string,
   deliveryMode: DeliveryMode = 'queued',
 ): Promise<boolean> {
-  if (providerFor(business) !== 'ycloud') return false
+  const canal = await conCanalDePlataforma(business)
+  if (providerFor(canal) !== 'ycloud') return false
   try {
     const sent = await ycloud.sendInteractive(
-      ycloudKeyFor(business),
-      ycloudNumberFor(business),
+      ycloudKeyFor(canal),
+      ycloudNumberFor(canal),
       to,
       body,
       options,
@@ -325,11 +366,12 @@ async function sendLinkButton(
   message: { body: string; url: string; label: string; footer?: string | null },
   deliveryMode: DeliveryMode = 'queued',
 ): Promise<boolean> {
-  if (providerFor(business) !== 'ycloud') return false
+  const canal = await conCanalDePlataforma(business)
+  if (providerFor(canal) !== 'ycloud') return false
   try {
     const sent = await ycloud.sendCtaUrl(
-      ycloudKeyFor(business),
-      ycloudNumberFor(business),
+      ycloudKeyFor(canal),
+      ycloudNumberFor(canal),
       to,
       message,
       deliveryMode === 'direct',

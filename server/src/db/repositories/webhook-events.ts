@@ -68,8 +68,12 @@ export function createWebhookEventsRepository(client: WebhookRpcClient) {
     },
   )
 
+  // `businessId` nulo = mensaje al número del marketplace, todavía sin local
+  // elegido. La RPC lo acepta desde el 2026-08-21 y sus índices parciales
+  // deduplican igual; `claimWebhookEvent` sigue exigiéndolo, que es correcto
+  // porque solo lo usan los canales con número propio.
   const enqueueWebhookEvent = async (
-    businessId: string,
+    businessId: string | null,
     provider: WebhookProvider,
     messageId: string,
     conversationKey: string,
