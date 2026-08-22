@@ -600,7 +600,16 @@ declare
   v_message_type text;
   v_inbound_hash text;
 begin
-  if new.stream_key_hash is null then
+  -- Sin `business_id` el mensaje llegó al número de la PLATAFORMA y el
+  -- cliente todavía no eligió local: no es consumo de ningún negocio, así
+  -- que no se le cobra a nadie. Es la misma regla que el saliente, donde
+  -- `recordOutboundUsage` con negocio nulo tampoco escribe.
+  --
+  -- ⚠️ Sin este corte, `message_usage_events.business_id not null` abortaba
+  -- la inserción ENTERA en la cola: el mensaje del marketplace ni se
+  -- encolaba. Solo aparece con datos — sobre una tabla vacía el trigger no
+  -- llega a dispararse.
+  if new.stream_key_hash is null or new.business_id is null then
     return new;
   end if;
 
@@ -1094,7 +1103,9 @@ create table if not exists order_items (
 -- deduplicar redeliveries durante 24 horas.
 create table if not exists webhook_inbound_events (
   id              uuid primary key default gen_random_uuid(),
-  business_id     uuid not null references businesses(id) on delete cascade,
+  -- Nulo mientras el cliente no ha elegido local: un mensaje al número del
+  -- marketplace todavía no pertenece a ningún negocio (2026-08-21).
+  business_id     uuid references businesses(id) on delete cascade,
   provider        text not null check (provider in ('meta', 'ycloud')),
   message_id_hash text not null check (message_id_hash ~ '^[0-9a-f]{64}$'),
   payload_version smallint not null default 1,
@@ -1229,6 +1240,21 @@ create index if not exists idx_webhook_inbox_stream_order
 create unique index if not exists uq_webhook_inbox_processing_stream
   on webhook_inbound_events(business_id, provider, stream_key_hash)
   where status = 'processing';
+
+-- Gemelos para los eventos del marketplace, que llegan sin negocio elegido.
+-- ⚠️ Hacen falta porque en SQL dos NULL no son iguales: los índices únicos
+-- de arriba, que empiezan por `business_id`, NO deduplican nada cuando ese
+-- valor es nulo. Sin estos, el mismo mensaje reentregado —la cola es
+-- at-least-once— se contestaría dos veces.
+create unique index if not exists uq_webhook_events_plataforma_hash
+  on webhook_inbound_events(provider, message_id_hash)
+  where business_id is null;
+create unique index if not exists uq_webhook_inbox_plataforma_stream
+  on webhook_inbound_events(provider, stream_key_hash)
+  where status = 'processing' and business_id is null;
+create index if not exists idx_webhook_inbox_plataforma_orden
+  on webhook_inbound_events(provider, stream_key_hash, received_at, id)
+  where status in ('pending', 'processing') and business_id is null;
 
 -- Normalización compatible con instalaciones creadas antes de que la duración
 -- y el tenant de las reservas fueran obligatorios.
@@ -1712,9 +1738,6 @@ declare
   v_quiet_until timestamptz;
   v_is_text boolean;
 begin
-  if p_business_id is null then
-    raise exception using errcode = '22023', message = 'El negocio es obligatorio';
-  end if;
   if p_provider not in ('meta', 'ycloud') then
     raise exception using errcode = '22023', message = 'Proveedor de webhook invalido';
   end if;
@@ -1740,7 +1763,7 @@ begin
   -- concurrentes observan la ventana más reciente y un duplicado nunca la
   -- prolonga. Una colisión del hash solo reduce concurrencia, no mezcla datos.
   perform pg_advisory_xact_lock(hashtextextended(
-    p_business_id::text || ':' || p_provider || ':' || p_stream_key_hash,
+    coalesce(p_business_id::text, 'plataforma') || ':' || p_provider || ':' || p_stream_key_hash,
     0
   ));
   v_received_at := clock_timestamp();
@@ -1777,7 +1800,7 @@ begin
     v_received_at,
     v_received_at
   )
-  on conflict (business_id, provider, message_id_hash) do nothing
+  on conflict do nothing
   returning id into v_event_id;
 
   if not found then
@@ -1788,7 +1811,7 @@ begin
     update public.webhook_inbound_events as queued
     set available_at = greatest(queued.available_at, v_quiet_until),
         updated_at = clock_timestamp()
-    where queued.business_id = p_business_id
+    where queued.business_id is not distinct from p_business_id
       and queued.provider = p_provider
       and queued.stream_key_hash = p_stream_key_hash
       and queued.status = 'pending'
@@ -1801,7 +1824,7 @@ begin
       and not exists (
         select 1
         from public.webhook_inbound_events as boundary
-        where boundary.business_id = queued.business_id
+        where boundary.business_id is not distinct from queued.business_id
           and boundary.provider = queued.provider
           and boundary.stream_key_hash = queued.stream_key_hash
           and boundary.status in ('pending', 'processing')
@@ -1975,7 +1998,7 @@ begin
         dead_at = now(),
         updated_at = now()
     where event.id = any(v_terminal_ids)
-      and event.business_id = v_terminal_head.business_id
+      and event.business_id is not distinct from v_terminal_head.business_id
       and event.provider = v_terminal_head.provider
       and event.stream_key_hash = v_terminal_head.stream_key_hash
       and (
@@ -2019,7 +2042,7 @@ begin
       and not exists (
         select 1
         from public.webhook_inbound_events as earlier
-        where earlier.business_id = event.business_id
+        where earlier.business_id is not distinct from event.business_id
           and earlier.provider = event.provider
           and earlier.stream_key_hash = event.stream_key_hash
           and earlier.status in ('pending', 'processing')
@@ -2067,7 +2090,7 @@ begin
             rows between unbounded preceding and current row
           ) as combined_length
         from public.webhook_inbound_events as member
-        where member.business_id = v_head.business_id
+        where member.business_id is not distinct from v_head.business_id
           and member.provider = v_head.provider
           and member.stream_key_hash = v_head.stream_key_hash
           and member.status = 'pending'
@@ -2083,7 +2106,7 @@ begin
           and not exists (
             select 1
             from public.webhook_inbound_events as boundary
-            where boundary.business_id = v_head.business_id
+            where boundary.business_id is not distinct from v_head.business_id
               and boundary.provider = v_head.provider
               and boundary.stream_key_hash = v_head.stream_key_hash
               and boundary.status in ('pending', 'processing')

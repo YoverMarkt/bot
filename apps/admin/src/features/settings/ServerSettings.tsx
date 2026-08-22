@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
-import { Bot as BotIcon, Cloud, Plug, Search } from 'lucide-react'
+import { Bot as BotIcon, Cloud, Plug, Search, Store } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -122,6 +122,40 @@ export default function ServerSettings() {
           <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
         </div>
+      </Card>
+
+      {/* El número de Umbani */}
+      <Card className={card}>
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Store className="w-4 h-4" /> Número del marketplace (Umbani)</h2>
+        <p className="mb-3 text-xs text-muted-foreground">
+          El número por el que escriben TODOS los clientes. No pertenece a
+          ningún local: es el de la plataforma, y por eso vive aquí y no en la
+          ficha de un negocio. Sin él, los locales sin número propio no reciben
+          ni envían WhatsApp.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="server-platform-number">Número de WhatsApp {saved.platform_ycloud_number && <em className="text-muted-foreground not-italic">— {saved.platform_ycloud_number}</em>}</Label>
+            <Input id="server-platform-number" value={val('platform_ycloud_number')} onChange={set('platform_ycloud_number')} placeholder={saved.platform_ycloud_number || '+593…'} />
+          </div>
+          <div>
+            <Label htmlFor="server-platform-api-key">YCloud API Key {saved.platform_ycloud_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</Label>
+            <Input id="server-platform-api-key" type="password" value={val('platform_ycloud_api_key')} onChange={set('platform_ycloud_api_key')} placeholder={saved.platform_ycloud_api_key || 'Escribe solo para reemplazarla'} />
+          </div>
+          <div>
+            <Label htmlFor="server-platform-endpoint">Webhook Endpoint ID</Label>
+            <Input id="server-platform-endpoint" value={val('platform_webhook_endpoint_id')} onChange={set('platform_webhook_endpoint_id')} placeholder={saved.platform_webhook_endpoint_id || 'Developers → Webhooks'} />
+          </div>
+          <div>
+            <Label htmlFor="server-platform-secret">Webhook Signing Secret {saved.platform_webhook_secret && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
+            <Input id="server-platform-secret" type="password" value={val('platform_webhook_secret')} onChange={set('platform_webhook_secret')} placeholder={saved.platform_webhook_secret || 'whsec_…'} />
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          En producción el signing secret es <strong>obligatorio</strong>: sin
+          él no hay con qué comprobar la firma de un mensaje que llega sin
+          local, y el webhook responde 503 en vez de aceptarlo sin verificar.
+        </p>
       </Card>
 
       {/* Otras conexiones */}

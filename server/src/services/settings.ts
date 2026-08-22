@@ -19,6 +19,22 @@ export const ALLOWED_KEYS = [
   'cloudinary_cloud_name',
   'cloudinary_api_key',
   'cloudinary_api_secret',
+  // ── El número de la plataforma (Umbani) ──────────────────────────────
+  // Con un solo número para todo el marketplace, estas credenciales NO
+  // pueden vivir en la ficha de un negocio: el número no es de ningún
+  // local. Guardarlo en uno obligaría a elegir a dedo un negocio
+  // «portador», y el enrutado dependería de a cuál se mire primero —
+  // que es justo lo que `businesses_marketplace_sin_canal_check`
+  // prohíbe desde el 2026-08-20.
+  //
+  // ⚠️ `platform_webhook_secret` es lo que valida la firma de un mensaje
+  // que llega SIN negocio que resolver. Sin él, ese camino no tendría con
+  // qué comprobar la firma, y aceptar sin comprobar convertiría el webhook
+  // en un buzón abierto.
+  'platform_ycloud_api_key',
+  'platform_ycloud_number',
+  'platform_webhook_secret',
+  'platform_webhook_endpoint_id',
 ] as const
 
 type AllowedKey = typeof ALLOWED_KEYS[number]
