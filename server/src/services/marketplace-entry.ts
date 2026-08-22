@@ -9,6 +9,12 @@ import {
   type MarketplaceReply,
   type MarketplaceView,
 } from './marketplace-menu'
+import { optionTitle } from './bot-menu-flow'
+import type {
+  FlowState,
+  MenuFlowInput,
+  MenuFlowResult,
+} from './bot-menu-flow'
 
 /**
  * LA ENTRADA DEL MARKETPLACE
@@ -57,6 +63,15 @@ export interface MarketplaceEntryDatabase {
     storefront_enabled?: boolean | null
     takes_orders?: boolean | null
   } | null>
+  /** Cuántos productos ACTIVOS tiene el local. Decide chat o enlace. */
+  countProducts(businessId: string): Promise<number>
+  getProducts(businessId: string): Promise<unknown[]>
+  getMenuModifiers?(businessId: string): Promise<unknown[]>
+  getLastOrderForContact?(
+    businessId: string,
+    phone: string,
+  ): Promise<{ order_items?: unknown[] } | null>
+  getPolicies(businessId: string): Promise<{ welcome_message?: unknown } | null>
 }
 
 export interface MarketplaceEntryDeps {
@@ -69,6 +84,27 @@ export interface MarketplaceEntryDeps {
     force?: boolean
   }): Promise<string | null>
   send(reply: string, options: string[]): Promise<void>
+  /**
+   * Cuántos productos caben en el chat. Por encima, se manda el enlace.
+   *
+   * Se inyecta en vez de leerse aquí para poder probar los dos lados del
+   * umbral sin tocar `server_settings`.
+   */
+  maxProductosEnChat(): Promise<number>
+  /** Un paso de la máquina de estados del menú, con el estado fuera. */
+  avanzarMenu(
+    input: MenuFlowInput,
+    estadoPrevio: FlowState | null,
+  ): { resultado: MenuFlowResult; estado: FlowState | null }
+  /** Crea el pedido con `money.ts` y las RPC atómicas de siempre. */
+  crearPedido(input: {
+    business: Record<string, unknown>
+    phone: string
+    items: { name: string; qty: number; note?: string | null }[]
+    payload: string
+    products: unknown[]
+    send: (mensaje: string) => Promise<unknown>
+  }): Promise<boolean>
   logger?: { log(...args: unknown[]): void }
 }
 
@@ -148,14 +184,26 @@ export async function handleMarketplaceMessage(
     return
   }
 
-  // ── 3. Un pedido a la vez ──────────────────────────────────────────
+  // ── 3. ¿Está pidiendo DENTRO del chat en un local pequeño? ─────────
+  //
+  // Va antes del bloqueo de «un pedido a la vez» porque aquí el cliente no
+  // está intentando empezar otra cosa: está en medio de su pedido, y este
+  // mensaje es su siguiente elección del menú.
+  if (conversation?.current_state === 'pidiendo' && conversation.selected_business_id) {
+    await conducirEnElChat(
+      deps, customer, from, conversation.selected_business_id, text, conversation,
+    )
+    return
+  }
+
+  // ── 4. Un pedido a la vez ──────────────────────────────────────────
   if (estado.bloqueado && negocioActual) {
     const respuesta = recordarPedidoEnProceso({ name: negocioActual.name })
     await send(respuesta.reply, respuesta.options)
     return
   }
 
-  // ── 4. El menú ─────────────────────────────────────────────────────
+  // ── 5. El menú ─────────────────────────────────────────────────────
   //
   // `paso` es una función PURA: no consulta nada. Cuando el cliente elige una
   // categoría devuelve la vista nueva con el texto vacío, porque los locales
@@ -189,13 +237,19 @@ export async function handleMarketplaceMessage(
 }
 
 /**
- * El cliente eligió local: se le manda el enlace de su tienda y la
- * conversación queda apuntando ahí.
+ * El cliente eligió local. Aquí se decide CÓMO va a pedir.
  *
- * ⚠️ El local se guarda ANTES de mandar el enlace. Si se guardara después y
- * el envío fallara, el cliente tendría un enlace en el chat y la plataforma
- * creería que sigue en la portada — y su siguiente mensaje lo devolvería al
- * menú, con la tienda abierta en el teléfono.
+ * ⚠️ La regla la decide el CATÁLOGO REAL, contado en este momento, y no el
+ * tipo de negocio ni una estimación del alta. Al crear un local tiene cero
+ * productos —`apply_business_template` siembra categorías y grupos de
+ * opciones, no productos—, así que en el alta no hay nada que contar y
+ * cualquier respuesta de entonces sería inventada.
+ *
+ * ⚠️ Esto NO pisa `chat_mode`. Aquel gobierna el canal PROPIO de un negocio
+ * (su número, si lo tiene); esto gobierna la experiencia dentro del
+ * marketplace, donde el cliente llegó por el número de la plataforma. Son dos
+ * contextos distintos y no se contradicen, así que no hace falta ninguna
+ * columna nueva ni sobrescribir la decisión de nadie.
  */
 async function entregarLocal(
   deps: MarketplaceEntryDeps,
@@ -204,18 +258,51 @@ async function entregarLocal(
   negocio: MarketplaceBusiness,
   version: number | undefined,
 ): Promise<void> {
-  const { database, send, logger } = deps
+  const { database, logger } = deps
+
+  const [productos, maximo] = await Promise.all([
+    database.countProducts(negocio.id).catch(() => Number.MAX_SAFE_INTEGER),
+    deps.maxProductosEnChat(),
+  ])
+  // Ante un fallo al contar se manda el ENLACE: la tienda sabe atender
+  // cualquier catálogo, mientras que el menú del chat con cientos de
+  // productos sería inusable. Se falla hacia lo que siempre funciona.
+  const enElChat = productos > 0 && productos <= maximo
 
   await database.advanceConversation(
     customer.id,
     {
-      state: 'en_local',
+      state: enElChat ? 'pidiendo' : 'en_local',
       businessId: negocio.id,
+      // El menú del local empieza limpio: `advanceMenuFlowConEstado` con
+      // estado nulo devuelve la bienvenida y el menú principal.
       flowState: { vista: { vista: 'negocios', categoria: negocio.type, pagina: 0 } },
     },
     version,
   )
 
+  logger?.log(
+    `🏬 [marketplace] ${negocio.slug}: ${productos} productos → ${enElChat ? 'chat' : 'enlace'}`,
+  )
+
+  if (enElChat) {
+    // Se entra en el menú del local YA, con este mismo mensaje: hacerle
+    // escribir otra vez para ver la carta costaría un mensaje de más.
+    await conducirEnElChat(deps, customer, phone, negocio.id, '', null)
+    return
+  }
+
+  await mandarElEnlace(deps, customer, phone, negocio)
+}
+
+/** El local es grande: se pide en la mini app. */
+async function mandarElEnlace(
+  deps: MarketplaceEntryDeps,
+  customer: { id: string; name: string | null },
+  phone: string,
+  negocio: MarketplaceBusiness,
+): Promise<void> {
+  const { database, send, logger } = deps
   const business = await database.getBusinessById(negocio.id)
   const url = business
     ? await deps.issueLink({
@@ -243,6 +330,106 @@ async function entregarLocal(
     + 'Cuando termines te aviso por aquí mismo. Para volver al inicio, escribe *MENÚ*.',
     [],
   )
+}
+
+/**
+ * El local es pequeño: se pide DENTRO del chat, eligiendo de una lista.
+ *
+ * Reutiliza `bot-menu-flow`, la misma máquina de estados que ya conduce a los
+ * negocios con número propio en modo menú. No hay un segundo motor: un
+ * segundo motor sería un segundo sitio donde arreglar cada bug.
+ *
+ * ⚠️ El estado vive en `marketplace_conversations.flow_state`, NO en el `Map`
+ * en memoria de `bot-menu-flow`. Ese `Map` se pierde en cada despliegue de
+ * Railway y con dos instancias lleva dos cuentas del mismo carrito: un
+ * cliente a media compra perdería lo que llevaba sin que nada lo avisara.
+ */
+async function conducirEnElChat(
+  deps: MarketplaceEntryDeps,
+  customer: { id: string; name: string | null },
+  phone: string,
+  businessId: string,
+  mensaje: string,
+  conversacion: { flow_state: Record<string, unknown> | null; version: number } | null,
+): Promise<void> {
+  const { database, send, logger } = deps
+
+  const business = await database.getBusinessById(businessId)
+  if (!business) {
+    // El local desapareció a media compra. Se dice y se ofrece la salida en
+    // vez de dejar al cliente hablando con un catálogo que ya no existe.
+    await send(
+      '😕 Ese local ya no está disponible. Escribe *MENÚ* para elegir otro.',
+      [],
+    )
+    return
+  }
+
+  const [productos, modifiers, lastOrder, policies] = await Promise.all([
+    database.getProducts(businessId).catch(() => [] as unknown[]),
+    database.getMenuModifiers
+      ? database.getMenuModifiers(businessId).catch(() => [] as unknown[])
+      : Promise.resolve([] as unknown[]),
+    database.getLastOrderForContact
+      ? database.getLastOrderForContact(businessId, phone).catch(() => null)
+      : Promise.resolve(null),
+    database.getPolicies(businessId).catch(() => null),
+  ])
+
+  const saludo = policies && typeof policies.welcome_message === 'string'
+    ? policies.welcome_message
+    : null
+  const estadoPrevio = (conversacion?.flow_state?.menu as FlowState | undefined) ?? null
+
+  const { resultado, estado } = deps.avanzarMenu({
+    business: business as unknown as MenuFlowInput['business'],
+    contact: phone,
+    message: mensaje,
+    products: productos as MenuFlowInput['products'],
+    welcomeMessage: saludo,
+    modifiers: modifiers as MenuFlowInput['modifiers'],
+    lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
+  }, estadoPrevio)
+
+  let respuesta = resultado.reply
+  // `MenuOption` puede traer descripción; el envío del marketplace manda
+  // títulos. `optionTitle` es el mismo conversor que usa el canal propio.
+  let opciones = resultado.options.map(optionTitle)
+
+  // ── El cliente confirmó su pedido ──────────────────────────────────
+  //
+  // El total oficial lo calcula SIEMPRE `money.ts` con las RPC atómicas: el
+  // menú solo aporta QUÉ pidió, nunca un monto. Es la regla #8 y aquí no
+  // cambia por venir del marketplace.
+  if (resultado.action?.type === 'order') {
+    const creado = await deps.crearPedido({
+      business: business as unknown as Record<string, unknown>,
+      phone,
+      items: resultado.action.items,
+      payload: resultado.action.payload,
+      products: productos,
+      send: mensaje => send(String(mensaje), []),
+    })
+    // `crearPedido` ya mandó el resumen oficial si lo creó.
+    respuesta = creado
+      ? '¿Necesitas algo más?'
+      : 'No pude confirmar de forma segura si el pedido quedó registrado. '
+        + 'Para no duplicarlo, no lo envíes otra vez; el equipo lo revisará 🙏'
+    opciones = []
+    logger?.log(`🛒 [marketplace] pedido en el chat: ${creado ? 'creado' : 'sin total oficial'}`)
+  }
+
+  await database.advanceConversation(
+    customer.id,
+    {
+      state: 'pidiendo',
+      businessId,
+      flowState: { menu: (estado ?? null) as unknown as Record<string, unknown> },
+    },
+    conversacion?.version,
+  )
+
+  if (respuesta || opciones.length) await send(respuesta, opciones)
 }
 
 /** Guarda dónde quedó la conversación. */

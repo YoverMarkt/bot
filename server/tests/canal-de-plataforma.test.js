@@ -167,6 +167,13 @@ describe('el menú del marketplace, de punta a punta', () => {
         id: 'biz-1', name: 'Monster Pizza', slug: 'monster-pizza',
         storefront_enabled: true, takes_orders: true,
       }),
+      // Catálogo grande: estos casos cubren el camino del ENLACE. La regla
+      // de los 20 y el pedido dentro del chat viven en su propio archivo.
+      countProducts: vi.fn().mockResolvedValue(80),
+      getProducts: vi.fn().mockResolvedValue([]),
+      getMenuModifiers: vi.fn().mockResolvedValue([]),
+      getLastOrderForContact: vi.fn().mockResolvedValue(null),
+      getPolicies: vi.fn().mockResolvedValue(null),
       ...overrides.database,
     }
     const enviados = []
@@ -179,6 +186,12 @@ describe('el menú del marketplace, de punta a punta', () => {
         issueLink: overrides.issueLink
           || vi.fn().mockResolvedValue('https://umbani.app/t/monster-pizza?k=abc'),
         send: async (reply, options) => { enviados.push({ reply, options }) },
+        maxProductosEnChat: async () => 20,
+        avanzarMenu: vi.fn(() => ({
+          resultado: { reply: '', options: [] },
+          estado: null,
+        })),
+        crearPedido: vi.fn().mockResolvedValue(true),
         logger: { log: () => {} },
       },
     }

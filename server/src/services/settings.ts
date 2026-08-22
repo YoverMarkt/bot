@@ -35,6 +35,13 @@ export const ALLOWED_KEYS = [
   'platform_ycloud_number',
   'platform_webhook_secret',
   'platform_webhook_endpoint_id',
+  // Hasta cuántos productos se pide DENTRO del chat. Por encima, el local
+  // manda el enlace de su tienda: una lista de WhatsApp admite diez filas,
+  // así que un catálogo grande se navega mejor en la app.
+  //
+  // Vive aquí y no en el código para poder moverlo sin desplegar: el número
+  // bueno se sabrá viendo pedidos reales, no antes.
+  'marketplace_menu_max_productos',
 ] as const
 
 type AllowedKey = typeof ALLOWED_KEYS[number]
