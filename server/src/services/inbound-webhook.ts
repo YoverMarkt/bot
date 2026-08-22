@@ -26,7 +26,11 @@ interface InboundBatchMetadata {
 export interface InboundWebhookPayload {
   version: 1
   provider: WhatsAppProvider
-  businessId: string
+  /**
+   * Nulo mientras el mensaje llegó al número del marketplace y el cliente
+   * todavía no eligió local. Con número propio siempre viene resuelto.
+   */
+  businessId: string | null
   from: string
   inboundId: string
   channelAddress: WhatsAppChannelAddress
@@ -54,7 +58,7 @@ interface InboundDatabase {
 
 interface MessageOptions {
   inboundId: string
-  businessId: string
+  businessId: string | null
   channelAddress: WhatsAppChannelAddress
   bypassDebounce?: boolean
 }
@@ -110,6 +114,14 @@ export interface InboundWebhookDependencies {
    * antes de que el bloqueo existiera.
    */
   contactoBloqueado?: (businessId: string, contactPhone: string) => Promise<boolean>
+  /**
+   * Atiende un mensaje al número de la PLATAFORMA, donde todavía no hay local.
+   *
+   * Opcional como el resto de ganchos: sin ella el mensaje se descarta con un
+   * aviso, que es exactamente lo que pasaba antes de que el marketplace
+   * existiera. Así una instalación sin número de plataforma no cambia.
+   */
+  atenderMarketplace?: (input: { from: string; text: string }) => Promise<void>
   esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
   /** Sube la foto y la engancha al pedido. Devuelve el número si lo logró. */
   adjuntarComprobante?: (
@@ -124,7 +136,8 @@ export interface InboundWebhookDependencies {
 }
 
 export interface InboundWebhookExpectation {
-  businessId: string
+  /** Nulo en los eventos del número de la plataforma. */
+  businessId: string | null
   provider: WhatsAppProvider
   eventId?: string
 }
@@ -209,13 +222,19 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
   if (provider !== 'meta' && provider !== 'ycloud') {
     throw new Error('Proveedor durable de webhook inválido')
   }
-  const businessId = boundedText(payload.businessId, 128)
+  // Ausente = mensaje al número de la plataforma, sin local elegido todavía.
+  // Presente pero ilegible sigue siendo un error: eso es un payload corrupto,
+  // no un mensaje de marketplace, y tratarlos igual escondería el corrupto.
+  const businessId = payload.businessId == null
+    ? null
+    : boundedText(payload.businessId, 128) || null
+  const businessIdCorrupto = payload.businessId != null && !businessId
   const from = boundedText(payload.from, 64)
   const inboundId = boundedText(payload.inboundId)
   const address = recordValue(payload.channelAddress)
   const identifierType = address?.identifierType
   const identifier = boundedText(address?.identifier, 255)
-  if (!businessId || !from || !inboundId || address?.provider !== provider
+  if (businessIdCorrupto || !from || !inboundId || address?.provider !== provider
     || (identifierType !== 'phone' && identifierType !== 'account_id')
     || !identifier
     || !normalizeChannelIdentifier(identifierType, identifier)) {
@@ -263,7 +282,13 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
 }
 
 export function inboundConversationKey(payload: InboundWebhookPayload): string {
-  return `${payload.provider}:${payload.businessId}:${payload.from}`
+  // Sin negocio, la conversación es la del cliente con la PLATAFORMA, y el
+  // teléfono basta para identificarla. Se escribe 'plataforma' y no se deja
+  // el `null` que produciría la interpolación: el hash sale igual de único,
+  // pero un stream key que dice «plataforma» se lee en un log, y un `null`
+  // ahí parece un dato que se perdió.
+  const tenant = payload.businessId ?? 'plataforma'
+  return `${payload.provider}:${tenant}:${payload.from}`
 }
 
 function validatedYCloudMediaUrl(value?: string): string {
@@ -358,6 +383,29 @@ export function createInboundWebhookProcessor(
         throw new Error('El lote durable no coincide con el evento reservado')
       }
     }
+    // ── El número de la PLATAFORMA: aún no hay local ───────────────────
+    //
+    // Va ANTES de resolver el negocio porque aquí no hay ninguno que
+    // resolver: el cliente escribió a Umbani y todavía no ha elegido. El
+    // menú del marketplace lo lleva hasta la puerta del local correcto.
+    //
+    // ⚠️ Solo se atiende TEXTO. Una foto o un audio antes de elegir local no
+    // tienen nada a lo que referirse —no hay pedido, no hay catálogo, no hay
+    // comprobante que adjuntar—, así que bajarlos sería pagar tráfico por un
+    // archivo que nadie va a mirar. Es el mismo criterio del atajo del modo
+    // mini app, unas líneas más abajo.
+    if (payload.businessId === null) {
+      if (!dependencies.atenderMarketplace) {
+        logger.log('⚠️  [marketplace] llegó un mensaje pero no hay quien lo atienda')
+        return
+      }
+      const texto = payload.content.kind === 'text'
+        ? payload.content.text
+        : payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]'
+      await dependencies.atenderMarketplace({ from: payload.from, text: texto })
+      return
+    }
+
     const business = await dependencies.database.getBusinessByChannel(
       payload.channelAddress,
     )
@@ -566,6 +614,46 @@ const processor = createInboundWebhookProcessor({
   adjuntarComprobante: (businessId, contactPhone, imagen) => {
     const bot = require('./bot-entry') as typeof import('./bot-entry')
     return bot.adjuntarComprobante(businessId, contactPhone, imagen)
+  },
+  /**
+   * El menú del marketplace: categorías → locales → el enlace de su tienda.
+   *
+   * Carga diferida como el resto, para no cerrar un ciclo de importaciones al
+   * arrancar (`marketplace-entry` → `storefront-link` → `db` → …).
+   */
+  atenderMarketplace: async ({ from, text }) => {
+    const db = require('../db') as typeof import('../db')
+    const entry = require('./marketplace-entry') as typeof import('./marketplace-entry')
+    const link = require('./storefront-link') as typeof import('./storefront-link')
+    const platform = require('./platform-channel') as typeof import('./platform-channel')
+    const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
+    const acciones = require('./bot-actions') as typeof import('./bot-actions')
+    const settings = require('./settings') as typeof import('./settings')
+    await entry.handleMarketplaceMessage({ from, text }, {
+      database: db,
+      issueLink: link.issueStorefrontLink,
+      send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
+      // El umbral vive en `server_settings` para moverlo sin desplegar: el
+      // número bueno se sabrá viendo pedidos reales, no antes.
+      maxProductosEnChat: async () => {
+        const valor = Number(await settings.get('marketplace_menu_max_productos'))
+        return Number.isFinite(valor) && valor > 0 ? valor : 20
+      },
+      avanzarMenu: menu.advanceMenuFlowConEstado,
+      // El MISMO camino del dinero que usa el canal propio: `money.ts` y las
+      // RPC atómicas. El marketplace no abre una vía de cobro paralela.
+      crearPedido: entrada => acciones.processOrderPayload({
+        business: entrada.business as unknown as Parameters<typeof acciones.processOrderPayload>[0]['business'],
+        phone: entrada.phone,
+        session: null,
+        payload: entrada.payload,
+        items: entrada.items,
+        products: entrada.products as Parameters<typeof acciones.processOrderPayload>[0]['products'],
+        preFiltered: false,
+        send: entrada.send,
+      }),
+      logger: console,
+    })
   },
 })
 

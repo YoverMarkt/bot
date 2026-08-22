@@ -37,6 +37,47 @@ export interface ConversationPatch {
   clearFlow?: boolean
 }
 
+/**
+ * El cliente detrás de un teléfono, sin negocio de por medio.
+ *
+ * ⚠️ Existe aparte de `resolveCustomer` (storefront.ts) porque aquel EXIGE un
+ * `businessId` para dejar la fila en `business_customers`, y aquí todavía no
+ * hay local: el cliente acaba de escribir a Umbani y aún no ha elegido. Crear
+ * esa relación antes de que elija inventaría un vínculo con un negocio que
+ * quizá nunca visite, y ese vínculo es justo lo que un local ve de sus
+ * clientes.
+ *
+ * `customers` no lleva `business_id` —es de la plataforma, como esta misma
+ * tabla— así que la consulta no necesita filtro de tenant. La relación con el
+ * local se crea después, cuando lo elige.
+ */
+const resolveMarketplaceCustomer = async (
+  phone: string,
+): Promise<{ id: string; phone: string; name: string | null }> => {
+  // Mismos dígitos que `resolveCustomer`: el mismo teléfono llega con `+` por
+  // un canal y sin él por otro, y dos formas de escribirlo serían dos clientes.
+  const digits = String(phone || '').replace(/\D/g, '')
+  if (!digits) throw new Error('El teléfono del cliente es obligatorio')
+
+  const existing = await db
+    .from('customers')
+    .select('id,phone,name')
+    .eq('phone', digits)
+    .maybeSingle()
+  if (existing.error) throw new Error(existing.error.message)
+  if (existing.data) {
+    return existing.data as { id: string; phone: string; name: string | null }
+  }
+
+  const created = await db
+    .from('customers')
+    .insert({ phone: digits, name: null })
+    .select('id,phone,name')
+    .single()
+  if (created.error) throw new Error(created.error.message)
+  return created.data as { id: string; phone: string; name: string | null }
+}
+
 const getConversation = async (
   customerId: string,
 ): Promise<MarketplaceConversation | null> => {
@@ -90,4 +131,9 @@ const searchScopeFor = (
   conversation?.selected_business_id ? 'current_business' : 'global'
 )
 
-export { getConversation, advanceConversation, searchScopeFor }
+export {
+  getConversation,
+  advanceConversation,
+  searchScopeFor,
+  resolveMarketplaceCustomer,
+}
