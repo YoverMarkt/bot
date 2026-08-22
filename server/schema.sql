@@ -88,14 +88,19 @@ create table if not exists businesses (
   takes_orders        boolean not null default true,
   -- Quién conduce la conversación:
   --   'ai'      → conversa con IA y se pide por chat
-  --   'menu'    → máquina de estados por código, sin IA, con los datos reales
-  --   'miniapp' → la IA resuelve dudas y el enlace de la tienda es donde se pide
-  chat_mode           text not null default 'ai'
+  --   'menu'    → máquina de estados por código, con los datos reales
+  --   'miniapp' → el enlace de la tienda es donde se pide
+  --
+  -- El defecto era 'ai' hasta el 2026-08-21. Se retiró la IA y pasa a 'menu':
+  -- atiende por chat con cualquier catálogo, mientras que 'miniapp' exige
+  -- pedidos Y tienda encendidos y dejaría mudo a un negocio sin ellos.
+  chat_mode           text not null default 'menu'
                       -- 'miniapp' se añadió el 2026-08-02 y vivía SOLO en su
                       -- migración: una base creada desde este archivo no
                       -- admitía el modo. Lo destapó la migración del enlace de
                       -- 24 h, que da de alta un negocio en modo mini app.
-                      check (chat_mode in ('menu','ai','miniapp')),
+                      -- Dos modos desde el 2026-08-21: la IA se retiró.
+                      check (chat_mode in ('menu','miniapp')),
   -- Negocio / facturación
   plan                text default 'basic',
   monthly_rate        numeric(10,2),
@@ -5682,7 +5687,7 @@ declare
     nullif(btrim(coalesce(p_client_email, '')), '');
   v_password_hash text := nullif(p_password_hash, '');
   v_chat_mode text :=
-    coalesce(nullif(btrim(p_business ->> 'chat_mode'), ''), 'ai');
+    coalesce(nullif(btrim(p_business ->> 'chat_mode'), ''), 'menu');
   v_plan text :=
     lower(coalesce(nullif(btrim(p_business ->> 'plan'), ''), 'micro'));
   v_plan_definition record;
@@ -5724,10 +5729,10 @@ begin
       errcode = '22023',
       message = 'La contraseña debe llegar cifrada';
   end if;
-  if v_chat_mode not in ('menu', 'ai', 'miniapp') then
+  if v_chat_mode not in ('menu', 'miniapp') then
     raise exception using
       errcode = '22023',
-      message = 'El modo de conversación debe ser menu, ai o miniapp';
+      message = 'El modo de conversación debe ser menu o miniapp';
   end if;
   if v_chat_mode = 'miniapp' and (
     coalesce((p_business ->> 'takes_orders')::boolean, true) is not true

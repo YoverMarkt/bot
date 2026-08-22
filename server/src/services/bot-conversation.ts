@@ -116,26 +116,8 @@ interface ConversationSchedule {
 }
 
 interface ConversationAi {
-  callAI(
-    prompt: string,
-    history: ConversationHistory[],
-    text: string,
-    provider?: string | null,
-  ): Promise<string>
-  embedText(text: string): Promise<number[]>
 }
 
-interface ConversationPrompt {
-  buildPrompt(
-    business: ConversationBusiness,
-    products: ConversationProduct[],
-    policies: unknown,
-    userQuery: string,
-    schedule: unknown[],
-    preFiltered: boolean,
-    postSale: boolean,
-  ): string
-}
 
 interface ConversationTags {
   detectMediaRequest(text: string): { wantsImage: boolean; wantsVideo: boolean }
@@ -214,7 +196,6 @@ export interface BotConversationDependencies {
   reports: ConversationReports
   schedule: ConversationSchedule
   ai: ConversationAi
-  prompt: ConversationPrompt
   tags: ConversationTags
   actions: ConversationActions
   media: ConversationMedia
@@ -227,7 +208,6 @@ export interface BotConversationDependencies {
   now?: () => number
   // Vigilante de precios: comprueba que la IA no cite montos que no existen en
   // el catálogo. Opcional para no obligar a cada prueba a montarlo.
-  priceGuard?: ConversationPriceGuard
 }
 
 export interface ConversationPriceGuard {
@@ -307,12 +287,11 @@ function mentionedProductIds(products: ConversationProduct[], text: string): str
 
 function createBotConversation(dependencies: BotConversationDependencies) {
   const {
-    database, reports, schedule, ai, prompt, tags, actions, media, menuFlow, storefrontLink,
+    database, reports, schedule, tags, actions, menuFlow, storefrontLink,
   } = dependencies
   const logger = dependencies.logger || console
   const sleep = dependencies.sleep || defaultSleep
   const now = dependencies.now || Date.now
-  const priceGuard = dependencies.priceGuard
   const offHoursNotified = new Map<string, number>()
 
   async function humanizedSend(
@@ -629,6 +608,21 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     })
 
     await database.saveMessage(business.id, phone, 'user', text)
+
+    // ⚠️ Esto vivía SOLO en el camino de la IA, que se retiró el 2026-08-21.
+    // Sin traerlo aquí, «Productos más consultados» y «Consultas sin venta»
+    // del panel del dueño se habrían quedado vacíos para siempre, en silencio.
+    //
+    // Y el dato es mejor que antes: en el menú, el mensaje del cliente ES el
+    // nombre del producto que eligió, no una frase suelta donde había que
+    // adivinar de qué hablaba.
+    try {
+      const consultados = mentionedProductIds(products as ConversationProduct[], text)
+      if (consultados.length) {
+        void database.recordConsultations(business.id, consultados).catch(() => {})
+      }
+    } catch { /* las métricas no bloquean la conversación */ }
+
     const action = flow.action
     let menuReply = flow.reply
     let menuOptions = flow.options
@@ -882,213 +876,21 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       return
     }
 
-    if (sendTyping) {
-      try { await sendTyping() } catch { /* best-effort */ }
-    }
-
-    const needsMemory = /vez pasada|anterior|última vez|last time|antes|pedí|ordené|compré/i
-      .test(text)
-    const historyLimit = needsMemory ? 24 : 8
-    const [policies, history, totalProducts] = await Promise.all([
-      database.getPolicies(business.id),
-      database.getContactHistory(
-        business.id, phone, historyLimit, session?.closed_sale_at || null,
-      ),
-      database.countProducts(business.id).catch(() => 0),
-    ])
-
-    const postSale = Boolean(session?.closed_sale_at)
-      && !history.some(message => message.role === 'assistant')
-    let products: ConversationProduct[] = []
-    let preFiltered = false
-    if (totalProducts > 40) {
-      try {
-        const embedding = await ai.embedText(text)
-        const found = await database.searchProductsByVector(
-          business.id, embedding, 12,
-        )
-        if (found?.length) {
-          products = found
-          preFiltered = true
-          logger.log(`🔎 [${business.name}] RAG: ${found.length} de ${totalProducts} productos relevantes`)
-        }
-      } catch (error) {
-        logger.error(
-          'RAG (usando fallback):',
-          error instanceof Error ? error.message : error,
-        )
-      }
-    }
-    if (!products.length) products = await database.getProducts(business.id)
-
-    await database.saveMessage(business.id, phone, 'user', text)
-    if (outsideHoursMessage) {
-      await database.saveMessage(
-        business.id, phone, 'assistant', outsideHoursMessage,
-      )
-    }
-    try {
-      const productIds = mentionedProductIds(products, text)
-      if (productIds.length) {
-        void database.recordConsultations(business.id, productIds).catch(() => {})
-      }
-    } catch { /* las métricas no bloquean la conversación */ }
-
-    const { wantsImage, wantsVideo } = tags.detectMediaRequest(text)
-    let reply = ''
-    try {
-      reply = await ai.callAI(
-        prompt.buildPrompt(
-          business, products, policies, text,
-          businessSchedule,
-          preFiltered, postSale,
-        ),
-        history,
-        text,
-        business.ai_provider,
-      )
-    } catch (error) {
-      logger.error('❌ IA:', error instanceof Error ? error.message : error)
-      reply = 'Disculpa, tuve un problema técnico. Intenta de nuevo 🙏'
-    }
-
-    const parsedOutput = tags.parseBotOutput(reply)
-
-    // La IA jamás escribe montos: si imita el formato de los resúmenes
-    // oficiales (cotizaciones/pedidos del servidor) está inventando cifras.
-    // Falla cerrado: el cliente no ve ese texto y continúa una persona.
-    // Regla inviolable #8: la IA conversa, el CÓDIGO calcula. Aquí se comprueba
-    // que cada monto citado exista de verdad en el catálogo del negocio.
-    // ⚠️ Arranca en modo observación: registra el hallazgo sin cortar la
-    // conversación, para calibrar con casos reales antes de descartar mensajes.
-    if (priceGuard && parsedOutput.finalText) {
-      const revision = priceGuard.check({
-        text: parsedOutput.finalText,
-        allowedAmounts: products.flatMap(product => [product.price, product.price_sale]),
-      })
-      if (!revision.ok) {
-        priceGuard.onInvented({
-          businessId: business.id,
-          invented: revision.invented,
-          text: parsedOutput.finalText,
-        })
-        logger.error(
-          `❌ [${business.name}] la IA citó precios que no existen en el catálogo: ${revision.invented.join(', ')}`,
-        )
-        if (priceGuard.mode() === 'bloquear') {
-          await actions.handleConversationOutcome({
-            business,
-            phone,
-            originalText: text,
-            hasSale: false,
-            hasHandoffTag: false,
-            isUncertain: true,
-            wasManual: session?.manual_mode,
-            send,
-          })
-          return
-        }
-      }
-    }
-
-    if (tags.impersonatesOfficialSummary(parsedOutput.finalText)) {
-      logger.error(`❌ [${business.name}] la IA imitó un resumen oficial con datos propios; se deriva fallando cerrado`)
-      await actions.handleConversationOutcome({
-        business,
-        phone,
-        originalText: text,
-        hasSale: false,
-        hasHandoffTag: false,
-        isUncertain: true,
-        wasManual: session?.manual_mode,
-        send,
-      })
-      return
-    }
-
-    if (parsedOutput.isUncertain) {
-      const handoffOutcome = await actions.handleConversationOutcome({
-        business,
-        phone,
-        originalText: text,
-        hasSale: parsedOutput.hasSale,
-        hasHandoffTag: parsedOutput.hasHandoffTag,
-        isUncertain: true,
-        wasManual: session?.manual_mode,
-        send,
-      })
-      if (handoffOutcome.handled) return
-    }
-
-    const canOrder = business.takes_orders !== false
-
-    if (parsedOutput.orderPayload && !canOrder) {
-      await actions.handleConversationOutcome({
-        business,
-        phone,
-        originalText: text,
-        hasSale: true,
-        hasHandoffTag: false,
-        isUncertain: false,
-        wasManual: session?.manual_mode,
-        send,
-      })
-      const message = 'Este negocio no procesa pedidos mediante el bot. Un asesor continuará contigo para ayudarte con la compra 🙏'
-      await database.saveMessage(business.id, phone, 'assistant', message)
-      await send(message)
-      return
-    }
-
-    const outcome = await actions.handleConversationOutcome({
-      business,
-      phone,
-      originalText: text,
-      hasSale: parsedOutput.hasSale,
-      hasHandoffTag: parsedOutput.hasHandoffTag,
-      isUncertain: false,
-      wasManual: session?.manual_mode,
-      send,
-    })
-    if (outcome.handled) return
-
-    if (parsedOutput.orderPayload) {
-      const orderProcessed = await actions.processOrderPayload({
-        business,
-        phone,
-        session,
-        payload: parsedOutput.orderPayload,
-        products,
-        preFiltered,
-        send,
-      })
-      if (!orderProcessed) {
-        const message = 'No pude registrar el pedido con un total oficial de forma segura. Un asesor continuará contigo para revisarlo 🙏'
-        await database.saveMessage(business.id, phone, 'assistant', message)
-        await send(message)
-      }
-      return
-    }
-
-    await humanizedSend(parsedOutput.finalText, send, sendTyping)
-    await media.sendRequestedProductMedia({
-      business,
-      text,
-      reply,
-      history,
-      products,
-      preFiltered,
-      wantsImage,
-      wantsVideo,
-      send,
-      sendImage,
-      sendVideo,
-    })
-
-    await database.saveMessage(
-      business.id, phone, 'assistant', parsedOutput.finalText,
+    // Sin modo reconocido no se responde nada, y es deliberado.
+    //
+    // Hasta el 2026-08-21 aquí caía el MODO IA: se leían políticas, historial y
+    // catálogo, se armaba un prompt y el modelo redactaba la respuesta. Se
+    // retiró entero — el dueño decidió que todo lo que ve el cliente lo escriba
+    // el código, con datos de la base y nada inventado.
+    //
+    // ⚠️ Callar es lo correcto aquí. Un negocio sin modo válido es una
+    // configuración rota, y contestarle algo genérico al cliente esconde el
+    // problema: se registra para que se vea y se arregla en el panel.
+    logger.error(
+      `❌ [${business.name}] modo de conversación no reconocido: ${business.chat_mode || '(vacío)'}`,
     )
-    logger.log(`🤖 [${business.name}] respondido`)
   }
+
 
   return { humanizedSend, processMessage }
 }
@@ -1103,30 +905,12 @@ interface ModuloStorefrontLinkService {
   storefrontInviteButton: ConversationStorefrontLink['storefrontInviteButton']
 }
 const storefrontLinkService: ModuloStorefrontLinkService = require('./storefront-link') as typeof import('./storefront-link')
-interface ModuloPriceGuardService {
-  checkQuotedPrices(input: {
-    text: unknown
-    allowedAmounts: Array<number | string | null | undefined>
-  }): { ok: boolean; invented: number[]; quoted: number[] }
-  priceGuardMode(): 'observar' | 'bloquear'
-}
-const priceGuardService: ModuloPriceGuardService = require('./price-guard') as typeof import('./price-guard')
-const { recordError } = require('./error-log') as {
-  recordError(input: {
-    businessId?: string | null
-    category: string
-    code?: string | number | null
-    message: unknown
-    context?: Record<string, unknown>
-  }): Promise<void>
-}
 
 const conversation = createBotConversation({
   database: require('../db') as ConversationDatabase,
   reports: require('./reports') as ConversationReports,
   schedule: require('./schedule') as ConversationSchedule,
   ai: require('./ai') as ConversationAi,
-  prompt: require('./prompt') as ConversationPrompt,
   tags: require('./bot-tags') as ConversationTags,
   actions: require('./bot-actions') as ConversationActions,
   media: require('./bot-media') as ConversationMedia,
@@ -1138,20 +922,6 @@ const conversation = createBotConversation({
     issueLink: storefrontLinkService.issueStorefrontLink,
     storefrontInvite: storefrontLinkService.storefrontInvite,
     storefrontInviteButton: storefrontLinkService.storefrontInviteButton,
-  },
-  priceGuard: {
-    check: input => priceGuardService.checkQuotedPrices(input),
-    mode: () => priceGuardService.priceGuardMode(),
-    onInvented: ({ businessId, invented, text }) => {
-      void recordError({
-        businessId,
-        category: 'ia',
-        code: 'precio_inventado',
-        // El texto va saneado por error-log antes de guardarse.
-        message: `La IA citó precios que no existen en el catálogo: ${invented.join(', ')}`,
-        context: { montos: invented.join(', '), respuesta: text.slice(0, 200) },
-      })
-    },
   },
 })
 

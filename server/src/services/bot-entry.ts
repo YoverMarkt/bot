@@ -25,7 +25,6 @@ interface EntryConversation {
 
 interface EntryAi {
   identifyImage(dataUrl: string): Promise<string>
-  callAI(...args: unknown[]): Promise<string>
   transcribeAudio(buffer: Buffer, filename?: string): Promise<string>
   embedText(text: string): Promise<number[]>
   indexProduct(product: unknown): Promise<boolean>
@@ -60,10 +59,6 @@ interface EntryWhatsApp {
 
 interface EntryMedia {
   getImageBuffer(product: { image_url?: string | null }): Promise<Buffer | null>
-}
-
-interface EntryPrompt {
-  buildPrompt(...args: unknown[]): string
 }
 
 interface EntrySchedule {
@@ -515,7 +510,6 @@ const conversation: EntryConversation = require('./bot-conversation') as typeof 
 const ai: EntryAi = require('./ai') as typeof import('./ai')
 const whatsapp: EntryWhatsApp = require('../integrations/whatsapp') as typeof import('../integrations/whatsapp')
 const media: EntryMedia = require('./media') as typeof import('./media')
-const prompt: EntryPrompt = require('./prompt') as typeof import('./prompt')
 const schedule: EntrySchedule = require('./schedule') as typeof import('./schedule')
 
 const entry = createBotEntry({
@@ -528,10 +522,8 @@ export const handleMessage = entry.handleMessage
 export const drainPendingMessages = entry.drainPendingMessages
 export const processMessage = entry.processMessage
 export const sendWhatsAppMessage = entry.sendWhatsAppMessage
-export const buildPrompt = prompt.buildPrompt
 export const buildScheduleMessage = schedule.buildScheduleMessage
 export const isOutsideHours = schedule.isOutsideHours
-export const callAI = ai.callAI
 export const transcribeAudio = ai.transcribeAudio
 export const embedText = ai.embedText
 export const indexProduct = ai.indexProduct
