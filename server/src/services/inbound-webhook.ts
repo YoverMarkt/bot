@@ -721,7 +721,7 @@ const processor = createInboundWebhookProcessor({
    * Carga diferida como el resto, para no cerrar un ciclo de importaciones al
    * arrancar (`marketplace-entry` → `storefront-link` → `db` → …).
    */
-  atenderMarketplace: async ({ from, text }) => {
+  atenderMarketplace: async ({ from, text, location }) => {
     const db = require('../db') as typeof import('../db')
     const entry = require('./marketplace-entry') as typeof import('./marketplace-entry')
     const link = require('./storefront-link') as typeof import('./storefront-link')
@@ -729,7 +729,7 @@ const processor = createInboundWebhookProcessor({
     const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
     const acciones = require('./bot-actions') as typeof import('./bot-actions')
     const settings = require('./settings') as typeof import('./settings')
-    await entry.handleMarketplaceMessage({ from, text }, {
+    await entry.handleMarketplaceMessage({ from, text, location }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
@@ -740,6 +740,55 @@ const processor = createInboundWebhookProcessor({
         return Number.isFinite(valor) && valor > 0 ? valor : 20
       },
       avanzarMenu: menu.advanceMenuFlowConEstado,
+      /**
+       * El pedido COMPLETO, por la RPC atómica de siempre.
+       *
+       * ⚠️ Se resuelven los nombres del menú contra el catálogo del MISMO
+       * local antes de crear nada: `create_storefront_order` quiere
+       * `product_id`, y mandarle un nombre suelto sería confiar en un texto
+       * para decidir qué se cobra. Lo que no se resuelva se descarta, y si no
+       * queda nada el pedido no se crea.
+       */
+      crearPedidoCompleto: async (entrada) => {
+        const catalogo = entrada.products as Array<{ id?: string; name?: string }>
+        const normalizar = (valor: string) => String(valor || '')
+          .toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '').trim()
+        const resueltos = entrada.items.flatMap((item) => {
+          const encontrado = catalogo.find(
+            producto => normalizar(String(producto.name)) === normalizar(item.name),
+          )
+          return encontrado?.id
+            ? [{ product_id: encontrado.id, quantity: item.qty }]
+            : []
+        })
+        if (!resueltos.length) return null
+
+        const { data, error } = await db.createStorefrontOrder({
+          businessId: entrada.businessId,
+          customerId: entrada.customerId,
+          contactPhone: entrada.phone,
+          contactName: entrada.contactName || null,
+          addressId: entrada.addressId,
+          fulfillment: 'delivery',
+          paymentMethod: entrada.paymentMethod,
+          items: resueltos,
+          deliveryNotes: entrada.notes || null,
+        })
+        if (error || !data) return null
+        const pedido = data as { id?: string; total?: unknown }
+        if (!pedido.id) return null
+        // El correlativo lo pone un disparador, así que la RPC no lo
+        // devuelve: se relee. Si falla, el pedido YA existe y se confirma sin
+        // número — quedarse sin confirmación por un dato de presentación
+        // sería mucho peor que confirmar sin él.
+        const seguimiento = await db.getStorefrontOrder({
+          businessId: entrada.businessId,
+          contactPhone: entrada.phone,
+          orderId: pedido.id,
+        }).catch(() => ({ data: null }))
+        const numero = (seguimiento?.data as { order_number?: number } | null)?.order_number
+        return { orderNumber: numero ?? null, total: pedido.total ?? 0 }
+      },
       // El MISMO camino del dinero que usa el canal propio: `money.ts` y las
       // RPC atómicas. El marketplace no abre una vía de cobro paralela.
       crearPedido: entrada => acciones.processOrderPayload({
