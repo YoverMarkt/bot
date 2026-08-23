@@ -39,7 +39,42 @@ interface CartItem {
   quantity: number
   priceCents: number
   // Modificador elegido (p. ej. el sabor). Viaja pegado a la línea del pedido.
+  //
+  // ⚠️ Es el sistema VIEJO (`menu_modifiers`): un texto suelto, colgado de la
+  // categoría entera. Se conserva para los negocios que aún lo usan, pero lo
+  // que se elige por `option_groups` va en `options` — estructurado, con su
+  // id, y lo guarda `order_item_options`.
   modifier?: string
+  /** Opciones del motor de personalización, con su id real. */
+  options?: ChosenOption[]
+}
+
+/** Una opción elegida del motor: id real, para que la base la valide. */
+export interface ChosenOption {
+  optionId: string
+  groupName: string
+  name: string
+}
+
+/** Un grupo de opciones tal como lo lee `getStorefrontOptionGroups`. */
+export interface FlowOptionGroup {
+  id: string
+  product_id?: string | null
+  category_id?: string | null
+  name?: string | null
+  selection_type?: string | null
+  required?: boolean | null
+  sort?: number | null
+}
+
+/** Una opción de un grupo, tal como la lee `getStorefrontOptions`. */
+export interface FlowOption {
+  id: string
+  option_group_id?: string | null
+  name?: string | null
+  price_adjustment?: number | string | null
+  stock?: string | null
+  sort?: number | null
 }
 
 type FlowView =
@@ -50,6 +85,9 @@ type FlowView =
   | { kind: 'modifier'; tag: string; page: number }
   | { kind: 'products'; intent: 'order' | 'browse'; tag: string | null; page: number }
   | { kind: 'product'; intent: 'order' | 'browse'; productId: string; tag: string | null; page: number; mediaShown?: boolean }
+  // Un grupo de opciones del motor, de uno en uno. `groupIndex` dice por cuál
+  // va: así el cliente contesta una pregunta por mensaje, como en el banco.
+  | { kind: 'options'; productId: string; tag: string | null; groupIndex: number }
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
@@ -59,6 +97,8 @@ interface FlowState {
   cart: CartItem[]
   // Modificador elegido (sabor) pendiente de adjuntar al producto/tamaño
   pendingModifier?: string
+  /** Opciones ya elegidas para el producto que se está armando. */
+  pendingOptions?: ChosenOption[]
   updatedAt: number
 }
 
@@ -70,7 +110,21 @@ type FlowAction =
   // `payload` es respaldo (formato ##PEDIDO##); `items` lleva cada línea con su
   // modificador (sabor) para que money.ts calcule el precio por el producto y
   // pliegue el sabor en el nombre visible.
-  | { type: 'order'; summary: string; totalCents: number; payload: string; items: { name: string; qty: number; note?: string | null }[] }
+  | {
+      type: 'order'
+      summary: string
+      totalCents: number
+      payload: string
+      // `note` es el modificador VIEJO (texto). `options` son las del motor,
+      // con su id real, y son las que acaban en `order_item_options`.
+      items: {
+        name: string
+        qty: number
+        note?: string | null
+        productId?: string
+        options?: ChosenOption[]
+      }[]
+    }
 
 // Ítems del último pedido del contacto. Solo se reutilizan producto y cantidad:
 // el precio SIEMPRE se recalcula con el catálogo vigente, nunca el histórico.
@@ -92,6 +146,16 @@ export interface MenuFlowInput {
   welcomeMessage?: string | null
   modifiers?: FlowModifier[]
   lastOrderItems?: LastOrderItem[]
+  /**
+   * El motor de personalización: los mismos grupos y opciones que usa la mini
+   * app. Cuando un producto tiene grupos, se preguntan DESPUÉS de elegirlo —
+   * al revés que `menu_modifiers`, que preguntaba el sabor antes de saber si
+   * el cliente quería un jugo o una cola, y se lo pegaba a las dos cosas.
+   */
+  optionGroups?: FlowOptionGroup[]
+  options?: FlowOption[]
+  /** La categoría de cada producto, para los grupos que cuelgan de ella. */
+  productCategories?: Record<string, string | null>
 }
 
 // Una opción puede ser texto simple (las fijas del menú, ya cortas) o un
@@ -189,6 +253,45 @@ const priceCentsOf = (product: FlowProduct): number | null => {
 }
 
 const capitalize = (value: string): string => value ? value.charAt(0).toUpperCase() + value.slice(1) : value
+
+/**
+ * Los grupos que aplican a ESTE producto: los suyos y los de su categoría.
+ *
+ * ⚠️ Solo `single` (elegir uno). `multiple` y `quantity` piden casillas y
+ * contadores, que en una lista de WhatsApp se vuelven una conversación larga
+ * y confusa; esos productos se piden en la mini app, que es justo para lo que
+ * está. Aquí se filtran para no prometer lo que el chat no sabe hacer.
+ */
+const gruposDelProducto = (
+  input: MenuFlowInput,
+  productId: string,
+): FlowOptionGroup[] => {
+  const categoria = input.productCategories?.[productId] ?? null
+  return (input.optionGroups || [])
+    .filter(grupo => (
+      grupo.selection_type === 'single'
+      && (grupo.product_id === productId
+        || (Boolean(grupo.category_id) && grupo.category_id === categoria))
+    ))
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+}
+
+/** Un producto con un grupo OBLIGATORIO que el chat no sabe preguntar. */
+const exigeLaApp = (input: MenuFlowInput, productId: string): boolean => {
+  const categoria = input.productCategories?.[productId] ?? null
+  return (input.optionGroups || []).some(grupo => (
+    grupo.required === true
+    && grupo.selection_type !== 'single'
+    && (grupo.product_id === productId
+      || (Boolean(grupo.category_id) && grupo.category_id === categoria))
+  ))
+}
+
+const opcionesDelGrupo = (input: MenuFlowInput, groupId: string): FlowOption[] => (
+  (input.options || [])
+    .filter(opcion => opcion.option_group_id === groupId && opcion.stock !== 'agotado')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+)
 
 // ── Datos derivados del negocio ───────────────────────────────────────
 const activeProducts = (products: FlowProduct[]): FlowProduct[] =>
@@ -419,6 +522,28 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         options: [...(canShowMedia ? [OPT_MEDIA] : []), ...(canOrder ? [OPT_ASK] : []), OPT_BACK, OPT_HOME],
       }
     }
+    case 'options': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo) return renderView({ kind: 'main' }, state, input)
+      const opciones = opcionesDelGrupo(input, grupo.id)
+      const producto = input.products.find(item => item.id === view.productId)
+      // El recargo se enseña solo cuando lo hay: «Extra queso · +$0.50». Un
+      // «+$0.00» pegado a cada línea es ruido que además hace dudar.
+      const filas = opciones.map((opcion) => {
+        const recargo = Math.round(Number(opcion.price_adjustment || 0) * 100)
+        return {
+          title: String(opcion.name || '').trim(),
+          ...(recargo > 0 ? { description: `+${money(recargo)}` } : {}),
+        }
+      })
+      return {
+        reply: `*${String(producto?.name || '').trim()}*\n${String(grupo.name || 'Elige una opción').trim()} 👇`,
+        // Un grupo obligatorio no ofrece «Volver»: saltárselo dejaría un
+        // pedido que la base va a rechazar, y el cliente no sabría por qué.
+        options: [...filas, ...(grupo.required ? [] : [OPT_BACK])],
+      }
+    }
     case 'quantity': {
       const product = input.products.find(item => item.id === view.productId)
       return {
@@ -434,7 +559,15 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       }
     }
     case 'order-confirm': {
-      const lines = state.cart.map(item => `• ${item.quantity}x ${item.name}${item.modifier ? ` — ${item.modifier}` : ''} — ${money(item.priceCents * item.quantity)}`)
+      // Lo elegido se enseña agrupado bajo su línea: el cliente tiene que
+      // poder comprobar que se entendió su pedido ANTES de confirmarlo.
+      const lines = state.cart.map((item) => {
+        const elegido = (item.options || []).map(o => o.name).join(', ')
+        const detalle = [item.modifier, elegido].filter(Boolean).join(' · ')
+        return `• ${item.quantity}x ${item.name}`
+          + (detalle ? ` — ${detalle}` : '')
+          + ` — ${money(item.priceCents * item.quantity)}`
+      })
       const total = state.cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
       return {
         reply: `🧾 Resumen de tu pedido:\n${lines.join('\n')}\n*Total: ${money(total)}*\n¿Lo confirmamos?`,
@@ -598,6 +731,23 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
             if (productMediaList(product).length || product.stock === 'agotado' || priceCentsOf(product) === null) {
               return goTo(state, { kind: 'product', intent: view.intent, productId: product.id, tag: view.tag, page: view.page }, input)
             }
+            // ⚠️ La ruta rápida también tiene que preguntar las opciones. Sin
+            // esto, un producto sin fotos se pedía sin su sabor y el pedido
+            // salía incompleto — o lo rechazaba la base si el grupo era
+            // obligatorio.
+            if (exigeLaApp(input, product.id)) {
+              return {
+                reply: 'Este producto tiene opciones que se eligen mejor en la app 📱\n'
+                  + 'Escribe *MENÚ* y te paso el enlace.',
+                options: [OPT_BACK, OPT_HOME],
+              }
+            }
+            state.pendingOptions = []
+            if (gruposDelProducto(input, product.id).length) {
+              return goTo(state, {
+                kind: 'options', productId: product.id, tag: view.tag, groupIndex: 0,
+              }, input)
+            }
             return goTo(state, { kind: 'quantity', productId: product.id }, input)
           }
           return goTo(state, { kind: 'product', intent: view.intent, productId: product.id, tag: view.tag, page: view.page }, input)
@@ -621,8 +771,52 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       if (choice === OPT_BACK) {
         return goTo(state, { kind: 'products', intent: view.intent, tag: view.tag, page: view.page }, input)
       }
-      if (choice === OPT_ASK) return goTo(state, { kind: 'quantity', productId: view.productId }, input)
+      if (choice === OPT_ASK) {
+        // ⚠️ Un producto con un grupo obligatorio que el chat no sabe
+        // preguntar (casillas, contadores) no se deja pedir aquí: la base lo
+        // rechazaría y el cliente se quedaría sin saber por qué.
+        if (exigeLaApp(input, view.productId)) {
+          return {
+            reply: 'Este producto tiene opciones que se eligen mejor en la app 📱\n'
+              + 'Escribe *MENÚ* y te paso el enlace.',
+            options: [OPT_BACK, OPT_HOME],
+          }
+        }
+        state.pendingOptions = []
+        return gruposDelProducto(input, view.productId).length
+          ? goTo(state, { kind: 'options', productId: view.productId, tag: view.tag, groupIndex: 0 }, input)
+          : goTo(state, { kind: 'quantity', productId: view.productId }, input)
+      }
       break
+    }
+    case 'options': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo) return goTo(state, { kind: 'quantity', productId: view.productId }, input)
+      if (choice === OPT_BACK && !grupo.required) {
+        return goTo(state, {
+          kind: 'product', intent: 'order', productId: view.productId,
+          tag: view.tag, page: 0,
+        }, input)
+      }
+      const elegida = opcionesDelGrupo(input, grupo.id)
+        .find(opcion => String(opcion.name || '').trim() === choice)
+      if (!elegida) break
+
+      state.pendingOptions = [
+        ...(state.pendingOptions || []),
+        {
+          optionId: elegida.id,
+          groupName: String(grupo.name || '').trim(),
+          name: String(elegida.name || '').trim(),
+        },
+      ]
+      // Un grupo por mensaje: se pasa al siguiente, y al acabarlos, a la
+      // cantidad. Preguntarlos todos de golpe no cabe en una lista.
+      const siguiente = view.groupIndex + 1
+      return siguiente < grupos.length
+        ? goTo(state, { ...view, groupIndex: siguiente }, input)
+        : goTo(state, { kind: 'quantity', productId: view.productId }, input)
     }
     case 'quantity': {
       // El número escrito manda: "4" es una cantidad, no la opción 4 de la lista
@@ -637,16 +831,23 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         if (product && cents !== null) {
           // El sabor pendiente se pega a esta línea y se limpia.
           const modifier = state.pendingModifier
+          const elegidas = state.pendingOptions || []
           state.cart.push({
             productId: product.id,
             name: String(product.name).trim(),
             quantity,
             priceCents: cents,
             ...(modifier ? { modifier } : {}),
+            ...(elegidas.length ? { options: elegidas } : {}),
           })
           state.pendingModifier = undefined
+          state.pendingOptions = undefined
           const added = { ...goTo(state, { kind: 'after-add' }, input) }
-          added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()}${modifier ? ` — ${modifier}` : ''} ✅\n${added.reply}`
+          // Se nombra lo elegido: el cliente acaba de contestar tres
+          // preguntas y merece ver que se entendieron, no un «listo» a secas.
+          const detalle = [modifier, elegidas.map(o => o.name).join(', ')]
+            .filter(Boolean).join(' · ')
+          added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()}${detalle ? ` — ${detalle}` : ''} ✅\n${added.reply}`
           return added
         }
       }
@@ -681,7 +882,13 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           payload: state.cart.map(item => `${item.name} x${item.quantity}`).join('; '),
           // Cada línea con su sabor: el servidor calcula el precio por el
           // producto (tamaño) y pliega el sabor en el nombre visible.
-          items: state.cart.map(item => ({ name: item.name, qty: item.quantity, note: item.modifier || null })),
+          items: state.cart.map(item => ({
+            name: item.name,
+            qty: item.quantity,
+            note: item.modifier || null,
+            productId: item.productId,
+            ...(item.options?.length ? { options: item.options } : {}),
+          })),
         }
         state.cart = []
         const home = goTo(state, { kind: 'main' }, input)

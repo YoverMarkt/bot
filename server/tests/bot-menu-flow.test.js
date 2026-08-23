@@ -287,8 +287,13 @@ describe('modo menú estilo banco (sin IA)', () => {
 
     const confirmado = enviar(pizzeria2, 'pz1', '✅ Confirmar pedido', args)
     expect(confirmado.action).toEqual(expect.objectContaining({ type: 'order', totalCents: 1050 }))
-    // El pedido lleva el tamaño (para el precio) y el sabor como modificador
-    expect(confirmado.action.items).toEqual([{ name: 'Pizza Familiar', qty: 1, note: 'Hawaiana' }])
+    // El pedido lleva el tamaño (para el precio) y el sabor como modificador.
+    // ⚠️ Y desde el 2026-08-22 también el `productId`: el pedido deja de
+    // depender del NOMBRE para saber qué se cobra. El nombre sigue viajando
+    // porque es lo que ve el dueño en la comanda.
+    expect(confirmado.action.items).toEqual([
+      { name: 'Pizza Familiar', qty: 1, note: 'Hawaiana', productId: 'ps2' },
+    ])
 
     // Una categoría SIN sabores (bebidas) va directo a los productos
     resetMenuFlow(pizzeria2.id, 'pz2')

@@ -89,8 +89,9 @@ export interface MarketplaceEntryDatabase {
   getStorefrontPaymentMethods(businessId: string): Promise<checkout.MetodoDePago[]>
   /** La cuenta a la que transferir. Null si el local no cargó ninguna. */
   getBusinessBankAccount(businessId: string): Promise<checkout.CuentaBancaria | null>
-  /** Resuelve nombres del catálogo a `product_id`. */
-  getProductsForOrder?(businessId: string): Promise<unknown[]>
+  /** El motor de personalización, el mismo que usa la mini app. */
+  getStorefrontOptionGroups?(businessId: string): Promise<unknown[]>
+  getStorefrontOptions?(businessId: string): Promise<unknown[]>
 }
 
 export interface MarketplaceEntryDeps {
@@ -135,7 +136,7 @@ export interface MarketplaceEntryDeps {
     contactName?: string | null
     addressId: string
     paymentMethod: string
-    items: { name: string; qty: number; note?: string }[]
+    items: CheckoutPendiente['items']
     products: unknown[]
     notes?: string | null
   }): Promise<{ orderNumber: number | null; total: unknown } | null>
@@ -150,7 +151,14 @@ export interface MarketplaceEntryDeps {
  * `create_storefront_order` al final, con los precios de ese momento.
  */
 export interface CheckoutPendiente {
-  items: { name: string; qty: number; note?: string }[]
+  items: {
+    name: string
+    qty: number
+    note?: string
+    productId?: string
+    /** Del motor de personalización: id real, lo valida la base. */
+    options?: { optionId: string; groupName: string; name: string }[]
+  }[]
   addressId?: string
 }
 
@@ -431,7 +439,7 @@ async function conducirEnElChat(
     return
   }
 
-  const [productos, modifiers, lastOrder, policies] = await Promise.all([
+  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor] = await Promise.all([
     database.getProducts(businessId).catch(() => [] as unknown[]),
     database.getMenuModifiers
       ? database.getMenuModifiers(businessId).catch(() => [] as unknown[])
@@ -440,7 +448,17 @@ async function conducirEnElChat(
       ? database.getLastOrderForContact(businessId, phone).catch(() => null)
       : Promise.resolve(null),
     database.getPolicies(businessId).catch(() => null),
+    // El MISMO motor que usa la mini app. Sin esto, el chat seguiría con
+    // `menu_modifiers`: un texto suelto colgado de la categoría entera, que
+    // preguntaba el sabor antes de saber si el cliente quería jugo o cola.
+    database.getStorefrontOptionGroups
+      ? database.getStorefrontOptionGroups(businessId).catch(() => [])
+      : Promise.resolve([]),
+    database.getStorefrontOptions
+      ? database.getStorefrontOptions(businessId).catch(() => [])
+      : Promise.resolve([]),
   ])
+  const catalogoDeOpciones = opcionesDelMotor
 
   const saludo = policies && typeof policies.welcome_message === 'string'
     ? policies.welcome_message
@@ -455,6 +473,14 @@ async function conducirEnElChat(
     welcomeMessage: saludo,
     modifiers: modifiers as MenuFlowInput['modifiers'],
     lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
+    optionGroups: grupos as MenuFlowInput['optionGroups'],
+    options: catalogoDeOpciones as MenuFlowInput['options'],
+    // Para los grupos que cuelgan de una CATEGORÍA y no de un producto.
+    productCategories: Object.fromEntries(
+      (productos as Array<{ id?: string; category_id?: string | null }>)
+        .filter(producto => producto.id)
+        .map(producto => [producto.id as string, producto.category_id ?? null]),
+    ),
   }, estadoPrevio)
 
   let respuesta = resultado.reply
@@ -482,6 +508,8 @@ async function conducirEnElChat(
         name: item.name,
         qty: item.qty,
         ...(item.note ? { note: item.note } : {}),
+        ...(item.productId ? { productId: item.productId } : {}),
+        ...(item.options?.length ? { options: item.options } : {}),
       })),
     }
     await database.advanceConversation(
@@ -687,7 +715,7 @@ async function avanzarCheckout(input: {
 
 /** Las elecciones del menú que no son opciones del catálogo, para la comanda. */
 function notasDeLosItems(
-  items: { name: string; qty: number; note?: string }[],
+  items: CheckoutPendiente['items'],
 ): string | null {
   const notas = items
     .filter(item => item.note)

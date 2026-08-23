@@ -754,12 +754,25 @@ const processor = createInboundWebhookProcessor({
         const normalizar = (valor: string) => String(valor || '')
           .toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '').trim()
         const resueltos = entrada.items.flatMap((item) => {
-          const encontrado = catalogo.find(
-            producto => normalizar(String(producto.name)) === normalizar(item.name),
-          )
-          return encontrado?.id
-            ? [{ product_id: encontrado.id, quantity: item.qty }]
-            : []
+          // El id que trae el carrito manda; el nombre es el respaldo para
+          // las líneas que vengan de un flujo antiguo sin id.
+          const encontrado = item.productId
+            ? { id: item.productId }
+            : catalogo.find(
+                producto => normalizar(String(producto.name)) === normalizar(item.name),
+              )
+          if (!encontrado?.id) return []
+          return [{
+            product_id: encontrado.id,
+            quantity: item.qty,
+            // Las opciones del motor van con su id REAL: la RPC comprueba que
+            // cada una pertenece a este negocio y a este producto (o a su
+            // categoría) antes de cobrarla. Un nombre suelto no se puede
+            // validar, y es lo que se está dejando atrás.
+            ...(item.options?.length
+              ? { options: item.options.map(o => ({ option_id: o.optionId })) }
+              : {}),
+          }]
         })
         if (!resueltos.length) return null
 
