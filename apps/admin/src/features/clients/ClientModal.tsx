@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
-import { RadioTower, Search } from 'lucide-react'
+import { RadioTower } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Input } from '@botpanel/ui/components/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
@@ -45,25 +45,25 @@ const EMPTY = {
 
 export default function ClientModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState(EMPTY)
-  const [savedCredentials, setSavedCredentials] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [vfy, setVfy] = useState('')
   const [salesTouched, setSalesTouched] = useState(false)
   const [storefrontTouched, setStorefrontTouched] = useState(false)
-  const [chatModeTouched, setChatModeTouched] = useState(false)
   const [applyPlanDefaults, setApplyPlanDefaults] = useState(false)
 
   // Editar → cargar el detalle real (el server nunca manda esto a paneles de cliente)
   useEffect(() => {
     if (!id) return
     adm.getClient(id).then(c => {
-      setSavedCredentials(c.credential_status || {})
       setF({
         name: c.name ?? '', type: c.type ?? 'negocio',
         whatsapp_number: c.whatsapp_number ?? '', owner_phone: c.owner_phone ?? '',
-        whatsapp_provider: c.whatsapp_provider ?? 'ycloud',
+        // ⚠️ `marketplace` y no `ycloud`: desde el 2026-08-23 ningún local
+        // tiene canal propio. Con `ycloud` de defecto, un negocio sin
+        // proveedor guardado abría el modal pidiendo credenciales de una
+        // cuenta que no existe.
+        whatsapp_provider: c.whatsapp_provider ?? 'marketplace',
         ycloud_api_key: '',
         ycloud_webhook_endpoint_id: c.ycloud_webhook_endpoint_id ?? '',
         ycloud_webhook_secret: '',
@@ -98,7 +98,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       if (k === 'type' && !id && !salesTouched) {
         next.sales = recommendedSalesForBusinessType(value)
       }
-      if (k === 'type' && !id && !chatModeTouched) {
+      // El modo sigue saliendo del TIPO al crear. Ya no hay selector que lo
+      // pueda «tocar», así que la recomendación se aplica siempre al alta.
+      if (k === 'type' && !id) {
         next.chat_mode = recommendedChatModeForBusinessType(value)
       }
       if (k === 'type' && !id && !storefrontTouched) {
@@ -115,9 +117,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ...prev,
         type,
         sales: id || salesTouched ? prev.sales : recommendedSalesForBusinessType(type),
-        chat_mode: id || chatModeTouched
-          ? prev.chat_mode
-          : recommendedChatModeForBusinessType(type),
+        chat_mode: id ? prev.chat_mode : recommendedChatModeForBusinessType(type),
         storefront: id || storefrontTouched
           ? prev.storefront
           : recommendedStorefrontForBusinessType(type) ? 'yes' : 'no',
@@ -138,34 +138,23 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     }))
   }
 
-  const requestVerification = () => {
-    const payload: adm.ProviderVerificationPayload = {
-      provider: f.whatsapp_provider as adm.ProviderVerificationPayload['provider'],
-      ycloud_api_key: f.ycloud_api_key || undefined,
-      ycloud_number: f.whatsapp_number.trim(),
-      // Se envían para que la verificación avise si falta lo del webhook; en
-      // blanco el servidor usa lo ya guardado del negocio.
-      ycloud_webhook_secret: f.ycloud_webhook_secret || undefined,
-      ycloud_webhook_endpoint_id: f.ycloud_webhook_endpoint_id.trim() || undefined,
-      meta_token: f.meta_token || undefined,
-      meta_phone_id: f.meta_phone_id.trim(),
-      telegram_bot_token: f.telegram_bot_token || undefined,
-    }
-    return id ? adm.verifyClient(id, payload) : adm.verifyProvider(payload)
-  }
-
-  async function verify() {
-    setVfy('Verificando credenciales…')
-    try {
-      const r = await requestVerification()
-      setVfy(`${r.ok ? '✓' : '✗'} ${r.info}`)
-    } catch (e) { setVfy(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
-  }
+  // ⚠️ Aquí vivían `requestVerification` y `verify`, que comprobaban las
+  // credenciales del canal PROPIO de un negocio. Se van con el bloque que las
+  // llamaba: sin canal propio no hay nada que verificar — el verificador
+  // consultaría una cuenta que no existe.
+  //
+  // El botón de verificar el número del MARKETPLACE es otro y sigue vivo, en
+  // Ajustes del servidor (`/api/admin/verify-platform-channel`).
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    const sinCanalPropio = f.whatsapp_provider === 'marketplace'
+    // ⚠️ SIEMPRE. Desde el 2026-08-23 ningún local tiene canal propio: no hay
+    // pantalla para dárselo y la base lo impediría con el número de la
+    // plataforma. Se deja explícito en vez de leer el guardado para que un
+    // negocio que venga de la etapa anterior quede convertido al editarlo, en
+    // vez de conservar en silencio un número que secuestraría el enrutado.
+    const sinCanalPropio = true
     if (!f.name.trim()) { setError('El nombre es obligatorio'); return }
     if (!sinCanalPropio && !f.whatsapp_number.trim()) { setError('El número de WhatsApp es obligatorio'); return }
     // En el marketplace es el ÚNICO número del negocio, y es lo que le deja
@@ -181,7 +170,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       name: f.name.trim(), type: f.type.trim() || 'negocio',
       whatsapp_number: sinCanalPropio ? null : f.whatsapp_number.trim(),
       owner_phone: f.owner_phone.trim() || null,
-      whatsapp_provider: f.whatsapp_provider as BusinessPayload['whatsapp_provider'],
+      whatsapp_provider: 'marketplace' as BusinessPayload['whatsapp_provider'],
       ycloud_number: sinCanalPropio ? null : (f.whatsapp_number.trim() || null),
       ycloud_webhook_endpoint_id: sinCanalPropio ? null : (f.ycloud_webhook_endpoint_id.trim() || null),
       meta_phone_id: sinCanalPropio ? null : (f.meta_phone_id || null),
@@ -213,36 +202,16 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     if (f.client_email) payload.client_email = f.client_email.trim()
     if (f.client_password) payload.client_password = f.client_password
     setSaving(true)
-    // Un negocio nuevo no debe quedar activo con un canal que no funciona.
-    // Al editar se conserva la posibilidad de guardar otros cambios aunque el
-    // proveedor esté temporalmente fuera de línea.
+    // ⚠️ Aquí se verificaban las credenciales del canal antes de guardar, y el
+    // bloque entero murió el 2026-08-23: sin canal propio no hay credenciales
+    // que verificar, así que la condición nunca se cumplía. Se retira en vez
+    // de dejarla como rama inalcanzable — que es justo el tipo de código que
+    // luego nadie sabe si está vivo.
     //
-    // ⚠️ El marketplace se salta la verificación porque no tiene credenciales
-    // que verificar. Sin esta condición el alta era IMPOSIBLE: el verificador
-    // no conoce el proveedor, responde `ok:false`, y al crear eso aborta el
-    // guardado con «No se creó el negocio: Proveedor no reconocido».
-    if (!sinCanalPropio
-      && (f.whatsapp_provider !== 'telegram' || f.telegram_bot_token || (id && savedCredentials.telegram_bot_token))) {
-      setVfy('Verificando credenciales…')
-      try {
-        const vr = await requestVerification()
-        if (!vr.ok && !id) {
-          setError(`No se creó el negocio: ${vr.info}`)
-          setVfy(`✗ ${vr.info}`)
-          setSaving(false)
-          return
-        }
-        setVfy(vr.ok ? `✓ ${vr.info}` : `Atención: ${vr.info}`)
-      } catch (verificationError) {
-        if (!id) {
-          setError(`No se creó el negocio: ${verificationError instanceof Error ? verificationError.message : 'no se pudo verificar el canal'}`)
-          setVfy('✗ No se pudo verificar el canal')
-          setSaving(false)
-          return
-        }
-        setVfy('Atención: No se pudo verificar el canal')
-      }
-    }
+    // ⚠️ Y este bloque tiene historia: en su día verificaba para TODO proveedor
+    // que no fuera Telegram, así que el alta de un local de marketplace moría
+    // con «Proveedor no reconocido» — con las pruebas y los verificadores en
+    // verde, porque ninguno pasa por el panel.
     try {
       if (id) await adm.updateClient(id, payload)
       else await adm.createClient(payload)
@@ -327,43 +296,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </Select>
                 <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
               </div>
-              {/* ⚠️ Solo al EDITAR. En el alta el modo lo deduce el tipo de
-                  negocio (`recommendedChatModeForBusinessType`), y dentro del
-                  marketplace lo decide el tamaño del catálogo al elegir el
-                  local. Preguntarlo aquí sería pedir una decisión que en ese
-                  momento nadie puede tomar con datos: un negocio recién
-                  creado tiene CERO productos. */}
-              {id && (
-              <div>
-                <Label htmlFor="client-chat-mode">Quién conduce la conversación</Label>
-                <Select value={f.chat_mode} onValueChange={value => {
-                  setChatModeTouched(true)
-                  if (value === 'miniapp') {
-                    setSalesTouched(true)
-                    setStorefrontTouched(true)
-                    setF(prev => ({
-                      ...prev,
-                      chat_mode: 'miniapp',
-                      sales: 'vende',
-                      storefront: 'yes',
-                    }))
-                  } else {
-                    setVal('chat_mode')(value)
-                  }
-                }}>
-                  <SelectTrigger id="client-chat-mode" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="miniapp">Mini app (enlace para pedir)</SelectItem>
-                    <SelectItem value="menu">Menú de opciones en el chat</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  <strong>Mini app</strong>: responde con el enlace y el pedido se hace en la app.
-                  {' '}<strong>Menú</strong>: el cliente elige entre opciones armadas con los datos reales.
-                  {' '}El servidor calcula los totales en los dos, y ninguno usa IA.
-                </p>
-              </div>
-              )}
+              {/* ⚠️ Se retiró «Quién conduce la conversación» el 2026-08-23.
+                  Dentro del marketplace ese desplegable NO decide nada: la
+                  experiencia la elige el tamaño del catálogo al elegir local
+                  (la regla de los 20, `services/marketplace-entry.ts`).
+                  `chat_mode` solo gobierna el canal PROPIO de un negocio, y
+                  ya no hay ninguno con canal propio. Dejarlo puesto mostraba
+                  una decisión que no se cumplía — que es exactamente cómo
+                  nació el fallo del número. La columna NO se toca: el payload
+                  sigue mandando el valor guardado. */}
               <div>
                 <Label htmlFor="client-storefront">Mini app de la tienda</Label>
                 <Select
@@ -405,53 +346,37 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 producción y ya existe—, así que se configura aquí, al editar,
                 en vez de gastar siete campos del alta en algo que casi nadie
                 rellena. Nada se pierde: todo esto sigue vivo e intacto. */}
+            {/* ⚠️ SE RETIRÓ EL CANAL PROPIO el 2026-08-23, y nace de un fallo
+                real: Monster Pizza tenía el MISMO número que la plataforma,
+                así que `resolveBusinessChannel` la encontraba antes de llegar
+                a la rama del marketplace y escribir al número de Umbani
+                contestaba con su mini app en vez de las categorías. Todo lo
+                construido para el número único era inalcanzable.
+
+                Aquí vivían siete campos —proveedor, API Key, Endpoint ID,
+                Signing Secret, token y Phone ID de Meta, token de Telegram— y
+                un botón de verificar. Ninguno tiene sentido ya: los locales se
+                atienden por el número del marketplace y no tienen cuenta
+                propia que configurar.
+
+                ⚠️ La defensa de verdad NO es esta pantalla, es el disparador
+                `businesses_numero_de_plataforma` en la base: quitar el campo
+                evita el error de dedo, pero solo la guarda impide que el
+                número vuelva a entrar por una API o un `update` a mano. */}
             {id && (
             <div className="rounded-xl border p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <span id="client-whatsapp-provider-label" className="inline-flex items-center gap-1.5"><RadioTower className="w-4 h-4" /> Canal de WhatsApp</span>
-                <Select value={f.whatsapp_provider} onValueChange={setVal('whatsapp_provider')}>
-                  <SelectTrigger id="client-whatsapp-provider" aria-labelledby="client-whatsapp-provider-label" className="w-44"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="marketplace">Marketplace (sin número propio)</SelectItem>
-                    <SelectItem value="ycloud">YCloud</SelectItem>
-                    <SelectItem value="meta">Meta (oficial)</SelectItem>
-                    <SelectItem value="telegram">Solo Telegram</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {f.whatsapp_provider === 'ycloud' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div><Label htmlFor="client-ycloud-api-key">YCloud API Key {savedCredentials.ycloud_api_key && '— guardada'}</Label><Input id="client-ycloud-api-key" type="password" value={f.ycloud_api_key} onChange={set('ycloud_api_key')} placeholder={savedCredentials.ycloud_api_key ? 'Escribe solo para reemplazarla' : ''} /></div>
-                  <div><Label htmlFor="client-ycloud-endpoint-id">Webhook Endpoint ID</Label><Input id="client-ycloud-endpoint-id" value={f.ycloud_webhook_endpoint_id} onChange={set('ycloud_webhook_endpoint_id')} placeholder="Cópialo desde Developers → Webhooks" /></div>
-                  <div><Label htmlFor="client-ycloud-signing-secret">Webhook Signing Secret {savedCredentials.ycloud_webhook_secret && '— guardado'}</Label><Input id="client-ycloud-signing-secret" type="password" value={f.ycloud_webhook_secret} onChange={set('ycloud_webhook_secret')} placeholder={savedCredentials.ycloud_webhook_secret ? 'Escribe solo para reemplazarlo' : 'whsec_…'} /></div>
-                </div>
-              )}
-              {f.whatsapp_provider === 'meta' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div><Label htmlFor="client-meta-token">Meta Token {savedCredentials.meta_token && '— guardado'}</Label><Input id="client-meta-token" type="password" value={f.meta_token} onChange={set('meta_token')} placeholder={savedCredentials.meta_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                  <div><Label htmlFor="client-meta-phone-id">Phone ID</Label><Input id="client-meta-phone-id" value={f.meta_phone_id} onChange={set('meta_phone_id')} /></div>
-                </div>
-              )}
-              {/* Sin canal propio no hay credenciales que guardar ni que
-                  verificar: el verificador consultaría una cuenta que no
-                  existe y devolvería un fallo que no significa nada. */}
-              {f.whatsapp_provider === 'marketplace' ? (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Este negocio se atiende por el número del marketplace. No necesita número propio, cuenta de YCloud ni webhook.
-                </p>
-              ) : (
-                <>
-                  <div className="mt-3">
-                    <div><Label htmlFor="client-telegram-token">Telegram Bot Token {savedCredentials.telegram_bot_token ? '— guardado' : '(opcional)'}</Label><Input id="client-telegram-token" type="password" value={f.telegram_bot_token} onChange={set('telegram_bot_token')} placeholder={savedCredentials.telegram_bot_token ? 'Escribe solo para reemplazarlo' : ''} /></div>
-                  </div>
-                  <div className="flex items-center gap-3 mt-3">
-                    <Button variant="outline" size="sm" type="button" onClick={verify} >
-                      <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar credenciales</span>
-                    </Button>
-                    {vfy && <span className="text-xs text-foreground/80">{vfy}</span>}
-                  </div>
-                </>
-              )}
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium">
+                <RadioTower className="w-4 h-4" /> Canal de WhatsApp
+              </span>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Este local se atiende por el <strong>número del marketplace</strong>.
+                No tiene número propio, ni cuenta de YCloud, ni webhook: sus clientes
+                escriben al número de Umbani y el menú los lleva hasta su tienda.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                El número del marketplace se configura una sola vez en{' '}
+                <strong>Ajustes del servidor → Número del marketplace</strong>.
+              </p>
             </div>
             )}
 
