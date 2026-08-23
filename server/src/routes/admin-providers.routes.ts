@@ -347,29 +347,22 @@ router.post('/api/admin/verify-platform-channel', auth.authAdmin, async (req, re
   if (!apiKey) return res.json({ ok: false, info: 'Falta la YCloud API Key del marketplace' })
   if (!numero) return res.json({ ok: false, info: 'Falta el número de WhatsApp del marketplace' })
 
+  // ⚠️ El secreto y el endpoint van AQUÍ dentro. `verifyProvider` comprueba
+  // el hueco del webhook mirando `ycloud_webhook_*`, que son los campos del
+  // NEGOCIO; sin pasárselos daba «falta Signing Secret y Endpoint ID» aunque
+  // estuvieran guardados en `platform_webhook_*`, y el resultado salía en
+  // rojo justo cuando la configuración era correcta.
   const resultado = await verifyProvider({
     provider: 'ycloud',
     ycloud_api_key: apiKey,
     ycloud_number: numero,
+    ycloud_webhook_secret: secret || undefined,
+    ycloud_webhook_endpoint_id: endpoint || undefined,
   })
   if (!resultado.ok) return res.json(resultado)
 
-  // El canal responde. Ahora lo que YCloud no puede decirnos: sin estos dos,
-  // el webhook rechaza en producción (503) y el número quedaría mudo aunque
-  // la key sea correcta — es justo el fallo que no se ve hasta que alguien
-  // escribe.
-  const faltan = [
-    !secret ? 'el Signing Secret' : null,
-    !endpoint ? 'el Endpoint ID' : null,
-  ].filter(Boolean)
-
-  if (faltan.length) {
-    return res.json({
-      ok: false,
-      info: `${resultado.info} — pero falta ${faltan.join(' y ')}: sin eso el webhook rechaza los mensajes en producción.`,
-    })
-  }
-
+  // Aquí el canal responde Y el webhook está completo: `verifyProvider` ya
+  // habría devuelto `ok: false` con el aviso si faltara alguno de los dos.
   return res.json({
     ok: true,
     info: `${resultado.info} · webhook configurado`,

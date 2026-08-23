@@ -255,13 +255,26 @@ describe('el número del marketplace se puede verificar', () => {
     expect(ruta).toMatch(/verify-platform-channel[\s\S]{0,2000}?verifyProvider\(\{/)
   })
 
+  it('le pasa el secreto y el endpoint de PLATAFORMA a la comprobación', () => {
+    // ⚠️ El bug del 2026-08-22: `verifyProvider` mira `ycloud_webhook_*` —los
+    // campos del NEGOCIO—, así que sin pasárselos decía «falta Signing Secret
+    // y Endpoint ID» aunque estuvieran guardados en `platform_webhook_*`. El
+    // resultado salía en rojo justo cuando la configuración era correcta.
+    const ruta = leer('../src/routes/admin-providers.routes.ts')
+    const bloque = ruta.match(
+      /verify-platform-channel[\s\S]*?verifyProvider\(\{[\s\S]*?\}\)/,
+    )?.[0] || ''
+    expect(bloque).toContain('ycloud_webhook_secret: secret')
+    expect(bloque).toContain('ycloud_webhook_endpoint_id: endpoint')
+  })
+
   it('avisa de lo que YCloud no puede decir: falta el webhook', () => {
     // Sin signing secret ni endpoint id, el webhook rechaza en producción y
     // el número queda mudo aunque la key sea correcta.
     const ruta = leer('../src/routes/admin-providers.routes.ts')
     expect(ruta).toContain('Signing Secret')
     expect(ruta).toContain('Endpoint ID')
-    expect(ruta).toMatch(/rechaza los mensajes en producción/)
+    expect(ruta).toMatch(/el bot no recibirá mensajes/)
   })
 
   it('exige autenticación de superadmin', () => {
