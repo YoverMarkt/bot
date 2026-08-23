@@ -350,6 +350,30 @@ describe('intentar empezar otra cosa con un pedido abierto', () => {
     // ⚠️ Cada respuesta se paga: no se gasta un mensaje en decir solo «no».
     const r = recordarPedidoEnProceso({ name: 'El Puerto' })
     expect(r.reply).toContain('El Puerto')
-    expect(r.reply).toMatch(/MENÚ/)
+
+    // ⚠️ CAMBIADO EL 2026-08-23, y la intención es la MISMA: decirle cómo
+    // salir. Antes el texto mandaba «escribe *MENÚ*»… y escribir MENÚ llevaba
+    // a una pregunta que MENÚ no podía responder, así que el cliente se
+    // quedaba dando vueltas. Ahora se le dan las dos salidas de verdad.
+    expect(r.options).toHaveLength(2)
+    expect(r.options.join(' ')).toMatch(/Empezar de nuevo/)
+    expect(r.options.join(' ')).toMatch(/Seguir mi pedido/)
+    expect(r.vista.vista).toBe('confirmando_reinicio')
+  })
+
+  // ⚠️ EL BUCLE que vivió el dueño: «sigue enviando y enviando lo mismo».
+  // MENÚ se comprueba antes que la vista, así que escribirlo estando ya en la
+  // confirmación volvía a preguntar lo mismo, para siempre.
+  //
+  // Pedir el menú DOS VECES no es ambiguo: es la misma petición repetida.
+  it('un segundo MENÚ confirma en vez de volver a preguntar', async () => {
+    const entrada = await import('../dist/services/marketplace-entry.js')
+    const fuente = readFileSync(
+      fileURLToPath(new URL('../src/services/marketplace-entry.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(entrada.handleMarketplaceMessage).toBeTypeOf('function')
+    // La rama existe y suelta el local, que es lo que rompe el bucle.
+    expect(fuente).toMatch(/vista\.vista === 'confirmando_reinicio'[\s\S]{0,400}soltarLocal: true/)
   })
 })

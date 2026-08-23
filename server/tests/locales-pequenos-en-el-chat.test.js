@@ -457,7 +457,7 @@ describe('el bloqueo se activa de verdad', () => {
   })
 
   it('con el bloqueo puesto, pedir otra cosa NO cambia de local', async () => {
-    const ctx = armar({ productos: 50 })
+    const ctx = armar({ enChat: false })
     ctx.database.getConversation.mockResolvedValue({
       current_state: 'en_local',
       selected_business_id: 'biz-1',
@@ -469,8 +469,14 @@ describe('el bloqueo se activa de verdad', () => {
 
     const ultimo = ctx.enviados.at(-1)
     // Se le dice DÓNDE lo tiene y CÓMO salir, en el mismo mensaje.
+    //
+    // ⚠️ CAMBIADO EL 2026-08-23, misma intención: antes el texto mandaba
+    // «escribe *MENÚ*», y escribir MENÚ llevaba a una pregunta que MENÚ no
+    // podía responder — el cliente se quedaba en bucle. Ahora la salida son
+    // las dos opciones, que sí resuelven.
     expect(ultimo.reply).toContain('Almuerzos Doña María')
-    expect(ultimo.reply).toMatch(/MENÚ/)
+    expect(ultimo.options).toHaveLength(2)
+    expect(ultimo.options.join(' ')).toMatch(/Empezar de nuevo/)
     // Y no se le cambia el local por debajo.
     expect(ctx.guardados.some(p => p.businessId && p.businessId !== 'biz-1')).toBe(false)
   })

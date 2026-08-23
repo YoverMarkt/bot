@@ -30,13 +30,13 @@ describe('menú guiado de bienvenida', () => {
     const pizzeria = menu.buildWelcomeMenu({ name: 'Pizzería Don Luigi', takes_orders: true }, 12)
     expect(pizzeria.text).toContain('Pizzería Don Luigi')
     expect(pizzeria.options).toEqual([
-      '🛒 Hacer un pedido', '📋 Ver productos y precios', '💬 Otra consulta',
+      '🛒 Hacer un pedido', '📋 Ver la carta', '💬 Otra consulta',
     ])
 
     // Sin agenda ni pedidos, solo queda mirar el catálogo y hablar con alguien.
     const informativo = menu.buildWelcomeMenu({ name: 'Barbería' }, 3)
     expect(informativo.options).toEqual([
-      '📋 Ver productos y precios', '💬 Otra consulta',
+      '📋 Ver la carta', '💬 Otra consulta',
     ])
 
     // Modo informativo sin catálogo: siempre queda la conversación libre

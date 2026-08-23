@@ -185,11 +185,25 @@ export interface MenuFlowResult {
 }
 
 // ── Etiquetas fijas del menú (el cliente ve exactamente estos textos) ──
+//
+// ⚠️ MÁXIMO 20 CARACTERES, y no es una preferencia de estilo: WhatsApp RECORTA
+// el título de un botón a 20 y devuelve el recorte cuando el cliente lo toca.
+// Una etiqueta más larga vuelve como «💬 Hablar con el eq…», no casa con nada,
+// y el cliente recibe «no te entendí» cada vez que la toca — es decir, esa
+// opción se vuelve IMPOSIBLE de elegir.
+//
+// Pasó de verdad el 2026-08-23: seis de las diez opciones se pasaban, así que
+// «Repetir mi último pedido», «Ver productos y precios», «Hablar con el
+// equipo» y «Sí, empezar de nuevo» no funcionaban en absoluto.
+//
+// Lo vigila `opciones-que-caben.test.js`. `elegir` además tolera el recorte,
+// pero eso es la red de seguridad: lo que el cliente debe leer es el texto
+// entero, no uno cortado.
 const OPT_ORDER = '🛒 Hacer un pedido'
-const OPT_REPEAT = '🔄 Repetir mi último pedido'
-const OPT_BROWSE = '📋 Ver productos y precios'
-const OPT_MEDIA = '📷 Ver fotos y videos'
-const OPT_TEAM = '💬 Hablar con el equipo'
+const OPT_REPEAT = '🔄 Repetir pedido'
+const OPT_BROWSE = '📋 Ver la carta'
+const OPT_MEDIA = '📷 Fotos y videos'
+const OPT_TEAM = '💬 Escribir al local'
 const OPT_BACK = '⬅️ Volver'
 const OPT_HOME = '🏠 Menú principal'
 const OPT_MORE = '➡️ Ver más'
