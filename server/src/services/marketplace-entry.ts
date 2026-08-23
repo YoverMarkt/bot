@@ -10,6 +10,8 @@ import {
   type MarketplaceView,
 } from './marketplace-menu'
 import { optionTitle } from './bot-menu-flow'
+import * as checkout from './marketplace-checkout'
+import type { InboundLocation } from './inbound-webhook'
 import type {
   FlowState,
   MenuFlowInput,
@@ -72,6 +74,23 @@ export interface MarketplaceEntryDatabase {
     phone: string,
   ): Promise<{ order_items?: unknown[] } | null>
   getPolicies(businessId: string): Promise<{ welcome_message?: unknown } | null>
+
+  // ── Lo que hace falta para cerrar el pedido dentro del chat ────────
+  /** Guarda la dirección del cliente para ESTE negocio. */
+  createCustomerAddress(input: {
+    businessId: string
+    customerId: string
+    address: string
+    reference?: string | null
+    latitude?: number | null
+    longitude?: number | null
+  }): Promise<{ id: string } | null>
+  /** Los métodos que acepta este local, nunca una lista fija. */
+  getStorefrontPaymentMethods(businessId: string): Promise<checkout.MetodoDePago[]>
+  /** La cuenta a la que transferir. Null si el local no cargó ninguna. */
+  getBusinessBankAccount(businessId: string): Promise<checkout.CuentaBancaria | null>
+  /** Resuelve nombres del catálogo a `product_id`. */
+  getProductsForOrder?(businessId: string): Promise<unknown[]>
 }
 
 export interface MarketplaceEntryDeps {
@@ -105,7 +124,34 @@ export interface MarketplaceEntryDeps {
     products: unknown[]
     send: (mensaje: string) => Promise<unknown>
   }): Promise<boolean>
+  /**
+   * Crea el pedido COMPLETO con `create_storefront_order`: la RPC atómica de
+   * siempre, con dirección, método de pago y el total oficial.
+   */
+  crearPedidoCompleto(input: {
+    businessId: string
+    customerId: string
+    phone: string
+    contactName?: string | null
+    addressId: string
+    paymentMethod: string
+    items: { name: string; qty: number; note?: string }[]
+    products: unknown[]
+    notes?: string | null
+  }): Promise<{ orderNumber: number | null; total: unknown } | null>
   logger?: { log(...args: unknown[]): void }
+}
+
+/**
+ * El carrito que espera dirección y método de pago.
+ *
+ * Vive en `flow_state.checkout` hasta que hay todo para crear el pedido de
+ * una vez. Guarda lo que el cliente ELIGIÓ, no importes: el total lo calcula
+ * `create_storefront_order` al final, con los precios de ese momento.
+ */
+export interface CheckoutPendiente {
+  items: { name: string; qty: number; note?: string }[]
+  addressId?: string
 }
 
 /** La vista guardada, o la portada si es el primer mensaje. */
@@ -131,11 +177,11 @@ const vistaDe = (flowState: Record<string, unknown> | null): MarketplaceView => 
  *   4. El menú normal.
  */
 export async function handleMarketplaceMessage(
-  input: { from: string; text: string },
+  input: { from: string; text: string; location?: InboundLocation },
   deps: MarketplaceEntryDeps,
 ): Promise<void> {
   const { database, send } = deps
-  const { from, text } = input
+  const { from, text, location } = input
 
   const customer = await database.resolveMarketplaceCustomer(from)
   const conversation = await database.getConversation(customer.id)
@@ -184,7 +230,27 @@ export async function handleMarketplaceMessage(
     return
   }
 
-  // ── 3. ¿Está pidiendo DENTRO del chat en un local pequeño? ─────────
+  // ── 3. El CHECKOUT: ubicación y método de pago ─────────────────────
+  //
+  // Van antes que el menú porque el cliente ya terminó de elegir: su mensaje
+  // es la respuesta a lo que se le acaba de preguntar, no una opción del
+  // catálogo. MENÚ sigue por delante de todo, así que nunca queda atrapado.
+  if (conversation?.selected_business_id
+    && (conversation.current_state === 'esperando_ubicacion'
+      || conversation.current_state === 'esperando_metodo_pago')) {
+    await avanzarCheckout({
+      deps,
+      customer,
+      phone: from,
+      texto: text,
+      location,
+      businessId: conversation.selected_business_id,
+      conversacion: conversation,
+    })
+    return
+  }
+
+  // ── 4. ¿Está pidiendo DENTRO del chat en un local pequeño? ─────────
   //
   // Va antes del bloqueo de «un pedido a la vez» porque aquí el cliente no
   // está intentando empezar otra cosa: está en medio de su pedido, y este
@@ -196,14 +262,14 @@ export async function handleMarketplaceMessage(
     return
   }
 
-  // ── 4. Un pedido a la vez ──────────────────────────────────────────
+  // ── 5. Un pedido a la vez ──────────────────────────────────────────
   if (estado.bloqueado && negocioActual) {
     const respuesta = recordarPedidoEnProceso({ name: negocioActual.name })
     await send(respuesta.reply, respuesta.options)
     return
   }
 
-  // ── 5. El menú ─────────────────────────────────────────────────────
+  // ── 6. El menú ─────────────────────────────────────────────────────
   //
   // `paso` es una función PURA: no consulta nada. Cuando el cliente elige una
   // categoría devuelve la vista nueva con el texto vacío, porque los locales
@@ -401,22 +467,39 @@ async function conducirEnElChat(
   // El total oficial lo calcula SIEMPRE `money.ts` con las RPC atómicas: el
   // menú solo aporta QUÉ pidió, nunca un monto. Es la regla #8 y aquí no
   // cambia por venir del marketplace.
+  // ── El cliente confirmó el carrito: empieza el CHECKOUT ────────────
+  //
+  // ⚠️ El pedido NO se crea todavía. Antes hacen falta la dirección y el
+  // método de pago, y crearlo ahora dejaría un pedido sin destino ni forma de
+  // cobro en el panel del dueño cada vez que alguien abandone a media
+  // conversación — pedidos que él ve como reales y no puede preparar.
+  //
+  // El carrito espera en `flow_state.checkout` y el pedido nace COMPLETO y de
+  // una sola vez, con `create_storefront_order`, al final.
   if (resultado.action?.type === 'order') {
-    const creado = await deps.crearPedido({
-      business: business as unknown as Record<string, unknown>,
-      phone,
-      items: resultado.action.items,
-      payload: resultado.action.payload,
-      products: productos,
-      send: mensaje => send(String(mensaje), []),
-    })
-    // `crearPedido` ya mandó el resumen oficial si lo creó.
-    respuesta = creado
-      ? '¿Necesitas algo más?'
-      : 'No pude confirmar de forma segura si el pedido quedó registrado. '
-        + 'Para no duplicarlo, no lo envíes otra vez; el equipo lo revisará 🙏'
-    opciones = []
-    logger?.log(`🛒 [marketplace] pedido en el chat: ${creado ? 'creado' : 'sin total oficial'}`)
+    const pendiente: CheckoutPendiente = {
+      items: resultado.action.items.map(item => ({
+        name: item.name,
+        qty: item.qty,
+        ...(item.note ? { note: item.note } : {}),
+      })),
+    }
+    await database.advanceConversation(
+      customer.id,
+      {
+        state: 'esperando_ubicacion',
+        businessId,
+        flowState: {
+          menu: (estado ?? null) as unknown as Record<string, unknown>,
+          checkout: pendiente as unknown as Record<string, unknown>,
+        },
+      },
+      conversacion?.version,
+    )
+    const pide = checkout.pedirUbicacion()
+    logger?.log(`🛒 [marketplace] carrito confirmado, pidiendo ubicación`)
+    await send(pide.reply, pide.options)
+    return
   }
 
   await database.advanceConversation(
@@ -430,6 +513,186 @@ async function conducirEnElChat(
   )
 
   if (respuesta || opciones.length) await send(respuesta, opciones)
+}
+
+/**
+ * Los dos pasos que van entre el carrito y el pedido: dónde lo llevo y cómo
+ * pagas.
+ *
+ * ⚠️ El pedido nace al FINAL, de una vez, con `create_storefront_order`. No se
+ * crea antes y se completa después: eso obligaría a una segunda función que
+ * actualice la del dinero —hoy hay una sola— y dejaría pedidos sin dirección
+ * en el panel del dueño cada vez que alguien abandone a media conversación.
+ */
+async function avanzarCheckout(input: {
+  deps: MarketplaceEntryDeps
+  customer: { id: string; name: string | null }
+  phone: string
+  texto: string
+  location?: InboundLocation
+  businessId: string
+  conversacion: {
+    current_state: string
+    flow_state: Record<string, unknown> | null
+    version: number
+  }
+}): Promise<void> {
+  const { deps, customer, phone, texto, location, businessId, conversacion } = input
+  const { database, send, logger } = deps
+
+  const pendiente = conversacion.flow_state?.checkout as CheckoutPendiente | undefined
+  if (!pendiente?.items?.length) {
+    // El carrito se perdió (conversación vencida, estado inconsistente). Se
+    // dice y se ofrece la salida en vez de dejarlo respondiendo al vacío.
+    logger?.log('⚠️  [checkout] sin carrito pendiente: se reinicia')
+    await database.advanceConversation(
+      customer.id, { state: 'navegando', clearFlow: true }, conversacion.version,
+    )
+    await send(
+      '😕 Se me perdió tu pedido. Escribe *MENÚ* para empezar de nuevo.', [],
+    )
+    return
+  }
+
+  // ── Paso 1: la ubicación ───────────────────────────────────────────
+  if (conversacion.current_state === 'esperando_ubicacion') {
+    // El punto del mapa es lo bueno: llega exacto y sin que el cliente
+    // escriba. Pero quien no lo comparta —o abra WhatsApp en un navegador que
+    // no lo permita— tiene que poder pedir igual escribiendo su dirección.
+    const direccion = location
+      ? checkout.direccionDesdeUbicacion(location)
+      : texto.trim()
+
+    if (!location && direccion.length < 8) {
+      await send(
+        '🙏 No entendí la dirección. Comparte tu ubicación con el clip 📎 '
+        + 'o escríbela con más detalle (calle, número y referencia).',
+        [],
+      )
+      return
+    }
+
+    const guardada = await database.createCustomerAddress({
+      businessId,
+      customerId: customer.id,
+      address: direccion,
+      // Las coordenadas viajan juntas o no viajan: media apunta al ecuador.
+      latitude: location?.latitude ?? null,
+      longitude: location?.longitude ?? null,
+    }).catch(() => null)
+
+    if (!guardada?.id) {
+      logger?.log('⚠️  [checkout] no se pudo guardar la dirección')
+      await send(
+        '😕 No pude guardar tu dirección. Inténtalo otra vez o escribe *MENÚ*.', [],
+      )
+      return
+    }
+
+    const metodos = await database.getStorefrontPaymentMethods(businessId)
+      .catch(() => [] as checkout.MetodoDePago[])
+    const pide = checkout.pedirMetodoPago(metodos)
+
+    await database.advanceConversation(
+      customer.id,
+      {
+        state: 'esperando_metodo_pago',
+        businessId,
+        flowState: {
+          ...(conversacion.flow_state || {}),
+          checkout: { ...pendiente, addressId: guardada.id } as unknown as Record<string, unknown>,
+        },
+      },
+      conversacion.version,
+    )
+    logger?.log(`📍 [checkout] dirección guardada, ${metodos.length} métodos de pago`)
+    await send(pide.reply, pide.options)
+    return
+  }
+
+  // ── Paso 2: el método de pago, y el pedido ─────────────────────────
+  const metodos = await database.getStorefrontPaymentMethods(businessId)
+    .catch(() => [] as checkout.MetodoDePago[])
+  const elegido = checkout.elegirMetodo(texto, metodos)
+
+  if (!elegido) {
+    const repetir = checkout.pedirMetodoPago(metodos)
+    await send(`🙏 No te entendí.\n\n${repetir.reply}`, repetir.options)
+    return
+  }
+
+  if (!pendiente.addressId) {
+    // No debería pasar: se guarda antes de llegar aquí. Si pasa, se vuelve al
+    // paso anterior en vez de crear un pedido sin destino.
+    logger?.log('⚠️  [checkout] método elegido sin dirección guardada')
+    await database.advanceConversation(
+      customer.id, { state: 'esperando_ubicacion', businessId }, conversacion.version,
+    )
+    const pide = checkout.pedirUbicacion()
+    await send(pide.reply, pide.options)
+    return
+  }
+
+  const [productos, negocio, cuenta] = await Promise.all([
+    database.getProducts(businessId).catch(() => [] as unknown[]),
+    database.getBusinessById(businessId),
+    elegido.requires_proof
+      ? database.getBusinessBankAccount(businessId).catch(() => null)
+      : Promise.resolve(null),
+  ])
+
+  const pedido = await deps.crearPedidoCompleto({
+    businessId,
+    customerId: customer.id,
+    phone,
+    contactName: customer.name,
+    addressId: pendiente.addressId,
+    paymentMethod: elegido.code,
+    items: pendiente.items,
+    products: productos,
+    // El modificador que eligió en el chat (el sabor del jugo) viaja como
+    // nota del pedido: la comanda del dueño lo tiene que ver aunque no sea
+    // una opción del motor de personalización.
+    notes: notasDeLosItems(pendiente.items),
+  }).catch(() => null)
+
+  if (!pedido) {
+    logger?.log('❌ [checkout] el pedido no se pudo crear')
+    const fallo = checkout.pedidoNoCreado()
+    await send(fallo.reply, fallo.options)
+    return
+  }
+
+  // El pedido existe: la conversación suelta el carrito. Si el método pide
+  // comprobante, el pedido nació esperando pago y el buzón que ya existe
+  // adjunta la foto solo — por eso aquí no hay un paso más.
+  await database.advanceConversation(
+    customer.id,
+    { state: 'navegando', clearFlow: true, clearBusiness: true },
+    conversacion.version,
+  )
+
+  const confirmacion = checkout.pedidoCreado({
+    orderNumber: pedido.orderNumber,
+    total: pedido.total,
+    metodo: elegido,
+    cuenta,
+    telefonoDelLocal: (negocio as { phone?: string | null } | null)?.phone ?? null,
+  })
+  logger?.log(
+    `✅ [checkout] pedido #${pedido.orderNumber} creado — ${elegido.code}`,
+  )
+  await send(confirmacion.reply, confirmacion.options)
+}
+
+/** Las elecciones del menú que no son opciones del catálogo, para la comanda. */
+function notasDeLosItems(
+  items: { name: string; qty: number; note?: string }[],
+): string | null {
+  const notas = items
+    .filter(item => item.note)
+    .map(item => `${item.name}: ${item.note}`)
+  return notas.length ? notas.join(' · ').slice(0, 300) : null
 }
 
 /** Guarda dónde quedó la conversación. */

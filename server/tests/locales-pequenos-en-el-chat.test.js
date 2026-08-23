@@ -52,6 +52,18 @@ const armar = ({ productos = 5, maximo = 20, estadoMenu = null } = {}) => {
     getMenuModifiers: vi.fn().mockResolvedValue([]),
     getLastOrderForContact: vi.fn().mockResolvedValue(null),
     getPolicies: vi.fn().mockResolvedValue({ welcome_message: null }),
+    createCustomerAddress: vi.fn().mockResolvedValue({ id: 'dir-1' }),
+    getStorefrontPaymentMethods: vi.fn().mockResolvedValue([
+      { code: 'transferencia', label: 'Transferencia bancaria', help_text: null, is_prepaid: true, requires_proof: true },
+      { code: 'efectivo', label: 'Efectivo (contra entrega)', help_text: 'Paga al recibir.', is_prepaid: false, requires_proof: false },
+    ]),
+    getBusinessBankAccount: vi.fn().mockResolvedValue({
+      bank_name: 'Banco Pichincha',
+      account_type: 'corriente',
+      account_number: '2203344556',
+      holder_name: 'Almuerzos Doña María',
+      instructions: null,
+    }),
   }
   const enviados = []
   const avanzarMenu = vi.fn(() => ({
@@ -66,7 +78,8 @@ const armar = ({ productos = 5, maximo = 20, estadoMenu = null } = {}) => {
       send: async (reply, options) => { enviados.push({ reply, options }) },
       maxProductosEnChat: async () => maximo,
       avanzarMenu,
-      crearPedido: vi.fn().mockResolvedValue(true),
+        crearPedido: vi.fn().mockResolvedValue(true),
+      crearPedidoCompleto: vi.fn().mockResolvedValue({ orderNumber: 10581, total: 11 }),
       logger: { log: () => {} },
     },
   }
@@ -187,8 +200,8 @@ describe('el carrito sobrevive a un despliegue', () => {
   })
 })
 
-describe('el pedido dentro del chat', () => {
-  const conPedidoConfirmado = ctx => {
+describe('el checkout dentro del chat', () => {
+  const conCarritoConfirmado = ctx => {
     ctx.avanzarMenu.mockReturnValue({
       resultado: {
         reply: 'Resumen…',
@@ -198,7 +211,7 @@ describe('el pedido dentro del chat', () => {
           summary: '2 × Almuerzo completo',
           totalCents: 700,
           payload: '##PEDIDO:Almuerzo completo x 2##',
-          items: [{ name: 'Almuerzo completo', qty: 2 }],
+          items: [{ name: 'Almuerzo completo', qty: 2, note: 'Jugo de maracuyá' }],
         },
       },
       estado: { view: { kind: 'main' }, cart: [], updatedAt: 1 },
@@ -212,27 +225,172 @@ describe('el pedido dentro del chat', () => {
     })
   }
 
-  it('se crea por el MISMO camino del dinero que el canal propio', async () => {
+  const enEstado = (ctx, current_state, checkout) => {
+    ctx.database.getConversation.mockResolvedValue({
+      current_state,
+      selected_business_id: 'biz-1',
+      shopping_locked: false,
+      flow_state: { checkout },
+      version: 6,
+    })
+  }
+
+  const CARRITO = { items: [{ name: 'Almuerzo completo', qty: 2 }] }
+
+  it('confirmar el carrito NO crea el pedido: primero pide la ubicación', async () => {
+    // ⚠️ Crear el pedido aquí dejaría uno sin dirección ni forma de cobro en
+    // el panel del dueño cada vez que alguien abandone a media conversación.
     const ctx = armar({ productos: 5 })
-    conPedidoConfirmado(ctx)
+    conCarritoConfirmado(ctx)
     await handle({ from: '593990978367', text: '✅ Confirmar pedido' }, ctx.deps)
 
-    // El total oficial lo calcula `money.ts` con las RPC atómicas. El menú
-    // solo aporta QUÉ pidió, nunca un monto (regla #8).
-    expect(ctx.deps.crearPedido).toHaveBeenCalledWith(expect.objectContaining({
-      phone: '593990978367',
-      items: [{ name: 'Almuerzo completo', qty: 2 }],
-    }))
+    expect(ctx.deps.crearPedidoCompleto).not.toHaveBeenCalled()
+    expect(ctx.enviados.at(-1).reply).toMatch(/ubicación/i)
+    expect(ctx.guardados.at(-1).state).toBe('esperando_ubicacion')
+    // El carrito espera guardado, no en memoria.
+    expect(ctx.guardados.at(-1).flowState.checkout.items).toHaveLength(1)
   })
 
-  it('si el pedido no se pudo confirmar, se dice y NO se invita a reenviar', async () => {
+  it('la ubicación compartida se guarda con sus coordenadas', async () => {
     const ctx = armar({ productos: 5 })
-    conPedidoConfirmado(ctx)
-    ctx.deps.crearPedido.mockResolvedValue(false)
-    await handle({ from: '593990978367', text: '✅ Confirmar pedido' }, ctx.deps)
+    enEstado(ctx, 'esperando_ubicacion', CARRITO)
+    await handle({
+      from: '593990978367',
+      text: '[ubicación]',
+      location: { latitude: -3.2581, longitude: -79.9554 },
+    }, ctx.deps)
+
+    expect(ctx.database.createCustomerAddress).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: -3.2581, longitude: -79.9554 }),
+    )
+    // Y se pasa a pedir el método de pago, con los del LOCAL.
+    expect(ctx.enviados.at(-1).options).toEqual([
+      'Transferencia bancaria', 'Efectivo (contra entrega)',
+    ])
+  })
+
+  it('quien no comparte ubicación puede escribir su dirección', async () => {
+    // El navegador de WhatsApp no siempre deja compartir el punto azul, y sin
+    // esta salida el cliente se quedaría sin poder pedir.
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_ubicacion', CARRITO)
+    await handle({
+      from: '593990978367',
+      text: 'Av. Quito y 10 de Agosto, casa blanca de dos pisos',
+    }, ctx.deps)
+
+    expect(ctx.database.createCustomerAddress).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: null, longitude: null }),
+    )
+  })
+
+  it('una dirección demasiado corta se vuelve a pedir', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_ubicacion', CARRITO)
+    await handle({ from: '593990978367', text: 'aquí' }, ctx.deps)
+
+    expect(ctx.database.createCustomerAddress).not.toHaveBeenCalled()
+    expect(ctx.enviados.at(-1).reply).toMatch(/no entendí/i)
+  })
+
+  it('elegir transferencia crea el pedido y da los datos bancarios', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'Transferencia bancaria' }, ctx.deps)
+
+    expect(ctx.deps.crearPedidoCompleto).toHaveBeenCalledWith(
+      expect.objectContaining({ addressId: 'dir-1', paymentMethod: 'transferencia' }),
+    )
+    const ultimo = ctx.enviados.at(-1)
+    expect(ultimo.reply).toContain('Banco Pichincha')
+    expect(ultimo.reply).toContain('2203344556')
+    // ⚠️ El importe sale del pedido YA creado, no de una suma hecha en el
+    // chat: es la cifra exacta que el cliente va a transferir.
+    expect(ultimo.reply).toContain('$11.00')
+    expect(ultimo.reply).toContain('#10581')
+    expect(ultimo.reply).toMatch(/comprobante/i)
+  })
+
+  it('elegir efectivo NO pide comprobante ni datos bancarios', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
 
     const ultimo = ctx.enviados.at(-1)
-    expect(ultimo.reply).toMatch(/no.*duplicarlo|no lo envíes otra vez/i)
+    expect(ultimo.reply).not.toContain('Banco')
+    expect(ultimo.reply).toMatch(/preparación/i)
+    expect(ctx.database.getBusinessBankAccount).not.toHaveBeenCalled()
+  })
+
+  it('el cliente puede elegir el método por su NÚMERO de lista', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: '2' }, ctx.deps)
+    expect(ctx.deps.crearPedidoCompleto).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentMethod: 'efectivo' }),
+    )
+  })
+
+  it('un método que no existe se vuelve a preguntar', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'con tarjeta' }, ctx.deps)
+
+    expect(ctx.deps.crearPedidoCompleto).not.toHaveBeenCalled()
+    expect(ctx.enviados.at(-1).options).toHaveLength(2)
+  })
+
+  it('creado el pedido, la conversación suelta el carrito y el local', async () => {
+    // Si no lo soltara, el siguiente mensaje del cliente seguiría creyéndose
+    // parte de un pedido que ya se cerró.
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
+
+    const ultimo = ctx.guardados.at(-1)
+    expect(ultimo.clearFlow).toBe(true)
+    expect(ultimo.clearBusiness).toBe(true)
+  })
+
+  it('si el pedido NO se pudo crear, se dice y no se invita a reenviar', async () => {
+    const ctx = armar({ productos: 5 })
+    ctx.deps.crearPedidoCompleto.mockResolvedValue(null)
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
+
+    expect(ctx.enviados.at(-1).reply).toMatch(/no lo envíes otra vez/i)
+  })
+
+  it('un local sin métodos de pago lo dice, con salida', async () => {
+    const ctx = armar({ productos: 5 })
+    ctx.database.getStorefrontPaymentMethods.mockResolvedValue([])
+    enEstado(ctx, 'esperando_ubicacion', CARRITO)
+    await handle({
+      from: '593990978367', text: '[ubicación]',
+      location: { latitude: -3.2581, longitude: -79.9554 },
+    }, ctx.deps)
+
+    expect(ctx.enviados.at(-1).reply).toMatch(/MENÚ/)
+    expect(ctx.enviados.at(-1).options).toEqual([])
+  })
+
+  it('si se pierde el carrito a media conversación, se reinicia con aviso', async () => {
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', undefined)
+    await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
+
+    expect(ctx.deps.crearPedidoCompleto).not.toHaveBeenCalled()
+    expect(ctx.enviados.at(-1).reply).toMatch(/MENÚ/)
+  })
+
+  it('MENÚ sigue funcionando en pleno checkout', async () => {
+    // Es la única salida del cliente y no puede depender de dónde esté.
+    const ctx = armar({ productos: 5 })
+    enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
+    await handle({ from: '593990978367', text: 'menú' }, ctx.deps)
+
+    expect(ctx.deps.crearPedidoCompleto).not.toHaveBeenCalled()
+    expect(ctx.enviados.at(-1).options).toEqual(['🍕 Pizzerías'])
   })
 })
 
