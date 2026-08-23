@@ -45,6 +45,13 @@ interface InboundMessage {
   audio?: MediaReference
   voice?: MediaReference
   image?: MediaReference
+  // La ubicación que comparte el cliente. Meta y YCloud usan la misma forma.
+  location?: {
+    latitude?: number | string
+    longitude?: number | string
+    address?: string
+    name?: string
+  }
   whatsappApiAccountPhoneNumber?: string
 }
 
@@ -186,6 +193,29 @@ function metaMessages(body: MetaWebhookBody): Array<{
   ))
 }
 
+/**
+ * La ubicación compartida, si el mensaje es de ese tipo.
+ *
+ * Meta y YCloud mandan la misma forma, así que un solo extractor sirve para
+ * los dos. La VALIDACIÓN vive en `parseInboundWebhookPayload` —rango real del
+ * planeta, coordenadas juntas— para que sea la misma comprobación tanto si el
+ * mensaje entra ahora como si se relee de la cola durable.
+ */
+function sharedLocation(message: InboundMessage): InboundWebhookPayload['content'] | null {
+  if (message.type !== 'location' || !message.location) return null
+  const { latitude, longitude, address, name } = message.location
+  if (latitude === undefined || longitude === undefined) return null
+  return {
+    kind: 'location',
+    location: {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      ...(address ? { address } : {}),
+      ...(name ? { name } : {}),
+    },
+  }
+}
+
 function metaContent(message: InboundMessage): InboundWebhookPayload['content'] | null {
   const text = message.type === 'text'
     ? message.text?.body
@@ -208,7 +238,7 @@ function metaContent(message: InboundMessage): InboundWebhookPayload['content'] 
       media: { id: message.image.id, mimeType: message.image.mime_type },
     }
   }
-  return null
+  return sharedLocation(message)
 }
 
 function headerText(value: string | string[] | undefined): string | undefined {
@@ -235,7 +265,7 @@ function ycloudContent(message: InboundMessage): InboundWebhookPayload['content'
       : null
   const reference = kind === 'image' ? message.image : message.audio || message.voice
   const url = reference?.link || reference?.url
-  if (!kind || !url) return null
+  if (!kind || !url) return sharedLocation(message)
   return {
     kind,
     media: { url, mimeType: reference?.mime_type },

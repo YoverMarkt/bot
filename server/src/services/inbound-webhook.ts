@@ -14,9 +14,28 @@ export interface InboundMediaReference {
   mimeType?: string
 }
 
+/**
+ * La ubicación que comparte el cliente desde WhatsApp.
+ *
+ * ⚠️ Latitud y longitud viajan JUNTAS o no viajan: media coordenada apunta al
+ * ecuador, y eso es peor que nada porque parece un dato bueno. Es la misma
+ * regla que ya rige `orders.delivery_lat/lng`.
+ *
+ * `address` y `name` son lo que WhatsApp adjunta cuando el cliente elige un
+ * sitio del mapa en vez de su punto azul. Opcionales: la mayoría manda solo
+ * el punto.
+ */
+export interface InboundLocation {
+  latitude: number
+  longitude: number
+  address?: string
+  name?: string
+}
+
 type InboundContent =
   | { kind: 'text'; text: string }
   | { kind: 'audio' | 'image'; media: InboundMediaReference }
+  | { kind: 'location'; location: InboundLocation }
 
 interface InboundBatchMetadata {
   version: 1
@@ -121,7 +140,12 @@ export interface InboundWebhookDependencies {
    * aviso, que es exactamente lo que pasaba antes de que el marketplace
    * existiera. Así una instalación sin número de plataforma no cambia.
    */
-  atenderMarketplace?: (input: { from: string; text: string }) => Promise<void>
+  atenderMarketplace?: (input: {
+    from: string
+    text: string
+    /** Presente solo si el cliente compartió su ubicación. */
+    location?: InboundLocation
+  }) => Promise<void>
   esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
   /** Sube la foto y la engancha al pedido. Devuelve el número si lo logró. */
   adjuntarComprobante?: (
@@ -191,6 +215,45 @@ function inboundMediaReference(value: unknown): InboundMediaReference | null {
   }
 }
 
+/**
+ * Valida una ubicación entrante.
+ *
+ * Devuelve null si falta cualquiera de las dos coordenadas, si no son
+ * números, o si caen fuera del rango real del planeta. Un `0,0` literal se
+ * rechaza: es la Isla Nula frente a África, y en la práctica siempre es un
+ * campo vacío que se coló como cero — el mismo fallo que `Number(null)`.
+ */
+function inboundLocation(value: unknown): InboundLocation | null {
+  const record = recordValue(value)
+  if (!record) return null
+  // ⚠️ NO se usa `Number(...)` a secas: `Number(null)` es 0, no NaN, así que
+  // una coordenada nula pasaría como el ecuador y el pedido apuntaría al
+  // golfo de Guinea. Es el mismo fallo que ya cazó `tests/ubicacion.test.ts`
+  // con `accuracy_m`. Solo un número o una cadena numérica cuentan.
+  const coordenada = (valor: unknown): number | null => {
+    if (typeof valor === 'number') return Number.isFinite(valor) ? valor : null
+    if (typeof valor === 'string' && valor.trim()) {
+      const parsed = Number(valor)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    return null
+  }
+  const latitude = coordenada(record.latitude)
+  const longitude = coordenada(record.longitude)
+  if (latitude === null || longitude === null) return null
+  if (latitude < -90 || latitude > 90) return null
+  if (longitude < -180 || longitude > 180) return null
+  if (latitude === 0 && longitude === 0) return null
+  const address = boundedText(record.address, 300)
+  const name = boundedText(record.name, 120)
+  return {
+    latitude,
+    longitude,
+    ...(address ? { address } : {}),
+    ...(name ? { name } : {}),
+  }
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function inboundBatchMetadata(value: unknown): InboundBatchMetadata | null {
@@ -248,6 +311,10 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
     const text = boundedMessageText(content.text)
     if (!text) throw new Error('Texto durable de webhook inválido')
     parsedContent = { kind: 'text', text }
+  } else if (content.kind === 'location') {
+    const location = inboundLocation(content.location)
+    if (!location) throw new Error('Ubicación durable de webhook inválida')
+    parsedContent = { kind: 'location', location }
   } else if (content.kind === 'audio' || content.kind === 'image') {
     const media = inboundMediaReference(content.media)
     if (!media
@@ -389,11 +456,15 @@ export function createInboundWebhookProcessor(
     // resolver: el cliente escribió a Umbani y todavía no ha elegido. El
     // menú del marketplace lo lleva hasta la puerta del local correcto.
     //
-    // ⚠️ Solo se atiende TEXTO. Una foto o un audio antes de elegir local no
-    // tienen nada a lo que referirse —no hay pedido, no hay catálogo, no hay
-    // comprobante que adjuntar—, así que bajarlos sería pagar tráfico por un
-    // archivo que nadie va a mirar. Es el mismo criterio del atajo del modo
-    // mini app, unas líneas más abajo.
+    // ⚠️ No se descarga NINGÚN archivo. Una foto o un audio antes de elegir
+    // local no tienen a qué referirse —no hay pedido, no hay catálogo, no hay
+    // comprobante que adjuntar—, así que bajarlos sería pagar tráfico por algo
+    // que nadie va a mirar. Es el mismo criterio del atajo del modo mini app.
+    //
+    // ⚠️ La UBICACIÓN es la excepción, y no cuesta nada: viaja dentro del
+    // propio mensaje —dos números—, no hay archivo que bajar. Es lo que deja
+    // cerrar el pedido dentro del chat sin pedirle al cliente que escriba su
+    // dirección a mano.
     if (payload.businessId === null) {
       if (!dependencies.atenderMarketplace) {
         logger.log('⚠️  [marketplace] llegó un mensaje pero no hay quien lo atienda')
@@ -401,8 +472,16 @@ export function createInboundWebhookProcessor(
       }
       const texto = payload.content.kind === 'text'
         ? payload.content.text
-        : payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]'
-      await dependencies.atenderMarketplace({ from: payload.from, text: texto })
+        : payload.content.kind === 'audio'
+          ? '[nota de voz]'
+          : payload.content.kind === 'location' ? '[ubicación]' : '[foto]'
+      await dependencies.atenderMarketplace({
+        from: payload.from,
+        text: texto,
+        ...(payload.content.kind === 'location'
+          ? { location: payload.content.location }
+          : {}),
+      })
       return
     }
 
@@ -429,7 +508,12 @@ export function createInboundWebhookProcessor(
      * distintos por proveedor y por tipo.
      */
     const descargarMedia = async (): Promise<{ data: Buffer; mimeType?: string }> => {
-      if (payload.content.kind === 'text') throw new Error('Un texto no tiene media')
+      // Ni un texto ni una ubicación traen archivo que bajar. El compilador
+      // obliga a nombrar los dos casos, que es justo lo que se quiere: al
+      // añadir un tipo de mensaje nuevo, este punto falla y hay que decidir.
+      if (payload.content.kind === 'text' || payload.content.kind === 'location') {
+        throw new Error('Este tipo de mensaje no tiene media')
+      }
       const audio = payload.content.kind === 'audio'
       if (payload.provider === 'meta') {
         const token = business.meta_token?.trim()
@@ -520,7 +604,9 @@ export function createInboundWebhookProcessor(
         logger.log(`🛍️  [${payload.provider}] media en modo mini app: no se procesa`)
         await dependencies.bot.handleMessage(
           payload.from,
-          payload.content.kind === 'audio' ? '[nota de voz]' : '[foto]',
+          payload.content.kind === 'audio'
+            ? '[nota de voz]'
+            : payload.content.kind === 'location' ? '[ubicación]' : '[foto]',
           businessIdentifier,
           options,
         )
@@ -552,6 +638,20 @@ export function createInboundWebhookProcessor(
           : comprobante.ambiguos?.length
             ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
             : '[foto]',
+        businessIdentifier,
+        options,
+      )
+      return
+    }
+
+    // Una ubicación no tiene archivo: se entrega como texto y no pasa por la
+    // descarga. Va antes que el audio y la imagen porque `descargarMedia`
+    // lanzaría con ella, y un cliente que comparte su ubicación con un
+    // negocio de número propio merece que su mensaje llegue igual.
+    if (payload.content.kind === 'location') {
+      await dependencies.bot.handleMessage(
+        payload.from,
+        '[ubicación]',
         businessIdentifier,
         options,
       )
