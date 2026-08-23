@@ -137,6 +137,96 @@ describe('navegar', () => {
   })
 })
 
+// ═══════════════════════════════════════════════════════════════════════════
+// UN MENSAJE VACÍO ES REPINTAR, NO EQUIVOCARSE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ Fallo REAL del 2026-08-23, visto por el dueño en su teléfono: tocaba
+// «🍕 Pizzerías» y el bot le contestaba «🙏 No te entendí» — con la lista de
+// locales correcta debajo. La vista avanzaba bien; solo el texto mentía.
+//
+// El porqué: elegir una categoría devuelve una vista SIN texto para que el
+// llamador consulte los locales y vuelva a llamar. En esa segunda llamada el
+// mensaje ya se consumió y llega vacío, y `elegir('')` devuelve null — que se
+// trataba como «no casó ninguna opción».
+describe('repintar la vista tras elegir una categoría', () => {
+  const negocios = [neg('pizza-uno', 'Pizza Uno')]
+  const enNegocios = { vista: 'negocios', categoria: 'pizzerias', pagina: 0 }
+
+  it('con el mensaje vacío pinta los locales SIN reprochar nada', () => {
+    const r = paso({ mensaje: '', vista: enNegocios, categorias: CATEGORIAS, negocios })
+    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).toContain('Elige un local')
+    expect(r.options).toContain('Pizza Uno')
+  })
+
+  it('y en la portada, igual', () => {
+    const r = paso({
+      mensaje: '', vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).not.toContain('No te entendí')
+  })
+
+  // ⚠️ Lo que NO puede perderse: quien de verdad escribe cualquier cosa
+  // estando en el menú sí tiene que saber que no se le entendió.
+  it('pero una respuesta que no casa SIGUE diciendo que no se entendió', () => {
+    const r = paso({
+      mensaje: 'quiero un helado de mora',
+      vista: enNegocios, categorias: CATEGORIAS, negocios,
+    })
+    expect(r.reply).toContain('No te entendí')
+    expect(r.options).toContain('Pizza Uno')
+  })
+
+  it('el recorrido entero: categoría → repintado → local', () => {
+    // Es el camino que el dueño no podía completar.
+    const elegida = paso({
+      mensaje: '🍕 Pizzerías', vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+    })
+    expect(elegida.vista.categoria).toBe('pizzerias')
+
+    const pintada = paso({
+      mensaje: '', vista: elegida.vista, categorias: CATEGORIAS, negocios,
+    })
+    expect(pintada.reply).not.toContain('No te entendí')
+
+    const local = paso({
+      mensaje: 'Pizza Uno', vista: pintada.vista, categorias: CATEGORIAS, negocios,
+    })
+    expect(local.negocioElegido?.slug).toBe('pizza-uno')
+  })
+})
+
+// ⚠️ `saludar` existía en `verCategorias` desde el principio y NADIE lo ponía
+// en `true`: el saludo de bienvenida estaba construido y desconectado, así que
+// el primerísimo mensaje de alguien que nunca había escrito recibía «🙏 No te
+// entendí» como bienvenida a Umbani. Mismo patrón que `shopping_locked`.
+describe('el primer mensaje de alguien que nunca ha escrito', () => {
+  it('recibe la bienvenida, no un reproche', () => {
+    const r = paso({
+      mensaje: 'Hola buenas noches',
+      vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+      primerContacto: true,
+    })
+    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).toContain('Bienvenido')
+    expect(r.options.length).toBeGreaterThan(0)
+  })
+
+  it('pero quien YA conocía el menú sí recibe el aviso', () => {
+    const r = paso({
+      mensaje: 'Hola buenas noches',
+      vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+      primerContacto: false,
+    })
+    expect(r.reply).toContain('No te entendí')
+  })
+})
+
 describe('el reparto de tipos en categorías', () => {
   const sql = readFileSync(
     fileURLToPath(new URL('../migration-2026-08-21-categorias-del-marketplace.sql', import.meta.url)),

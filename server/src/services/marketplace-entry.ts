@@ -330,10 +330,15 @@ export async function handleMarketplaceMessage(
       ? await database.getMarketplaceBusinesses(vistaActual.categoria)
       : []
     respuesta = paso({
+      // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
+      // consumió al elegir la categoría, y esta llamada solo sirve para
+      // pintar los locales que se acaban de consultar.
       mensaje: intento === 0 ? text : '',
       vista: vistaActual,
       categorias,
       negocios,
+      // Nunca había escrito: su «hola» merece una bienvenida, no un reproche.
+      primerContacto: !conversation,
     })
     if (respuesta.reply || respuesta.negocioElegido) break
     vistaActual = respuesta.vista

@@ -146,11 +146,29 @@ export function verNegocios(
 }
 
 export interface PasoInput {
+  /**
+   * Lo que escribió el cliente.
+   *
+   * ⚠️ **Vacío significa REPINTAR, no «se equivocó»**. Al elegir una
+   * categoría, `paso` devuelve una vista sin texto para que el llamador
+   * consulte los locales y vuelva a llamar — y en esa segunda llamada el
+   * mensaje ya se consumió, así que llega vacío. Tratarlo como una elección
+   * fallida dejaba el menú en bucle: el cliente tocaba «🍕 Pizzerías», la
+   * vista avanzaba bien a los locales… y encima le decía «no te entendí».
+   */
   mensaje: string
   vista: MarketplaceView
   categorias: MarketplaceCategory[]
   /** Los locales de `vista.categoria`. El llamador los consulta. */
   negocios: MarketplaceBusiness[]
+  /**
+   * Primera vez que este cliente escribe al marketplace.
+   *
+   * ⚠️ Un «hola» NO es una opción equivocada. Sin esto, el primerísimo
+   * mensaje de alguien que nunca ha escrito recibía «🙏 No te entendí» como
+   * bienvenida a Umbani.
+   */
+  primerContacto?: boolean
 }
 
 /**
@@ -161,6 +179,8 @@ export interface PasoInput {
  */
 export function paso(input: PasoInput): MarketplaceReply {
   const { mensaje, vista, categorias, negocios } = input
+  // Repintar la vista tal cual: nadie se equivocó, no hay nada que reprochar.
+  const repintar = !normalizar(mensaje)
 
   if (vista.vista === 'negocios' && vista.categoria) {
     const categoria = categorias.find(c => c.code === vista.categoria)
@@ -185,6 +205,7 @@ export function paso(input: PasoInput): MarketplaceReply {
       }
     }
     const repetir = verNegocios(categoria, negocios, vista.pagina)
+    if (repintar) return repetir
     return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
   }
 
@@ -203,6 +224,11 @@ export function paso(input: PasoInput): MarketplaceReply {
       options: [],
       vista: { vista: 'negocios', categoria: categoria.code, pagina: 0 },
     }
+  }
+  // Repintado, o el primer «hola» de alguien que nunca ha escrito: en los dos
+  // casos se le da la bienvenida, no un reproche.
+  if (repintar || input.primerContacto) {
+    return verCategorias(categorias, vista.pagina, Boolean(input.primerContacto))
   }
   const repetir = verCategorias(categorias, vista.pagina)
   return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
