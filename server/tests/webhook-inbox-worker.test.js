@@ -398,6 +398,85 @@ describe('worker del inbox durable de webhooks', () => {
     await expect(oversizedWorker.pollOnce()).rejects.toThrow('filas inválidas')
   })
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // EL MENSAJE SIN LOCAL: EL MARKETPLACE SE QUEDÓ MUDO POR ESTO
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // ⚠️ Fallo REAL del 2026-08-23, y en producción. Un mensaje al número de la
+  // plataforma llega con `business_id` NULO —el número no es de ningún local—.
+  // `isLease` exigía `typeof business_id === 'string'`, así que lo daba por
+  // fila inválida y `executePoll` lanzaba antes de procesar nada.
+  //
+  // Lo peor era el SÍNTOMA, porque no parecía un error: el evento se quedaba
+  // en `processing` con el lease tomado, sin `last_error` en su fila, sin
+  // aparecer en `in_flight`, y con los intentos subiendo cada vez que vencía
+  // el lease. El cliente escribía al número y no recibía absolutamente nada.
+  //
+  // ⚠️ La migración del canal de plataforma arregló este MISMO fallo en SQL
+  // —índices parciales, `is not distinct from` en el FIFO, el disparador de
+  // consumo— y este guardián de TypeScript se quedó atrás. Dos NULL no son
+  // iguales en SQL; `null` no es `string` en TypeScript.
+  it('acepta un lease SIN local: es el mensaje al número de la plataforma', async () => {
+    const sinLocal = { ...lease(1, 'ycloud'), business_id: null }
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([sinLocal])),
+    })
+    const procesados = []
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-sin-local',
+      repository: repo,
+      processEvent: async event => { procesados.push(event.business_id) },
+    })
+
+    await expect(worker.pollOnce()).resolves.toBe(1)
+    // Se procesa, y llega con el nulo intacto: aguas abajo eso significa
+    // «todavía no hay local elegido», no «falta un dato».
+    expect(procesados).toEqual([null])
+    expect(repo.completeWebhookEvent).toHaveBeenCalledOnce()
+  })
+
+  // ⚠️ La consecuencia que multiplicaba el daño: `leased.every(isLease)` tira
+  // el LOTE ENTERO. Un solo mensaje al número de la plataforma dejaba sin
+  // procesar también los de los negocios con número propio que vinieran con
+  // él — un fallo del marketplace se llevaba por delante a todos los demás.
+  it('y no arrastra a los mensajes de los negocios que vengan en el mismo lote', async () => {
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([
+        { ...lease(1, 'ycloud'), business_id: null },
+        lease(2, 'ycloud'),
+      ])),
+    })
+    const procesados = []
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-lote-mixto',
+      repository: repo,
+      concurrency: 2,
+      processEvent: async event => { procesados.push(event.business_id) },
+    })
+
+    await expect(worker.pollOnce()).resolves.toBe(2)
+    // Sin depender del orden: lo que importa es que se procesen LOS DOS.
+    expect(procesados).toHaveLength(2)
+    expect(procesados).toContain(null)
+    expect(procesados).toContain('business-a')
+  })
+
+  // Y lo que SÍ tiene que seguir rechazando: una fila a la que le falta el
+  // identificador no es un mensaje de plataforma, es una fila rota.
+  it('pero una fila sin id sigue siendo inválida', async () => {
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([
+        { ...lease(1, 'ycloud'), id: undefined, business_id: null },
+      ])),
+    })
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-fila-rota',
+      repository: repo,
+      processEvent: async () => {},
+    })
+    await expect(worker.pollOnce()).rejects.toThrow('filas inválidas')
+  })
+
   it('sanitiza valores no Error y no usa unref en ningún timer', () => {
     expect(sanitizeWebhookInboxError({ token: 'should-not-be-read' }))
       .toBe('Error interno durante el procesamiento del webhook')
