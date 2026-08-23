@@ -311,6 +311,34 @@ const createStorefrontOrder = async (input: {
   p_notes: input.deliveryNotes || null,
 })
 
+/**
+ * Registra la huella del comprobante y avisa si esa imagen ya se usó.
+ *
+ * ⚠️ La búsqueda de duplicados es GLOBAL —un comprobante reutilizado en otro
+ * local es el fraude que más importa cazar—, pero la RPC nunca devuelve datos
+ * del otro negocio: solo dice que ya se usó. Por eso vive en una función
+ * `security definer` y no en una consulta desde aquí.
+ */
+const registerPaymentReceipt = async (input: {
+  businessId: string
+  orderId: string
+  fileUrl: string
+  filePublicId?: string | null
+  sha256: string
+  perceptualHash?: string | null
+  mimeType?: string | null
+  fileSize?: number | null
+}) => db.rpc('register_payment_receipt', {
+  p_business_id: input.businessId,
+  p_order_id: input.orderId,
+  p_file_url: input.fileUrl,
+  p_file_public_id: input.filePublicId || null,
+  p_sha256: input.sha256,
+  p_perceptual_hash: input.perceptualHash || null,
+  p_mime_type: input.mimeType || null,
+  p_file_size: input.fileSize ?? null,
+})
+
 // El comprobante lo sube el cliente desde la mini app, sin JWT: la RPC
 // comprueba negocio + pedido + teléfono de la sesión antes de guardarlo.
 const attachStorefrontPaymentProof = async (input: {
@@ -613,6 +641,7 @@ const getStorefrontPaymentMethods = async (businessId: string) => {
 }
 
 export = {
+  registerPaymentReceipt,
   getStorefrontPaymentMethods,
   resolveCustomer,
   claimStorefrontLinkSend,

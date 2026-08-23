@@ -1816,6 +1816,87 @@ begin
     raise notice 'CANAL DE LA PLATAFORMA: encolado, deduplicación y FIFO verificados';
   end;
 
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- LA HUELLA DEL COMPROBANTE
+  -- ═══════════════════════════════════════════════════════════════════════
+  --
+  -- ⚠️ Necesita DOS negocios y varios pedidos: el caso que de verdad importa
+  -- —un comprobante reutilizado en otro local— no se puede ver con una sola
+  -- fila, y sobre una tabla vacía todo esto pasa solo.
+  declare
+    v_loc_a uuid; v_loc_b uuid;
+    v_pa uuid; v_pa2 uuid; v_pb uuid;
+    v_rec jsonb;
+    v_huella text := repeat('a', 64);
+    v_visual text := 'phash-de-prueba';
+  begin
+    insert into public.businesses (slug, name, type, whatsapp_provider)
+    values ('verificacion-huella-a', 'Local A', 'pizzería', 'marketplace')
+    returning id into v_loc_a;
+    insert into public.businesses (slug, name, type, whatsapp_provider)
+    values ('verificacion-huella-b', 'Local B', 'pizzería', 'marketplace')
+    returning id into v_loc_b;
+
+    insert into public.orders (business_id, contact_phone, status, subtotal, total)
+    values (v_loc_a, '593990000001', 'esperando_pago', 10, 10) returning id into v_pa;
+    insert into public.orders (business_id, contact_phone, status, subtotal, total)
+    values (v_loc_a, '593990000001', 'esperando_pago', 20, 20) returning id into v_pa2;
+    insert into public.orders (business_id, contact_phone, status, subtotal, total)
+    values (v_loc_b, '593990000002', 'esperando_pago', 30, 30) returning id into v_pb;
+
+    -- 1. El primero está limpio.
+    v_rec := public.register_payment_receipt(v_loc_a, v_pa, 'https://x/1', 'p1', v_huella, v_visual);
+    if (v_rec->>'duplicado')::boolean then
+      raise exception 'El primer comprobante no puede salir como duplicado';
+    end if;
+
+    -- 2. El MISMO archivo en otro pedido del mismo local: se caza, y se dice
+    --    en cuál se usó.
+    v_rec := public.register_payment_receipt(v_loc_a, v_pa2, 'https://x/2', 'p2', v_huella, v_visual);
+    if not (v_rec->>'duplicado')::boolean then
+      raise exception 'No cazó el mismo archivo reutilizado en el mismo negocio';
+    end if;
+    if v_rec->>'pedido_previo' is null then
+      raise exception 'Debería nombrar el pedido de ESTE negocio donde ya se usó';
+    end if;
+
+    -- 3. ⚠️ EL CASO QUE IMPORTA: el mismo comprobante en OTRO local. Se caza
+    --    igual —es el fraude que más pesa— pero sin revelar nada del otro
+    --    negocio: que exista basta para desconfiar, y el pedido ajeno no es
+    --    asunto de este dueño.
+    v_rec := public.register_payment_receipt(v_loc_b, v_pb, 'https://x/3', 'p3', v_huella, v_visual);
+    if not (v_rec->>'duplicado')::boolean then
+      raise exception 'No cazó el comprobante reutilizado en OTRO local';
+    end if;
+    if v_rec->>'pedido_previo' is not null then
+      raise exception 'FUGA: le reveló al local B un pedido del local A';
+    end if;
+
+    -- 4. La señal queda escrita en la base, no solo en el código: si el
+    --    análisis posterior falla o está apagado, el duplicado ya está marcado.
+    if not exists (
+      select 1 from public.payment_receipt_risk_flags
+      where business_id = v_loc_b and severity = 'critica' and points > 0
+    ) then
+      raise exception 'No se registró la señal de duplicado';
+    end if;
+
+    -- 5. Un pedido de otro negocio no se puede colgar aquí.
+    if (public.register_payment_receipt(
+          v_loc_a, v_pb, 'https://x/4', 'p4', repeat('b', 64)
+        )->>'result') <> 'not_found' then
+      raise exception 'FUGA: aceptó colgar un comprobante de un pedido ajeno';
+    end if;
+
+    -- 6. Y la auditoría no se sobrescribe: una fila por comprobante.
+    if (select count(*) from public.payment_receipt_audit_logs) <> 3 then
+      raise exception 'La auditoría debería llevar una fila por comprobante';
+    end if;
+
+    delete from public.businesses where id in (v_loc_a, v_loc_b);
+    raise notice 'HUELLA DEL COMPROBANTE: duplicados, aislamiento y auditoría verificados';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;

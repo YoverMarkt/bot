@@ -83,6 +83,7 @@ export async function uploadMedia(
           url: uploaded.secure_url,
           public_id: uploaded.public_id,
           resource_type: uploaded.resource_type,
+          ...(uploaded.phash ? { phash: String(uploaded.phash) } : {}),
         })
       },
     )
@@ -104,7 +105,7 @@ export async function uploadMedia(
 export async function uploadPrivateMedia(
   buffer: Buffer,
   businessId: string,
-): Promise<MediaUploadResult> {
+): Promise<MediaUploadResult & { phash?: string }> {
   if (!(await configure())) throw new Error('Cloudinary no está configurado')
 
   return new Promise((resolve, reject) => {
@@ -113,6 +114,15 @@ export async function uploadPrivateMedia(
         folder: `botpanel/${businessId}/comprobantes`,
         resource_type: 'image',
         type: 'authenticated',
+        // La huella PERCEPTUAL de la imagen, que la calcula Cloudinary al
+        // subirla. Reconoce la misma foto recortada, recomprimida o con otro
+        // brillo — que es justo lo que pasa cuando alguien reenvía un
+        // comprobante por WhatsApp, porque WhatsApp la recomprime y el
+        // SHA-256 deja de coincidir.
+        //
+        // Sale gratis aquí: pedirla evita añadir una librería de imagen al
+        // servidor solo para esto.
+        phash: true,
       },
       (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
         if (error) return reject(error)

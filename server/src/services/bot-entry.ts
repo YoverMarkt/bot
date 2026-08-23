@@ -157,6 +157,13 @@ const adjuntarComprobante = crearBuzonDeComprobantes({
     const log = require('./error-log') as typeof import('./error-log')
     return log.recordError(input)
   },
+  // La huella del comprobante: SHA-256 del archivo y la perceptual de
+  // Cloudinary, para saber si esa imagen ya se usó en otro pedido. Es una
+  // capa encima del camino de siempre y nunca lo interrumpe.
+  registrarHuella: (input) => {
+    const ingest = require('./receipt-ingest') as typeof import('./receipt-ingest')
+    return ingest.registrarComprobante(input)
+  },
 })
 
 function imageQuery(identified: string): string {
