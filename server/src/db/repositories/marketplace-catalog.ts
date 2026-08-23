@@ -81,9 +81,31 @@ const searchMarketplaceProducts = async (
   return (data || []) as MarketplaceProductHit[]
 }
 
+/**
+ * ¿Este TIPO de local se pide dentro del chat, o se le manda el enlace?
+ *
+ * ⚠️ Lo decide cuánto hay que ELEGIR para armar el pedido, no cuántos
+ * productos hay en la carta. Vive en la base —junto al reparto de tipos en
+ * categorías— para que el panel y el servidor lean lo mismo y para poder
+ * reclasificar un tipo sin desplegar.
+ *
+ * ⚠️ Un fallo devuelve `false` (el enlace) en vez de lanzar: la tienda atiende
+ * cualquier catálogo, así que es el lado que siempre funciona.
+ */
+const tipoPideEnChat = async (
+  businessType: string | null | undefined,
+): Promise<boolean> => {
+  const { data, error } = await db.rpc('tipo_pide_en_chat', {
+    p_business_type: businessType ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data === true
+}
+
 export {
   getMarketplaceCategories,
   getMarketplaceBusinesses,
+  tipoPideEnChat,
   searchMarketplaceBusinesses,
   searchMarketplaceProducts,
 }

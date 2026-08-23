@@ -35,13 +35,11 @@ export const ALLOWED_KEYS = [
   'platform_ycloud_number',
   'platform_webhook_secret',
   'platform_webhook_endpoint_id',
-  // Hasta cuántos productos se pide DENTRO del chat. Por encima, el local
-  // manda el enlace de su tienda: una lista de WhatsApp admite diez filas,
-  // así que un catálogo grande se navega mejor en la app.
-  //
-  // Vive aquí y no en el código para poder moverlo sin desplegar: el número
-  // bueno se sabrá viendo pedidos reales, no antes.
-  'marketplace_menu_max_productos',
+  // ⚠️ Aquí vivía `marketplace_menu_max_productos`, el umbral de la «regla de
+  // los 20». Se retiró el 2026-08-23: cómo se pide lo decide ahora el TIPO del
+  // local (`marketplace_category_types.pide_en_chat`), no cuántos productos
+  // tiene. Contar productos mandaba una pizzería de 17 al chat, donde pedirla
+  // es tamaño, masa, borde y dos sabores.
   // ── El análisis de comprobantes ───────────────────────────────────────
   //
   // ⚠️ `receipt_analysis_enabled` NACE APAGADO, y es deliberado. El análisis
