@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
-import { Bot as BotIcon, Cloud, Plug, Search, Store } from 'lucide-react'
+import { Bot as BotIcon, Cloud, Plug, Receipt, Search, Store } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -118,6 +118,47 @@ export default function ServerSettings() {
         <div className="flex items-center gap-3 mt-3">
           <Button variant="outline" size="sm" onClick={verifyAI} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
           <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
+        </div>
+      </Card>
+
+      {/* Análisis de comprobantes */}
+      <Card className={card}>
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Receipt className="w-4 h-4" /> Análisis de comprobantes</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Lee la captura del banco que manda el cliente y le da al dueño señales antes de
+          aprobar: valor, fecha, cuenta destino y si esa imagen ya se usó. Sobre todo evita
+          que una foto que no es un comprobante se trate como un pago. Usa la OpenAI API Key
+          de arriba y cuesta alrededor de $0,003 por comprobante.
+        </p>
+        <p className="text-xs text-amber-700 dark:text-amber-400 mb-3">
+          ⚠️ El análisis nunca confirma un pago ni mueve un pedido: eso lo sigue decidiendo
+          el dueño desde su panel. Si se apaga, o si OpenAI falla, todo funciona como hoy.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="server-receipt-analysis">Estado</Label>
+            <Select
+              value={val('receipt_analysis_enabled') || saved.receipt_analysis_enabled || '0'}
+              onValueChange={v => setF(p => ({ ...p, receipt_analysis_enabled: v }))}
+            >
+              <SelectTrigger id="server-receipt-analysis" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Apagado — no se analiza nada (por defecto)</SelectItem>
+                <SelectItem value="1">Encendido — se analiza cada comprobante</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="server-receipt-rules">
+              Puntos de cada señal (JSON, opcional)
+            </Label>
+            <Input
+              id="server-receipt-rules"
+              value={val('receipt_risk_rules')}
+              onChange={set('receipt_risk_rules')}
+              placeholder={saved.receipt_risk_rules || '{"monto_menor":60,"cuenta_incorrecta":80}'}
+            />
+          </div>
         </div>
       </Card>
 

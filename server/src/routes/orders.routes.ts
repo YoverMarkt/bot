@@ -45,6 +45,15 @@ interface ModuloDb {
     payment_proof_url?: string | null
     payment_proof_public_id?: string | null
   } | null>
+  getReceiptAnalysis(
+    businessId: string,
+    orderId: string,
+  ): Promise<Record<string, unknown> | null>
+  getBusinessBankAccount(businessId: string): Promise<{
+    bank_name?: string | null
+    account_number?: string | null
+    holder_name?: string | null
+  } | null>
   requestNewPaymentProof(
     businessId: string,
     orderId: string,
@@ -154,6 +163,50 @@ router.get(
     const url = await signedMediaUrl(pedido.payment_proof_public_id)
     if (!url) return res.status(503).json({ error: 'No se pudo abrir el comprobante ahora mismo' })
     return res.json({ url, firmada: true })
+  },
+)
+
+// ── Lo que el sistema leyó del comprobante ─────────────────────────────────
+//
+// Los campos extraídos de la imagen, las señales de riesgo y el score, para
+// que el dueño decida con algo más que su intuición.
+//
+// ⚠️ ESTO NO CONFIRMA UN PAGO, y el panel lo dice con todas las letras encima
+// de los datos. Un comprobante que se lee perfecto sigue siendo una imagen:
+// pudo editarse, generarse con una plantilla o reutilizarse de otro pedido. Lo
+// único que confirma un pago es el dueño mirando su banco.
+//
+// El `businessId` sale del JWT y viaja DENTRO de la función de base de datos:
+// el identificador del pedido va en la URL y sin el negocio se estaría
+// enseñando el comprobante de otro local.
+router.get(
+  '/api/client/orders/:id/receipt-analysis',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    const analisis = await db.getReceiptAnalysis(businessId, String(req.params.id || ''))
+    // Sin comprobante registrado no es un error: son todos los pedidos
+    // anteriores a esta capa, y el panel tiene que pintarlos igual.
+    if (!analisis || analisis.result === 'sin_analisis') {
+      return res.json({ analisis: null, esperado: null })
+    }
+
+    // Lo ESPERADO viaja con lo detectado para que el panel los pueda poner
+    // uno al lado del otro. El total ya lo tiene el panel —está pintando el
+    // pedido—, pero la cuenta del negocio no, y es justo la comparación que
+    // más pesa: si el dinero fue a otra cuenta, ese pago no va a llegar.
+    const cuenta = await db.getBusinessBankAccount(businessId).catch(() => null)
+    return res.json({
+      analisis,
+      esperado: cuenta
+        ? {
+          bank_name: cuenta.bank_name ?? null,
+          account_number: cuenta.account_number ?? null,
+          holder_name: cuenta.holder_name ?? null,
+        }
+        : null,
+    })
   },
 )
 

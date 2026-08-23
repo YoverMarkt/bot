@@ -1893,6 +1893,176 @@ begin
       raise exception 'La auditoría debería llevar una fila por comprobante';
     end if;
 
+    -- ═════════════════════════════════════════════════════════════════════
+    -- Y AHORA EL ANÁLISIS, sobre estos mismos comprobantes
+    -- ═════════════════════════════════════════════════════════════════════
+    --
+    -- Va DENTRO de este bloque a propósito: necesita comprobantes ya
+    -- registrados y, sobre todo, el del local A que salió DUPLICADO. Ese es
+    -- el caso que no se puede ver de otra forma.
+    declare
+      v_r_limpio uuid;
+      v_r_dup uuid;
+      v_ana jsonb;
+      v_lee jsonb;
+      v_estado text;
+      v_confirmado timestamptz;
+    begin
+      select id into v_r_limpio from public.payment_receipts
+      where business_id = v_loc_a and order_id = v_pa;
+      select id into v_r_dup from public.payment_receipts
+      where business_id = v_loc_a and order_id = v_pa2;
+
+      -- 7. Un comprobante que cuadra: las señales que RESTAN lo dejan en cero,
+      --    nunca en negativo.
+      v_ana := public.save_receipt_analysis(
+        v_loc_a, v_r_limpio, 'analizado',
+        jsonb_build_object(
+          'bank_name', 'Banco Pichincha', 'sender_name', 'Ana Perez',
+          'destination_account', '2100123456', 'amount', '10.00',
+          'currency', 'USD', 'transaction_date', '2026-08-22',
+          'reference_number', 'REF-1', 'ocr_raw_text', 'Transferencia exitosa'
+        ),
+        jsonb_build_array(
+          jsonb_build_object('flag_type','monto_coincide','severity','baja','points',-10),
+          jsonb_build_object('flag_type','cuenta_coincide','severity','baja','points',-10)
+        ),
+        jsonb_build_object('modelo', 'gpt-4o-mini')
+      );
+      if (v_ana->>'risk_score')::int <> 0 or v_ana->>'risk_level' <> 'bajo' then
+        raise exception 'Un comprobante limpio no puede salir en % (%)',
+          v_ana->>'risk_level', v_ana->>'risk_score';
+      end if;
+
+      -- 8. ⚠️ EL CASO QUE JUSTIFICA QUE EL SCORE SE SUME EN LA BASE: el
+      --    duplicado ya traía 70 puntos escritos por `register_payment_receipt`
+      --    ANTES de que el análisis existiera. Si el servidor mandara su propio
+      --    total, esos puntos se perderían y un comprobante reutilizado podría
+      --    salir «bajo» solo porque el monto cuadra —que es justo lo que hace
+      --    quien reenvía el comprobante de otro pedido del mismo importe.
+      v_ana := public.save_receipt_analysis(
+        v_loc_a, v_r_dup, 'analizado',
+        jsonb_build_object('bank_name', 'Banco Pichincha', 'amount', '20.00'),
+        jsonb_build_array(
+          jsonb_build_object('flag_type','monto_coincide','severity','baja','points',-10)
+        ),
+        null
+      );
+      if (v_ana->>'risk_score')::int <> 60 then
+        raise exception 'El duplicado del registro debe contar en el score: salió %',
+          v_ana->>'risk_score';
+      end if;
+      if v_ana->>'risk_level' <> 'alto' then
+        raise exception 'Un comprobante reutilizado no puede quedar en nivel %',
+          v_ana->>'risk_level';
+      end if;
+
+      -- 9. ⚠️ LO MÁS IMPORTANTE DE TODO EL MÓDULO: analizar NO confirma un
+      --    pago. Ni mueve el pedido, ni marca `payment_confirmed_at`. Eso lo
+      --    decide el dueño mirando su banco, nunca un modelo mirando una foto.
+      select status, payment_confirmed_at into v_estado, v_confirmado
+      from public.orders where id = v_pa;
+      if v_estado <> 'esperando_pago' or v_confirmado is not null then
+        raise exception 'FALLO GRAVE: el análisis tocó el pedido (estado %, pago %)',
+          v_estado, v_confirmado;
+      end if;
+
+      -- 10. La basura de un modelo no puede tumbar el análisis. Una foto
+      --     ruidosa devuelve cualquier cosa, y perder el análisis entero por
+      --     un campo mal leído sería perder también las señales de riesgo.
+      v_ana := public.save_receipt_analysis(
+        v_loc_b, (select id from public.payment_receipts where business_id = v_loc_b),
+        'analizado',
+        jsonb_build_object(
+          'bank_name', repeat('B', 300), 'transaction_date', '32/13/2026',
+          'transaction_time', 'ayer', 'amount', 'un millón'
+        ),
+        jsonb_build_array(
+          jsonb_build_object('flag_type','sin_referencia','severity','media','points',15),
+          jsonb_build_object('flag_type','','points',99),
+          '"no soy un objeto"'::jsonb
+        ),
+        null
+      );
+      if v_ana->>'result' <> 'saved' then
+        raise exception 'La basura de un modelo tumbó el análisis: %', v_ana;
+      end if;
+      if (select transaction_date from public.payment_receipts where business_id = v_loc_b) is not null then
+        raise exception 'Una fecha imposible tiene que quedar nula, no colarse';
+      end if;
+
+      -- 11. Un estado que diera un pago por bueno no se admite siquiera.
+      begin
+        perform public.save_receipt_analysis(v_loc_a, v_r_limpio, 'pagado', null, null, null);
+        raise exception 'Aceptó dejar el comprobante en un estado que no existe';
+      exception when sqlstate '22023' then null;
+      end;
+
+      -- 12. Un comprobante de otro negocio no se escribe ni se lee.
+      if (public.save_receipt_analysis(v_loc_b, v_r_limpio, 'analizado', null, null, null)->>'result')
+         <> 'not_found' then
+        raise exception 'FUGA: el local B escribió sobre un comprobante del local A';
+      end if;
+      if (public.get_receipt_analysis(v_loc_b, v_pa)->>'result') <> 'sin_analisis' then
+        raise exception 'FUGA: el local B leyó el comprobante del local A';
+      end if;
+
+      -- 13. Y lo que el dueño SÍ ve: su comprobante con sus señales.
+      v_lee := public.get_receipt_analysis(v_loc_a, v_pa2);
+      if v_lee->>'risk_score' <> '60' then
+        raise exception 'La lectura del panel no trae el score';
+      end if;
+      if jsonb_array_length(v_lee->'flags') < 2 then
+        raise exception 'La lectura del panel no trae las señales que explican el score';
+      end if;
+
+      -- 14. La referencia repetida: el duplicado que la HUELLA no puede ver.
+      --     Quien reenvía el mismo pago recortado cambia el SHA y hasta el
+      --     perceptual, pero el número del banco sigue siendo el mismo.
+      --     ⚠️ Se busca en toda la plataforma, y la señal no nombra al otro
+      --     negocio — el mismo criterio que la huella.
+      v_ana := public.save_receipt_analysis(
+        v_loc_a, v_r_limpio, 'analizado',
+        jsonb_build_object('reference_number', 'REF-REPETIDA-1'),
+        null, null, 60
+      );
+      if exists (
+        select 1 from public.payment_receipt_risk_flags
+        where receipt_id = v_r_limpio and flag_type = 'referencia_duplicada'
+      ) then
+        raise exception 'La primera vez que se ve una referencia no es un duplicado';
+      end if;
+
+      v_ana := public.save_receipt_analysis(
+        v_loc_a, v_r_dup, 'analizado',
+        jsonb_build_object('reference_number', 'REF-REPETIDA-1'),
+        null, null, 60
+      );
+      if not exists (
+        select 1 from public.payment_receipt_risk_flags
+        where receipt_id = v_r_dup and flag_type = 'referencia_duplicada'
+      ) then
+        raise exception 'No cazó la misma referencia bancaria en otro pedido';
+      end if;
+
+      -- 15. Y con los puntos a cero la señal se APAGA: el dueño puede
+      --     desactivar una regla desde Ajustes sin que aparezca como ruido.
+      perform public.save_receipt_analysis(
+        v_loc_b, (select id from public.payment_receipts where business_id = v_loc_b),
+        'analizado', jsonb_build_object('reference_number', 'REF-REPETIDA-1'),
+        null, null, 0
+      );
+      if exists (
+        select 1 from public.payment_receipt_risk_flags f
+        join public.payment_receipts r on r.id = f.receipt_id
+        where r.business_id = v_loc_b and f.flag_type = 'referencia_duplicada'
+      ) then
+        raise exception 'Con la regla en cero no debería escribirse la señal';
+      end if;
+
+      raise notice 'ANÁLISIS DEL COMPROBANTE: score, aislamiento y «no confirma pagos» verificados';
+    end;
+
     delete from public.businesses where id in (v_loc_a, v_loc_b);
     raise notice 'HUELLA DEL COMPROBANTE: duplicados, aislamiento y auditoría verificados';
   end;

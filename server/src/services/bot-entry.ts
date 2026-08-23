@@ -157,6 +157,17 @@ const adjuntarComprobante = crearBuzonDeComprobantes({
     const log = require('./error-log') as typeof import('./error-log')
     return log.recordError(input)
   },
+  /**
+   * La compuerta: ¿esto es siquiera un comprobante?
+   *
+   * ⚠️ Nace APAGADA (`receipt_analysis_enabled` en Ajustes del servidor). Con
+   * el análisis apagado devuelve `motivo: 'apagado'` sin llamar a nadie ni
+   * gastar un céntimo, y el buzón se comporta exactamente como siempre.
+   */
+  analizarImagen: (imagen, mimeType) => {
+    const vision = require('./receipt-vision') as typeof import('./receipt-vision')
+    return vision.analizarComprobante(imagen, mimeType)
+  },
   // La huella del comprobante: SHA-256 del archivo y la perceptual de
   // Cloudinary, para saber si esa imagen ya se usó en otro pedido. Es una
   // capa encima del camino de siempre y nunca lo interrumpe.

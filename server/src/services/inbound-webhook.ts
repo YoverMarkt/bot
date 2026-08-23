@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { atiendeSinIA } from './chat-mode'
-import { textoDelComprobante, textoDelComprobanteAmbiguo } from './payment-proof-inbox'
+import {
+  textoDelComprobante, textoDelComprobanteAmbiguo, textoDeFotoQueNoEsComprobante,
+} from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
   normalizeChannelIdentifier,
@@ -152,10 +154,16 @@ export interface InboundWebhookDependencies {
     businessId: string,
     contactPhone: string,
     imagen: Buffer,
+    mimeType?: string | null,
   ) => Promise<{
     adjuntado: boolean
     orderNumber?: number | null
     ambiguos?: Array<{ orderId: string; orderNumber: number | null; businessName: string }>
+    /**
+     * La imagen no tenía NADA de un comprobante y por eso no se subió.
+     * Solo se pone con el análisis encendido y ante el vacío absoluto.
+     */
+    noEsComprobante?: boolean
   }>
 }
 
@@ -616,7 +624,7 @@ export function createInboundWebhookProcessor(
       logger.log(`🧾 [${payload.provider}] foto con pedido esperando pago: se descarga`)
       const foto = await descargarMedia()
       const comprobante = await dependencies.adjuntarComprobante!(
-        business.id, payload.from, foto.data,
+        business.id, payload.from, foto.data, foto.mimeType,
       )
       // Pagos pendientes en más de un local: se PREGUNTA cuál, y la foto no
       // se adjunta a ninguno mientras tanto. Adivinar sería dar por cobrado a
@@ -629,15 +637,18 @@ export function createInboundWebhookProcessor(
 
       await dependencies.bot.handleMessage(
         payload.from,
-        // Tres casos, y el del medio es el nuevo: se adjuntó, no se supo a
-        // cuál de varios locales, o no había pedido esperando pago. Si no se
-        // pudo adjuntar se sigue como siempre y el cliente recibe su respuesta
-        // de siempre en vez de quedarse sin nada.
+        // CUATRO casos: se adjuntó, no se supo a cuál de varios locales, la
+        // imagen no era un comprobante (desde el 2026-08-22, y solo con el
+        // análisis encendido), o no se pudo adjuntar. El último se sigue
+        // tratando como siempre —el cliente recibe su respuesta de siempre en
+        // vez de quedarse sin nada—, que es lo que hace que esto falle ABIERTO.
         comprobante.adjuntado
           ? textoDelComprobante(comprobante.orderNumber)
           : comprobante.ambiguos?.length
             ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
-            : '[foto]',
+            : comprobante.noEsComprobante
+              ? textoDeFotoQueNoEsComprobante()
+              : '[foto]',
         businessIdentifier,
         options,
       )
@@ -711,9 +722,9 @@ const processor = createInboundWebhookProcessor({
     const pedido = await db.getLastOrderForContact(businessId, contactPhone).catch(() => null)
     return inbox.esperaComprobante(pedido)
   },
-  adjuntarComprobante: (businessId, contactPhone, imagen) => {
+  adjuntarComprobante: (businessId, contactPhone, imagen, mimeType) => {
     const bot = require('./bot-entry') as typeof import('./bot-entry')
-    return bot.adjuntarComprobante(businessId, contactPhone, imagen)
+    return bot.adjuntarComprobante(businessId, contactPhone, imagen, mimeType)
   },
   /**
    * El menú del marketplace: categorías → locales → el enlace de su tienda.

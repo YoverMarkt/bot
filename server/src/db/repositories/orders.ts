@@ -129,6 +129,9 @@ const pedidosEsperandoComprobante = async (
     order_number: number | null
     total: number | null
     contact_phone: string | null
+    // Ya venía en el `select` pero no estaba declarado, así que el análisis no
+    // lo veía: es con lo que se detecta un comprobante viejo reciclado.
+    created_at: string | null
     businesses?: { name?: string | null } | null
   }>
 }

@@ -124,6 +124,49 @@ export const createCounterOrder = (input: {
 export const getOrderProof = (id: string) =>
   api<{ url: string; firmada: boolean }>(`/api/client/orders/${id}/proof`)
 
+/** Una señal del análisis, con los puntos que aportó al score. */
+export type SenalDeRiesgo = {
+  flag_type: string
+  severity: 'baja' | 'media' | 'alta' | 'critica'
+  description?: string | null
+  points: number
+}
+
+/**
+ * Lo que el sistema leyó del comprobante.
+ *
+ * ⚠️ NADA de esto confirma que el dinero haya entrado. El panel lo dice encima
+ * de los datos, siempre y sin excepción: un comprobante que se lee perfecto
+ * sigue siendo una imagen, y pudo editarse, generarse o reutilizarse.
+ */
+export type ReceiptAnalysis = {
+  receipt_id: string
+  status: 'pendiente_analisis' | 'analizado' | 'requiere_revision' | 'descartado'
+  bank_name?: string | null
+  sender_name?: string | null
+  beneficiary_name?: string | null
+  destination_account?: string | null
+  amount?: string | number | null
+  currency?: string | null
+  transaction_date?: string | null
+  transaction_time?: string | null
+  reference_number?: string | null
+  transaction_number?: string | null
+  risk_score?: number | null
+  risk_level?: 'bajo' | 'medio' | 'alto' | 'critico' | null
+  flags: SenalDeRiesgo[]
+}
+
+export const getReceiptAnalysis = (id: string) =>
+  api<{
+    analisis: ReceiptAnalysis | null
+    esperado: {
+      bank_name?: string | null
+      account_number?: string | null
+      holder_name?: string | null
+    } | null
+  }>(`/api/client/orders/${id}/receipt-analysis`)
+
 export const setOrderStatus = (id: string, status: OrderStatus) =>
   api(`/api/client/orders/${id}/status`, {
     method: 'PUT',

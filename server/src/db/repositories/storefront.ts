@@ -339,6 +339,50 @@ const registerPaymentReceipt = async (input: {
   p_file_size: input.fileSize ?? null,
 })
 
+/**
+ * Guarda lo que la visión leyó del comprobante, sus señales y su score.
+ *
+ * ⚠️ El score lo calcula la BASE sumando todas las señales del comprobante, no
+ * el servidor: `register_payment_receipt` ya dejó escrita la del duplicado
+ * ANTES de que el análisis existiera, y un total calculado aquí la perdería.
+ *
+ * ⚠️ Y no confirma ningún pago: la RPC no escribe una sola columna de `orders`.
+ */
+const saveReceiptAnalysis = async (input: {
+  businessId: string
+  receiptId: string
+  status: 'analizado' | 'requiere_revision'
+  datos?: Record<string, unknown> | null
+  flags?: Array<Record<string, unknown>> | null
+  analysis?: Record<string, unknown> | null
+  /** Los puntos de la señal de referencia repetida, configurables en Ajustes. */
+  puntosReferencia?: number
+}) => db.rpc('save_receipt_analysis', {
+  p_business_id: input.businessId,
+  p_receipt_id: input.receiptId,
+  p_status: input.status,
+  p_datos: input.datos ?? null,
+  p_flags: input.flags ?? null,
+  p_analysis: input.analysis ?? null,
+  p_puntos_referencia: input.puntosReferencia ?? 60,
+})
+
+/**
+ * El análisis del comprobante más reciente de un pedido, para el panel.
+ *
+ * El filtro por negocio va DENTRO de la función: el identificador del pedido
+ * viaja en la URL, y sin el negocio se estaría enseñando el comprobante de
+ * otro local.
+ */
+const getReceiptAnalysis = async (businessId: string, orderId: string) => {
+  const { data, error } = await db.rpc('get_receipt_analysis', {
+    p_business_id: businessId,
+    p_order_id: orderId,
+  })
+  fail(error, 'No se pudo leer el análisis del comprobante')
+  return (data || null) as Record<string, unknown> | null
+}
+
 // El comprobante lo sube el cliente desde la mini app, sin JWT: la RPC
 // comprueba negocio + pedido + teléfono de la sesión antes de guardarlo.
 const attachStorefrontPaymentProof = async (input: {
@@ -642,6 +686,8 @@ const getStorefrontPaymentMethods = async (businessId: string) => {
 
 export = {
   registerPaymentReceipt,
+  saveReceiptAnalysis,
+  getReceiptAnalysis,
   getStorefrontPaymentMethods,
   resolveCustomer,
   claimStorefrontLinkSend,
