@@ -424,3 +424,74 @@ describe('lo que no cambia', () => {
     expect(ctx.enviados.at(-1).reply).toMatch(/MENÚ/)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UN PEDIDO A LA VEZ — que el bloqueo se ACTIVE
+//
+// ⚠️ Hasta el 2026-08-22 `shopping_locked` existía en la base, el texto que
+// lo explica estaba escrito y probado… y NADIE lo ponía en `true`. El cliente
+// que estaba comprando en un local podía cambiarse a otro en silencio, y se
+// quedaba con la mini app del primero abierta y un carrito que ya no llevaba
+// a ninguna parte.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('el bloqueo se activa de verdad', () => {
+  const hastaElLocal = async (ctx) => {
+    await handle({ from: '593990978367', text: 'hola' }, ctx.deps)
+    await handle({ from: '593990978367', text: 'Pizzerías' }, ctx.deps)
+  }
+
+  it('elegir local con MINI APP bloquea: ya tiene su tienda abierta', async () => {
+    const ctx = armar({ productos: 50 })
+    await hastaElLocal(ctx)
+    await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
+
+    const conLocal = ctx.guardados.find(p => p.businessId === 'biz-1')
+    expect(conLocal.shoppingLocked).toBe(true)
+  })
+
+  it('y elegir local que pide por CHAT también', async () => {
+    const ctx = armar({ productos: 5 })
+    await hastaElLocal(ctx)
+    await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
+
+    const conLocal = ctx.guardados.find(p => p.businessId === 'biz-1')
+    expect(conLocal.shoppingLocked).toBe(true)
+  })
+
+  it('con el bloqueo puesto, pedir otra cosa NO cambia de local', async () => {
+    const ctx = armar({ productos: 50 })
+    ctx.database.getConversation.mockResolvedValue({
+      current_state: 'en_local',
+      selected_business_id: 'biz-1',
+      shopping_locked: true,
+      flow_state: null,
+      version: 3,
+    })
+    await handle({ from: '593990978367', text: 'ahora quiero pizza' }, ctx.deps)
+
+    const ultimo = ctx.enviados.at(-1)
+    // Se le dice DÓNDE lo tiene y CÓMO salir, en el mismo mensaje.
+    expect(ultimo.reply).toContain('Almuerzos Doña María')
+    expect(ultimo.reply).toMatch(/MENÚ/)
+    // Y no se le cambia el local por debajo.
+    expect(ctx.guardados.some(p => p.businessId && p.businessId !== 'biz-1')).toBe(false)
+  })
+
+  it('crear el pedido SUELTA el bloqueo', async () => {
+    // Si no lo soltara, el cliente no podría volver a pedir nunca sin
+    // escribir MENÚ.
+    const ctx = armar({ productos: 5 })
+    ctx.database.getConversation.mockResolvedValue({
+      current_state: 'esperando_metodo_pago',
+      selected_business_id: 'biz-1',
+      shopping_locked: true,
+      flow_state: { checkout: { items: [{ name: 'Almuerzo completo', qty: 1 }], addressId: 'dir-1' } },
+      version: 7,
+    })
+    await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
+
+    const ultimo = ctx.guardados.at(-1)
+    expect(ultimo.shoppingLocked).toBe(false)
+    expect(ultimo.clearBusiness).toBe(true)
+  })
+})

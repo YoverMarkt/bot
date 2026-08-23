@@ -282,3 +282,40 @@ describe('el número del marketplace se puede verificar', () => {
     expect(ruta).toMatch(/verify-platform-channel', auth\.authAdmin/)
   })
 })
+
+describe('rechazar el comprobante avisa al cliente', () => {
+  const ruta = leer('../src/routes/orders.routes.ts')
+
+  it('se le manda un WhatsApp pidiendo otra foto', () => {
+    // ⚠️ Hasta el 2026-08-22 no se avisaba. En la mini app el cliente lo veía
+    // al recargar la pantalla de pago; quien pidió por el CHAT no se enteraba
+    // nunca y se quedaba esperando un pedido devuelto a «esperando pago».
+    expect(ruta).toContain('avisarQueFaltaOtroComprobante')
+    expect(ruta).toMatch(/No pudimos leer tu comprobante/)
+  })
+
+  it('el mensaje dice QUÉ tiene que verse, no solo «manda otra»', () => {
+    // Sin decirle qué falta, la segunda foto suele salir igual de mal.
+    expect(ruta).toMatch(/valor/)
+    expect(ruta).toMatch(/fecha/)
+    expect(ruta).toMatch(/banco/)
+  })
+
+  it('y lleva el importe exacto del pedido', () => {
+    expect(ruta).toMatch(/Number\(pedido\.total \|\| 0\)\.toFixed\(2\)/)
+  })
+
+  it('nunca lanza: el pedido ya volvió a esperar pago', () => {
+    // Un fallo de envío no puede tumbar la respuesta al dueño, que ya hizo
+    // lo que pidió.
+    const bloque = ruta.match(
+      /async function avisarQueFaltaOtroComprobante[\s\S]*?\n}/,
+    )?.[0] || ''
+    expect(bloque).toContain('try {')
+    expect(bloque).toContain('catch')
+  })
+
+  it('sale sin await, como el resto de avisos', () => {
+    expect(ruta).toMatch(/void avisarQueFaltaOtroComprobante/)
+  })
+})
