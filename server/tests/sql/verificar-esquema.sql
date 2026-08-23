@@ -2127,6 +2127,43 @@ begin
     raise notice 'NÚMERO DE LA PLATAFORMA: ningún local se lo puede quedar';
   end;
 
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- CÓMO SE PIDE LO DECIDE EL TIPO, NO CUÁNTOS PRODUCTOS HAY
+  -- ═══════════════════════════════════════════════════════════════════════
+  --
+  -- Corrección del dueño (2026-08-23): una pizzería tiene pocos productos
+  -- pero pedirla es tamaño, masa, borde y dos sabores; una heladería «vende un
+  -- solo producto» pero lo que pesa son sus veinte sabores. Los dos van a la
+  -- mini app. Una almuercería son tres platos del día y se piden hablando.
+  begin
+    -- Los ejemplos EXACTOS que dio el dueño.
+    if public.tipo_pide_en_chat('pizzería') then
+      raise exception 'La pizzería tiene que ir a la mini app: son tamaño, masa, borde y dos sabores';
+    end if;
+    if public.tipo_pide_en_chat('heladería') then
+      raise exception 'La heladería tiene que ir a la mini app: lo que pesa son sus sabores';
+    end if;
+    if not public.tipo_pide_en_chat('almuerzos') then
+      raise exception 'Los almuerzos se piden hablando: son tres platos del día';
+    end if;
+
+    -- ⚠️ `businesses.type` es TEXTO LIBRE: un tipo escrito a mano no puede
+    -- reventar, cae al enlace — que es el lado que siempre funciona.
+    if public.tipo_pide_en_chat('lo que alguien escriba a mano') then
+      raise exception 'Un tipo desconocido debe caer al enlace';
+    end if;
+    if public.tipo_pide_en_chat(null) then
+      raise exception 'Un tipo nulo debe caer al enlace';
+    end if;
+
+    -- Ni mayúsculas ni espacios sueltos pueden cambiar la respuesta.
+    if not public.tipo_pide_en_chat('  ALMUERZOS  ') then
+      raise exception 'Debe normalizar mayúsculas y espacios';
+    end if;
+
+    raise notice 'PEDIR POR TIPO: pizzería y heladería al enlace, almuerzos al chat';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;

@@ -17,10 +17,13 @@ const CATEGORIAS = [
 ]
 const LOCAL = {
   id: 'biz-1', slug: 'donia-maria', name: 'Almuerzos Doña María',
-  type: 'pizzería', prep_min: 25,
+  // ⚠️ El tipo tiene que CUADRAR con el nombre desde el 2026-08-23: es lo
+  // que decide si se pide en el chat o por enlace. Antes decía 'pizzería'
+  // en un local de almuerzos, y no pasaba nada porque el tipo no se miraba.
+  type: 'almuerzos', prep_min: 25,
 }
 
-const armar = ({ productos = 5, maximo = 20, estadoMenu = null } = {}) => {
+const armar = ({ enChat = true, estadoMenu = null } = {}) => {
   const conversacion = { valor: null }
   const guardados = []
   const database = {
@@ -45,7 +48,6 @@ const armar = ({ productos = 5, maximo = 20, estadoMenu = null } = {}) => {
       id: 'biz-1', name: 'Almuerzos Doña María', slug: 'donia-maria',
       storefront_enabled: true, takes_orders: true,
     }),
-    countProducts: vi.fn().mockResolvedValue(productos),
     getProducts: vi.fn().mockResolvedValue([
       { id: 'p1', name: 'Almuerzo completo', price: 3.5, active: true },
     ]),
@@ -76,7 +78,7 @@ const armar = ({ productos = 5, maximo = 20, estadoMenu = null } = {}) => {
       database,
       issueLink: vi.fn().mockResolvedValue('https://umbani.app/t/donia-maria?k=abc'),
       send: async (reply, options) => { enviados.push({ reply, options }) },
-      maxProductosEnChat: async () => maximo,
+      tipoPideEnChat: vi.fn().mockResolvedValue(enChat),
       avanzarMenu,
         crearPedido: vi.fn().mockResolvedValue(true),
       crearPedidoCompleto: vi.fn().mockResolvedValue({ orderNumber: 10581, total: 11 }),
@@ -96,9 +98,28 @@ const hastaElLocal = async (ctx) => {
   await handle({ from: '593990978367', text: 'Pizzerías' }, ctx.deps)
 }
 
-describe('el umbral decide cómo se pide', () => {
-  it('con 5 productos se pide en el CHAT, sin mandar enlace', async () => {
-    const ctx = armar({ productos: 5 })
+// ═══════════════════════════════════════════════════════════════════════════
+// CÓMO SE PIDE LO DECIDE EL TIPO, NO CUÁNTOS PRODUCTOS HAY
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ ESTE BLOQUE DECÍA LO CONTRARIO HASTA EL 2026-08-23, y lo corrigió el
+// dueño mirando su teléfono:
+//
+//   «una pizzería puede tener 10 productos pero al momento de elegir tiene
+//    muchas opciones, así como una heladería puede tener 10 helados pero
+//    muchos sabores: eso son mini app. Pero un restaurante que ofrece
+//    almuerzos solo, queda pedir por WhatsApp.»
+//
+// Se contaban PRODUCTOS (la «regla de los 20»). Con ese criterio Monster
+// Pizza —17 productos— caía en el chat, y pedir una pizza por lista de
+// WhatsApp es tamaño, masa, borde y dos sabores.
+//
+// ⚠️ El criterio correcto YA EXISTÍA —`PEDIDO_SIMPLE`, con estos mismos
+// ejemplos— pero vivía solo en el panel del admin y la regla de los 20 lo
+// sobrescribía. Ahora vive en `marketplace_category_types.pide_en_chat`.
+describe('el TIPO de local decide cómo se pide', () => {
+  it('un tipo de pedido simple se atiende en el CHAT, sin enlace', async () => {
+    const ctx = armar({ enChat: true })
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
 
@@ -107,8 +128,8 @@ describe('el umbral decide cómo se pide', () => {
     expect(ctx.enviados.at(-1).reply).not.toContain('http')
   })
 
-  it('con 50 productos se manda el ENLACE', async () => {
-    const ctx = armar({ productos: 50 })
+  it('un tipo con mucho que elegir recibe el ENLACE', async () => {
+    const ctx = armar({ enChat: false })
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
 
@@ -117,46 +138,23 @@ describe('el umbral decide cómo se pide', () => {
     expect(ctx.enviados.at(-1).reply).toContain('https://umbani.app/t/donia-maria?k=abc')
   })
 
-  it('justo EN el umbral se pide en el chat', async () => {
-    const ctx = armar({ productos: 20, maximo: 20 })
+  it('se pregunta por el TIPO del local, no por su catálogo', async () => {
+    // Lo que se mide es cuánto hay que ELEGIR, y eso no se deduce contando.
+    const ctx = armar({ enChat: true })
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
-    expect(ctx.avanzarMenu).toHaveBeenCalled()
+    expect(ctx.deps.tipoPideEnChat).toHaveBeenCalledWith('almuerzos')
   })
 
-  it('uno por encima ya manda el enlace', async () => {
-    const ctx = armar({ productos: 21, maximo: 20 })
-    await hastaElLocal(ctx)
-    await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
-    expect(ctx.deps.issueLink).toHaveBeenCalled()
-  })
-
-  it('un local SIN productos manda el enlace, no un menú vacío', async () => {
-    // Un catálogo vacío en el chat sería una lista sin opciones: el cliente
-    // se queda mirando un menú que no ofrece nada.
-    const ctx = armar({ productos: 0 })
+  it('si la consulta falla se manda el ENLACE: es el lado que siempre funciona', async () => {
+    // La tienda atiende cualquier catálogo y cualquier cantidad de opciones;
+    // un menú de chat mal elegido deja al cliente recorriendo listas.
+    const ctx = armar({ enChat: true })
+    ctx.deps.tipoPideEnChat.mockRejectedValue(new Error('base caída'))
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
     expect(ctx.deps.issueLink).toHaveBeenCalled()
     expect(ctx.avanzarMenu).not.toHaveBeenCalled()
-  })
-
-  it('si CONTAR falla se manda el enlace: la tienda atiende cualquier catálogo', async () => {
-    // Se falla hacia lo que siempre funciona. Un menú de chat con cientos de
-    // productos sería inusable; la mini app no.
-    const ctx = armar({ productos: 5 })
-    ctx.database.countProducts.mockRejectedValue(new Error('base caída'))
-    await hastaElLocal(ctx)
-    await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
-    expect(ctx.deps.issueLink).toHaveBeenCalled()
-  })
-
-  it('el umbral sale de la configuración, no está fijo en el código', async () => {
-    // Con el umbral en 3, un local de 5 productos ya va al enlace.
-    const ctx = armar({ productos: 5, maximo: 3 })
-    await hastaElLocal(ctx)
-    await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
-    expect(ctx.deps.issueLink).toHaveBeenCalled()
   })
 })
 
@@ -165,7 +163,7 @@ describe('el carrito sobrevive a un despliegue', () => {
     // ⚠️ `bot-menu-flow` guarda su estado en un `Map` que se pierde en cada
     // arranque y que con dos instancias lleva dos cuentas del mismo carrito.
     // En el marketplace vive en `marketplace_conversations.flow_state`.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
 
@@ -180,7 +178,7 @@ describe('el carrito sobrevive a un despliegue', () => {
       cart: [{ name: 'Almuerzo completo', qty: 2 }],
       updatedAt: 1,
     }
-    const ctx = armar({ productos: 5, estadoMenu: carrito })
+    const ctx = armar({ enChat: true, estadoMenu: carrito })
     ctx.database.getConversation.mockResolvedValue({
       current_state: 'pidiendo',
       selected_business_id: 'biz-1',
@@ -240,7 +238,7 @@ describe('el checkout dentro del chat', () => {
   it('confirmar el carrito NO crea el pedido: primero pide la ubicación', async () => {
     // ⚠️ Crear el pedido aquí dejaría uno sin dirección ni forma de cobro en
     // el panel del dueño cada vez que alguien abandone a media conversación.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     conCarritoConfirmado(ctx)
     await handle({ from: '593990978367', text: '✅ Confirmar pedido' }, ctx.deps)
 
@@ -252,7 +250,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('la ubicación compartida se guarda con sus coordenadas', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_ubicacion', CARRITO)
     await handle({
       from: '593990978367',
@@ -272,7 +270,7 @@ describe('el checkout dentro del chat', () => {
   it('quien no comparte ubicación puede escribir su dirección', async () => {
     // El navegador de WhatsApp no siempre deja compartir el punto azul, y sin
     // esta salida el cliente se quedaría sin poder pedir.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_ubicacion', CARRITO)
     await handle({
       from: '593990978367',
@@ -285,7 +283,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('una dirección demasiado corta se vuelve a pedir', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_ubicacion', CARRITO)
     await handle({ from: '593990978367', text: 'aquí' }, ctx.deps)
 
@@ -294,7 +292,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('elegir transferencia crea el pedido y da los datos bancarios', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'Transferencia bancaria' }, ctx.deps)
 
@@ -312,7 +310,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('elegir efectivo NO pide comprobante ni datos bancarios', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
 
@@ -323,7 +321,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('el cliente puede elegir el método por su NÚMERO de lista', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: '2' }, ctx.deps)
     expect(ctx.deps.crearPedidoCompleto).toHaveBeenCalledWith(
@@ -332,7 +330,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('un método que no existe se vuelve a preguntar', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'con tarjeta' }, ctx.deps)
 
@@ -343,7 +341,7 @@ describe('el checkout dentro del chat', () => {
   it('creado el pedido, la conversación suelta el carrito y el local', async () => {
     // Si no lo soltara, el siguiente mensaje del cliente seguiría creyéndose
     // parte de un pedido que ya se cerró.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
 
@@ -353,7 +351,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('si el pedido NO se pudo crear, se dice y no se invita a reenviar', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     ctx.deps.crearPedidoCompleto.mockResolvedValue(null)
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
@@ -362,7 +360,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('un local sin métodos de pago lo dice, con salida', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     ctx.database.getStorefrontPaymentMethods.mockResolvedValue([])
     enEstado(ctx, 'esperando_ubicacion', CARRITO)
     await handle({
@@ -375,7 +373,7 @@ describe('el checkout dentro del chat', () => {
   })
 
   it('si se pierde el carrito a media conversación, se reinicia con aviso', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', undefined)
     await handle({ from: '593990978367', text: 'Efectivo (contra entrega)' }, ctx.deps)
 
@@ -385,7 +383,7 @@ describe('el checkout dentro del chat', () => {
 
   it('MENÚ sigue funcionando en pleno checkout', async () => {
     // Es la única salida del cliente y no puede depender de dónde esté.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     enEstado(ctx, 'esperando_metodo_pago', { ...CARRITO, addressId: 'dir-1' })
     await handle({ from: '593990978367', text: 'menú' }, ctx.deps)
 
@@ -397,7 +395,7 @@ describe('el checkout dentro del chat', () => {
 describe('lo que no cambia', () => {
   it('MENÚ sigue funcionando en medio de un pedido por chat', async () => {
     // Es la única salida del cliente y no puede depender de dónde esté.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     ctx.database.getConversation.mockResolvedValue({
       current_state: 'pidiendo',
       selected_business_id: 'biz-1',
@@ -411,7 +409,7 @@ describe('lo que no cambia', () => {
   })
 
   it('si el local desaparece a media compra se dice, con salida', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     ctx.database.getConversation.mockResolvedValue({
       current_state: 'pidiendo',
       selected_business_id: 'biz-1',
@@ -450,7 +448,7 @@ describe('el bloqueo se activa de verdad', () => {
   })
 
   it('y elegir local que pide por CHAT también', async () => {
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     await hastaElLocal(ctx)
     await handle({ from: '593990978367', text: 'Almuerzos Doña María' }, ctx.deps)
 
@@ -480,7 +478,7 @@ describe('el bloqueo se activa de verdad', () => {
   it('crear el pedido SUELTA el bloqueo', async () => {
     // Si no lo soltara, el cliente no podría volver a pedir nunca sin
     // escribir MENÚ.
-    const ctx = armar({ productos: 5 })
+    const ctx = armar({ enChat: true })
     ctx.database.getConversation.mockResolvedValue({
       current_state: 'esperando_metodo_pago',
       selected_business_id: 'biz-1',

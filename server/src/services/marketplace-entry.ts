@@ -69,8 +69,6 @@ export interface MarketplaceEntryDatabase {
     storefront_enabled?: boolean | null
     takes_orders?: boolean | null
   } | null>
-  /** Cuántos productos ACTIVOS tiene el local. Decide chat o enlace. */
-  countProducts(businessId: string): Promise<number>
   getProducts(businessId: string): Promise<unknown[]>
   getMenuModifiers?(businessId: string): Promise<unknown[]>
   getLastOrderForContact?(
@@ -109,12 +107,18 @@ export interface MarketplaceEntryDeps {
   }): Promise<string | null>
   send(reply: string, options: string[]): Promise<void>
   /**
-   * Cuántos productos caben en el chat. Por encima, se manda el enlace.
+   * ¿Este TIPO de local se pide dentro del chat, o se le manda el enlace?
    *
-   * Se inyecta en vez de leerse aquí para poder probar los dos lados del
-   * umbral sin tocar `server_settings`.
+   * ⚠️ Lo decide cuánto hay que ELEGIR para armar el pedido, no cuántos
+   * productos hay: una pizzería tiene pocos productos pero pedirla es tamaño,
+   * masa, borde y dos sabores; una heladería «vende un solo producto» pero lo
+   * que pesa son sus veinte sabores. Los dos van a la mini app. Una
+   * almuercería son tres platos del día y se piden hablando.
+   *
+   * Se inyecta en vez de leerse aquí para poder probar los dos lados sin
+   * tocar la base.
    */
-  maxProductosEnChat(): Promise<number>
+  tipoPideEnChat(businessType: string | null | undefined): Promise<boolean>
   /** Un paso de la máquina de estados del menú, con el estado fuera. */
   avanzarMenu(
     input: MenuFlowInput,
@@ -357,11 +361,24 @@ export async function handleMarketplaceMessage(
 /**
  * El cliente eligió local. Aquí se decide CÓMO va a pedir.
  *
- * ⚠️ La regla la decide el CATÁLOGO REAL, contado en este momento, y no el
- * tipo de negocio ni una estimación del alta. Al crear un local tiene cero
- * productos —`apply_business_template` siembra categorías y grupos de
- * opciones, no productos—, así que en el alta no hay nada que contar y
- * cualquier respuesta de entonces sería inventada.
+ * ⚠️ LO DECIDE EL TIPO DE LOCAL, no cuántos productos tiene. Corrección del
+ * dueño del 2026-08-23, y la razón es que las dos cosas no miden lo mismo:
+ *
+ *   «una pizzería puede tener 10 productos pero al momento de elegir tiene
+ *    muchas opciones, así como una heladería puede tener 10 helados pero
+ *    muchos sabores: eso son mini app. Pero un restaurante que ofrece
+ *    almuerzos solo, queda pedir por WhatsApp.»
+ *
+ * Hasta esa fecha se contaban PRODUCTOS (la «regla de los 20»): hasta 20 se
+ * pedía en el chat. Con ese criterio Monster Pizza —17 productos— caía en el
+ * chat, y pedir una pizza por lista de WhatsApp es tamaño, masa, borde y dos
+ * sabores. Lo que pesa es cuánto hay que ELEGIR, no cuánto hay en la carta.
+ *
+ * ⚠️ El criterio ya existía —`PEDIDO_SIMPLE` en el panel del admin, con estos
+ * mismos ejemplos— pero vivía solo ahí, donde el servidor no podía leerlo, y
+ * la regla de los 20 lo sobrescribía. Ahora vive en
+ * `marketplace_category_types.pide_en_chat`: una sola fuente para el panel y
+ * para el servidor, y reclasificable sin desplegar.
  *
  * ⚠️ Esto NO pisa `chat_mode`. Aquel gobierna el canal PROPIO de un negocio
  * (su número, si lo tiene); esto gobierna la experiencia dentro del
@@ -378,14 +395,11 @@ async function entregarLocal(
 ): Promise<void> {
   const { database, logger } = deps
 
-  const [productos, maximo] = await Promise.all([
-    database.countProducts(negocio.id).catch(() => Number.MAX_SAFE_INTEGER),
-    deps.maxProductosEnChat(),
-  ])
-  // Ante un fallo al contar se manda el ENLACE: la tienda sabe atender
-  // cualquier catálogo, mientras que el menú del chat con cientos de
-  // productos sería inusable. Se falla hacia lo que siempre funciona.
-  const enElChat = productos > 0 && productos <= maximo
+  // Ante cualquier fallo se manda el ENLACE: la tienda atiende cualquier
+  // catálogo y cualquier cantidad de opciones, mientras que un menú de chat
+  // mal elegido deja al cliente recorriendo listas interminables. Se falla
+  // hacia lo que siempre funciona.
+  const enElChat = await deps.tipoPideEnChat(negocio.type).catch(() => false)
 
   await database.advanceConversation(
     customer.id,
@@ -410,7 +424,7 @@ async function entregarLocal(
   )
 
   logger?.log(
-    `🏬 [marketplace] ${negocio.slug}: ${productos} productos → ${enElChat ? 'chat' : 'enlace'}`,
+    `🏬 [marketplace] ${negocio.slug} (${negocio.type || 'sin tipo'}) → ${enElChat ? 'chat' : 'enlace'}`,
   )
 
   if (enElChat) {

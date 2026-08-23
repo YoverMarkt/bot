@@ -12983,3 +12983,68 @@ $$;
 revoke all on function public.get_receipt_analysis(uuid, uuid)
   from public, anon, authenticated;
 grant execute on function public.get_receipt_analysis(uuid, uuid) to service_role;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CÓMO SE PIDE LO DECIDE EL TIPO DE LOCAL, NO CUÁNTOS PRODUCTOS TIENE
+-- (migration-2026-08-23-pedir-por-tipo.sql)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Una pizzería tiene pocos productos pero pedirla es tamaño, masa, borde y dos
+-- sabores; una heladería «vende un solo producto» pero lo que pesa son sus
+-- veinte sabores. Las dos van a la mini app. Una almuercería son tres platos
+-- del día y se piden hablando.
+
+alter table public.marketplace_category_types
+  add column if not exists pide_en_chat boolean not null default false;
+
+comment on column public.marketplace_category_types.pide_en_chat is
+  'Si el pedido se arma DENTRO del chat (true) o se manda el enlace de la '
+  'tienda (false). Lo decide cuánto hay que ELEGIR para armar el pedido, no '
+  'cuántos productos hay en el catálogo.';
+
+-- ⚠️ El defecto es FALSE —el enlace— y eso es fallar hacia lo seguro: la
+-- tienda atiende cualquier catálogo y cualquier cantidad de opciones,
+-- mientras que un menú de chat mal elegido deja al cliente recorriendo listas
+-- interminables. Un tipo nuevo cae solo en el lado que siempre funciona.
+--
+-- Se listan los del CHAT, que son la excepción. Es la misma lista de
+-- `PEDIDO_SIMPLE`, y `tipos-que-piden-en-el-chat.test.js` comprueba que las
+-- dos no se separen.
+update public.marketplace_category_types
+   set pide_en_chat = true
+ where business_type in (
+   -- Platos del día: se elige uno de tres o cuatro.
+   'almuerzos', 'menú ejecutivo', 'desayunos', 'comida típica',
+   -- Carta corta de platos que se piden por su nombre.
+   'marisquería', 'pollo asado', 'asadero', 'parrillada', 'comida saludable',
+   -- Producto suelto, sin nada que configurar.
+   'postres', 'carnicería', 'cafetería', 'jugos', 'batidos',
+   'emprendimiento de comida'
+ );
+
+-- Lo que el servidor pregunta al entregar el local: ¿este tipo se pide
+-- hablando, o se le manda el enlace?
+--
+-- ⚠️ Un tipo que no esté en la tabla devuelve FALSE, no error: los negocios
+-- con un tipo escrito a mano —`businesses.type` es texto libre— tienen que
+-- poder pedir igual, y el enlace es el lado que siempre funciona.
+create or replace function public.tipo_pide_en_chat(p_business_type text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+    (
+      select t.pide_en_chat
+      from public.marketplace_category_types t
+      where t.business_type = btrim(lower(coalesce(p_business_type, '')))
+    ),
+    false
+  );
+$$;
+
+revoke all on function public.tipo_pide_en_chat(text) from public, anon, authenticated;
+grant execute on function public.tipo_pide_en_chat(text) to service_role;

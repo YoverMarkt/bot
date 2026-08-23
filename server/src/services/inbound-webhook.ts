@@ -847,16 +847,19 @@ const processor = createInboundWebhookProcessor({
     const platform = require('./platform-channel') as typeof import('./platform-channel')
     const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
     const acciones = require('./bot-actions') as typeof import('./bot-actions')
-    const settings = require('./settings') as typeof import('./settings')
     await entry.handleMarketplaceMessage({ from, text, location }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
-      // El umbral vive en `server_settings` para moverlo sin desplegar: el
-      // número bueno se sabrá viendo pedidos reales, no antes.
-      maxProductosEnChat: async () => {
-        const valor = Number(await settings.get('marketplace_menu_max_productos'))
-        return Number.isFinite(valor) && valor > 0 ? valor : 20
+      // ⚠️ Cómo se pide lo decide el TIPO de local, no cuántos productos
+      // tiene (corrección del dueño, 2026-08-23). Antes vivía aquí un umbral
+      // en `server_settings` —la «regla de los 20»— y mandaba una pizzería de
+      // 17 productos al chat, donde pedirla es tamaño, masa, borde y dos
+      // sabores. El criterio vive ahora en la base, junto al reparto de tipos
+      // en categorías.
+      tipoPideEnChat: async (businessType: string | null | undefined) => {
+        const base = require('../db') as typeof import('../db')
+        return base.tipoPideEnChat(businessType)
       },
       avanzarMenu: menu.advanceMenuFlowConEstado,
       /**
