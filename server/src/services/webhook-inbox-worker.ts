@@ -166,7 +166,26 @@ const isLease = (value: unknown): value is WebhookInboxLease => {
   if (!value || typeof value !== 'object') return false
   const lease = value as Partial<WebhookInboxLease>
   return typeof lease.id === 'string'
-    && typeof lease.business_id === 'string'
+    // ⚠️ `null` ES VÁLIDO, y omitirlo dejó el marketplace MUDO desde que el
+    // número de la plataforma empezó a recibir (2026-08-23).
+    //
+    // Un mensaje al número de Umbani llega sin local —`business_id` nulo,
+    // porque el número no es de ningún negocio—. Al exigir `string`, este
+    // guardián lo daba por fila inválida, `executePoll` lanzaba «la RPC de
+    // leases devolvió filas inválidas», y el evento se quedaba RESERVADO sin
+    // procesar: sin error en su fila, sin aparecer en `in_flight`, y con los
+    // intentos subiendo cada vez que vencía el lease. El cliente escribía y
+    // no recibía nada.
+    //
+    // ⚠️ Y ARRASTRABA AL RESTO: `leased.every(isLease)` tira el LOTE entero,
+    // así que un solo mensaje sin local también dejaba sin procesar los
+    // mensajes de los negocios con número propio que vinieran con él.
+    //
+    // ⚠️ La migración del canal de plataforma arregló esto mismo en SQL —los
+    // índices parciales, el `is not distinct from` del FIFO, el disparador de
+    // consumo— y este guardián de TypeScript se quedó atrás. Mismo fallo, otro
+    // idioma: dos NULL no son iguales en SQL, y `null` no es `string` en TS.
+    && (typeof lease.business_id === 'string' || lease.business_id === null)
     && (lease.provider === 'meta' || lease.provider === 'ycloud')
     && Boolean(lease.payload)
     && typeof lease.payload === 'object'

@@ -11,7 +11,13 @@ export type WebhookFailureStatus = 'pending' | 'dead' | 'stale'
 
 export interface WebhookInboxLease {
   id: string
-  business_id: string
+  /**
+   * ⚠️ NULO en los mensajes al número de la plataforma: ahí no hay local que
+   * resolver todavía. Estuvo declarado como `string` a secas hasta el
+   * 2026-08-23 y eso dejó el marketplace MUDO — ver `isLease` en
+   * `services/webhook-inbox-worker.ts`.
+   */
+  business_id: string | null
   provider: WebhookProvider
   payload: WebhookInboxPayload
   lease_token: string
