@@ -187,7 +187,13 @@ export const esperaComprobante = (pedido: PedidoEsperandoPago | null): boolean =
 
 export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) =>
   async function adjuntarComprobante(
-    businessId: string,
+    /**
+     * ⚠️ NULO cuando la foto llegó al número de la plataforma: ahí no hay
+     * ningún local que resolver. Solo se usa como FILTRO al buscar pedidos y
+     * para nombrar el negocio en el registro de errores — el local del
+     * comprobante sale del PEDIDO desde el 2026-08-21, nunca del número.
+     */
+    businessId: string | null,
     contactPhone: string,
     imagen: Buffer,
     mimeType?: string | null,

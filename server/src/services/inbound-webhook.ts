@@ -149,9 +149,28 @@ export interface InboundWebhookDependencies {
     location?: InboundLocation
   }) => Promise<void>
   esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
+  /**
+   * ¿Este teléfono tiene un pedido esperando comprobante en CUALQUIER local?
+   *
+   * ⚠️ Sin negocio a propósito: en el número de la plataforma no hay ninguno
+   * que resolver, y el del pedido sale del PEDIDO. Es la misma consulta del
+   * atajo del modo mini app, sin el filtro por local.
+   */
+  esperaComprobanteSinLocal?: (contactPhone: string) => Promise<boolean>
+  /**
+   * La API Key del número de la PLATAFORMA.
+   *
+   * ⚠️ Vive en `server_settings` (`platform_ycloud_api_key`), no en el
+   * entorno ni en la ficha de un negocio: el número es de la plataforma y no
+   * pertenece a ningún local. Tomarla de `env.YCLOUD_API_KEY` habría dejado
+   * la descarga muerta en producción, donde esa variable no es la del
+   * marketplace.
+   */
+  credencialDePlataforma?: () => Promise<string | null>
   /** Sube la foto y la engancha al pedido. Devuelve el número si lo logró. */
   adjuntarComprobante?: (
-    businessId: string,
+    /** Nulo cuando la foto llegó al número de la plataforma: no hay local. */
+    businessId: string | null,
     contactPhone: string,
     imagen: Buffer,
     mimeType?: string | null,
@@ -473,16 +492,90 @@ export function createInboundWebhookProcessor(
     // propio mensaje —dos números—, no hay archivo que bajar. Es lo que deja
     // cerrar el pedido dentro del chat sin pedirle al cliente que escriba su
     // dirección a mano.
+    /**
+     * Bajar la media de un mensaje SIN local.
+     *
+     * ⚠️ No puede usar `descargarMedia`: aquella saca las credenciales del
+     * NEGOCIO (`business.ycloud_api_key`, `business.meta_token`) y aquí no hay
+     * negocio ninguno — ese es todo el sentido del número de la plataforma.
+     * Las credenciales salen del entorno, que es lo que YCloud usa para el
+     * número de Umbani.
+     *
+     * ⚠️ Meta queda fuera a propósito: su descarga necesita un token de página
+     * que hoy no existe para la plataforma, y fingir que se puede acabaría en
+     * una excepción por cada foto. El número del marketplace está en YCloud.
+     */
+    const descargarMediaDelMarketplace = async (): Promise<{
+      data: Buffer
+      mimeType?: string
+    }> => {
+      if (payload.content.kind !== 'image') {
+        throw new Error('Este tipo de mensaje no tiene media')
+      }
+      if (payload.provider !== 'ycloud') {
+        throw new Error('El número de la plataforma solo descarga media por YCloud')
+      }
+      const apiKey = dependencies.credencialDePlataforma
+        ? (await dependencies.credencialDePlataforma())?.trim()
+        : env.YCLOUD_API_KEY?.trim()
+      if (!apiKey) throw new Error('Falta la API Key YCloud de la plataforma')
+      return downloadYCloudMedia(http, payload.content.media, apiKey, YCLOUD_IMAGE_LIMIT)
+    }
+
     if (payload.businessId === null) {
       if (!dependencies.atenderMarketplace) {
         logger.log('⚠️  [marketplace] llegó un mensaje pero no hay quien lo atienda')
         return
       }
-      const texto = payload.content.kind === 'text'
+      // ⚠️ CON UNA EXCEPCIÓN, y cierra un hueco que costaba pedidos: la foto
+      // de quien YA pidió y está esperando pagar. Con un solo número, quien
+      // compra en el chat del marketplace manda su captura a ESE número, el
+      // mensaje llega sin local, y hasta el 2026-08-22 se convertía en «[foto]»
+      // sin descargarse jamás: el comprobante se perdía, el pedido se quedaba
+      // en `esperando_pago` para siempre y el cliente sin respuesta.
+      //
+      // Se le pregunta a la BASE antes de bajar un solo byte, igual que en el
+      // atajo del modo mini app. Ese orden es el punto: una consulta cuesta
+      // milisegundos y bajar 5 MB cuesta tráfico. Quien no tenga un pedido
+      // esperando pago sigue por el camino de siempre, sin descargar nada.
+      const fotoDelMarketplace = payload.content.kind === 'image'
+        && Boolean(dependencies.esperaComprobanteSinLocal)
+        && Boolean(dependencies.adjuntarComprobante)
+        && await dependencies.esperaComprobanteSinLocal!(payload.from).catch(() => false)
+
+      let textoDeLaFoto: string | null = null
+      if (fotoDelMarketplace) {
+        // Falla ABIERTO: si la media no baja o el buzón revienta, el cliente
+        // recibe su respuesta de siempre en vez de quedarse sin nada.
+        try {
+          logger.log('🧾 [marketplace] foto con pedido esperando pago: se descarga')
+          const foto = await descargarMediaDelMarketplace()
+          // ⚠️ SIN local: el negocio sale del PEDIDO, nunca del número. Es la
+          // misma regla del 2026-08-21, y aquí es la única posible.
+          const comprobante = await dependencies.adjuntarComprobante!(
+            null, payload.from, foto.data, foto.mimeType,
+          )
+          textoDeLaFoto = comprobante.adjuntado
+            ? textoDelComprobante(comprobante.orderNumber)
+            : comprobante.ambiguos?.length
+              ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
+              : comprobante.noEsComprobante
+                ? textoDeFotoQueNoEsComprobante()
+                : null
+        } catch (error) {
+          logger.log(
+            `⚠️  [marketplace] no se pudo procesar el comprobante: ${
+              error instanceof Error ? error.message : 'desconocido'
+            }`,
+          )
+        }
+      }
+
+      const texto = textoDeLaFoto ?? (payload.content.kind === 'text'
         ? payload.content.text
         : payload.content.kind === 'audio'
           ? '[nota de voz]'
-          : payload.content.kind === 'location' ? '[ubicación]' : '[foto]'
+          : payload.content.kind === 'location' ? '[ubicación]' : '[foto]')
       await dependencies.atenderMarketplace({
         from: payload.from,
         text: texto,
@@ -721,6 +814,21 @@ const processor = createInboundWebhookProcessor({
     const inbox = require('./payment-proof-inbox') as typeof import('./payment-proof-inbox')
     const pedido = await db.getLastOrderForContact(businessId, contactPhone).catch(() => null)
     return inbox.esperaComprobante(pedido)
+  },
+  /**
+   * Lo mismo que `esperaComprobante` pero SIN local: en el número de la
+   * plataforma no hay negocio que resolver, y el mismo cliente puede tener
+   * pedidos abiertos en dos locales a la vez. Se pregunta por el TELÉFONO.
+   */
+  credencialDePlataforma: async () => {
+    const platform = require('./platform-channel') as typeof import('./platform-channel')
+    const canal = await platform.getPlatformChannel().catch(() => null)
+    return canal?.apiKey ?? null
+  },
+  esperaComprobanteSinLocal: async (contactPhone) => {
+    const db = require('../db') as typeof import('../db')
+    const pedidos = await db.pedidosEsperandoComprobante(contactPhone).catch(() => [])
+    return pedidos.length > 0
   },
   adjuntarComprobante: (businessId, contactPhone, imagen, mimeType) => {
     const bot = require('./bot-entry') as typeof import('./bot-entry')

@@ -53,6 +53,30 @@ async function dispatch({ authorization, query = {} } = {}) {
   return result
 }
 
+async function dispatchAnalisis({ authorization, id = 'order-a' } = {}) {
+  const routeLayer = ordersRouter.stack.find(layer => (
+    layer.route?.path === '/api/client/orders/:id/receipt-analysis'
+    && layer.route?.methods?.get
+  ))
+  const handlers = routeLayer.route.stack.map(layer => layer.handle)
+  const req = { headers: authorization ? { authorization } : {}, params: { id }, query: {} }
+  const result = { status: 200, body: undefined }
+  const res = {
+    status(code) { result.status = code; return this },
+    json(body) { result.body = body; return this },
+  }
+  async function run(index) {
+    if (index >= handlers.length) return
+    let nextCalled = false
+    let nextError
+    await handlers[index](req, res, error => { nextCalled = true; nextError = error })
+    if (nextError) throw nextError
+    if (nextCalled) await run(index + 1)
+  }
+  await run(0)
+  return result
+}
+
 async function dispatchConfirmarPago({ authorization, id = 'order-a' } = {}) {
   const routeLayer = ordersRouter.stack.find(layer => (
     layer.route?.path === '/api/client/orders/:id/payment-confirmed'
@@ -726,5 +750,60 @@ describe('ver el comprobante', () => {
 
     expect(r.status).toBe(503)
     expect(JSON.stringify(r.body)).not.toContain('cloudinary.com/demo/crudo')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE EL SISTEMA LEYÓ DEL COMPROBANTE
+// ═══════════════════════════════════════════════════════════════════════════
+describe('GET /api/client/orders/:id/receipt-analysis', () => {
+  const dueno = { role: 'client', businessId: 'biz-1', urole: 'owner' }
+
+  it('sin sesión no devuelve nada', async () => {
+    const resultado = await dispatchAnalisis({})
+    expect(resultado.status).toBeGreaterThanOrEqual(401)
+  })
+
+  // ⚠️ El identificador del pedido viaja en la URL: el negocio SIEMPRE sale
+  // del JWT, nunca de lo que mande el cliente.
+  it('el negocio sale del JWT y viaja a la base', async () => {
+    const getReceiptAnalysis = vi.spyOn(db, 'getReceiptAnalysis')
+      .mockResolvedValue({ receipt_id: 'r1', risk_score: 12, risk_level: 'bajo', flags: [] })
+    vi.spyOn(db, 'getBusinessBankAccount').mockResolvedValue({ account_number: '2100123456' })
+
+    const resultado = await dispatchAnalisis({
+      authorization: `Bearer ${token(dueno)}`, id: 'ped-9',
+    })
+
+    expect(getReceiptAnalysis).toHaveBeenCalledWith('biz-1', 'ped-9')
+    expect(resultado.body.analisis.risk_score).toBe(12)
+    expect(resultado.body.esperado.account_number).toBe('2100123456')
+  })
+
+  it('un pedido sin comprobante registrado no es un error', async () => {
+    // Son todos los pedidos anteriores a esta capa: el panel los pinta igual.
+    vi.spyOn(db, 'getReceiptAnalysis').mockResolvedValue({ result: 'sin_analisis' })
+    const resultado = await dispatchAnalisis({ authorization: `Bearer ${token(dueno)}` })
+    expect(resultado.status).toBe(200)
+    expect(resultado.body).toEqual({ analisis: null, esperado: null })
+  })
+
+  it('si la cuenta bancaria no se puede leer, el análisis se devuelve igual', async () => {
+    // Lo que importa es lo detectado; la cuenta esperada es una ayuda.
+    vi.spyOn(db, 'getReceiptAnalysis').mockResolvedValue({ receipt_id: 'r1', flags: [] })
+    vi.spyOn(db, 'getBusinessBankAccount').mockRejectedValue(new Error('base caída'))
+    const resultado = await dispatchAnalisis({ authorization: `Bearer ${token(dueno)}` })
+    expect(resultado.status).toBe(200)
+    expect(resultado.body.analisis.receipt_id).toBe('r1')
+    expect(resultado.body.esperado).toBeNull()
+  })
+
+  it('un empleado sin permiso de ventas no lo ve', async () => {
+    const resultado = await dispatchAnalisis({
+      authorization: `Bearer ${token({
+        role: 'client', businessId: 'biz-1', urole: 'staff', perms: ['horarios'],
+      })}`,
+    })
+    expect(resultado.status).toBe(403)
   })
 })
