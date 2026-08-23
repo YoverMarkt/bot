@@ -2364,7 +2364,7 @@ begin
       dead_at = null,
       updated_at = now()
   where event.id = any(v_batch_ids)
-    and event.business_id = v_head.business_id
+    and event.business_id is not distinct from v_head.business_id
     and event.provider = v_head.provider
     and event.stream_key_hash = v_head.stream_key_hash
     and (
@@ -2521,7 +2521,7 @@ begin
         dead_at = now(),
         updated_at = now()
     where event.id = any(v_batch_ids)
-      and event.business_id = v_head.business_id
+      and event.business_id is not distinct from v_head.business_id
       and event.provider = v_head.provider
       and event.stream_key_hash = v_head.stream_key_hash
       and (

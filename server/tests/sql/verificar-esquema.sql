@@ -2164,6 +2164,82 @@ begin
     raise notice 'PEDIR POR TIPO: pizzería y heladería al enlace, almuerzos al chat';
   end;
 
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- EL LOTE DE UN MENSAJE SIN LOCAL SE PUEDE CERRAR
+  -- ═══════════════════════════════════════════════════════════════════════
+  --
+  -- ⚠️ Fallo REAL del 2026-08-23 que dejó al marketplace mudo. El `update`
+  -- final de `complete_webhook_event` y `fail_webhook_event` comparaba
+  -- `event.business_id = v_head.business_id`, y en un mensaje al número de la
+  -- plataforma los dos lados son NULL: **`NULL = NULL` no es verdadero**. El
+  -- `where` no casaba ninguna fila y la función LANZABA «El lote del webhook
+  -- cambió durante su finalización».
+  --
+  -- Un evento del marketplace con lote no podía completarse NI marcarse
+  -- fallido: se reintentaba —reprocesando, así que el cliente recibía la misma
+  -- respuesta cada tres minutos— hasta morir. Y la cola es FIFO por
+  -- conversación, así que sus mensajes siguientes esperaban detrás.
+  declare
+    v_lote_id uuid;
+    v_lote_token uuid;
+    v_ok boolean;
+  begin
+    delete from public.webhook_inbound_events where message_id_hash = repeat('9', 64);
+
+    if public.enqueue_webhook_event(
+      null, 'ycloud', repeat('9', 64), repeat('8', 64),
+      -- ⚠️ El payload lleva `inboundId` a propósito: `lease_webhook_events`
+      -- arma el suyo con `jsonb_set(..., to_jsonb(v_latest_inbound_id))`, y
+      -- `jsonb_set` es ESTRICTA — con un nulo devuelve NULL y anularía el
+      -- payload entero. Los payloads reales siempre lo traen (lo exige
+      -- `parseInboundWebhookPayload`), así que esto solo reproduce el caso
+      -- real en vez de uno imposible.
+      '{"version":1,"from":"+593990978367","provider":"ycloud","inboundId":"lote-1","businessId":null,"content":{"kind":"text","text":"hola"}}'::jsonb
+    ) is not true then
+      raise exception 'No se pudo encolar el mensaje sin local';
+    end if;
+
+    update public.webhook_inbound_events
+       set available_at = now() - interval '1 minute'
+     where message_id_hash = repeat('9', 64);
+
+    select id, lease_token into v_lote_id, v_lote_token
+    from public.lease_webhook_events('verificacion-lote', 1, 180);
+    if v_lote_id is null then
+      raise exception 'No se pudo reservar el mensaje sin local';
+    end if;
+
+    -- ⚠️ EL CASO: con lote y sin local, esto lanzaba «El lote del webhook
+    -- cambió durante su finalización» en vez de completar.
+    v_ok := public.complete_webhook_event(v_lote_id, v_lote_token);
+    if v_ok is not true then
+      raise exception 'Un mensaje SIN LOCAL no se pudo completar (devolvió %)', v_ok;
+    end if;
+    if (select status from public.webhook_inbound_events where id = v_lote_id)
+       <> 'completed' then
+      raise exception 'El evento sin local no quedó completado';
+    end if;
+
+    -- Y lo mismo con el camino del FALLO, que tenía el mismo predicado.
+    delete from public.webhook_inbound_events where message_id_hash = repeat('7', 64);
+    perform public.enqueue_webhook_event(
+      null, 'ycloud', repeat('7', 64), repeat('6', 64),
+      '{"version":1,"from":"+593990978367","provider":"ycloud","inboundId":"lote-2","businessId":null,"content":{"kind":"text","text":"hola"}}'::jsonb
+    );
+    update public.webhook_inbound_events
+       set available_at = now() - interval '1 minute'
+     where message_id_hash = repeat('7', 64);
+    select id, lease_token into v_lote_id, v_lote_token
+    from public.lease_webhook_events('verificacion-lote-fallo', 1, 180);
+    if public.fail_webhook_event(v_lote_id, v_lote_token, 'prueba', 10) is null then
+      raise exception 'Un mensaje SIN LOCAL no pudo marcarse como fallido';
+    end if;
+
+    delete from public.webhook_inbound_events
+     where message_id_hash in (repeat('9', 64), repeat('7', 64));
+    raise notice 'LOTE SIN LOCAL: se completa y se puede marcar fallido';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
