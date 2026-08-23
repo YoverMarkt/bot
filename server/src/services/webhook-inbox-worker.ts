@@ -67,6 +67,28 @@ export interface WebhookInboxWorkerOptions {
   concurrency?: number
   pollIntervalMilliseconds?: number
   leaseSeconds?: number
+  /**
+   * Cuánto se le da al manejador antes de darlo por colgado.
+   *
+   * ⚠️ Nace de un incidente real (2026-08-23): un evento se quedaba en
+   * `processing` sin volver JAMÁS. El lease vencía, otro worker lo reservaba,
+   * volvía a colgarse… y como el fallo nunca ocurría, la fila **no guardaba
+   * ningún error**, el evento no aparecía en `in_flight` y `/api/health` seguía
+   * en verde. Ocho intentos después moría con «lease vencido», que dice cuándo
+   * se rindió pero no QUÉ pasó.
+   *
+   * Peor: la cola es FIFO por conversación, así que ese evento colgado
+   * **bloqueaba todos los mensajes siguientes de ese cliente**.
+   *
+   * Un manejador que nunca vuelve es peor que uno que falla: el que falla deja
+   * rastro, reintenta con backoff y acaba en dead-letter a la vista. Esto
+   * convierte el cuelgue en un fallo normal.
+   *
+   * ⚠️ Tiene que vencer ANTES que el lease: si venciera después, el evento ya
+   * no sería nuestro al registrar el fallo y la RPC respondería `stale`, que
+   * es justo quedarse otra vez sin explicación. Por defecto, el 60 % del lease.
+   */
+  processTimeoutMilliseconds?: number
   heartbeatIntervalMilliseconds?: number
   baseDelaySeconds?: number
   readinessTimeoutMilliseconds?: number
@@ -215,6 +237,15 @@ export function createWebhookInboxWorker(
     30,
     900,
   )
+  // Por defecto, el 60 % del lease: sobra margen para registrar el fallo con
+  // el token todavía válido, y a la vez se le da al manejador mucho más de lo
+  // que tarda un mensaje normal (un texto se resuelve en ~3 s).
+  const processTimeoutMilliseconds = positiveInteger(
+    options.processTimeoutMilliseconds ?? Math.floor(leaseSeconds * 600),
+    'processTimeoutMilliseconds',
+    1_000,
+    leaseSeconds * 1_000,
+  )
   const baseDelaySeconds = positiveInteger(
     options.baseDelaySeconds ?? 10,
     'baseDelaySeconds',
@@ -339,7 +370,29 @@ export function createWebhookInboxWorker(
     let processingError: unknown
 
     try {
-      await options.processEvent(event)
+      // ⚠️ Con TIEMPO LÍMITE. Un manejador que no vuelve deja el evento
+      // reservado, sin error en su fila y sin aparecer en `in_flight` — y como
+      // la cola es FIFO por conversación, bloquea todos los mensajes que ese
+      // cliente mande después. Pasó el 2026-08-23 y costó horas justamente
+      // porque no dejaba ni una traza.
+      //
+      // El timer se limpia SIEMPRE: si no, un manejador rápido dejaría vivo un
+      // temporizador por cada evento y el proceso no podría cerrarse limpio.
+      let expirar: ReturnType<typeof scheduler.setTimeout> | null = null
+      try {
+        await Promise.race([
+          options.processEvent(event),
+          new Promise<never>((_, rechazar) => {
+            expirar = scheduler.setTimeout(() => {
+              rechazar(new Error(
+                `El manejador no respondió en ${processTimeoutMilliseconds} ms`,
+              ))
+            }, processTimeoutMilliseconds)
+          }),
+        ])
+      } finally {
+        if (expirar !== null) scheduler.clearTimeout(expirar)
+      }
     } catch (error) {
       processingFailed = true
       processingError = error

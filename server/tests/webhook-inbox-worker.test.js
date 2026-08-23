@@ -477,6 +477,74 @@ describe('worker del inbox durable de webhooks', () => {
     await expect(worker.pollOnce()).rejects.toThrow('filas inválidas')
   })
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // UN MANEJADOR QUE NO VUELVE
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // ⚠️ Incidente REAL del 2026-08-23. Un evento se quedaba en `processing` sin
+  // volver jamás: el lease vencía, se reservaba otra vez, se colgaba otra
+  // vez… y como el fallo nunca llegaba a ocurrir, la fila **no guardaba ningún
+  // error**, el evento no aparecía en `in_flight`, y `/api/health` seguía en
+  // verde. Ocho intentos después moría con «lease vencido», que dice cuándo se
+  // rindió pero no QUÉ pasó.
+  //
+  // Y como la cola es FIFO por conversación, ese evento bloqueaba TODOS los
+  // mensajes siguientes de ese cliente.
+  it('da por fallido al manejador que se cuelga, en vez de esperarlo para siempre', async () => {
+    const nuncaVuelve = new Promise(() => {})
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+    })
+    const { scheduler, runByDelay } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-colgado',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      processTimeoutMilliseconds: 1_000,
+      processEvent: () => nuncaVuelve,
+    })
+
+    const poll = worker.pollOnce()
+    // Se dispara el temporizador del límite, que es el único de 1.000 ms.
+    await Promise.resolve()
+    runByDelay(1_000)
+    await poll
+
+    // Se registra el FALLO —con su motivo— en vez de completarlo o de
+    // quedarse esperando. A partir de ahí, backoff y dead-letter normales.
+    expect(repo.failWebhookEvent).toHaveBeenCalledOnce()
+    expect(repo.failWebhookEvent.mock.calls[0][2]).toMatch(/no respondió en 1000 ms/)
+    expect(repo.completeWebhookEvent).not.toHaveBeenCalled()
+  })
+
+  it('y el manejador que sí responde no deja temporizadores vivos', async () => {
+    // Sin limpiar el timer, cada evento rápido dejaría uno colgando y el
+    // proceso no podría cerrarse limpio.
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+    })
+    const { scheduler, size } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-rapido',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      // Tiene que caber DENTRO del lease: la validación lo exige, para poder
+      // registrar el fallo con el token todavía válido.
+      processTimeoutMilliseconds: 20_000,
+      processEvent: async () => {},
+    })
+
+    await worker.pollOnce()
+    expect(repo.completeWebhookEvent).toHaveBeenCalledOnce()
+    expect(repo.failWebhookEvent).not.toHaveBeenCalled()
+    // Ni un temporizador vivo: ni el del límite ni el del heartbeat.
+    expect(size()).toBe(0)
+  })
+
   it('sanitiza valores no Error y no usa unref en ningún timer', () => {
     expect(sanitizeWebhookInboxError({ token: 'should-not-be-read' }))
       .toBe('Error interno durante el procesamiento del webhook')
