@@ -100,6 +100,25 @@ const webhookInboxWorker = createWebhookInboxWorker({
       `❌ Inbox webhook [${context.phase}:${context.provider || 'n/a'}:${context.eventId || 'n/a'}]:`,
       error.message,
     )
+    // ⚠️ Y AL REGISTRO QUE EL SUPERADMIN PUEDE VER. Hasta el 2026-08-23 esto
+    // solo escribía en la salida estándar: cuando el worker empezó a colgarse
+    // con los mensajes del marketplace, el panel no mostraba absolutamente
+    // nada y hubo que reconstruir el fallo consultando la base a mano.
+    //
+    // Un fallo de la cola de entrada es exactamente lo que el registro de
+    // errores existe para enseñar: si deja de entrar, el negocio está mudo.
+    //
+    // `void` y `.catch`: registrar el error no puede provocar otro ni retrasar
+    // el reintento del evento.
+    void recordError({
+      category: 'canal',
+      code: `inbox_${context.phase}`,
+      message: error,
+      context: {
+        provider: context.provider || null,
+        eventId: context.eventId || null,
+      },
+    }).catch(() => { /* registrar el fallo no puede provocar otro */ })
   },
 })
 
