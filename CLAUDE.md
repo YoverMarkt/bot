@@ -25,6 +25,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 5. **CAMBIO MÍNIMO** — Haz el cambio más pequeño que cumpla el pedido. No reescribas archivos enteros ni borres funciones, campos, endpoints o validaciones que no se pidieron.
    - Si el cambio **corta un flujo** (un modo nuevo, un atajo, un `return` temprano): antes de escribirlo, lista **qué HACÍA de paso** el camino que saltas — marcar leído, guardar el mensaje, actualizar la sesión, registrar consumo, liberar un lock. Conserva todo lo que no sea "pensar", y añade una prueba por cada efecto que conservas. Ver **cambios-seguros**. Así se perdió el check azul el 2026-08-03: nueve pruebas en verde comprobando lo nuevo, y nadie miró lo que dejó de ocurrir.
 6. **VERIFICAR** — Corre las verificaciones según **tester-saas** (carga de módulos, sintaxis, arranque, smoke test).
+   - Si el cambio abre una **rama nueva** de comportamiento (un modo, una configuración, un camino de entrada), aplica además **camino-real**: demuestra que la configuración REAL de producción llega hasta el código nuevo, y qué corre ANTES que podría ganarle. Cinco veces en este proyecto el CI estuvo verde sobre código al que nadie llegaba.
 7. **REPORTAR** — Di qué archivos cambiaron, qué se verificó y qué **NO** se tocó.
 
 > Ante la duda, para y pregunta. Es preferible una pregunta de más que romper algo que ya funcionaba.
@@ -353,6 +354,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **El horario del dueño manda sobre todos los modos** → [DECISIONES.md](DECISIONES.md#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - **Lo que gana la plataforma (motor de margen)** → [DECISIONES.md](DECISIONES.md#lo-que-gana-la-plataforma)
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
+- **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 ---
 
 ## 8. HIGIENE DE GIT
@@ -381,6 +383,7 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 |--------------------|-------------------|
 | Tocar BD, RLS, auth, esquema, multi-tenancy o etiquetas/tools del bot | **arquitecto-saas** (primero) |
 | Modificar algo existente, pedido amplio o ambiguo, "mejora esto/todo" | **cambios-seguros** |
+| Antes de dar por terminada una feature, un modo o una rama nueva; o ante un «está construido pero no responde» | **camino-real** |
 | Después de CUALQUIER cambio, verificar que nada se rompió | **tester-saas** |
 | Tocar auth, secretos, encriptación, webhooks, endpoints públicos, datos sensibles | **seguridad-saas** |
 | Crear/modificar migraciones, tablas, índices, columnas o políticas RLS | **base-de-datos** |
