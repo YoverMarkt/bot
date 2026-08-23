@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -376,5 +377,82 @@ describe('el negocio de marketplace ya puede enviar', () => {
     const resolver = typing.indexOf('conCanalDePlataforma(business)')
     expect(try_).toBeGreaterThan(-1)
     expect(resolver).toBeGreaterThan(try_)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LA PUERTA DE ENTRADA DEL MARKETPLACE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ Este módulo decide si un mensaje al número de Umbani se reconoce o se
+// descarta, y estaba al 37 % de cobertura — siendo la puerta por la que entra
+// TODO el marketplace. Lo que se fija aquí es que media configuración nunca se
+// dé por buena, y que un fallo leyendo los ajustes no tumbe el webhook.
+// ⚠️ `createRequire` y no `await import`: el import ESM devuelve un
+// ENVOLTORIO del módulo CommonJS, así que espiarlo no cambia lo que ve
+// `platform-channel`, que hizo su propio `require`. La prueba se colgaba
+// cinco segundos llamando a Supabase de verdad.
+const requerir = createRequire(import.meta.url)
+const ajustes = requerir('../dist/services/settings')
+const { getPlatformChannel } = requerir('../dist/services/platform-channel')
+
+describe('las credenciales del número de la plataforma', () => {
+  const con = (valores) => {
+    vi.spyOn(ajustes, 'get').mockImplementation(async clave => (
+      typeof valores === 'function' ? valores(clave) : (valores[clave] ?? null)
+    ))
+  }
+  const completo = {
+    platform_ycloud_api_key: ' key-de-la-plataforma ',
+    platform_ycloud_number: '+593 99 171 6574',
+    platform_webhook_secret: ' whsec_abc ',
+    platform_webhook_endpoint_id: ' endpoint-1 ',
+  }
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('con todo puesto, devuelve el canal con el número normalizado', async () => {
+    con(completo)
+    expect(await getPlatformChannel()).toEqual({
+      apiKey: 'key-de-la-plataforma',
+      number: '593991716574',
+      webhookSecret: 'whsec_abc',
+      endpointId: 'endpoint-1',
+    })
+  })
+
+  // ⚠️ Media configuración que parece válida es PEOR que ninguna: fallaría más
+  // tarde y más lejos, con el número ya recibiendo mensajes de clientes.
+  it('sin API key no hay canal, aunque haya número', async () => {
+    con({ ...completo, platform_ycloud_api_key: null })
+    expect(await getPlatformChannel()).toBeNull()
+    con({ ...completo, platform_ycloud_api_key: '   ' })
+    expect(await getPlatformChannel()).toBeNull()
+  })
+
+  it('sin un número válido no hay canal, aunque haya API key', async () => {
+    con({ ...completo, platform_ycloud_number: null })
+    expect(await getPlatformChannel()).toBeNull()
+    con({ ...completo, platform_ycloud_number: 'no-es-un-numero' })
+    expect(await getPlatformChannel()).toBeNull()
+  })
+
+  // El webhook puede funcionar sin secreto (en desarrollo). Lo que NO puede es
+  // que faltar un opcional impida reconocer el número.
+  it('el secreto y el endpoint son opcionales', async () => {
+    con({
+      platform_ycloud_api_key: 'k', platform_ycloud_number: '593991716574',
+      platform_webhook_secret: null, platform_webhook_endpoint_id: '',
+    })
+    const canal = await getPlatformChannel()
+    expect(canal.webhookSecret).toBeNull()
+    expect(canal.endpointId).toBeNull()
+  })
+
+  // ⚠️ ESTE ES EL IMPORTANTE. Dejar que lance tumbaría el webhook ENTERO,
+  // incluidos los negocios con número propio que no tienen nada que ver con
+  // el marketplace. Es el fallo que dejó el canal mudo cinco días en julio.
+  it('si `server_settings` falla, dice «no configurado» en vez de lanzar', async () => {
+    con(() => { throw new Error('base caída') })
+    await expect(getPlatformChannel()).resolves.toBeNull()
   })
 })
