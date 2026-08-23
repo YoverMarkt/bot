@@ -300,6 +300,50 @@ router.put(
 // dinero en todos los negocios del SaaS. Aquí no hace falta — el pedido vuelve
 // a esperar pago, así que al cliente le reaparece solo el aviso en la tienda y
 // la pantalla que le dice qué hacer. Si el dueño quiere explicarle, le escribe.
+/**
+ * Le pide al cliente una foto nueva del comprobante.
+ *
+ * El dueño rechazó la anterior —borrosa, cortada, o sencillamente no era un
+ * comprobante—, y el pedido volvió a `esperando_pago`. Sin este mensaje el
+ * cliente no tiene forma de enterarse.
+ */
+async function avisarQueFaltaOtroComprobante(
+  businessId: string,
+  order: unknown,
+): Promise<void> {
+  try {
+    const pedido = (order || {}) as {
+      contact_phone?: string | null
+      order_number?: number | null
+      total?: unknown
+    }
+    const telefono = String(pedido.contact_phone || '').trim()
+    if (!telefono) return
+    const negocio = await db.getBusinessById(businessId)
+    if (!negocio) return
+
+    const whatsapp = require('../integrations/whatsapp') as {
+      sendText(business: unknown, to: string, text: string): Promise<void>
+    }
+    const numero = pedido.order_number ? ` #${pedido.order_number}` : ''
+    const total = Number(pedido.total || 0).toFixed(2)
+    await whatsapp.sendText(
+      negocio,
+      telefono,
+      `📸 No pudimos leer tu comprobante del pedido${numero}.\n\n`
+      + `¿Puedes enviarnos otra foto? Que se vean el *valor ($${total})*, `
+      + 'la *fecha* y el *banco*.',
+    )
+  } catch (error) {
+    // Un fallo de envío no puede tumbar la respuesta al dueño: el pedido ya
+    // volvió a esperar pago, que es lo que él pidió.
+    console.error(
+      '⚠️  aviso de comprobante nuevo:',
+      error instanceof Error ? error.message : 'Error desconocido',
+    )
+  }
+}
+
 router.post(
   '/api/client/orders/:id/request-proof',
   auth.authClient,
@@ -314,7 +358,7 @@ router.post(
         console.error('❌ pedir otro comprobante:', error.message || 'Error desconocido')
         return res.status(500).json({ error: 'No se pudo pedir otro comprobante' })
       }
-      const resultado = (data || {}) as { result?: string }
+      const resultado = (data || {}) as { result?: string; order?: unknown }
       if (resultado.result === 'not_found') {
         return res.status(404).json({ error: 'Ese pedido no existe' })
       }
@@ -323,6 +367,17 @@ router.post(
           error: 'Solo se puede pedir otro comprobante mientras revisas el pago',
         })
       }
+      // ⚠️ Y se le DICE al cliente. Hasta el 2026-08-22 no se le avisaba: en
+      // la mini app lo veía al recargar la pantalla de pago, pero quien pidió
+      // por el chat no se enteraba nunca — se quedaba esperando un pedido que
+      // el dueño había devuelto a «esperando pago», sin saber por qué.
+      //
+      // Va sin reclamo ni cola, al revés que los hitos de estado: no se paga
+      // por hito sino por acción manual del dueño, y la RPC ya impide el
+      // doble toque (el segundo da `invalid_transition`). Sale sin `await` y
+      // NUNCA lanza: el pedido ya volvió a esperar pago, y un fallo de envío
+      // no puede tumbar la respuesta al dueño.
+      void avisarQueFaltaOtroComprobante(businessId, resultado.order)
       return res.json({ ok: true })
     } catch (error) {
       console.error(

@@ -348,6 +348,16 @@ async function entregarLocal(
     {
       state: enElChat ? 'pidiendo' : 'en_local',
       businessId: negocio.id,
+      // ⚠️ A partir de aquí el cliente ESTÁ pidiendo en este local: con el
+      // enlace ya tiene su tienda abierta con su token, y en el chat va a
+      // empezar a llenar el carrito. Cambiarlo de local en silencio le
+      // tiraría lo que lleva —y le dejaría una mini app abierta que ya no
+      // lleva a ninguna parte—, así que a partir de ahora se le PREGUNTA.
+      //
+      // Se suelta al crear el pedido o al reiniciar con MENÚ. Hasta el
+      // 2026-08-22 esta columna existía y NADIE la ponía en `true`: el
+      // bloqueo estaba escrito, probado… y nunca se activaba.
+      shoppingLocked: true,
       // El menú del local empieza limpio: `advanceMenuFlowConEstado` con
       // estado nulo devuelve la bienvenida y el menú principal.
       flowState: { vista: { vista: 'negocios', categoria: negocio.type, pagina: 0 } },
@@ -694,9 +704,17 @@ async function avanzarCheckout(input: {
   // El pedido existe: la conversación suelta el carrito. Si el método pide
   // comprobante, el pedido nació esperando pago y el buzón que ya existe
   // adjunta la foto solo — por eso aquí no hay un paso más.
+  // El pedido existe: se suelta el local y el bloqueo. `clearBusiness` ya
+  // apaga `shopping_locked` en la base —sin negocio no significa nada—, pero
+  // se nombra igual para que la intención quede escrita aquí.
   await database.advanceConversation(
     customer.id,
-    { state: 'navegando', clearFlow: true, clearBusiness: true },
+    {
+      state: 'navegando',
+      clearFlow: true,
+      clearBusiness: true,
+      shoppingLocked: false,
+    },
     conversacion.version,
   )
 
