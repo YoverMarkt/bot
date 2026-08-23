@@ -80,7 +80,29 @@ export interface ComprobanteDependencias {
     contact_phone: string | null
     businesses?: { name?: string | null } | null
   }>>
-  subirPrivado(buffer: Buffer, businessId: string): Promise<{ url: string; public_id: string }>
+  // `phash` es la huella perceptual que calcula Cloudinary al subir: caza la
+  // misma imagen recortada o recomprimida, que es lo que hace WhatsApp al
+  // reenviarla. Opcional porque un fallo calculándola no puede impedir que el
+  // comprobante se adjunte.
+  subirPrivado(buffer: Buffer, businessId: string): Promise<{
+    url: string
+    public_id: string
+    phash?: string
+  }>
+  /**
+   * Registra la huella del comprobante y detecta si esa imagen ya se usó.
+   *
+   * Opcional a propósito: sin ella el buzón se comporta exactamente como
+   * antes de que existiera. Es una capa encima, no un punto único de fallo.
+   */
+  registrarHuella?(input: {
+    businessId: string
+    orderId: string
+    imagen: Buffer
+    fileUrl: string
+    filePublicId?: string | null
+    perceptualHash?: string | null
+  }): Promise<unknown>
   adjuntar(input: {
     businessId: string
     orderId: string
@@ -168,6 +190,21 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
         publicId: subida.public_id,
       })
       if (error) throw new Error(error.message || 'La base rechazó el comprobante')
+
+      // La huella va DESPUÉS de adjuntar, y sin `await` en el camino del
+      // cliente: el comprobante ya está donde tiene que estar, y un fallo
+      // registrando su huella no puede deshacerlo ni dejar sin respuesta a
+      // quien acaba de pagar. Nunca lanza.
+      if (dependencias.registrarHuella) {
+        void dependencias.registrarHuella({
+          businessId: localDelPedido,
+          orderId: String(pedido.id),
+          imagen,
+          fileUrl: subida.url,
+          filePublicId: subida.public_id,
+          perceptualHash: subida.phash ?? null,
+        })
+      }
 
       return { adjuntado: true, orderNumber: pedido.order_number ?? null }
     } catch (error) {

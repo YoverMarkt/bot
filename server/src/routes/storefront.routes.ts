@@ -684,9 +684,10 @@ router.post(
       // permanente. Se sube como `authenticated` y solo se ve con una firma
       // temporal que genera el servidor.
       const subida = await uploadPrivateMedia(req.file.buffer, businessId)
+      const orderId = String(req.params.id || '')
       const { data, error } = await db.attachStorefrontPaymentProof({
         businessId,
-        orderId: String(req.params.id || ''),
+        orderId,
         contactPhone,
         url: subida.url,
         publicId: subida.public_id,
@@ -696,6 +697,20 @@ router.post(
         return res.status(500).json({ error: 'No pudimos guardar tu comprobante' })
       }
       const resultado = (data || {}) as { result?: string }
+      // La huella, sin `await`: el comprobante ya está adjunto y un fallo
+      // registrándola no puede deshacerlo ni dejar al cliente sin respuesta.
+      if (resultado.result !== 'not_found') {
+        const ingest = require('../services/receipt-ingest') as typeof import('../services/receipt-ingest')
+        void ingest.registrarComprobante({
+          businessId,
+          orderId,
+          imagen: req.file.buffer,
+          fileUrl: subida.url,
+          filePublicId: subida.public_id,
+          perceptualHash: subida.phash ?? null,
+          mimeType: req.file.mimetype,
+        })
+      }
       if (resultado.result === 'not_found') {
         return res.status(404).json({ error: 'Ese pedido no es tuyo o ya no existe' })
       }
