@@ -3,6 +3,7 @@ import {
   paso,
   recordarPedidoEnProceso,
   responderAlMenu,
+  verCategorias,
   resolverReinicio,
   type MarketplaceBusiness,
   type MarketplaceCategory,
@@ -226,6 +227,26 @@ export async function handleMarketplaceMessage(
 
   // ── 1. MENÚ, antes que nada ────────────────────────────────────────
   if (esComandoMenu(text)) {
+    // ⚠️ SEGUNDO MENÚ = SÍ, y esto arregla un bucle real (2026-08-23).
+    //
+    // El muro de «un pedido a la vez» dice literalmente «escribe *MENÚ*». El
+    // cliente lo escribe, se le pregunta si tira su pedido… y como MENÚ se
+    // comprueba antes que la vista, escribirlo otra vez volvía a preguntar lo
+    // mismo. Para siempre. El dueño lo vivió: «sigue enviando y enviando lo
+    // mismo».
+    //
+    // Pedir el menú DOS VECES no es una respuesta ambigua: es la misma
+    // petición repetida. La regla de no decidir por él sigue en pie para todo
+    // lo demás —cualquier otro texto vuelve a preguntar—, porque tirar un
+    // carrito es lo único que no tiene vuelta atrás.
+    if (vista.vista === 'confirmando_reinicio') {
+      const respuesta = verCategorias(categorias, 0)
+      await guardar(deps, customer.id, conversation?.version, respuesta, {
+        soltarLocal: true,
+      })
+      await send(respuesta.reply, respuesta.options)
+      return
+    }
     const respuesta = responderAlMenu(estado, categorias)
     // Solo se suelta el local cuando NO hay que preguntar nada. Con un pedido
     // en marcha la respuesta es la pregunta, y el carrito sigue donde estaba.

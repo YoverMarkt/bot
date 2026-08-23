@@ -95,10 +95,28 @@ export function elegir(mensaje: string, opciones: string[]): string | null {
   const exacta = opciones.find(opcion => normalizar(opcion) === texto)
   if (exacta) return exacta
   // Sin el emoji delante: «pizzerias» debe encontrar «🍕 Pizzerías».
-  return opciones.find((opcion) => {
+  const porTexto = opciones.find((opcion) => {
     const limpia = normalizar(opcion).replace(/[^a-z0-9 ]/g, '').trim()
     return limpia === texto || (limpia.length > 2 && limpia.includes(texto))
-  }) || null
+  })
+  if (porTexto) return porTexto
+
+  // ⚠️ WHATSAPP RECORTA LOS TÍTULOS, y esto dejaba opciones IMPOSIBLES de
+  // elegir. Un botón admite 20 caracteres: «✅ Sí, empezar de nuevo» son 22, así
+  // que al tocarlo volvía «✅ Sí, empezar de nu…» y no casaba con nada. El
+  // cliente tocaba el botón y recibía «no te entendí», una y otra vez.
+  //
+  // Se compara por PREFIJO, y solo si es inequívoco: con dos opciones que
+  // empiecen igual no se adivina, se vuelve a preguntar.
+  const recortado = texto.replace(/[…]+$/, '').replace(/\.{3,}$/, '').trim()
+  if (recortado.length >= 4) {
+    const candidatas = opciones.filter((opcion) => {
+      const limpia = normalizar(opcion).replace(/[^a-z0-9 ]/g, '').trim()
+      return limpia.startsWith(recortado) || normalizar(opcion).startsWith(recortado)
+    })
+    if (candidatas.length === 1) return candidatas[0]
+  }
+  return null
 }
 
 /** La portada: las categorías que hoy tienen locales detrás. */
@@ -256,8 +274,8 @@ const COMANDOS_MENU = [
   'volver al menú', 'reiniciar', 'cancelar', 'salir',
 ]
 
-export const SI_REINICIAR = '✅ Sí, empezar de nuevo'
-export const NO_CONTINUAR = '↩️ No, seguir con mi pedido'
+export const SI_REINICIAR = '✅ Empezar de nuevo'
+export const NO_CONTINUAR = '↩️ Seguir mi pedido'
 
 /**
  * ¿Es el comando global de volver al menú?
@@ -313,9 +331,13 @@ export function recordarPedidoEnProceso(
 ): MarketplaceReply {
   return {
     reply: `Tienes un pedido en proceso en *${negocio.name}*.\n\n`
-      + 'Termínalo o, si prefieres empezar de nuevo, escribe *MENÚ*.',
-    options: [],
-    vista: { vista: 'negocios', pagina: 0 },
+      + 'Termínalo, o elige empezar de nuevo aquí abajo 👇',
+    // ⚠️ Antes decía «escribe *MENÚ*» y no ofrecía nada. Escribir MENÚ llevaba
+    // a una pregunta que MENÚ no podía responder, así que el cliente se quedaba
+    // dando vueltas. Ahora se le dan las dos salidas, que es lo que de verdad
+    // resuelve — y siguen siendo las mismas dos de la confirmación.
+    options: [SI_REINICIAR, NO_CONTINUAR],
+    vista: { vista: 'confirmando_reinicio', pagina: 0 },
   }
 }
 

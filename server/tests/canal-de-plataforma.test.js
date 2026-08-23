@@ -294,7 +294,12 @@ describe('el menú del marketplace, de punta a punta', () => {
       expect(ultimo.reply).toContain('Monster Pizza')
       // El bloqueo NO es un muro: dice qué tiene abierto Y cómo salir, en el
       // mismo mensaje. Cada respuesta se paga desde el 1 de octubre.
-      expect(ultimo.reply).toMatch(/MENÚ/)
+      //
+      // ⚠️ CAMBIADO EL 2026-08-23, misma intención: antes mandaba «escribe
+      // *MENÚ*», y MENÚ llevaba a una pregunta que MENÚ no podía responder.
+      // El dueño se quedó en bucle. Ahora la salida son las dos opciones.
+      expect(ultimo.options).toHaveLength(2)
+      expect(ultimo.options.join(' ')).toMatch(/Empezar de nuevo/)
     })
 
     it('MENÚ con un pedido abierto PREGUNTA antes de tirarlo', async () => {

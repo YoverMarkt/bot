@@ -262,7 +262,7 @@ describe('orquestación de conversaciones del bot', () => {
 
     await current.conversation.processMessage(input(current, {
       business: { ...business, chat_mode: 'menu' },
-      text: '📷 Ver fotos y videos',
+      text: '📷 Fotos y videos',
       sendImage,
       sendVideo,
       sendOptions,
@@ -309,7 +309,7 @@ describe('orquestación de conversaciones del bot', () => {
 
     const processing = current.conversation.processMessage(input(current, {
       business: { ...business, chat_mode: 'menu' },
-      text: '📷 Ver fotos y videos',
+      text: '📷 Fotos y videos',
       sendVideo,
       sendOptions,
     }))
@@ -352,7 +352,7 @@ describe('orquestación de conversaciones del bot', () => {
       menuFlow: {
         advanceMenuFlow: vi.fn().mockReturnValue({
           reply: '¡Pedido recibido! 🙌',
-          options: ['🛒 Hacer un pedido', '💬 Hablar con el equipo'],
+          options: ['🛒 Hacer un pedido', '💬 Escribir al local'],
           action: {
             type: 'order',
             summary: 'resumen',

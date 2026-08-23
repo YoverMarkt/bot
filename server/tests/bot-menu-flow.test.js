@@ -35,8 +35,8 @@ describe('modo menú estilo banco (sin IA)', () => {
     const first = enviar(pizzeria, 'c1', 'quiero información de todo', { products: productos })
     expect(first.reply).toContain('Pizzería Don Luigi')
     expect(titulos(first.options)).toContain('🛒 Hacer un pedido')
-    expect(titulos(first.options)).toContain('📋 Ver productos y precios')
-    expect(titulos(first.options)).toContain('💬 Hablar con el equipo')
+    expect(titulos(first.options)).toContain('📋 Ver la carta')
+    expect(titulos(first.options)).toContain('💬 Escribir al local')
     expect(first.action).toBeUndefined()
   })
 
@@ -121,7 +121,7 @@ describe('modo menú estilo banco (sin IA)', () => {
 
     resetMenuFlow(negocio.id, 'acentos-b')
     enviar(negocio, 'acentos-b', 'hola', args)
-    enviar(negocio, 'acentos-b', '📋 Ver productos y precios', args)
+    enviar(negocio, 'acentos-b', '📋 Ver la carta', args)
     const bebidas = enviar(negocio, 'acentos-b', 'Bebidas frías', args)
     expect(titulos(bebidas.options)).toContain('Té Helado')
   })
@@ -142,9 +142,9 @@ describe('modo menú estilo banco (sin IA)', () => {
     }
 
     const bienvenida = enviar(pizzeria, 'rep1', 'hola', args)
-    expect(titulos(bienvenida.options)).toContain('🔄 Repetir mi último pedido')
+    expect(titulos(bienvenida.options)).toContain('🔄 Repetir pedido')
 
-    const repetido = enviar(pizzeria, 'rep1', '🔄 Repetir mi último pedido', args)
+    const repetido = enviar(pizzeria, 'rep1', '🔄 Repetir pedido', args)
     // Precio de HOY (9.99 x2 = 19.98), jamás el histórico de 8.50
     expect(repetido.reply).toContain('2x Pizza Hawaiana — $19.98')
     expect(repetido.reply).toContain('Total: $19.98')
@@ -187,7 +187,7 @@ describe('modo menú estilo banco (sin IA)', () => {
   it('no ofrece repetir pedido si el cliente no tiene uno anterior', () => {
     resetMenuFlow(pizzeria.id, 'rep2')
     const bienvenida = enviar(pizzeria, 'rep2', 'hola', { products: productos })
-    expect(titulos(bienvenida.options)).not.toContain('🔄 Repetir mi último pedido')
+    expect(titulos(bienvenida.options)).not.toContain('🔄 Repetir pedido')
   })
 
   it('acepta el número de la lista como en el banco y repite el menú si no entiende', () => {
@@ -318,10 +318,10 @@ describe('modo menú estilo banco (sin IA)', () => {
     enviar(pizzeria3, 'pm-a', 'Pizzas', args)
     // Con foto: al elegirla se muestra el detalle con el paso de fotos y "Pedirlo"
     const detalleProd = enviar(pizzeria3, 'pm-a', 'Pizza Deluxe', args)
-    expect(titulos(detalleProd.options)).toContain('📷 Ver fotos y videos')
+    expect(titulos(detalleProd.options)).toContain('📷 Fotos y videos')
     expect(titulos(detalleProd.options)).toContain('🛒 Pedirlo')
 
-    const fotos = enviar(pizzeria3, 'pm-a', '📷 Ver fotos y videos', args)
+    const fotos = enviar(pizzeria3, 'pm-a', '📷 Fotos y videos', args)
     expect(fotos.media).toEqual([
       { url: 'https://res.cloudinary.com/demo/image/upload/deluxe.jpg', isVideo: false },
       { url: 'https://res.cloudinary.com/demo/video/upload/deluxe.mp4', isVideo: true },
@@ -350,7 +350,7 @@ describe('modo menú estilo banco (sin IA)', () => {
 
     resetMenuFlow(pizzeria.id, 'c6')
     enviar(pizzeria, 'c6', 'hola', args)
-    const porOpcion = enviar(pizzeria, 'c6', '💬 Hablar con el equipo', args)
+    const porOpcion = enviar(pizzeria, 'c6', '💬 Escribir al local', args)
     expect(porOpcion.action).toEqual({ type: 'handoff' })
   })
 
