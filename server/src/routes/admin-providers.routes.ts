@@ -315,4 +315,65 @@ router.post('/api/admin/clients/:id/verify', auth.authAdmin, async (req, res) =>
   res.json(await verifyProvider(payload))
 })
 
+/**
+ * Verifica el número de la PLATAFORMA (Umbani).
+ *
+ * Reutiliza la misma comprobación que un negocio con canal propio —consultar
+ * YCloud y confirmar que ese número está vinculado a la cuenta—, porque el
+ * canal es el mismo; lo único distinto es de dónde salen las credenciales:
+ * de `server_settings`, no de la ficha de un negocio.
+ *
+ * ⚠️ Acepta lo que el admin acaba de teclear SIN guardar, igual que la
+ * verificación de un negocio: así se comprueba una key antes de dejarla
+ * puesta, en vez de guardar a ciegas y descubrir el fallo cuando un cliente
+ * escriba.
+ */
+router.post('/api/admin/verify-platform-channel', auth.authAdmin, async (req, res) => {
+  const body = req.body as Record<string, unknown>
+  const settings = require('../services/settings') as typeof import('../services/settings')
+
+  const [guardadaKey, guardadoNumero, guardadoSecret, guardadoEndpoint] = await Promise.all([
+    settings.get('platform_ycloud_api_key'),
+    settings.get('platform_ycloud_number'),
+    settings.get('platform_webhook_secret'),
+    settings.get('platform_webhook_endpoint_id'),
+  ]).catch(() => [null, null, null, null])
+
+  const apiKey = optionalText(body.platform_ycloud_api_key) || guardadaKey || ''
+  const numero = optionalText(body.platform_ycloud_number) || guardadoNumero || ''
+  const secret = optionalText(body.platform_webhook_secret) || guardadoSecret || ''
+  const endpoint = optionalText(body.platform_webhook_endpoint_id) || guardadoEndpoint || ''
+
+  if (!apiKey) return res.json({ ok: false, info: 'Falta la YCloud API Key del marketplace' })
+  if (!numero) return res.json({ ok: false, info: 'Falta el número de WhatsApp del marketplace' })
+
+  const resultado = await verifyProvider({
+    provider: 'ycloud',
+    ycloud_api_key: apiKey,
+    ycloud_number: numero,
+  })
+  if (!resultado.ok) return res.json(resultado)
+
+  // El canal responde. Ahora lo que YCloud no puede decirnos: sin estos dos,
+  // el webhook rechaza en producción (503) y el número quedaría mudo aunque
+  // la key sea correcta — es justo el fallo que no se ve hasta que alguien
+  // escribe.
+  const faltan = [
+    !secret ? 'el Signing Secret' : null,
+    !endpoint ? 'el Endpoint ID' : null,
+  ].filter(Boolean)
+
+  if (faltan.length) {
+    return res.json({
+      ok: false,
+      info: `${resultado.info} — pero falta ${faltan.join(' y ')}: sin eso el webhook rechaza los mensajes en producción.`,
+    })
+  }
+
+  return res.json({
+    ok: true,
+    info: `${resultado.info} · webhook configurado`,
+  })
+})
+
 export = router

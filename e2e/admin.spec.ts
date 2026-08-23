@@ -188,7 +188,7 @@ test('el simulador conserva los controles dentro del móvil', async ({ page }) =
   ))).toBe(true)
 })
 
-test('el alta recomienda capacidades seguras según el tipo de negocio', async ({ page }) => {
+test('el alta deduce del tipo cómo va a atender el negocio', async ({ page }) => {
   await seedAdminSession(page)
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/clients`)
@@ -196,7 +196,7 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
 
   const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
   const businessType = dialog.getByRole('combobox', { name: 'Tipo de negocio' })
-  const salesMode = dialog.getByRole('combobox', { name: 'Ventas por el bot' })
+  const resumenModo = dialog.getByTestId('client-mode-summary')
   const selectBusinessType = async (name: string) => {
     await businessType.click()
     const listbox = page.getByRole('listbox')
@@ -204,45 +204,47 @@ test('el alta recomienda capacidades seguras según el tipo de negocio', async (
     await listbox.getByRole('option', { name, exact: true }).click()
     await expect(listbox).toBeHidden()
   }
-  // El desplegable quedó en comida y retail el 2026-08-20, así que el único
-  // tipo que no vende es el genérico. Antes este recorrido usaba Hotel y
-  // Barbería, que ya no se pueden elegir.
-  //
-  // ⚠️ El genérico va el ÚLTIMO a propósito: lo que hay que probar es que la
-  // recomendación VUELVE a «informa» después de un tipo que vende. Con los dos
-  // que venden al final, una recomendación que se quedara pegada —un
-  // `sales || recomendado` de más— daría de alta un negocio que solo informa
-  // con pedidos y tienda encendidos, y esta prueba no se enteraría.
+
+  // ⚠️ El criterio es cuánto hay que ELEGIR para armar el pedido, no cuántos
+  // productos hay. Una pizzería tiene pocos productos pero pedirla es tamaño,
+  // masa, borde y dos sabores: eso se arma en la app. Una almuercería son
+  // tres platos del día y se piden hablando.
   await selectBusinessType('Pizzería')
-  await expect(salesMode).toContainText('Crea pedidos con total oficial')
+  await expect(resumenModo).toContainText('mini app')
+
+  await selectBusinessType('Almuerzos')
+  await expect(resumenModo).toContainText('chat')
 
   await selectBusinessType('Supermercado')
-  await expect(salesMode).toContainText('Crea pedidos con total oficial')
+  await expect(resumenModo).toContainText('mini app')
 
+  // ⚠️ El genérico va el ÚLTIMO a propósito: lo que hay que probar es que la
+  // recomendación VUELVE a «no vende» después de tipos que sí venden. Con los
+  // que venden al final, una recomendación pegada no se notaría.
   await selectBusinessType('Otro / negocio genérico')
-  await expect(salesMode).toContainText('Solo informa y deriva')
+  await expect(resumenModo).toContainText('no crea pedidos')
   await expect(dialog.getByText(/Se creará un horario inicial/)).toBeVisible()
 
+  // El plan solo pacta la mensualidad: los cupos se guardan, pero no se
+  // enseñan al dar de alta.
   await dialog.getByRole('combobox', { name: 'Plan' }).click()
   const planListbox = page.getByRole('listbox')
   await expect(planListbox.getByRole('option')).toHaveCount(6)
   await planListbox.getByRole('option', { name: /Pro — \$99\/mes/ }).click()
   await expect(planListbox).toBeHidden()
-  // ⚠️ Eran tres inputs `readOnly`. Se leen igual de bien —y ocupando una
-  // línea en vez de media pantalla— en el resumen del plan: lo que importa
-  // sigue siendo que elegir el plan fije tarifa y cupos, no que haya tres
-  // campos que nadie puede tocar.
   const resumen = dialog.getByTestId('client-plan-summary')
   await expect(resumen).toContainText('$99/mes')
-  await expect(resumen).toContainText('400 contactos')
-  await expect(resumen).toContainText('2.000 mensajes')
+  await expect(resumen).not.toContainText('contactos')
+  await expect(resumen).not.toContainText('mensajes')
   await expect(dialog.getByLabel('Plan vence')).toHaveCount(0)
 
-  // El alta ya no pide el canal ni el modo: un local nace en el marketplace y
-  // el modo lo deduce el tipo. Todo eso sigue vivo al EDITAR.
+  // Nada de esto se pregunta ya al crear: sale del tipo, o del marketplace.
+  // Todo sigue vivo al EDITAR.
   await expect(dialog.getByText('Canal de WhatsApp')).toHaveCount(0)
   await expect(dialog.getByLabel('Quién conduce la conversación')).toHaveCount(0)
   await expect(dialog.getByLabel('IA de este negocio')).toHaveCount(0)
+  await expect(dialog.getByLabel('Ventas por el bot')).toHaveCount(0)
+  await expect(dialog.getByLabel('Mini app de la tienda')).toHaveCount(0)
   await expectConnectedLabels(dialog)
 })
 

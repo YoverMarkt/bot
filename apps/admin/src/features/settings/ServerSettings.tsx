@@ -33,6 +33,7 @@ export default function ServerSettings() {
   const [provider, setProvider] = useState('')
   const [aiMsg, setAiMsg] = useState('')
   const [cldMsg, setCldMsg] = useState('')
+  const [platMsg, setPlatMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
   const activeProvider = provider || saved.ai_provider || 'claude'
@@ -58,6 +59,19 @@ export default function ServerSettings() {
       })
       setCldMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
     } catch (e) { setCldMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+  }
+
+  async function verifyPlatform() {
+    setPlatMsg('Verificando el número del marketplace…')
+    try {
+      const r = await cfg.verifyPlatformChannel({
+        platform_ycloud_api_key: val('platform_ycloud_api_key') || undefined,
+        platform_ycloud_number: val('platform_ycloud_number') || undefined,
+        platform_webhook_secret: val('platform_webhook_secret') || undefined,
+        platform_webhook_endpoint_id: val('platform_webhook_endpoint_id') || undefined,
+      })
+      setPlatMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
+    } catch (e) { setPlatMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
   }
 
   async function save() {
@@ -150,6 +164,14 @@ export default function ServerSettings() {
             <Label htmlFor="server-platform-secret">Webhook Signing Secret {saved.platform_webhook_secret && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
             <Input id="server-platform-secret" type="password" value={val('platform_webhook_secret')} onChange={set('platform_webhook_secret')} placeholder={saved.platform_webhook_secret || 'whsec_…'} />
           </div>
+        </div>
+        <div className="flex items-center gap-3 mt-3">
+          <Button variant="outline" size="sm" onClick={verifyPlatform}>
+            <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar el número</span>
+          </Button>
+          <span className="text-xs text-foreground/80">
+            {platMsg || 'Comprueba contra YCloud que el número está vinculado y el webhook configurado'}
+          </span>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           En producción el signing secret es <strong>obligatorio</strong>: sin

@@ -151,39 +151,41 @@ describe('lo que el alta SIGUE pidiendo', () => {
 
 describe('con qué modo NACE cada tipo de negocio', () => {
   const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')
+  const lista = tipos.match(/const PEDIDO_SIMPLE = \[[\s\S]*?\]/)?.[0] || ''
 
-  it('una almuercería nace en MENÚ, no en mini app', () => {
-    // ⚠️ El fallo que se corrige: hasta el 2026-08-21 la regla era
-    // `vende ? 'miniapp' : 'menu'`, y con el desplegable reducido a comida y
-    // retail eso significaba TODO menos el genérico. Una almuercería con
-    // cuatro platos del día salía «Mini app», que es justo al revés: cuatro
-    // opciones se eligen mejor en el chat que abriendo un enlace.
-    expect(tipos).not.toMatch(
-      /return recommendedStorefrontForBusinessType\(type\) \? 'miniapp' : 'menu'/,
-    )
-    expect(tipos).toContain('CATALOGO_LARGO')
-    // Los de catálogo corto NO están en la lista de excepciones.
-    for (const corto of ['almuerzos', 'desayunos', 'jugos', 'pizzería']) {
-      const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
-      expect(lista, `${corto} no debería estar en CATALOGO_LARGO`)
-        .not.toContain(`'${corto}'`)
+  it('el criterio es cuánto hay que ELEGIR, no cuántos productos hay', () => {
+    // ⚠️ Corrección del dueño (2026-08-22). El primer intento clasificó por
+    // número de productos y mandó la pizzería al chat: pocos productos, sí,
+    // pero pedirla es tamaño, masa, borde y dos sabores. Eso en una lista de
+    // WhatsApp es penoso; en la mini app es un momento.
+    expect(tipos).toContain('PEDIDO_SIMPLE')
+    expect(tipos).not.toContain('CATALOGO_LARGO')
+  })
+
+  it('una almuercería y una cevichería piden por el CHAT', () => {
+    // Tres o cuatro platos del día: se eligen hablando.
+    for (const simple of ['almuerzos', 'comida típica', 'marisquería', 'desayunos']) {
+      expect(lista, `${simple} debería pedir por el chat`).toContain(`'${simple}'`)
     }
   })
 
-  it('un supermercado sí nace en mini app', () => {
-    const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
-    for (const largo of ['supermercado', 'farmacia', 'ferretería', 'restaurante']) {
-      expect(lista, `${largo} debería estar en CATALOGO_LARGO`).toContain(`'${largo}'`)
+  it('una pizzería y una heladería piden por la MINI APP', () => {
+    // Hay bastante que elegir en cada producto: sabores, tamaños, extras.
+    for (const armado of ['pizzería', 'heladería', 'hamburguesería', 'sushi']) {
+      expect(lista, `${armado} NO debería pedir por el chat`).not.toContain(`'${armado}'`)
     }
   })
 
-  it('se lista la EXCEPCIÓN, no la regla', () => {
-    // Son ocho frente a veintidós: así un tipo de comida nuevo cae solo en el
-    // lado correcto sin que nadie tenga que acordarse de clasificarlo.
-    const lista = tipos.match(/const CATALOGO_LARGO = \[[\s\S]*?\]/)?.[0] || ''
-    const cuantos = (lista.match(/'/g) || []).length / 2
-    const total = (tipos.match(/\{ value: '/g) || []).length
-    expect(cuantos).toBeLessThan(total / 2)
+  it('el retail también va a la app', () => {
+    for (const retail of ['supermercado', 'farmacia', 'ferretería', 'tienda']) {
+      expect(lista).not.toContain(`'${retail}'`)
+    }
+  })
+
+  it('un tipo SIN clasificar cae en la mini app, que nunca es inusable', () => {
+    // Falla hacia lo seguro: la tienda atiende cualquier catálogo, mientras
+    // que un menú de chat mal elegido deja al cliente en listas interminables.
+    expect(tipos).toMatch(/return simple \? 'menu' : 'miniapp'/)
   })
 
   it('sin pedidos no hay menú de compra: el genérico cae en `menu`', () => {
@@ -191,8 +193,79 @@ describe('con qué modo NACE cada tipo de negocio', () => {
   })
 
   it('sigue siendo solo una RECOMENDACIÓN al crear', () => {
-    // Dentro del marketplace manda el catálogo real contado al elegir local:
-    // un tipo mal clasificado aquí se corrige solo en cuanto hay productos.
     expect(tipos).toMatch(/solo PROPONE al crear/i)
+  })
+})
+
+describe('el alta ya no pregunta lo que se deduce del tipo', () => {
+  const modal = leer('../../apps/admin/src/features/clients/ClientModal.tsx')
+
+  it('«Ventas por el bot» y «Mini app de la tienda» son solo de edición', () => {
+    // Dos decisiones (`takes_orders` y `storefront_enabled`) que salen de lo
+    // mismo: el tipo de negocio. En el alta se explican en una línea.
+    const desde = modal.indexOf('{id ? (')
+    const ventas = modal.indexOf('client-sales-mode')
+    const tienda = modal.indexOf('client-storefront')
+    expect(desde).toBeGreaterThan(-1)
+    expect(ventas).toBeGreaterThan(desde)
+    expect(tienda).toBeGreaterThan(desde)
+  })
+
+  it('en su lugar dice cómo va a atender', () => {
+    expect(modal).toContain('client-mode-summary')
+    expect(modal).toContain('chatModeSummary')
+  })
+
+  it('y el resumen lo explica en español, sin jerga', () => {
+    const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')
+    expect(tipos).toMatch(/Pedirá por el chat/)
+    expect(tipos).toMatch(/Pedirá por su mini app/)
+  })
+})
+
+describe('el plan solo pacta la mensualidad', () => {
+  const modal = leer('../../apps/admin/src/features/clients/ClientModal.tsx')
+
+  it('ni el desplegable ni el resumen enseñan cupos', () => {
+    // Los cupos se siguen guardando y Medición alerta los excesos; lo que se
+    // pacta al dar de alta es la mensualidad y nada más.
+    expect(modal).not.toContain('monthlyContactLimit.toLocaleString')
+    expect(modal).not.toContain('contactos')
+    expect(modal).not.toMatch(/\}\s*mensajes/)
+  })
+
+  it('pero el payload los sigue enviando', () => {
+    expect(modal).toContain('payload.monthly_contact_limit')
+    expect(modal).toContain('payload.monthly_outbound_message_limit')
+  })
+})
+
+describe('el número del marketplace se puede verificar', () => {
+  it('el panel tiene su botón', () => {
+    const panel = leer('../../apps/admin/src/features/settings/ServerSettings.tsx')
+    expect(panel).toContain('Verificar el número')
+    expect(panel).toContain('verifyPlatformChannel')
+  })
+
+  it('y el servidor comprueba el número contra YCloud', () => {
+    const ruta = leer('../src/routes/admin-providers.routes.ts')
+    expect(ruta).toContain('/api/admin/verify-platform-channel')
+    // Reutiliza la MISMA comprobación que un negocio con canal propio: el
+    // canal es el mismo, solo cambia de dónde salen las credenciales.
+    expect(ruta).toMatch(/verify-platform-channel[\s\S]{0,2000}?verifyProvider\(\{/)
+  })
+
+  it('avisa de lo que YCloud no puede decir: falta el webhook', () => {
+    // Sin signing secret ni endpoint id, el webhook rechaza en producción y
+    // el número queda mudo aunque la key sea correcta.
+    const ruta = leer('../src/routes/admin-providers.routes.ts')
+    expect(ruta).toContain('Signing Secret')
+    expect(ruta).toContain('Endpoint ID')
+    expect(ruta).toMatch(/rechaza los mensajes en producción/)
+  })
+
+  it('exige autenticación de superadmin', () => {
+    const ruta = leer('../src/routes/admin-providers.routes.ts')
+    expect(ruta).toMatch(/verify-platform-channel', auth\.authAdmin/)
   })
 })
