@@ -78,6 +78,19 @@ function manualScheduler() {
   }
 }
 
+/**
+ * Dispara un temporizador en cuanto exista, sin depender del orden de las
+ * microtareas: los reintentos se programan dentro de una cadena de promesas.
+ */
+const correrCuandoExista = async (scheduler, runByDelay, countByDelay, delay) => {
+  for (let intento = 0; intento < 60; intento += 1) {
+    if (countByDelay(delay) > 0) { runByDelay(delay); return }
+    await Promise.resolve()
+    await new Promise(seguir => process.nextTick(seguir))
+  }
+  throw new Error(`El temporizador de ${delay} ms nunca se programó`)
+}
+
 describe('worker del inbox durable de webhooks', () => {
   it('no reserva más leases que su concurrencia y completa cada fila', async () => {
     const gate = deferred()
@@ -543,6 +556,142 @@ describe('worker del inbox durable de webhooks', () => {
     expect(repo.failWebhookEvent).not.toHaveBeenCalled()
     // Ni un temporizador vivo: ni el del límite ni el del heartbeat.
     expect(size()).toBe(0)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // UN FALLO PASAJERO AL RECONOCER NO PUEDE COSTAR EL EVENTO
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // ⚠️ Incidente REAL del 2026-08-23, y el que dejó al marketplace sin
+  // entregar el enlace de la mini app. El mensaje se procesaba bien —el
+  // cliente recibía su respuesta— pero CERRAR el evento fallaba con «upstream
+  // request timeout». Un solo fallo pasajero costaba carísimo:
+  //
+  //   · el evento se quedaba en `processing` hasta que venciera el lease
+  //   · la cola es FIFO por conversación, así que TODOS los mensajes
+  //     siguientes de ese cliente se quedaban esperando
+  //   · y al reintentarlo se REPROCESABA: el cliente recibía la misma
+  //     respuesta cada tres minutos
+  //
+  // Medido: la función tarda ~180 ms por conexión directa. 37 s no es la
+  // función siendo lenta, es la capa de en medio teniendo un mal momento.
+  it('reintenta completar si la primera llamada falla', async () => {
+    const completeWebhookEvent = vi.fn()
+      .mockRejectedValueOnce(new Error('upstream request timeout'))
+      .mockResolvedValueOnce(ok(true))
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+      completeWebhookEvent,
+    })
+    const { scheduler, runByDelay, countByDelay } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-ack-reintento',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      processEvent: async () => {},
+    })
+
+    const poll = worker.pollOnce()
+    // La espera entre intentos: 500 ms el primero.
+    await correrCuandoExista(scheduler, runByDelay, countByDelay, 500)
+    await poll
+
+    expect(completeWebhookEvent).toHaveBeenCalledTimes(2)
+    // Y con el MISMO token: reintentar es seguro porque el fencing decide.
+    expect(completeWebhookEvent.mock.calls[1]).toEqual(completeWebhookEvent.mock.calls[0])
+  })
+
+  it('reintenta también al registrar un fallo', async () => {
+    // Perder el registro del fallo deja el evento igual de atascado que
+    // perder el completado.
+    const failWebhookEvent = vi.fn()
+      .mockRejectedValueOnce(new Error('upstream request timeout'))
+      .mockResolvedValueOnce(ok('pending'))
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+      failWebhookEvent,
+    })
+    const { scheduler, runByDelay, countByDelay } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-fail-reintento',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      processEvent: async () => { throw new Error('el manejador falló') },
+    })
+
+    const poll = worker.pollOnce()
+    await correrCuandoExista(scheduler, runByDelay, countByDelay, 500)
+    await poll
+
+    expect(failWebhookEvent).toHaveBeenCalledTimes(2)
+  })
+
+  // ⚠️ Lo que NO puede pasar: reintentar para siempre. El lease dura 180 s y
+  // reintentar más allá sería trabajar sobre un evento que ya es de otro.
+  it('se rinde tras tres intentos y lo REGISTRA', async () => {
+    const completeWebhookEvent = vi.fn()
+      .mockRejectedValue(new Error('upstream request timeout'))
+    const errores = []
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+      completeWebhookEvent,
+    })
+    const { scheduler, runByDelay, countByDelay } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-ack-rendido',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      processEvent: async () => {},
+      onError: (error, contexto) => errores.push({ error, contexto }),
+    })
+
+    const poll = worker.pollOnce()
+    await correrCuandoExista(scheduler, runByDelay, countByDelay, 500)
+    await correrCuandoExista(scheduler, runByDelay, countByDelay, 1_000)
+    await poll
+
+    expect(completeWebhookEvent).toHaveBeenCalledTimes(3)
+    expect(errores.some(e => e.contexto.phase === 'complete')).toBe(true)
+  })
+
+  // ⚠️ El `return` silencioso que escondió el fallo durante horas: el evento
+  // se quedaba en `processing` sin `last_error`, sin salir en `in_flight` y
+  // con `/api/health` en verde. No había NADA que mirar.
+  it('perder el lease a mitad del proceso deja rastro, no silencio', async () => {
+    const errores = []
+    const puerta = deferred()
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async () => ok([lease(1, 'ycloud')])),
+      renewWebhookEventLease: vi.fn(async () => ok(false)),
+    })
+    const { scheduler, runByDelay, countByDelay } = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-lease-perdido',
+      repository: repo,
+      scheduler,
+      leaseSeconds: 30,
+      heartbeatIntervalMilliseconds: 5_000,
+      processEvent: () => puerta.promise,
+      onError: (error, contexto) => errores.push({ error, contexto }),
+    })
+
+    // El proceso tiene que durar lo suficiente para que lata el heartbeat:
+    // es ahí donde se descubre que el lease ya no es nuestro.
+    const poll = worker.pollOnce()
+    await correrCuandoExista(scheduler, runByDelay, countByDelay, 5_000)
+    puerta.resolve()
+    await poll
+
+    expect(errores.some(e => e.contexto.phase === 'lease-perdido')).toBe(true)
+    // Y no se toca la fila: el lease ya es de otro worker.
+    expect(repo.completeWebhookEvent).not.toHaveBeenCalled()
+    expect(repo.failWebhookEvent).not.toHaveBeenCalled()
   })
 
   it('sanitiza valores no Error y no usa unref en ningún timer', () => {

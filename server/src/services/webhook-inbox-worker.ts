@@ -44,6 +44,10 @@ export type WebhookInboxWorkerPhase =
   | 'poll'
   | 'process'
   | 'renew'
+  // El worker perdió el lease a mitad del proceso. No es un fallo suyo,
+  // pero SÍ hay que decirlo: ese evento se reprocesará y el cliente va a
+  // recibir la misma respuesta otra vez.
+  | 'lease-perdido'
   | 'complete'
   | 'fail'
   | 'dead'
@@ -364,6 +368,49 @@ export function createWebhookInboxWorker(
     }
   }
 
+  /**
+   * Reintenta el RECONOCIMIENTO del evento (completar o marcar fallo).
+   *
+   * ⚠️ Nace del incidente del 2026-08-23. El mensaje se procesaba bien —el
+   * cliente recibía su respuesta— pero cerrar el evento fallaba con «upstream
+   * request timeout», y un solo fallo pasajero costaba carísimo:
+   *
+   *   · el evento se quedaba en `processing` hasta que venciera el lease
+   *   · la cola es FIFO por conversación, así que **todos los mensajes
+   *     siguientes de ese cliente se quedaban esperando** — por eso elegir un
+   *     local nunca llegaba a entregar el enlace
+   *   · y al reintentarlo se REPROCESABA, así que el cliente recibía la misma
+   *     respuesta una y otra vez cada tres minutos
+   *
+   * Medido: la función tarda ~180 ms por conexión directa. Un tiempo de
+   * respuesta de 37 s no es la función siendo lenta, es la capa de en medio
+   * teniendo un mal momento — y eso se pasa reintentando.
+   *
+   * ⚠️ Reintentar es SEGURO porque las dos RPC llevan el `lease_token`: si el
+   * lease ya no es nuestro no hacen nada, y si el primer intento sí llegó a
+   * PostgreSQL el segundo es inocuo.
+   *
+   * ⚠️ Cabe de sobra dentro del lease: dos esperas cortas contra 180 segundos.
+   */
+  const conReintentos = async <T>(
+    operacion: () => Promise<T>,
+    intentos = 3,
+  ): Promise<T> => {
+    let ultimo: unknown
+    for (let intento = 0; intento < intentos; intento += 1) {
+      try {
+        return await operacion()
+      } catch (error) {
+        ultimo = error
+        if (intento === intentos - 1) break
+        await new Promise<void>((seguir) => {
+          scheduler.setTimeout(() => seguir(), 500 * (intento + 1))
+        })
+      }
+    }
+    throw ultimo
+  }
+
   const handleEvent = async (event: WebhookInboxLease): Promise<void> => {
     const stopHeartbeat = startHeartbeat(event)
     let processingFailed = false
@@ -399,7 +446,23 @@ export function createWebhookInboxWorker(
     }
 
     const stillOwnsLease = await stopHeartbeat()
-    if (!stillOwnsLease) return
+    if (!stillOwnsLease) {
+      // ⚠️ ANTES ESTO ERA UN `return` A SECAS, y escondió un fallo durante
+      // horas el 2026-08-23: el evento se quedaba en `processing` sin
+      // `last_error`, sin salir en `in_flight` y con `/api/health` en verde.
+      // No había NADA que mirar.
+      //
+      // No se puede hacer más que avisar —el lease ya es de otro worker y
+      // tocar la fila pisaría su trabajo—, pero avisar es exactamente lo que
+      // faltaba. Y no es inocuo: ese evento se reprocesará, así que el cliente
+      // va a recibir la misma respuesta otra vez.
+      report('Se perdió el lease durante el proceso: el evento se reintentará', {
+        phase: 'lease-perdido',
+        eventId: event.id,
+        provider: event.provider,
+      })
+      return
+    }
 
     if (processingFailed) {
       const safeError = sanitizeWebhookInboxError(processingError)
@@ -410,12 +473,12 @@ export function createWebhookInboxWorker(
       })
       try {
         const status = rpcData(
-          await repository.failWebhookEvent(
+          await conReintentos(() => repository.failWebhookEvent(
             event.id,
             event.lease_token,
             safeError,
             baseDelaySeconds,
-          ),
+          )),
           'No se pudo registrar el fallo del webhook',
         )
         if (status !== 'pending' && status !== 'dead' && status !== 'stale') {
@@ -447,7 +510,9 @@ export function createWebhookInboxWorker(
 
     try {
       const completed = rpcData(
-        await repository.completeWebhookEvent(event.id, event.lease_token),
+        await conReintentos(
+          () => repository.completeWebhookEvent(event.id, event.lease_token),
+        ),
         'No se pudo completar el webhook',
       )
       if (typeof completed !== 'boolean') {
