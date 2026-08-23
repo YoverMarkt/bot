@@ -7,6 +7,7 @@ import type { ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 import {
   RESPUESTA_COMPROBANTE, esComprobante, esComprobanteAmbiguo, preguntaDeQueLocal,
+  RESPUESTA_NO_ES_COMPROBANTE, esFotoQueNoEsComprobante,
 } from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
@@ -520,6 +521,25 @@ function createBotConversation(dependencies: BotConversationDependencies) {
       await send(pregunta)
       await database.saveMessage(business.id, phone, 'assistant', pregunta)
       logger.log(`🧾 [${business.name}] comprobante ambiguo: se preguntó el local a ${phone}`)
+      return
+    }
+
+    // ⚠️ La foto NO era un comprobante: ni banco, ni monto, ni fecha, ni
+    // referencia. Se le pide la captura correcta diciéndole QUÉ tiene que
+    // verse — sin eso, la segunda foto suele salir tan inservible como la
+    // primera, y cada mensaje se paga desde el 1 de octubre.
+    //
+    // ⚠️ Va detrás del techo anti-molestias (`reclamo.permitido`), al revés
+    // que las dos ramas de arriba, y la diferencia es deliberada: quien manda
+    // su comprobante de verdad lo manda una o dos veces, muy por debajo del
+    // tope. Quien manda veinte fotos que no son pagos es justo lo que el techo
+    // existe para frenar — y cada una cuesta además una llamada de visión. Si
+    // está silenciado, esto no responde y cae al silencio de abajo.
+    if (esFotoQueNoEsComprobante(text) && reclamo.permitido) {
+      await marcarLeido()
+      await send(RESPUESTA_NO_ES_COMPROBANTE)
+      await database.saveMessage(business.id, phone, 'assistant', RESPUESTA_NO_ES_COMPROBANTE)
+      logger.log(`🖼️  [${business.name}] la foto de ${phone} no era un comprobante`)
       return
     }
 

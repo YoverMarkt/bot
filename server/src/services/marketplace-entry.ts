@@ -11,6 +11,10 @@ import {
 } from './marketplace-menu'
 import { optionTitle } from './bot-menu-flow'
 import * as checkout from './marketplace-checkout'
+import {
+  esComprobante, esComprobanteAmbiguo, esFotoQueNoEsComprobante,
+  preguntaDeQueLocal, RESPUESTA_COMPROBANTE, RESPUESTA_NO_ES_COMPROBANTE,
+} from './payment-proof-inbox'
 import type { InboundLocation } from './inbound-webhook'
 import type {
   FlowState,
@@ -225,6 +229,41 @@ export async function handleMarketplaceMessage(
       soltarLocal: respuesta.vista.vista !== 'confirmando_reinicio',
     })
     await send(respuesta.reply, respuesta.options)
+    return
+  }
+
+  // ── 1b. La foto que ya se procesó como comprobante ─────────────────
+  //
+  // ⚠️ Estos textos NO los escribió el cliente: los pone el webhook después de
+  // haber subido y adjuntado (o rechazado) su captura. Si cayeran al menú se
+  // tratarían como una BÚSQUEDA, y quien acaba de pagar recibiría «no
+  // encontramos locales para [el cliente envió su comprobante…]».
+  //
+  // ⚠️ Va detrás de MENÚ para no romper la regla de que MENÚ se comprueba
+  // antes que nada, aunque ninguno de estos marcadores pueda confundirse con
+  // él. Y NO toca el estado de la conversación: el carrito, el local elegido y
+  // la vista se quedan exactamente donde estaban.
+  if (esComprobante(text)) {
+    await send(RESPUESTA_COMPROBANTE, [])
+    return
+  }
+  if (esFotoQueNoEsComprobante(text)) {
+    await send(RESPUESTA_NO_ES_COMPROBANTE, [])
+    return
+  }
+  if (esComprobanteAmbiguo(text)) {
+    // Los nombres viajan dentro del propio marcador: quien lo escribió ya
+    // consultó la base, y volver a consultarla sería pagar dos veces por la
+    // misma respuesta. Es el mismo desempaquetado que hace `bot-conversation`.
+    const locales = String(text).split(': ').slice(1).join(': ').replace(/\]$/, '')
+    await send(
+      preguntaDeQueLocal(
+        locales.split(' / ').filter(Boolean).map(businessName => ({
+          orderId: '', orderNumber: null, businessName,
+        })),
+      ),
+      [],
+    )
     return
   }
 

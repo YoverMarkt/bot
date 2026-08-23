@@ -1,4 +1,9 @@
 import crypto from 'node:crypto'
+import {
+  compararConElPedido, leerReglas,
+  type LoEsperado, type SenalDeRiesgo,
+} from './receipt-analysis'
+import type { ResultadoVision } from './receipt-vision'
 
 /**
  * LA HUELLA DEL COMPROBANTE
@@ -25,6 +30,25 @@ import crypto from 'node:crypto'
  */
 
 export interface ReceiptIngestDatabase {
+  /**
+   * Guarda lo leído, sus señales y el score. Opcional a propósito: sin ella el
+   * registro se comporta exactamente como antes de que el análisis existiera.
+   */
+  saveReceiptAnalysis?(input: {
+    businessId: string
+    receiptId: string
+    status: 'analizado' | 'requiere_revision'
+    datos?: Record<string, unknown> | null
+    flags?: Array<Record<string, unknown>> | null
+    analysis?: Record<string, unknown> | null
+    puntosReferencia?: number
+  }): Promise<{ error?: { message?: string } | null }>
+  /** La cuenta que el negocio publica, para comparar el destino del dinero. */
+  getBusinessBankAccount?(businessId: string): Promise<{
+    bank_name?: string | null
+    account_number?: string | null
+    holder_name?: string | null
+  } | null>
   registerPaymentReceipt(input: {
     businessId: string
     orderId: string
@@ -70,15 +94,113 @@ export const huellaDelArchivo = (imagen: Buffer): string =>
 
 export const crearRegistroDeComprobantes = (dependencias: {
   database: ReceiptIngestDatabase
+  /** Los puntos de cada señal, de `server_settings`. Sin esto, los de código. */
+  settings?: { get(key: 'receipt_risk_rules'): Promise<string | null> }
   logger?: { log(...args: unknown[]): void }
-}) =>
+}) => {
+  /**
+   * Guarda lo que la visión leyó, comparado con el pedido.
+   *
+   * ⚠️ LOS TRES DESENLACES, y la diferencia entre ellos importa:
+   *
+   *   · **Análisis apagado** (`motivo: 'apagado'`) → no se escribe nada y el
+   *     comprobante se queda en `pendiente_analisis`. No hay nada que decir:
+   *     nadie lo miró. Es el estado de siempre.
+   *   · **Análisis encendido pero fallido** —OpenAI caído, sin saldo, JSON
+   *     roto— → `requiere_revision`. Se intentó y no se pudo, y el dueño tiene
+   *     que saber que ese comprobante no lleva señales porque nadie las buscó,
+   *     no porque estuviera limpio. Falla ABIERTO: no bloquea nada.
+   *   · **Leído** → `analizado`, con sus campos y sus señales.
+   *
+   * ⚠️ Ninguno de los tres confirma un pago ni mueve el pedido. La RPC no
+   * escribe una sola columna de `orders`.
+   */
+  async function guardarAnalisis(
+    receiptId: string,
+    input: {
+      businessId: string
+      analisis?: ResultadoVision
+      esperado?: Omit<LoEsperado, 'cuenta'>
+    },
+  ): Promise<void> {
+    const guardar = dependencias.database.saveReceiptAnalysis
+    // Sin la función en la base, o con el análisis apagado, esto no existe: el
+    // comprobante se queda como siempre. Es el camino de hoy.
+    if (!guardar || !input.analisis) return
+    if (!input.analisis.ok && input.analisis.motivo === 'apagado') return
+
+    const reglas = leerReglas(
+      dependencias.settings
+        ? await dependencias.settings.get('receipt_risk_rules').catch(() => null)
+        : null,
+    )
+
+    // No se pudo leer: se deja constancia de que se intentó, sin acusar a
+    // nadie. `ilegible` no dice que el comprobante sea falso, dice que hacen
+    // falta ojos humanos — que es exactamente lo que había antes de esto.
+    if (!input.analisis.ok) {
+      await guardar({
+        businessId: input.businessId,
+        receiptId,
+        status: 'requiere_revision',
+        flags: [{
+          flag_type: 'ilegible',
+          severity: 'media',
+          description: 'No se pudo leer el comprobante automáticamente: revísalo a mano',
+          points: reglas.ilegible,
+        }],
+        analysis: { motivo: input.analisis.motivo },
+        puntosReferencia: reglas.referencia_duplicada,
+      })
+      dependencias.logger?.log(
+        `⚠️  [comprobante] sin análisis (${input.analisis.motivo}): queda para revisión manual`,
+      )
+      return
+    }
+
+    const cuenta = dependencias.database.getBusinessBankAccount
+      ? await dependencias.database.getBusinessBankAccount(input.businessId).catch(() => null)
+      : null
+
+    const senales: SenalDeRiesgo[] = input.esperado
+      ? compararConElPedido(input.analisis.datos, { ...input.esperado, cuenta }, reglas)
+      : []
+
+    // El modelo dijo que no era un comprobante, pero se vio alguna señal
+    // suelta —un monto, una fecha— y por eso llegó hasta aquí en vez de
+    // rechazarse. No se decide por él: se marca fuerte y lo mira una persona.
+    if (!input.analisis.esComprobante && reglas.patron_debil !== 0) {
+      senales.push({
+        flag_type: 'patron_debil',
+        severity: 'alta',
+        description: 'La imagen apenas tiene rasgos de un comprobante bancario',
+        points: reglas.patron_debil,
+      })
+    }
+
+    const { error } = await guardar({
+      businessId: input.businessId,
+      receiptId,
+      status: 'analizado',
+      datos: input.analisis.datos as Record<string, unknown>,
+      flags: senales as unknown as Array<Record<string, unknown>>,
+      analysis: input.analisis.crudo,
+      puntosReferencia: reglas.referencia_duplicada,
+    })
+    if (error) {
+      dependencias.logger?.log(
+        `⚠️  [comprobante] no se pudo guardar el análisis: ${error.message || 'sin detalle'}`,
+      )
+    }
+  }
+
   /**
    * Registra el comprobante y devuelve lo que se sabe de él.
    *
    * NUNCA lanza: corre después de que el comprobante ya se adjuntó al pedido,
    * y un fallo aquí no puede deshacer eso ni dejar al cliente sin respuesta.
    */
-  async function registrarComprobante(input: {
+  return async function registrarComprobante(input: {
     businessId: string
     orderId: string
     imagen: Buffer
@@ -86,6 +208,19 @@ export const crearRegistroDeComprobantes = (dependencias: {
     filePublicId?: string | null
     perceptualHash?: string | null
     mimeType?: string | null
+    /**
+     * Lo que la visión ya leyó de esta imagen.
+     *
+     * ⚠️ Se RECIBE en vez de calcularse aquí: quien llama ya pagó esa lectura
+     * para decidir si la foto era siquiera un comprobante. Volver a llamar al
+     * modelo sería cobrar dos veces por mirar la misma imagen.
+     *
+     * Ausente = el análisis está apagado y el comprobante se queda en
+     * `pendiente_analisis`, exactamente como antes de que esto existiera.
+     */
+    analisis?: ResultadoVision
+    /** Lo que el pedido dice que hay que cobrar, para comparar. */
+    esperado?: Omit<LoEsperado, 'cuenta'>
   }): Promise<HuellaDelComprobante> {
     const vacio: HuellaDelComprobante = {
       registrado: false,
@@ -126,6 +261,12 @@ export const crearRegistroDeComprobantes = (dependencias: {
           }${huella.pedidoPrevio ? ` (pedido #${huella.pedidoPrevio})` : ''}`,
         )
       }
+
+      // El análisis va DESPUÉS y en su propio try: un fallo guardándolo no
+      // puede tirar la huella, que ya está registrada y ya marcó el duplicado.
+      if (huella.receiptId) {
+        await guardarAnalisis(huella.receiptId, input).catch(() => { /* ya se registró */ })
+      }
       return huella
     } catch (error) {
       dependencias.logger?.log(
@@ -136,10 +277,12 @@ export const crearRegistroDeComprobantes = (dependencias: {
       return vacio
     }
   }
+}
 
 const database: ReceiptIngestDatabase = require('../db') as unknown as ReceiptIngestDatabase
 
 export const registrarComprobante = crearRegistroDeComprobantes({
   database,
+  settings: require('./settings') as { get(key: 'receipt_risk_rules'): Promise<string | null> },
   logger: console,
 })

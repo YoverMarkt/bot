@@ -21,11 +21,16 @@
 //    mentalmente, y con dos pedidos abiertos el cliente está pensando en el
 //    último.
 //
-// 3. **Si la foto NO es un comprobante, no pasa nada malo.** Se adjunta igual
-//    y el pedido queda `pago_en_revision`, que es precisamente el estado en el
-//    que una PERSONA lo mira antes de aceptar. El dueño ve una foto de un
-//    perro, se ríe y le escribe. Preferible a perder comprobantes de verdad,
-//    que es lo que pasaba hasta hoy.
+// 3. **Si la foto NO es un comprobante, se corta ANTES de subirla** — desde el
+//    2026-08-22, y solo cuando el análisis está encendido y la imagen no tiene
+//    NADA de un pago: ni banco, ni monto, ni fecha, ni referencia. Al cliente
+//    se le pide la captura correcta en el mismo mensaje que ya se iba a pagar.
+//
+//    ⚠️ Ante cualquier duda se adjunta y decide el dueño, que es lo que se
+//    hacía siempre: el pedido queda en `pago_en_revision`, que es precisamente
+//    el estado en el que una PERSONA lo mira antes de aceptar. Los dos errores
+//    no cuestan lo mismo — rechazar el pago de alguien que sí pagó lo deja
+//    tirado, y aceptar una foto de un perro solo le hace sonreír al dueño.
 //
 // 4. **Privado, como en la app.** `uploadPrivateMedia` sube como
 //    `authenticated`: un movimiento bancario con el nombre y la cuenta de una
@@ -34,6 +39,8 @@
 // ⚠️ NUNCA lanza. Esto corre dentro del camino de un mensaje entrante: si
 // Cloudinary está caído o la RPC falla, el cliente tiene que recibir su
 // respuesta igual. Un fallo va al registro de errores y la conversación sigue.
+
+import type { ResultadoVision } from './receipt-vision'
 
 /**
  * Lo justo que hace falta del pedido. Se declara aquí en vez de importar el
@@ -78,8 +85,20 @@ export interface ComprobanteDependencias {
     business_id: string
     order_number: number | null
     contact_phone: string | null
+    /** Lo que hay que cobrar: con esto se compara el monto del comprobante. */
+    total?: number | null
+    /** Cuándo se pidió: con esto se detecta una captura vieja reciclada. */
+    created_at?: string | null
     businesses?: { name?: string | null } | null
   }>>
+  /**
+   * Lee la imagen antes de subirla: ¿esto es siquiera un comprobante?
+   *
+   * ⚠️ Opcional a propósito. Sin ella el buzón se comporta EXACTAMENTE como
+   * antes de que el análisis existiera —se adjunta todo y decide el dueño—,
+   * que es también lo que pasa con el análisis apagado. Falla abierto.
+   */
+  analizarImagen?(imagen: Buffer, mimeType?: string | null): Promise<ResultadoVision>
   // `phash` es la huella perceptual que calcula Cloudinary al subir: caza la
   // misma imagen recortada o recomprimida, que es lo que hace WhatsApp al
   // reenviarla. Opcional porque un fallo calculándola no puede impedir que el
@@ -102,6 +121,12 @@ export interface ComprobanteDependencias {
     fileUrl: string
     filePublicId?: string | null
     perceptualHash?: string | null
+    /**
+     * Lo que ya leyó la compuerta de arriba. Se PASA en vez de volver a
+     * pedirlo: mirar dos veces la misma imagen se paga dos veces.
+     */
+    analisis?: ResultadoVision
+    esperado?: { total: number; currency?: string | null; createdAt?: string | null }
   }): Promise<unknown>
   adjuntar(input: {
     businessId: string
@@ -121,6 +146,15 @@ export interface ComprobanteDependencias {
 export interface ResultadoComprobante {
   /** `true` solo si la foto quedó adjunta al pedido. */
   adjuntado: boolean
+  /**
+   * La imagen no tiene NADA de un comprobante: ni banco, ni monto, ni fecha,
+   * ni referencia. Una foto de un perro, de un plato, de una persona.
+   *
+   * ⚠️ Solo se pone con el vacío absoluto, nunca ante una duda — ver
+   * `decidirSiEsComprobante`. Y cuando se pone, no se sube nada a Cloudinary:
+   * el negocio no paga almacenamiento por una foto que no era un pago.
+   */
+  noEsComprobante?: boolean
   /** El número, para poder nombrarlo en la respuesta al cliente. */
   orderNumber?: number | null
   /**
@@ -153,9 +187,16 @@ export const esperaComprobante = (pedido: PedidoEsperandoPago | null): boolean =
 
 export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) =>
   async function adjuntarComprobante(
-    businessId: string,
+    /**
+     * ⚠️ NULO cuando la foto llegó al número de la plataforma: ahí no hay
+     * ningún local que resolver. Solo se usa como FILTRO al buscar pedidos y
+     * para nombrar el negocio en el registro de errores — el local del
+     * comprobante sale del PEDIDO desde el 2026-08-21, nunca del número.
+     */
+    businessId: string | null,
     contactPhone: string,
     imagen: Buffer,
+    mimeType?: string | null,
   ): Promise<ResultadoComprobante> {
     try {
       const pedidos = await dependencias.pedidosEsperando(contactPhone, businessId)
@@ -180,6 +221,28 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
       // El local sale del PEDIDO. Nunca del número por el que llegó la foto.
       const [pedido] = pedidos
       const localDelPedido = pedido.business_id
+
+      // ── LA COMPUERTA: ¿esto es siquiera un comprobante? ──
+      //
+      // ⚠️ Va ANTES de subir a Cloudinary, y el orden es la mitad del valor:
+      // una foto que no es un pago no cuesta almacenamiento, igual que hoy no
+      // se sube nada cuando no hay pedido esperando. Y va antes de adjuntar,
+      // porque adjuntar mueve el pedido a `pago_en_revision` y le enciende la
+      // alarma al dueño — por una foto de un perro.
+      //
+      // ⚠️ FALLA ABIERTO, siempre. Sin analizador, con el análisis apagado, con
+      // OpenAI caído o ante cualquier duda del modelo, se sigue por el camino
+      // de siempre: se adjunta y decide el dueño. Solo el vacío absoluto —ni
+      // banco, ni monto, ni fecha, ni referencia— corta aquí. Un falso negativo
+      // dejaría tirado a alguien que acaba de pagar de verdad, y eso cuesta
+      // mucho más que una foto de más en el panel.
+      const analisis = dependencias.analizarImagen
+        ? await dependencias.analizarImagen(imagen, mimeType).catch(() => undefined)
+        : undefined
+      if (analisis?.ok && !analisis.esComprobante) {
+        return { adjuntado: false, noEsComprobante: true }
+      }
+
       const subida = await dependencias.subirPrivado(imagen, localDelPedido)
       const { error } = await dependencias.adjuntar({
         businessId: localDelPedido,
@@ -203,6 +266,13 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
           fileUrl: subida.url,
           filePublicId: subida.public_id,
           perceptualHash: subida.phash ?? null,
+          // Lo ya leído viaja con la huella: volver a llamar al modelo sería
+          // pagar dos veces por mirar la misma imagen.
+          analisis,
+          esperado: {
+            total: Number(pedido.total ?? 0),
+            createdAt: pedido.created_at ?? null,
+          },
         })
       }
 
@@ -240,6 +310,38 @@ export const esComprobante = (texto: string): boolean =>
 export const RESPUESTA_COMPROBANTE =
   'Recibimos tu comprobante 🙌 El local lo está revisando y te avisamos '
   + 'en cuanto empiece a prepararlo.'
+
+/**
+ * Marcador de que la foto NO era un comprobante.
+ *
+ * ⚠️ Tiene que ser inconfundible con los otros dos. `esComprobante()` busca la
+ * subcadena «su comprobante de pago», así que un texto que la contuviera le
+ * diría al cliente que su pago quedó registrado cuando no lo está — que es
+ * justo el error que no se puede cometer aquí. Hay una prueba de los tres.
+ */
+export const MARCA_NO_ES_COMPROBANTE = 'una imagen que no parece un pago'
+
+export const textoDeFotoQueNoEsComprobante = (): string =>
+  `[el cliente envió ${MARCA_NO_ES_COMPROBANTE}]`
+
+export const esFotoQueNoEsComprobante = (texto: unknown): boolean =>
+  String(texto || '').includes(MARCA_NO_ES_COMPROBANTE)
+
+/**
+ * Lo que se le responde a quien manda una foto que no es un comprobante.
+ *
+ * ⚠️ Dice QUÉ tiene que verse, no solo que está mal. Sin eso la segunda foto
+ * suele salir tan inservible como la primera —es la misma lección que dejó
+ * `avisarQueFaltaOtroComprobante` el 2026-08-22—, y cada mensaje se paga.
+ *
+ * ⚠️ Y no acusa a nadie. Puede ser una foto mandada por error, o una captura
+ * que salió movida. El tono es el de alguien que quiere cobrar, no el de un
+ * guardia.
+ */
+export const RESPUESTA_NO_ES_COMPROBANTE =
+  '🧾 Recibimos tu imagen, pero no parece el comprobante de la transferencia.\n\n'
+  + 'Mándanos la captura de tu banco donde se vea el *valor*, la *fecha* y el '
+  + '*número de referencia*, y registramos tu pago enseguida.'
 
 /** Marcador de que la foto era un comprobante pero no se sabe de qué local. */
 export const MARCA_COMPROBANTE_AMBIGUO = 'un comprobante sin local claro'

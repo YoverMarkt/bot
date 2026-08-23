@@ -360,8 +360,11 @@ describe('la foto de quien tiene un pedido esperando pago', () => {
 
     await contexto.process(fotoEntrante())
 
+    // ⚠️ El tipo de la imagen viaja con ella desde el 2026-08-22: la lectura
+    // por visión arma un data URL y necesita saber si es jpeg o png. Sin él,
+    // un png se mandaría anunciado como jpeg.
     expect(adjuntarComprobante).toHaveBeenCalledWith(
-      'business-a', '+593988000001', expect.any(Buffer),
+      'business-a', '+593988000001', expect.any(Buffer), 'image/jpeg',
     )
     // El texto que sigue lo lee el dueño en su panel, y decide la respuesta.
     expect(contexto.bot.handleMessage).toHaveBeenCalledWith(

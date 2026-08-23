@@ -381,6 +381,217 @@ describe('el negocio de marketplace ya puede enviar', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
+// EL COMPROBANTE QUE LLEGA AL NÚMERO DE LA PLATAFORMA
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ EL HUECO QUE ESTO CIERRA, y no era teórico: con un solo número, quien
+// pide en el chat del marketplace y transfiere manda su captura a ESE número.
+// El mensaje llega sin local —`businessId === null`, porque el número es de la
+// plataforma y no de ningún negocio— y la foto se convertía en el texto
+// «[foto]» sin descargarse nunca. El comprobante se perdía, el pedido se
+// quedaba en `esperando_pago` para siempre y el cliente sin respuesta.
+//
+// Es el mismo patrón que ya cerró el atajo del modo mini app: se le pregunta
+// a la BASE si ese teléfono tiene un pedido esperando comprobante ANTES de
+// bajar un solo byte. Quien no lo tenga sigue por el camino de siempre.
+const { createInboundWebhookProcessor } = await import('../dist/services/inbound-webhook.js')
+
+describe('la foto de quien pidió por el marketplace', () => {
+  const eventoConFoto = () => ({
+    version: 1,
+    provider: 'ycloud',
+    businessId: null,
+    from: '+593988000001',
+    inboundId: 'wamid-foto-1',
+    channelAddress: { provider: 'ycloud', identifierType: 'phone', identifier: '593991716574' },
+    content: {
+      kind: 'image',
+      media: { url: 'https://api.ycloud.com/v2/whatsapp/media/download/abc123', mimeType: 'image/jpeg' },
+    },
+  })
+
+  const montar = (overrides = {}) => {
+    const atenderMarketplace = vi.fn().mockResolvedValue(undefined)
+    const logger = { log: vi.fn() }
+    const http = {
+      get: vi.fn().mockResolvedValue({
+        data: Buffer.from('la captura'), headers: { 'content-type': 'image/jpeg' },
+      }),
+    }
+    const process = createInboundWebhookProcessor({
+      database: { getBusinessByChannel: vi.fn() },
+      bot: { handleMessage: vi.fn(), handleImage: vi.fn(), transcribeAudio: vi.fn() },
+      http,
+      logger,
+      atenderMarketplace,
+      // ⚠️ La key sale de `server_settings`, no del entorno: el número es de
+      // la plataforma y no pertenece a ningún negocio.
+      credencialDePlataforma: async () => 'ycloud-key-de-la-plataforma',
+      ...overrides,
+    })
+    return { process, atenderMarketplace, http, logger }
+  }
+
+  it('sin pedido esperando pago NO se descarga nada (el ahorro se conserva)', async () => {
+    const esperaComprobanteSinLocal = vi.fn().mockResolvedValue(false)
+    const m = montar({ esperaComprobanteSinLocal, adjuntarComprobante: vi.fn() })
+    await m.process(eventoConFoto())
+
+    expect(m.http.get).not.toHaveBeenCalled()
+    expect(m.atenderMarketplace).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '[foto]' }),
+    )
+  })
+
+  it('CON un pedido esperando pago, la foto se descarga y se adjunta', async () => {
+    const adjuntarComprobante = vi.fn().mockResolvedValue({ adjuntado: true, orderNumber: 45 })
+    const m = montar({
+      esperaComprobanteSinLocal: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante,
+    })
+    await m.process(eventoConFoto())
+
+    // ⚠️ Se llama SIN local: el negocio sale del PEDIDO, nunca del número.
+    expect(adjuntarComprobante).toHaveBeenCalledWith(
+      null, '+593988000001', expect.any(Buffer), 'image/jpeg',
+    )
+    expect(m.atenderMarketplace).toHaveBeenCalledWith(expect.objectContaining({
+      text: '[el cliente envió su comprobante de pago del pedido #45]',
+    }))
+  })
+
+  it('con pagos pendientes en varios locales, se pregunta cuál', async () => {
+    const m = montar({
+      esperaComprobanteSinLocal: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn().mockResolvedValue({
+        adjuntado: false,
+        ambiguos: [
+          { orderId: 'a', orderNumber: 1, businessName: 'El Puerto' },
+          { orderId: 'b', orderNumber: 2, businessName: 'Monster Pizza' },
+        ],
+      }),
+    })
+    await m.process(eventoConFoto())
+    expect(m.atenderMarketplace.mock.calls[0][0].text).toContain('El Puerto / Monster Pizza')
+  })
+
+  it('si la foto no era un comprobante, se le pide la correcta', async () => {
+    const m = montar({
+      esperaComprobanteSinLocal: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn().mockResolvedValue({
+        adjuntado: false, noEsComprobante: true,
+      }),
+    })
+    await m.process(eventoConFoto())
+    expect(m.atenderMarketplace.mock.calls[0][0].text)
+      .toContain('una imagen que no parece un pago')
+  })
+
+  it('sin la credencial de la plataforma, se falla abierto', async () => {
+    // Es el caso del día que nadie haya pegado todavía la API Key en Ajustes.
+    const m = montar({
+      esperaComprobanteSinLocal: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn(),
+      credencialDePlataforma: async () => null,
+    })
+    await m.process(eventoConFoto())
+    expect(m.atenderMarketplace).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '[foto]' }),
+    )
+  })
+
+  it('si la descarga falla, el mensaje llega igual como [foto]', async () => {
+    // Falla ABIERTO: el cliente recibe respuesta aunque la media no baje.
+    const m = montar({
+      esperaComprobanteSinLocal: vi.fn().mockResolvedValue(true),
+      adjuntarComprobante: vi.fn(),
+      http: { get: vi.fn().mockRejectedValue(new Error('media caída')) },
+    })
+    await m.process(eventoConFoto())
+    expect(m.atenderMarketplace).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '[foto]' }),
+    )
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Y EL MARKETPLACE SABE QUÉ CONTESTAR
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ Sin esto, el marcador que pone el webhook caería al menú y se trataría
+// como una BÚSQUEDA: quien acaba de pagar recibiría «no encontramos locales
+// para [el cliente envió su comprobante de pago del pedido #45]».
+const entry = await import('../dist/services/marketplace-entry.js')
+const inbox = await import('../dist/services/payment-proof-inbox.js')
+
+describe('el marketplace contesta al comprobante', () => {
+  const montar = () => {
+    const enviados = []
+    const advanceConversation = vi.fn()
+    return {
+      enviados,
+      advanceConversation,
+      deps: {
+        database: {
+          resolveMarketplaceCustomer: async () => ({ id: 'cust-1' }),
+          getConversation: async () => ({
+            version: 1, current_state: 'navegando', selected_business_id: null,
+          }),
+          getMarketplaceCategories: async () => ([{ code: 'pizza', label: 'Pizzas' }]),
+          getBusinessById: async () => null,
+          advanceConversation,
+        },
+        send: async (reply) => { enviados.push(reply) },
+      },
+    }
+  }
+
+  it('al comprobante adjuntado le contesta que está en revisión', async () => {
+    const m = montar()
+    await entry.handleMarketplaceMessage(
+      { from: '+593988000001', text: `[el cliente envió ${inbox.MARCA_COMPROBANTE} del pedido #45]` },
+      m.deps,
+    )
+    expect(m.enviados[0]).toBe(inbox.RESPUESTA_COMPROBANTE)
+    // ⚠️ Y NO toca la conversación: el carrito y el local siguen donde estaban.
+    expect(m.advanceConversation).not.toHaveBeenCalled()
+  })
+
+  it('a la foto que no era un comprobante le pide la correcta', async () => {
+    const m = montar()
+    await entry.handleMarketplaceMessage(
+      { from: '+593988000001', text: `[el cliente envió ${inbox.MARCA_NO_ES_COMPROBANTE}]` },
+      m.deps,
+    )
+    expect(m.enviados[0]).toBe(inbox.RESPUESTA_NO_ES_COMPROBANTE)
+  })
+
+  it('con pagos en varios locales, pregunta cuál', async () => {
+    const m = montar()
+    await entry.handleMarketplaceMessage(
+      {
+        from: '+593988000001',
+        text: `[el cliente envió ${inbox.MARCA_COMPROBANTE_AMBIGUO}: El Puerto / Monster Pizza]`,
+      },
+      m.deps,
+    )
+    expect(m.enviados[0]).toContain('El Puerto')
+    expect(m.enviados[0]).toContain('Monster Pizza')
+    expect(m.enviados[0]).toContain('más de un local')
+  })
+
+  it('un mensaje normal NO se confunde con un comprobante', async () => {
+    const m = montar()
+    await entry.handleMarketplaceMessage(
+      { from: '+593988000001', text: 'quiero pizza' },
+      m.deps,
+    )
+    expect(m.enviados[0]).not.toBe(inbox.RESPUESTA_COMPROBANTE)
+    expect(m.enviados[0]).not.toBe(inbox.RESPUESTA_NO_ES_COMPROBANTE)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
 // LA PUERTA DE ENTRADA DEL MARKETPLACE
 // ═══════════════════════════════════════════════════════════════════════════
 //

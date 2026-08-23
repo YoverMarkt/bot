@@ -42,6 +42,20 @@ export const ALLOWED_KEYS = [
   // Vive aquí y no en el código para poder moverlo sin desplegar: el número
   // bueno se sabrá viendo pedidos reales, no antes.
   'marketplace_menu_max_productos',
+  // ── El análisis de comprobantes ───────────────────────────────────────
+  //
+  // ⚠️ `receipt_analysis_enabled` NACE APAGADO, y es deliberado. El análisis
+  // es lo único de la plataforma que puede negarle algo a un cliente que YA
+  // pagó («esa foto no parece un comprobante»). Fusionar despliega producción
+  // sola, así que encenderlo con el merge convertiría al primer cliente real
+  // en el conejillo de indias, de madrugada y sin nadie mirando. Lo enciende
+  // el dueño desde Ajustes cuando pueda observar qué hace — y lo apaga en
+  // cinco segundos si no le convence, sin esperar un despliegue.
+  'receipt_analysis_enabled',
+  // Los puntos de cada señal, en UNA clave JSON en vez de una por regla: así
+  // añadir una señal mañana no obliga a tocar esta lista ni a desplegar. Lo
+  // que no venga —o venga roto— cae a los valores por defecto del código.
+  'receipt_risk_rules',
 ] as const
 
 type AllowedKey = typeof ALLOWED_KEYS[number]
