@@ -93,55 +93,45 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 
-export type BusinessChatMode = 'menu' | 'miniapp'
-
-// El tipo solo PROPONE el modo al crear un negocio. `chat_mode` persistido
-// manda siempre y nunca se sobrescribe a un negocio existente.
-//
-// La regla de fondo: un negocio que tiene mini app atiende en modo 'miniapp',
-// porque la app YA es donde se pide. Antes esos negocios salían en modo menú y
-// recibían el menú de botones Y el enlace a la vez — dos formas de hacer lo
-// mismo compitiendo en el mismo chat.
-//
-// El modo 'menu' no se RECOMIENDA automáticamente, pero sigue disponible: lo
-// elige a mano el superadmin para el negocio que quiere pedir sin IA y sin
-// mini app. Dejó de proponerse solo cuando salieron las citas, que eran los
-// negocios con la lista corta de servicios donde encajaba.
 /**
- * Los tipos cuyo catálogo típico NO cabe en una lista de WhatsApp.
+ * Los tipos que se piden BIEN dentro del chat.
  *
- * Se lista la EXCEPCIÓN y no la regla: son ocho frente a veintidós, y así
- * añadir un tipo de comida nuevo cae solo en el lado correcto sin que nadie
- * tenga que acordarse de clasificarlo.
+ * ⚠️ El criterio NO es cuántos productos tiene el negocio, sino **cuánto hay
+ * que elegir para armar un pedido**. Es la corrección del dueño el
+ * 2026-08-22, y es la que manda: una pizzería tiene pocos productos pero
+ * pedirla es elegir tamaño, masa, borde y dos sabores — hacerlo en una lista
+ * de WhatsApp es penoso, y en la mini app es un momento. Una almuercería, en
+ * cambio, son tres o cuatro platos del día: se eligen hablando.
  *
- * El criterio es cuántos PRODUCTOS distintos maneja el negocio, no cuántas
- * opciones: los diecinueve sabores de una pizzería son opciones de un mismo
- * producto, así que una pizzería tiene catálogo corto aunque su carta parezca
- * larga. Un supermercado tiene cientos de productos de verdad.
+ * Por eso una heladería va a la app aunque «venda un solo producto»: lo que
+ * pesa son sus veinte sabores.
+ *
+ * ⚠️ Se listan los del CHAT y todo lo demás cae en la mini app, al revés que
+ * antes. Es fallar hacia lo seguro: la tienda atiende cualquier catálogo,
+ * mientras que un menú de chat mal elegido deja al cliente recorriendo listas
+ * interminables. Un tipo nuevo sin clasificar cae solo del lado que nunca es
+ * inusable — el mismo criterio que sigue `entregarLocal` en el servidor.
  */
-const CATALOGO_LARGO = [
-  // Retail: cientos de SKU, imposible de recorrer hablando.
-  'tienda', 'perfumería', 'farmacia', 'ferretería', 'supermercado',
-  'panadería',
-  // Comida de carta larga.
-  'restaurante', 'pastelería', 'sushi', 'comida china', 'marisquería',
+const PEDIDO_SIMPLE = [
+  // Platos del día: se elige uno de tres o cuatro.
+  'almuerzos', 'menú ejecutivo', 'desayunos', 'comida típica',
+  // Carta corta de platos que se piden por su nombre.
+  'marisquería', 'pollo asado', 'asadero', 'parrillada', 'comida saludable',
+  // Producto suelto, sin nada que configurar.
+  'postres', 'carnicería', 'cafetería', 'jugos', 'batidos',
+  'emprendimiento de comida',
 ]
+
+export type BusinessChatMode = 'menu' | 'miniapp'
 
 /**
  * Con qué modo NACE un negocio. Solo PROPONE al crear: `chat_mode` persistido
  * manda siempre y jamás se sobrescribe a un negocio existente.
  *
- * ⚠️ Hasta el 2026-08-21 esto era `vende ? 'miniapp' : 'menu'`, o sea que
- * TODO lo que vendía nacía en mini app — y con el desplegable reducido a
- * comida y retail, eso era todo menos el genérico. Una almuercería con cuatro
- * platos del día salía «Mini app», que es justo al revés de lo que conviene:
- * cuatro opciones se eligen mejor en el chat que abriendo un enlace.
- *
  * ⚠️ Es una RECOMENDACIÓN, no la última palabra. Dentro del marketplace, lo
  * que decide de verdad es el catálogo REAL contado al elegir el local (la
- * regla de los 20): un tipo mal clasificado aquí se corrige solo en cuanto
- * el negocio tiene productos. Esto solo evita que el alta muestre un valor
- * que contradice lo que va a pasar después.
+ * regla de los 20): un tipo mal clasificado aquí se corrige solo en cuanto el
+ * negocio tiene productos.
  */
 export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
   // Sin pedidos no hay menú de compra que conducir: el genérico y lo que se
@@ -149,10 +139,20 @@ export function recommendedChatModeForBusinessType(type: string): BusinessChatMo
   if (recommendedSalesForBusinessType(type) !== 'vende') return 'menu'
 
   const normalized = normalizeBusinessType(type)
-  const largo = CATALOGO_LARGO.some(candidato => (
+  const simple = PEDIDO_SIMPLE.some(candidato => (
     normalized.includes(normalizeBusinessType(candidato))
   ))
-  return largo ? 'miniapp' : 'menu'
+  return simple ? 'menu' : 'miniapp'
+}
+
+/** Cómo se le explica al superadmin, en una línea. */
+export function chatModeSummary(type: string): string {
+  if (recommendedSalesForBusinessType(type) !== 'vende') {
+    return 'Responderá consultas por el chat; no crea pedidos.'
+  }
+  return recommendedChatModeForBusinessType(type) === 'menu'
+    ? 'Pedirá por el chat, eligiendo de una lista. Su carta es corta.'
+    : 'Pedirá por su mini app: hay bastante que elegir en cada producto.'
 }
 
 export function businessTypeChoice(type: string): string {

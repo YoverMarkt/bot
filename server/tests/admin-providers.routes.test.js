@@ -56,13 +56,20 @@ async function dispatch(path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('verificación de proveedores del superadmin', () => {
-  it('protege ambos endpoints exclusivamente con autenticación admin', async () => {
-    expect(providersRouter.stack).toHaveLength(2)
+  it('protege TODOS sus endpoints exclusivamente con autenticación admin', async () => {
+    // Tres desde el 2026-08-22: los dos de siempre y el del número del
+    // marketplace. El conteo es a propósito — si mañana se añade un cuarto
+    // sin `authAdmin`, esta cuenta falla y obliga a mirarlo.
+    expect(providersRouter.stack).toHaveLength(3)
     expect(providersRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
-    expect((await dispatch('/api/admin/verify-provider')).status).toBe(401)
-    expect((await dispatch('/api/admin/verify-provider', {
-      auth: authorization('client'),
-    })).status).toBe(403)
+    for (const ruta of [
+      '/api/admin/verify-provider',
+      '/api/admin/verify-platform-channel',
+    ]) {
+      expect((await dispatch(ruta)).status, `${ruta} sin token`).toBe(401)
+      expect((await dispatch(ruta, { auth: authorization('client') })).status,
+        `${ruta} con token de cliente`).toBe(403)
+    }
   })
 
   it('valida campos requeridos sin realizar llamadas externas', async () => {

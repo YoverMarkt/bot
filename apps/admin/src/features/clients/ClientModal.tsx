@@ -15,6 +15,7 @@ import {
   recommendedChatModeForBusinessType,
   recommendedStorefrontForBusinessType,
   recommendedSalesForBusinessType,
+  chatModeSummary,
 } from './business-types'
 import { PLAN_CATALOG, planById } from './plans'
 
@@ -302,7 +303,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               <div><Label htmlFor="client-owner-phone">WhatsApp del dueño (reportes){f.whatsapp_provider === 'marketplace' ? ' *' : ''}</Label><Input id="client-owner-phone" value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
             </div>
 
-            {/* Modos */}
+            {/* Cómo va a atender — ⚠️ Solo al EDITAR se elige a mano.
+                En el alta lo decide el TIPO de negocio, y se explica en una
+                línea en vez de pedir dos decisiones (`takes_orders` y
+                `storefront_enabled`) que se deducen de lo mismo. El criterio
+                es cuánto hay que elegir para armar un pedido: una almuercería
+                son tres platos del día y se piden hablando; una pizzería es
+                tamaño, masa, borde y dos sabores, y eso se arma mejor en la
+                app. */}
+            {id ? (
             <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-2">
               <div>
                 <Label htmlFor="client-sales-mode">Ventas por el bot</Label>
@@ -378,6 +387,16 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </p>
               </div>
             </div>
+            ) : (
+              <div className="mb-4 rounded-lg border border-border/70 p-3">
+                <p className="text-sm text-foreground" data-testid="client-mode-summary">
+                  {chatModeSummary(f.type)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Lo decide el tipo de negocio. Se puede cambiar después, al editarlo.
+                </p>
+              </div>
+            )}
 
             {/* Canal WhatsApp — ⚠️ Solo al EDITAR.
                 Un local NACE en el marketplace: se atiende por el número de
@@ -449,8 +468,11 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                       <SelectItem value={f.plan} disabled>Plan anterior: {f.plan}</SelectItem>
                     )}
                     {PLAN_CATALOG.map(plan => (
+                      // Solo el precio: los cupos se siguen guardando y
+                      // Medición alerta los excesos, pero al dar de alta lo
+                      // único que se pacta con el negocio es la mensualidad.
                       <SelectItem key={plan.id} value={plan.id}>
-                        {plan.label} — ${plan.monthlyRate}/mes · {plan.monthlyContactLimit.toLocaleString('es-EC')} / {plan.monthlyOutboundMessageLimit.toLocaleString('es-EC')}
+                        {plan.label} — ${plan.monthlyRate}/mes
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -463,16 +485,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                   los mismos valores. */}
               <div className="self-end text-sm text-muted-foreground" data-testid="client-plan-summary">
                 {planById(f.plan)
-                  ? <>
-                      <strong className="text-foreground">${f.monthly_rate}/mes</strong>
-                      {' · '}{Number(f.monthly_contact_limit || 0).toLocaleString('es-EC')} contactos
-                      {' · '}{Number(f.monthly_outbound_message_limit || 0).toLocaleString('es-EC')} mensajes
-                    </>
+                  ? <strong className="text-foreground">${f.monthly_rate}/mes</strong>
                   : 'Selecciona un plan'}
               </div>
               </div>
               <p id="client-plan-help" className="mt-3 text-xs text-muted-foreground">
-                La tarifa y los límites pertenecen al plan seleccionado. Cada mes se crea una sola cuota automáticamente; Medición alerta los excesos y la suspensión por falta de pago continúa siendo manual.
+                La tarifa pertenece al plan seleccionado. Cada mes se crea una sola cuota automáticamente; la suspensión por falta de pago continúa siendo manual.
               </p>
               {id && planById(f.plan) && (
                 <Button

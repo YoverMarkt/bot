@@ -16,6 +16,15 @@ export const verifyAI = (payload: Record<string, string | undefined>) =>
 export const verifyCloudinary = (payload: Record<string, string | undefined>) =>
   api<{ ok: boolean; info: string }>('/api/admin/server-settings/verify-cloudinary', { method: 'POST', body: JSON.stringify(payload) })
 
+/**
+ * Comprueba el número del marketplace contra YCloud.
+ *
+ * Acepta lo tecleado sin guardar: así se valida una key ANTES de dejarla
+ * puesta, en vez de descubrir el fallo cuando un cliente escriba.
+ */
+export const verifyPlatformChannel = (payload: Record<string, string | undefined>) =>
+  api<{ ok: boolean; info: string }>('/api/admin/verify-platform-channel', { method: 'POST', body: JSON.stringify(payload) })
+
 // ── Túnel público + URLs de webhooks ──
 export type TunnelState = {
   url: string | null
