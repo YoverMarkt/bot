@@ -229,8 +229,14 @@ describe('el panel del superadmin', () => {
     )
     const inicial = modal.slice(modal.indexOf('const EMPTY = {'), modal.indexOf('ycloud_api_key'))
     expect(inicial).toMatch(/whatsapp_provider: 'marketplace'/)
-    // Al EDITAR se lee el proveedor guardado: ningún negocio existente se pisa.
-    expect(modal).toMatch(/whatsapp_provider: c\.whatsapp_provider \?\? 'ycloud'/)
+    // ⚠️ CAMBIADO EL 2026-08-23. Antes esta prueba exigía que al EDITAR se
+    // leyera el proveedor guardado, con `?? 'ycloud'` de respaldo. Eso dejó de
+    // ser correcto el día que se retiró el canal propio: un negocio sin
+    // proveedor guardado abría el modal pidiendo credenciales de una cuenta
+    // que no existe, y —peor— conservaba en silencio un número que podía ser
+    // el de la plataforma. Ahora el respaldo es `marketplace`.
+    expect(modal).toMatch(/whatsapp_provider: c\.whatsapp_provider \?\? 'marketplace'/)
+    expect(modal).not.toMatch(/whatsapp_provider: c\.whatsapp_provider \?\? 'ycloud'/)
   })
 })
 

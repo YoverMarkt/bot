@@ -72,6 +72,23 @@ describe('la IA de este negocio se retira del alta', () => {
   })
 })
 
+
+/**
+ * El modal SIN sus comentarios.
+ *
+ * ⚠️ Hace falta: estas pruebas buscan cadenas en el archivo, y un comentario
+ * que EXPLIQUE por qué se retiró algo contiene por fuerza el nombre de lo
+ * retirado. Sin esto, documentar bien una retirada rompe la prueba que la
+ * vigila — y el arreglo fácil sería borrar el comentario, que es exactamente
+ * al revés de lo que conviene.
+ */
+const sinComentarios = (fuente) => fuente
+  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n')
+  .filter(linea => !linea.trimStart().startsWith('//'))
+  .join('\n')
+
 describe('lo que el alta deja de preguntar', () => {
   const modal = leer('../../apps/admin/src/features/clients/ClientModal.tsx')
 
@@ -88,10 +105,25 @@ describe('lo que el alta deja de preguntar', () => {
     expect(soloAlEditar('Canal de WhatsApp')).toBe(true)
   })
 
-  it('el modo: lo deduce el tipo, y en el marketplace el catálogo', () => {
-    // Al crear, el negocio tiene CERO productos: la regla de los 20 no se
-    // puede evaluar todavía, así que preguntarlo sería inventar el dato.
-    expect(soloAlEditar('Quién conduce la conversación')).toBe(true)
+  it('el modo NO se pregunta en ningún sitio, ni al crear ni al editar', () => {
+    // ⚠️ CAMBIADO EL 2026-08-23, y antes esta prueba exigía lo contrario: que
+    // el desplegable existiera al EDITAR. Dejó de tener sentido cuando se
+    // retiró el canal propio — `chat_mode` solo gobierna el canal propio de un
+    // negocio, y dentro del marketplace la experiencia la decide el tamaño del
+    // catálogo al elegir local (la regla de los 20).
+    //
+    // Un desplegable que enseña una decisión que el sistema no cumple es
+    // exactamente cómo nació el fallo del número: la pantalla decía una cosa y
+    // el enrutado hacía otra.
+    const codigo = sinComentarios(modal)
+    expect(codigo).not.toContain('Quién conduce la conversación')
+    expect(codigo).not.toContain('client-chat-mode')
+  })
+
+  it('pero el PAYLOAD sigue mandando chat_mode: la columna no se toca', () => {
+    // Retirar el campo de la pantalla no puede cambiar lo que se guarda, ni
+    // dejar la columna a merced de un defecto del servidor.
+    expect(modal).toContain('chat_mode:')
   })
 
   it('los tres derivados del plan pasan a una línea de resumen', () => {
@@ -134,8 +166,16 @@ describe('lo que el alta SIGUE pidiendo', () => {
     expect(modal).toMatch(/sinCanalPropio && !id && !f\.owner_phone/)
   })
 
-  it('y la edición conserva el canal completo, intacto', () => {
-    // Nada se pierde: un negocio con número propio se configura al editar.
+  // ⚠️ ESTA PRUEBA DECÍA LO CONTRARIO HASTA EL 2026-08-23, y el cambio nace de
+  // un fallo real: Monster Pizza tenía el MISMO número que la plataforma, así
+  // que `resolveBusinessChannel` la encontraba antes de llegar a la rama del
+  // marketplace y escribir al número de Umbani contestaba con su mini app en
+  // vez de las categorías. Todo lo construido para el número único —las 15
+  // categorías, la búsqueda, el pedido en el chat— era inalcanzable.
+  //
+  // El caso raro que estos campos servían ya no existe: los locales viven en
+  // el marketplace y no tienen cuenta propia que configurar.
+  it('el canal propio se RETIRÓ del panel: ya no hay dónde dárselo a un local', () => {
     for (const campo of [
       'client-ycloud-api-key',
       'client-ycloud-endpoint-id',
@@ -143,9 +183,27 @@ describe('lo que el alta SIGUE pidiendo', () => {
       'client-meta-token',
       'client-meta-phone-id',
       'client-telegram-token',
+      'client-whatsapp-provider',
     ]) {
-      expect(modal, `se perdió ${campo}`).toContain(campo)
+      expect(sinComentarios(modal), `${campo} debería haberse retirado`).not.toContain(campo)
     }
+  })
+
+  it('y el envío fuerza marketplace, sin leer lo guardado', () => {
+    // Un negocio que venga de la etapa anterior queda convertido al editarlo,
+    // en vez de conservar en silencio un número que secuestraría el enrutado.
+    expect(modal).toContain("whatsapp_provider: 'marketplace'")
+  })
+
+  it('⚠️ pero la defensa de verdad está en la BASE, no en esta pantalla', () => {
+    // Quitar el campo evita el error de dedo. Solo la guarda impide que el
+    // número vuelva a entrar por una API, un script o un `update` a mano.
+    const migracion = leer('../migration-2026-08-23-el-numero-es-de-la-plataforma.sql')
+    expect(migracion).toContain('businesses_numero_de_plataforma')
+    expect(migracion).toContain('before insert or update')
+    // Compara solo los DÍGITOS: el mismo teléfono se escribe «+593…» en un
+    // sitio y «593…» en otro, y en crudo se colaría justo el caso que evita.
+    expect(migracion).toMatch(/regexp_replace\([^)]*'\\D'/)
   })
 })
 

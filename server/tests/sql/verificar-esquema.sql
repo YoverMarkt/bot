@@ -1897,6 +1897,66 @@ begin
     raise notice 'HUELLA DEL COMPROBANTE: duplicados, aislamiento y auditoría verificados';
   end;
 
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- EL NÚMERO DE LA PLATAFORMA NO SE LO PUEDE QUEDAR UN LOCAL
+  -- ═══════════════════════════════════════════════════════════════════════
+  --
+  -- ⚠️ Nace de un fallo REAL del 2026-08-22: escribir al número de Umbani
+  -- contestaba con la mini app de Monster Pizza en vez de las categorías,
+  -- porque ese local tenía el MISMO número. `resolveBusinessChannel` corre
+  -- antes que la rama del marketplace, así que el local ganaba y todo lo
+  -- construido para el número único era inalcanzable.
+  --
+  -- Ninguna prueba lo cazó porque no había nada roto que cazar: el código
+  -- hacía lo que se le pidió y era la CONFIGURACIÓN la que había quedado de
+  -- la etapa anterior. Por eso la defensa está en la base.
+  declare
+    v_neg uuid;
+  begin
+    insert into public.server_settings (key, value)
+    values ('platform_ycloud_number', '+593991716574')
+    on conflict (key) do update set value = excluded.value;
+
+    insert into public.businesses (slug, name, type, whatsapp_provider)
+    values ('verificacion-plataforma-numero', 'Local', 'pizzería', 'marketplace')
+    returning id into v_neg;
+
+    -- 1. El caso exacto que ocurrió.
+    begin
+      update public.businesses set whatsapp_provider = 'ycloud',
+             ycloud_number = '+593991716574' where id = v_neg;
+      raise exception 'Un local se quedó con el número del marketplace';
+    exception when sqlstate '23514' then null;
+    end;
+
+    -- 2. Y escrito sin el «+», que es como lo guarda la tabla de
+    --    identificadores: comparar en crudo dejaría pasar justo este.
+    begin
+      update public.businesses set whatsapp_provider = 'ycloud',
+             whatsapp_number = '593991716574' where id = v_neg;
+      raise exception 'Se coló el número del marketplace escrito sin el «+»';
+    exception when sqlstate '23514' then null;
+    end;
+
+    -- 3. Un local NUEVO tampoco puede nacer con él.
+    begin
+      insert into public.businesses (slug, name, type, whatsapp_provider, whatsapp_number)
+      values ('verificacion-plataforma-2', 'Otro', 'pizzería', 'ycloud', '+593 99 171 6574');
+      raise exception 'Un local nuevo nació con el número del marketplace';
+    exception when sqlstate '23514' then null;
+    end;
+
+    -- 4. ⚠️ Y NO estorba a un número distinto: una guarda que impidiera
+    --    configurar cualquier canal sería peor que el fallo que evita.
+    update public.businesses set whatsapp_provider = 'ycloud',
+           whatsapp_number = '+593999888777', ycloud_number = '+593999888777'
+     where id = v_neg;
+
+    delete from public.businesses where id = v_neg;
+    delete from public.server_settings where key = 'platform_ycloud_number';
+    raise notice 'NÚMERO DE LA PLATAFORMA: ningún local se lo puede quedar';
+  end;
+
   raise notice 'VERIFICACIÓN DEL ESQUEMA: todas las comprobaciones pasaron';
 end;
 $$;
