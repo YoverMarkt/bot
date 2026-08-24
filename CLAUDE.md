@@ -185,13 +185,13 @@ bot/
 │   ├── migration-2026-08-20-negocio-sin-canal-propio.sql # Un negocio puede existir sin número propio: lo atiende el del marketplace
 │   ├── migration-2026-08-20-conversacion-del-marketplace.sql # Dónde está cada cliente: la única tabla sin business_id, y blindada
 │   ├── migration-2026-08-21-categorias-del-marketplace.sql # Las 15 categorías del menú y a qué tipo pertenece cada una
-│   ├── migration-2026-08-21-marketplace-busqueda.sql # ⚠️ se llama así para ordenar DESPUÉS de las categorías, de las que depende
+│   ├── migration-2026-08-21-marketplace-busqueda.sql # ⚠️ se llama así para ordenar DESPUÉS de las categorías; la dependencia está DECLARADA en el ejecutor desde 2026-08-24
 │   ├── migration-2026-08-21-outbox-de-avisos.sql # El aviso que falla se reintenta en vez de perderse
 │   ├── migration-2026-08-21-retirar-el-modo-ia.sql # Se retira la IA: todo lo que ve el cliente lo escribe el código
 │   ├── migration-2026-08-21-mensaje-de-bienvenida.sql # El dueño escribe su saludo, no un prompt del que se pesca uno
 │   ├── migration-2026-08-21-canal-de-plataforma.sql # El mensaje al número de Umbani entra sin local todavía
 │   ├── migration-2026-08-22-huella-del-comprobante.sql # El comprobante deja de ser dos columnas y gana historia
-│   ├── migration-2026-08-22-lectura-del-comprobante.sql # ⚠️ se llama así para ordenar DESPUÉS de la huella, de la que depende
+│   ├── migration-2026-08-22-lectura-del-comprobante.sql # ⚠️ se llama así para ordenar DESPUÉS de la huella; la dependencia está DECLARADA en el ejecutor desde 2026-08-24
 │   ├── migration-2026-08-23-el-numero-es-de-la-plataforma.sql # Ningún local puede quedarse el número del marketplace
 │   ├── migration-2026-08-23-pedir-por-tipo.sql # Chat o enlace lo decide el TIPO, no cuántos productos hay
 │   ├── migration-2026-08-24-techo-del-marketplace.sql # El número compartido responde sin límite: tope por cliente y silencio
