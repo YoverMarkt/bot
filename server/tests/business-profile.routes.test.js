@@ -180,6 +180,77 @@ describe('identidad y políticas del negocio', () => {
     expect(updateBusiness).toHaveBeenCalledWith('business-a', { delivery_extra_minutes: 0 })
   })
 
+  // ── Los dos frenos del local (2026-08-26) ────────────────────────────────
+  //
+  // Nacen del caso de las cuarenta personas: alguien pasa el enlace en un
+  // grupo con «pidan una gaseosa, es gratis». Cada uno hace UN pedido, así que
+  // el freno por cliente no ve nada, y a la cocina le entran cuarenta comandas
+  // de $1,50 a la vez.
+  describe('el pedido mínimo y el tope por hora', () => {
+    it('los guarda con decimales y los acota como la base', async () => {
+      const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+
+      const ok = await dispatch('put', '/api/client/business', {
+        auth: authorization(),
+        body: { min_order_amount: '5.005', max_orders_per_hour: 40 },
+      })
+      expect(ok.status).toBe(200)
+      // Se redondea a centavos: el CHECK de la base guarda numeric(10,2) y un
+      // tercer decimal se perdería en silencio al escribirlo.
+      expect(updateBusiness).toHaveBeenCalledWith('business-a', {
+        min_order_amount: 5.01, max_orders_per_hour: 40,
+      })
+    })
+
+    // CERO es «sin mínimo», un valor que el dueño elige a propósito. Es el
+    // mismo cuidado que con el tiempo de entrega.
+    it('el cero del mínimo SÍ se guarda', async () => {
+      const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+      const response = await dispatch('put', '/api/client/business', {
+        auth: authorization(), body: { min_order_amount: 0 },
+      })
+      expect(response.status).toBe(200)
+      expect(updateBusiness).toHaveBeenCalledWith('business-a', { min_order_amount: 0 })
+    })
+
+    // ⚠️ Un campo VACÍO no es un cero: `Number('')` vale 0, así que borrarlo
+    // para reescribirlo guardaría «sin mínimo» sin haberlo pedido. Y un tope
+    // de cero dejaría al local sin poder recibir un solo pedido.
+    it('rechaza lo que no es un número, y el tope de cero', async () => {
+      const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+
+      for (const cuerpo of [
+        { min_order_amount: '' },
+        { min_order_amount: '   ' },
+        { min_order_amount: null },
+        { min_order_amount: -1 },
+        { min_order_amount: 1000 },
+        { max_orders_per_hour: 0 },
+        { max_orders_per_hour: '' },
+        { max_orders_per_hour: 501 },
+        { max_orders_per_hour: 2.5 },
+      ]) {
+        const response = await dispatch('put', '/api/client/business', {
+          auth: authorization(), body: cuerpo,
+        })
+        expect(response.status, JSON.stringify(cuerpo)).toBe(400)
+      }
+      expect(updateBusiness).not.toHaveBeenCalled()
+    })
+
+    it('el error dice qué rango se espera, no «valor inválido»', async () => {
+      vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+      const minimo = await dispatch('put', '/api/client/business', {
+        auth: authorization(), body: { min_order_amount: -1 },
+      })
+      expect(minimo.body.error).toMatch(/entre 0 y 999/)
+      const tope = await dispatch('put', '/api/client/business', {
+        auth: authorization(), body: { max_orders_per_hour: 0 },
+      })
+      expect(tope.body.error).toMatch(/entre 1 y 500/)
+    })
+  })
+
   it('no confirma errores de Supabase al actualizar la identidad', async () => {
     const updateBusiness = vi.spyOn(db, 'updateBusiness')
       .mockResolvedValue({ error: { message: 'detalle interno' } })

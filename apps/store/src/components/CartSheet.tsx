@@ -61,8 +61,8 @@ const tieneUbicacion = (direccion: Address): boolean =>
 
 export default function CartSheet({
   abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
-  entrega, paymentMethods, onEntrega, onConfirmar, onNuevaDireccion, onUbicarDireccion,
-  onBorrarDireccion,
+  minOrderAmount, entrega, paymentMethods, onEntrega, onConfirmar, onNuevaDireccion,
+  onUbicarDireccion, onBorrarDireccion,
 }: {
   abierta: boolean
   onCerrar: () => void
@@ -73,6 +73,8 @@ export default function CartSheet({
   enviando: boolean
   error: string | null
   deliveryFee: number
+  /** Lo mínimo que el local prepara, sin el envío. Cero = sin mínimo. */
+  minOrderAmount: number
   /**
    * Cómo lo recibe. Llega de fuera porque también se elige en la portada, y
    * las dos pantallas tienen que reflejar la MISMA decisión: con un estado
@@ -252,6 +254,14 @@ export default function CartSheet({
   // Vista previa del envío. El importe que manda es el que calcula el servidor
   // al crear el pedido: aquí solo se anticipa para que nadie se lleve sorpresas.
   const subtotal = cartTotal(lines)
+  // ⚠️ Sobre el SUBTOTAL, sin el envío: el local decide cuánto vale la pena
+  // cocinar, no cuánto gasta el cliente. Quien quiera un agua y pagar el
+  // reparto está en su derecho. Es la misma cuenta que hace la base en
+  // `orders_enforce_min_amount`, y tienen que coincidir o el botón dejaría
+  // pasar un pedido que se rechaza al confirmar.
+  const faltaParaElMinimo = minOrderAmount > 0
+    ? Math.max(0, Math.round((minOrderAmount - subtotal) * 100) / 100)
+    : 0
   const envio = needsAddress(entrega) ? deliveryFee : 0
   const total = orderTotal(lines, entrega, deliveryFee)
 
@@ -585,6 +595,12 @@ export default function CartSheet({
             <span>Subtotal</span>
             <span className="tabular-nums">{money(subtotal)}</span>
           </div>
+          {minOrderAmount > 0 && (
+            <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+              <span>Pedido mínimo</span>
+              <span className="tabular-nums">{money(minOrderAmount)}</span>
+            </div>
+          )}
           <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
             <span>Envío</span>
             <span className="tabular-nums">
@@ -600,12 +616,19 @@ export default function CartSheet({
             bloques encima, «faltan datos» deja al cliente buscando cuál. */}
         {enCarrito
           ? (
-              <Boton onClick={() => setPaso('checkout')} disabled={!puedePedir || !lines.length}>
+              <Boton
+                onClick={() => setPaso('checkout')}
+                disabled={!puedePedir || !lines.length || faltaParaElMinimo > 0}
+              >
                 {!lines.length
                   ? 'Tu carrito está vacío'
                   : !puedePedir
                     ? 'El local está cerrado'
-                    : `Continuar · ${money(total)}`}
+                    : faltaParaElMinimo > 0
+                      // Dice CUÁNTO falta, no «no llegas al mínimo»: con el
+                      // número exacto el cliente sabe qué añadir.
+                      ? `Te faltan ${money(faltaParaElMinimo)} para el mínimo`
+                      : `Continuar · ${money(total)}`}
               </Boton>
             )
           : (
@@ -614,7 +637,7 @@ export default function CartSheet({
                   fulfillment: entrega, addressId: elegida, name: nombreFinal,
                   paymentMethod: pagoEfectivo, deliveryNotes: instrucciones.trim() || null,
                 })}
-                disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length}
+                disabled={!puedePedir || enviando || faltaDireccion || faltaNombre || !lines.length || faltaParaElMinimo > 0}
               >
                 {enviando
                   ? 'Enviando…'

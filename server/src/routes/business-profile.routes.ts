@@ -20,6 +20,10 @@ const editableBusinessFields = [
   // pone el valor de arranque, y a partir de ahí manda él.
   'prep_time_minutes',
   'delivery_extra_minutes',
+  // Los dos frenos del local. El mínimo lo decide el dueño según su producto
+  // más barato: la plataforma no sabe si $5 sobra o cierra el negocio.
+  'min_order_amount',
+  'max_orders_per_hour',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -89,6 +93,10 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     // además las franjas que se ofrecen para programar.
     prep_time_minutes: Number(business.prep_time_minutes) || 25,
     delivery_extra_minutes: Number(business.delivery_extra_minutes) || 0,
+    // ⚠️ `?? 0` y no `|| 0`: son distintos y aquí importa. Un mínimo de 0 es
+    // «sin mínimo», un valor legítimo que `||` confundiría con «no vino».
+    min_order_amount: Number(business.min_order_amount ?? 0),
+    max_orders_per_hour: Number(business.max_orders_per_hour ?? 30),
     suspended: business.suspended,
     bot_active: business.bot_active,
   })
@@ -117,12 +125,26 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
     // Vacío = volver al color de la plataforma.
     data.brand_color = color ? color.toUpperCase() : null
   }
-  // Los dos tiempos replican aquí el CHECK de la base a propósito: el dueño
-  // lee «entre 1 y 480 minutos» en vez de un error de restricción de
+  // El mínimo admite decimales; los demás son enteros, así que va aparte.
+  if ('min_order_amount' in data) {
+    const crudo = data.min_order_amount
+    const vacio = crudo == null || (typeof crudo === 'string' && crudo.trim() === '')
+    const monto = Number(crudo)
+    if (vacio || !Number.isFinite(monto) || monto < 0 || monto > 999) {
+      return res.status(400).json({
+        error: 'El pedido mínimo debe estar entre 0 y 999. Deja 0 para no exigir mínimo.',
+      })
+    }
+    data.min_order_amount = Math.round(monto * 100) / 100
+  }
+
+  // Los tiempos y el tope replican aquí el CHECK de la base a propósito: el
+  // dueño lee «entre 1 y 480 minutos» en vez de un error de restricción de
   // PostgreSQL. Es el mismo criterio del motor de opciones.
   for (const [campo, minimo, maximo, texto] of [
     ['prep_time_minutes', 1, 480, 'El tiempo de preparación debe estar entre 1 y 480 minutos'],
     ['delivery_extra_minutes', 0, 240, 'El tiempo de entrega debe estar entre 0 y 240 minutos'],
+    ['max_orders_per_hour', 1, 500, 'El tope de pedidos por hora debe estar entre 1 y 500'],
   ] as const) {
     if (!(campo in data)) continue
     const crudo = data[campo]

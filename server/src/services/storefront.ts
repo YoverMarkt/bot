@@ -37,6 +37,8 @@ export interface StorefrontBusiness {
   prep_time_minutes?: number | string | null
   /** Minutos que suma llevarlo a domicilio. Solo se muestra. */
   delivery_extra_minutes?: number | string | null
+  /** 0 = sin mínimo. Lo pone el dueño según su producto más barato. */
+  min_order_amount?: number | string | null
 }
 
 // El color lo escribe el dueño en su panel y acaba pintando la mini app, así
@@ -506,6 +508,14 @@ export function publicBusiness(business: StorefrontBusiness) {
     // sitio que usa el servidor para calcularlas: uno solo puede mentir.
     prepTimeMinutes: Math.max(1, Number(business.prep_time_minutes) || 25),
     deliveryExtraMinutes: Math.max(0, Number(business.delivery_extra_minutes) || 0),
+    // ⚠️ El mínimo viaja al CATÁLOGO, no solo al confirmar. La base lo exige
+    // igualmente en `orders_enforce_min_amount` —eso es lo que manda—, pero si
+    // el cliente solo se enterara ahí, habría armado el carrito entero para
+    // que se lo rechacen al final. Es el mismo error que ya se corrigió con el
+    // bloqueo y el enlace: decirlo cuando aún se puede hacer algo.
+    //
+    // `?? 0` y no `|| 0`: cero es «sin mínimo», un valor que el dueño elige.
+    minOrderAmount: Math.max(0, Number(business.min_order_amount ?? 0) || 0),
   }
 }
 
