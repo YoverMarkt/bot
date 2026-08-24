@@ -18,9 +18,11 @@ import {
 } from '../config/plans'
 import {
   diagnoseChannels,
+  tieneCanalPropio,
   type ChannelActivity,
   type DiagnosableBusiness,
 } from '../services/channel-health'
+import { getPlatformChannel } from '../services/platform-channel'
 const ALLOWED_ERROR_CATEGORIES = ['canal', 'ia', 'envio', 'servidor']
 
 interface PlatformErrorRow {
@@ -56,7 +58,7 @@ const db: {
   getAdminStats(): Promise<unknown>
   getAllBusinesses(): Promise<unknown[]>
   getLastInboundByBusiness(businessIds: string[]): Promise<ChannelActivity[]>
-  getErrorCountsByBusiness(): Promise<unknown[]>
+  getPlatformLastInboundAt(): Promise<string | null>
   getPlatformErrors(options: {
     category?: string
     businessId?: string
@@ -346,16 +348,35 @@ router.get('/api/admin/stats', auth.authAdmin, async (_req, res) => {
 // Vigilancia del canal de entrada: responde "¿siguen llegando mensajes?".
 // Existe porque en julio de 2026 el bot estuvo cinco días mudo sin que nada
 // avisara — el servidor vivía, pero ningún WhatsApp entraba.
+//
+// ⚠️ Desde el 2026-08-23 el sujeto es el NÚMERO DE LA PLATAFORMA. Antes se
+// preguntaba por cada local, y con un número compartido esa consulta no
+// encuentra nada nunca: los mensajes del marketplace se encolan con
+// `business_id` NULL. El semáforo por negocio se conserva para quien tenga
+// canal propio, y solo se le pregunta a esos — preguntar por un local de
+// marketplace es gastar una consulta para recibir siempre «null».
+//
+// ⚠️ Se retiró `errorsByBusiness`: lo declaraba el tipo del panel y no lo
+// pintaba nadie, y además descartaba los errores con `business_id` NULL, que
+// hoy son cinco de cada seis. Los errores se leen en su propia pantalla.
 router.get('/api/admin/channel-health', auth.authAdmin, async (_req, res) => {
   const businesses = await db.getAllBusinesses() as DiagnosableBusiness[]
-  const [activity, errorCounts] = await Promise.all([
-    db.getLastInboundByBusiness(businesses.map(business => business.id)),
-    db.getErrorCountsByBusiness(),
+  const conCanalPropio = businesses.filter(tieneCanalPropio)
+  const [activity, platformLastInboundAt, platformChannel] = await Promise.all([
+    db.getLastInboundByBusiness(conCanalPropio.map(business => business.id)),
+    db.getPlatformLastInboundAt(),
+    // Un fallo leyendo `server_settings` no puede tumbar la vigilancia entera:
+    // se trata como «no configurado», que es lo que el panel sabe pintar.
+    getPlatformChannel().catch(() => null),
   ])
-  res.json({
-    ...diagnoseChannels({ businesses, activity }),
-    errorsByBusiness: errorCounts,
-  })
+  res.json(diagnoseChannels({
+    businesses,
+    activity,
+    platform: {
+      configured: Boolean(platformChannel),
+      lastInboundAt: platformLastInboundAt,
+    },
+  }))
 })
 
 // Registro de errores para diagnosticar sin entrar a los logs del servidor.

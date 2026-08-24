@@ -48,36 +48,21 @@ const getPlatformErrors = async (options: {
   return (data || []) as PlatformErrorRow[]
 }
 
-// Resumen por negocio para pintar el semáforo en la lista de clientes sin
-// traerse todos los errores.
-const getErrorCountsByBusiness = async () => {
-  const { data, error } = await db
-    .from('platform_errors')
-    .select('business_id,occurrences,last_seen_at')
-    .gte('last_seen_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    .limit(1000)
-  // Permite desplegar antes de correr migration-registro-errores.sql: sin la
-  // tabla no hay errores que contar, pero la vigilancia del canal —que es lo
-  // que de verdad avisa si el bot está mudo— debe seguir respondiendo.
-  if (error?.message && /platform_errors/.test(error.message)) return []
-  if (error) throw new Error(error.message)
-  const counts = new Map<string, { occurrences: number; lastSeenAt: string }>()
-  for (const row of (data || []) as Array<{
-    business_id: string | null
-    occurrences: number
-    last_seen_at: string
-  }>) {
-    if (!row.business_id) continue
-    const previous = counts.get(row.business_id)
-    counts.set(row.business_id, {
-      occurrences: (previous?.occurrences || 0) + (row.occurrences || 0),
-      lastSeenAt: previous && previous.lastSeenAt > row.last_seen_at
-        ? previous.lastSeenAt
-        : row.last_seen_at,
-    })
-  }
-  return [...counts].map(([businessId, value]) => ({ businessId, ...value }))
-}
+// ⚠️ Aquí vivía `getErrorCountsByBusiness`, retirado el 2026-08-23.
+//
+// Resumía los errores de las últimas 24 h POR NEGOCIO para pintar un semáforo
+// en la lista de clientes. Se va por dos motivos que se refuerzan:
+//
+//   · Nadie lo pintaba. Viajaba en la respuesta de `/api/admin/channel-health`
+//     y el panel lo declaraba en su tipo (`errorsByBusiness`) sin renderizarlo
+//     en ningún sitio.
+//   · Y ya no podría: descartaba las filas con `business_id` NULL, que hoy son
+//     CINCO DE CADA SEIS — los errores del canal del marketplace no pertenecen
+//     a ningún local. El resumen habría enseñado ceros mientras el registro
+//     acumulaba fallos reales del webhook.
+//
+// Los errores se leen enteros, con su negocio o con «plataforma», en la
+// pantalla de Errores (`getPlatformErrors`).
 
 const cleanupPlatformErrors = async (days = 30) => db.rpc(
   'cleanup_platform_errors',
@@ -87,6 +72,5 @@ const cleanupPlatformErrors = async (days = 30) => db.rpc(
 export = {
   recordPlatformError,
   getPlatformErrors,
-  getErrorCountsByBusiness,
   cleanupPlatformErrors,
 }

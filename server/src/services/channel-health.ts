@@ -8,6 +8,18 @@
 // Este módulo mira lo único que importa de verdad: ¿están ENTRANDO mensajes?
 // El diagnóstico es cálculo puro; lo único que escribe es el rastro del fallo
 // en el registro de errores, y siempre sin bloquear a quien lo llamó.
+//
+// ⚠️ HAY UN SOLO CANAL DE ENTRADA, y hasta el 2026-08-23 esto no lo sabía.
+// Diagnosticaba un semáforo POR LOCAL leyendo `webhook_inbound_events` filtrado
+// por `business_id`, y los mensajes del marketplace se encolan con ese campo
+// NULL: ningún local volvía a registrar un entrante JAMÁS, así que a las 12 h
+// todos caían en `silencio` y la alarma sonaba en falso para siempre.
+//
+// El diagnóstico que vale hoy es el del NÚMERO de la plataforma. El semáforo
+// por negocio SE CONSERVA porque el canal propio sigue existiendo en el código
+// (`ycloud`, `meta`, `telegram`), pero solo se aplica a quien lo tiene: un
+// local de marketplace no tiene canal suyo que pueda estar mudo — tiene el de
+// la plataforma, que se diagnostica UNA vez y no una por local.
 
 import { recordError } from './error-log'
 
@@ -56,11 +68,39 @@ export interface ChannelDiagnosis {
   detail: string
 }
 
+/**
+ * La salud del NÚMERO DE LA PLATAFORMA: el canal por el que entra todo.
+ *
+ * No lleva `businessId` a propósito. El número no pertenece a ningún local, y
+ * es la misma razón por la que sus credenciales viven en `server_settings` y
+ * no en la ficha de un negocio.
+ */
+export interface PlatformChannelDiagnosis {
+  status: ChannelStatus
+  lastInboundAt: string | null
+  hoursSinceLastInbound: number | null
+  detail: string
+}
+
+/** Lo que hace falta saber del canal de la plataforma para diagnosticarlo. */
+export interface PlatformChannelActivity {
+  /** ¿Hay número de marketplace puesto en `server_settings`? */
+  configured: boolean
+  /** Último entrante con `business_id` NULL, o null si nunca entró ninguno. */
+  lastInboundAt: string | null
+}
+
 export interface ChannelHealthReport {
   checkedAt: string
   silenceHours: number
-  /** true si algún negocio activo está en silencio o nunca recibió nada. */
+  /**
+   * true si el número de la plataforma está mudo, o si algún negocio con canal
+   * PROPIO lo está.
+   */
   alert: boolean
+  /** El número de Umbani. Lo que antes era una fila por local. */
+  platform: PlatformChannelDiagnosis
+  /** Solo los negocios con canal propio: hoy, ninguno. */
   businesses: ChannelDiagnosis[]
   recentFailures: WebhookFailure[]
 }
@@ -129,13 +169,87 @@ const hasInboundChannel = (business: DiagnosableBusiness): boolean => (
 const round1 = (value: number): number => Math.round(value * 10) / 10
 
 /**
- * Clasifica cada negocio ACTIVO según cuándo entró su último mensaje.
- * Los dados de baja o suspendidos se omiten: su silencio es esperado y
- * alertar por ellos sería ruido que acabaría haciendo ignorar el aviso.
+ * ¿Un negocio tiene canal de entrada PROPIO?
+ *
+ * `marketplace` significa exactamente lo contrario: sus clientes escriben al
+ * número de la plataforma. Diagnosticarlo por separado le daría siempre
+ * «silencio» —sus mensajes se encolan sin `business_id`— y esa alarma falsa,
+ * repetida por cada local, es lo que acaba haciendo que nadie mire el aviso el
+ * día que sea de verdad.
+ */
+export const tieneCanalPropio = (business: DiagnosableBusiness): boolean => (
+  String(business.whatsapp_provider || '').trim() !== 'marketplace'
+)
+
+/**
+ * Diagnostica el NÚMERO DE LA PLATAFORMA.
+ *
+ * Es la pieza que faltaba: el semáforo por local respondía «¿le llegan
+ * mensajes a este negocio?», una pregunta que con un número compartido ya no
+ * tiene respuesta en la cola. La que sí la tiene es «¿está entrando algo por
+ * el número de Umbani?».
+ */
+export function diagnosePlatformChannel(
+  activity: PlatformChannelActivity,
+  now: Date,
+  silenceHours: number,
+): PlatformChannelDiagnosis {
+  // Sin número configurado no hay canal que pueda estar mudo. No alerta aquí
+  // —sería un aviso permanente en una instalación recién montada—: de eso avisa
+  // `credential-monitor`, que sí sabe que hay locales esperándolo.
+  if (!activity.configured) {
+    return {
+      status: 'sin_canal',
+      lastInboundAt: activity.lastInboundAt,
+      hoursSinceLastInbound: null,
+      detail: 'Sin número de marketplace configurado (Ajustes del servidor)',
+    }
+  }
+  if (!activity.lastInboundAt) {
+    return {
+      status: 'nunca_recibio',
+      lastInboundAt: null,
+      hoursSinceLastInbound: null,
+      detail: 'Nunca ha entrado un mensaje: revisa el webhook en YCloud',
+    }
+  }
+  const hours = hoursBetween(activity.lastInboundAt, now)
+  if (hours === null) {
+    return {
+      status: 'nunca_recibio',
+      lastInboundAt: activity.lastInboundAt,
+      hoursSinceLastInbound: null,
+      detail: 'La fecha del último mensaje no es válida',
+    }
+  }
+  if (hours >= silenceHours) {
+    return {
+      status: 'silencio',
+      lastInboundAt: activity.lastInboundAt,
+      hoursSinceLastInbound: round1(hours),
+      detail: `Sin mensajes entrantes desde hace ${round1(hours)} h`,
+    }
+  }
+  return {
+    status: 'ok',
+    lastInboundAt: activity.lastInboundAt,
+    hoursSinceLastInbound: round1(hours),
+    detail: `Último mensaje hace ${round1(hours)} h`,
+  }
+}
+
+/**
+ * El estado del canal de entrada: el número de la plataforma, más los negocios
+ * que además tengan canal PROPIO.
+ *
+ * Los dados de baja o suspendidos se omiten: su silencio es esperado y alertar
+ * por ellos sería ruido que acabaría haciendo ignorar el aviso. Los del
+ * marketplace también, por el motivo de `tieneCanalPropio`.
  */
 export function diagnoseChannels(input: {
   businesses: DiagnosableBusiness[]
   activity: ChannelActivity[]
+  platform?: PlatformChannelActivity
   now?: Date
   silenceHours?: number
 }): ChannelHealthReport {
@@ -144,9 +258,15 @@ export function diagnoseChannels(input: {
   const lastInboundByBusiness = new Map(
     input.activity.map(entry => [entry.businessId, entry.lastInboundAt]),
   )
+  const platform = diagnosePlatformChannel(
+    input.platform ?? { configured: false, lastInboundAt: null },
+    now,
+    silenceHours,
+  )
 
   const businesses = input.businesses
     .filter(business => business.active !== false && business.suspended !== true)
+    .filter(tieneCanalPropio)
     .map((business): ChannelDiagnosis => {
       const name = String(business.name || '(sin nombre)')
       const lastInboundAt = lastInboundByBusiness.get(business.id) ?? null
@@ -209,12 +329,17 @@ export function diagnoseChannels(input: {
       }
     })
 
+  const mudo = (status: ChannelStatus): boolean => (
+    status === 'silencio' || status === 'nunca_recibio'
+  )
+
   return {
     checkedAt: now.toISOString(),
     silenceHours,
-    alert: businesses.some(
-      business => business.status === 'silencio' || business.status === 'nunca_recibio',
-    ),
+    // El número de la plataforma pesa por sí solo: si está mudo, lo están
+    // TODOS los locales a la vez, aunque la lista de negocios salga vacía.
+    alert: mudo(platform.status) || businesses.some(b => mudo(b.status)),
+    platform,
     businesses,
     recentFailures: getRecentWebhookFailures(),
   }

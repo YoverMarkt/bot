@@ -72,15 +72,27 @@ const getBusinessByPhone = async (phone?: string | null) => {
   return routedBusiness(route.data as ChannelRouteRecord | null)
 }
 
+// Las columnas del LISTADO del superadmin. Ninguna es un secreto: lo que se
+// pide por la ficha pasa antes por `sanitizeBusinessForAdmin`.
+//
+// ⚠️ `whatsapp_provider`, `takes_orders` y `storefront_enabled` se añadieron el
+// 2026-08-23. Las tres responden la única pregunta que la lista tenía que
+// contestar y no podía: **¿este local aparece en el marketplace?** Sin ellas la
+// tabla enseñaba el número de WhatsApp (vacío en todos), el estado del bot
+// (una columna que ya no decide nada) y un semáforo de canal por local (que
+// ningún local del marketplace tiene).
 const businessListFields = [
   'id',
   'slug',
   'name',
   'type',
   'whatsapp_number',
+  'whatsapp_provider',
   'active',
   'bot_active',
   'suspended',
+  'takes_orders',
+  'storefront_enabled',
   'plan',
   'monthly_contact_limit',
   'monthly_outbound_message_limit',
