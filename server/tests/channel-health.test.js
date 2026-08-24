@@ -58,25 +58,44 @@ describe('salud del canal de entrada', () => {
     expect(report.alert).toBe(true)
   })
 
-  it('usa 12 horas por defecto y respeta el umbral recibido', () => {
-    expect(DEFAULT_SILENCE_HOURS).toBe(12)
+  // ⚠️ ERAN 12 HORAS hasta el 2026-08-24. Con el sujeto cambiado al NÚMERO de
+  // la plataforma, 12 h mentían en la otra dirección: un negocio de comida
+  // cierra por la noche y del último pedido al primero del día siguiente van 13
+  // h normales. La alarma habría sonado casi cada madrugada.
+  //
+  // Se puede subir porque ya no es la detección principal: `credential-monitor`
+  // revisa el webhook y el saldo cada 6 h, y `recordWebhookFailure` deja
+  // constancia en el acto de cada entrega rechazada.
+  it('usa 24 horas por defecto y respeta el umbral recibido', () => {
+    expect(DEFAULT_SILENCE_HOURS).toBe(24)
+
+    // Una noche cerrada NO es un canal caído.
+    const nocheNormal = diagnoseChannels({
+      businesses: [],
+      platform: { configured: true, lastInboundAt: haceHoras(13) },
+      activity: [],
+      now: ahora,
+    })
+    expect(nocheNormal.platform.status).toBe('ok')
+    expect(nocheNormal.alert).toBe(false)
+
     const enSilencio = diagnoseChannels({
       businesses: [negocio()],
       platform: plataformaSana,
-      activity: [{ businessId: 'biz-1', lastInboundAt: haceHoras(13) }],
+      activity: [{ businessId: 'biz-1', lastInboundAt: haceHoras(25) }],
       now: ahora,
     })
     expect(enSilencio.businesses[0].status).toBe('silencio')
 
-    const tolerante = diagnoseChannels({
+    const estricto = diagnoseChannels({
       businesses: [negocio()],
       platform: plataformaSana,
       activity: [{ businessId: 'biz-1', lastInboundAt: haceHoras(13) }],
       now: ahora,
-      silenceHours: 24,
+      silenceHours: 12,
     })
-    expect(tolerante.businesses[0].status).toBe('ok')
-    expect(tolerante.alert).toBe(false)
+    expect(estricto.businesses[0].status).toBe('silencio')
+    expect(estricto.alert).toBe(true)
   })
 
   it('distingue el negocio que nunca recibió un mensaje', () => {
@@ -215,7 +234,7 @@ describe('el número de la plataforma', () => {
 
   it('cae en silencio pasadas las horas del umbral', () => {
     const estado = diagnosePlatformChannel(
-      { configured: true, lastInboundAt: haceHoras(13) }, ahora, DEFAULT_SILENCE_HOURS,
+      { configured: true, lastInboundAt: haceHoras(25) }, ahora, DEFAULT_SILENCE_HOURS,
     )
     expect(estado.status).toBe('silencio')
   })

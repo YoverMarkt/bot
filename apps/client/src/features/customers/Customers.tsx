@@ -8,6 +8,7 @@ import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
+import { Label } from '@botpanel/ui/components/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
@@ -167,8 +168,9 @@ function Directory() {
           <p className="text-xs text-muted-foreground/80 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
         </>
       )}
-      <OtrosBloqueados
+      <Bloqueados
         numeros={listaBloqueados.filter(phone => !customers.some(c => soloDigitos(c.phone) === soloDigitos(phone)))}
+        onBloquear={phone => mBlock.mutate({ phone, blocked: true })}
         onDesbloquear={phone => mBlock.mutate({ phone, blocked: false })}
       />
     </div>
@@ -176,33 +178,96 @@ function Directory() {
 }
 
 /**
- * Los bloqueados que NO están en el directorio.
+ * Bloquear por NÚMERO, y la lista de los que no salen en el directorio.
  *
- * ⚠️ Sin esto quedaban atrapados para siempre: el directorio sale de `sales`
- * —quien COMPRÓ— y quien pide para molestar normalmente no ha comprado nada,
- * así que su fila no existe ahí y no habría dónde tocar «Desbloquear».
+ * ⚠️ ESTO ES LO QUE FALTABA, y sin ello el bloqueo no servía para el caso que
+ * existe para cubrir. El directorio de arriba sale de `sales` —quien COMPRÓ y
+ * recibió su pedido—, y **quien pide para molestar nunca llega ahí**: su pedido
+ * se cancela, así que jamás se convierte en venta. El dueño podía bloquear a
+ * sus buenos clientes y a nadie más.
  *
- * No se pinta si no hay ninguno, que es el caso de casi todos los negocios.
+ * El servidor ya estaba preparado: `setContactBlocked` crea el cliente si no
+ * existía, y su comentario dice literalmente «quien escribe por molestar puede
+ * no haber pedido nunca, y es justo a ese al que hay que poder bloquear». Lo
+ * que faltaba era la casilla donde escribirlo.
+ *
+ * Se pinta SIEMPRE, aunque no haya ninguno: si solo apareciera cuando ya hay un
+ * bloqueado, el dueño no descubriría nunca que puede bloquear a alguien que no
+ * le ha comprado — que es justo cuando lo necesita.
  */
-function OtrosBloqueados({ numeros, onDesbloquear }: {
+function Bloqueados({ numeros, onBloquear, onDesbloquear }: {
   numeros: string[]
+  onBloquear: (phone: string) => void
   onDesbloquear: (phone: string) => void
 }) {
-  if (!numeros.length) return null
+  const [nuevo, setNuevo] = useState('')
+  const digitos = nuevo.replace(/\D/g, '')
+  // E.164: entre 8 y 15 dígitos. Ni un teléfono a medias ni un número pegado
+  // con espacios de más pueden acabar bloqueando a otra persona.
+  const valido = digitos.length >= 8 && digitos.length <= 15
+
+  function bloquear() {
+    if (!valido) return
+    onBloquear(digitos)
+    setNuevo('')
+  }
+
   return (
-    <Card className="mt-6 p-4 gap-2">
-      <h2 className="text-sm font-semibold text-foreground">Otros números bloqueados</h2>
-      <p className="text-xs text-muted-foreground">
-        No han comprado, así que no salen en el directorio. No pueden hacer pedidos en tu tienda.
-      </p>
-      {numeros.map(phone => (
-        <div key={phone} className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
-          <span className="flex-1 font-mono text-sm text-foreground/80">{phone}</span>
-          <Button variant="outline" size="sm" onClick={() => onDesbloquear(phone)}>
-            <Undo2 /> Desbloquear
-          </Button>
+    <Card className="mt-6 p-4 gap-3">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Números bloqueados</h2>
+        <p className="text-xs text-muted-foreground">
+          Un bloqueado no puede hacer pedidos en tu tienda, ni siquiera con su enlace guardado,
+          y el menú de Umbani deja de ofrecerle tu local. No se le avisa de nada.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="customers-block-phone">Bloquear un número</Label>
+          <Input
+            id="customers-block-phone"
+            value={nuevo}
+            onChange={e => setNuevo(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); bloquear() } }}
+            placeholder="+593…"
+            className="mt-1 max-w-xs"
+          />
         </div>
-      ))}
+        <ConfirmAction
+          trigger={
+            <Button variant="outline" disabled={!valido}>
+              <Ban /> Bloquear
+            </Button>
+          }
+          title={`Bloquear el número ${digitos}`}
+          description="No podrá hacer pedidos en tu tienda ni ver tu local en el menú de Umbani. No se le avisa. Puedes desbloquearlo desde aquí mismo."
+          confirmLabel="Bloquear"
+          destructive
+          onConfirm={bloquear}
+        />
+      </div>
+      {nuevo && !valido && (
+        <p className="text-xs text-destructive">
+          Escribe el número completo con su código de país (entre 8 y 15 dígitos).
+        </p>
+      )}
+
+      {numeros.length > 0 && (
+        <div className="mt-1">
+          <p className="mb-1 text-xs text-muted-foreground">
+            Bloqueados que no aparecen arriba porque no te han comprado:
+          </p>
+          {numeros.map(phone => (
+            <div key={phone} className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
+              <span className="flex-1 font-mono text-sm text-foreground/80">{phone}</span>
+              <Button variant="outline" size="sm" onClick={() => onDesbloquear(phone)}>
+                <Undo2 /> Desbloquear
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

@@ -147,6 +147,12 @@ export interface InboundWebhookDependencies {
     text: string
     /** Presente solo si el cliente compartió su ubicación. */
     location?: InboundLocation
+    /**
+     * Id del mensaje entrante. Hace idempotente el reclamo del techo de gasto:
+     * la entrada es *at-least-once* y sin él cinco reintentos del worker
+     * silenciarían 12 h a un cliente legítimo.
+     */
+    inboundId?: string | null
   }) => Promise<void>
   esperaComprobante?: (businessId: string, contactPhone: string) => Promise<boolean>
   /**
@@ -579,6 +585,7 @@ export function createInboundWebhookProcessor(
       await dependencies.atenderMarketplace({
         from: payload.from,
         text: texto,
+        inboundId: payload.inboundId ?? null,
         ...(payload.content.kind === 'location'
           ? { location: payload.content.location }
           : {}),
@@ -840,14 +847,14 @@ const processor = createInboundWebhookProcessor({
    * Carga diferida como el resto, para no cerrar un ciclo de importaciones al
    * arrancar (`marketplace-entry` → `storefront-link` → `db` → …).
    */
-  atenderMarketplace: async ({ from, text, location }) => {
+  atenderMarketplace: async ({ from, text, location, inboundId }) => {
     const db = require('../db') as typeof import('../db')
     const entry = require('./marketplace-entry') as typeof import('./marketplace-entry')
     const link = require('./storefront-link') as typeof import('./storefront-link')
     const platform = require('./platform-channel') as typeof import('./platform-channel')
     const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
     const acciones = require('./bot-actions') as typeof import('./bot-actions')
-    await entry.handleMarketplaceMessage({ from, text, location }, {
+    await entry.handleMarketplaceMessage({ from, text, location, inboundId }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),

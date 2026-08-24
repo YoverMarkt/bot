@@ -143,6 +143,23 @@ describe('simulador del marketplace', () => {
     expect(fuente).toMatch(/createCustomerAddress: async \(\) =>/)
   })
 
+  // ⚠️ El techo de gasto NO se aplica aquí, y es coherente con lo que existe
+  // para hacer: limitar los mensajes que se PAGAN. El simulador no manda un
+  // solo WhatsApp, y dejarlo puesto silenciaría 12 h al superadmin justo cuando
+  // está dando de alta varios locales seguidos.
+  it('no se silencia al superadmin por probar mucho', async () => {
+    mockMarketplace()
+    const techo = vi.spyOn(db, 'claimMarketplaceReply')
+
+    for (let i = 0; i < 30; i += 1) {
+      const r = await dispatch('post', '/api/admin/simulate', {
+        auth: authorization(), body: { message: 'hola' },
+      })
+      expect(r.status).toBe(200)
+    }
+    expect(techo).not.toHaveBeenCalled()
+  })
+
   it('el simulador no puede llamar a un modelo', () => {
     // Si alguien reintroduce la IA por aquí, esto lo caza.
     const fuente = fs.readFileSync(
@@ -211,6 +228,9 @@ describe('simulador del marketplace', () => {
       id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza',
       storefront_enabled: true, takes_orders: true,
     })
+    // El local no tiene bloqueado a este contacto: desde el 2026-08-24 el menú
+    // lo comprueba antes de entregar el enlace.
+    vi.spyOn(db, 'isContactBlocked').mockResolvedValue(false)
     // Una pizzería se pide en la app: lo decide el TIPO, no el catálogo.
     const pideEnChat = vi.spyOn(db, 'tipoPideEnChat').mockResolvedValue(false)
     const emitir = vi.spyOn(link, 'issueStorefrontLink')

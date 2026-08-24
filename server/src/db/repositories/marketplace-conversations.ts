@@ -153,10 +153,41 @@ const deleteConversation = async (customerId: string): Promise<void> => {
   if (error) throw new Error(error.message)
 }
 
+/**
+ * ¿Se le contesta a este cliente, o ya se pasó del techo?
+ *
+ * El equivalente del marketplace a `claimMiniappReply`, que solo cubre el canal
+ * PROPIO. Sin esto el número compartido responde sin límite, y desde el 1 de
+ * octubre de 2026 cada respuesta se paga.
+ *
+ * ⚠️ Falla ABIERTO: un problema de la base no puede dejar mudo al marketplace
+ * entero. Quedarse callado por un fallo nuestro deja sin servicio a clientes de
+ * verdad; equivocarse al revés cuesta un mensaje.
+ */
+const claimMarketplaceReply = async (
+  customerId: string,
+  messageId?: string | null,
+  limites?: { tope?: number; silencioHoras?: number },
+): Promise<{ permitido: boolean; respuestas: number }> => {
+  const { data, error } = await db.rpc('claim_marketplace_reply', {
+    p_customer_id: customerId,
+    p_tope: limites?.tope ?? 25,
+    p_silencio_horas: limites?.silencioHoras ?? 12,
+    p_message_id: messageId ?? null,
+  })
+  if (error) throw new Error(error.message)
+  const reclamo = (data || {}) as { permitido?: boolean; respuestas?: number }
+  return {
+    permitido: reclamo.permitido !== false,
+    respuestas: Number(reclamo.respuestas) || 0,
+  }
+}
+
 export {
   getConversation,
   advanceConversation,
   deleteConversation,
+  claimMarketplaceReply,
   searchScopeFor,
   resolveMarketplaceCustomer,
 }

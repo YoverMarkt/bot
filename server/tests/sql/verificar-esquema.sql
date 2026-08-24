@@ -2815,3 +2815,106 @@ end;
 $$;
 
 select '✅ motor de margen: reglas, frenos, disparador y congelado' as resultado;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL TECHO DE GASTO DEL MARKETPLACE (2026-08-24)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El número de Umbani contesta a cada mensaje, y desde el 1 de octubre de 2026
+-- cada respuesta se paga. El techo del canal PROPIO (`claim_miniapp_reply`) no
+-- cubría este camino: se llama desde `bot-conversation.ts` y el marketplace no
+-- pasa por ahí.
+do $$
+declare
+  v_cliente uuid;
+  v_r jsonb;
+  v_i integer;
+begin
+  insert into public.customers (phone) values ('593900000824')
+  returning id into v_cliente;
+
+  -- El tope es ALTO a propósito: armar un pedido dentro del chat son
+  -- fácilmente 15-25 mensajes. Con 5 se cortaría a un cliente de verdad.
+  for v_i in 1..25 loop
+    v_r := public.claim_marketplace_reply(v_cliente, 25, 12);
+    if (v_r->>'permitido')::boolean is not true then
+      raise exception 'la respuesta % no debía callarse todavía: %', v_i, v_r;
+    end if;
+    if (v_r->>'respuestas')::integer <> v_i then
+      raise exception 'la cuenta debía ir por % y va por %', v_i, v_r->>'respuestas';
+    end if;
+  end loop;
+
+  -- La 26 calla.
+  v_r := public.claim_marketplace_reply(v_cliente, 25, 12);
+  if (v_r->>'permitido')::boolean is not false or v_r->>'motivo' <> 'silenciado' then
+    raise exception 'pasado el tope debía callar, y fue %', v_r;
+  end if;
+
+  -- Y el silencio NO se levanta al cambiar de hora: con una ventana que se
+  -- reinicia sola, quien molesta con paciencia pagaría el techo entero cada
+  -- hora — 25 por hora son 600 mensajes pagados al día.
+  update public.marketplace_conversations
+  set reply_window_start = now() - interval '2 hours', reply_count = 0
+  where customer_id = v_cliente;
+
+  v_r := public.claim_marketplace_reply(v_cliente, 25, 12);
+  if (v_r->>'permitido')::boolean is not false then
+    raise exception 'el silencio no puede levantarse al cambiar de hora: %', v_r;
+  end if;
+
+  -- Vencido el silencio, vuelve a contestar desde cero.
+  update public.marketplace_conversations
+  set muted_until = now() - interval '1 minute'
+  where customer_id = v_cliente;
+
+  v_r := public.claim_marketplace_reply(v_cliente, 25, 12);
+  if (v_r->>'permitido')::boolean is not true or (v_r->>'respuestas')::integer <> 1 then
+    raise exception 'pasado el silencio debía empezar de cero: %', v_r;
+  end if;
+
+  -- ⚠️ IDEMPOTENTE POR ID DE MENSAJE. La entrada es *at-least-once*: si la
+  -- confirmación a PostgreSQL no llega, el worker reintenta y el mismo mensaje
+  -- se procesa otra vez. Sin esto, cinco reintentos acercaban al silencio a un
+  -- cliente legítimo.
+  v_r := public.claim_marketplace_reply(v_cliente, 25, 12, 'wamid.repetido');
+  if (v_r->>'respuestas')::integer <> 2 then
+    raise exception 'el primer mensaje con id debía contar: %', v_r;
+  end if;
+  v_r := public.claim_marketplace_reply(v_cliente, 25, 12, 'wamid.repetido');
+  if (v_r->>'permitido')::boolean is not true
+     or (v_r->>'respuestas')::integer <> 2
+     or (v_r->>'repetido')::boolean is not true then
+    raise exception 'el reintento del MISMO mensaje no puede volver a contar: %', v_r;
+  end if;
+
+  -- ⚠️ NO toca `version`. El bloqueo optimista protege el estado del menú, y
+  -- subirlo aquí haría que contar una respuesta invalidara el avance que se
+  -- guarda en el mismo mensaje: el cliente elegiría local y se perdería.
+  declare
+    v_version integer;
+    v_despues integer;
+  begin
+    select version into v_version
+    from public.marketplace_conversations where customer_id = v_cliente;
+    v_r := public.claim_marketplace_reply(v_cliente, 25, 12, 'wamid.otro');
+    select version into v_despues
+    from public.marketplace_conversations where customer_id = v_cliente;
+    if v_despues <> v_version then
+      raise exception 'el techo movió la versión de la conversación (% → %)', v_version, v_despues;
+    end if;
+  end;
+
+  -- Sin cliente se ATIENDE: quedarse mudo por un problema nuestro deja sin
+  -- servicio a alguien de verdad.
+  v_r := public.claim_marketplace_reply(null, 25, 12);
+  if (v_r->>'permitido')::boolean is not true then
+    raise exception 'sin cliente debía atender, y fue %', v_r;
+  end if;
+
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ techo del marketplace: tope, silencio, idempotencia y versión intacta' as resultado;

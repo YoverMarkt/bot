@@ -297,29 +297,61 @@ describe('el bloqueo del dueño', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EL HUECO QUE QUEDA, ESCRITO PARA QUE NO SE OLVIDE
+// EL MARKETPLACE, QUE HASTA EL 2026-08-24 NO TENÍA NINGUNA DE LAS DOS DEFENSAS
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Todo lo de arriba prueba el camino del canal PROPIO (`bot-conversation.ts` e
-// `inbound-webhook.ts`). El marketplace NO pasa por ahí: `marketplace-entry.ts`
-// no consulta el bloqueo, así que hoy un bloqueado sigue recibiendo respuestas
-// del menú de Umbani — lo que SÍ se le impide es pedir (403 de la tienda y el
-// disparador `orders_reject_blocked`).
+// Todo lo de arriba prueba el canal PROPIO. El marketplace no pasa por ahí, y
+// durante un día tuvo el número compartido **respondiendo sin límite** y
+// entregando el enlace de un local a quien ese local había bloqueado.
 //
-// No es un descuido que se pueda cablear con una consulta más: con un número
-// compartido, «bloqueado por quién» no tiene respuesta hasta que el cliente
-// elige local. Es una decisión de producto pendiente.
-//
-// Esta prueba falla el día que alguien lo conecte, y ese es el objetivo: que
-// quien lo haga venga aquí y actualice lo que este archivo afirma.
-describe('el bloqueo todavía no alcanza al marketplace', () => {
-  it('marketplace-entry no consulta el bloqueo (y hay que decidir si debe)', () => {
-    const fuente = readFileSync(
-      new URL('../src/services/marketplace-entry.ts', import.meta.url), 'utf8',
-    )
-    expect(
-      fuente,
-      'Si acabas de cablear el bloqueo en el marketplace: enhorabuena, y actualiza esta prueba y el comentario de blocked-contacts.routes.ts.',
-    ).not.toMatch(/isContactBlocked/)
+// ⚠️ Esta sección SUSTITUYE a la que decía «el bloqueo todavía no alcanza al
+// marketplace», escrita el 2026-08-23 para que el hueco no se olvidara. Cumplió
+// su función: falló en cuanto se conectó, que era exactamente el objetivo.
+
+describe('el marketplace tiene techo de gasto y honra el bloqueo', () => {
+  const fuente = readFileSync(
+    new URL('../src/services/marketplace-entry.ts', import.meta.url), 'utf8',
+  )
+
+  // El techo va ANTES que MENÚ, y no es un detalle de orden: MENÚ se comprueba
+  // antes que cualquier intención porque es la salida del cliente, pero si el
+  // techo fuera después bastaría con escribir «MENÚ» sin parar para tener
+  // respuestas gratis para siempre.
+  it('reclama el techo antes de decidir qué contestar', () => {
+    const techo = fuente.indexOf('claimMarketplaceReply(customer.id')
+    const menu = fuente.indexOf('if (esComandoMenu(text))')
+    expect(techo).toBeGreaterThan(-1)
+    expect(menu).toBeGreaterThan(-1)
+    expect(techo).toBeLessThan(menu)
+  })
+
+  // Quien acaba de pagar no es quien molesta, y dejarlo sin respuesta con el
+  // dinero ya transferido es el peor momento posible para callarse.
+  it('el comprobante se contesta aunque esté silenciado', () => {
+    expect(fuente).toMatch(/esMarcadorDeComprobante[\s\S]{0,200}claimMarketplaceReply/)
+  })
+
+  // Falla ABIERTO en los dos: un problema de la base no puede dejar mudo al
+  // marketplace entero ni echar de un local a un cliente legítimo.
+  it('los dos fallan abierto', () => {
+    expect(fuente).toMatch(/claimMarketplaceReply\([\s\S]{0,120}catch\(\(\) => \(\{ permitido: true/)
+    expect(fuente).toMatch(/isContactBlocked\(negocio\.id, phone\)\.catch\(\(\) => false\)/)
+  })
+
+  // El bloqueo es del LOCAL, no de la plataforma: bloquear en El Puerto no
+  // puede dejar a nadie fuera de Umbani entero. Por eso se comprueba al elegir
+  // local y no a la entrada.
+  it('comprueba el bloqueo al elegir local, no a la entrada', () => {
+    const alElegir = fuente.indexOf('isContactBlocked(negocio.id, phone)')
+    const alEntrar = fuente.indexOf('const customer = await database.resolveMarketplaceCustomer')
+    expect(alElegir).toBeGreaterThan(alEntrar)
+  })
+
+  // Al bloqueado NUNCA se le dice que lo está: busca una reacción, y avisar
+  // cuesta justo el mensaje que se está ahorrando.
+  it('no le dice al bloqueado que está bloqueado', () => {
+    const mensaje = fuente.match(/no está recibiendo pedidos tuyos[^`]*/)
+    expect(mensaje, 'debería haber un mensaje neutro para el bloqueado').toBeTruthy()
+    expect(mensaje[0]).not.toMatch(/bloquead/i)
   })
 })

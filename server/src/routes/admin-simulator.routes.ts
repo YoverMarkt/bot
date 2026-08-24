@@ -84,6 +84,12 @@ function dependenciasDelSimulador(
       // crea, así que nadie va a buscarlo. Guardarla de verdad dejaría
       // direcciones de un cliente inventado en la ficha del local.
       createCustomerAddress: async () => ({ id: 'simulacion-sin-direccion' }),
+      // ⚠️ El techo de gasto NO se aplica aquí, y es coherente con lo que el
+      // techo existe para hacer: limitar los mensajes que se PAGAN. El
+      // simulador no manda un solo WhatsApp. Dejarlo puesto silenciaría 12 h al
+      // superadmin justo cuando está dando de alta varios locales seguidos —
+      // que es exactamente cuando esta pantalla hace falta.
+      claimMarketplaceReply: async () => ({ permitido: true, respuestas: 0 }),
     } as unknown as MarketplaceEntryDeps['database'],
     issueLink: link.issueStorefrontLink,
     send: async (reply: string, options: string[] = []) => {
