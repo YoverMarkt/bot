@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ClipboardList, DollarSign, Target, TrendingUp, Bot as BotIcon, Camera, Mic, MessageSquare, Server } from 'lucide-react'
+import { ClipboardList, DollarSign, Target, TrendingUp, Camera, Mic, MessageSquare, Server } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
@@ -9,10 +9,18 @@ import { Label } from '@botpanel/ui/components/label'
 // de Meta y cobras un solo pago mensual. Misma fórmula que el panel viejo:
 // Meta cobra por mensaje SALIENTE (≈ la mitad de la conversación) y el
 // colchón (%) cubre si el cliente conversa más de lo estimado.
-
+//
+// ⚠️ Se retiró la línea «Chat IA» el 2026-08-23. Cobraba $0,0006 por CADA
+// mensaje de la conversación por una llamada al modelo que ya no ocurre: la IA
+// conversacional se fue el 2026-08-21 y todo lo que ve el cliente lo escribe el
+// código con datos de la base. Con 1.000 clientes y 8 mensajes eran $4,80/mes
+// de coste inventado, que además inflaba el precio sugerido al multiplicarlo.
+//
+// Visión y audio SÍ se quedan, y no son residuo: visión lee los comprobantes
+// de transferencia (`services/receipt-vision.ts`) y Whisper transcribe las
+// notas de voz. Son las dos llamadas caras que siguen vivas.
 const CALC = {
-  chatPerMsg: 0.0006,  // respuesta de chat (input+output con RAG)
-  visionPerImg: 0.004, // análisis de 1 foto
+  visionPerImg: 0.004, // análisis de 1 comprobante (gpt-4o-mini)
   audioPerMin: 0.006,  // Whisper; ~0.5 min por nota
   audioAvgMin: 0.5,
 }
@@ -34,11 +42,10 @@ export default function Calculator() {
 
   const totalMsgs = n * m
   const outMsgs = Math.ceil(totalMsgs / 2) // Meta cobra lo SALIENTE (lo que envía el bot)
-  const cChat = totalMsgs * CALC.chatPerMsg
   const cVision = n * ph * CALC.visionPerImg
   const cAudio = n * au * CALC.audioAvgMin * CALC.audioPerMin
   const cWa = outMsgs * wa * (1 + buf)
-  const cTotal = cChat + cVision + cAudio + cWa + fixed
+  const cTotal = cVision + cAudio + cWa + fixed
   const price = cTotal * mult
   const profit = price - cTotal
 
@@ -49,9 +56,8 @@ export default function Calculator() {
   const ok = margin > 0
 
   const rows = [
-    { icon: BotIcon, name: `Chat IA (${totalMsgs.toLocaleString()} msgs)`, cost: cChat },
-    { icon: Camera, name: `Visión (${Math.round(n * ph)} fotos)`, cost: cVision },
-    { icon: Mic, name: `Audio (${Math.round(n * au)} notas)`, cost: cAudio },
+    { icon: Camera, name: `Comprobantes leídos (${Math.round(n * ph)} fotos)`, cost: cVision },
+    { icon: Mic, name: `Notas de voz transcritas (${Math.round(n * au)})`, cost: cAudio },
     { icon: MessageSquare, name: `WhatsApp Meta (${outMsgs.toLocaleString()} salientes${buf > 0 ? ` +${Math.round(buf * 100)}% colchón` : ''})`, cost: cWa },
     { icon: Server, name: 'Fijos (hosting, dominio)', cost: fixed },
   ]
@@ -71,8 +77,8 @@ export default function Calculator() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div><Label htmlFor="calculator-clients">Clientes que escriben al mes</Label><Input id="calculator-clients" type="number" value={f.clients} onChange={set('clients')} /></div>
             <div><Label htmlFor="calculator-messages">Mensajes por conversación</Label><Input id="calculator-messages" type="number" value={f.msgs} onChange={set('msgs')} /></div>
-            <div><Label htmlFor="calculator-photo-percent">% que envía FOTOS</Label><Input id="calculator-photo-percent" type="number" value={f.photo} onChange={set('photo')} /></div>
-            <div><Label htmlFor="calculator-audio-percent">% que envía AUDIOS</Label><Input id="calculator-audio-percent" type="number" value={f.audio} onChange={set('audio')} /></div>
+            <div><Label htmlFor="calculator-photo-percent">% que manda COMPROBANTE</Label><Input id="calculator-photo-percent" type="number" value={f.photo} onChange={set('photo')} /></div>
+            <div><Label htmlFor="calculator-audio-percent">% que manda NOTA DE VOZ</Label><Input id="calculator-audio-percent" type="number" value={f.audio} onChange={set('audio')} /></div>
             <div>
               <Label htmlFor="calculator-meta-cost">Costo Meta por mensaje SALIENTE ($)</Label>
               <Input id="calculator-meta-cost" type="number" step="0.001" value={f.wa} onChange={set('wa')} />

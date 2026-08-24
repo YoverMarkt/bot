@@ -131,9 +131,32 @@ const searchScopeFor = (
   conversation?.selected_business_id ? 'current_business' : 'global'
 )
 
+/**
+ * Borra la conversación de un cliente: la deja como si nunca hubiera escrito.
+ *
+ * ⚠️ NO es lo mismo que `MENÚ`, y por eso existe además de él. `MENÚ` suelta el
+ * local y el carrito pero CONSERVA la fila, así que el cliente sigue siendo
+ * conocido y su siguiente mensaje ya no es un primer contacto — que es
+ * precisamente lo que decide si recibe la bienvenida o un «no te entendí»
+ * (`paso(...)`, `primerContacto: !conversation`).
+ *
+ * ⚠️ Es del SIMULADOR, no del canal real. A un cliente de verdad no se le borra
+ * la conversación: para él está `MENÚ`, que le deja salir sin perder quién es.
+ * Aquí hace falta porque lo primero que hay que poder comprobar al dar de alta
+ * un local es qué ve alguien que escribe a Umbani por primera vez.
+ */
+const deleteConversation = async (customerId: string): Promise<void> => {
+  const { error } = await db
+    .from('marketplace_conversations')
+    .delete()
+    .eq('customer_id', customerId)
+  if (error) throw new Error(error.message)
+}
+
 export {
   getConversation,
   advanceConversation,
+  deleteConversation,
   searchScopeFor,
   resolveMarketplaceCustomer,
 }

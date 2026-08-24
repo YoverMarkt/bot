@@ -28,9 +28,11 @@ const TOPE = 20
  * Saca las etiquetas literales que el cliente ve como opción.
  *
  * ⚠️ Mira las constantes Y los `push('…')` sueltos. Al escribir esta prueba
- * solo miraba las constantes, y se le escapó `bot-menu.ts`, que empuja sus
+ * solo miraba las constantes, y se le escapó `bot-menu.ts`, que empujaba sus
  * opciones directamente — con «📋 Ver productos y precios» de 25 caracteres.
  * Un guardián que no mira donde de verdad están las cosas no protege nada.
+ * (`bot-menu.ts` se retiró el 2026-08-23 al quedarse sin un solo llamador; la
+ * lección de mirar los `push` sueltos vale igual para los dos que quedan.)
  */
 const etiquetasDe = (fuente) => [
   ...[...fuente.matchAll(
@@ -43,7 +45,6 @@ describe('ninguna opción se pasa del tope de WhatsApp', () => {
   const fuentes = {
     'bot-menu-flow.ts': leer('../src/services/bot-menu-flow.ts'),
     'marketplace-menu.ts': leer('../src/services/marketplace-menu.ts'),
-    'bot-menu.ts': leer('../src/services/bot-menu.ts'),
   }
 
   for (const [archivo, fuente] of Object.entries(fuentes)) {

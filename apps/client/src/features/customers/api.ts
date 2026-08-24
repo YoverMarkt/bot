@@ -25,6 +25,33 @@ export type InactiveContact = {
 }
 
 export const getCustomers = () => api<Customer[]>('/api/client/customers')
+
+// ── Bloqueo de contactos ────────────────────────────────────────────────────
+//
+// ⚠️ Vivía en Conversaciones, retirada el 2026-08-23. Se muda aquí porque
+// bloquear es una decisión sobre un CLIENTE, no sobre un chat, y porque es la
+// única defensa del dueño frente a quien pide para molestar: sin este
+// interruptor, `blocked_at` no lo escribe nadie y las comprobaciones que ya
+// existen —el 403 de la tienda y el disparador `orders_reject_blocked`— se
+// quedan puestas sin poder dispararse nunca.
+//
+// ⚠️ Lo que HOY no hace: no calla al bot del marketplace. Ese camino no
+// consulta el bloqueo, y cerrarlo es una decisión pendiente — con un número
+// compartido, «bloqueado por quién» no tiene respuesta hasta que el cliente
+// elige local.
+export const getBlocked = () => api<string[]>('/api/client/blocked')
+
+/**
+ * Bloquear impide PEDIR: `POST /api/store/:slug/orders` responde 403 y el
+ * disparador lo rechaza dentro de la misma transacción que la inserción.
+ *
+ * Al bloqueado NUNCA se le avisa: quien lo hace por molestar busca una
+ * reacción, y avisar cuesta justo el mensaje que se está ahorrando.
+ */
+export const setBlocked = (phone: string, blocked: boolean) =>
+  api<{ blocked: boolean }>(`/api/client/blocked/${encodeURIComponent(phone)}`, {
+    method: 'PUT', body: JSON.stringify({ blocked }),
+  })
 export const getInactive = (days: number) => api<InactiveContact[]>(`/api/client/inactive-contacts?days=${days}`)
 
 export const money = (n: number | string) => `$${(Number(n) || 0).toFixed(2)}`

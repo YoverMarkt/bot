@@ -87,8 +87,11 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     }).catch(e => { setError(e instanceof Error ? e.message : 'Error'); setLoading(false) })
   }, [id])
 
-  // Versión para los Select de Radix (entregan el valor directo, no un evento)
-  const setVal = (k: keyof typeof EMPTY) => (value: string) => setF(prev => ({ ...prev, [k]: value }))
+  // ⚠️ Aquí vivía `setVal`, el ayudante para los Select de Radix. Se queda sin
+  // uso el 2026-08-23: los dos desplegables que quedaban en el modal —«Ventas
+  // por el bot» y «Mini app de la tienda»— se fundieron en «Aparece en el
+  // marketplace», que escribe los dos campos a la vez con `setEnMarketplace`.
+  // El tipo de negocio y el plan tienen sus propios manejadores.
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const value = e.target.value
@@ -221,9 +224,40 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     } finally { setSaving(false) }
   }
 
-  // La tienda solo tiene sentido si hay algo que vender. Un negocio que solo
-  // informa abriría una app vacía, así que ni se ofrece.
-  const puedeTenerTienda = f.sales !== 'informa'
+  /**
+   * ¿Este local sale en el menú de Umbani?
+   *
+   * DERIVADO de los dos campos que ya existían, no un campo nuevo: el payload
+   * sigue mandando exactamente `takes_orders` y `storefront_enabled`. Lo que
+   * cambia es que ya no se pueden poner en desacuerdo desde la pantalla, que
+   * era el estado en el que un local «vendía» sin que ningún cliente pudiera
+   * encontrarlo.
+   *
+   * Las condiciones son las mismas que aplica `marketplace_categories_disponibles`
+   * en la base. `active` y `suspended` no entran aquí: se manejan con Suspender
+   * y Reactivar, no editando la ficha.
+   */
+  const enMarketplace = f.sales !== 'informa' && f.storefront === 'yes'
+
+  const setEnMarketplace = (value: string) => {
+    const visible = value === 'si'
+    setSalesTouched(true)
+    setStorefrontTouched(true)
+    setF(prev => ({
+      ...prev,
+      sales: visible ? 'vende' : 'informa',
+      storefront: visible ? 'yes' : 'no',
+      // ⚠️ `chat_mode` viaja con la decisión, y no es un capricho: el servidor
+      // rechaza `miniapp` sin pedidos ni tienda (`miniappConfigurationError`),
+      // así que ocultar un local con `chat_mode = 'miniapp'` guardado —el caso
+      // de producción— fallaría con «El modo miniapp requiere que el negocio
+      // cree pedidos». Dentro del marketplace la columna no decide nada: la
+      // experiencia la elige el TIPO del local al entrar en él. Se mueve para
+      // que el guardado no choque con un invariante de un modo que ya no
+      // gobierna a nadie.
+      chat_mode: visible ? prev.chat_mode : 'menu',
+    }))
+  }
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
@@ -272,61 +306,38 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
               <div><Label htmlFor="client-owner-phone">WhatsApp del dueño (reportes){f.whatsapp_provider === 'marketplace' ? ' *' : ''}</Label><Input id="client-owner-phone" value={f.owner_phone} onChange={set('owner_phone')} placeholder="+593… (solo él pide reportes)" /></div>
             </div>
 
-            {/* Cómo va a atender — ⚠️ Solo al EDITAR se elige a mano.
-                En el alta lo decide el TIPO de negocio, y se explica en una
-                línea en vez de pedir dos decisiones (`takes_orders` y
-                `storefront_enabled`) que se deducen de lo mismo. El criterio
-                es cuánto hay que elegir para armar un pedido: una almuercería
-                son tres platos del día y se piden hablando; una pizzería es
-                tamaño, masa, borde y dos sabores, y eso se arma mejor en la
-                app. */}
+            {/* ⚠️ UNA decisión, no dos — cambiado el 2026-08-23.
+                Aquí había dos desplegables, «Ventas por el bot»
+                (`takes_orders`) y «Mini app de la tienda»
+                (`storefront_enabled`), y la base exige LOS DOS para que un
+                local salga en el menú (`marketplace_categories_disponibles`).
+                Eso abría un estado trampa —crea pedidos pero sin tienda— en el
+                que el local quedaba invisible en el marketplace sin que nada
+                lo dijera: el superadmin lo veía «vendiendo» y ningún cliente
+                podía encontrarlo.
+
+                Los nombres tampoco valían ya: hablaban de un bot que informa y
+                deriva, y de un bot que manda su enlace. Ese bot por local no
+                existe desde que se retiró la IA y el canal propio; quien manda
+                el enlace es el menú de Umbani.
+
+                Las DOS columnas se siguen enviando en el payload, con el mismo
+                valor. Ninguna se retira. */}
             {id ? (
-            <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-2">
-              <div>
-                <Label htmlFor="client-sales-mode">Ventas por el bot</Label>
-                <Select value={f.sales} onValueChange={value => {
-                  setSalesTouched(true)
-                  setVal('sales')(value)
-                }}>
-                  <SelectTrigger id="client-sales-mode" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="vende">Crea pedidos con total oficial</SelectItem>
-                    <SelectItem value="informa" disabled={f.chat_mode === 'miniapp'}>Solo informa y deriva</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">Informar permite precios, descripciones, fotos y videos; no crea pedidos ni solicita pagos.</p>
-              </div>
-              {/* ⚠️ Se retiró «Quién conduce la conversación» el 2026-08-23.
-                  Dentro del marketplace ese desplegable NO decide nada: la
-                  experiencia la elige el tamaño del catálogo al elegir local
-                  (la regla de los 20, `services/marketplace-entry.ts`).
-                  `chat_mode` solo gobierna el canal PROPIO de un negocio, y
-                  ya no hay ninguno con canal propio. Dejarlo puesto mostraba
-                  una decisión que no se cumplía — que es exactamente cómo
-                  nació el fallo del número. La columna NO se toca: el payload
-                  sigue mandando el valor guardado. */}
-              <div>
-                <Label htmlFor="client-storefront">Mini app de la tienda</Label>
-                <Select
-                  value={f.storefront}
-                  onValueChange={value => {
-                    setStorefrontTouched(true)
-                    setVal('storefront')(value)
-                  }}
-                  disabled={!puedeTenerTienda}
-                >
-                  <SelectTrigger id="client-storefront" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no" disabled={f.chat_mode === 'miniapp'}>Solo chat</SelectItem>
-                    <SelectItem value="yes">El bot manda su enlace de tienda</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {puedeTenerTienda
-                    ? 'El cliente recibe por WhatsApp un enlace personal para armar su pedido. Enciéndela con el catálogo ya cargado: una tienda vacía se ve peor que ninguna.'
-                    : 'Necesita crear pedidos. Un negocio que solo informa no tendría nada que mostrar en la tienda.'}
-                </p>
-              </div>
+            <div className="mb-4 rounded-lg border border-border/70 p-3">
+              <Label htmlFor="client-marketplace">Aparece en el marketplace</Label>
+              <Select value={enMarketplace ? 'si' : 'no'} onValueChange={setEnMarketplace}>
+                <SelectTrigger id="client-marketplace" className="mt-1 w-full sm:max-w-md"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="si">Sí — sale en el menú y recibe pedidos</SelectItem>
+                  <SelectItem value="no">No — queda oculto para los clientes</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-2 text-xs text-muted-foreground" data-testid="client-marketplace-help">
+                {enMarketplace
+                  ? 'Quien escriba al número de Umbani lo encontrará en su categoría y recibirá el enlace de su tienda. Enciéndelo con el catálogo ya cargado: una tienda vacía se ve peor que ninguna.'
+                  : 'No aparece en ninguna categoría del menú y su tienda no acepta pedidos. Úsalo mientras se carga el catálogo; el negocio y sus datos siguen intactos.'}
+              </p>
             </div>
             ) : (
               <div className="mb-4 rounded-lg border border-border/70 p-3">

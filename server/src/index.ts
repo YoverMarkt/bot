@@ -18,8 +18,10 @@ import { getRecentWebhookFailures } from './services/channel-health'
 import { recordError } from './services/error-log'
 import {
   checkAllCredentials,
+  checkPlatformCredentials,
   type MonitorableBusiness,
 } from './services/credential-monitor'
+import { getPlatformChannel } from './services/platform-channel'
 import { providerStatusClient } from './integrations/provider-status'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
@@ -31,7 +33,7 @@ import { getBotInstance, setupTelegram } from './integrations/telegram'
 import authRouter = require('./routes/auth.routes')
 import adminRouter = require('./routes/admin.routes')
 import businessRouter = require('./routes/business.routes')
-import sessionsRouter = require('./routes/sessions.routes')
+import blockedContactsRouter = require('./routes/blocked-contacts.routes')
 import salesRouter = require('./routes/sales.routes')
 import reportsRouter = require('./routes/reports.routes')
 import scheduleRouter = require('./routes/schedule.routes')
@@ -240,7 +242,7 @@ app.use(authRouter)
 app.use('/api/client', activeClientGuard)
 app.use(adminRouter)
 app.use(businessRouter)
-app.use(sessionsRouter)
+app.use(blockedContactsRouter)
 app.use(salesRouter)
 app.use(reportsRouter)
 app.use(scheduleRouter)
@@ -416,11 +418,26 @@ async function cleanupWebhookInbox(): Promise<void> {
 async function checkCredentials(): Promise<void> {
   try {
     const businesses = await db.getAllBusinessesWithSecrets()
-    const problemas = await checkAllCredentials(businesses, providerStatusClient, {
-      baseUrl: process.env.BASE_URL,
-    })
+    // ⚠️ LAS DOS, y en paralelo. Hasta el 2026-08-23 solo corría la primera, y
+    // con todos los locales en el marketplace eso significaba no revisar nada:
+    // ninguno tiene credenciales propias. La segunda mira el único canal que
+    // de verdad recibe — el número de Umbani.
+    const [deNegocios, deLaPlataforma] = await Promise.all([
+      checkAllCredentials(businesses, providerStatusClient, {
+        baseUrl: process.env.BASE_URL,
+      }),
+      // Un fallo leyendo `server_settings` no puede impedir la revisión de los
+      // negocios con canal propio: se trata como «no configurado», que es lo
+      // que ya avisa `checkPlatformCredentials`.
+      getPlatformChannel()
+        .catch(() => null)
+        .then(canal => checkPlatformCredentials(canal, providerStatusClient, {
+          baseUrl: process.env.BASE_URL,
+        })),
+    ])
+    const problemas = [...deLaPlataforma, ...deNegocios]
     if (!problemas.length) {
-      console.log('🔐 Credenciales: todos los negocios en orden')
+      console.log('🔐 Credenciales: el número del marketplace y los negocios, en orden')
       return
     }
     for (const problema of problemas) {

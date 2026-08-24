@@ -53,16 +53,33 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
   return result
 }
 
-function mockBusinessContext() {
-  const business = { id: 'business-a', name: 'Demo', ai_provider: 'groq', chat_mode: 'ai' }
-  vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
-  vi.spyOn(db, 'getProducts').mockResolvedValue([{ id: 'product-a' }])
-  vi.spyOn(db, 'getPolicies').mockResolvedValue({ bot_prompt: 'Vende bien' })
-  vi.spyOn(db, 'getContactHistory').mockResolvedValue([{ role: 'user', content: 'Antes' }])
-  return business
-}
+describe('simulador del marketplace', () => {
+  // ═════════════════════════════════════════════════════════════════════════
+  // Estas pruebas SUSTITUYEN a las del simulador por negocio, no las borran.
+  //
+  // Hasta el 2026-08-23 el simulador despachaba por `businesses.chat_mode` y
+  // fijaba tres ramas: menú, miniapp y «modo no reconocido». Con todos los
+  // locales en el marketplace ninguna de las tres se ejecuta en producción: el
+  // cliente escribe al número compartido y el local lo elige él navegando.
+  // Se probaba, con el CI en verde, un camino por el que no entra nadie.
+  //
+  // Lo que se fija ahora es que el simulador corra la MISMA función que el
+  // webhook, con los datos reales, y que NO escriba en el negocio del dueño.
+  // ═════════════════════════════════════════════════════════════════════════
 
-describe('simulador del superadmin', () => {
+  const TELEFONO_SIMULADO = '000000000000'
+  const CLIENTE = { id: 'customer-sim', name: null }
+
+  /** El marketplace tal y como responde con una categoría y un local. */
+  function mockMarketplace() {
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockResolvedValue(CLIENTE)
+    vi.spyOn(db, 'getConversation').mockResolvedValue(null)
+    vi.spyOn(db, 'advanceConversation').mockResolvedValue({ conflicto: false })
+    vi.spyOn(db, 'getMarketplaceCategories').mockResolvedValue([
+      { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', sort: 10, locales: 1 },
+    ])
+  }
+
   it('protege ambos endpoints exclusivamente con autenticación admin', async () => {
     expect(simulatorRouter.stack).toHaveLength(2)
     expect(simulatorRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
@@ -72,42 +89,61 @@ describe('simulador del superadmin', () => {
     })).status).toBe(403)
   })
 
-  it('valida negocio y mensaje antes de ejecutar el bot', async () => {
-    const getBusiness = vi.spyOn(db, 'getBusinessById').mockResolvedValue(null)
+  // ⚠️ Ya NO se pide `business_id`, y es el cambio que más importa: pedirlo
+  // sería volver a simular «un bot por local». El local lo elige el cliente.
+  it('no pide negocio: solo el mensaje', async () => {
+    const getBusiness = vi.spyOn(db, 'getBusinessById')
+    mockMarketplace()
 
-    const missing = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(), body: { business_id: 'business-a', message: '   ' },
+    const vacio = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: '   ' },
     })
-    const unknown = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(), body: { business_id: 'business-a', message: 'Hola' },
-    })
+    expect(vacio.status).toBe(400)
 
-    expect(missing.status).toBe(400)
-    expect(unknown.status).toBe(404)
-    expect(getBusiness).toHaveBeenCalledOnce()
+    const conMensaje = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: 'hola' },
+    })
+    expect(conMensaje.status).toBe(200)
+    expect(getBusiness).not.toHaveBeenCalled()
   })
 
-  // ⚠️ Aquí vivían SIETE pruebas del modo IA del simulador: el prompt que se
-  // armaba, el parser de etiquetas, el descarte de totales inventados y el
-  // HANDOFF. Se fueron con la IA el 2026-08-21. Lo que queda en su lugar es lo
-  // único que importa ahora: que no haya forma de llegar a un modelo.
-  it('un modo no reconocido avisa de la configuración en vez de inventar', async () => {
-    mockBusinessContext()
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
+  // Lo que hace que esto sea un simulador y no una maqueta: corre la misma
+  // función que el webhook, contra el mismo estado y las mismas categorías.
+  it('atiende el mensaje por el camino REAL del marketplace', async () => {
+    mockMarketplace()
 
     const response = await dispatch('post', '/api/admin/simulate', {
-      auth: authorization(),
-      // No un saludo: «hola» lo atiende antes el menú de bienvenida, que
-      // sigue vivo y no depende de la IA.
-      body: { business_id: 'business-a', message: 'quiero comprar algo' },
+      auth: authorization(), body: { message: 'hola' },
     })
 
     expect(response.status).toBe(200)
-    expect(response.body.actionNote).toMatch(/modo de conversación/i)
-    expect(response.body.reply).toMatch(/no tiene un modo/i)
+    expect(db.resolveMarketplaceCustomer).toHaveBeenCalledWith(TELEFONO_SIMULADO)
+    expect(response.body.replies.length).toBeGreaterThan(0)
+    // Las categorías salen de la base, no de una lista fija del simulador.
+    expect(response.body.replies[0].options).toContain('🍕 Pizzerías')
   })
 
-  it('el simulador ya no puede llamar a un modelo', async () => {
+  it('guarda el avance donde lo guarda producción, no en memoria', async () => {
+    mockMarketplace()
+    await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: 'hola' },
+    })
+    expect(db.advanceConversation).toHaveBeenCalled()
+    expect(db.advanceConversation.mock.calls[0][0]).toBe(CLIENTE.id)
+  })
+
+  // ⚠️ LA LÍNEA QUE NO SE PUEDE CRUZAR. Un pedido de prueba entra en la cocina
+  // del local, le suena la alarma al dueño y acaba en `sales` al entregarlo:
+  // o sea, en su reporte de ventas y en la comisión de la plataforma.
+  it('no crea pedidos ni direcciones de verdad', async () => {
+    const fuente = fs.readFileSync(
+      new URL('../src/routes/admin-simulator.routes.ts', import.meta.url), 'utf8',
+    )
+    expect(fuente).not.toMatch(/createStorefrontOrder|processOrderPayload/)
+    expect(fuente).toMatch(/createCustomerAddress: async \(\) =>/)
+  })
+
+  it('el simulador no puede llamar a un modelo', () => {
     // Si alguien reintroduce la IA por aquí, esto lo caza.
     const fuente = fs.readFileSync(
       new URL('../src/routes/admin-simulator.routes.ts', import.meta.url), 'utf8',
@@ -115,80 +151,115 @@ describe('simulador del superadmin', () => {
     expect(fuente).not.toMatch(/callAI|buildPrompt/)
   })
 
+  // ⚠️ BORRA la conversación, no la suelta con la RPC de `MENÚ`. La diferencia
+  // no es de estilo: `MENÚ` conserva la fila, y con fila el siguiente mensaje
+  // deja de ser un primer contacto y recibe «🙏 No te entendí» en vez de la
+  // bienvenida. Lo primero que hay que poder comprobar al dar de alta un local
+  // es exactamente eso — qué ve quien escribe a Umbani por primera vez.
+  it('reiniciar deja al cliente como si nunca hubiera escrito', async () => {
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockResolvedValue(CLIENTE)
+    const borrar = vi.spyOn(db, 'deleteConversation').mockResolvedValue(undefined)
+    const avanzar = vi.spyOn(db, 'advanceConversation')
 
-  it(
-    'en miniapp replica el corte sin IA y no finge una conversación',
-    async () => {
-      const business = { id: 'business-a', name: 'Demo', chat_mode: 'miniapp' }
-      vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
-      const getProducts = vi.spyOn(db, 'getProducts')
-      const getPolicies = vi.spyOn(db, 'getPolicies')
-      const getHistory = vi.spyOn(db, 'getContactHistory')
-      const saveMessage = vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-
-      const response = await dispatch('post', '/api/admin/simulate', {
-        auth: authorization(),
-        body: { business_id: 'business-a', message: 'Quiero pedir' },
-      })
-
-      expect(getProducts).not.toHaveBeenCalled()
-      expect(getPolicies).not.toHaveBeenCalled()
-      expect(getHistory).not.toHaveBeenCalled()
-      expect(saveMessage).toHaveBeenNthCalledWith(
-        1, 'business-a', 'sim_admin', 'user', 'Quiero pedir',
-      )
-      expect(saveMessage).toHaveBeenNthCalledWith(
-        2,
-        'business-a',
-        'sim_admin',
-        'assistant',
-        expect.stringContaining('enlace personal'),
-      )
-      expect(response.status).toBe(200)
-      expect(response.body.reply).toContain('enlace personal')
-      expect(response.body.actionNote).toContain('no se llamó a la IA')
-      expect(response.body.options).toBeNull()
-    },
-  )
-
-  it('en menú conduce la máquina de estados y tampoco llama a la IA', async () => {
-    const business = {
-      id: 'business-a', name: 'Demo', chat_mode: 'menu', takes_orders: true,
-    }
-    vi.spyOn(db, 'getBusinessById').mockResolvedValue(business)
-    vi.spyOn(db, 'getProducts').mockResolvedValue([
-      { id: 'p1', name: 'Pizza Familiar', price: 10.5, tags: ['pizzas'], stock: 'disponible', active: true },
-    ])
-    vi.spyOn(db, 'getMenuModifiers').mockResolvedValue([])
-    vi.spyOn(db, 'getLastOrderForContact').mockResolvedValue(null)
-    vi.spyOn(db, 'getPolicies').mockResolvedValue({})
-    vi.spyOn(db, 'saveMessage').mockResolvedValue({ error: null })
-
-    const response = await dispatch('post', '/api/admin/simulate', {
+    const response = await dispatch('delete', '/api/admin/simulate/history', {
       auth: authorization(),
-      body: { business_id: 'business-a', message: 'hola' },
     })
 
-    // Lo que define el modo: el código conduce y el modelo no participa.
     expect(response.status).toBe(200)
-    // La bienvenida llega con las opciones armadas desde el catálogo real.
-    expect(Array.isArray(response.body.options)).toBe(true)
-    expect(response.body.options.length).toBeGreaterThan(0)
+    expect(borrar).toHaveBeenCalledWith(CLIENTE.id)
+    expect(avanzar).not.toHaveBeenCalled()
   })
 
-  it('comprueba el resultado al limpiar el historial del negocio', async () => {
+  // La bienvenida de verdad, la que ve un cliente nuevo: sin conversación
+  // previa NO puede salir un «no te entendí».
+  it('el primer mensaje recibe la bienvenida, no un reproche', async () => {
+    mockMarketplace()
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: 'hola' },
+    })
+
+    expect(response.body.replies[0].reply).not.toMatch(/no te entendí/i)
+  })
+
+  // El camino completo, que es lo que el superadmin va a hacer con cada local
+  // nuevo: llegar hasta el enlace de su tienda y comprobar que abre.
+  it('llega hasta el enlace de la tienda sin crear un solo pedido', async () => {
+    const link = require('../dist/services/storefront-link')
+    // Estado con memoria: `advanceConversation` guarda y `getConversation`
+    // devuelve, igual que la base entre dos mensajes.
+    let guardada = null
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockResolvedValue(CLIENTE)
+    vi.spyOn(db, 'getConversation').mockImplementation(async () => guardada)
+    vi.spyOn(db, 'advanceConversation').mockImplementation(async (_id, patch) => {
+      guardada = {
+        current_state: patch.state ?? 'navegando',
+        selected_business_id: patch.clearBusiness ? null : (patch.businessId ?? guardada?.selected_business_id ?? null),
+        shopping_locked: patch.shoppingLocked ?? guardada?.shopping_locked ?? false,
+        flow_state: patch.clearFlow ? null : (patch.flowState ?? guardada?.flow_state ?? null),
+        version: (guardada?.version ?? 0) + 1,
+      }
+      return { conflicto: false }
+    })
+    vi.spyOn(db, 'getMarketplaceCategories').mockResolvedValue([
+      { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', sort: 10, locales: 1 },
+    ])
+    vi.spyOn(db, 'getMarketplaceBusinesses').mockResolvedValue([
+      { id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 },
+    ])
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza',
+      storefront_enabled: true, takes_orders: true,
+    })
+    // Una pizzería se pide en la app: lo decide el TIPO, no el catálogo.
+    const pideEnChat = vi.spyOn(db, 'tipoPideEnChat').mockResolvedValue(false)
+    const emitir = vi.spyOn(link, 'issueStorefrontLink')
+      .mockResolvedValue('https://umbani.test/s/token-de-prueba')
+    // La línea que no se cruza: el simulador no puede tocar el dinero.
+    const crearPedido = vi.spyOn(db, 'createStorefrontOrder')
+
+    const enviar = message => dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message },
+    })
+
+    await enviar('hola')
+    await enviar('🍕 Pizzerías')
+    const final = await enviar('Monster Pizza')
+
+    expect(final.status).toBe(200)
+    expect(final.body.replies.at(-1).reply).toContain('https://umbani.test/s/token-de-prueba')
+    expect(pideEnChat).toHaveBeenCalledWith('pizzería')
+    expect(emitir).toHaveBeenCalled()
+    expect(crearPedido).not.toHaveBeenCalled()
+  })
+
+  it('un fallo al reiniciar se reporta, no se traga', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const clear = vi.spyOn(db, 'clearSimHistory').mockResolvedValue({
-      error: { message: 'delete rechazado' },
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockRejectedValue(new Error('base caída'))
+
+    const response = await dispatch('delete', '/api/admin/simulate/history', {
+      auth: authorization(),
     })
 
-    const response = await dispatch('delete', '/api/admin/simulate/:bizId/history', {
-      auth: authorization(), params: { bizId: 'business-a' },
-    })
-
-    expect(clear).toHaveBeenCalledWith('business-a')
     expect(response).toEqual({
       status: 500,
-      body: { error: 'No se pudo limpiar el historial' },
+      body: { error: 'No se pudo reiniciar la conversación' },
     })
-  })})
+  })
+
+  // Un fallo de la base no puede devolver una respuesta a medias que el
+  // superadmin lea como «así responde el bot».
+  it('un fallo atendiendo el mensaje devuelve 500, no media conversación', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockRejectedValue(new Error('base caída'))
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: 'hola' },
+    })
+
+    expect(response).toEqual({
+      status: 500,
+      body: { error: 'No se pudo completar la simulación' },
+    })
+  })
+})

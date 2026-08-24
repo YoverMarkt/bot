@@ -72,16 +72,19 @@ const saveMessage = async (
   return result
 }
 
-const clearSimHistory = async (businessId: string) => db
-  .from('conversation_history')
-  .delete()
-  .eq('business_id', businessId)
-  .eq('contact_phone', 'sim_admin')
+// ⚠️ Aquí vivía `clearSimHistory`, retirada el 2026-08-23.
+//
+// Borraba las filas del contacto `sim_admin`, que era como el simulador
+// guardaba sus mensajes de prueba en el historial del negocio. El simulador
+// dejó de escribir ahí: ahora corre el camino REAL del marketplace, cuyo
+// estado vive en `marketplace_conversations`, y reiniciar es soltar esa
+// conversación — no borrar mensajes de un negocio.
+//
+// Comprobado en producción antes de retirarla: cero filas de `sim_admin`.
 
 export = {
   getConversations,
   getContactHistory,
   getLatestBusinessIdForContact,
   saveMessage,
-  clearSimHistory,
 }

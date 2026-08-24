@@ -5,13 +5,16 @@ import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 
-// ── Conexiones (sección propia, igual que el admin viejo):
-// túnel público + URLs de webhooks por proveedor listas para copiar.
+// ── Conexiones: el túnel público de desarrollo y la URL que hay que pegar en
+// YCloud para que el número del marketplace entregue aquí.
+//
+// ⚠️ Se retiró la fila de Meta el 2026-08-23: ningún negocio usa ese canal —el
+// marketplace entra por YCloud— y ofrecer su URL invitaba a configurar un
+// webhook que nadie iba a atender. La ruta `/webhook` sigue en el servidor.
 const card = 'p-5 mb-5 gap-0'
 
 const WH_PROVIDERS = [
-  { name: 'YCloud',        path: '/webhook/ycloud',         desc: 'YCloud → Webhooks → Add Endpoint' },
-  { name: 'Meta',          path: '/webhook',                desc: 'Meta → App → WhatsApp → Webhook URL' },
+  { name: 'YCloud', path: '/webhook/ycloud', desc: 'YCloud → Developers → Webhooks → Add Endpoint' },
 ]
 
 export default function Connections() {
@@ -33,7 +36,9 @@ export default function Connections() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-foreground mb-1">Conexiones</h1>
-      <p className="text-sm text-muted-foreground mb-6">Túnel público y URLs de webhooks para cada proveedor.</p>
+      <p className="text-sm text-muted-foreground mb-6">
+        Túnel público de desarrollo y la URL del webhook del número del marketplace.
+      </p>
 
       <Card className={card}>
         <div className="flex items-center justify-between mb-2 flex-wrap gap-3">
@@ -51,7 +56,7 @@ export default function Connections() {
 
         {base && (
           <div className="mt-3 space-y-2">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">URLs de webhooks (copiar y pegar en cada proveedor)</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">URL del webhook (copiar y pegar en YCloud)</div>
             {WH_PROVIDERS.map(p => {
               const url = base + p.path
               return (
@@ -65,8 +70,14 @@ export default function Connections() {
             })}
           </div>
         )}
+        {/* ⚠️ Decía «guárdalos en el negocio correspondiente», y eso ya no
+            existe: el número es de la PLATAFORMA y sus credenciales viven en
+            `server_settings`. Mandar al superadmin a la ficha de un local le
+            haría configurar un canal que ese local no puede tener. */}
         <p className="text-[11px] text-muted-foreground/70 mt-3">
-          YCloud firma cada solicitud con <code>YCloud-Signature</code>. Guarda el Endpoint ID y el signing secret del endpoint en el negocio correspondiente.
+          YCloud firma cada solicitud con <code>YCloud-Signature</code>. El Endpoint ID y el
+          Signing Secret van en <strong>Configuración → Número del marketplace</strong>:
+          sin ellos el servidor rechaza las entregas con 503 y el número queda mudo.
         </p>
         <p className="text-[11px] text-muted-foreground/70 mt-3">En producción con BASE_URL configurada, la URL es fija y el túnel no se usa.</p>
       </Card>

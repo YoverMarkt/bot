@@ -62,13 +62,16 @@ test('oculta a un empleado las secciones que no tiene permitidas', async ({ page
   await page.addInitScript(() => {
     localStorage.setItem('client_token', 'e2e-employee-token')
     localStorage.setItem('client_biz', JSON.stringify({ id: 'biz-e2e', name: 'Negocio E2E', type: 'tienda' }))
-    localStorage.setItem('client_user', JSON.stringify({ name: 'Empleado E2E', role: 'employee', permissions: ['conversaciones'] }))
+    // ⚠️ Era `conversaciones`, y ese permiso se quedó sin pantalla el
+    // 2026-08-23. Se prueba con `catalogo`, que sí abre una sección: lo que
+    // fija esta prueba es que un empleado ve SOLO lo suyo, no qué permiso.
+    localStorage.setItem('client_user', JSON.stringify({ name: 'Empleado E2E', role: 'employee', permissions: ['catalogo'] }))
   })
   await mockClientApi(page)
   await page.goto(clientUrl)
 
-  await expect(page.getByRole('link', { name: 'Conversaciones' })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Catálogo/ })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /Catálogo/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Conversaciones' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Reportes' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Ajustes' })).toHaveCount(0)
   expect(alertsRequests).toBe(0)
@@ -240,8 +243,12 @@ test('la alarma se enciende sola cuando entra un pedido pendiente', async ({ pag
   // los pedidos quedaban escondidos dentro de Ventas y nadie los veía llegar.
   await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible()
 
+  // ⚠️ «Conversaciones» se retiró el 2026-08-23: el dueño de un local del
+  // marketplace no tiene chats que leer — sus clientes escriben al número de
+  // Umbani y esa conversación no pasa por `conversation_history`.
+  await expect(page.getByRole('link', { name: 'Conversaciones' })).toHaveCount(0)
+
   // Sin pedidos pendientes el panel calla (si no, el dueño la silenciaría siempre).
-  await expect(page.getByRole('link', { name: 'Conversaciones' })).toBeVisible()
   await expect(page.getByText('¡Nuevo pedido!')).toHaveCount(0)
 
   orders = [{
@@ -309,155 +316,61 @@ test('la alarma suena cuando llega el comprobante de una transferencia', async (
   await expect(page).toHaveURL(/#\/orders$/)
 })
 
-test('conversaciones se adapta a móvil sin desbordamiento horizontal', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await seedClientSession(page)
-  await mockClientApi(page)
-  await page.goto(`${clientUrl}#/conversations`)
+// ⚠️ Aquí vivían CINCO pruebas de la pantalla de Conversaciones —el móvil sin
+// desbordamiento, el fallo de la lista de bloqueados, el envío manual que
+// devuelve el texto, los modales de nombre y etiquetas, y el recordatorio de
+// venta—. Se van con la pantalla el 2026-08-23: el dueño de un local del
+// marketplace no tiene chats que leer.
+//
+// La única que seguía protegiendo algo se REESCRIBE justo debajo: el bloqueo
+// se mudó a Clientes, y con él la misma forma de romperse.
 
-  await expect(page.getByText('Cliente móvil').first()).toBeVisible()
-  await page.getByText('Cliente móvil').first().click()
-  await expect(page.getByText('Hola desde E2E').last()).toBeVisible()
-  await expect.poll(() => page.evaluate(() => (
-    document.documentElement.scrollWidth <= window.innerWidth
-  ))).toBe(true)
-  // El panel de mensajes tampoco desborda aunque un mensaje traiga una URL
-  // imposible de partir (regresión: barra horizontal en el chat)
-  await expect.poll(() => page.evaluate(() => {
-    const pane = document.querySelector('div.overflow-y-auto.p-4')
-    return pane !== null && pane.scrollWidth <= pane.clientWidth + 1
-  })).toBe(true)
-})
-
-// ⚠️ REGRESIÓN del 2026-08-15. La lista de bloqueados es una petición más de
-// esta pantalla, y cuando devolvió `{}` en vez de una lista, `new Set({})`
-// reventó y se llevó por delante la pantalla ENTERA: el dueño se quedó sin
-// poder leer a sus clientes por un dato accesorio.
+// ⚠️ REGRESIÓN del 2026-08-15, que sigue viva en su nueva casa. La lista de
+// bloqueados es una petición más de la pantalla, y cuando devolvió `{}` en vez
+// de una lista, `new Set({})` reventó y se llevó por delante la pantalla
+// ENTERA: el dueño se quedó sin poder leer a sus clientes por un dato
+// accesorio.
 //
 // El caso no es teórico ni de laboratorio: pasa con un 502 del proxy, con un
 // error de la base, o con un despliegue a medias. Un dato de adorno no puede
 // tumbar lo importante.
-test('un fallo en la lista de bloqueados no deja la pantalla en blanco', async ({ page }) => {
+test('un fallo en la lista de bloqueados no deja Clientes en blanco', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)
-  await page.route('**/api/client/sessions/blocked', route => route.fulfill({
+  await page.route('**/api/client/blocked', route => route.fulfill({
     status: 200, contentType: 'application/json', body: '{}',
   }))
-  await page.goto(`${clientUrl}#/conversations`)
+  await page.goto(`${clientUrl}#/customers`)
 
-  // La conversación se sigue leyendo, que es para lo que existe la pantalla.
-  await expect(page.getByText('Cliente móvil').first()).toBeVisible()
-  await page.getByText('Cliente móvil').first().click()
-  await expect(page.getByText('Hola desde E2E').last()).toBeVisible()
+  // El directorio se sigue leyendo, que es para lo que existe la pantalla.
+  await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible()
+  await expect(page.getByText('Cliente E2E').first()).toBeVisible()
 })
 
-// ⚠️ El texto se borraba al enviar y no volvía si el envío fallaba: el dueño
-// escribía media pantalla, el canal fallaba —sin saldo, fuera de la ventana de
-// 24 h, un 500— y su mensaje desaparecía sin decir nada. Escribirlo otra vez
-// de memoria es lo peor que se le puede pedir a quien está atendiendo.
-test('si el envío manual falla, el texto vuelve al campo', async ({ page }) => {
+// El bloqueo es la única defensa del dueño frente a quien pide para molestar,
+// y se mudó de Conversaciones a Clientes con la pantalla que lo alojaba.
+test('desde Clientes se puede bloquear y desbloquear', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)
-  await page.route('**/api/client/sessions/**/send', route => route.fulfill({
-    status: 500, contentType: 'application/json', body: '{"error":"Sin saldo en el canal"}',
+  let bloqueados: string[] = []
+  await page.route('**/api/client/blocked', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(bloqueados),
   }))
-  // El campo de escribir solo existe en modo manual, así que la conversación
-  // se monta ya así: tomar el control aquí dependería de que el simulador
-  // reflejara el cambio, que es otra prueba distinta.
-  await page.route('**/api/client/sessions', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify([{
-      contact_phone: '+593999999999',
-      contact_name: 'Cliente móvil',
-      manual_mode: true,
-      unread_owner: false,
-      last_message: 'Hola desde E2E',
-      last_message_at: '2026-07-12T18:00:00.000Z',
-      tags: [],
-    }]),
-  }))
-  await page.goto(`${clientUrl}#/conversations`)
-
-  await page.getByText('Cliente móvil').first().click()
-
-  const campo = page.getByLabel('Mensaje manual')
-  await campo.fill('Su pedido sale en veinte minutos')
-  await page.getByRole('button', { name: 'Enviar' }).click()
-
-  await expect(campo).toHaveValue('Su pedido sale en veinte minutos')
-})
-
-test('el nombre del contacto y las etiquetas se editan en modales', async ({ page }) => {
-  await seedClientSession(page)
-  await mockClientApi(page)
-  let namePayload: unknown = null
-  await page.route('**/api/client/sessions/**/name', async (route) => {
-    if (route.request().method() === 'PUT') {
-      namePayload = route.request().postDataJSON()
-      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
-    }
-    return route.fallback()
+  await page.route('**/api/client/blocked/*', route => {
+    bloqueados = ['593999000111']
+    return route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ blocked: true }),
+    })
   })
-  await page.goto(`${clientUrl}#/conversations`)
-  await page.getByText('Cliente móvil').first().click()
+  await page.goto(`${clientUrl}#/customers`)
 
-  // Modal de nombre: accesible, guarda y se cierra
-  await page.getByRole('button', { name: 'Nombre', exact: true }).click()
-  const nameDialog = page.getByRole('dialog', { name: 'Editar nombre del contacto' })
-  await expect(nameDialog).toBeVisible()
-  await expectConnectedLabels(nameDialog)
-  await nameDialog.getByLabel('Nombre del contacto').fill('Doña Rosa')
-  await nameDialog.getByRole('button', { name: 'Guardar' }).click()
-  await expect.poll(() => namePayload).toEqual({ name: 'Doña Rosa' })
-  await expect(nameDialog).toBeHidden()
-
-  // Modal de etiquetas: accesible y con el formulario de creación
-  await page.getByRole('button', { name: 'Etiquetas' }).click()
-  const tagsDialog = page.getByRole('dialog', { name: 'Etiquetas del chat' })
-  await expect(tagsDialog).toBeVisible()
-  await expectConnectedLabels(tagsDialog)
-  await expect(tagsDialog.getByText('Aún no tienes etiquetas — crea la primera abajo.')).toBeVisible()
-  await expect(tagsDialog.getByRole('button', { name: '+ Crear etiqueta' })).toBeDisabled()
-  await tagsDialog.getByRole('button', { name: 'Cerrar' }).click()
-  await expect(tagsDialog).toBeHidden()
+  await page.getByRole('button', { name: /Bloquear a Cliente E2E/ }).click()
+  await page.getByRole('button', { name: 'Bloquear', exact: true }).click()
+  await expect(page.getByText('Cliente bloqueado')).toBeVisible()
+  // Y al recargar la lista sale marcado, con su salida a mano.
+  await expect(page.getByRole('button', { name: /Desbloquear/ }).first()).toBeVisible()
 })
 
-test('el recordatorio de venta solo aparece en conversaciones con actividad reciente', async ({ page }) => {
-  await seedClientSession(page)
-  await mockClientApi(page)
-  const recentAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const dormantAt = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
-  await page.route('**/api/client/sessions', (route) => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify([
-      { contact_phone: '+593999999999', contact_name: 'Cliente reciente', manual_mode: true, unread_owner: false, last_message: 'Quiero el adaptador', last_message_at: recentAt, tags: [] },
-      { contact_phone: '+593888888888', contact_name: 'Cliente dormido', manual_mode: true, unread_owner: false, last_message: 'Hola', last_message_at: dormantAt, tags: [] },
-    ]),
-  }))
-  await page.goto(`${clientUrl}#/conversations`)
-
-  // Chat dormido hace semanas: devolver al bot NO recuerda registrar la venta
-  await page.getByText('Cliente dormido').first().click()
-  const dormantMode = page.waitForResponse(r => r.request().method() === 'PUT' && r.url().includes('/mode'))
-  const dormantRefetch = page.waitForResponse(r => r.request().method() === 'GET' && r.url().endsWith('/api/client/sessions'))
-  await page.getByRole('button', { name: 'Devolver al bot' }).click()
-  await dormantMode
-  await dormantRefetch
-  await page.waitForTimeout(500)
-  await expect(page.getByText('¿Cerraste una venta con este cliente?')).toHaveCount(0)
-
-  // Chat con actividad en las últimas 24 h: sí aparece el recordatorio
-  await page.getByText('Cliente reciente').first().click()
-  await page.getByRole('button', { name: 'Devolver al bot' }).click()
-  await expect(page.getByText('¿Cerraste una venta con este cliente?')).toBeVisible()
-  // El recordatorio lleva a Pedidos: desde que se retiró el alta manual, una
-  // venta solo nace de un pedido o de una cita. Se busca DENTRO del aviso,
-  // porque la propia conversación tiene ya su botón con el mismo nombre.
-  await expect(
-    page.getByLabel('Notifications alt+T').getByRole('button', { name: 'Registrar pedido' }),
-  ).toBeVisible()
-})
 
 test('cambiar de sesión no hereda módulos ni datos del negocio anterior', async ({ page }) => {
   await mockClientApi(page)

@@ -15,9 +15,14 @@ export type BusinessRow = {
   name: string
   type: string | null
   whatsapp_number: string | null
+  /** `marketplace` = sin canal propio; lo atiende el número de Umbani. */
+  whatsapp_provider: string | null
   active: boolean
   bot_active: boolean
   suspended: boolean
+  /** Las dos que deciden si el local sale en el menú del marketplace. */
+  takes_orders: boolean
+  storefront_enabled: boolean
   plan: string | null
   monthly_contact_limit: number | null
   monthly_outbound_message_limit: number | null
@@ -26,6 +31,18 @@ export type BusinessRow = {
   // Modo real configurado del negocio: el simulador arranca con este
   chat_mode?: 'menu' | 'miniapp' | null
 }
+
+/**
+ * ¿Un cliente puede ENCONTRAR este local escribiendo al número de Umbani?
+ *
+ * Las mismas cuatro condiciones que `marketplace_categories_disponibles()` en
+ * la base. Se escriben aquí una sola vez para que ninguna pantalla se invente
+ * su propia versión: si el panel dijera «sí» y el menú no lo ofreciera, sería
+ * exactamente la clase de decisión mostrada y no cumplida que ya costó cara.
+ */
+export const enElMarketplace = (c: BusinessRow): boolean => (
+  c.active && !c.suspended && c.takes_orders && c.storefront_enabled
+)
 
 export type MonthlyUsageRow = {
   business_id: string
@@ -47,10 +64,31 @@ export type MonthlyUsageRow = {
 
 export type ChannelStatus = 'ok' | 'silencio' | 'nunca_recibio' | 'sin_canal'
 
+/**
+ * La salud del canal de entrada.
+ *
+ * ⚠️ `platform` es lo que antes era una fila por local. Hay UN canal —el
+ * número de Umbani— y el semáforo por negocio no podía verlo: los mensajes del
+ * marketplace se encolan sin `business_id`, así que cada local salía «sin
+ * mensajes» a las 12 h para siempre.
+ *
+ * `businesses` se conserva para los negocios con canal PROPIO. Hoy va vacío, y
+ * eso es correcto, no un fallo.
+ *
+ * ⚠️ Se retiró `errorsByBusiness`: el tipo lo declaraba y ninguna pantalla lo
+ * pintaba, y descartaba justo los errores de la plataforma (`business_id`
+ * NULL), que son la mayoría. Los errores viven en su propia pantalla.
+ */
 export type ChannelHealth = {
   checkedAt: string
   silenceHours: number
   alert: boolean
+  platform: {
+    status: ChannelStatus
+    lastInboundAt: string | null
+    hoursSinceLastInbound: number | null
+    detail: string
+  }
   businesses: Array<{
     businessId: string
     name: string
@@ -64,11 +102,6 @@ export type ChannelHealth = {
     status: number
     reason: string
     at: string
-  }>
-  errorsByBusiness: Array<{
-    businessId: string
-    occurrences: number
-    lastSeenAt: string
   }>
 }
 
@@ -101,19 +134,17 @@ export const suspendClient = (id: string, reason?: string) =>
 export const reactivateClient = (id: string) =>
   api(`/api/admin/clients/${id}/reactivate`, { method: 'POST' })
 
-/**
- * Enciende o apaga el bot de un negocio SIN tocar su cuenta.
- *
- * No es lo mismo que suspender: un negocio suspendido responde avisando del
- * pago pendiente, mientras que con el bot apagado el cliente escribe y no
- * recibe absolutamente nada. Sirve para pausar mientras se cambia el número o
- * se arregla el canal, no para cobrar.
- */
-export const setBotActive = (id: string, active: boolean) =>
-  api(`/api/admin/clients/${id}/bot`, {
-    method: 'POST',
-    body: JSON.stringify({ active }),
-  })
+// ⚠️ Aquí vivía `setBotActive`, retirada del panel el 2026-08-23.
+//
+// Encendía y apagaba `businesses.bot_active`, que solo lee
+// `bot-conversation.ts` — el camino del canal PROPIO. Un local del marketplace
+// no pasa por ahí: el botón prometía dejarlo mudo y no cortaba absolutamente
+// nada. Para ocultar un local está «Aparece en el marketplace» en su ficha;
+// para cortarle el servicio, Suspender.
+//
+// La ruta `/api/admin/clients/:id/bot` SIGUE VIVA y la columna intacta: los
+// negocios con canal propio existen todavía en el código y ahí sí funciona.
+// Lo que se retira es la pantalla que enseñaba una decisión sin cumplir.
 
 
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
@@ -141,17 +172,6 @@ export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'>
   apply_plan_defaults?: boolean
 }
 
-export type ProviderVerificationPayload = {
-  provider: NonNullable<BusinessDetail['whatsapp_provider']>
-  ycloud_api_key?: string
-  ycloud_number?: string
-  ycloud_webhook_secret?: string
-  ycloud_webhook_endpoint_id?: string
-  meta_token?: string
-  meta_phone_id?: string
-  telegram_bot_token?: string
-}
-
 export const getClient = (id: string) => api<BusinessDetail>(`/api/admin/clients/${id}`)
 
 export const createClient = (p: BusinessPayload) =>
@@ -160,8 +180,11 @@ export const createClient = (p: BusinessPayload) =>
 export const updateClient = (id: string, p: BusinessPayload) =>
   api(`/api/admin/clients/${id}`, { method: 'PUT', body: JSON.stringify(p) })
 
-export const verifyProvider = (payload: ProviderVerificationPayload) =>
-  api<{ ok: boolean; info: string }>('/api/admin/verify-provider', { method: 'POST', body: JSON.stringify(payload) })
+// ⚠️ Aquí vivía `verifyProvider` (y su tipo `ProviderVerificationPayload`).
+// Verificaba credenciales TECLEADAS de un canal propio antes de guardarlas, y
+// su único llamador —el bloque del canal en `ClientModal`— se retiró con el
+// canal propio el 2026-08-23. La ruta `/api/admin/verify-provider` sigue en el
+// servidor; lo que ya no existe es la pantalla desde la que se llamaba.
 
 // ── Herramientas por negocio (paridad con el admin viejo) ──
 export type ClientProduct = { id: string; name: string }
@@ -181,13 +204,16 @@ export const getClientPolicies = (id: string) =>
 export const saveClientPolicies = (id: string, p: Record<string, string | null>) =>
   api(`/api/admin/clients/${id}/policies`, { method: 'PUT', body: JSON.stringify(p) })
 
-// Verifica la configuración prospectiva sin revelar los secretos guardados.
-// Los valores no enviados se completan exclusivamente dentro del servidor.
-export const verifyClient = (id: string, payload?: ProviderVerificationPayload) =>
-  api<{ ok: boolean; info: string }>(`/api/admin/clients/${id}/verify`, {
-    method: 'POST',
-    body: JSON.stringify(payload || {}),
-  })
+// ⚠️ Aquí vivía `verifyClient`, retirada del panel el 2026-08-23.
+//
+// `/api/admin/clients/:id/verify` resuelve el proveedor con `providerFrom`,
+// que solo conoce ycloud, meta y telegram. Con `whatsapp_provider =
+// 'marketplace'` devolvía `null` y la respuesta era SIEMPRE «✗ Proveedor no
+// reconocido», sin consultar nada — para todos los negocios de producción.
+//
+// La ruta sigue viva porque un negocio con canal propio sí se puede verificar.
+// El número del MARKETPLACE tiene su propio verificador, que sí funciona:
+// `/api/admin/verify-platform-channel`, en Ajustes del servidor.
 
 export const deleteClient = (id: string) =>
   api(`/api/admin/clients/${id}`, { method: 'DELETE' })

@@ -150,8 +150,11 @@ describe('lo que el alta SIGUE pidiendo', () => {
       'client-name',              // sin nombre no hay negocio
       'client-business-type',     // decide plantilla, prep_time, familia y modo
       'client-owner-phone',       // el ÚNICO número del local en marketplace
-      'client-sales-mode',        // takes_orders
-      'client-storefront',        // storefront_enabled
+      // ⚠️ `client-sales-mode` y `client-storefront` se fundieron en
+      // `client-marketplace` el 2026-08-23: la base exige LAS DOS columnas
+      // para listar un local, así que por separado permitían un local que
+      // «vendía» y no aparecía en ninguna categoría.
+      'client-marketplace',       // takes_orders + storefront_enabled
       'client-plan',              // tarifa y cupos
       'client-owner-email',       // acceso al panel
       'client-owner-password',
@@ -258,15 +261,34 @@ describe('con qué modo NACE cada tipo de negocio', () => {
 describe('el alta ya no pregunta lo que se deduce del tipo', () => {
   const modal = leer('../../apps/admin/src/features/clients/ClientModal.tsx')
 
-  it('«Ventas por el bot» y «Mini app de la tienda» son solo de edición', () => {
-    // Dos decisiones (`takes_orders` y `storefront_enabled`) que salen de lo
-    // mismo: el tipo de negocio. En el alta se explican en una línea.
+  // ⚠️ ESTA PRUEBA FIJABA DOS DESPLEGABLES hasta el 2026-08-23, y ahora fija
+  // uno. «Ventas por el bot» y «Mini app de la tienda» escribían dos columnas
+  // que la base exige JUNTAS (`marketplace_categories_disponibles`), así que
+  // por separado abrían un estado sin salida: el local creaba pedidos, no salía
+  // en ninguna categoría, y el panel lo enseñaba «vendiendo». Y sus nombres
+  // hablaban de un bot por local que no existe desde que se fueron la IA y el
+  // canal propio.
+  it('«Aparece en el marketplace» es solo de edición, y es UNA decisión', () => {
     const desde = modal.indexOf('{id ? (')
-    const ventas = modal.indexOf('client-sales-mode')
-    const tienda = modal.indexOf('client-storefront')
     expect(desde).toBeGreaterThan(-1)
-    expect(ventas).toBeGreaterThan(desde)
-    expect(tienda).toBeGreaterThan(desde)
+    expect(modal.indexOf('client-marketplace')).toBeGreaterThan(desde)
+    // Los dos nombres viejos no vuelven por ninguna puerta.
+    //
+    // ⚠️ Sobre el código SIN comentarios: el bloque que explica esta retirada
+    // los nombra, y sin quitarlo la prueba se rompería por su propia
+    // documentación. Es la misma trampa que ya mordió al guardián del canal.
+    const codigo = sinComentarios(modal)
+    expect(codigo).not.toContain('client-sales-mode')
+    expect(codigo).not.toContain('client-storefront')
+    expect(codigo).not.toContain('Ventas por el bot')
+    expect(codigo).not.toContain('Mini app de la tienda')
+  })
+
+  // Las columnas NO se retiran: el control es derivado y el payload manda
+  // exactamente lo mismo que antes.
+  it('sigue escribiendo takes_orders y storefront_enabled', () => {
+    expect(modal).toContain('takes_orders:')
+    expect(modal).toContain('storefront_enabled:')
   })
 
   it('en su lugar dice cómo va a atender', () => {

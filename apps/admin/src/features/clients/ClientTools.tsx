@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as adm from './api'
-import type { BusinessRow } from './api'
+import { enElMarketplace, type BusinessRow } from './api'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Textarea } from '@botpanel/ui/components/textarea'
@@ -29,9 +29,17 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
           <div className="rounded-xl bg-muted/60 p-4 text-sm text-foreground/80 space-y-1">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Negocio</div>
             <div><strong className="text-foreground/90">Tipo:</strong> {c.type || '—'}</div>
-            <div><strong className="text-foreground/90">Número:</strong> {c.whatsapp_number || '—'}</div>
+            {/* ⚠️ Era «Número», y estaba vacío en todos: un local del
+                marketplace no puede tener número propio —la base se lo
+                prohíbe— y se atiende por el de Umbani. Lo que lo identifica
+                es su tienda. */}
+            <div><strong className="text-foreground/90">Tienda:</strong> /t/{c.slug}</div>
             <div><strong className="text-foreground/90">Plan:</strong> {planLabel(c.plan)}</div>
             <div><strong className="text-foreground/90">Estado:</strong> {c.suspended ? 'Suspendido' : 'Activo'}</div>
+            <div>
+              <strong className="text-foreground/90">Marketplace:</strong>{' '}
+              {enElMarketplace(c) ? 'Visible en el menú' : 'Oculto'}
+            </div>
           </div>
           <div className="rounded-xl bg-muted/60 p-4 text-sm text-foreground/80 space-y-1">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Estadísticas</div>
@@ -40,9 +48,21 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
             <div><strong className="text-foreground/90">Envíos:</strong> {pol?.shipping ? 'Configurado' : 'Sin configurar'}</div>
           </div>
         </div>
-        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Últimas conversaciones</div>
+        {/* ⚠️ Estas son las conversaciones del CANAL PROPIO
+            (`conversation_history`). Un local del marketplace no escribe ahí:
+            su conversación con el cliente vive en `marketplace_conversations`
+            hasta que se le entrega el enlace de la tienda. Decirlo evita leer
+            «sin mensajes» como «nadie le escribe». */}
+        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+          Conversaciones por canal propio
+        </div>
         <div className="max-h-64 overflow-y-auto space-y-2">
-          {convs.length === 0 && <p className="text-sm text-muted-foreground">Sin mensajes todavía.</p>}
+          {convs.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Sin mensajes por canal propio. Los clientes de este local escriben al número
+              de Umbani y sus pedidos se ven en el panel del negocio.
+            </p>
+          )}
           {convs.slice(0, 20).map((m, i) => (
             <div key={i} className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
               <div className={`text-[11px] font-semibold mb-0.5 flex items-center gap-1 ${m.role === 'user' ? 'text-blue-600 dark:text-blue-400' : 'text-primary'}`}>

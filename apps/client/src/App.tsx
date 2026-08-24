@@ -8,7 +8,6 @@ import Layout from './components/Layout'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const Dashboard = lazy(() => import('./features/dashboard/Dashboard'))
-const Conversations = lazy(() => import('./features/conversations/Conversations'))
 const Catalog = lazy(() => import('./features/catalog/Catalog'))
 const Sales = lazy(() => import('./features/sales/Sales'))
 const Orders = lazy(() => import('./features/orders/Orders'))
@@ -49,7 +48,8 @@ export default function App() {
             <Route element={<Layout />}>
               <Route element={<Suspense fallback={<PageLoader />}><Outlet /></Suspense>}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/conversations" element={<Conversations />} />
+              {/* ⚠️ `Conversaciones` se retiró el 2026-08-23. El enlace
+                  guardado cae en el comodín de más abajo, que lleva a Inicio. */}
               <Route path="/catalog" element={<Catalog />} />
               <Route path="/sales" element={<Sales />} />
               <Route path="/orders" element={<Orders />} />

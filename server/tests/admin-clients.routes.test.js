@@ -87,6 +87,91 @@ describe('clientes y onboarding del superadmin', () => {
     })).status).toBe(403)
   })
 
+  // ── La salud del canal, después de la corrección del 2026-08-23 ──────────
+  //
+  // Esto NO comprueba el cálculo (de eso va `channel-health.test.js`), sino el
+  // CABLEADO: que la ruta pregunte de verdad por el número de la plataforma y
+  // que no gaste una consulta por cada local que nunca puede responderla.
+  // Justo lo que faltaba antes: la lógica del semáforo era correcta y estaba
+  // alimentada con una consulta que devolvía null para siempre.
+  describe('la vigilancia del canal pregunta por el número de la plataforma', () => {
+    const settings = require('../dist/services/settings')
+
+    beforeEach(() => {
+      // Las credenciales del número viven en `server_settings`, no en un negocio.
+      vi.spyOn(settings, 'get').mockImplementation(async key => ({
+        platform_ycloud_api_key: 'clave',
+        platform_ycloud_number: '+593991716574',
+        platform_webhook_secret: 'whsec_x',
+        platform_webhook_endpoint_id: 'ep_x',
+      })[key] ?? null)
+    })
+
+    it('devuelve el estado del número y no consulta por los locales de marketplace', async () => {
+      vi.spyOn(db, 'getAllBusinesses').mockResolvedValue([{
+        id: 'business-a', name: 'Monster Pizza', active: true, suspended: false,
+        whatsapp_provider: 'marketplace',
+      }])
+      const porNegocio = vi.spyOn(db, 'getLastInboundByBusiness').mockResolvedValue([])
+      vi.spyOn(db, 'getPlatformLastInboundAt')
+        .mockResolvedValue(new Date(Date.now() - 60_000).toISOString())
+
+      const response = await dispatch('get', '/api/admin/channel-health', {
+        auth: authorization('admin'),
+      })
+
+      expect(response.status).toBe(200)
+      expect(response.body.platform.status).toBe('ok')
+      expect(response.body.businesses).toEqual([])
+      expect(response.body.alert).toBe(false)
+      // Con cero negocios de canal propio, la lista de ids va vacía: preguntar
+      // por un local de marketplace es gastar una consulta para recibir null.
+      expect(porNegocio).toHaveBeenCalledWith([])
+    })
+
+    it('alerta cuando el número de la plataforma lleva horas mudo', async () => {
+      vi.spyOn(db, 'getAllBusinesses').mockResolvedValue([])
+      vi.spyOn(db, 'getLastInboundByBusiness').mockResolvedValue([])
+      vi.spyOn(db, 'getPlatformLastInboundAt')
+        .mockResolvedValue(new Date(Date.now() - 30 * 3_600_000).toISOString())
+
+      const response = await dispatch('get', '/api/admin/channel-health', {
+        auth: authorization('admin'),
+      })
+      expect(response.body.platform.status).toBe('silencio')
+      expect(response.body.alert).toBe(true)
+    })
+
+    // Un fallo leyendo `server_settings` no puede tumbar la vigilancia: es el
+    // mismo criterio que dejó el canal mudo cinco días en julio.
+    it('sobrevive a un fallo leyendo los ajustes del servidor', async () => {
+      settings.get.mockRejectedValue(new Error('base caída'))
+      vi.spyOn(db, 'getAllBusinesses').mockResolvedValue([])
+      vi.spyOn(db, 'getLastInboundByBusiness').mockResolvedValue([])
+      vi.spyOn(db, 'getPlatformLastInboundAt').mockResolvedValue(null)
+
+      const response = await dispatch('get', '/api/admin/channel-health', {
+        auth: authorization('admin'),
+      })
+      expect(response.status).toBe(200)
+      expect(response.body.platform.status).toBe('sin_canal')
+      expect(response.body.alert).toBe(false)
+    })
+
+    // Se retiró del contrato el 2026-08-23: nadie lo pintaba y descartaba los
+    // errores con `business_id` NULL, que hoy son la mayoría.
+    it('ya no devuelve errorsByBusiness', async () => {
+      vi.spyOn(db, 'getAllBusinesses').mockResolvedValue([])
+      vi.spyOn(db, 'getLastInboundByBusiness').mockResolvedValue([])
+      vi.spyOn(db, 'getPlatformLastInboundAt').mockResolvedValue(null)
+
+      const response = await dispatch('get', '/api/admin/channel-health', {
+        auth: authorization('admin'),
+      })
+      expect(response.body).not.toHaveProperty('errorsByBusiness')
+    })
+  })
+
   // El registro puede describir fallos de cualquier negocio: jamás debe quedar
   // al alcance de un cliente.
   it('el registro de errores y su descarga exigen superadmin', async () => {
