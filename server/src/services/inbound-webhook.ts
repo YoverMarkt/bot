@@ -916,6 +916,14 @@ const processor = createInboundWebhookProcessor({
           items: resueltos,
           deliveryNotes: entrada.notes || null,
         })
+        // ⚠️ `42501` es un rechazo DELIBERADO de la base —bloqueado, o con
+        // demasiados pedidos sin confirmar—, no un fallo. Se relanza para que
+        // el checkout pueda decirle al cliente qué pasa: tragárselo aquí le
+        // devolvía «fallo técnico, no reintentes», que ni es verdad ni le dice
+        // qué hacer. Cualquier otro error sigue devolviendo null.
+        if (error?.code === '42501') {
+          throw new Error(error.message || 'No podemos recibir tu pedido.')
+        }
         if (error || !data) return null
         const pedido = data as { id?: string; total?: unknown }
         if (!pedido.id) return null

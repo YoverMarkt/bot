@@ -177,7 +177,22 @@ export function pedidoCreado(input: {
 }
 
 /** Cuando el pedido no se pudo crear. Nunca se invita a reenviarlo. */
-export function pedidoNoCreado(): RespuestaDeCheckout {
+/**
+ * El pedido no se pudo crear.
+ *
+ * ⚠️ `motivo` llega cuando la BASE lo rechazó por una regla que el cliente
+ * puede entender y resolver —tener ya tres pedidos sin confirmar, por
+ * ejemplo—. Sin él se cae al texto de siempre: un fallo técnico no se le
+ * explica al cliente, y decirle «reintenta» tras un error del que no sabemos
+ * la causa es cómo se acaba con pedidos duplicados.
+ */
+export function pedidoNoCreado(motivo?: string | null): RespuestaDeCheckout {
+  if (motivo) {
+    return {
+      reply: `😕 ${motivo}\n\nSi prefieres empezar de nuevo, escribe *MENÚ*.`,
+      options: [],
+    }
+  }
   return {
     reply: '😕 No pude registrar tu pedido de forma segura. '
       + 'Para no duplicarlo, no lo envíes otra vez: el equipo lo va a revisar. '

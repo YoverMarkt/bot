@@ -59,6 +59,12 @@ const db: {
   getAllBusinesses(): Promise<unknown[]>
   getLastInboundByBusiness(businessIds: string[]): Promise<ChannelActivity[]>
   getPlatformLastInboundAt(): Promise<string | null>
+  getPlatformBlocked(): Promise<{ phone: string; blockedAt: string; reason: string | null }[]>
+  setPlatformBlocked(
+    phone: string,
+    blocked: boolean,
+    reason?: string | null,
+  ): Promise<{ phone: string; blocked: boolean }>
   getPlatformErrors(options: {
     category?: string
     businessId?: string
@@ -377,6 +383,41 @@ router.get('/api/admin/channel-health', auth.authAdmin, async (_req, res) => {
       lastInboundAt: platformLastInboundAt,
     },
   }))
+})
+
+// ── Bloqueo de PLATAFORMA ──────────────────────────────────────────────────
+//
+// Distinto del bloqueo del dueño, y por eso vive aquí y no en el panel del
+// negocio: aquel lo pone un local y solo cierra ese local —que El Puerto te
+// expulse no puede dejarte fuera de Umbani entero—; este lo pone el superadmin
+// y significa que la plataforma deja de atender a esa persona: el bot no
+// responde y NINGÚN local acepta su pedido, ni siquiera de mostrador.
+router.get('/api/admin/blocked', auth.authAdmin, async (_req, res) => {
+  res.json(await db.getPlatformBlocked())
+})
+
+router.put('/api/admin/blocked/:phone', auth.authAdmin, async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone)
+  const body = req.body as { blocked?: unknown; reason?: unknown }
+  const blocked = body?.blocked === true
+  const reason = typeof body?.reason === 'string' ? body.reason : null
+  try {
+    res.json(await db.setPlatformBlocked(phone, blocked, reason))
+  } catch (error) {
+    // El único fallo esperable es un teléfono mal escrito, y ese sí se le dice
+    // al superadmin: cualquier otro se registra sin exponer el detalle.
+    const mensaje = error instanceof Error ? error.message : ''
+    if (/dígitos/i.test(mensaje)) return res.status(400).json({ error: mensaje })
+    console.error('❌ bloqueo de plataforma:', mensaje)
+    void recordError({
+      businessId: null,
+      category: 'servidor',
+      code: 'bloqueo de plataforma',
+      message: mensaje || 'fallo desconocido',
+      context: {},
+    })
+    res.status(500).json({ error: 'No se pudo actualizar el bloqueo' })
+  }
 })
 
 // Registro de errores para diagnosticar sin entrar a los logs del servidor.

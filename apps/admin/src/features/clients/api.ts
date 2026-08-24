@@ -123,6 +123,21 @@ export const getPlatformErrors = (category?: string) => api<PlatformError[]>(
 
 export const getStats = () => api<AdminStats>('/api/admin/stats')
 export const getChannelHealth = () => api<ChannelHealth>('/api/admin/channel-health')
+
+// ── Bloqueo de PLATAFORMA ────────────────────────────────────────────
+//
+// ⚠️ NO es el bloqueo del dueño. Aquel lo pone un local y solo cierra ese local
+// —que El Puerto te expulse no puede dejarte fuera de Umbani entero—. Este lo
+// pone el superadmin: el bot deja de responder y NINGÚN local acepta el pedido,
+// ni siquiera de mostrador.
+export type PlatformBlock = { phone: string; blockedAt: string; reason: string | null }
+
+export const getPlatformBlocked = () => api<PlatformBlock[]>('/api/admin/blocked')
+
+export const setPlatformBlocked = (phone: string, blocked: boolean, reason?: string) =>
+  api<{ phone: string; blocked: boolean }>(`/api/admin/blocked/${encodeURIComponent(phone)}`, {
+    method: 'PUT', body: JSON.stringify({ blocked, reason }),
+  })
 export const getClients = () => api<BusinessRow[]>('/api/admin/clients')
 export const getMonthlyUsage = (month?: string) => api<MonthlyUsageRow[]>(
   `/api/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`,

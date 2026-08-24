@@ -71,8 +71,12 @@ async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
 }
 
 describe('clientes y onboarding del superadmin', () => {
-  it('protege sus 17 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(17)
+  // 17 hasta el 2026-08-25; 19 con las dos del bloqueo de PLATAFORMA (leer la
+  // lista y cambiar el estado de un número). El número exacto es lo que obliga
+  // a mirar aquí cuando alguien añade una ruta: una nueva sin autenticación
+  // pasaría inadvertida, y estas hablan de todos los negocios a la vez.
+  it('protege sus 19 endpoints exclusivamente con autenticación admin', async () => {
+    expect(clientsRouter.stack).toHaveLength(19)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -170,6 +174,57 @@ describe('clientes y onboarding del superadmin', () => {
       })
       expect(response.body).not.toHaveProperty('errorsByBusiness')
     })
+  })
+
+  // Bloquear en toda la plataforma es la acción más fuerte del panel: deja a
+  // una persona fuera de TODOS los locales. Jamás al alcance de un dueño.
+  it('el bloqueo de plataforma exige superadmin', async () => {
+    expect((await dispatch('get', '/api/admin/blocked')).status).toBe(401)
+    expect((await dispatch('get', '/api/admin/blocked', {
+      auth: authorization('client'),
+    })).status).toBe(403)
+    expect((await dispatch('put', '/api/admin/blocked/:phone', {
+      auth: authorization('client'), params: { phone: '593900000825' },
+    })).status).toBe(403)
+  })
+
+  it('bloquea y desbloquea por teléfono, con su motivo', async () => {
+    const marcar = vi.spyOn(db, 'setPlatformBlocked')
+      .mockResolvedValue({ phone: '593900000825', blocked: true })
+
+    await dispatch('put', '/api/admin/blocked/:phone', {
+      auth: authorization('admin'),
+      params: { phone: '%2B593900000825' },
+      body: { blocked: true, reason: 'pedidos falsos' },
+    })
+    expect(marcar).toHaveBeenCalledWith('+593900000825', true, 'pedidos falsos')
+
+    // Sin `blocked: true` explícito se DESbloquea: un cuerpo raro no puede
+    // acabar dejando a alguien fuera de la plataforma entera.
+    await dispatch('put', '/api/admin/blocked/:phone', {
+      auth: authorization('admin'), params: { phone: '593900000825' }, body: {},
+    })
+    expect(marcar).toHaveBeenLastCalledWith('593900000825', false, null)
+  })
+
+  // Un teléfono mal escrito SÍ se le dice al superadmin; cualquier otro fallo
+  // se registra sin exponer el detalle.
+  it('distingue un teléfono inválido de un fallo interno', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const marcar = vi.spyOn(db, 'setPlatformBlocked')
+      .mockRejectedValue(new Error('El teléfono debe tener entre 8 y 15 dígitos'))
+    const corto = await dispatch('put', '/api/admin/blocked/:phone', {
+      auth: authorization('admin'), params: { phone: '5939' }, body: { blocked: true },
+    })
+    expect(corto.status).toBe(400)
+    expect(corto.body.error).toMatch(/dígitos/)
+
+    marcar.mockRejectedValue(new Error('connection reset by peer'))
+    const roto = await dispatch('put', '/api/admin/blocked/:phone', {
+      auth: authorization('admin'), params: { phone: '593900000825' }, body: { blocked: true },
+    })
+    expect(roto.status).toBe(500)
+    expect(roto.body.error).not.toContain('connection reset')
   })
 
   // El registro puede describir fallos de cualquier negocio: jamás debe quedar

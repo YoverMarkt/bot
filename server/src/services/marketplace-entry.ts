@@ -89,6 +89,13 @@ export interface MarketplaceEntryDatabase {
   ): Promise<{ permitido: boolean; respuestas: number }>
   /** ¿Este local bloqueó a este teléfono? */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
+  /**
+   * ¿Está bloqueado en TODA la plataforma?
+   *
+   * Distinto del anterior: este lo pone el superadmin y significa que Umbani
+   * entero deja de atenderlo. El del local solo cierra ese local.
+   */
+  isPlatformBlocked?(customerId: string): Promise<boolean>
 
   // ── Lo que hace falta para cerrar el pedido dentro del chat ────────
   /** Guarda la dirección del cliente para ESTE negocio. */
@@ -240,6 +247,25 @@ export async function handleMarketplaceMessage(
   const esMarcadorDeComprobante = esComprobante(text)
     || esFotoQueNoEsComprobante(text)
     || esComprobanteAmbiguo(text)
+
+  // ── 0a. Bloqueado en TODA la plataforma ────────────────────────────
+  //
+  // Va antes que el techo porque es más fuerte y más barato: ni se cuenta ni se
+  // contesta. Lo pone el superadmin, no un dueño — el bloqueo de un local se
+  // comprueba mucho más abajo, al elegir ese local, porque solo cierra ese.
+  //
+  // ⚠️ NUNCA se le avisa, ni siquiera al comprobante: quien está bloqueado en
+  // la plataforma entera no tiene ningún pedido válido esperando, y responder
+  // es la reacción que busca.
+  //
+  // ⚠️ Falla ABIERTO: un fallo de la base no puede dejar mudo al marketplace.
+  const bloqueadoEnLaPlataforma = database.isPlatformBlocked
+    ? await database.isPlatformBlocked(customer.id).catch(() => false)
+    : false
+  if (bloqueadoEnLaPlataforma) {
+    deps.logger?.log('⛔ [marketplace] contacto bloqueado en toda la plataforma: no se responde')
+    return
+  }
 
   if (!esMarcadorDeComprobante && database.claimMarketplaceReply) {
     // Falla ABIERTO: un fallo de la base no puede dejar mudo al marketplace.
@@ -842,24 +868,34 @@ async function avanzarCheckout(input: {
       : Promise.resolve(null),
   ])
 
-  const pedido = await deps.crearPedidoCompleto({
-    businessId,
-    customerId: customer.id,
-    phone,
-    contactName: customer.name,
-    addressId: pendiente.addressId,
-    paymentMethod: elegido.code,
-    items: pendiente.items,
-    products: productos,
-    // El modificador que eligió en el chat (el sabor del jugo) viaja como
-    // nota del pedido: la comanda del dueño lo tiene que ver aunque no sea
-    // una opción del motor de personalización.
-    notes: notasDeLosItems(pendiente.items),
-  }).catch(() => null)
+  // ⚠️ El motivo se conserva cuando la BASE rechazó el pedido por una regla que
+  // el cliente PUEDE resolver —ya tiene tres sin confirmar—. Antes se tragaba
+  // el error entero y recibía «fallo técnico, no reintentes»: ni era verdad, ni
+  // le decía qué hacer, y le dejaba pensando que el fallo era nuestro.
+  let pedido: { orderNumber: number | null; total: unknown } | null = null
+  let rechazo: string | null = null
+  try {
+    pedido = await deps.crearPedidoCompleto({
+      businessId,
+      customerId: customer.id,
+      phone,
+      contactName: customer.name,
+      addressId: pendiente.addressId,
+      paymentMethod: elegido.code,
+      items: pendiente.items,
+      products: productos,
+      // El modificador que eligió en el chat (el sabor del jugo) viaja como
+      // nota del pedido: la comanda del dueño lo tiene que ver aunque no sea
+      // una opción del motor de personalización.
+      notes: notasDeLosItems(pendiente.items),
+    })
+  } catch (error) {
+    rechazo = error instanceof Error ? error.message : null
+  }
 
   if (!pedido) {
-    logger?.log('❌ [checkout] el pedido no se pudo crear')
-    const fallo = checkout.pedidoNoCreado()
+    logger?.log(`❌ [checkout] el pedido no se pudo crear${rechazo ? ` (${rechazo})` : ''}`)
+    const fallo = checkout.pedidoNoCreado(rechazo)
     await send(fallo.reply, fallo.options)
     return
   }

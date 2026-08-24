@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
-import { Bot as BotIcon, Cloud, Plug, Receipt, Search, Store } from 'lucide-react'
+import { getPlatformBlocked, setPlatformBlocked } from '../clients/api'
+import { Ban, Bot as BotIcon, Cloud, Plug, Receipt, Search, Store, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -230,6 +231,8 @@ export default function ServerSettings() {
         </div>
       </Card>
 
+      <BloqueoDePlataforma />
+
       <div className="flex items-center gap-3 mb-8">
         <Button onClick={save} disabled={busy}
           >
@@ -238,5 +241,96 @@ export default function ServerSettings() {
       </div>
 
     </div>
+  )
+}
+
+/**
+ * Bloqueo de PLATAFORMA: Umbani entero deja de atender a esa persona.
+ *
+ * ⚠️ NO sustituye al bloqueo del dueño, que sigue en el panel de cada negocio.
+ * Aquel lo pone un local y solo cierra ese local — que El Puerto te expulse no
+ * puede dejarte fuera de Umbani entero. Este lo pone el superadmin: el bot no
+ * responde y NINGÚN local acepta el pedido, ni siquiera de mostrador.
+ *
+ * ⚠️ Vive aquí y no en Clientes porque no es de un negocio: es de la
+ * plataforma, como el número del marketplace.
+ *
+ * ⚠️ Se guarda al pulsar, no con el botón de abajo. Los ajustes se envían
+ * juntos al guardar; esto es una acción con consecuencia inmediata, y mezclarla
+ * con el resto haría que bloquear a alguien dependiera de acordarse de guardar.
+ */
+function BloqueoDePlataforma() {
+  const qc = useQueryClient()
+  const [nuevo, setNuevo] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const { data: bloqueados = [] } = useQuery({
+    queryKey: ['adm-blocked'],
+    queryFn: getPlatformBlocked,
+  })
+
+  const digitos = nuevo.replace(/\D/g, '')
+  const valido = digitos.length >= 8 && digitos.length <= 15
+
+  const mBlock = useMutation({
+    mutationFn: ({ phone, blocked, reason }: { phone: string; blocked: boolean; reason?: string }) =>
+      setPlatformBlocked(phone, blocked, reason),
+    onSuccess: (_d, v) => {
+      toast.success(v.blocked ? 'Bloqueado en toda la plataforma' : 'Desbloqueado')
+      setNuevo(''); setMotivo('')
+      qc.invalidateQueries({ queryKey: ['adm-blocked'] })
+    },
+    onError: e => toast.error(e instanceof Error ? e.message : 'No se pudo actualizar'),
+  })
+
+  // Una respuesta a medias no puede tumbar la pantalla de ajustes entera.
+  const lista = Array.isArray(bloqueados) ? bloqueados : []
+
+  return (
+    <Card className={card}>
+      <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+        <Ban className="w-4 h-4" /> Bloqueados en toda la plataforma
+      </h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        El bot deja de responderle y ningún local acepta su pedido, ni siquiera de mostrador.
+        Nunca se le avisa. Para bloquear solo en un local, lo hace su dueño desde su panel.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <Label htmlFor="server-block-phone">Número</Label>
+          <Input id="server-block-phone" value={nuevo} onChange={e => setNuevo(e.target.value)}
+            placeholder="+593…" className="mt-1 w-44" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="server-block-reason">Motivo (queda en el registro)</Label>
+          <Input id="server-block-reason" value={motivo} onChange={e => setMotivo(e.target.value)}
+            placeholder="Pedidos falsos repetidos" className="mt-1" />
+        </div>
+        <Button variant="outline" disabled={!valido || mBlock.isPending}
+          onClick={() => mBlock.mutate({ phone: digitos, blocked: true, reason: motivo.trim() || undefined })}>
+          <Ban /> Bloquear
+        </Button>
+      </div>
+      {nuevo && !valido && (
+        <p className="mt-2 text-xs text-destructive">
+          Escribe el número completo con su código de país (entre 8 y 15 dígitos).
+        </p>
+      )}
+      {lista.length > 0 && (
+        <div className="mt-3">
+          {lista.map(b => (
+            <div key={b.phone} className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
+              <span className="font-mono text-sm text-foreground/80">{b.phone}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {b.reason || 'sin motivo anotado'} · {new Date(b.blockedAt).toLocaleDateString('es-EC')}
+              </span>
+              <Button variant="outline" size="sm"
+                onClick={() => mBlock.mutate({ phone: b.phone, blocked: false })}>
+                <Undo2 /> Desbloquear
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   )
 }
