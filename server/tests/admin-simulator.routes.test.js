@@ -182,6 +182,57 @@ describe('simulador del marketplace', () => {
     expect(response.body.replies[0].reply).not.toMatch(/no te entendí/i)
   })
 
+  // El camino completo, que es lo que el superadmin va a hacer con cada local
+  // nuevo: llegar hasta el enlace de su tienda y comprobar que abre.
+  it('llega hasta el enlace de la tienda sin crear un solo pedido', async () => {
+    const link = require('../dist/services/storefront-link')
+    // Estado con memoria: `advanceConversation` guarda y `getConversation`
+    // devuelve, igual que la base entre dos mensajes.
+    let guardada = null
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockResolvedValue(CLIENTE)
+    vi.spyOn(db, 'getConversation').mockImplementation(async () => guardada)
+    vi.spyOn(db, 'advanceConversation').mockImplementation(async (_id, patch) => {
+      guardada = {
+        current_state: patch.state ?? 'navegando',
+        selected_business_id: patch.clearBusiness ? null : (patch.businessId ?? guardada?.selected_business_id ?? null),
+        shopping_locked: patch.shoppingLocked ?? guardada?.shopping_locked ?? false,
+        flow_state: patch.clearFlow ? null : (patch.flowState ?? guardada?.flow_state ?? null),
+        version: (guardada?.version ?? 0) + 1,
+      }
+      return { conflicto: false }
+    })
+    vi.spyOn(db, 'getMarketplaceCategories').mockResolvedValue([
+      { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', sort: 10, locales: 1 },
+    ])
+    vi.spyOn(db, 'getMarketplaceBusinesses').mockResolvedValue([
+      { id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 },
+    ])
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({
+      id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza',
+      storefront_enabled: true, takes_orders: true,
+    })
+    // Una pizzería se pide en la app: lo decide el TIPO, no el catálogo.
+    const pideEnChat = vi.spyOn(db, 'tipoPideEnChat').mockResolvedValue(false)
+    const emitir = vi.spyOn(link, 'issueStorefrontLink')
+      .mockResolvedValue('https://umbani.test/s/token-de-prueba')
+    // La línea que no se cruza: el simulador no puede tocar el dinero.
+    const crearPedido = vi.spyOn(db, 'createStorefrontOrder')
+
+    const enviar = message => dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message },
+    })
+
+    await enviar('hola')
+    await enviar('🍕 Pizzerías')
+    const final = await enviar('Monster Pizza')
+
+    expect(final.status).toBe(200)
+    expect(final.body.replies.at(-1).reply).toContain('https://umbani.test/s/token-de-prueba')
+    expect(pideEnChat).toHaveBeenCalledWith('pizzería')
+    expect(emitir).toHaveBeenCalled()
+    expect(crearPedido).not.toHaveBeenCalled()
+  })
+
   it('un fallo al reiniciar se reporta, no se traga', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(db, 'resolveMarketplaceCustomer').mockRejectedValue(new Error('base caída'))
@@ -193,6 +244,22 @@ describe('simulador del marketplace', () => {
     expect(response).toEqual({
       status: 500,
       body: { error: 'No se pudo reiniciar la conversación' },
+    })
+  })
+
+  // Un fallo de la base no puede devolver una respuesta a medias que el
+  // superadmin lea como «así responde el bot».
+  it('un fallo atendiendo el mensaje devuelve 500, no media conversación', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(db, 'resolveMarketplaceCustomer').mockRejectedValue(new Error('base caída'))
+
+    const response = await dispatch('post', '/api/admin/simulate', {
+      auth: authorization(), body: { message: 'hola' },
+    })
+
+    expect(response).toEqual({
+      status: 500,
+      body: { error: 'No se pudo completar la simulación' },
     })
   })
 })

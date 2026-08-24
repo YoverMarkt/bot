@@ -220,6 +220,16 @@ describe('el número de la plataforma', () => {
     expect(estado.status).toBe('silencio')
   })
 
+  // Una fecha corrupta no puede leerse como «ok»: sin poder calcular las horas,
+  // lo honrado es decir que no consta un entrante, no dar por bueno el canal.
+  it('una fecha ilegible no se toma por buena', () => {
+    const estado = diagnosePlatformChannel(
+      { configured: true, lastInboundAt: 'no-es-una-fecha' }, ahora, DEFAULT_SILENCE_HOURS,
+    )
+    expect(estado.status).toBe('nunca_recibio')
+    expect(estado.hoursSinceLastInbound).toBeNull()
+  })
+
   it('distingue el que nunca recibió del que no está configurado', () => {
     expect(diagnosePlatformChannel(
       { configured: true, lastInboundAt: null }, ahora, DEFAULT_SILENCE_HOURS,

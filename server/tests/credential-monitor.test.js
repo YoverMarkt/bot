@@ -138,6 +138,32 @@ describe('vigilancia de credenciales', () => {
       )
       expect(codigos(problemas)).toContain('token_invalido')
     })
+
+    it('detecta que se eligió Telegram y no se puso el token', async () => {
+      const problemas = await checkBusinessCredentials(
+        negocio({ whatsapp_provider: 'telegram', telegram_bot_token: '' }),
+        clienteSano(),
+      )
+      expect(codigos(problemas)).toEqual(['sin_token'])
+    })
+
+    it('reporta el rechazo de Telegram sin filtrar el token', async () => {
+      const problemas = await checkBusinessCredentials(
+        negocio({ whatsapp_provider: 'telegram', telegram_bot_token: 'token-malo' }),
+        clienteSano({ getTelegramBotName: async () => { throw new Error('401 Unauthorized') } }),
+      )
+      expect(codigos(problemas)).toContain('token_invalido')
+      expect(problemas[0].message).not.toContain('token-malo')
+    })
+  })
+
+  // Un negocio a medio configurar: existe, está activo y no puede recibir nada.
+  it('avisa del negocio que se quedó sin canal a medio configurar', async () => {
+    const problemas = await checkBusinessCredentials(
+      negocio({ whatsapp_provider: '', telegram_bot_token: '' }), clienteSano(),
+    )
+    expect(codigos(problemas)).toEqual(['sin_proveedor'])
+    expect(problemas[0].severity).toBe('aviso')
   })
 
   describe('revisión de toda la plataforma', () => {
@@ -156,6 +182,27 @@ describe('vigilancia de credenciales', () => {
       ], clienteSano(), { baseUrl: BASE_URL })
       expect(problemas).toHaveLength(1)
       expect(problemas[0].businessId).toBe('b')
+    })
+
+    // El bucle no puede rendirse por uno: la revisión existe para enterarse de
+    // los problemas de TODOS, y el que revienta suele ser el que más importa.
+    //
+    // Se rompe por donde NO hay red: una fila con un dato imposible de leer.
+    // Los fallos del proveedor ya los caza `checkBusinessCredentials` por
+    // dentro, así que probar con esos no demostraría nada de este `catch`.
+    it('un negocio ilegible no impide revisar los demás', async () => {
+      const ilegible = negocio({
+        id: 'a',
+        whatsapp_provider: { toString() { throw new Error('fila corrupta') } },
+      })
+      const problemas = await checkAllCredentials(
+        [ilegible, negocio({ id: 'b' })],
+        clienteSano(),
+        { baseUrl: BASE_URL },
+      )
+      expect(codigos(problemas)).toEqual(['revision_fallida'])
+      expect(problemas[0].businessId).toBe('a')
+      expect(problemas[0].severity).toBe('aviso')
     })
 
     it('identifica el negocio de cada problema', async () => {
@@ -246,6 +293,26 @@ describe('el canal de la plataforma', () => {
     ))
     expect(codes).toContain('plataforma_sin_secreto')
     expect(codes).toContain('plataforma_sin_endpoint')
+  })
+
+  // El canal puede responder y aun así no poder mandar nada: la API Key sirve
+  // pero el número no está puesto. YCloud contesta que sí a la primera pregunta.
+  it('detecta un canal con clave válida y sin número', async () => {
+    const problemas = await checkPlatformCredentials(
+      canalDePlataforma({ number: '' }), clienteSano(), { baseUrl: BASE_URL },
+    )
+    expect(codigos(problemas)).toContain('sin_numero')
+  })
+
+  // YCloud puede estar a medias: los números responden y los webhooks no. No
+  // poder MIRAR el webhook no es lo mismo que no tenerlo, así que es aviso.
+  it('no confunde un webhook ilegible con un webhook roto', async () => {
+    const problemas = await checkPlatformCredentials(canalDePlataforma(), clienteSano({
+      listWebhooks: async () => { throw new Error('502 Bad Gateway') },
+    }), { baseUrl: BASE_URL })
+    const aviso = problemas.find(p => p.code === 'webhook_no_verificable')
+    expect(aviso).toBeTruthy()
+    expect(aviso.severity).toBe('aviso')
   })
 
   it('avisa cuando no hay número de marketplace configurado', async () => {
