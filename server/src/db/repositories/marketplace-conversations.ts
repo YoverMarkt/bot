@@ -183,11 +183,60 @@ const claimMarketplaceReply = async (
   }
 }
 
+/**
+ * ¿Esta persona está bloqueada en TODA la plataforma?
+ *
+ * Distinto del bloqueo del dueño (`isContactBlocked`, por local). Este lo pone
+ * el superadmin y significa que Umbani entero deja de atenderla.
+ */
+const isPlatformBlocked = async (customerId: string): Promise<boolean> => {
+  const { data, error } = await db
+    .from('customers')
+    .select('blocked_at')
+    .eq('id', customerId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
+}
+
+/** Los teléfonos bloqueados en toda la plataforma, para el panel del superadmin. */
+const getPlatformBlocked = async (): Promise<
+  { phone: string; blockedAt: string; reason: string | null }[]
+> => {
+  const { data, error } = await db
+    .from('customers')
+    .select('phone,blocked_at,blocked_reason')
+    .not('blocked_at', 'is', null)
+    .order('blocked_at', { ascending: false })
+    .limit(500)
+  if (error) throw new Error(error.message)
+  return ((data || []) as Array<{ phone: string; blocked_at: string; blocked_reason: string | null }>)
+    .map(row => ({ phone: row.phone, blockedAt: row.blocked_at, reason: row.blocked_reason }))
+}
+
+/** Lo pone y lo quita el SUPERADMIN, nunca un dueño. */
+const setPlatformBlocked = async (
+  phone: string,
+  blocked: boolean,
+  reason?: string | null,
+): Promise<{ phone: string; blocked: boolean }> => {
+  const { data, error } = await db.rpc('set_platform_blocked', {
+    p_phone: phone,
+    p_blocked: blocked,
+    p_reason: reason ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return data as { phone: string; blocked: boolean }
+}
+
 export {
   getConversation,
   advanceConversation,
   deleteConversation,
   claimMarketplaceReply,
+  isPlatformBlocked,
+  getPlatformBlocked,
+  setPlatformBlocked,
   searchScopeFor,
   resolveMarketplaceCustomer,
 }

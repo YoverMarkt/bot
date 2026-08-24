@@ -41,6 +41,7 @@ const armar = ({ permitido = true, bloqueado = false } = {}) => {
     getPolicies: vi.fn().mockResolvedValue({ welcome_message: null }),
     claimMarketplaceReply: vi.fn().mockResolvedValue({ permitido, respuestas: permitido ? 3 : 26 }),
     isContactBlocked: vi.fn().mockResolvedValue(bloqueado),
+    isPlatformBlocked: vi.fn().mockResolvedValue(false),
   }
   return {
     database,
@@ -172,5 +173,50 @@ describe('el bloqueo dentro del marketplace', () => {
     enLaCategoria(h)
     await atender(h.deps, 'Monster Pizza')
     expect(h.deps.issueLink).toHaveBeenCalled()
+  })
+})
+
+describe('el bloqueo de PLATAFORMA', () => {
+  // Es distinto del bloqueo del local, y los dos hacen falta: aquel lo pone un
+  // dueño y solo cierra SU local; este lo pone el superadmin y significa que
+  // Umbani entero deja de atender a esa persona.
+  it('no se le responde absolutamente nada', async () => {
+    const h = armar()
+    h.database.isPlatformBlocked.mockResolvedValue(true)
+    await atender(h.deps, 'hola')
+    expect(h.enviados).toEqual([])
+  })
+
+  // Va antes que el techo porque es más fuerte y más barato: ni se cuenta.
+  it('ni se gasta el techo ni se lee la conversación', async () => {
+    const h = armar()
+    h.database.isPlatformBlocked.mockResolvedValue(true)
+    await atender(h.deps, 'hola')
+    expect(h.database.claimMarketplaceReply).not.toHaveBeenCalled()
+    expect(h.database.getConversation).not.toHaveBeenCalled()
+  })
+
+  // ⚠️ Al bloqueado de plataforma NI SIQUIERA se le contesta el comprobante:
+  // no tiene ningún pedido válido esperando, y responder es la reacción que
+  // busca. Es la diferencia con el techo, donde el comprobante sí pasa.
+  it('tampoco se le contesta el comprobante', async () => {
+    const h = armar()
+    h.database.isPlatformBlocked.mockResolvedValue(true)
+    await atender(h.deps, '[el cliente envió su comprobante de pago del pedido #12]')
+    expect(h.enviados).toEqual([])
+  })
+
+  it('falla ABIERTO: un fallo de la base no deja mudo al marketplace', async () => {
+    const h = armar()
+    h.database.isPlatformBlocked.mockRejectedValue(new Error('base caída'))
+    await atender(h.deps, 'hola')
+    expect(h.enviados).toHaveLength(1)
+  })
+
+  it('sin la función configurada, se atiende', async () => {
+    const h = armar()
+    delete h.database.isPlatformBlocked
+    await atender(h.deps, 'hola')
+    expect(h.enviados).toHaveLength(1)
   })
 })

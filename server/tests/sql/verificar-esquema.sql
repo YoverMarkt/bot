@@ -2918,3 +2918,141 @@ end;
 $$;
 
 select '✅ techo del marketplace: tope, silencio, idempotencia y versión intacta' as resultado;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LOS DOS FRENOS DE ABUSO (2026-08-25)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El techo cuenta RESPUESTAS. No contaba pedidos, y ahí el daño no es dinero:
+-- diez pedidos falsos son diez alarmas, diez comandas y comida que nadie
+-- recoge. Y bloquear era por local: a quien molesta a cinco había que
+-- bloquearlo cinco veces.
+do $$
+declare
+  v_biz uuid;
+  v_cliente uuid;
+  v_dir uuid;
+  v_prod uuid;
+  v_i integer;
+  v_rechazado boolean := false;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-frenos', 'Local Frenos', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+
+  insert into public.customers (phone) values ('593900000825')
+  returning id into v_cliente;
+
+  insert into public.customer_addresses (business_id, customer_id, address)
+  values (v_biz, v_cliente, 'Calle de prueba 123')
+  returning id into v_dir;
+
+  insert into public.products (business_id, name, price, active)
+  values (v_biz, 'Pizza de prueba', 10, true)
+  returning id into v_prod;
+
+  -- ── Tres pedidos abiertos entran; el cuarto NO ──────────────────────────
+  for v_i in 1..3 loop
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000825', 'storefront', 'pendiente', 10, 10);
+  end loop;
+
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000825', 'storefront', 'pendiente', 10, 10);
+    raise exception 'el cuarto pedido sin confirmar debía rechazarse';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el freno de pedidos abiertos no actuó';
+  end if;
+
+  -- ⚠️ En cuanto el dueño ACEPTA, ese pedido deja de contar: ya decidió
+  -- tomarlo, y el cliente puede encargar otra cosa.
+  update public.orders set status = 'preparacion'
+  where business_id = v_biz and customer_id = v_cliente
+    and id = (select id from public.orders where business_id = v_biz limit 1);
+
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000825', 'storefront', 'pendiente', 10, 10);
+
+  -- ⚠️ MOSTRADOR (`source = 'manual'`) NO se frena: lo teclea el dueño con la
+  -- persona delante, y si quiere meter cinco seguidos es su cocina.
+  for v_i in 1..5 loop
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000825', 'manual', 'pendiente', 10, 10);
+  end loop;
+
+  -- ⚠️ LA VENTANA ES IMPRESCINDIBLE. Sin ella, tres pedidos abandonados de
+  -- hace un mes dejarían a ese cliente sin poder pedir NUNCA — y hoy nadie
+  -- expira los abandonados.
+  update public.orders set created_at = now() - interval '7 hours'
+  where business_id = v_biz and source = 'storefront';
+
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000825', 'storefront', 'pendiente', 10, 10);
+
+  -- ── El bloqueo de PLATAFORMA ────────────────────────────────────────────
+  perform public.set_platform_blocked('+593 90 000 0825', true, 'pedidos falsos repetidos');
+
+  if not exists (
+    select 1 from public.customers
+    where id = v_cliente and blocked_at is not null
+      and blocked_reason = 'pedidos falsos repetidos'
+  ) then
+    raise exception 'el bloqueo de plataforma no se guardó, o no normalizó el teléfono';
+  end if;
+
+  -- ⚠️ Alcanza también al MOSTRADOR: si el superadmin lo expulsó de Umbani, un
+  -- local no puede colarlo tecleándole el pedido a mano.
+  v_rechazado := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000825', 'manual', 'pendiente', 10, 10);
+    raise exception 'un bloqueado de plataforma no puede pedir ni de mostrador';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el bloqueo de plataforma no frenó el pedido de mostrador';
+  end if;
+
+  -- Desbloquear lo suelta del todo, motivo incluido.
+  perform public.set_platform_blocked('593900000825', false);
+  if exists (
+    select 1 from public.customers
+    where id = v_cliente and (blocked_at is not null or blocked_reason is not null)
+  ) then
+    raise exception 'desbloquear debe limpiar la marca y el motivo';
+  end if;
+
+  -- Un teléfono a medias no puede acabar bloqueando a otra persona.
+  v_rechazado := false;
+  begin
+    perform public.set_platform_blocked('5939', true);
+    raise exception 'un teléfono corto debía rechazarse';
+  exception when others then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'set_platform_blocked aceptó un teléfono inválido';
+  end if;
+
+  -- ⚠️ CREA al cliente si no existía: quien molesta puede no haber pedido
+  -- nunca, y es justo a ese al que hay que poder bloquear ANTES de que lo
+  -- intente.
+  perform public.set_platform_blocked('593911112222', true, 'nunca pidió');
+  if not exists (
+    select 1 from public.customers where phone = '593911112222' and blocked_at is not null
+  ) then
+    raise exception 'bloquear a un desconocido debía crearlo';
+  end if;
+
+  delete from public.customers where phone in ('593900000825', '593911112222');
+  delete from public.businesses where id = v_biz;
+end;
+$$;
+
+select '✅ frenos de abuso: tope de pedidos abiertos y bloqueo de plataforma' as resultado;
