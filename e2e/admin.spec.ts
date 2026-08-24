@@ -180,15 +180,39 @@ test('el simulador conserva los controles dentro del móvil', async ({ page }) =
   await mockAdminApi(page)
   await page.goto(`${adminUrl}#/simulator`)
 
-  // El interruptor «Modo menú / Modo IA» se retiró: el simulador despacha por
-  // el modo REAL del negocio, así que lo que se prueba es lo que recibe su
-  // cliente. Los tres modos siguen vivos.
-  await page.getByRole('combobox', { name: 'Negocio para simular' }).click()
-  await page.getByRole('option', { name: 'Negocio E2E' }).click()
-  await expect(page.getByRole('button', { name: /Limpiar chat/ })).toBeVisible()
+  // ⚠️ Ya no hay selector de negocio, y esa es la corrección del 2026-08-23:
+  // en el marketplace el local lo elige el CLIENTE navegando el menú, no el
+  // superadmin de un desplegable. Se puede escribir sin elegir nada.
+  await expect(page.getByRole('combobox', { name: 'Negocio para simular' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Simulador del marketplace' })).toBeVisible()
+  await expect(page.getByLabel('Mensaje para el bot')).toBeEnabled()
+  await expect(page.getByRole('button', { name: /Empezar de cero/ })).toBeVisible()
   await expect.poll(() => page.locator('main').evaluate(element => (
     element.scrollWidth <= element.clientWidth + 1
   ))).toBe(true)
+})
+
+// El simulador manda una LISTA de respuestas: el checkout puede contestar dos
+// veces seguidas, igual que en WhatsApp.
+test('el simulador pinta lo que respondería el número de Umbani', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.route('**/api/admin/simulate', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      replies: [{ reply: '👋 ¡Hola! Bienvenido a *Umbani*.', options: ['🍕 Pizzerías'] }],
+      notes: [],
+    }),
+  }))
+  await page.goto(`${adminUrl}#/simulator`)
+
+  await page.getByLabel('Mensaje para el bot').fill('hola')
+  await page.getByRole('button', { name: 'Enviar' }).click()
+
+  await expect(page.getByText('Bienvenido a *Umbani*.')).toBeVisible()
+  // Las opciones se tocan, como una lista de WhatsApp.
+  await expect(page.getByRole('button', { name: '🍕 Pizzerías' })).toBeVisible()
 })
 
 test('el alta deduce del tipo cómo va a atender el negocio', async ({ page }) => {

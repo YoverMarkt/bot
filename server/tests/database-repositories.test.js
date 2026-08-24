@@ -212,7 +212,10 @@ describe('migración de la capa de datos', () => {
       'getContactHistory',
       'getLatestBusinessIdForContact',
       'saveMessage',
-      'clearSimHistory',
+      // ⚠️ `clearSimHistory` se retiró el 2026-08-23 con el simulador por
+      // negocio: borraba las filas del contacto `sim_admin`, y el simulador ya
+      // no escribe en el historial de ningún negocio — corre el camino real
+      // del marketplace, cuyo estado vive en `marketplace_conversations`.
       'getSession',
       'getSessions',
       'upsertSession',

@@ -1,75 +1,59 @@
 import { useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import { getClients } from '../clients/api'
-import { Trash2, MessageSquare, Bot as BotIcon } from 'lucide-react'
+import { Trash2, MessageSquare, Store } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 
-// Simulador de bot — prueba la respuesta configurada sin usar un canal real.
-// Despacha por el modo REAL del negocio: en menú corre la máquina de estados,
-// en miniapp replica el corte sin IA y explica que el enlace personal solo se
-// crea en WhatsApp/Telegram, y en modo IA usa el mismo prompt y guardas.
+// ═══════════════════════════════════════════════════════════════════════════
+// SIMULADOR DEL MARKETPLACE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Escribir al número de Umbani sin gastar un mensaje de WhatsApp.
+//
+// ⚠️ Ya no hay selector de negocio, y no es una simplificación: en el
+// marketplace el local NO lo elige el superadmin, lo elige el cliente
+// navegando el menú. Hasta el 2026-08-23 esta pantalla pedía un negocio y
+// despachaba por su `chat_mode`, así que con el único local de producción en
+// `miniapp` respondía «en el canal real, aquí se envía el enlace personal de la
+// tienda» — una rama por la que no entra nadie. Ahora corre la MISMA función
+// que atiende el webhook, con los datos de verdad.
 
-// El servidor manda las opciones como texto simple o como {título, descripción},
-// igual que una fila de lista de WhatsApp.
-type MenuOption = string | { title: string; description?: string }
-const optionTitle = (option: MenuOption) => typeof option === 'string' ? option : option.title
-const optionDetail = (option: MenuOption) => typeof option === 'string' ? '' : (option.description || '')
-
-type Msg = { role: 'user' | 'bot' | 'note'; text: string; image?: string | null; video?: string | null; options?: MenuOption[] | null; at: string }
+type Msg = { role: 'user' | 'bot' | 'note'; text: string; options?: string[] | null; at: string }
 
 const now = () => new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
 export default function Simulator() {
-  const { data: clients = [] } = useQuery({ queryKey: ['adm-clients'], queryFn: getClients })
-  const [bizId, setBizId] = useState('')
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
 
-  const biz = clients.find(c => c.id === bizId)
   const scroll = () => setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-
-  function selectBiz(id: string) {
-    setBizId(id)
-    setMsgs([])
-  }
 
   // fromOption: texto de un botón del menú guiado; tocar uno equivale a escribirlo
   async function send(fromOption?: string) {
     const t = (fromOption ?? text).trim()
-    if (!t || !bizId || typing) return
+    if (!t || typing) return
     if (!fromOption) setText('')
     setMsgs(m => [...m, { role: 'user', text: t, at: now() }])
     setTyping(true)
     scroll()
     try {
-      const d = await api<{ reply?: string; image?: string | null; video?: string | null; media?: { url: string; isVideo: boolean }[] | null; options?: MenuOption[] | null; mediaNote?: string | null; actionNote?: string | null }>('/api/admin/simulate', {
+      // El checkout puede mandar dos mensajes seguidos (confirmación + paso
+      // siguiente), igual que en WhatsApp: por eso llegan en lista.
+      const d = await api<{ replies?: { reply: string; options: string[] }[]; notes?: string[] }>('/api/admin/simulate', {
         method: 'POST',
-        body: JSON.stringify({ business_id: bizId, message: t }),
+        body: JSON.stringify({ message: t }),
       })
-      // Paso "Ver fotos y videos": los archivos llegan como mensajes separados
-      // ANTES del texto, igual que WhatsApp los envía uno por uno.
-      if (d.media?.length) {
-        setMsgs(m => [...m, ...d.media!.map(item => ({
-          role: 'bot' as const,
-          text: '',
-          image: item.isVideo ? null : item.url,
-          video: item.isVideo ? item.url : null,
-          at: now(),
-        }))])
+      for (const r of d.replies || []) {
+        setMsgs(m => [...m, { role: 'bot', text: r.reply, options: r.options, at: now() }])
       }
-      if (d.reply) setMsgs(m => [...m, { role: 'bot', text: d.reply!, image: d.image, video: d.video, options: d.options, at: now() }])
-      // La nota de media ("no tengo foto de ese producto…") llega como
-      // mensaje aparte, igual que en WhatsApp/Telegram.
-      if (d.mediaNote) setMsgs(m => [...m, { role: 'bot', text: d.mediaNote!, at: now() }])
-      // Nota del simulador: explica la acción interna detectada (el cliente real no la ve)
-      if (d.actionNote) setMsgs(m => [...m, { role: 'note', text: d.actionNote!, at: now() }])
+      // Notas del simulador: lo que en el canal real SÍ ocurriría y aquí no.
+      for (const note of d.notes || []) {
+        setMsgs(m => [...m, { role: 'note', text: note, at: now() }])
+      }
     } catch (e) {
       setMsgs(m => [...m, { role: 'bot', text: `Atención: Error de conexión: ${e instanceof Error ? e.message : e}`, at: now() }])
     }
@@ -78,8 +62,7 @@ export default function Simulator() {
   }
 
   async function clear() {
-    if (!bizId) return
-    await api(`/api/admin/simulate/${bizId}/history`, { method: 'DELETE' })
+    await api('/api/admin/simulate/history', { method: 'DELETE' })
     setMsgs([])
   }
 
@@ -87,26 +70,20 @@ export default function Simulator() {
     <div className="flex flex-col h-[calc(100vh-3rem)]">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Simulador de Bot</h1>
-          <p className="text-sm text-muted-foreground">Prueba el bot de cualquier negocio sin WhatsApp real</p>
+          <h1 className="text-2xl font-bold text-foreground">Simulador del marketplace</h1>
+          <p className="text-sm text-muted-foreground">
+            Escribe como un cliente al número de Umbani, sin gastar un mensaje de WhatsApp
+          </p>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
-          <Select value={bizId} onValueChange={selectBiz}>
-            <SelectTrigger id="simulator-business" aria-label="Negocio para simular" className="w-full min-w-0 sm:w-56"><SelectValue placeholder="— Elige un negocio —" /></SelectTrigger>
-            <SelectContent>
-              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {bizId && (
-            <ConfirmAction
-              trigger={<Button variant="outline"><Trash2 className="w-4 h-4" /> Limpiar chat</Button>}
-              title="Limpiar conversación de prueba"
-              description="Se eliminará el historial del simulador para este negocio."
-              confirmLabel="Limpiar chat"
-              destructive
-              onConfirm={clear}
-            />
-          )}
+          <ConfirmAction
+            trigger={<Button variant="outline"><Trash2 className="w-4 h-4" /> Empezar de cero</Button>}
+            title="Reiniciar la conversación de prueba"
+            description="Vuelve al menú de categorías y suelta el local y el carrito, igual que cuando un cliente escribe MENÚ."
+            confirmLabel="Empezar de cero"
+            destructive
+            onConfirm={clear}
+          />
         </div>
       </div>
 
@@ -114,20 +91,28 @@ export default function Simulator() {
         {/* Barra del chat */}
         <div className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/20 font-bold text-primary">
-            {biz ? biz.name.charAt(0).toUpperCase() : <BotIcon className="w-4 h-4" />}
+            <Store className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-foreground">{biz?.name || 'Ningún negocio seleccionado'}</div>
-            <div className="text-xs text-muted-foreground">{biz ? `${biz.type || '—'} · ${biz.whatsapp_number || ''}` : 'Elige un negocio del menú para comenzar'}</div>
+            <div className="text-sm font-semibold text-foreground">Umbani</div>
+            {/* ⚠️ Decirlo aquí y no en una nota escondida: el enlace que
+                devuelve es de VERDAD y se puede abrir, y para poder crearlo
+                el local acaba con un cliente de prueba (000000000000) en su
+                ficha. Es el precio de que el enlace sirva; enterarse después
+                sería peor. */}
+            <div className="text-xs text-muted-foreground">
+              Catálogo, precios y locales REALES · el pedido no se crea
+            </div>
           </div>
         </div>
 
         {/* Mensajes */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {!msgs.length && !typing && (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground/70 text-sm gap-2">
+            <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground/70 text-sm gap-2 px-6">
               <MessageSquare className="w-8 h-8 text-muted-foreground" />
-              <p>{biz ? 'Escribe un mensaje como si fueras un cliente.' : 'Selecciona un negocio para probar su bot.'}</p>
+              <p>Escribe cualquier cosa —«hola», «quiero pizza»— como si fueras un cliente.</p>
+              <p className="text-xs">Escribe <strong>MENÚ</strong> en cualquier momento para volver al principio.</p>
             </div>
           )}
           {msgs.map((m, i) => m.role === 'note' ? (
@@ -145,23 +130,13 @@ export default function Simulator() {
                   {m.text}
                 </div>
               )}
-              {m.image && (
-                <img src={m.image} alt="" className="mt-2 max-w-56 rounded-xl border border-input"
-                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-              )}
-              {m.video && (
-                <video src={m.video} controls className="mt-2 max-w-56 rounded-xl border border-input" />
-              )}
               {!!m.options?.length && (
                 <div className="mt-2 flex max-w-[75%] flex-col items-start gap-1.5">
                   {m.options.map(o => (
-                    <Button key={optionTitle(o)} variant="outline" size="sm" disabled={typing}
-                      className="h-auto max-w-full flex-col items-start gap-0 rounded-xl border-primary/40 px-3 py-1.5 text-left hover:bg-primary/10"
-                      onClick={() => send(optionTitle(o))}>
-                      <span className="text-xs font-medium text-primary">{optionTitle(o)}</span>
-                      {optionDetail(o) && (
-                        <span className="text-[11px] font-normal text-muted-foreground">{optionDetail(o)}</span>
-                      )}
+                    <Button key={o} variant="outline" size="sm" disabled={typing}
+                      className="h-auto max-w-full justify-start rounded-xl border-primary/40 px-3 py-1.5 text-left text-xs font-medium text-primary hover:bg-primary/10"
+                      onClick={() => send(o)}>
+                      {o}
                     </Button>
                   ))}
                 </div>
@@ -185,9 +160,8 @@ export default function Simulator() {
         <div className="flex gap-2 p-3 border-t border-border">
           <Input id="simulator-message" aria-label="Mensaje para el bot" value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            disabled={!bizId}
-            placeholder={bizId ? 'Escribe un mensaje… (Enter para enviar)' : 'Selecciona un negocio primero'} className="flex-1" />
-          <Button onClick={() => send()} disabled={!bizId || typing || !text.trim()}>
+            placeholder="Escribe un mensaje… (Enter para enviar)" className="flex-1" />
+          <Button onClick={() => send()} disabled={typing || !text.trim()}>
             Enviar
           </Button>
         </div>
