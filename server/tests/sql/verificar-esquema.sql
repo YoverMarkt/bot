@@ -3056,3 +3056,136 @@ end;
 $$;
 
 select '✅ frenos de abuso: tope de pedidos abiertos y bloqueo de plataforma' as resultado;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MÍNIMO DE COMPRA Y TOPE POR HORA (2026-08-26)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El caso que no cubría el freno del 2026-08-25: cuarenta personas distintas
+-- pidiendo una gaseosa cada una. Ninguna pasa de tres pedidos abiertos.
+do $$
+declare
+  v_biz uuid;
+  v_cliente uuid;
+  v_i integer;
+  v_rechazado boolean;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-minimo', 'Local Mínimo', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+  insert into public.customers (phone) values ('593900000826')
+  returning id into v_cliente;
+
+  -- Nace SIN mínimo y con tope de 30: ningún local existente cambia de
+  -- comportamiento sin haberlo pedido.
+  if (select min_order_amount from public.businesses where id = v_biz) <> 0
+     or (select max_orders_per_hour from public.businesses where id = v_biz) <> 30 then
+    raise exception 'los valores de arranque cambiaron sin querer';
+  end if;
+
+  -- ── El mínimo ───────────────────────────────────────────────────────────
+  update public.businesses set min_order_amount = 5 where id = v_biz;
+
+  v_rechazado := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 1.50, 3.50);
+    raise exception 'un pedido por debajo del mínimo debía rechazarse';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el mínimo de compra no actuó';
+  end if;
+
+  -- ⚠️ SIN EL ENVÍO. Quien quiera un agua de $0,50 y pagar $2 de reparto está
+  -- en su derecho: el local decide cuánto vale la pena COCINAR, no cuánto
+  -- gasta el cliente. `subtotal` = 5 basta aunque el total sea otro.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 5.00, 7.00);
+
+  -- El descuento SÍ baja la base: cobrar el mínimo sobre dinero que el
+  -- comercio no recibe sería cobrarle dos veces.
+  v_rechazado := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, discount, total)
+    values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 6.00, 2.00, 4.00);
+    raise exception 'el descuento debía bajar la base del mínimo';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el mínimo ignoró el descuento';
+  end if;
+
+  -- Mostrador exento: si el dueño quiere venderle un chicle, es su decisión.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000826', 'manual', 'pendiente', 0.50, 0.50);
+
+  -- ── El tope por hora ────────────────────────────────────────────────────
+  update public.businesses set min_order_amount = 0, max_orders_per_hour = 3 where id = v_biz;
+  delete from public.orders where business_id = v_biz;
+
+  -- ⚠️ CUARENTA PERSONAS DISTINTAS: el freno por cliente no las ve. Este sí.
+  for v_i in 1..3 loop
+    insert into public.customers (phone) values ('59390000090' || v_i);
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (
+      v_biz,
+      (select id from public.customers where phone = '59390000090' || v_i),
+      '59390000090' || v_i, 'storefront', 'pendiente', 1.50, 1.50
+    );
+  end loop;
+
+  v_rechazado := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 1.50, 1.50);
+    raise exception 'el cuarto pedido de la hora debía rechazarse';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el tope por hora no actuó con clientes distintos';
+  end if;
+
+  -- ⚠️ Cuenta TAMBIÉN los cancelados: un pedido cancelado ocupó a alguien, y
+  -- contarlos solo «abiertos» dejaría el freno inútil justo cuando el dueño va
+  -- cancelando la avalancha a mano.
+  update public.orders set status = 'cancelado' where business_id = v_biz and source = 'storefront';
+  v_rechazado := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 1.50, 1.50);
+    raise exception 'cancelar la avalancha no puede levantar el tope';
+  exception when insufficient_privilege then
+    v_rechazado := true;
+  end;
+  if not v_rechazado then
+    raise exception 'el tope por hora se levantó al cancelar';
+  end if;
+
+  -- Pasada la hora vuelve a vender.
+  update public.orders set created_at = now() - interval '2 hours' where business_id = v_biz;
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000826', 'storefront', 'pendiente', 1.50, 1.50);
+
+  -- Ni el mínimo ni el tope aceptan valores imposibles.
+  begin
+    update public.businesses set max_orders_per_hour = 0 where id = v_biz;
+    raise exception 'un tope de cero dejaría al local sin poder vender';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.businesses set min_order_amount = -1 where id = v_biz;
+    raise exception 'un mínimo negativo no tiene sentido';
+  exception when check_violation then null;
+  end;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone like '5939000009%' or phone = '593900000826';
+end;
+$$;
+
+select '✅ mínimo de compra y tope por hora: sin envío, con descuento, mostrador exento' as resultado;

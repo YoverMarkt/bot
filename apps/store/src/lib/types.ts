@@ -35,6 +35,14 @@ export interface Business {
   prepTimeMinutes: number
   /** Minutos que suma llevarlo a domicilio. Cero = entrega en su cuadra. */
   deliveryExtraMinutes: number
+  /**
+   * Lo mínimo que este local prepara, SIN contar el envío. Cero = sin mínimo.
+   *
+   * ⚠️ Se pinta en el carrito, no solo al confirmar. La base lo exige
+   * igualmente —eso es lo que manda—, pero si el cliente se enterara solo ahí
+   * habría armado el carrito entero para que se lo rechacen al final.
+   */
+  minOrderAmount: number
 }
 
 /** Cómo dice el cliente que va a pagar. La plataforma NO cobra (regla #6). */

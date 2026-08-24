@@ -20,6 +20,7 @@ type BusinessData = {
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; cover_url: string | null; takes_orders?: boolean
   prep_time_minutes: number | null; delivery_extra_minutes: number | null
+  min_order_amount: number | null; max_orders_per_hour: number | null
 }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
@@ -250,6 +251,11 @@ export function BusinessForm() {
         // Cero es legítimo aquí —entrego en mi cuadra—, así que solo se
         // descarta lo que NO es un número, nunca el cero.
         delivery_extra_minutes: minutosO(f?.delivery_extra_minutes, 10),
+        // ⚠️ Mismo cuidado que arriba, y aquí el cero pesa más: en el mínimo
+        // significa «sin mínimo», que es un valor que el dueño elige a
+        // propósito. `minutosO` ya distingue el cero de «no vino».
+        min_order_amount: minutosO(f?.min_order_amount, 0),
+        max_orders_per_hour: minutosO(f?.max_orders_per_hour, 30),
       }),
     }),
     onSuccess: () => {
@@ -329,6 +335,45 @@ export function BusinessForm() {
               />
               <p className="text-[11px] text-muted-foreground/80 mt-1">
                 Lo que suma llevarlo a domicilio. Quien retira en el local no lo espera.
+              </p>
+            </div>
+          </div>
+
+          {/* ── Los dos frenos del local ──
+              Nacen de un caso real y barato de montar: alguien pasa el enlace
+              en un grupo de cuarenta personas con «pidan una gaseosa, es
+              gratis». Cada uno hace UN pedido, así que ningún freno por
+              cliente los ve, y a la cocina le entran cuarenta comandas de
+              $1,50 a la vez. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="business-min-order">Pedido mínimo ($)</Label>
+              <Input
+                id="business-min-order"
+                type="number" min="0" max="999" step="0.01" inputMode="decimal"
+                value={f.min_order_amount ?? 0}
+                onChange={set('min_order_amount')}
+                placeholder="Ej: 5.00"
+              />
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Lo mínimo que vale la pena preparar, según tu producto más barato.
+                <strong> No cuenta el envío</strong>: si alguien quiere un agua y pagar
+                el reparto, es su decisión. Déjalo en 0 para no exigir mínimo.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="business-max-orders">Pedidos por hora que puedes atender</Label>
+              <Input
+                id="business-max-orders"
+                type="number" min="1" max="500" step="1" inputMode="numeric"
+                value={f.max_orders_per_hour ?? 30}
+                onChange={set('max_orders_per_hour')}
+                placeholder="Ej: 30"
+              />
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Pasado ese número, la tienda pide a los siguientes que vuelvan en unos
+                minutos en vez de llenarte la cocina. Súbelo si tu cocina da para más.
               </p>
             </div>
           </div>

@@ -52,6 +52,10 @@ export interface BusinessRecord {
   // manda además en las franjas programables; el segundo solo se muestra.
   prep_time_minutes?: number | string | null
   delivery_extra_minutes?: number | string | null
+  /** 0 = sin mínimo. Lo pone el dueño según su producto más barato. */
+  min_order_amount?: number | string | null
+  /** Cuántos pedidos de la tienda acepta por hora. Protege su cocina. */
+  max_orders_per_hour?: number | string | null
   owner_phone?: string | null
   notes?: string | null
   plan?: string | null

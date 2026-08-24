@@ -246,6 +246,18 @@ describe('la tienda del negocio', () => {
   })
 
   describe('lo que se publica del negocio', () => {
+    // El dueño lo pone según su producto más barato: la plataforma no sabe si
+    // $5 sobra en una pizzería o cierra una heladería.
+    it('publica el mínimo que puso el dueño, y el cero como «sin mínimo»', () => {
+      expect(publicBusiness(negocio({ min_order_amount: 7.5 })).minOrderAmount).toBe(7.5)
+      expect(publicBusiness(negocio({ min_order_amount: 0 })).minOrderAmount).toBe(0)
+      // Una fila anterior a la migración no puede publicar `NaN` ni negativo:
+      // el carrito lo restaría del subtotal y el botón se bloquearía solo.
+      expect(publicBusiness(negocio({ min_order_amount: null })).minOrderAmount).toBe(0)
+      expect(publicBusiness(negocio({ min_order_amount: -3 })).minOrderAmount).toBe(0)
+      expect(publicBusiness(negocio({ min_order_amount: 'roto' })).minOrderAmount).toBe(0)
+    })
+
     it('expone lo justo para pintar la portada', () => {
       const publico = publicBusiness(negocio({ slogan: 'La mejor pizza' }))
       expect(publico).toEqual({
@@ -265,6 +277,12 @@ describe('la tienda del negocio', () => {
         // Sin valor en la base se cae al defecto en vez de publicar `null`:
         // la portada tiene que poder decir un tiempo siempre.
         prepTimeMinutes: 25,
+        // ⚠️ El mínimo VIAJA AL CATÁLOGO, no solo al confirmar. La base lo
+        // exige igualmente —eso es lo que manda—, pero si el cliente se
+        // enterara solo ahí habría armado el carrito entero para que se lo
+        // rechacen al final: el mismo error que ya se corrigió con el bloqueo
+        // y el enlace del local.
+        minOrderAmount: 0,
         deliveryExtraMinutes: 0,
       })
     })

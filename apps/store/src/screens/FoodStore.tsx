@@ -828,6 +828,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         enviando={enviando}
         error={error}
         deliveryFee={business.deliveryFee}
+        minOrderAmount={business.minOrderAmount}
         entrega={entrega}
         onEntrega={setEntrega}
         onConfirmar={confirmar}
