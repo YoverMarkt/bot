@@ -416,6 +416,21 @@ export async function handleMarketplaceMessage(
   // ── 5. Un pedido a la vez ──────────────────────────────────────────
   if (estado.bloqueado && negocioActual) {
     const respuesta = recordarPedidoEnProceso({ name: negocioActual.name })
+    // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
+    // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
+    // «✅ Empezar de nuevo», y ese texto normalizado es uno de los
+    // `COMANDOS_MENU`. Sin la vista guardada, tocar ese botón se leía como MENÚ
+    // con la vista ANTERIOR, así que volvía a PREGUNTAR en vez de reiniciar y
+    // el cliente tenía que tocarlo dos veces —lo vivió el dueño—. Lo único que
+    // evitaba que fuera un bucle infinito era el parche «segundo MENÚ = SÍ»,
+    // que lo disfrazó de molestia cosmética en vez de dejarlo a la vista.
+    //
+    // ⚠️ `soltarLocal: false`: aquí solo se PREGUNTA. El carrito y el local
+    // siguen donde estaban hasta que el cliente confirme — tirar un carrito es
+    // lo único que no tiene vuelta atrás.
+    await guardar(deps, customer.id, conversation?.version, respuesta, {
+      soltarLocal: false,
+    })
     await send(respuesta.reply, respuesta.options)
     return
   }

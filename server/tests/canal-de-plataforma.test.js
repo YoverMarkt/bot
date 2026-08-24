@@ -198,8 +198,12 @@ describe('el menú del marketplace, de punta a punta', () => {
   }
 
   let handle
+  let SI_REINICIAR
   beforeEach(async () => {
     ({ handleMarketplaceMessage: handle } = await import('../dist/services/marketplace-entry.js'))
+    // La etiqueta REAL del botón, no una copia: si cambia, estas pruebas
+    // siguen midiendo lo que el cliente toca de verdad.
+    ;({ SI_REINICIAR } = await import('../dist/services/marketplace-menu.js'))
   })
 
   it('el primer mensaje ofrece las categorías', async () => {
@@ -300,6 +304,49 @@ describe('el menú del marketplace, de punta a punta', () => {
       // El dueño se quedó en bucle. Ahora la salida son las dos opciones.
       expect(ultimo.options).toHaveLength(2)
       expect(ultimo.options.join(' ')).toMatch(/Empezar de nuevo/)
+    })
+
+    // ── El bug del 2026-08-24: hacían falta DOS toques ──
+    //
+    // Esta rama era la única que respondía sin guardar su vista. Como el botón
+    // que ofrece —«✅ Empezar de nuevo»— normaliza a uno de los COMANDOS_MENU,
+    // tocarlo se leía como MENÚ con la vista anterior y volvía a preguntar.
+    it('recordar el pedido abierto DEJA GUARDADA la vista de confirmación', async () => {
+      const ctx = armar()
+      ctx.conversacion.valor = {
+        current_state: 'en_local',
+        selected_business_id: 'biz-1',
+        shopping_locked: true,
+        flow_state: { vista: { vista: 'negocios', pagina: 0 } },
+        version: 3,
+      }
+      await handle({ from: '593990978367', text: 'hola' }, ctx.deps)
+      // Sin esto, el toque siguiente no tiene forma de saber que se le
+      // preguntó nada.
+      expect(ctx.database.advanceConversation).toHaveBeenCalled()
+      expect(ctx.conversacion.valor.current_state).toBe('confirmando_reinicio')
+      // Y NO suelta el local: aquí solo se está preguntando.
+      expect(ctx.conversacion.valor.selected_business_id).toBe('biz-1')
+    })
+
+    it('tocar «Empezar de nuevo» reinicia en UN solo toque', async () => {
+      const ctx = armar()
+      ctx.conversacion.valor = {
+        current_state: 'en_local',
+        selected_business_id: 'biz-1',
+        shopping_locked: true,
+        flow_state: { vista: { vista: 'negocios', pagina: 0 } },
+        version: 3,
+      }
+      await handle({ from: '593990978367', text: 'hola' }, ctx.deps)
+      await handle({ from: '593990978367', text: SI_REINICIAR }, ctx.deps)
+
+      const ultimo = ctx.enviados.at(-1)
+      // Las categorías, no la pregunta otra vez.
+      expect(ultimo.options).toEqual(['🍕 Pizzerías', '🍽️ Almuerzos'])
+      expect(ultimo.reply).not.toMatch(/pedido en proceso/i)
+      // Y AHORA sí se suelta el local: el cliente confirmó.
+      expect(ctx.conversacion.valor.selected_business_id).toBeNull()
     })
 
     it('MENÚ con un pedido abierto PREGUNTA antes de tirarlo', async () => {
