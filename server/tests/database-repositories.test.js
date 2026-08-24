@@ -40,10 +40,6 @@ const sessionsSource = readFileSync(
   `${serverDir}/src/db/repositories/sessions.ts`,
   'utf8',
 )
-const tagsSource = readFileSync(
-  `${serverDir}/src/db/repositories/conversation-tags.ts`,
-  'utf8',
-)
 const scheduleSource = readFileSync(
   `${serverDir}/src/db/repositories/schedule.ts`,
   'utf8',
@@ -206,7 +202,11 @@ describe('migración de la capa de datos', () => {
     expect(entrySource).toContain("require('./ai')")
   })
 
-  it('migra conversaciones, sesiones y etiquetas sin romper su contrato', () => {
+  // ⚠️ Se cayeron las ETIQUETAS el 2026-08-23. `conversation-tags.ts` era del
+  // panel de Conversaciones y de nadie más: retirada la pantalla, sus cuatro
+  // funciones se quedaron sin un solo llamador. Cero etiquetas creadas en
+  // producción, comprobado antes de borrarlas.
+  it('migra conversaciones y sesiones sin romper su contrato', () => {
     for (const method of [
       'getConversations',
       'getContactHistory',
@@ -216,28 +216,26 @@ describe('migración de la capa de datos', () => {
       // negocio: borraba las filas del contacto `sim_admin`, y el simulador ya
       // no escribe en el historial de ningún negocio — corre el camino real
       // del marketplace, cuyo estado vive en `marketplace_conversations`.
+      // `getSessions` SE QUEDA aunque su pantalla se fuera: lo usa
+      // `services/reports.ts` para Reactivar y los clientes inactivos.
       'getSession',
       'getSessions',
       'upsertSession',
-      'getTags',
-      'createTag',
-      'updateTag',
-      'deleteTag',
     ]) {
       expect(db[method]).toBeTypeOf('function')
     }
+    // Las etiquetas ya no las expone nadie.
+    for (const retirado of ['getTags', 'createTag', 'updateTag', 'deleteTag']) {
+      expect(db[retirado], `${retirado} debería haberse retirado`).toBeUndefined()
+    }
     expect(facadeSource).not.toMatch(/const getConversations\s*=/)
     expect(facadeSource).not.toMatch(/const upsertSession\s*=/)
-    expect(facadeSource).not.toMatch(/const createTag\s*=/)
   })
 
-  it('aísla historial, sesiones y etiquetas por business_id', () => {
+  it('aísla historial y sesiones por business_id', () => {
     expect(historySource.match(/business_id/g)?.length).toBeGreaterThanOrEqual(4)
     expect(sessionsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
       .toBeGreaterThanOrEqual(2)
-    expect(tagsSource.match(/\.eq\('business_id', businessId\)/g)?.length)
-      .toBeGreaterThanOrEqual(3)
-    expect(tagsSource).toContain('business_id: businessId')
   })
 
   it('impide que datos de sesión reasignen tenant, teléfono o identidad', () => {

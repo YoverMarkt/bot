@@ -8,7 +8,6 @@ import sessions = require('./repositories/sessions')
 import marketplaceConversations = require('./repositories/marketplace-conversations')
 import marketplaceCatalog = require('./repositories/marketplace-catalog')
 import outbox = require('./repositories/outbox')
-import tags = require('./repositories/conversation-tags')
 import schedule = require('./repositories/schedule')
 import sales = require('./repositories/sales')
 import reporting = require('./repositories/reporting')
@@ -39,7 +38,6 @@ const database = {
   ...marketplaceConversations,
   ...marketplaceCatalog,
   ...outbox,
-  ...tags,
   ...schedule,
   ...sales,
   ...reporting,

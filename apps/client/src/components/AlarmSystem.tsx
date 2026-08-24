@@ -1,17 +1,19 @@
 // ── ALARMA INSISTENTE (port fiel del panel viejo) ───────────────────
 // Suena mientras haya pendientes SIN ATENDER (estado en BD):
-//  · chats en modo manual con unread_owner
 //  · pedidos por aceptar Y comprobantes por revisar (ver VIGILADOS)
 // Con: banner fijo, badges, notificación del navegador para pedidos nuevos,
 // silencio temporal (2 min), tope de 3 min por tanda y parpadeo del título de
 // la pestaña.
+//
+// ⚠️ Vigilaba una segunda cosa hasta el 2026-08-23: los chats en modo manual
+// con `unread_owner`. Se fue con la pantalla de Conversaciones — el
+// marketplace no escribe en `conversation_sessions`, así que esa alarma no
+// podía volver a sonar. Lo que queda es lo único que de verdad espera al
+// dueño: un pedido.
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api/client'
-import { Bell, BellOff, Check, Hand, ShoppingBag } from 'lucide-react'
+import { Bell, BellOff, Check, ShoppingBag } from 'lucide-react'
 import * as snd from '../lib/alarm'
-import type { Session } from '../features/conversations/api'
 import type { AttentionOrder } from '../hooks/useAttention'
 import { toast as sonnerToast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
@@ -20,16 +22,14 @@ const ALARM_MAX_MS = 180_000     // 3 minutos seguidos máximo por tanda
 const SILENCE_MS = 120_000       // silenciar = callar 2 minutos
 
 export function AlarmBanner({
-  manual, ordersPending, ordersLoaded,
+  ordersPending, ordersLoaded,
 }: {
-  manual: Session[]
   // Ya llegan filtrados a los estados de `VIGILADOS`: la misma lista suena y
   // avisa. Son DOS —un pedido por aceptar y un comprobante por revisar—, así
   // que aquí no se puede dar por hecho que todos sean lo mismo.
   ordersPending: AttentionOrder[]
   ordersLoaded: boolean
 }) {
-  const qc = useQueryClient()
   const navigate = useNavigate()
   const [ringing, setRinging] = useState(false)
   const [alarmEpoch, setAlarmEpoch] = useState(0)
@@ -39,7 +39,7 @@ export function AlarmBanner({
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const knownOrderIds = useRef<Set<string> | null>(null)
 
-  const shouldRing = manual.length > 0 || ordersPending.length > 0
+  const shouldRing = ordersPending.length > 0
 
   function recheckAfter(milliseconds: number) {
     if (wakeTimer.current) clearTimeout(wakeTimer.current)
@@ -112,19 +112,20 @@ export function AlarmBanner({
     if (wakeTimer.current) clearTimeout(wakeTimer.current)
   }, [])
 
-  // El dueño atendió lo manual → marcar leído en BD (calla de forma persistente)
-  async function attend() {
-    silencedUntil.current = Date.now() + 10_000   // gracia mientras el server confirma
+  /**
+   * Llevar al dueño a lo que espera.
+   *
+   * ⚠️ Ya no marca nada como leído. Marcaba `unread_owner` en las sesiones
+   * manuales, y esa mitad se fue con Conversaciones. Un pedido NO se puede
+   * silenciar así: sigue «pendiente» en la base hasta que el dueño lo acepte
+   * allí, y la alarma insiste a propósito.
+   */
+  function attend() {
+    silencedUntil.current = Date.now() + 10_000   // gracia mientras se navega
     recheckAfter(10_000)
     setRinging(false); snd.stopAlarmSound(); snd.stopTitleFlash()
     if (beepTimer.current) { clearInterval(beepTimer.current); beepTimer.current = null }
-    await Promise.all(manual.map(s =>
-      api(`/api/client/sessions/${encodeURIComponent(s.contact_phone)}/read`, { method: 'PUT' }).catch(() => {})
-    ))
-    qc.invalidateQueries({ queryKey: ['sessions-watch'] })
-    // Llevar a lo que necesita atención. El pedido sigue «pendiente» en BD
-    // hasta que el dueño lo confirme allí: la alarma insiste a propósito.
-    navigate(manual.length ? '/conversations' : '/orders')
+    navigate('/orders')
   }
 
   function silence() {
@@ -146,13 +147,10 @@ export function AlarmBanner({
   const porRevisar = ordersPending.filter(order => order.status === 'pago_en_revision')
   const porAceptar = ordersPending.filter(order => order.status !== 'pago_en_revision')
 
-  const title = manual.length && ordersPending.length
-    ? '¡Tienes pendientes!'
-    : manual.length ? '¡Atiende a un cliente!'
-    : porRevisar.length && !porAceptar.length ? '¡Comprobante por revisar!'
+  const title = porRevisar.length && !porAceptar.length
+    ? '¡Comprobante por revisar!'
     : '¡Nuevo pedido!'
   const parts = []
-  if (manual.length) parts.push(`${manual.length} cliente${manual.length !== 1 ? 's' : ''} esperando respuesta`)
   if (porAceptar.length) parts.push(`${porAceptar.length} pedido${porAceptar.length !== 1 ? 's' : ''} por confirmar`)
   if (porRevisar.length) parts.push(`${porRevisar.length} comprobante${porRevisar.length !== 1 ? 's' : ''} por revisar`)
 
@@ -160,7 +158,7 @@ export function AlarmBanner({
     <>
       {ringing && (
         <div className="fixed inset-x-3 bottom-4 z-50 mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-3 rounded-2xl bg-red-600 px-4 py-3 text-white shadow-2xl animate-pulse motion-reduce:animate-none sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:flex-nowrap sm:px-5">
-          {manual.length ? <Hand className="w-5 h-5" /> : <ShoppingBag className="w-5 h-5" />}
+          <ShoppingBag className="w-5 h-5" />
           <div>
             <div className="font-bold text-sm">{title}</div>
             <div className="text-xs opacity-90">{parts.join(' · ') || 'Tienes pendientes por atender'}</div>

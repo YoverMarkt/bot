@@ -442,8 +442,12 @@ export function BusinessForm() {
 // permisos editables en línea + formulario de nuevo empleado al lado.
 // El permiso "horarios" controla la sección Horarios (todos los
 // negocios la tienen); su nombre se adapta al tipo de negocio.
+// ⚠️ Se retiró el permiso `conversaciones` el 2026-08-23, con la pantalla que
+// gobernaba. El servidor lo SIGUE aceptando en `client_users.permissions`
+// (`ALLOWED_PERMISSIONS`), así que ningún empleado que ya lo tuviera se rompe
+// al guardar: simplemente deja de haber dónde marcarlo y qué abriría.
 const permsForBiz = () => [
-  ['catalogo', 'Catálogo'], ['conversaciones', 'Conversaciones'],
+  ['catalogo', 'Catálogo'],
   ['ventas', 'Ventas'], ['reportes', 'Reportes'],
   ['horarios', 'Horarios'],
 ] as const

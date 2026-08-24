@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import * as custApi from './api'
-import { Repeat2, Sparkles, Download } from 'lucide-react'
+import { Repeat2, Sparkles, Download, Ban, Undo2 } from 'lucide-react'
 import type { Customer } from './api'
+import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
@@ -44,10 +46,43 @@ export default function Customers() {
   )
 }
 
+/** Mismos dígitos: el teléfono llega con `+` por un canal y sin él por otro. */
+const soloDigitos = (phone: string) => String(phone || '').replace(/\D/g, '')
+
 // ── Directorio: quiénes te han comprado, cuánto y hace cuánto ──
 function Directory() {
+  const qc = useQueryClient()
   const { data: customers = [], isLoading, isError, refetch } = useQuery({ queryKey: ['customers'], queryFn: custApi.getCustomers })
+  // ⚠️ Los bloqueados vienen aparte y no dentro del directorio: son pocos —y
+  // en casi todos los negocios, ninguno— y quien molesta puede no haber
+  // comprado nunca, así que no siempre está en esta tabla.
+  const { data: blocked = [] } = useQuery({ queryKey: ['blocked'], queryFn: custApi.getBlocked })
   const [search, setSearch] = useState('')
+
+  // ⚠️ `Array.isArray` y no `blocked.map` a secas. Es la REGRESIÓN del
+  // 2026-08-15, que se muda con el bloqueo: cuando esta petición devolvió `{}`
+  // en vez de una lista —un 502 del proxy, un despliegue a medias—, el `.map`
+  // reventaba y se llevaba por delante la pantalla ENTERA. El dueño se quedaba
+  // sin su directorio de clientes por un dato accesorio.
+  //
+  // El panel compara SIEMPRE normalizado: la ficha guarda `593…` y el pedido
+  // llega como `+593…`. Sin eso un bloqueado volvía a salir como si no lo
+  // estuviera en cuanto se recargaba la pantalla.
+  const bloqueados = useMemo(
+    () => new Set((Array.isArray(blocked) ? blocked : []).map(soloDigitos)),
+    [blocked],
+  )
+  const listaBloqueados = Array.isArray(blocked) ? blocked : []
+
+  const mBlock = useMutation({
+    mutationFn: ({ phone, blocked: value }: { phone: string; blocked: boolean }) =>
+      custApi.setBlocked(phone, value),
+    onSuccess: (_data, variables) => {
+      toast.success(variables.blocked ? 'Cliente bloqueado' : 'Cliente desbloqueado')
+      qc.invalidateQueries({ queryKey: ['blocked'] })
+    },
+    onError: error => toast.error(error instanceof Error ? error.message : 'No se pudo actualizar'),
+  })
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -84,6 +119,7 @@ function Directory() {
                   <TableHead>Total gastado</TableHead>
                   <TableHead>Compras</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -95,7 +131,33 @@ function Directory() {
                     <TableCell className="font-mono tabular-nums">{money(c.total)}</TableCell>
                     <TableCell className="tabular-nums">{c.orders}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={STATUS_BADGE[c.status].cls}>{STATUS_BADGE[c.status].label}</Badge>
+                      {bloqueados.has(soloDigitos(c.phone))
+                        ? <Badge variant="secondary" className="bg-destructive/10 text-destructive">Bloqueado</Badge>
+                        : <Badge variant="secondary" className={STATUS_BADGE[c.status].cls}>{STATUS_BADGE[c.status].label}</Badge>}
+                    </TableCell>
+                    <TableCell className="w-[1%] text-right">
+                      {bloqueados.has(soloDigitos(c.phone)) ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => mBlock.mutate({ phone: c.phone, blocked: false })}
+                        >
+                          <Undo2 /> Desbloquear
+                        </Button>
+                      ) : (
+                        <ConfirmAction
+                          trigger={
+                            <Button variant="outline" size="sm" aria-label={`Bloquear a ${c.name}`}>
+                              <Ban /> Bloquear
+                            </Button>
+                          }
+                          title={`Bloquear a ${c.name}`}
+                          description="No podrá hacer pedidos en tu tienda, ni siquiera con su enlace guardado. No se le avisa de nada. Puedes desbloquearlo desde aquí mismo."
+                          confirmLabel="Bloquear"
+                          destructive
+                          onConfirm={() => mBlock.mutate({ phone: c.phone, blocked: true })}
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -105,7 +167,43 @@ function Directory() {
           <p className="text-xs text-muted-foreground/80 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
         </>
       )}
+      <OtrosBloqueados
+        numeros={listaBloqueados.filter(phone => !customers.some(c => soloDigitos(c.phone) === soloDigitos(phone)))}
+        onDesbloquear={phone => mBlock.mutate({ phone, blocked: false })}
+      />
     </div>
+  )
+}
+
+/**
+ * Los bloqueados que NO están en el directorio.
+ *
+ * ⚠️ Sin esto quedaban atrapados para siempre: el directorio sale de `sales`
+ * —quien COMPRÓ— y quien pide para molestar normalmente no ha comprado nada,
+ * así que su fila no existe ahí y no habría dónde tocar «Desbloquear».
+ *
+ * No se pinta si no hay ninguno, que es el caso de casi todos los negocios.
+ */
+function OtrosBloqueados({ numeros, onDesbloquear }: {
+  numeros: string[]
+  onDesbloquear: (phone: string) => void
+}) {
+  if (!numeros.length) return null
+  return (
+    <Card className="mt-6 p-4 gap-2">
+      <h2 className="text-sm font-semibold text-foreground">Otros números bloqueados</h2>
+      <p className="text-xs text-muted-foreground">
+        No han comprado, así que no salen en el directorio. No pueden hacer pedidos en tu tienda.
+      </p>
+      {numeros.map(phone => (
+        <div key={phone} className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
+          <span className="flex-1 font-mono text-sm text-foreground/80">{phone}</span>
+          <Button variant="outline" size="sm" onClick={() => onDesbloquear(phone)}>
+            <Undo2 /> Desbloquear
+          </Button>
+        </div>
+      ))}
+    </Card>
   )
 }
 

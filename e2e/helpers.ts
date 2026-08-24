@@ -89,35 +89,25 @@ export async function mockClientApi(page: Page) {
     }
     if (path === '/api/client/onboarding') return json(route, { done: 5, total: 5, pct: 100, steps: [] })
     if (path === '/api/client/products') return json(route, [{ id: 'product-e2e', name: 'Producto E2E', price: 10, stock: 5, active: true, status: 'disponible' }])
-    if (path === '/api/client/sessions') {
+    // ⚠️ Se retiraron los simulacros de `/api/client/sessions`,
+    // `/api/client/conversations` y `/api/client/tags` el 2026-08-23, con la
+    // pantalla de Conversaciones. El servidor ya no sirve esas rutas.
+    //
+    // El directorio de Clientes SÍ tiene simulacro: es donde vive ahora el
+    // bloqueo, y sin una fila no habría a quién bloquear.
+    if (path === '/api/client/customers') {
       return json(route, [{
-        contact_phone: '+593999999999',
-        contact_name: 'Cliente móvil',
-        manual_mode: false,
-        unread_owner: false,
-        last_message: 'Hola desde E2E con un preview larguísimo que debe truncarse con elipsis y jamás crear una barra de desplazamiento horizontal en la lista de conversaciones del panel',
-        last_message_at: '2026-07-12T18:00:00.000Z',
-        tags: [],
+        name: 'Cliente E2E',
+        phone: '+593999000111',
+        orders: 2,
+        total: 80,
+        lastPurchase: '2026-07-12T18:00:00.000Z',
+        daysSince: 3,
+        status: 'frecuente',
       }])
     }
-    if (path === '/api/client/conversations') {
-      return json(route, [{
-        contact_phone: '+593999999999',
-        role: 'user',
-        content: 'Hola desde E2E',
-        created_at: '2026-07-12T18:00:00.000Z',
-      }, {
-        contact_phone: '+593999999999',
-        role: 'assistant',
-        // URL imposible de partir: regresión del desbordamiento horizontal del chat
-        content: 'Aquí está la foto: https://res.cloudinary.com/botpanel/image/upload/v1783287641/botpanel/5f53982a-839d-47ea-8086-4d03e3756b3b/uipguoqgwpetw0upvdk5.jpg',
-        created_at: '2026-07-12T18:01:00.000Z',
-      }])
-    }
-    // Los bloqueados son una LISTA de teléfonos, y va antes del comodín por lo
-    // que dice el comentario de abajo: con `{}` el panel se queda en blanco.
-    if (path === '/api/client/sessions/blocked') return json(route, [])
-    if (path === '/api/client/tags' || path === '/api/client/schedule') return json(route, [])
+    if (path === '/api/client/blocked') return json(route, [])
+    if (path === '/api/client/schedule') return json(route, [])
     // Devuelven LISTA, y eso importa: el respaldo de más abajo contesta `{}` a
     // lo que no reconozca, y un `{}` donde el panel espera una lista revienta
     // la pantalla al hacer `.map`. Este mock las descubrió así.

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { Session } from '../features/conversations/api'
 
 // Pedido esperando al negocio. El total lo calculó el servidor; aquí solo se
 // muestra (regla inviolable #8: el panel nunca recalcula dinero).
@@ -29,16 +28,18 @@ export type AttentionOrder = {
  */
 export const VIGILADOS = ['pendiente', 'pago_en_revision'] as const
 
+/**
+ * Lo que espera al negocio ahora mismo.
+ *
+ * ⚠️ Vigilaba dos cosas hasta el 2026-08-23: los pedidos y los chats en modo
+ * manual sin leer. Lo segundo se fue con la pantalla de Conversaciones —el
+ * marketplace no escribe en `conversation_sessions`, así que `unread_owner`
+ * no vuelve a encenderse—, y con ello una consulta cada 12 s que devolvía
+ * siempre lo mismo.
+ */
 export function useAttention(opts: {
-  watchSessions: boolean
   watchOrders?: boolean
 }) {
-  const { data: sessions = [] } = useQuery({
-    queryKey: ['sessions-watch'],
-    queryFn: () => api<Session[]>('/api/client/sessions'),
-    refetchInterval: 12_000,
-    enabled: opts.watchSessions,
-  })
   // Un pedido no puede esperar a que el dueño vuelva a la pestaña: es el único
   // vigilado que sigue consultando con la pestaña en segundo plano. Se pide ya
   // filtrado por estado, así que el pago en datos es mínimo.
@@ -52,7 +53,6 @@ export function useAttention(opts: {
     enabled: opts.watchOrders === true,
   })
 
-  const manual = sessions.filter((session) => session.manual_mode && session.unread_owner)
   // La alarma vive en el Layout: si la respuesta no fuera una lista, el dueño
   // perdería el panel entero, no solo los pedidos.
   //
@@ -65,8 +65,5 @@ export function useAttention(opts: {
 
   // `ordersLoaded` distingue «todavía no cargó» de «cargó y no hay ninguno»:
   // sin él, el primer pedido que entra con la lista vacía no se avisaría.
-  return {
-    sessions,
-    manual, pendingOrders, ordersLoaded,
-  }
+  return { pendingOrders, ordersLoaded }
 }

@@ -49,6 +49,10 @@ const auth: {
 
 const router = createRouter()
 const MIN_PASSWORD_LENGTH = 12
+// ⚠️ `conversaciones` SE QUEDA aunque su pantalla se retirara el 2026-08-23.
+// Un empleado que ya lo tuviera guardado vería su ficha rechazada al primer
+// cambio de nombre si el servidor dejara de reconocerlo, y el permiso no
+// concede nada: no queda una sola ruta que lo exija.
 const validPermissions: Permission[] = [
   'catalogo',
   'conversaciones',

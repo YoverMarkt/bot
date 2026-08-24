@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -292,5 +293,33 @@ describe('el bloqueo del dueño', () => {
     const m = montar({ isContactBlocked: undefined, claimMiniappReply: undefined })
     const enviados = await procesar(m)
     expect(enviados[0]).toContain(URL_DEL_ENLACE)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL HUECO QUE QUEDA, ESCRITO PARA QUE NO SE OLVIDE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Todo lo de arriba prueba el camino del canal PROPIO (`bot-conversation.ts` e
+// `inbound-webhook.ts`). El marketplace NO pasa por ahí: `marketplace-entry.ts`
+// no consulta el bloqueo, así que hoy un bloqueado sigue recibiendo respuestas
+// del menú de Umbani — lo que SÍ se le impide es pedir (403 de la tienda y el
+// disparador `orders_reject_blocked`).
+//
+// No es un descuido que se pueda cablear con una consulta más: con un número
+// compartido, «bloqueado por quién» no tiene respuesta hasta que el cliente
+// elige local. Es una decisión de producto pendiente.
+//
+// Esta prueba falla el día que alguien lo conecte, y ese es el objetivo: que
+// quien lo haga venga aquí y actualice lo que este archivo afirma.
+describe('el bloqueo todavía no alcanza al marketplace', () => {
+  it('marketplace-entry no consulta el bloqueo (y hay que decidir si debe)', () => {
+    const fuente = readFileSync(
+      new URL('../src/services/marketplace-entry.ts', import.meta.url), 'utf8',
+    )
+    expect(
+      fuente,
+      'Si acabas de cablear el bloqueo en el marketplace: enhorabuena, y actualiza esta prueba y el comentario de blocked-contacts.routes.ts.',
+    ).not.toMatch(/isContactBlocked/)
   })
 })
