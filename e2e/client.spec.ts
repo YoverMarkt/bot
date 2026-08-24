@@ -347,6 +347,45 @@ test('un fallo en la lista de bloqueados no deja Clientes en blanco', async ({ p
   await expect(page.getByText('Cliente E2E').first()).toBeVisible()
 })
 
+// ⚠️ EL CASO QUE DE VERDAD IMPORTA, y que el botón de la tabla NO cubre: el
+// directorio sale de `sales` —quien COMPRÓ y recibió su pedido— y quien pide
+// para molestar nunca llega ahí, porque su pedido se cancela. Sin esta casilla
+// el dueño solo podía bloquear a sus buenos clientes.
+test('se puede bloquear un número que nunca compró', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+  let bloqueado: string | null = null
+  await page.route('**/api/client/blocked', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify(bloqueado ? [bloqueado] : []),
+  }))
+  await page.route('**/api/client/blocked/*', route => {
+    bloqueado = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() || '')
+    return route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ blocked: true }),
+    })
+  })
+  await page.goto(`${clientUrl}#/customers`)
+
+  const campo = page.getByLabel('Bloquear un número')
+  await expect(campo).toBeVisible()
+
+  // Un número a medias no puede acabar bloqueando a otra persona.
+  await campo.fill('5939')
+  await expect(page.getByText(/número completo con su código de país/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Bloquear', exact: true })).toBeDisabled()
+
+  await campo.fill('+593 99 555 4433')
+  await page.getByRole('button', { name: 'Bloquear', exact: true }).click()
+  await page.getByRole('button', { name: 'Bloquear', exact: true }).last().click()
+
+  await expect(page.getByText('Cliente bloqueado')).toBeVisible()
+  // Se manda solo en dígitos: el mismo teléfono llega con `+` por un canal y
+  // sin él por otro, y dos formas de escribirlo serían dos clientes.
+  expect(bloqueado).toBe('593995554433')
+  await expect(page.getByText('593995554433')).toBeVisible()
+})
+
 // El bloqueo es la única defensa del dueño frente a quien pide para molestar,
 // y se mudó de Conversaciones a Clientes con la pantalla que lo alojaba.
 test('desde Clientes se puede bloquear y desbloquear', async ({ page }) => {
