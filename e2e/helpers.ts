@@ -139,14 +139,16 @@ export async function mockAdminApi(page: Page) {
     if (path === '/api/admin/clients') {
       return json(route, [{
         id: 'biz-e2e', slug: 'negocio-e2e', name: 'Negocio E2E', type: 'tienda',
-        whatsapp_number: '+593999999999', active: true, bot_active: true,
-        suspended: false, plan: 'basic',
+        whatsapp_number: null, whatsapp_provider: 'marketplace',
+        active: true, bot_active: true, suspended: false,
+        takes_orders: true, storefront_enabled: true, plan: 'basic',
         monthly_contact_limit: 200, monthly_outbound_message_limit: 1000,
         created_at: '2026-07-11T00:00:00.000Z', notes: null,
       }, {
         id: 'biz-limit', slug: 'negocio-limite', name: 'Negocio al límite', type: 'cafetería',
-        whatsapp_number: '+593999999998', active: true, bot_active: true,
-        suspended: false, plan: 'micro',
+        whatsapp_number: null, whatsapp_provider: 'marketplace',
+        active: true, bot_active: true, suspended: false,
+        takes_orders: true, storefront_enabled: false, plan: 'micro',
         monthly_contact_limit: 50, monthly_outbound_message_limit: 250,
         created_at: '2026-07-10T00:00:00.000Z', notes: null,
       }])
@@ -206,13 +208,38 @@ export async function mockAdminApi(page: Page) {
     // ⚠️ La salud del canal es un OBJETO con listas dentro, y el comodín de
     // abajo devolvía `{}`: el dashboard hacía `undefined.length` y no llegaba
     // a renderizarse. Las pruebas daban verde porque solo miraban la URL.
+    // La ficha de un negocio: la que abre «Editar». Sin este simulacro el
+    // comodín del final devolvía `{}` y el modal se abría vacío, así que
+    // ninguna prueba podía mirar lo que enseña al editar.
+    if (path === '/api/admin/clients/biz-e2e') {
+      return json(route, {
+        id: 'biz-e2e', slug: 'negocio-e2e', name: 'Negocio E2E', type: 'pizzería',
+        whatsapp_number: null, whatsapp_provider: 'marketplace',
+        owner_phone: '+593999999999',
+        ycloud_number: null, ycloud_webhook_endpoint_id: null, meta_phone_id: null,
+        active: true, bot_active: true, suspended: false,
+        takes_orders: true, storefront_enabled: true, chat_mode: 'miniapp',
+        plan: 'basic', monthly_rate: 49,
+        monthly_contact_limit: 200, monthly_outbound_message_limit: 1000,
+        created_at: '2026-07-11T00:00:00.000Z', notes: null,
+        client_email: 'dueno@e2e.test',
+      })
+    }
+
     if (path === '/api/admin/channel-health') {
+      // ⚠️ La forma REAL desde el 2026-08-23: el sujeto es el número de la
+      // plataforma. `businesses` va vacío porque ningún local del marketplace
+      // tiene canal propio — que es exactamente lo que devuelve producción.
       return json(route, {
         alert: null,
         silenceHours: 12,
-        businesses: [{
-          businessId: 'biz-e2e', name: 'Negocio E2E', status: 'ok', detail: 'Último mensaje hace 2 h',
-        }],
+        platform: {
+          status: 'ok',
+          lastInboundAt: '2026-08-23T13:31:36.696Z',
+          hoursSinceLastInbound: 0.1,
+          detail: 'Último mensaje hace 0.1 h',
+        },
+        businesses: [],
         recentFailures: [],
       })
     }

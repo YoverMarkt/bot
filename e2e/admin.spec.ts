@@ -51,6 +51,9 @@ test('el dashboard del superadmin se renderiza entero', async ({ page }) => {
   await expect(page.getByText('Negocios')).toBeVisible()
   // Y el recuadro que lo tumbaba, con su contenido.
   await expect(page.getByText('Canal de entrada')).toBeVisible()
+  // ⚠️ El sujeto es el NÚMERO, no una fila por local: con un solo canal, un
+  // semáforo por negocio enseñaba «Sin mensajes» en todos para siempre.
+  await expect(page.getByText('Número de Umbani', { exact: true })).toBeVisible()
   await expect(page.getByText('Negocio E2E').first()).toBeVisible()
 })
 
@@ -239,13 +242,75 @@ test('el alta deduce del tipo cómo va a atender el negocio', async ({ page }) =
   await expect(dialog.getByLabel('Plan vence')).toHaveCount(0)
 
   // Nada de esto se pregunta ya al crear: sale del tipo, o del marketplace.
-  // Todo sigue vivo al EDITAR.
   await expect(dialog.getByText('Canal de WhatsApp')).toHaveCount(0)
   await expect(dialog.getByLabel('Quién conduce la conversación')).toHaveCount(0)
   await expect(dialog.getByLabel('IA de este negocio')).toHaveCount(0)
+  // ⚠️ «Ventas por el bot» y «Mini app de la tienda» ya no existen en NINGUNA
+  // pantalla desde el 2026-08-23: se fundieron en «Aparece en el marketplace»,
+  // que sí sale al editar. Los dos nombres hablaban de un bot por local que no
+  // existe, y por separado permitían un estado en el que el local «vendía» y
+  // ningún cliente podía encontrarlo.
   await expect(dialog.getByLabel('Ventas por el bot')).toHaveCount(0)
   await expect(dialog.getByLabel('Mini app de la tienda')).toHaveCount(0)
+  await expect(dialog.getByLabel('Aparece en el marketplace')).toHaveCount(0)
   await expectConnectedLabels(dialog)
+})
+
+// La pantalla que más va a usar el superadmin al dar de alta locales nuevos:
+// la única decisión que separa un negocio cargado de uno que los clientes
+// pueden encontrar.
+test('al editar, una sola decisión dice si el local sale en el menú', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/clients`)
+  await page.getByRole('row', { name: /Negocio E2E/ }).getByRole('button', { name: 'Editar' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Editar negocio' })
+  await expect(dialog.getByLabel('Nombre *')).toHaveValue('Negocio E2E')
+
+  const visible = dialog.getByRole('combobox', { name: 'Aparece en el marketplace' })
+  await expect(visible).toContainText('Sí')
+  await expect(dialog.getByTestId('client-marketplace-help')).toContainText('número de Umbani')
+
+  // Ocultarlo tiene que decir QUÉ deja de pasar, no solo cambiar de valor.
+  await visible.click()
+  const listbox = page.getByRole('listbox')
+  await listbox.getByRole('option', { name: /queda oculto/ }).click()
+  await expect(listbox).toBeHidden()
+  await expect(dialog.getByTestId('client-marketplace-help')).toContainText('No aparece en ninguna categoría')
+
+  // Y lo que se retiró: un local del marketplace no tiene canal que verificar.
+  await expect(dialog.getByLabel('WhatsApp del negocio *')).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: /Verificar/ })).toHaveCount(0)
+  await expectConnectedLabels(dialog)
+})
+
+// Las columnas que enseñaban un mundo de «un bot por local». La de WhatsApp
+// salía «—» en TODOS los negocios, porque la base les prohíbe tener número.
+test('la tabla de clientes no promete un bot ni un canal por local', async ({ page }) => {
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/clients`)
+
+  await expect(page.getByRole('columnheader', { name: 'WhatsApp' })).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: 'Bot' })).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: 'Canal' })).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: 'Marketplace' })).toBeVisible()
+
+  // El que tiene pedidos y tienda se encuentra; el que no, dice por qué no.
+  const visible = page.getByRole('row', { name: /Negocio E2E/ })
+  await expect(visible.getByText('Visible')).toBeVisible()
+  const oculto = page.getByRole('row', { name: /Negocio al límite/ })
+  await expect(oculto.getByText('Sin tienda encendida')).toBeVisible()
+
+  // «Verificar conexión» respondía SIEMPRE «Proveedor no reconocido», y
+  // «Pausar bot» prometía dejar mudo a un local sin cortar nada.
+  await visible.getByRole('button', { name: /Más acciones/ }).click()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitem', { name: 'Mensaje de bienvenida' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: /Verificar conexión/ })).toHaveCount(0)
+  await expect(menu.getByRole('menuitem', { name: /Pausar bot/ })).toHaveCount(0)
+  await expect(menu.getByRole('menuitem', { name: /Reanudar bot/ })).toHaveCount(0)
 })
 
 test('Facturación muestra la cuota automática y conserva el cobro manual del pago', async ({ page }) => {
