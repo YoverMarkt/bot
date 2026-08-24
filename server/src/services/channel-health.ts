@@ -23,8 +23,32 @@
 
 import { recordError } from './error-log'
 
-/** Horas sin un solo mensaje entrante antes de considerar el canal en silencio. */
-export const DEFAULT_SILENCE_HOURS = 12
+/**
+ * Horas sin un solo mensaje entrante antes de considerar el canal en silencio.
+ *
+ * ⚠️ Eran 12 hasta el 2026-08-24, y con el sujeto cambiado al NÚMERO de la
+ * plataforma esa cifra empezó a mentir en la otra dirección. Un negocio de
+ * comida cierra por la noche: del último pedido (~22:00) al primero del día
+ * siguiente (~11:00) van 13 h **normales**, y un domingo flojo pasa de 20.
+ * La alarma habría sonado casi cada madrugada, y una alarma que grita todas las
+ * noches es una alarma que se acaba ignorando — que es justo lo que este
+ * módulo existe para evitar.
+ *
+ * Se puede subir porque ESTA YA NO ES LA DETECCIÓN PRINCIPAL. Cuando se
+ * escribió, en julio de 2026, el silencio era la única pista. Hoy hay dos
+ * detectores más rápidos y más precisos, que además miran la causa y no el
+ * síntoma:
+ *
+ *   · `recordWebhookFailure` deja constancia EN EL ACTO de cada entrega
+ *     rechazada, con su código.
+ *   · `credential-monitor` revisa cada 6 h que el webhook siga activo,
+ *     apuntando aquí y suscrito a los entrantes — que es exactamente lo que se
+ *     rompió en julio— y además el saldo.
+ *
+ * El silencio queda como red de seguridad de lo que a esos dos se les escape.
+ * Sigue siendo cinco veces más rápido que los cinco días de julio.
+ */
+export const DEFAULT_SILENCE_HOURS = 24
 
 /** Fallos del webhook que se recuerdan en memoria (se pierden al reiniciar). */
 const MAX_RECORDED_FAILURES = 50

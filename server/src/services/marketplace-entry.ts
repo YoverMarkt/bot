@@ -77,6 +77,18 @@ export interface MarketplaceEntryDatabase {
     phone: string,
   ): Promise<{ order_items?: unknown[] } | null>
   getPolicies(businessId: string): Promise<{ welcome_message?: unknown } | null>
+  /**
+   * ¿Se le contesta a este cliente, o ya se pasó del techo de la hora?
+   *
+   * Opcional para no romper a quien construya estas dependencias sin él —el
+   * simulador, las pruebas—: sin la función se atiende, que es fallar abierto.
+   */
+  claimMarketplaceReply?(
+    customerId: string,
+    messageId?: string | null,
+  ): Promise<{ permitido: boolean; respuestas: number }>
+  /** ¿Este local bloqueó a este teléfono? */
+  isContactBlocked?(businessId: string, phone: string): Promise<boolean>
 
   // ── Lo que hace falta para cerrar el pedido dentro del chat ────────
   /** Guarda la dirección del cliente para ESTE negocio. */
@@ -194,13 +206,54 @@ const vistaDe = (flowState: Record<string, unknown> | null): MarketplaceView => 
  *   4. El menú normal.
  */
 export async function handleMarketplaceMessage(
-  input: { from: string; text: string; location?: InboundLocation },
+  input: {
+    from: string
+    text: string
+    location?: InboundLocation
+    /** Id del mensaje entrante: hace idempotente el reclamo del techo. */
+    inboundId?: string | null
+  },
   deps: MarketplaceEntryDeps,
 ): Promise<void> {
   const { database, send } = deps
   const { from, text, location } = input
 
   const customer = await database.resolveMarketplaceCustomer(from)
+
+  // ── 0. EL TECHO DE GASTO ───────────────────────────────────────────
+  //
+  // Va lo PRIMERO de todo salvo por el comprobante, y el orden es el punto: el
+  // número de Umbani contesta a cada mensaje, y desde el 1 de octubre de 2026
+  // cada respuesta se paga. Sin techo, quinientos mensajes son quinientos
+  // mensajes pagados — y no hay local al que cargárselos, porque quien molesta
+  // no ha elegido ninguno.
+  //
+  // ⚠️ EL COMPROBANTE SE CONTESTA AUNQUE ESTÉ SILENCIADO. Quien acaba de pagar
+  // no es quien molesta, y dejarlo sin respuesta con el dinero ya transferido
+  // es el peor momento posible para callarse. Es la misma excepción que ya hace
+  // `bot-conversation.ts` en el canal propio.
+  //
+  // ⚠️ Va ANTES que MENÚ, a diferencia de todo lo demás. MENÚ es la salida del
+  // cliente y por eso se comprueba antes que cualquier intención, pero si el
+  // techo fuera después bastaría con escribir «MENÚ» sin parar para tener
+  // respuestas gratis para siempre — que es justo lo que el techo evita.
+  const esMarcadorDeComprobante = esComprobante(text)
+    || esFotoQueNoEsComprobante(text)
+    || esComprobanteAmbiguo(text)
+
+  if (!esMarcadorDeComprobante && database.claimMarketplaceReply) {
+    // Falla ABIERTO: un fallo de la base no puede dejar mudo al marketplace.
+    const reclamo = await database
+      .claimMarketplaceReply(customer.id, input.inboundId ?? null)
+      .catch(() => ({ permitido: true, respuestas: 0 }))
+    if (!reclamo.permitido) {
+      // Ni una palabra. Avisar al silenciado cuesta justo el mensaje que se
+      // está ahorrando, y le da la reacción que busca.
+      deps.logger?.log(`🔇 [marketplace] techo alcanzado (${reclamo.respuestas}): no se responde`)
+      return
+    }
+  }
+
   const conversation = await database.getConversation(customer.id)
   const categorias = await database.getMarketplaceCategories()
 
@@ -415,6 +468,37 @@ async function entregarLocal(
   version: number | undefined,
 ): Promise<void> {
   const { database, logger } = deps
+
+  // ── ¿Este local bloqueó a este cliente? ────────────────────────────
+  //
+  // El bloqueo YA le impedía pedir —la tienda responde 403 y el disparador
+  // `orders_reject_blocked` rechaza la inserción—, pero hasta aquí el menú le
+  // entregaba igualmente el enlace: el cliente armaba su carrito entero y
+  // descubría el rechazo AL CONFIRMAR, que es el peor momento para enterarse.
+  //
+  // ⚠️ Es del LOCAL, no de la plataforma: bloquear en El Puerto no puede dejar
+  // a nadie fuera de Umbani entero. Por eso se comprueba al elegir local y no
+  // a la entrada — y por eso el resto del menú sigue igual para él.
+  //
+  // ⚠️ NUNCA se le dice que está bloqueado. Quien pide para molestar busca una
+  // reacción, y «te bloquearon» es una reacción — además de un mensaje que se
+  // paga. Se le dice lo mismo que si el local no estuviera disponible.
+  //
+  // ⚠️ Falla ABIERTO: si la consulta revienta se atiende. Dejar a un cliente
+  // legítimo fuera de un local por un fallo nuestro es peor que dejar entrar a
+  // un bloqueado, que además no va a poder cerrar el pedido.
+  const bloqueado = database.isContactBlocked
+    ? await database.isContactBlocked(negocio.id, phone).catch(() => false)
+    : false
+  if (bloqueado) {
+    logger?.log(`⛔ [marketplace] ${negocio.slug} tiene bloqueado a este contacto`)
+    await deps.send(
+      `😕 *${negocio.name}* no está recibiendo pedidos tuyos ahora mismo. `
+      + 'Escribe *MENÚ* para elegir otro local.',
+      [],
+    )
+    return
+  }
 
   // Ante cualquier fallo se manda el ENLACE: la tienda atiende cualquier
   // catálogo y cualquier cantidad de opciones, mientras que un menú de chat
