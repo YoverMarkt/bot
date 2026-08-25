@@ -23,6 +23,64 @@ const sinComentarios = sql => sql.replace(/--[^\n]*/g, '')
 
 afterEach(() => { vi.restoreAllMocks() })
 
+describe('el diccionario que distingue «no entiendo» de «no tengo»', () => {
+  // Devuelve la etiqueta de la categoría a la que apunta el alias, o null.
+  const conFilas = (alias, categoria) => {
+    vi.spyOn(cliente, 'from').mockImplementation((tabla) => {
+      if (tabla === 'marketplace_search_aliases') {
+        return {
+          select: () => ({ in: () => ({ limit: async () => ({ data: alias, error: null }) }) }),
+        }
+      }
+      return {
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: categoria, error: null }) }) }),
+      }
+    })
+  }
+
+  it('«quiero pollo asado» se reconoce y devuelve su categoría', async () => {
+    conFilas([{ category_code: 'asados' }], { label: 'Asados y parrilladas' })
+    await expect(db.marketplaceKnownTerm('quiero pollo asado'))
+      .resolves.toBe('Asados y parrilladas')
+  })
+
+  // Palabra por palabra, no la frase entera: el alias es «pollo», no «quiero
+  // pollo asado». Es el mismo motivo por el que existe la normalización.
+  it('busca por palabras y descarta las cortas', async () => {
+    const capturado = []
+    vi.spyOn(cliente, 'from').mockImplementation(() => ({
+      select: () => ({
+        in: (_col, valores) => { capturado.push(...valores); return { limit: async () => ({ data: [], error: null }) } },
+      }),
+    }))
+    await db.marketplaceKnownTerm('me das un POLLO, con papas')
+    // Sin tildes, en minúsculas, sin puntuación y sin palabras de 1-2 letras.
+    expect(capturado).toContain('pollo')
+    expect(capturado).toContain('papas')
+    expect(capturado).not.toContain('me')
+    expect(capturado).not.toContain('un')
+  })
+
+  it('una tontería no casa con nada', async () => {
+    conFilas([], null)
+    await expect(db.marketplaceKnownTerm('asdfghjkl')).resolves.toBeNull()
+  })
+
+  it('un texto vacío no gasta ni una consulta', async () => {
+    const from = vi.spyOn(cliente, 'from')
+    await expect(db.marketplaceKnownTerm('   ')).resolves.toBeNull()
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  // Falla hacia null: el llamador responde entonces lo de siempre.
+  it('un fallo de la base devuelve null, no lanza', async () => {
+    vi.spyOn(cliente, 'from').mockImplementation(() => ({
+      select: () => ({ in: () => ({ limit: async () => ({ data: null, error: { message: 'caída' } }) }) }),
+    }))
+    await expect(db.marketplaceKnownTerm('pollo')).resolves.toBeNull()
+  })
+})
+
 describe('el ámbito de la búsqueda', () => {
   it('en global busca locales y no productos sueltos', async () => {
     const rpc = vi.spyOn(cliente, 'rpc').mockResolvedValue({ data: [], error: null })
@@ -147,7 +205,7 @@ describe('la búsqueda respeta lo que puede atender', () => {
 const CATEGORIAS = [{ code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', locales: 1 }]
 const CEVICHERIA = { id: 'biz-9', slug: 'el-puerto', name: 'El Puerto', type: 'marisquería' }
 
-const armarEntrada = ({ hits = [], buscar } = {}) => {
+const armarEntrada = ({ hits = [], buscar, conocido = null } = {}) => {
   const conversacion = { valor: null }
   const enviados = []
   const database = {
@@ -177,6 +235,7 @@ const armarEntrada = ({ hits = [], buscar } = {}) => {
     isPlatformBlocked: vi.fn().mockResolvedValue(false),
     claimBlockedNotice: vi.fn().mockResolvedValue(false),
     searchMarketplaceBusinesses: buscar || vi.fn().mockResolvedValue(hits),
+    marketplaceKnownTerm: vi.fn().mockResolvedValue(conocido),
   }
   return {
     database,
@@ -272,5 +331,64 @@ describe('la búsqueda, conectada al flujo', () => {
     const { deps, database } = armarEntrada({ hits: [CEVICHERIA] })
     await escribir(deps, 'hola')
     expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// «NO TE ENTENDÍ» vs «TE ENTIENDO, PERO NO LO TENGO» (2026-08-25)
+//
+// El dueño lo probó y lo vio: escribir «pollo» devolvía «🙏 No te entendí».
+// Y «pollo» SE ENTIENDE — el alias existe y apunta a `asados`; lo que falta es
+// un asadero dado de alta. Llamarle tonto a quien escribió bien es de las
+// cosas que hacen que una app parezca tonta, y le pasa justo al cliente que
+// sabe lo que quiere.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('cuando se entiende pero no hay locales', () => {
+  it('lo dice con su nombre, y ofrece lo que sí hay', async () => {
+    const { deps, enviados } = armarEntrada({ hits: [], conocido: 'Asados y parrilladas' })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'quiero pollo asado')
+
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).not.toContain('No te entendí')
+    expect(texto).toContain('Asados y parrilladas')
+    // No es una calle sin salida: se le enseña lo que sí puede pedir.
+    expect(enviados.flatMap(e => e.options)).toContain('🍕 Pizzerías')
+  })
+
+  // Una tontería SÍ merece «no te entendí»: ahí no hay nada que ofrecer que
+  // tenga que ver con lo que escribió.
+  it('una tontería sigue recibiendo «no te entendí»', async () => {
+    const { deps, enviados } = armarEntrada({ hits: [], conocido: null })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'asdfghjkl')
+    expect(enviados.map(e => e.reply).join('')).toContain('No te entendí')
+  })
+
+  // Primero se busca de verdad: si hay locales, se enseñan. Este mensaje es
+  // solo para cuando la búsqueda vino vacía.
+  it('con resultados NO se dice que no hay', async () => {
+    const { deps, enviados } = armarEntrada({
+      hits: [CEVICHERIA], conocido: 'Mariscos y ceviches',
+    })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'quiero ceviche')
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).not.toMatch(/Todavía no tenemos/)
+    expect(enviados.flatMap(e => e.options)).toContain('El Puerto')
+  })
+
+  // Falla hacia el mensaje de siempre: esto es una mejora del trato, no un
+  // camino del que dependa la respuesta.
+  it('si el diccionario revienta, responde como antes', async () => {
+    const m = armarEntrada({ hits: [] })
+    m.database.marketplaceKnownTerm = vi.fn().mockRejectedValue(new Error('caído'))
+    await escribir(m.deps, 'hola')
+    m.enviados.length = 0
+    await escribir(m.deps, 'quiero pollo')
+    expect(m.enviados.map(e => e.reply).join('')).toContain('No te entendí')
   })
 })
