@@ -100,6 +100,14 @@ export interface MarketplaceEntryDatabase {
     query: string,
     limite?: number,
   ): Promise<{ id: string; slug: string; name: string; type: string }[]>
+  /**
+   * ¿Lo que escribió es comida CONOCIDA, aunque hoy no la venda nadie?
+   *
+   * Distingue «no te entiendo» de «te entiendo, pero no lo tengo». Sin esto,
+   * «pollo» y «asdfghjkl» recibían el mismo reproche — y «pollo» se entiende
+   * perfectamente: lo que falta es un asadero dado de alta.
+   */
+  marketplaceKnownTerm?(query: string): Promise<string | null>
   /** ¿Este local bloqueó a este teléfono? */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
   /**
@@ -520,6 +528,33 @@ export async function handleMarketplaceMessage(
       deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
       await guardar(deps, customer.id, conversation?.version, resultados, { soltarLocal: false })
       await send(resultados.reply, resultados.options)
+      return
+    }
+
+    // ── No hay locales… ¿pero le entendimos? ─────────────────────────
+    //
+    // «pollo» y «asdfghjkl» recibían EXACTAMENTE el mismo «🙏 No te entendí»,
+    // y no son lo mismo: el alias de «pollo» existe y apunta a `asados`, así
+    // que se le entendió — lo que falta es un asadero dado de alta. Decirle
+    // que no se le entendió cuando escribió bien es de las cosas que hacen
+    // que una app parezca tonta, y es justo el cliente que SÍ sabe lo que
+    // quiere.
+    //
+    // ⚠️ Falla hacia el mensaje de siempre: si esto revienta o el término no
+    // está en el diccionario, se responde lo que se respondía antes.
+    const conocido = database.marketplaceKnownTerm
+      ? await database.marketplaceKnownTerm(text).catch(() => null)
+      : null
+    if (conocido) {
+      const portada = verCategorias(categorias, 0)
+      const aviso = {
+        ...portada,
+        reply: `😔 Todavía no tenemos *${conocido}* por aquí.\n\n`
+          + `Esto es lo que sí puedes pedir hoy 👇`,
+      }
+      deps.logger?.log(`🔎 [marketplace] «${text}» → ${conocido}, sin locales`)
+      await guardar(deps, customer.id, conversation?.version, aviso, { soltarLocal: false })
+      await send(aviso.reply, aviso.options)
       return
     }
   }

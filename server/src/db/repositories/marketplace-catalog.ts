@@ -30,6 +30,56 @@ const getMarketplaceBusinesses = async (
   return (data || []) as MarketplaceBusiness[]
 }
 
+/**
+ * ¿Esto que escribió el cliente es COMIDA que conocemos, aunque hoy no haya
+ * ningún local que la venda?
+ *
+ * ⚠️ Existe para no llamarle tonto a quien escribió bien. Hasta el 2026-08-25,
+ * «pollo» y «asdfghjkl» recibían EXACTAMENTE el mismo «🙏 No te entendí» — y
+ * «pollo» sí se entiende: el alias existe y apunta a `asados`, lo que pasa es
+ * que no hay ningún asadero dado de alta. Decirle al cliente que no se le
+ * entendió cuando se le entendió perfectamente es de las cosas que hacen que
+ * una app parezca tonta.
+ *
+ * Devuelve la etiqueta de la categoría («Asados y parrilladas») o `null`.
+ *
+ * ⚠️ Se apoya en el diccionario de alias que ya existe, no en una lista nueva:
+ * dos listas de sinónimos acabarían contradiciéndose, y esta ya la cura el
+ * superadmin. El coste es que solo reconoce lo que esté en ella — «lasaña»
+ * caerá en «no te entendí» hasta que alguien la añada, que es un fallo que se
+ * corrige con datos y sin desplegar.
+ */
+const marketplaceKnownTerm = async (
+  query: string,
+): Promise<string | null> => {
+  const palabras = String(query || '')
+    .toLocaleLowerCase('es')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(palabra => palabra.length >= 3)
+    .slice(0, 8)
+  if (!palabras.length) return null
+
+  const { data, error } = await db
+    .from('marketplace_search_aliases')
+    .select('category_code')
+    .in('term', palabras)
+    .limit(1)
+  if (error || !data?.length) return null
+
+  const code = (data[0] as { category_code?: string }).category_code
+  if (!code) return null
+
+  const { data: categoria } = await db
+    .from('marketplace_categories')
+    .select('label')
+    .eq('code', code)
+    .maybeSingle()
+  return (categoria as { label?: string } | null)?.label || null
+}
+
 export interface MarketplaceHit {
   id: string
   slug: string
@@ -108,4 +158,5 @@ export {
   tipoPideEnChat,
   searchMarketplaceBusinesses,
   searchMarketplaceProducts,
+  marketplaceKnownTerm,
 }
