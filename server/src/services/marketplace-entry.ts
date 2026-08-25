@@ -4,6 +4,7 @@ import {
   recordarPedidoEnProceso,
   responderAlMenu,
   verCategorias,
+  verResultados,
   resolverReinicio,
   type MarketplaceBusiness,
   type MarketplaceCategory,
@@ -87,6 +88,18 @@ export interface MarketplaceEntryDatabase {
     customerId: string,
     messageId?: string | null,
   ): Promise<{ permitido: boolean; respuestas: number }>
+  /**
+   * Buscar locales en TODO el marketplace, sin IA.
+   *
+   * ⚠️ Estuvo CONSTRUIDA Y DESCONECTADA desde el 2026-08-21: tres capas
+   * (alias, texto completo, trigramas), su migración y sus pruebas, y ni un
+   * llamador fuera de su repositorio. «Quiero ceviche» caía en «no te
+   * entendí» aunque la base supiera resolverlo.
+   */
+  searchMarketplaceBusinesses?(
+    query: string,
+    limite?: number,
+  ): Promise<{ id: string; slug: string; name: string; type: string }[]>
   /** ¿Este local bloqueó a este teléfono? */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
   /**
@@ -453,9 +466,15 @@ export async function handleMarketplaceMessage(
   let respuesta: MarketplaceReply = { reply: '', options: [], vista }
   let vistaActual = vista
   for (let intento = 0; intento < 2; intento += 1) {
-    const negocios = vistaActual.vista === 'negocios' && vistaActual.categoria
-      ? await database.getMarketplaceBusinesses(vistaActual.categoria)
-      : []
+    let negocios: MarketplaceBusiness[] = []
+    if (vistaActual.vista === 'negocios' && vistaActual.categoria) {
+      negocios = await database.getMarketplaceBusinesses(vistaActual.categoria)
+    } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta) {
+      // Se repite la búsqueda en vez de guardar los resultados: mantiene el
+      // `flow_state` pequeño y la lista fresca. Falla hacia una lista vacía,
+      // que `paso` resuelve devolviendo al cliente a las categorías.
+      negocios = await buscarLocales(deps, vistaActual.consulta)
+    }
     respuesta = paso({
       // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
       // consumió al elegir la categoría, y esta llamada solo sirve para
@@ -477,8 +496,58 @@ export async function handleMarketplaceMessage(
     return
   }
 
+  // ── 7. No casó con el menú: quizá está BUSCANDO ────────────────────
+  //
+  // «Quiero ceviche» no es una opción equivocada: es un cliente diciendo lo
+  // que quiere. La búsqueda existía desde el 2026-08-21 —alias curados, texto
+  // completo en español y trigramas— y **no la llamaba nadie**, así que esa
+  // frase recibía «🙏 No te entendí» aunque la base supiera resolverla.
+  //
+  // ⚠️ Va DESPUÉS del menú, no antes: si se buscara primero, «1» o «Pizzerías»
+  // se tratarían como texto libre y el cliente que está eligiendo de la lista
+  // acabaría en una búsqueda. El menú manda; buscar es la segunda oportunidad.
+  //
+  // ⚠️ Solo cuando `paso` no entendió Y no hay local elegido: dentro de un
+  // local el ámbito es ese local, y traerle el ceviche de otro negocio metería
+  // en el carrito un producto que no puede estar ahí.
+  //
+  // ⚠️ Falla hacia el mensaje de siempre: si la búsqueda revienta o no
+  // encuentra nada, el cliente recibe exactamente lo que recibía antes.
+  if (respuesta.noEntendido && !conversation?.selected_business_id) {
+    const encontrados = await buscarLocales(deps, text)
+    if (encontrados.length) {
+      const resultados = verResultados(text, encontrados, 0)
+      deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
+      await guardar(deps, customer.id, conversation?.version, resultados, { soltarLocal: false })
+      await send(resultados.reply, resultados.options)
+      return
+    }
+  }
+
   await guardar(deps, customer.id, conversation?.version, respuesta, { soltarLocal: false })
   await send(respuesta.reply, respuesta.options)
+}
+
+/**
+ * Los locales que casan con lo que escribió el cliente.
+ *
+ * ⚠️ Nunca lanza: la búsqueda es una MEJORA sobre «no te entendí», así que un
+ * fallo suyo devuelve al cliente exactamente lo que recibía antes en vez de
+ * dejarlo sin respuesta. `prep_min` va a null porque la RPC no lo devuelve y
+ * el menú solo lo usa para pintar tiempos de la categoría.
+ */
+async function buscarLocales(
+  deps: MarketplaceEntryDeps,
+  consulta: string,
+): Promise<MarketplaceBusiness[]> {
+  const texto = String(consulta || '').trim()
+  if (!texto || !deps.database.searchMarketplaceBusinesses) return []
+  const hits = await deps.database
+    .searchMarketplaceBusinesses(texto, 9)
+    .catch(() => [])
+  return hits.map(hit => ({
+    id: hit.id, slug: hit.slug, name: hit.name, type: hit.type, prep_min: null,
+  }))
 }
 
 /**

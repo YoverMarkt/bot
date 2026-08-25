@@ -133,3 +133,144 @@ describe('la búsqueda respeta lo que puede atender', () => {
     expect(sinComentarios(SQL)).not.toMatch(/create_storefront_order|set_order_status/)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Y AHORA SÍ LA LLAMA ALGUIEN (2026-08-25)
+//
+// Hasta esta fecha la búsqueda estaba CONSTRUIDA Y DESCONECTADA: tres capas,
+// su migración, sus pruebas… y ni un llamador fuera de su repositorio.
+// `marketplace-entry.ts` no la mencionaba, así que «quiero ceviche» recibía
+// «🙏 No te entendí» aunque la base supiera resolverlo. Octavo caso del
+// patrón; por eso estas pruebas ejercen la función REAL, no leen el archivo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CATEGORIAS = [{ code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', locales: 1 }]
+const CEVICHERIA = { id: 'biz-9', slug: 'el-puerto', name: 'El Puerto', type: 'marisquería' }
+
+const armarEntrada = ({ hits = [], buscar } = {}) => {
+  const conversacion = { valor: null }
+  const enviados = []
+  const database = {
+    resolveMarketplaceCustomer: vi.fn().mockResolvedValue({ id: 'cli-1', name: null }),
+    getConversation: vi.fn(async () => conversacion.valor),
+    advanceConversation: vi.fn(async (_id, patch) => {
+      conversacion.valor = {
+        current_state: patch.state || 'navegando',
+        selected_business_id: patch.clearBusiness ? null : (patch.businessId ?? null),
+        shopping_locked: Boolean(patch.shoppingLocked),
+        flow_state: patch.flowState ?? null,
+        version: (conversacion.valor?.version || 0) + 1,
+      }
+      return { conflicto: false }
+    }),
+    getMarketplaceCategories: vi.fn().mockResolvedValue(CATEGORIAS),
+    getMarketplaceBusinesses: vi.fn().mockResolvedValue([
+      { id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 },
+    ]),
+    getBusinessById: vi.fn().mockResolvedValue({
+      id: 'biz-9', name: 'El Puerto', slug: 'el-puerto',
+      storefront_enabled: true, takes_orders: true,
+    }),
+    getPolicies: vi.fn().mockResolvedValue({ welcome_message: null }),
+    claimMarketplaceReply: vi.fn().mockResolvedValue({ permitido: true, respuestas: 1 }),
+    isContactBlocked: vi.fn().mockResolvedValue(false),
+    isPlatformBlocked: vi.fn().mockResolvedValue(false),
+    claimBlockedNotice: vi.fn().mockResolvedValue(false),
+    searchMarketplaceBusinesses: buscar || vi.fn().mockResolvedValue(hits),
+  }
+  return {
+    database,
+    enviados,
+    deps: {
+      database,
+      send: async (reply, options) => { enviados.push({ reply, options }) },
+      issueLink: vi.fn().mockResolvedValue('https://umbani.test/s/token'),
+      tipoPideEnChat: vi.fn().mockResolvedValue(false),
+      avanzarMenu: vi.fn(), crearPedido: vi.fn(), crearPedidoCompleto: vi.fn(),
+    },
+  }
+}
+
+const escribir = async (deps, texto) => {
+  const { handleMarketplaceMessage } = await import('../dist/services/marketplace-entry.js')
+  await handleMarketplaceMessage({ from: '593900000825', text: texto }, deps)
+}
+
+describe('la búsqueda, conectada al flujo', () => {
+  it('«quiero ceviche» encuentra el local en vez de reprochar', async () => {
+    const { deps, enviados, database } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'quiero ceviche')
+
+    expect(database.searchMarketplaceBusinesses).toHaveBeenCalledWith('quiero ceviche', 9)
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).not.toContain('No te entendí')
+    // El local va en las OPCIONES: en WhatsApp es una fila de la lista, no
+    // texto del mensaje.
+    expect(enviados.flatMap(e => e.options)).toContain('El Puerto')
+    // Se dice QUÉ se buscó: si no, una lista de locales tras escribir una
+    // frase parece que el bot cambió de tema.
+    expect(texto).toContain('quiero ceviche')
+  })
+
+  // El menú MANDA. Si se buscara primero, quien está eligiendo de la lista
+  // acabaría en una búsqueda de texto libre.
+  it('elegir del menú NO dispara la búsqueda', async () => {
+    const { deps, database } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    await escribir(deps, '🍕 Pizzerías')
+    expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
+  })
+
+  it('tocar un resultado entra en ese local, como si viniera del menú', async () => {
+    const { deps, enviados } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    await escribir(deps, 'quiero ceviche')
+    enviados.length = 0
+    await escribir(deps, 'El Puerto')
+
+    expect(deps.issueLink).toHaveBeenCalled()
+    expect(enviados.map(e => e.reply).join('')).toContain('umbani.test/s/token')
+  })
+
+  // Sin resultados, el cliente recibe exactamente lo de antes.
+  it('si no encuentra nada, responde como siempre', async () => {
+    const { deps, enviados } = armarEntrada({ hits: [] })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'quiero sushi de wagyu')
+    expect(enviados.map(e => e.reply).join('')).toContain('No te entendí')
+  })
+
+  // La búsqueda es una MEJORA sobre «no te entendí»: un fallo suyo no puede
+  // dejar al cliente sin respuesta.
+  it('si la búsqueda revienta, el cliente recibe su respuesta igual', async () => {
+    const { deps, enviados } = armarEntrada({
+      buscar: vi.fn().mockRejectedValue(new Error('trigramas caídos')),
+    })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'quiero ceviche')
+    expect(enviados.map(e => e.reply).join('')).toContain('No te entendí')
+  })
+
+  // Dentro de un local el ámbito es ese local: traerle el ceviche de otro
+  // negocio metería en el carrito un producto que no puede estar ahí.
+  it('con local elegido NO busca en todo el marketplace', async () => {
+    const { deps, database } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    await escribir(deps, '🍕 Pizzerías')
+    await escribir(deps, 'Monster Pizza')
+    database.searchMarketplaceBusinesses.mockClear()
+    await escribir(deps, 'quiero ceviche')
+    expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
+  })
+
+  // Un saludo no es una búsqueda: no se gasta una consulta en «hola».
+  it('un saludo no dispara la búsqueda', async () => {
+    const { deps, database } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
+  })
+})
