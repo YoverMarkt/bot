@@ -3189,3 +3189,98 @@ end;
 $$;
 
 select '✅ mínimo de compra y tope por hora: sin envío, con descuento, mostrador exento' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PEDIR SUELTA EL TECHO · AL BLOQUEADO SE LE EXPLICA UNA VEZ (2026-08-27)
+--
+-- Armar un pedido dentro del chat son 15-25 mensajes, así que quien pedía dos
+-- veces en la misma hora se comía el techo de 25 y quedaba mudo 12 h: el
+-- cliente que MÁS pide era el que más cerca estaba del silencio.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  v_biz uuid;
+  v_cliente uuid;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-aviso', 'Local Aviso', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+  insert into public.customers (phone) values ('593900000827')
+  returning id into v_cliente;
+
+  -- ── Pedir suelta el techo ───────────────────────────────────────────────
+  insert into public.marketplace_conversations
+    (customer_id, reply_count, reply_window_start, muted_until)
+  values (v_cliente, 20, now(), now() + interval '2 hours');
+
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000827', 'storefront', 'pendiente', 10.00, 10.00);
+
+  if (select reply_count from public.marketplace_conversations where customer_id = v_cliente) <> 0 then
+    raise exception 'crear un pedido debía soltar el contador del techo';
+  end if;
+
+  -- ⚠️ Pero NO levanta un silencio ya caído: si bastara con pedir para
+  -- recuperar la voz, el silenciado haría un pedido falso y volvería a empezar.
+  if (select muted_until from public.marketplace_conversations where customer_id = v_cliente) is null then
+    raise exception 'pedir no puede levantar un silencio ya activo';
+  end if;
+
+  -- El de MOSTRADOR lo teclea el dueño con la persona delante: no puede ser
+  -- una vía para soltarle el contador a nadie.
+  update public.marketplace_conversations set reply_count = 15 where customer_id = v_cliente;
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_biz, v_cliente, '593900000827', 'manual', 'pendiente', 10.00, 10.00);
+
+  if (select reply_count from public.marketplace_conversations where customer_id = v_cliente) <> 15 then
+    raise exception 'el pedido de mostrador no debía tocar el contador';
+  end if;
+
+  -- ── El aviso al bloqueado, una sola vez ─────────────────────────────────
+  insert into public.business_customers (business_id, customer_id)
+  values (v_biz, v_cliente)
+  on conflict (business_id, customer_id) do nothing;
+
+  -- Sin bloqueo no hay nada que explicar: sin esta condición, la primera
+  -- visita de CUALQUIER cliente gastaría el reclamo en silencio.
+  if public.claim_blocked_notice(v_biz, v_cliente) is not false then
+    raise exception 'no se puede reclamar el aviso de quien no está bloqueado';
+  end if;
+
+  update public.business_customers set blocked_at = now()
+   where business_id = v_biz and customer_id = v_cliente;
+
+  if public.claim_blocked_notice(v_biz, v_cliente) is not true then
+    raise exception 'el primer intento del bloqueado debía llevar explicación';
+  end if;
+
+  -- La segunda NO: avisar en cada intento haría que el bloqueado costara más
+  -- mensajes que un cliente normal, y quien molesta insiste.
+  if public.claim_blocked_notice(v_biz, v_cliente) is not false then
+    raise exception 'el aviso debía salir UNA sola vez';
+  end if;
+
+  -- Desbloquear y volver a bloquear es una decisión NUEVA del dueño, y merece
+  -- su propia explicación. Sin limpiar la marca, el segundo bloqueo sería mudo.
+  update public.business_customers set blocked_at = null, blocked_notified_at = null
+   where business_id = v_biz and customer_id = v_cliente;
+  update public.business_customers set blocked_at = now()
+   where business_id = v_biz and customer_id = v_cliente;
+
+  if public.claim_blocked_notice(v_biz, v_cliente) is not true then
+    raise exception 'un bloqueo nuevo merece su propia explicación';
+  end if;
+
+  -- Y no cruza la frontera del negocio ni la del cliente.
+  if public.claim_blocked_notice(gen_random_uuid(), v_cliente) is not false
+     or public.claim_blocked_notice(v_biz, gen_random_uuid()) is not false then
+    raise exception 'el aviso cruzó la frontera del negocio o del cliente';
+  end if;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.marketplace_conversations where customer_id = v_cliente;
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ pedir suelta el techo · al bloqueado se le explica una vez' as resultado;

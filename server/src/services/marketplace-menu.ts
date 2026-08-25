@@ -64,6 +64,50 @@ const normalizar = (valor: string): string => String(valor || '')
   .normalize('NFD')
   .replace(/[̀-ͯ]/g, '')
 
+/**
+ * Los saludos que abren una conversación. No son opciones equivocadas.
+ *
+ * ⚠️ Nace de un fallo real: un cliente escribía «Hola» y recibía «🙏 No te
+ * entendí. Elige una opción de la lista». La bienvenida existía, pero solo se
+ * daba en el PRIMER mensaje de alguien que nunca había escrito —y como la
+ * conversación no vence ni la borra nadie, el cliente que VUELVE (que es el
+ * que más vale) recibía el reproche para siempre.
+ */
+const PALABRAS_DE_SALUDO = new Set([
+  'hola', 'ola', 'holi', 'holis', 'hey', 'ey', 'alo', 'hello', 'hi',
+  'buenas', 'buenos', 'buen', 'dia', 'dias', 'tarde', 'tardes', 'noche',
+  'noches', 'saludos', 'que', 'tal', 'como', 'estas', 'feliz',
+])
+
+/** Un saludo suelto no puede ocupar media conversación. */
+const MAX_PALABRAS_DE_SALUDO = 4
+
+/**
+ * ¿El mensaje es SOLO un saludo?
+ *
+ * ⚠️ Se exige que TODAS sus palabras sean de saludo, no que contenga una.
+ * Así «hola buenas noches» se reconoce entero —que es como saluda la gente—
+ * mientras que «hola quiero pizza» sigue siendo una BÚSQUEDA: tratarla como
+ * saludo le devolvería la portada en vez de buscarle su pizza. Es el mismo
+ * criterio que `esComandoMenu`, que tampoco se dispara con una frase que
+ * solo contiene la palabra.
+ *
+ * Las letras estiradas del final se recortan («holaaa», «buenasss»): es como
+ * se saluda de verdad por WhatsApp.
+ */
+export function esSaludo(mensaje: string): boolean {
+  const texto = normalizar(mensaje)
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!texto) return false
+  const palabras = texto.split(' ')
+  if (palabras.length > MAX_PALABRAS_DE_SALUDO) return false
+  return palabras.every(palabra => (
+    PALABRAS_DE_SALUDO.has(palabra.replace(/(.)\1+$/, '$1'))
+  ))
+}
+
 const etiquetaCategoria = (categoria: MarketplaceCategory): string => (
   categoria.emoji ? `${categoria.emoji} ${categoria.label}` : categoria.label
 )
@@ -223,7 +267,11 @@ export function paso(input: PasoInput): MarketplaceReply {
       }
     }
     const repetir = verNegocios(categoria, negocios, vista.pagina)
-    if (repintar) return repetir
+    // Un saludo a media navegación tampoco es un error: se repinta la lista
+    // donde estaba. Aquí NO se saluda con «Bienvenido a Umbani» — el cliente
+    // ya está dentro de una categoría, y darle la bienvenida otra vez leería
+    // como si hubiera vuelto al principio.
+    if (repintar || esSaludo(mensaje)) return repetir
     return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
   }
 
@@ -245,8 +293,11 @@ export function paso(input: PasoInput): MarketplaceReply {
   }
   // Repintado, o el primer «hola» de alguien que nunca ha escrito: en los dos
   // casos se le da la bienvenida, no un reproche.
-  if (repintar || input.primerContacto) {
-    return verCategorias(categorias, vista.pagina, Boolean(input.primerContacto))
+  const saluda = esSaludo(mensaje)
+  if (repintar || input.primerContacto || saluda) {
+    return verCategorias(
+      categorias, vista.pagina, Boolean(input.primerContacto) || saluda,
+    )
   }
   const repetir = verCategorias(categorias, vista.pagina)
   return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }

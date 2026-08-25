@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 const CATEGORIAS = [{ code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', locales: 1 }]
 const LOCAL = { id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 }
 
-const armar = ({ permitido = true, bloqueado = false } = {}) => {
+const armar = ({ permitido = true, bloqueado = false, avisaDelBloqueo = false } = {}) => {
   const conversacion = { valor: null }
   const enviados = []
   const database = {
@@ -41,6 +41,7 @@ const armar = ({ permitido = true, bloqueado = false } = {}) => {
     getPolicies: vi.fn().mockResolvedValue({ welcome_message: null }),
     claimMarketplaceReply: vi.fn().mockResolvedValue({ permitido, respuestas: permitido ? 3 : 26 }),
     isContactBlocked: vi.fn().mockResolvedValue(bloqueado),
+    claimBlockedNotice: vi.fn().mockResolvedValue(avisaDelBloqueo),
     isPlatformBlocked: vi.fn().mockResolvedValue(false),
   }
   return {
@@ -218,5 +219,62 @@ describe('el bloqueo de PLATAFORMA', () => {
     delete h.database.isPlatformBlocked
     await atender(h.deps, 'hola')
     expect(h.enviados).toHaveLength(1)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AL BLOQUEADO SE LE EXPLICA UNA VEZ (2026-08-25)
+//
+// Hasta esta fecha no se le decía NUNCA. El dueño decidió lo contrario: quien
+// fue bloqueado por dejar pedidos sin recoger no se enteraba de qué hizo mal,
+// y el bloqueado por error tampoco. Pero avisar en CADA intento haría que el
+// bloqueado costara más mensajes que un cliente normal — quien molesta insiste.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('el aviso al bloqueado', () => {
+  const elegirLocal = async (opciones) => {
+    const m = armar(opciones)
+    await atender(m.deps, 'hola')            // portada
+    await atender(m.deps, '🍕 Pizzerías')    // locales
+    m.enviados.length = 0
+    await atender(m.deps, 'Monster Pizza')   // elige local
+    return m
+  }
+
+  it('la primera vez le explica por qué, y le da salida', async () => {
+    const { enviados, database } = await elegirLocal({ bloqueado: true, avisaDelBloqueo: true })
+    expect(database.claimBlockedNotice).toHaveBeenCalledWith('biz-1', 'cli-1')
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).toMatch(/pausó tus pedidos/i)
+    expect(texto).toMatch(/otros locales/i)
+    // El bloqueo es de UN local: nunca se le echa de Umbani entero.
+    expect(texto).toMatch(/MENÚ/)
+  })
+
+  it('a partir de la segunda vuelve el mensaje neutro', async () => {
+    const { enviados } = await elegirLocal({ bloqueado: true, avisaDelBloqueo: false })
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).toMatch(/no está recibiendo pedidos tuyos/i)
+    expect(texto).not.toMatch(/pausó tus pedidos/i)
+  })
+
+  // Falla hacia el silencio: es la conducta anterior a esto, y la barata.
+  it('si el reclamo revienta, se manda el mensaje neutro', async () => {
+    const m = armar({ bloqueado: true })
+    m.database.claimBlockedNotice = vi.fn().mockRejectedValue(new Error('base caída'))
+    await atender(m.deps, 'hola')
+    await atender(m.deps, '🍕 Pizzerías')
+    m.enviados.length = 0
+    await atender(m.deps, 'Monster Pizza')
+    const texto = m.enviados.map(e => e.reply).join('\n')
+    expect(texto).toMatch(/no está recibiendo pedidos tuyos/i)
+  })
+
+  // Al bloqueado JAMÁS se le manda el enlace de la tienda: armaría el carrito
+  // entero para que se lo rechacen al confirmar.
+  it('bloqueado o no, nunca recibe el enlace', async () => {
+    const { enviados, deps } = await elegirLocal({ bloqueado: true, avisaDelBloqueo: true })
+    expect(deps.issueLink).not.toHaveBeenCalled()
+    expect(enviados.map(e => e.reply).join('')).not.toContain('umbani.test/s/')
   })
 })
