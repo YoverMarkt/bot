@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EL PEDIDO SIN PAGAR CADUCA SOLO (2026-08-28)
@@ -114,11 +115,68 @@ describe('el aviso de expiración', () => {
 })
 
 describe('el barrido', () => {
-  it('nunca lanza: corre en un setInterval', async () => {
-    const mod = await import('../dist/services/order-expiry.js')
-    const db = await import('../dist/db/index.js')
-    vi.spyOn(db.default ?? db, 'expireUnpaidOrders').mockRejectedValue(new Error('base caída'))
+  // ⚠️ `createRequire` y no `import`: el servidor es CommonJS, y solo así se
+  // espía el MISMO objeto que usa el código. Con el import de ESM se espía una
+  // copia y el mock no llega — el barrido caía a su `catch` y devolvía 0.
+  const cargar = () => {
+    const req = createRequire(import.meta.url)
+    return {
+      mod: req('../dist/services/order-expiry.js'),
+      db: req('../dist/db'),
+      notice: req('../dist/services/order-status-notice.js'),
+    }
+  }
+
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('avisa a cada cliente cuyo pedido expiró', async () => {
+    const { mod, db, notice } = cargar()
+    vi.spyOn(db, 'expireUnpaidOrders').mockResolvedValue([
+      { order_id: 'ord-1', business_id: 'biz-1', order_number: 7 },
+      { order_id: 'ord-2', business_id: 'biz-1', order_number: 8 },
+    ])
+    const aviso = vi.spyOn(notice, 'avisarAlCliente').mockResolvedValue(undefined)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await expect(mod.expireUnpaidOrders()).resolves.toBe(2)
+    expect(aviso).toHaveBeenCalledTimes(2)
+    // El estado del aviso es `expirado`, no `cancelado`: son mensajes distintos.
+    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-1', 'expirado')
+    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-2', 'expirado')
+  })
+
+  it('sin nada que expirar no manda un solo mensaje', async () => {
+    const { mod, db, notice } = cargar()
+    vi.spyOn(db, 'expireUnpaidOrders').mockResolvedValue([])
+    const aviso = vi.spyOn(notice, 'avisarAlCliente').mockResolvedValue(undefined)
     await expect(mod.expireUnpaidOrders()).resolves.toBe(0)
-    vi.restoreAllMocks()
+    expect(aviso).not.toHaveBeenCalled()
+  })
+
+  // ⚠️ El tope por tanda es el freno contra los cien avisos de golpe: si
+  // alguien lo sube aquí, vuelve el escenario que la vieja prohibición temía.
+  it('pide como mucho 20 por pasada', async () => {
+    const { mod, db } = cargar()
+    const barrido = vi.spyOn(db, 'expireUnpaidOrders').mockResolvedValue([])
+    await mod.expireUnpaidOrders()
+    expect(barrido).toHaveBeenCalledWith(20)
+  })
+
+  it('nunca lanza: corre en un setInterval', async () => {
+    const { mod, db } = cargar()
+    vi.spyOn(db, 'expireUnpaidOrders').mockRejectedValue(new Error('base caída'))
+    await expect(mod.expireUnpaidOrders()).resolves.toBe(0)
+  })
+
+  // Un fallo enviando un aviso no puede dejar sin avisar a los demás… pero
+  // tampoco puede tumbar el proceso.
+  it('si un aviso revienta, el barrido no tumba el servidor', async () => {
+    const { mod, db, notice } = cargar()
+    vi.spyOn(db, 'expireUnpaidOrders').mockResolvedValue([
+      { order_id: 'ord-1', business_id: 'biz-1', order_number: 7 },
+    ])
+    vi.spyOn(notice, 'avisarAlCliente').mockRejectedValue(new Error('canal caído'))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    await expect(mod.expireUnpaidOrders()).resolves.toBe(0)
   })
 })

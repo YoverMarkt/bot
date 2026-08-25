@@ -150,15 +150,16 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
   // cancelaría el pedido antes de que al cliente le dé tiempo a transferir.
   if ('payment_window_minutes' in data) {
     const crudo = data.payment_window_minutes
-    if (crudo === '' || crudo === null || crudo === undefined) {
-      return { error: 'Indica cuántos minutos esperar el comprobante (0 para no expirar)' }
-    }
+    // Misma cautela que el bucle de rangos: una cadena vacía NO es un cero, y
+    // aquí el cero significa «no expirar nunca» — adivinarlo apagaría la
+    // caducidad de un local sin que nadie lo pidiera.
+    const vacio = crudo == null || (typeof crudo === 'string' && crudo.trim() === '')
     const minutos = Number(crudo)
-    if (!Number.isInteger(minutos)
+    if (vacio || !Number.isInteger(minutos)
       || (minutos !== 0 && (minutos < 15 || minutos > 1440))) {
-      return {
+      return res.status(400).json({
         error: 'La espera del comprobante debe ser 0 (no expirar) o entre 15 y 1440 minutos',
-      }
+      })
     }
     data.payment_window_minutes = minutos
   }

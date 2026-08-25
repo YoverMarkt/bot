@@ -8,8 +8,10 @@
  * aviso es lo que se paga.
  */
 const db = require('../db') as typeof import('../db')
-const { notificarCambioDePedido } = require('./order-notify') as
-  typeof import('./order-notify')
+// ⚠️ Por PROPIEDAD, no desestructurando: desestructurar congela la referencia
+// al cargar el módulo y el envío deja de poder ejercerse en una prueba — que
+// es justo lo que hay que poder comprobar de lo que se paga.
+const notify = require('./order-notify') as typeof import('./order-notify')
 
 export const avisarAlCliente = async (
   businessId: string,
@@ -38,7 +40,7 @@ export const avisarAlCliente = async (
 
     const negocio = await db.getBusinessById(businessId)
     if (!negocio) return
-    const enviado = await notificarCambioDePedido(negocio, pedido, status)
+    const enviado = await notify.notificarCambioDePedido(negocio, pedido, status)
 
     // Salió: se cierra el evento y el worker no lo tocará. Si no salió, se
     // deja en la cola y el worker lo reintentará pasada su ventana.

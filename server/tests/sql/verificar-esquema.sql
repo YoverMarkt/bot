@@ -3292,11 +3292,15 @@ select '✅ pedir suelta el techo · al bloqueado se le explica una vez' as resu
 -- aquí no es que expire —eso es fácil— sino los CUATRO frenos que sustituyen a
 -- la vieja prohibición: que no toque al que ya pagó, que respete la ventana
 -- del dueño, que no barra el histórico y que se pueda apagar.
+--
+-- ⚠️ CADA PEDIDO ES DE UN CLIENTE DISTINTO, y no por realismo: con todos del
+-- mismo, el disparador `orders_limit_open_per_customer` —3 abiertos en 6 h,
+-- del 2026-08-25— rechaza el cuarto y el escenario ni llega a montarse. Lo
+-- cazó el CI a la primera, que es justo para lo que está.
 -- ═══════════════════════════════════════════════════════════════════════════
 do $$
 declare
   v_biz uuid;
-  v_cliente uuid;
   v_reciente uuid;
   v_vencido uuid;
   v_pagado uuid;
@@ -3307,8 +3311,10 @@ begin
   insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
   values ('verificacion-caducan', 'Local Caduca', 'pizzería', 'marketplace', true, true)
   returning id into v_biz;
-  insert into public.customers (phone) values ('593900000828')
-  returning id into v_cliente;
+
+  insert into public.customers (phone) values
+    ('593900000841'), ('593900000842'), ('593900000843'),
+    ('593900000844'), ('593900000845');
 
   -- Nace en 120 minutos: ningún local existente cambia de comportamiento.
   if (select payment_window_minutes from public.businesses where id = v_biz) <> 120 then
@@ -3319,27 +3325,32 @@ begin
 
   -- 1. Recién hecho: NO se toca.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
-  values (v_biz, v_cliente, '593900000828', 'storefront', 'esperando_pago', 10, 10)
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10
+  from public.customers where phone = '593900000841'
   returning id into v_reciente;
 
   -- 2. Vencido: este SÍ.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
-  values (v_biz, v_cliente, '593900000828', 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours')
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours'
+  from public.customers where phone = '593900000842'
   returning id into v_vencido;
 
   -- 3. Vencido PERO con comprobante: no es un pedido sin pagar.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at, payment_proof_url)
-  values (v_biz, v_cliente, '593900000828', 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours', 'https://ejemplo/comprobante.jpg')
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours', 'https://ejemplo/comprobante.jpg'
+  from public.customers where phone = '593900000843'
   returning id into v_pagado;
 
   -- 4. De hace dos días: histórico, fuera de la ventana superior.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
-  values (v_biz, v_cliente, '593900000828', 'storefront', 'esperando_pago', 10, 10, now() - interval '2 days')
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '2 days'
+  from public.customers where phone = '593900000844'
   returning id into v_antiguo;
 
   -- 5. De mostrador: lo teclea el dueño con la persona delante.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
-  values (v_biz, v_cliente, '593900000828', 'manual', 'esperando_pago', 10, 10, now() - interval '3 hours')
+  select v_biz, id, phone, 'manual', 'esperando_pago', 10, 10, now() - interval '3 hours'
+  from public.customers where phone = '593900000845'
   returning id into v_mostrador;
 
   select count(*) into v_n from public.expire_unpaid_orders(20);
@@ -3399,7 +3410,7 @@ begin
   end if;
 
   delete from public.businesses where id = v_biz;
-  delete from public.customers where id = v_cliente;
+  delete from public.customers where phone like '59390000084%' or phone = '593900000845';
 end;
 $$;
 

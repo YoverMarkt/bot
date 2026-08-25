@@ -23,10 +23,12 @@
  * proceso con un rechazo sin capturar. Lo que falle va al registro de errores.
  */
 const db = require('../db') as typeof import('../db')
-const { avisarAlCliente } = require('./order-status-notice') as
-  typeof import('./order-status-notice')
-const { recordError } = require('./error-log') as
-  typeof import('./error-log')
+// ⚠️ Se accede por PROPIEDAD (`notice.avisarAlCliente`) y no desestructurando:
+// desestructurar congela la referencia al cargar el módulo, y entonces el
+// camino que de verdad importa —el que avisa— no se puede ejercer en una
+// prueba. Es el mismo patrón que ya usa `order-notify.ts`.
+const notice = require('./order-status-notice') as typeof import('./order-status-notice')
+const errores = require('./error-log') as typeof import('./error-log')
 
 /**
  * Cuántos por pasada. Con un intervalo de 10 minutos son 120 por hora como
@@ -46,13 +48,13 @@ export const expireUnpaidOrders = async (): Promise<number> => {
     // forma atómica y sale por el canal del negocio, así que dispararlos a la
     // vez solo amontonaría peticiones al proveedor sin ganar nada.
     for (const pedido of expirados) {
-      await avisarAlCliente(pedido.business_id, pedido.order_id, 'expirado')
+      await notice.avisarAlCliente(pedido.business_id, pedido.order_id, 'expirado')
     }
     return expirados.length
   } catch (error) {
     // Falla en silencio hacia el registro: que un barrido no corra deja las
     // cosas como estaban ayer, y tumbar el proceso las deja peor.
-    await recordError({
+    await errores.recordError({
       category: 'servidor',
       code: 'expiracion_pedidos',
       message: error instanceof Error ? error.message : 'Error desconocido',
