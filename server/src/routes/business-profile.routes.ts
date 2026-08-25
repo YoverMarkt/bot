@@ -24,6 +24,9 @@ const editableBusinessFields = [
   // más barato: la plataforma no sabe si $5 sobra o cierra el negocio.
   'min_order_amount',
   'max_orders_per_hour',
+  // Cuánto espera el local su comprobante antes de liberar el pedido. 0 = no
+  // expira nunca, que es una decisión legítima de quien coordina por teléfono.
+  'payment_window_minutes',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -97,6 +100,8 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     // «sin mínimo», un valor legítimo que `||` confundiría con «no vino».
     min_order_amount: Number(business.min_order_amount ?? 0),
     max_orders_per_hour: Number(business.max_orders_per_hour ?? 30),
+    // Mismo `??` por el mismo motivo: aquí el 0 es «no expirar nunca».
+    payment_window_minutes: Number(business.payment_window_minutes ?? 120),
     suspended: business.suspended,
     bot_active: business.bot_active,
   })
@@ -136,6 +141,26 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
       })
     }
     data.min_order_amount = Math.round(monto * 100) / 100
+  }
+
+  // ⚠️ La ventana de pago se valida APARTE y no en el bucle de rangos: su
+  // dominio no es continuo. El 0 vale —significa «no expirar nunca», para
+  // quien cobra contra entrega o coordina por teléfono— y a partir de ahí el
+  // mínimo es 15 minutos. Un rango 0..1440 dejaría pasar «5 minutos», que
+  // cancelaría el pedido antes de que al cliente le dé tiempo a transferir.
+  if ('payment_window_minutes' in data) {
+    const crudo = data.payment_window_minutes
+    if (crudo === '' || crudo === null || crudo === undefined) {
+      return { error: 'Indica cuántos minutos esperar el comprobante (0 para no expirar)' }
+    }
+    const minutos = Number(crudo)
+    if (!Number.isInteger(minutos)
+      || (minutos !== 0 && (minutos < 15 || minutos > 1440))) {
+      return {
+        error: 'La espera del comprobante debe ser 0 (no expirar) o entre 15 y 1440 minutos',
+      }
+    }
+    data.payment_window_minutes = minutos
   }
 
   // Los tiempos y el tope replican aquí el CHECK de la base a propósito: el

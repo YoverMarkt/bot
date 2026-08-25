@@ -13629,3 +13629,103 @@ $$;
 
 revoke all on function public.claim_blocked_notice(uuid, uuid) from public;
 grant execute on function public.claim_blocked_notice(uuid, uuid) to service_role;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL PEDIDO SIN PAGAR CADUCA SOLO (2026-08-28)
+--
+-- 20 de las 40 cancelaciones de producción murieron en `esperando_pago`: gente
+-- que pidió y nunca mandó el comprobante, y que el dueño cancelaba a mano.
+-- `expirado` existía en las restricciones desde el 2026-08-05 y nadie lo
+-- escribía nunca.
+--
+-- ⚠️ Rompe a propósito la invariante «no hay tarea que expire pedidos». Los
+-- frenos que la sustituyen: tope por tanda, ventana superior de 24 h para no
+-- barrer el histórico, interruptor por negocio, y que el aviso SUSTITUYE al de
+-- la cancelación manual en vez de añadirse. Ver la migración.
+--
+-- ⚠️ NUNCA expira `pago_en_revision`: ahí el cliente ya pagó.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Cuánto espera cada local su comprobante ─────────────────────────────────
+--
+-- Lo pone el DUEÑO: dos horas sobran en una pizzería y se quedan cortas en un
+-- local que reparte al día siguiente. Nace en 120 minutos.
+--
+-- ⚠️ Aquí el 0 SÍ vale como «no expirar nunca», al revés que
+-- `max_orders_per_hour`. Ese freno protege al local de una avalancha y por eso
+-- no admite infinito; este CANCELA pedidos, que es una decisión de dinero del
+-- dueño — y quien cobra contra entrega o coordina por teléfono tiene motivos
+-- legítimos para no querer que nada caduque.
+alter table public.businesses
+  add column if not exists payment_window_minutes integer not null default 120;
+
+alter table public.businesses
+  drop constraint if exists businesses_payment_window_check;
+alter table public.businesses
+  add constraint businesses_payment_window_check
+  check (payment_window_minutes = 0
+         or (payment_window_minutes >= 15 and payment_window_minutes <= 1440));
+
+comment on column public.businesses.payment_window_minutes is
+  'Minutos que el local espera el comprobante antes de expirar el pedido. 0 = no expira nunca.';
+
+-- ── El barrido ──────────────────────────────────────────────────────────────
+--
+-- Devuelve lo que expiró para que el servidor mande los avisos. No los manda
+-- él: la base no habla WhatsApp, y mezclarlo dejaría el envío dentro de una
+-- transacción que puede tardar.
+create or replace function public.expire_unpaid_orders(
+  p_limite integer default 20
+)
+returns table (
+  order_id uuid,
+  business_id uuid,
+  order_number integer
+)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_fila record;
+  v_hechos integer := 0;
+begin
+  for v_fila in
+    select o.id, o.business_id, o.order_number
+    from public.orders o
+    join public.businesses b on b.id = o.business_id
+    where o.status = 'esperando_pago'
+      and coalesce(o.source, '') = 'storefront'
+      -- Mandó su comprobante: eso ya no es un pedido sin pagar, aunque el
+      -- estado no haya avanzado todavía.
+      and o.payment_proof_url is null
+      and b.payment_window_minutes > 0
+      and o.created_at < now() - make_interval(mins => b.payment_window_minutes)
+      -- ⚠️ La ventana superior. Lo más viejo se queda como está: es histórico
+      -- que el dueño ya gestionó o abandonó, y barrerlo de golpe es justo lo
+      -- que la nota de `order-notify.ts` temía.
+      and o.created_at > now() - interval '24 hours'
+    order by o.created_at
+    limit greatest(1, least(coalesce(p_limite, 20), 100))
+  loop
+    -- Si otro proceso lo movió entre el select y aquí, `set_order_status`
+    -- rechaza la transición y este pedido se salta sin romper la tanda.
+    begin
+      perform public.set_order_status(v_fila.business_id, v_fila.id, 'expirado');
+      order_id := v_fila.id;
+      business_id := v_fila.business_id;
+      order_number := v_fila.order_number;
+      v_hechos := v_hechos + 1;
+      return next;
+    exception when others then
+      -- Un pedido que no se pudo expirar no puede tumbar la tanda entera.
+      null;
+    end;
+  end loop;
+
+  return;
+end;
+$$;
+
+revoke all on function public.expire_unpaid_orders(integer) from public;
+grant execute on function public.expire_unpaid_orders(integer) to service_role;

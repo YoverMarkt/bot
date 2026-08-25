@@ -19,8 +19,13 @@ const SQL = readFileSync(
   fileURLToPath(new URL('../migration-2026-08-21-outbox-de-avisos.sql', import.meta.url)),
   'utf8',
 )
+// ⚠️ El aviso vivía dentro de `routes/orders.routes.ts` y se movió a su
+// propio servicio el 2026-08-28, sin tocar su cuerpo: ahora también lo usa el
+// barrido que expira los pedidos sin pagar, y duplicarlo daría dos sitios
+// donde arreglar cada fallo de lo que se paga. Estas comprobaciones siguen
+// vigilando exactamente lo mismo, solo que en su archivo nuevo.
 const RUTA = readFileSync(
-  fileURLToPath(new URL('../src/routes/orders.routes.ts', import.meta.url)),
+  fileURLToPath(new URL('../src/services/order-status-notice.ts', import.meta.url)),
   'utf8',
 )
 

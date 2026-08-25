@@ -199,6 +199,25 @@ const setOrderStatus = async (businessId: string, id: string, status: string) =>
  * así que un pedido del que no se ha avisado nada no pasaría el filtro y
  * jamás recibiría su primer mensaje.
  */
+/**
+ * Expira los pedidos que llevan demasiado esperando su comprobante.
+ *
+ * Devuelve los que expiró para que el llamador mande los avisos: la base no
+ * habla WhatsApp, y hacerlo dentro de la transacción la dejaría abierta
+ * mientras se espera a un proveedor externo.
+ *
+ * ⚠️ El tope por tanda es el freno principal contra el escenario que temía la
+ * nota de `order-notify.ts` —cien avisos de golpe—, junto con la ventana de
+ * 24 h que la propia función aplica.
+ */
+const expireUnpaidOrders = async (
+  limite = 20,
+): Promise<{ order_id: string; business_id: string; order_number: number | null }[]> => {
+  const { data, error } = await db.rpc('expire_unpaid_orders', { p_limite: limite })
+  if (error) throw new Error(error.message)
+  return (data || []) as { order_id: string; business_id: string; order_number: number | null }[]
+}
+
 const claimOrderNotification = async (
   businessId: string,
   orderId: string,
@@ -292,5 +311,6 @@ export = {
   requestNewPaymentProof,
   confirmOrderPayment,
   claimOrderNotification,
+  expireUnpaidOrders,
   pedidosEsperandoComprobante,
 }

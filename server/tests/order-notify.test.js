@@ -55,10 +55,10 @@ describe('qué estados se avisan', () => {
   // también los dos finales que dejan al cliente esperando de balde. Este test
   // no impide que la lista crezca: impide que crezca sin que alguien lo decida
   // y lo escriba, porque cada hito es dinero en todos los negocios del SaaS.
-  it('son seis, y ni uno más sin decidirlo', () => {
+  it('son siete, y ni uno más sin decidirlo', () => {
     expect([...HITOS_QUE_SE_AVISAN]).toEqual([
       'preparacion', 'en_camino', 'listo_para_retiro', 'completado',
-      'cancelado', 'rechazado',
+      'cancelado', 'rechazado', 'expirado',
     ])
   })
 
@@ -68,20 +68,29 @@ describe('qué estados se avisan', () => {
   it('los estados intermedios no gastan un mensaje', () => {
     for (const status of [
       'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado',
-      'aceptado', 'expirado',
+      'aceptado',
     ]) {
       expect(seAvisa(status), `${status} no debería avisarse`).toBe(false)
       expect(textoDelAviso(NEGOCIO, PEDIDO, status)).toBeNull()
     }
   })
 
-  // ⚠️ `expirado` se queda FUERA a propósito aunque sea final como los otros
-  // dos: hoy no lo escribe nadie —no hay tarea que expire pedidos— así que un
-  // texto para él sería código muerto. Si algún día existe esa tarea, avisar
-  // pasa a ser una decisión de dinero (podría dispararse sobre cien pedidos de
-  // golpe, sin que nadie toque un botón), y por eso no se adelanta aquí.
-  it('expirado no avisa: hoy nadie lo escribe', () => {
-    expect(seAvisa('expirado')).toBe(false)
+  // ⚠️ Esta prueba decía lo CONTRARIO hasta el 2026-08-28: «expirado no avisa,
+  // hoy nadie lo escribe». Ya lo escribe `services/order-expiry.ts`, y el
+  // riesgo que la nota temía —dispararse sobre cien pedidos de golpe— no se
+  // conjura prohibiéndolo sino con frenos que sí se pueden comprobar: tope de
+  // 20 por tanda, ventana superior de 24 h e interruptor por negocio. Están
+  // en `pedidos-que-caducan.test.js` y en `verificar-esquema.sql`.
+  //
+  // Y no es un gasto nuevo: hoy el dueño cancelaba esos pedidos a mano, y
+  // `cancelado` ya avisaba.
+  it('expirado avisa, y su texto no suena a reproche', () => {
+    expect(seAvisa('expirado')).toBe(true)
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado')
+    expect(texto).toMatch(/comprobante/i)
+    // Se cuenta DISTINTO de `cancelado`: el cliente no hizo nada malo, se le
+    // pasó el tiempo, y lo que se quiere es que vuelva a pedir.
+    expect(texto).not.toBe(textoDelAviso(NEGOCIO, PEDIDO, 'cancelado'))
   })
 })
 
