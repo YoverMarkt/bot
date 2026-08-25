@@ -202,6 +202,46 @@ describe('identidad y políticas del negocio', () => {
       })
     })
 
+    // ── La espera del comprobante (2026-08-28) ───────────────────────────
+    //
+    // Aquí el 0 SÍ vale, al revés que en el tope por hora: significa «no
+    // expirar nunca», y quien cobra contra entrega o coordina por teléfono
+    // tiene motivos legítimos para quererlo. Su dominio NO es continuo, por
+    // eso se valida aparte del bucle de rangos.
+    it('la espera del comprobante acepta 0 y el rango 15-1440', async () => {
+      const updateBusiness = vi.spyOn(db, 'updateBusiness').mockResolvedValue({})
+      for (const minutos of [0, 15, 120, 1440]) {
+        updateBusiness.mockClear()
+        const ok = await dispatch('put', '/api/client/business', {
+          auth: authorization(), body: { payment_window_minutes: minutos },
+        })
+        expect(ok.status, `${minutos} debería valer`).toBe(200)
+        expect(updateBusiness).toHaveBeenCalledWith('business-a', {
+          payment_window_minutes: minutos,
+        })
+      }
+    })
+
+    // ⚠️ 5 minutos no le da tiempo ni a hacer la transferencia: el pedido se
+    // cancelaría mientras el cliente está en la app del banco.
+    it('rechaza esperas imposibles y valores a medias', async () => {
+      for (const cuerpo of [
+        { payment_window_minutes: 5 },
+        { payment_window_minutes: 14 },
+        { payment_window_minutes: 1441 },
+        { payment_window_minutes: -10 },
+        { payment_window_minutes: 30.5 },
+        { payment_window_minutes: '' },
+        { payment_window_minutes: null },
+        { payment_window_minutes: 'pronto' },
+      ]) {
+        const response = await dispatch('put', '/api/client/business', {
+          auth: authorization(), body: cuerpo,
+        })
+        expect(response.status, JSON.stringify(cuerpo)).toBe(400)
+      }
+    })
+
     // CERO es «sin mínimo», un valor que el dueño elige a propósito. Es el
     // mismo cuidado que con el tiempo de entrega.
     it('el cero del mínimo SÍ se guarda', async () => {

@@ -70,12 +70,20 @@ export const HITOS_QUE_SE_AVISAN = [
   // y ese es el que no vuelve a pedir.
   //
   // No multiplican el gasto como los demás: un pedido cancelado no recibe
-  // ninguno de los otros, así que es UN mensaje en vez de tres. Y no puede
-  // dispararse solo: `cancelado` y `rechazado` únicamente se escriben desde
-  // `PUT /api/client/orders/:id/status`, que exige sesión de cliente y permiso
-  // de ventas. No hay tarea que expire pedidos por su cuenta.
+  // ninguno de los otros, así que es UN mensaje en vez de tres.
   'cancelado',
   'rechazado',
+  // ⚠️ ESTE SÍ SE DISPARA SOLO, y hasta el 2026-08-28 aquí ponía que ninguno
+  // podía: «no hay tarea que expire pedidos por su cuenta». La cautela era por
+  // el dinero —una tarea automática puede mandar cien avisos de golpe— y sigue
+  // siendo válida, así que se sustituye por frenos concretos en vez de por una
+  // prohibición: tope de 20 por tanda, ventana superior de 24 h para no barrer
+  // el histórico, e interruptor por negocio (`payment_window_minutes = 0`).
+  //
+  // Y no es un gasto NUEVO: hoy el dueño cancela esos pedidos a mano y
+  // `cancelado` ya avisa. Esto sustituye ese mensaje, no lo añade — 20 de las
+  // 40 cancelaciones de producción murieron en `esperando_pago`.
+  'expirado',
 ] as const
 
 export type HitoAvisado = typeof HITOS_QUE_SE_AVISAN[number]
@@ -198,6 +206,21 @@ export const textoDelAviso = (
   // Para él son la misma noticia —su pedido no va a llegar— y la diferencia
   // entre «lo cancelé» y «no lo acepté» es de gestión interna. Contársela solo
   // le haría preguntarse qué hizo mal.
+  // ⚠️ Se cuenta distinto de `cancelado` a propósito. El cliente no hizo nada
+  // malo: se le pasó el tiempo. Decirle «tu pedido fue cancelado» a secas le
+  // deja pensando que el local le falló, cuando lo que falta es su
+  // comprobante — y lo que se quiere es que VUELVA a pedir, no que se ofenda.
+  if (status === 'expirado') {
+    lineas.push(`⌛ *Tu pedido${numero} se canceló*`)
+    lineas.push('')
+    lineas.push('No alcanzamos a recibir tu comprobante de pago, así que '
+      + `${negocio.name} liberó el pedido.`)
+    lineas.push('')
+    lineas.push('Si todavía lo quieres, puedes volver a pedirlo cuando gustes. '
+      + 'Escribe *MENÚ* para empezar de nuevo.')
+    return lineas.join('\n')
+  }
+
   if (status === 'cancelado' || status === 'rechazado') {
     lineas.push(`❌ *Tu pedido${numero} fue cancelado*`)
     lineas.push('')

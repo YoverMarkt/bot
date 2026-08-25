@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { crearWorkerDeAvisos } from '../dist/services/outbox-worker.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -19,8 +20,13 @@ const SQL = readFileSync(
   fileURLToPath(new URL('../migration-2026-08-21-outbox-de-avisos.sql', import.meta.url)),
   'utf8',
 )
+// ⚠️ El aviso vivía dentro de `routes/orders.routes.ts` y se movió a su
+// propio servicio el 2026-08-28, sin tocar su cuerpo: ahora también lo usa el
+// barrido que expira los pedidos sin pagar, y duplicarlo daría dos sitios
+// donde arreglar cada fallo de lo que se paga. Estas comprobaciones siguen
+// vigilando exactamente lo mismo, solo que en su archivo nuevo.
 const RUTA = readFileSync(
-  fileURLToPath(new URL('../src/routes/orders.routes.ts', import.meta.url)),
+  fileURLToPath(new URL('../src/services/order-status-notice.ts', import.meta.url)),
   'utf8',
 )
 
@@ -151,5 +157,92 @@ describe('la cola no se atasca sola', () => {
     expect(SQL).toMatch(/business_id\s+uuid not null references public\.businesses\(id\) on delete cascade/)
     expect(SQL).toContain('alter table public.outbox_events enable row level security')
     expect(SQL).toMatch(/revoke all on table public\.outbox_events\s+from public, anon, authenticated, service_role/)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL AVISO, EJECUTADO DE VERDAD
+//
+// Las comprobaciones de arriba LEEN el archivo: vigilan el orden (encolar
+// antes de enviar) porque un refactor puede invertirlo sin romper nada. Estas
+// lo EJECUTAN, que es lo único que responde «¿y hace lo que dice?».
+//
+// Importa desde el 2026-08-28: el aviso ya no lo dispara solo el botón del
+// dueño, también el barrido que expira los pedidos sin pagar.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('avisarAlCliente, ejecutado', () => {
+  const req = createRequire(import.meta.url)
+  const cargar = () => ({
+    notice: req('../dist/services/order-status-notice.js'),
+    db: req('../dist/db'),
+    notify: req('../dist/services/order-notify.js'),
+  })
+
+  const PEDIDO = { id: 'ord-1', order_number: 7, status: 'expirado', total: 10 }
+
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('reclama, encola, envía y cierra el evento', async () => {
+    const { notice, db, notify } = cargar()
+    const reclamo = vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(PEDIDO)
+    const encolar = vi.spyOn(db, 'enqueueOutboxEvent').mockResolvedValue('ev-1')
+    const cerrar = vi.spyOn(db, 'completeOutboxEvent').mockResolvedValue(undefined)
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Local' })
+    vi.spyOn(notify, 'notificarCambioDePedido').mockResolvedValue(true)
+
+    await notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')
+
+    expect(reclamo).toHaveBeenCalledWith('biz-1', 'ord-1', 'expirado')
+    expect(encolar).toHaveBeenCalled()
+    expect(cerrar).toHaveBeenCalledWith('ev-1', null)
+  })
+
+  // Sin reclamo no hay aviso: es lo que impide que dos toques manden —y
+  // cobren— dos mensajes.
+  it('si el reclamo no es suyo, no manda nada', async () => {
+    const { notice, db, notify } = cargar()
+    vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(null)
+    const encolar = vi.spyOn(db, 'enqueueOutboxEvent')
+    const enviar = vi.spyOn(notify, 'notificarCambioDePedido')
+
+    await notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')
+
+    expect(encolar).not.toHaveBeenCalled()
+    expect(enviar).not.toHaveBeenCalled()
+  })
+
+  // El evento se queda en la cola para que el worker lo reintente: el reclamo
+  // ya se gastó, así que sin cola ese aviso no saldría nunca más.
+  it('si el envío falla, el evento NO se cierra', async () => {
+    const { notice, db, notify } = cargar()
+    vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(PEDIDO)
+    vi.spyOn(db, 'enqueueOutboxEvent').mockResolvedValue('ev-1')
+    const cerrar = vi.spyOn(db, 'completeOutboxEvent').mockResolvedValue(undefined)
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Local' })
+    vi.spyOn(notify, 'notificarCambioDePedido').mockResolvedValue(false)
+
+    await notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')
+    expect(cerrar).not.toHaveBeenCalled()
+  })
+
+  // Encolar no puede impedir el aviso: si la cola falla, se envía igual.
+  it('con la cola caída se envía de todos modos', async () => {
+    const { notice, db, notify } = cargar()
+    vi.spyOn(db, 'claimOrderNotification').mockResolvedValue(PEDIDO)
+    vi.spyOn(db, 'enqueueOutboxEvent').mockRejectedValue(new Error('cola caída'))
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Local' })
+    const enviar = vi.spyOn(notify, 'notificarCambioDePedido').mockResolvedValue(true)
+
+    await notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')
+    expect(enviar).toHaveBeenCalled()
+  })
+
+  // Nunca lanza: sale sin await desde la ruta y desde el barrido, así que una
+  // excepción aquí sería un rechazo sin capturar en el proceso.
+  it('nunca lanza, pase lo que pase', async () => {
+    const { notice, db } = cargar()
+    vi.spyOn(db, 'claimOrderNotification').mockRejectedValue(new Error('base caída'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')).resolves.toBeUndefined()
   })
 })

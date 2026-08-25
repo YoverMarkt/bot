@@ -22,6 +22,7 @@ import {
   type MonitorableBusiness,
 } from './services/credential-monitor'
 import { getPlatformChannel } from './services/platform-channel'
+import { expireUnpaidOrders } from './services/order-expiry'
 import { providerStatusClient } from './integrations/provider-status'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
@@ -508,6 +509,17 @@ httpServer = app.listen(port, () => {
   // proveedores con consultas constantes.
   setTimeout(checkCredentials, 20_000)
   setInterval(checkCredentials, 6 * 60 * 60 * 1000)
+  // ⌛ Los pedidos que se quedaron esperando un comprobante que no llegó.
+  //
+  // Cada 10 min: la ventana del negocio se mide en horas, así que afinar más
+  // no adelanta nada y solo añade consultas. Con el tope de 20 por tanda son
+  // 120 pedidos/hora como techo duro — el freno que sustituye a la vieja
+  // prohibición de «no hay tarea que expire pedidos por su cuenta».
+  //
+  // ⚠️ El primer barrido espera 30 s: si arrancara a la vez que el servidor,
+  // un despliegue con la base todavía fría empezaría cancelando pedidos.
+  setTimeout(expireUnpaidOrders, 30_000)
+  setInterval(expireUnpaidOrders, 10 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)

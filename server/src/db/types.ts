@@ -56,6 +56,7 @@ export interface BusinessRecord {
   min_order_amount?: number | string | null
   /** Cuántos pedidos de la tienda acepta por hora. Protege su cocina. */
   max_orders_per_hour?: number | string | null
+  payment_window_minutes?: number | string | null
   owner_phone?: string | null
   notes?: string | null
   plan?: string | null

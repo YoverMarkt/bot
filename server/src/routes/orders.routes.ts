@@ -3,8 +3,9 @@ import { getClientBusinessId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 import { signedMediaUrl } from '../integrations/cloudinary'
 import {
-  notificarCambioDePedido, seAvisa, type PedidoParaAvisar,
+  seAvisa, type PedidoParaAvisar,
 } from '../services/order-notify'
+import { avisarAlCliente } from '../services/order-status-notice'
 import { conOpcionesAgrupadasEnLote } from '../services/order-detail'
 import type { BusinessRecord } from '../db/types'
 
@@ -92,48 +93,6 @@ const router = createRouter()
  * de errores y el dueño recibe su respuesta correcta igualmente. Convertir
  * esto en un 500 le diría que el pedido no arrancó cuando sí arrancó.
  */
-const avisarAlCliente = async (
-  businessId: string,
-  orderId: string,
-  status: string,
-): Promise<void> => {
-  try {
-    // Se RECLAMA el aviso antes de redactarlo: el reclamo es atómico y solo lo
-    // gana quien de verdad avisa. `set_order_status` responde `updated`
-    // también cuando el estado ya era ese, así que sin esto un segundo toque
-    // en un botón mandaría un segundo mensaje — y desde octubre, lo cobraría
-    // dos veces.
-    const pedido = await db.claimOrderNotification(businessId, orderId, status)
-    if (!pedido) return
-
-    // ⚠️ Se ENCOLA antes de enviar, no después. El reclamo de arriba ya se
-    // consumió: si el proceso muriera entre el reclamo y el envío, o si el
-    // envío fallara —fuera de la ventana de 24 h, sin saldo, canal caído—,
-    // ese aviso no volvería a intentarse nunca. Encolado, se reintenta.
-    //
-    // Encolar no puede impedir el aviso: si la cola falla, se envía igual.
-    const evento = await db.enqueueOutboxEvent({
-      businessId, eventType: 'order_status_notice',
-      aggregateId: orderId, payload: { status },
-    }).catch(() => null)
-
-    const negocio = await db.getBusinessById(businessId)
-    if (!negocio) return
-    const enviado = await notificarCambioDePedido(negocio, pedido, status)
-
-    // Salió: se cierra el evento y el worker no lo tocará. Si no salió, se
-    // deja en la cola y el worker lo reintentará pasada su ventana.
-    if (enviado && evento) {
-      await db.completeOutboxEvent(evento, null).catch(() => { /* lo reintentará */ })
-    }
-  } catch (error) {
-    console.error(
-      '⚠️  aviso de pedido en preparación:',
-      error instanceof Error ? error.message : 'Error desconocido',
-    )
-  }
-}
-
 // ── Ver el comprobante de una transferencia ────────────────────────────────
 //
 // El comprobante ya NO vive en una URL pública: es un movimiento bancario de

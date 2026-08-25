@@ -21,6 +21,7 @@ type BusinessData = {
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; cover_url: string | null; takes_orders?: boolean
   prep_time_minutes: number | null; delivery_extra_minutes: number | null
   min_order_amount: number | null; max_orders_per_hour: number | null
+  payment_window_minutes: number | null
 }
 type TeamUser = { id: string; email: string; name: string | null; role: string; permissions: string[] | null }
 
@@ -256,6 +257,7 @@ export function BusinessForm() {
         // propósito. `minutosO` ya distingue el cero de «no vino».
         min_order_amount: minutosO(f?.min_order_amount, 0),
         max_orders_per_hour: minutosO(f?.max_orders_per_hour, 30),
+        payment_window_minutes: minutosO(f?.payment_window_minutes, 120),
       }),
     }),
     onSuccess: () => {
@@ -374,6 +376,27 @@ export function BusinessForm() {
               <p className="text-[11px] text-muted-foreground/80 mt-1">
                 Pasado ese número, la tienda pide a los siguientes que vuelvan en unos
                 minutos en vez de llenarte la cocina. Súbelo si tu cocina da para más.
+              </p>
+            </div>
+
+            {/* La mitad de los pedidos cancelados se quedaban esperando un
+                comprobante que nunca llegó, y el dueño los cancelaba a mano
+                uno a uno mientras el cliente miraba una pantalla de pago que
+                ya no llevaba a ninguna parte. */}
+            <div>
+              <Label htmlFor="business-payment-window">Espera del comprobante (minutos)</Label>
+              <Input
+                id="business-payment-window"
+                type="number" min="0" max="1440" step="5" inputMode="numeric"
+                value={f.payment_window_minutes ?? 120}
+                onChange={set('payment_window_minutes')}
+                placeholder="Ej: 120"
+              />
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Si el cliente no manda su comprobante en ese tiempo, el pedido se
+                libera solo y se le avisa que puede volver a pedir. Déjalo en
+                <strong> 0 para que nunca caduque</strong>. Mínimo 15 minutos: menos
+                no le da tiempo ni a hacer la transferencia.
               </p>
             </div>
           </div>

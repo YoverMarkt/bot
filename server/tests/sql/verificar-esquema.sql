@@ -3284,3 +3284,134 @@ end;
 $$;
 
 select '✅ pedir suelta el techo · al bloqueado se le explica una vez' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL PEDIDO SIN PAGAR CADUCA SOLO (2026-08-28)
+--
+-- Primera tarea que cambia el estado de un pedido sola. Lo que se comprueba
+-- aquí no es que expire —eso es fácil— sino los CUATRO frenos que sustituyen a
+-- la vieja prohibición: que no toque al que ya pagó, que respete la ventana
+-- del dueño, que no barra el histórico y que se pueda apagar.
+--
+-- ⚠️ CADA PEDIDO ES DE UN CLIENTE DISTINTO, y no por realismo: con todos del
+-- mismo, el disparador `orders_limit_open_per_customer` —3 abiertos en 6 h,
+-- del 2026-08-25— rechaza el cuarto y el escenario ni llega a montarse. Lo
+-- cazó el CI a la primera, que es justo para lo que está.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  v_biz uuid;
+  v_reciente uuid;
+  v_vencido uuid;
+  v_pagado uuid;
+  v_antiguo uuid;
+  v_mostrador uuid;
+  v_n integer;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-caducan', 'Local Caduca', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+
+  insert into public.customers (phone) values
+    ('593900000841'), ('593900000842'), ('593900000843'),
+    ('593900000844'), ('593900000845');
+
+  -- Nace en 120 minutos: ningún local existente cambia de comportamiento.
+  if (select payment_window_minutes from public.businesses where id = v_biz) <> 120 then
+    raise exception 'el valor de arranque de la ventana de pago cambió sin querer';
+  end if;
+
+  update public.businesses set payment_window_minutes = 60 where id = v_biz;
+
+  -- 1. Recién hecho: NO se toca.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10
+  from public.customers where phone = '593900000841'
+  returning id into v_reciente;
+
+  -- 2. Vencido: este SÍ.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours'
+  from public.customers where phone = '593900000842'
+  returning id into v_vencido;
+
+  -- 3. Vencido PERO con comprobante: no es un pedido sin pagar.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at, payment_proof_url)
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '3 hours', 'https://ejemplo/comprobante.jpg'
+  from public.customers where phone = '593900000843'
+  returning id into v_pagado;
+
+  -- 4. De hace dos días: histórico, fuera de la ventana superior.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
+  select v_biz, id, phone, 'storefront', 'esperando_pago', 10, 10, now() - interval '2 days'
+  from public.customers where phone = '593900000844'
+  returning id into v_antiguo;
+
+  -- 5. De mostrador: lo teclea el dueño con la persona delante.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total, created_at)
+  select v_biz, id, phone, 'manual', 'esperando_pago', 10, 10, now() - interval '3 hours'
+  from public.customers where phone = '593900000845'
+  returning id into v_mostrador;
+
+  select count(*) into v_n from public.expire_unpaid_orders(20);
+  if v_n <> 1 then
+    raise exception 'debía expirar EXACTAMENTE uno, y expiró %', v_n;
+  end if;
+
+  if (select status from public.orders where id = v_vencido) <> 'expirado' then
+    raise exception 'el pedido vencido debía expirar';
+  end if;
+  if (select status from public.orders where id = v_reciente) <> 'esperando_pago' then
+    raise exception 'un pedido recién hecho no puede expirar';
+  end if;
+  -- ⚠️ El más importante: quien mandó su comprobante YA PAGÓ. Expirarlo sería
+  -- quedarse con su dinero y cancelarle el pedido.
+  if (select status from public.orders where id = v_pagado) <> 'esperando_pago' then
+    raise exception 'NUNCA se expira a quien ya mandó comprobante';
+  end if;
+  if (select status from public.orders where id = v_antiguo) <> 'esperando_pago' then
+    raise exception 'la ventana de 24 h debía dejar el histórico intacto';
+  end if;
+  if (select status from public.orders where id = v_mostrador) <> 'esperando_pago' then
+    raise exception 'el pedido de mostrador no se expira';
+  end if;
+
+  -- Dejó su rastro, como cualquier cambio de estado hecho por la vía buena.
+  if not exists (
+    select 1 from public.order_events
+    where order_id = v_vencido and to_status = 'expirado'
+  ) then
+    raise exception 'expirar debía quedar registrado en order_events';
+  end if;
+
+  -- Un pedido en revisión JAMÁS se toca: el cliente ya pagó y espera al dueño.
+  update public.orders set status = 'pago_en_revision', payment_proof_url = null,
+         created_at = now() - interval '5 hours'
+   where id = v_reciente;
+  select count(*) into v_n from public.expire_unpaid_orders(20);
+  if v_n <> 0 then
+    raise exception 'un pedido en revisión no puede expirar';
+  end if;
+
+  -- Apagado (0) no toca nada, por vencido que esté.
+  update public.orders set status = 'esperando_pago', created_at = now() - interval '5 hours'
+   where id = v_reciente;
+  update public.businesses set payment_window_minutes = 0 where id = v_biz;
+  select count(*) into v_n from public.expire_unpaid_orders(20);
+  if v_n <> 0 then
+    raise exception 'con la ventana en 0 no debía expirar nada';
+  end if;
+
+  -- Y el tope por tanda manda: es el freno contra los cien avisos de golpe.
+  update public.businesses set payment_window_minutes = 60 where id = v_biz;
+  select count(*) into v_n from public.expire_unpaid_orders(1);
+  if v_n <> 1 then
+    raise exception 'el tope por tanda no se respetó: %', v_n;
+  end if;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone like '59390000084%' or phone = '593900000845';
+end;
+$$;
+
+select '✅ el pedido sin pagar caduca solo: ni el pagado, ni el histórico, ni el de mostrador' as resultado;
