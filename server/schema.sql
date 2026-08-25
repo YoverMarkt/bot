@@ -2901,7 +2901,12 @@ alter table public.business_customers
   -- El último mensaje entrante que ya se contó: la entrada es at-least-once y
   -- un reintento del worker sumaba dos veces
   -- (migration-2026-08-15-reclamo-idempotente.sql).
-  add column if not exists last_reply_message_id text;
+  add column if not exists last_reply_message_id text,
+  -- Cuándo se le EXPLICÓ el bloqueo. Hasta el 2026-08-27 no se le decía nunca,
+  -- y el cliente bloqueado por no recoger sus pedidos no se enteraba de qué
+  -- hizo mal. Se reclama UNA vez y se limpia al desbloquear
+  -- (migration-2026-08-27-techo-y-aviso-de-bloqueo.sql).
+  add column if not exists blocked_notified_at timestamptz;
 
 alter table public.business_customers
   drop constraint if exists business_customers_respuestas_check;
@@ -13538,3 +13543,89 @@ create trigger orders_limit_per_hour
 create index if not exists idx_orders_por_hora
   on public.orders (business_id, created_at)
   where source = 'storefront';
+
+-- ── Pedir suelta el techo de respuestas del marketplace ───────────────────
+--
+-- `claim_marketplace_reply` cuenta 25 respuestas por hora, y armar un pedido
+-- DENTRO del chat son 15-25 mensajes: quien pide dos veces en la misma hora se
+-- comía el techo entero y quedaba mudo 12 h. Se suelta al CREAR el pedido, que
+-- es el único momento en que el cliente demuestra con hechos que no es quien
+-- molesta — el mismo criterio con el que ya se suelta `shopping_locked`.
+--
+-- ⚠️ NO levanta un silencio ya activo: si bastara con pedir para recuperar la
+-- voz, el silenciado haría un pedido falso. Solo evita ACUMULAR mientras compra.
+-- ⚠️ AFTER insert y falla ABIERTO: el pedido ya está en la cocina.
+-- ⚠️ Solo `storefront`: el de mostrador lo teclea el dueño
+-- (migration-2026-08-27-techo-y-aviso-de-bloqueo.sql).
+create or replace function public.orders_reset_marketplace_reply()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if coalesce(new.source, '') <> 'storefront' or new.customer_id is null then
+    return new;
+  end if;
+
+  update public.marketplace_conversations
+     set reply_count = 0,
+         reply_window_start = null,
+         updated_at = now()
+   where customer_id = new.customer_id
+     and coalesce(reply_count, 0) > 0;
+
+  return new;
+exception when others then
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_reset_marketplace_reply on public.orders;
+create trigger orders_reset_marketplace_reply
+  after insert on public.orders
+  for each row execute function public.orders_reset_marketplace_reply();
+
+-- ── Al bloqueado se le explica UNA vez ────────────────────────────────────
+--
+-- Antes no se le decía nunca: quien molesta busca una reacción y cada aviso
+-- cuesta el mensaje que el bloqueo ahorra. Pero callando siempre, el cliente
+-- bloqueado por no recoger sus pedidos no se entera de qué hizo mal. El punto
+-- medio es el RECLAMO: se explica en su primer intento y a partir del segundo
+-- vuelve el mensaje neutro, así el bloqueado nunca cuesta más que un cliente
+-- normal.
+--
+-- ⚠️ El reclamo va DENTRO del `update`: entre un `select` previo y la
+-- escritura caben dos mensajes del mismo cliente, y el aviso saldría dos veces
+-- (migration-2026-08-27-techo-y-aviso-de-bloqueo.sql).
+create or replace function public.claim_blocked_notice(
+  p_business_id uuid,
+  p_customer_id uuid
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_reclamado boolean;
+begin
+  if p_business_id is null or p_customer_id is null then
+    return false;
+  end if;
+
+  update public.business_customers
+     set blocked_notified_at = now(),
+         updated_at = now()
+   where business_id = p_business_id
+     and customer_id = p_customer_id
+     and blocked_at is not null
+     and blocked_notified_at is null
+  returning true into v_reclamado;
+
+  return coalesce(v_reclamado, false);
+end;
+$$;
+
+revoke all on function public.claim_blocked_notice(uuid, uuid) from public;
+grant execute on function public.claim_blocked_notice(uuid, uuid) to service_role;

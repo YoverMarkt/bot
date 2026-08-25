@@ -90,6 +90,14 @@ export interface MarketplaceEntryDatabase {
   /** ¿Este local bloqueó a este teléfono? */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
   /**
+   * ¿Toca EXPLICARLE el bloqueo? Devuelve `true` una sola vez.
+   *
+   * Sin esto el bloqueado recibía siempre el mismo mensaje neutro y nunca
+   * sabía qué hizo mal. Avisarle en CADA intento tampoco vale: quien molesta
+   * insiste, y entonces el bloqueado costaría más mensajes que un cliente.
+   */
+  claimBlockedNotice?(businessId: string, customerId: string): Promise<boolean>
+  /**
    * ¿Está bloqueado en TODA la plataforma?
    *
    * Distinto del anterior: este lo pone el superadmin y significa que Umbani
@@ -521,9 +529,17 @@ async function entregarLocal(
   // a nadie fuera de Umbani entero. Por eso se comprueba al elegir local y no
   // a la entrada — y por eso el resto del menú sigue igual para él.
   //
-  // ⚠️ NUNCA se le dice que está bloqueado. Quien pide para molestar busca una
-  // reacción, y «te bloquearon» es una reacción — además de un mensaje que se
-  // paga. Se le dice lo mismo que si el local no estuviera disponible.
+  // ⚠️ Se le explica UNA VEZ, y solo una (decisión del dueño, 2026-08-25).
+  // Hasta esa fecha no se le decía NUNCA —quien pide para molestar busca una
+  // reacción, y avisar cuesta el mensaje que el bloqueo ahorra—, pero callando
+  // siempre, el cliente bloqueado por no recoger sus pedidos no se enteraba de
+  // qué hizo mal, y el bloqueado por error tampoco. El reclamo da la
+  // explicación en su primer intento y vuelve al mensaje neutro después, así
+  // el bloqueado nunca cuesta más mensajes que un cliente normal.
+  //
+  // ⚠️ El texto NO promete que sea temporal: hoy `blocked_at` no caduca, y lo
+  // levanta el dueño. Prometer un plazo que el sistema no cumple es cómo nació
+  // el fallo del número del 2026-08-23.
   //
   // ⚠️ Falla ABIERTO: si la consulta revienta se atiende. Dejar a un cliente
   // legítimo fuera de un local por un fallo nuestro es peor que dejar entrar a
@@ -533,9 +549,20 @@ async function entregarLocal(
     : false
   if (bloqueado) {
     logger?.log(`⛔ [marketplace] ${negocio.slug} tiene bloqueado a este contacto`)
+    // La PRIMERA vez se le explica; a partir de la segunda vuelve el mensaje
+    // neutro. Falla hacia el silencio, que es la conducta anterior a esto.
+    const toca = database.claimBlockedNotice
+      ? await database.claimBlockedNotice(negocio.id, customer.id).catch(() => false)
+      : false
     await deps.send(
-      `😕 *${negocio.name}* no está recibiendo pedidos tuyos ahora mismo. `
-      + 'Escribe *MENÚ* para elegir otro local.',
+      toca
+        ? `⛔ *${negocio.name}* pausó tus pedidos.\n\n`
+          + 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger. '
+          + 'Si crees que es un error, comunícate directamente con el local '
+          + 'para resolverlo.\n\n'
+          + 'Mientras tanto puedes pedir en otros locales: escribe *MENÚ*.'
+        : `😕 *${negocio.name}* no está recibiendo pedidos tuyos ahora mismo. `
+          + 'Escribe *MENÚ* para elegir otro local.',
       [],
     )
     return

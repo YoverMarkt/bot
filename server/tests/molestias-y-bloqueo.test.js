@@ -347,11 +347,37 @@ describe('el marketplace tiene techo de gasto y honra el bloqueo', () => {
     expect(alElegir).toBeGreaterThan(alEntrar)
   })
 
-  // Al bloqueado NUNCA se le dice que lo está: busca una reacción, y avisar
-  // cuesta justo el mensaje que se está ahorrando.
-  it('no le dice al bloqueado que está bloqueado', () => {
+  // ⚠️ Esta prueba fijaba «NUNCA se le avisa» hasta el 2026-08-25. El dueño
+  // decidió lo contrario: callando siempre, el cliente bloqueado por no
+  // recoger sus pedidos no se entera de qué hizo mal, y el bloqueado por error
+  // tampoco. Se reescribió para fijar la regla nueva, no se borró.
+  it('sigue existiendo el mensaje NEUTRO, que es el de la segunda vez en adelante', () => {
     const mensaje = fuente.match(/no está recibiendo pedidos tuyos[^`]*/)
     expect(mensaje, 'debería haber un mensaje neutro para el bloqueado').toBeTruthy()
     expect(mensaje[0]).not.toMatch(/bloquead/i)
+  })
+
+  // El aviso sale UNA vez y solo una. Avisar en cada intento haría que el
+  // bloqueado costara más mensajes que un cliente normal: quien molesta insiste.
+  it('la explicación depende del reclamo, no se manda siempre', () => {
+    expect(fuente).toMatch(/claimBlockedNotice\(negocio\.id, customer\.id\)/)
+    // El mensaje explicativo cuelga del reclamo, no del bloqueo a secas.
+    expect(fuente).toMatch(/const toca = database\.claimBlockedNotice[\s\S]{0,400}toca\s*\?/)
+  })
+
+  // Falla hacia el SILENCIO, que es la conducta anterior. Al revés, un fallo
+  // repetido de la base convertiría el bloqueo en una fuente de mensajes pagados.
+  it('el reclamo del aviso falla hacia el silencio', () => {
+    expect(fuente).toMatch(/claimBlockedNotice\(negocio\.id, customer\.id\)\.catch\(\(\) => false\)/)
+  })
+
+  // Hoy `blocked_at` no caduca: lo levanta el dueño. Prometer un plazo que el
+  // sistema no cumple es exactamente cómo nació el fallo del número.
+  it('la explicación NO promete que el bloqueo sea temporal', () => {
+    const explicacion = fuente.match(/pausó tus pedidos[\s\S]{0,400}?escribe \*MENÚ\*/)
+    expect(explicacion, 'debería existir la explicación').toBeTruthy()
+    expect(explicacion[0]).not.toMatch(/temporal|\d+\s*(hora|dia|día|semana)/i)
+    // Y da salida: el bloqueo es de UN local, no de Umbani entero.
+    expect(explicacion[0]).toMatch(/otros locales/i)
   })
 })

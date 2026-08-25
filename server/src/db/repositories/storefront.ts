@@ -493,6 +493,32 @@ const isContactBlocked = async (businessId: string, phone: string): Promise<bool
   return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
 }
 
+/**
+ * ¿Toca EXPLICARLE el bloqueo a este cliente? Una sola vez.
+ *
+ * Devuelve `true` en su primer intento tras ser bloqueado y `false` en todos
+ * los siguientes, así el bloqueado nunca cuesta más mensajes que un cliente
+ * normal — que es lo que pasaría avisando cada vez, porque quien molesta
+ * insiste.
+ *
+ * ⚠️ Falla hacia el SILENCIO (`false`): ante un fallo de la base se manda el
+ * mensaje neutro de siempre, que es la conducta anterior a esto. Al revés
+ * —avisar por defecto— un fallo repetido convertiría el bloqueo en una fuente
+ * de mensajes pagados.
+ */
+const claimBlockedNotice = async (
+  businessId: string,
+  customerId: string,
+): Promise<boolean> => {
+  if (!businessId || !customerId) return false
+  const { data, error } = await db.rpc('claim_blocked_notice', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+  })
+  if (error) return false
+  return data === true
+}
+
 /** Lo mismo cuando ya se sabe QUIÉN es: el camino de la mini app. */
 const isCustomerBlocked = async (businessId: string, customerId: string): Promise<boolean> => {
   if (!businessId || !customerId) return false
@@ -550,7 +576,13 @@ const setContactBlocked = async (
     .from('business_customers')
     .update(bloqueado
       ? { blocked_at: ahora, updated_at: ahora }
-      : { blocked_at: null, muted_until: null, reply_count: 0, reply_window_start: null, updated_at: ahora })
+      // Desbloquear limpia también `blocked_notified_at`: si el dueño lo
+      // vuelve a bloquear más adelante, esa es una decisión NUEVA y merece su
+      // propia explicación.
+      : {
+        blocked_at: null, blocked_notified_at: null, muted_until: null,
+        reply_count: 0, reply_window_start: null, updated_at: ahora,
+      })
     .eq('business_id', businessId)
     .eq('customer_id', customer.id)
   fail(error, 'No se pudo actualizar el bloqueo')
@@ -693,6 +725,7 @@ export = {
   claimStorefrontLinkSend,
   claimMiniappReply,
   isContactBlocked,
+  claimBlockedNotice,
   isCustomerBlocked,
   setContactBlocked,
   getBlockedPhones,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  PAGINA, VER_MAS, VOLVER, elegir, paso, verCategorias, verNegocios,
+  PAGINA, VER_MAS, VOLVER, elegir, esSaludo, paso, verCategorias, verNegocios,
 } from '../dist/services/marketplace-menu.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -216,14 +216,55 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
     expect(r.options.length).toBeGreaterThan(0)
   })
 
-  it('pero quien YA conocía el menú sí recibe el aviso', () => {
+  // ⚠️ Esta prueba fijaba lo CONTRARIO hasta el 2026-08-25: quien ya había
+  // escrito recibía «No te entendí» al saludar. Se reescribió, no se borró.
+  // El fallo lo vio el dueño en su teléfono: la conversación no vence ni la
+  // borra nadie, así que el cliente que VUELVE —el que más vale— recibía el
+  // reproche cada vez que decía «Hola», para siempre.
+  it('y quien YA había escrito recibe la bienvenida igual, no un reproche', () => {
     const r = paso({
       mensaje: 'Hola buenas noches',
       vista: { vista: 'categorias', pagina: 0 },
       categorias: CATEGORIAS, negocios: [],
       primerContacto: false,
     })
+    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).toContain('Bienvenido')
+    expect(r.options.length).toBeGreaterThan(0)
+  })
+
+  it('pero una BÚSQUEDA con saludo delante sigue siendo una búsqueda', () => {
+    // «hola quiero pizza» no puede devolver la portada: el cliente pidió algo
+    // concreto, y contestarle con el menú entero es no haberle escuchado.
+    const r = paso({
+      mensaje: 'hola quiero pizza',
+      vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+      primerContacto: false,
+    })
     expect(r.reply).toContain('No te entendí')
+  })
+})
+
+describe('qué cuenta como saludo', () => {
+  it('reconoce cómo saluda la gente de verdad', () => {
+    for (const saludo of [
+      'Hola', 'hola', 'HOLA', 'holaaa', 'ola', 'Buenas', 'buenass',
+      'buenos días', 'buenas tardes', 'Buenas noches', 'hola buenas',
+      'hola buenas noches', 'hey', 'Saludos', 'qué tal', 'como estas',
+    ]) {
+      expect(esSaludo(saludo), `«${saludo}» debería ser saludo`).toBe(true)
+    }
+  })
+
+  it('y NO se traga lo que el cliente sí quiere pedir', () => {
+    for (const texto of [
+      'hola quiero pizza', 'pizza', 'buenas quiero un ceviche', 'menu',
+      'hola, me traes dos hamburguesas y una cola por favor', '', '   ',
+      'quiero saber que tal esta la pizza de esta pizzeria hoy',
+    ]) {
+      expect(esSaludo(texto), `«${texto}» NO debería ser saludo`).toBe(false)
+    }
   })
 })
 
