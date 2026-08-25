@@ -36,14 +36,32 @@ export interface MarketplaceBusiness {
 
 /** Dónde está el cliente dentro del menú. Se guarda en `flow_state`. */
 export interface MarketplaceView {
-  vista: 'categorias' | 'negocios' | 'confirmando_reinicio'
+  vista: 'categorias' | 'negocios' | 'busqueda' | 'confirmando_reinicio'
   categoria?: string
+  /**
+   * Lo que el cliente escribió, cuando la vista es una BÚSQUEDA.
+   *
+   * ⚠️ Se guarda la consulta, no los resultados. Volver a buscar cuesta una
+   * consulta, pero mantiene `flow_state` pequeño y —lo que importa— los
+   * resultados frescos: un local que se suspendió entre medias desaparece de
+   * la lista en vez de seguir ofreciéndose.
+   */
+  consulta?: string
   pagina: number
 }
 
 export interface MarketplaceReply {
   reply: string
   options: string[]
+  /**
+   * El mensaje no casó con ninguna opción del menú.
+   *
+   * Es la señal de que quizá el cliente esté BUSCANDO («quiero ceviche») en
+   * vez de equivocándose. El llamador la usa para consultar la búsqueda antes
+   * de responder «no te entendí» — `paso` no puede hacerlo solo porque es una
+   * función pura y buscar exige tocar la base.
+   */
+  noEntendido?: boolean
   /** Cuando el cliente eligió local: a partir de aquí manda la tienda. */
   negocioElegido?: MarketplaceBusiness
   vista: MarketplaceView
@@ -207,6 +225,29 @@ export function verNegocios(
   }
 }
 
+/**
+ * Lo que encontró la búsqueda. Un local es un local: se pintan igual que los
+ * de una categoría, y al tocar uno se entra por el mismo camino.
+ *
+ * ⚠️ Se dice QUÉ se buscó («Esto encontré para "ceviche"»). Sin eso, una lista
+ * suelta de locales después de escribir una frase parece que el bot cambió de
+ * tema — sobre todo si el nombre del local no contiene la palabra buscada, que
+ * es justo el caso para el que existen los alias y los trigramas.
+ */
+export function verResultados(
+  consulta: string,
+  negocios: MarketplaceBusiness[],
+  pagina = 0,
+): MarketplaceReply {
+  const limpia = String(consulta || '').trim().slice(0, 60)
+  const { hayMas, opciones } = paginar(negocios, pagina, etiquetaNegocio)
+  return {
+    reply: `🔎 Esto encontré para *${limpia}*:`,
+    options: [...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER],
+    vista: { vista: 'busqueda', consulta: limpia, pagina },
+  }
+}
+
 export interface PasoInput {
   /**
    * Lo que escribió el cliente.
@@ -244,6 +285,37 @@ export function paso(input: PasoInput): MarketplaceReply {
   // Repintar la vista tal cual: nadie se equivocó, no hay nada que reprochar.
   const repintar = !normalizar(mensaje)
 
+  // ── Los resultados de una búsqueda ──────────────────────────────────
+  //
+  // Se pintan como cualquier lista de locales y al tocar uno se entra por el
+  // MISMO camino (`negocioElegido`): un local es un local, venga del menú o de
+  // haber escrito «quiero ceviche».
+  if (vista.vista === 'busqueda' && vista.consulta) {
+    const { mostrados, hayMas, opciones } = paginar(negocios, vista.pagina, etiquetaNegocio)
+    const elegida = elegir(mensaje, [
+      ...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER,
+    ])
+
+    if (elegida === VOLVER) return verCategorias(categorias, 0)
+    if (elegida === VER_MAS) return verResultados(vista.consulta, negocios, vista.pagina + 1)
+
+    const negocio = mostrados.find(n => etiquetaNegocio(n) === elegida)
+    if (negocio) {
+      return {
+        reply: '',
+        options: [],
+        negocioElegido: negocio,
+        vista: { vista: 'busqueda', consulta: vista.consulta, pagina: vista.pagina },
+      }
+    }
+
+    // No eligió ninguno: puede estar buscando OTRA cosa. Se devuelve la señal
+    // para que el llamador busque de nuevo antes de reprocharle nada.
+    const repetir = verResultados(vista.consulta, negocios, vista.pagina)
+    if (repintar || esSaludo(mensaje)) return repetir
+    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
+  }
+
   if (vista.vista === 'negocios' && vista.categoria) {
     const categoria = categorias.find(c => c.code === vista.categoria)
     // La categoría dejó de tener locales mientras el cliente miraba.
@@ -272,7 +344,7 @@ export function paso(input: PasoInput): MarketplaceReply {
     // ya está dentro de una categoría, y darle la bienvenida otra vez leería
     // como si hubiera vuelto al principio.
     if (repintar || esSaludo(mensaje)) return repetir
-    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
+    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
   }
 
   // Estamos en la portada.
@@ -300,7 +372,7 @@ export function paso(input: PasoInput): MarketplaceReply {
     )
   }
   const repetir = verCategorias(categorias, vista.pagina)
-  return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}` }
+  return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
