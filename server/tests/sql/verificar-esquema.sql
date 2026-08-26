@@ -2656,17 +2656,41 @@ begin
     raise exception 'al comercio debían quedarle 72.00, le quedaron %', v_ped.merchant_subtotal;
   end if;
 
-  -- (c) `on_top` no se puede guardar: el precio del cliente no sube.
+  -- (c) `on_top` SÍ se puede guardar desde el 2026-08-25, y el comercio cobra
+  -- entero.
   --
-  -- Descartado por el dueño el 2026-08-16 —«lo que está en la app no tiene que
-  -- subir de valor»— y además exigiría que el catálogo pintara los precios con
-  -- margen. Mientras no exista eso, activarlo mostraría un precio y cobraría
-  -- otro. Falla CERRADO, igual que `scope` con 'category'.
+  -- ⚠️ Aquí ponía lo CONTRARIO: que `on_top` estaba prohibido, «descartado por
+  -- el dueño el 2026-08-16 —lo que está en la app no tiene que subir de
+  -- valor—». El dueño revirtió esa decisión el 2026-08-25 al ver que el modelo
+  -- absorbido le descontaba el margen al local: sobre un pedido de $8 el
+  -- comercio recibía $7,20, un descuento forzoso que nunca pactó.
+  --
+  -- La otra condición que exigía —que el catálogo pintara los precios con
+  -- margen— se cumplió en la misma entrega, así que el freno se levantó cuando
+  -- lo que pedía existía, no antes.
+  update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
+
+  delete from public.orders where business_id = v_biz;
+  insert into public.orders (business_id, contact_phone, status, subtotal, total, currency, source)
+  values (v_biz, '593900000932', 'completado', 100, 100, 'USD', 'storefront')
+  returning platform_markup, merchant_subtotal into v_ped;
+
+  -- El comercio cobra sus 100 ENTEROS y la plataforma suma su 10 encima.
+  if v_ped.merchant_subtotal <> 100.00 then
+    raise exception 'con on_top el comercio debía cobrar 100.00 entero, y cobró %', v_ped.merchant_subtotal;
+  end if;
+  if v_ped.platform_markup <> 10.00 then
+    raise exception 'con on_top la plataforma debía sumar 10.00, y sumó %', v_ped.platform_markup;
+  end if;
+
+  -- Y un modo inventado sigue fallando CERRADO.
   begin
-    update public.pricing_rules set markup_mode = 'on_top' where id = v_regla;
-    raise exception 'se guardó on_top, que haría subir el precio del cliente';
+    update public.pricing_rules set markup_mode = 'regalado' where id = v_regla;
+    raise exception 'se guardó un modo de margen que no existe';
   exception when check_violation then null;
   end;
+
+  update public.pricing_rules set markup_mode = 'absorbed' where id = v_regla;
 
 
   -- 14. LOS MÉTODOS DE PAGO son del negocio, no del código.
