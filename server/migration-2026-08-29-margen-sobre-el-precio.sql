@@ -50,10 +50,7 @@ alter table public.pricing_rules
   check (markup_mode in ('absorbed', 'on_top'));
 
 comment on column public.pricing_rules.markup_mode is
-  '`on_top` (el margen se SUMA al precio del comercio, que cobra entero) o '
-  '`absorbed` (se le descuenta). El modelo del negocio es `on_top` desde el '
-  '2026-08-25; `absorbed` se conserva porque los pedidos ya sellados con él '
-  'deben seguir liquidándose como se cobraron.';
+  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25; `absorbed` se conserva porque los pedidos ya sellados con el deben seguir liquidandose como se cobraron.';
 
 -- ── 2. El disparador respeta el modo ────────────────────────────────────────
 --
