@@ -50,20 +50,27 @@ export default function Gate({ business, motivo }: {
   const telefono = business?.phone || ''
 
   return (
-    <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave">
-        <Lock size={24} className="text-marca" />
+    <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 pt-[calc(env(safe-area-inset-top)+3rem)] pb-12">
+      {/* ⚠️ El candado va en TINTA sobre el tinte de marca, no en `text-marca`.
+          El color del negocio como color de LETRA da 1,80:1 sobre blanco con
+          el verde real de Monster Pizza y 1,19:1 con el lima de la plataforma,
+          donde AA exige 4,5. El tinte de fondo sí es un uso legítimo del
+          acento —es fondo, no letra— y deja la marca presente sin apagar el
+          símbolo. El acento sólido se reserva para lo accionable, que aquí es
+          el botón de abajo. */}
+      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
+        <Lock size={24} />
       </div>
 
       {business?.name && (
-        <p className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold texto-tenue">
+        <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
           <Tienda size={14} />
           {business.name}
         </p>
       )}
 
-      <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">{titulo}</h1>
-      <p className="mt-3 text-[15px] leading-relaxed texto-tenue">{detalle}</p>
+      <h1 className="titulo-xl">{titulo}</h1>
+      <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">{detalle}</p>
 
       {telefono
         ? (
@@ -79,7 +86,7 @@ export default function Gate({ business, motivo }: {
             </div>
           )
         : (
-            <p className="mt-8 rounded-xl bg-black/5 px-4 py-3 text-[13px] texto-tenue">
+            <p className="superficie mt-8 rounded-2xl px-4 py-3.5 text-[13.5px] texto-cuerpo shadow-tarjeta">
               Contacta al negocio para recibir tu enlace.
             </p>
           )}

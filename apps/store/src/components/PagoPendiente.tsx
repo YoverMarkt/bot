@@ -62,20 +62,35 @@ export default function PagoPendiente({ slug }: { slug: string }) {
 
   return (
     <section className="w-full text-left">
-      <h2 className="mb-3 flex items-center gap-2 text-[17px] font-extrabold tracking-tight">
-        <Landmark size={17} className="texto-tenue" />
+      <h2 className="titulo-l mb-2.5 flex items-center gap-2 px-1">
+        <Landmark size={18} className="texto-tenue" />
         Para transferir
       </h2>
 
-      <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-2xl border borde-tema">
+      <div className="superficie divide-y divide-(--linea) overflow-hidden rounded-(--radius-tarjeta) shadow-tarjeta">
         {filas.map(({ etiqueta, valor, copiable }) => (
           <div key={etiqueta} className="flex items-center justify-between gap-3 px-4 py-3.5">
-            <span className="text-[13.5px] texto-tenue">{etiqueta}</span>
+            <span className="caption texto-tenue">{etiqueta}</span>
             <span className="flex items-center gap-2 text-right text-[14.5px] font-semibold">
               {String(valor)}
               {copiable && (
-                <button onClick={() => copiar(String(valor))} aria-label={`Copiar ${etiqueta}`}>
-                  <Copy size={15} className={copiado === String(valor) ? 'text-marca' : 'texto-tenue'} />
+                <button
+                  onClick={() => copiar(String(valor))}
+                  aria-label={`Copiar ${etiqueta}`}
+                  className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full transition active:scale-90"
+                >
+                  {/* ⚠️ El «copiado» va en `acento` SÓLIDO, no con el acento de
+                      letra: un icono de 15 px en el lima de la plataforma da
+                      1,19:1 sobre blanco y desaparece justo cuando su trabajo
+                      es confirmar que el número de cuenta ya está copiado.
+                      Antes se distinguían por un color que no se veía; ahora,
+                      por la pastilla, que se ve sin mirar. */}
+                  <span className={`flex size-7 items-center justify-center rounded-full transition ${
+                    copiado === String(valor) ? 'acento shadow-acento' : 'texto-tenue'
+                  }`}
+                  >
+                    <Copy size={15} />
+                  </span>
                 </button>
               )}
             </span>

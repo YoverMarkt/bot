@@ -20,12 +20,15 @@ export default function DesktopGate({ business }: { business: Business | null })
 
   return (
     <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave">
-        <Smartphone size={24} className="text-marca" />
+      {/* Icono en tinta sobre el tinte de marca, igual que las otras dos
+          puertas (`Gate.tsx` y `Confirmar.tsx`): el color del negocio como
+          LETRA no llega a AA. Las tres se pintan igual a propósito. */}
+      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
+        <Smartphone size={24} />
       </div>
 
       {business?.name && (
-        <p className="mb-1.5 text-[13px] font-semibold texto-tenue">{business.name}</p>
+        <p className="caption mb-2 font-bold texto-cuerpo">{business.name}</p>
       )}
 
       <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">

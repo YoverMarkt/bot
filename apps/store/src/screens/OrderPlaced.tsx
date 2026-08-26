@@ -152,23 +152,26 @@ export default function OrderPlaced({
     return (
       <div className="animar-entrada mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-10">
         <div className="flex flex-col items-center text-center">
-          <div className="flex size-16 items-center justify-center rounded-full bg-red-500 text-white">
-            <X size={32} strokeWidth={3} />
+          {/* El rojo NO es color de marca y por eso sí lleva blanco fijo: es
+              una advertencia, y un negocio no elige el color de su mala
+              noticia. */}
+          <div className="flex size-18 items-center justify-center rounded-full bg-red-500 text-white shadow-alzada">
+            <X size={34} strokeWidth={3} />
           </div>
-          <h1 className="mt-5 text-[26px] leading-tight font-extrabold tracking-tight">
+          <h1 className="titulo-xl mt-5">
             Pedido cancelado
           </h1>
-          <p className="mt-2 text-[14.5px] leading-snug texto-tenue">
+          <p className="mt-2.5 text-[14.5px] leading-relaxed texto-cuerpo">
             {numero ? `Tu pedido ${numero} no pudo continuar. ` : 'Tu pedido no pudo continuar. '}
             Si quieres saber qué pasó o volver a pedir, llama al local.
           </p>
         </div>
 
-        <div className="mt-8 space-y-2.5">
+        <div className="mt-8 space-y-1">
           {llamar && (
             <a
               href={`tel:${llamar}`}
-              className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight transition active:opacity-90"
+              className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
             >
               <Phone size={18} />
               Llamar al local
@@ -176,7 +179,7 @@ export default function OrderPlaced({
           )}
           <button
             onClick={onVolver}
-            className="w-full py-2.5 text-[14px] font-semibold texto-tenue transition active:scale-[0.98]"
+            className="w-full py-3.5 text-[14px] font-semibold texto-cuerpo transition active:scale-[0.98]"
           >
             Volver al menú
           </button>
@@ -186,21 +189,28 @@ export default function OrderPlaced({
   }
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 py-10">
+    <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col px-5 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-10">
       <div className="flex flex-1 flex-col items-center text-center">
-        <div className={`flex size-16 items-center justify-center rounded-full text-white ${
-          volviendo ? 'bg-amber-500' : 'bg-marca'
+        {/* ⚠️ El check va en `acento` SÓLIDO, no en `bg-marca` con el icono
+            forzado a blanco. Era el mismo fallo de contraste que la letra, del
+            revés: sobre el lima de la plataforma un icono blanco desaparece.
+            La utilidad `acento` trae su color calculado por luminancia
+            (`aplicarColorDeMarca`), así que cualquier color del negocio se ve.
+            El ámbar de «falta tu comprobante» sí lleva blanco fijo: no es
+            color de marca, es una advertencia, y esa no la elige el dueño. */}
+        <div className={`flex size-18 items-center justify-center rounded-full ${
+          volviendo ? 'bg-amber-500 text-white shadow-alzada' : 'acento shadow-acento-alto'
         }`}
         >
-          {volviendo ? <Clock size={30} strokeWidth={2.5} /> : <Check size={32} strokeWidth={3} />}
+          {volviendo ? <Clock size={32} strokeWidth={2.5} /> : <Check size={34} strokeWidth={3} />}
         </div>
 
-        <h1 className="mt-5 text-[26px] leading-tight font-extrabold tracking-tight">
+        <h1 className="titulo-xl mt-5">
           {volviendo
             ? 'Falta tu comprobante'
             : nombre ? `¡Gracias, ${nombre.split(' ')[0]}!` : '¡Gracias!'}
         </h1>
-        <p className="mt-2 text-[14.5px] leading-snug texto-tenue">
+        <p className="mt-2.5 text-[14.5px] leading-relaxed texto-cuerpo">
           {volviendo
             ? 'Tu pedido está guardado. En cuanto recibamos tu comprobante, el local lo prepara.'
             : transferencia
@@ -208,19 +218,30 @@ export default function OrderPlaced({
               : 'Tu pedido fue recibido correctamente.'}
         </p>
 
-        <dl className="mt-7 w-full space-y-2.5">
+        {/* Número y espera, en tarjeta: son los dos datos que el cliente puede
+            tener que repetir por teléfono, y sueltos sobre el fondo se leían
+            como un pie de página.
+
+            ⚠️ El número va en `acento` SÓLIDO. Estaba en `text-marca` sobre su
+            propio tinte —1,80:1 con el verde real de Monster Pizza y 1,19:1
+            con el lima de la plataforma, donde AA exige 4,5—, y es justo el
+            dato que el cliente dicta y el dueño canta en la cocina. Sigue
+            «destacado en el color de marca» como pide el diseño: lo que cambia
+            es que el color va DETRÁS de la letra y no en ella. */}
+        <dl className="superficie mt-7 w-full divide-y divide-(--linea) overflow-hidden rounded-(--radius-tarjeta) shadow-tarjeta">
           {numero && (
-            <div className="flex items-center justify-between">
-              <dt className="text-[13.5px] texto-tenue">Número de pedido</dt>
-              <dd className="rounded-lg bg-marca-suave px-2.5 py-1 text-[14px] font-bold text-marca tabular-nums">
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+              <dt className="caption texto-tenue">Número de pedido</dt>
+              <dd className="acento rounded-full px-3 py-1 text-[14px] font-extrabold tabular-nums shadow-acento">
                 {numero}
               </dd>
             </div>
           )}
           {espera && (
-            <div className="flex items-center justify-between">
-              <dt className="text-[13.5px] texto-tenue">Tiempo estimado</dt>
-              <dd className="rounded-lg bg-black/5 px-2.5 py-1 text-[14px] font-semibold">
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+              <dt className="caption texto-tenue">Tiempo estimado</dt>
+              <dd className="flex items-center gap-1.5 text-[14px] font-bold tabular-nums">
+                <Clock size={14} className="texto-tenue" />
                 {espera}
               </dd>
             </div>
@@ -230,11 +251,11 @@ export default function OrderPlaced({
         {/* El resumen es del CARRITO que se acaba de enviar: el servidor ya
             devolvió el total oficial, y ese es el que manda arriba del todo. */}
         {pedido.lineas.length > 0 && (
-          <section className="mt-7 w-full text-left">
-            <h2 className="mb-2.5 text-[17px] font-extrabold tracking-tight">
+          <section className="mt-6 w-full text-left">
+            <h2 className="titulo-l mb-2.5 px-1">
               Resumen del pedido
             </h2>
-            <div className="space-y-2">
+            <div className="superficie space-y-2.5 rounded-(--radius-tarjeta) px-4 py-4 shadow-tarjeta">
               {/* ⚠️ Lo elegido va DEBAJO de su producto, no pegado al nombre.
                   Esta pantalla decía «1× Pizza $16.83» justo después de que el
                   cliente eligiera masa, borde y sabor: el dato estaba en el
@@ -246,31 +267,35 @@ export default function OrderPlaced({
               {pedido.lineas.map((linea, indice) => (
                 <div key={indice} className="flex items-baseline justify-between gap-3 text-[14px]">
                   <span className="min-w-0">
-                    <span className="texto-tenue">{linea.cantidad}× </span>
-                    {linea.nombre}
+                    <span className="font-bold tabular-nums">{linea.cantidad}× </span>
+                    <span className="font-semibold">{linea.nombre}</span>
+                    {/* Lo elegido y la nota son CONTENIDO, no metadatos: es lo
+                        que el cliente repasa para comprobar que le entendieron.
+                        En `texto-tenue` (3,17:1 sobre blanco) a 12,5 px no se
+                        lee al sol, que es donde se abre esta app. */}
                     {linea.grupos.map(grupo => (
-                      <span key={grupo.group} className="mt-0.5 block text-[12.5px] leading-snug line-clamp-2 texto-tenue">
+                      <span key={grupo.group} className="mt-0.5 block text-[12.5px] leading-snug line-clamp-2 texto-cuerpo">
                         {grupoEnTexto(grupo)}
                       </span>
                     ))}
                     {linea.nota && (
-                      <span className="mt-0.5 block text-[12.5px] leading-snug italic texto-tenue">
+                      <span className="mt-0.5 block text-[12.5px] leading-snug italic texto-cuerpo">
                         «{linea.nota}»
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 tabular-nums">{money(linea.importe)}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{money(linea.importe)}</span>
                 </div>
               ))}
               {pedido.envio > 0 && (
-                <div className="flex items-baseline justify-between text-[14px] texto-tenue">
+                <div className="flex items-baseline justify-between text-[14px] texto-cuerpo">
                   <span>Envío</span>
                   <span className="tabular-nums">{money(pedido.envio)}</span>
                 </div>
               )}
-              <div className="flex items-baseline justify-between border-t borde-tema pt-2.5">
+              <div className="flex items-baseline justify-between border-t borde-tema pt-3">
                 <span className="text-[14px] font-bold">Total</span>
-                <span className="text-[20px] font-extrabold tracking-tight tabular-nums">
+                <span className="titulo-l tabular-nums">
                   {money(total)}
                 </span>
               </div>
@@ -281,7 +306,7 @@ export default function OrderPlaced({
             solo se lee el número de cuenta, y el comprobante se manda por el
             chat, que es donde el cliente tiene la captura. */}
         {transferencia && (
-          <div className="mt-8 w-full">
+          <div className="mt-6 w-full">
             <PagoPendiente slug={slug} />
           </div>
         )}
@@ -291,18 +316,18 @@ export default function OrderPlaced({
             pedido, y en efectivo es la promesa de que nadie tiene que volver a
             abrir esta app para enterarse de nada. Puesto en letra pequeña bajo
             un botón, se lee cuando ya no hace falta. */}
-        <div className="superficie mt-6 w-full rounded-2xl border borde-tema px-4 py-4 text-left">
+        <div className="superficie mt-6 w-full rounded-(--radius-tarjeta) px-4 py-4 text-left shadow-tarjeta">
           <div className="flex items-start gap-3">
-            <span className="acento flex size-9 shrink-0 items-center justify-center rounded-full">
-              <MessageCircle size={18} />
+            <span className="acento flex size-10 shrink-0 items-center justify-center rounded-full shadow-acento">
+              <MessageCircle size={19} />
             </span>
             <div className="min-w-0">
-              <p className="text-[16px] leading-snug font-bold tracking-tight">
+              <p className="titulo-m">
                 {transferencia
                   ? 'Mándanos el comprobante por WhatsApp'
                   : 'Te mantenemos al tanto por WhatsApp'}
               </p>
-              <p className="mt-1 text-[14px] leading-snug texto-tenue">
+              <p className="mt-1.5 text-[14px] leading-relaxed texto-cuerpo">
                 {transferencia
                   ? 'Envía la captura de tu transferencia al chat del local. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.'
                   : entrega === 'delivery'
@@ -314,7 +339,7 @@ export default function OrderPlaced({
         </div>
       </div>
 
-      <div className="mt-8 space-y-2.5">
+      <div className="mt-8 space-y-1">
         {/* ⚠️ La salida principal es el chat, no una pantalla de esta app. El
             cliente llegó aquí desde WhatsApp y ahí es donde va a recibir los
             avisos; devolverlo es terminar el viaje donde empezó. Va en TINTA
@@ -324,7 +349,7 @@ export default function OrderPlaced({
             href={whatsapp}
             target="_blank"
             rel="noreferrer"
-            className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight transition active:opacity-90"
+            className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
           >
             <MessageCircle size={18} />
             Volver a WhatsApp
@@ -332,7 +357,7 @@ export default function OrderPlaced({
         )}
         <button
           onClick={onVolver}
-          className="w-full py-2.5 text-[14px] font-semibold texto-tenue transition active:scale-[0.98]"
+          className="w-full py-3.5 text-[14px] font-semibold texto-cuerpo transition active:scale-[0.98]"
         >
           Volver al menú
         </button>

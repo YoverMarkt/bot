@@ -688,7 +688,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         <div className="px-4 pt-4">
           <button
             onClick={() => setAbrirPago(true)}
-            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left transition active:scale-[0.99] dark:border-amber-500/40 dark:bg-amber-500/10"
+            // Sin `dark:`. Esta app no tiene modo oscuro —`color-scheme: light`
+            // fijo en `index.css`—, pero la media query SÍ se dispara con el
+            // teléfono en oscuro: quedaba un ámbar al 10 % sobre página clara,
+            // o sea el aviso más importante de la portada casi sin fondo.
+            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left shadow-tarjeta transition active:scale-[0.99]"
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
               <Clock size={18} />

@@ -16,17 +16,21 @@ export function Boton({ children, onClick, disabled, variante = 'principal', typ
   // El principal es TINTA, no el color del negocio: así el botón que cierra el
   // pedido se lee igual aunque el dueño elija un color pálido. El acento se
   // reserva para señalar, no para todo.
+  //
+  // Cada variante lleva su sombra en capas —la que la despega del fondo—, y
+  // `disabled:shadow-none` la retira: un botón apagado que sigue flotando se
+  // lee como que se puede pulsar, que es justo lo contrario de lo que dice.
   const estilos = {
-    principal: 'tinta active:opacity-90 disabled:opacity-40',
-    suave: 'acento active:opacity-85 disabled:opacity-40',
-    linea: 'superficie border-2 borde-tema active:opacity-70 disabled:opacity-40',
+    principal: 'tinta shadow-alzada active:opacity-90 disabled:opacity-40 disabled:shadow-none',
+    suave: 'acento shadow-acento-alto active:opacity-85 disabled:opacity-40 disabled:shadow-none',
+    linea: 'superficie border-2 borde-tema shadow-tarjeta active:opacity-70 disabled:opacity-40 disabled:shadow-none',
   }[variante]
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`w-full rounded-2xl px-4 py-4 text-[15px] font-bold tracking-tight transition ${estilos}`}
+      className={`w-full rounded-2xl px-4 py-4 text-[15px] font-bold tracking-tight transition active:scale-[0.98] disabled:active:scale-100 ${estilos}`}
     >
       {children}
     </button>

@@ -243,7 +243,10 @@ export default function ProductSheet({
                       pizza», «2 Elige tu bebida». Sin el número, cinco bloques
                       seguidos parecen la misma lista repetida. */}
                   {esCombo && (
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-marca text-[11px] leading-none font-black text-white">
+                    // `acento`, no `bg-marca text-white`: sobre el lima de la
+                    // plataforma el número blanco desaparece. La utilidad trae
+                    // su color de texto calculado por luminancia.
+                    <span className="acento flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] leading-none font-black">
                       {indice + 1}
                     </span>
                   )}
@@ -251,8 +254,17 @@ export default function ProductSheet({
                 </span>
                 {minimo > 0
                   ? (
+                      // ⚠️ Las DOS ramas fallaban el contraste, y esta es la
+                      // insignia que dice si el cliente puede seguir: en falta
+                      // era `bg-marca text-white` (lima con letra blanca) y
+                      // cumplida `text-marca` sobre su propio tinte (1,19:1,
+                      // donde AA exige 4,5). El diseño pide «Obligatorio en el
+                      // color de marca, ✓ Listo en tono suave» y eso se
+                      // conserva entero: lo que cambia es que el color de marca
+                      // va de FONDO —con su letra calculada por luminancia— en
+                      // vez de ir en la letra.
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold normal-case ${
-                        cumplido ? 'bg-marca-suave text-marca' : 'bg-marca text-white'
+                        cumplido ? 'bg-marca-suave texto-cuerpo' : 'acento shadow-acento'
                       }`}
                       >
                         {cumplido ? '✓ Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}

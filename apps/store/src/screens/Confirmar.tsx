@@ -50,22 +50,27 @@ export default function Confirmar({ business, onConfirmar }: {
   }
 
   return (
-    <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave">
-        <Phone size={24} className="text-marca" />
+    <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 pt-[calc(env(safe-area-inset-top)+3rem)] pb-12">
+      {/* ⚠️ El icono va en TINTA sobre el tinte de marca, no en `text-marca` —
+          mismo motivo y misma solución que en `Gate.tsx`: el color del negocio
+          como LETRA da 1,80:1 con el verde real de Monster Pizza y 1,19:1 con
+          el lima de la plataforma, donde AA exige 4,5. Las dos puertas se
+          pintan igual a propósito: el cliente puede ver las dos seguidas. */}
+      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
+        <Phone size={24} />
       </div>
 
       {business?.name && (
-        <p className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold texto-tenue">
+        <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
           <Tienda size={14} />
           {business.name}
         </p>
       )}
 
-      <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">
+      <h1 className="titulo-xl">
         Confirma tu número
       </h1>
-      <p className="mt-3 text-[15px] leading-relaxed texto-tenue">
+      <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
         Escribe el número de WhatsApp con el que le escribiste al negocio. Es
         para que nadie más pueda pedir a tu nombre.
       </p>
@@ -86,11 +91,14 @@ export default function Confirmar({ business, onConfirmar }: {
           value={telefono}
           onChange={(evento) => { setTelefono(evento.target.value); setError(null) }}
           placeholder="Ej. 0999 111 222"
-          className="superficie w-full rounded-2xl border borde-tema px-4 py-3.5 text-[17px] outline-none focus:border-marca"
+          // El borde de foco SÍ puede ser el color del negocio: es un borde,
+          // no letra. Y el anillo de foco global de `index.css` sigue encima
+          // para quien navega con teclado.
+          className="superficie w-full rounded-2xl border-2 borde-tema px-4 py-4 text-[17px] font-semibold tracking-tight shadow-tarjeta outline-none focus:border-marca"
         />
 
         {error && (
-          <p className="mt-3 text-[14px] font-medium text-amber-700">
+          <p className="mt-3 rounded-xl bg-amber-50 px-3.5 py-2.5 text-[13.5px] font-semibold text-amber-700">
             {error}
           </p>
         )}
@@ -107,7 +115,7 @@ export default function Confirmar({ business, onConfirmar }: {
       {business?.phone && (
         <a
           href={textoWhatsapp(business.phone)}
-          className="mt-6 flex items-center justify-center gap-2 text-[14px] font-semibold texto-tenue"
+          className="mt-6 flex items-center justify-center gap-2 py-2 text-[14px] font-semibold texto-cuerpo"
         >
           <MessageCircle size={16} />
           No es mi enlace, quiero el mío
