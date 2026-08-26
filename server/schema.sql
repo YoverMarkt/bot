@@ -10447,10 +10447,10 @@ alter table public.pricing_rules
 
 alter table public.pricing_rules
   add constraint pricing_rules_mode_check
-  check (markup_mode = 'absorbed');
+  check (markup_mode in ('absorbed', 'on_top'));
 
 comment on column public.pricing_rules.markup_mode is
-  'Solo `absorbed` por ahora. `on_top` exige que el catálogo, el carrito y el resumen pinten el precio con margen; hasta entonces el CHECK lo impide.';
+  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25.';
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -10963,7 +10963,7 @@ alter table public.pricing_rules
 -- que falla CERRADO — igual que `scope` con 'category'.
 alter table public.pricing_rules
   add constraint pricing_rules_mode_check
-  check (markup_mode = 'absorbed');
+  check (markup_mode in ('absorbed', 'on_top'));
 
 comment on constraint pricing_rules_mode_check on public.pricing_rules is
   'Solo `absorbed`: el comercio paga la comisión de su precio. `on_top` exigiría que el catálogo pintara los precios con margen.';
@@ -13729,3 +13729,73 @@ $$;
 
 revoke all on function public.expire_unpaid_orders(integer) from public;
 grant execute on function public.expire_unpaid_orders(integer) to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- QUÉ MARGEN PINTAR EN EL CATÁLOGO
+-- Migración incremental: migration-2026-08-29-margen-sobre-el-precio.sql
+-- ════════════════════════════════════════════════════════════════════════
+--
+-- El catálogo tiene que enseñar el precio que el cliente va a pagar, y para eso
+-- necesita el porcentaje vigente ANTES de que exista un pedido. Se devuelve la
+-- regla entera —no un número suelto— para que el servidor aplique la MISMA
+-- jerarquía (negocio → tipo → global) sin reimplementarla.
+--
+-- ⚠️ Devuelve `null` si no hay regla vigente: entonces no se pinta margen y el
+-- cliente ve el precio del comercio. Falla hacia NO cobrar de más, que es el
+-- lado seguro del error.
+create or replace function public.business_pricing_view(
+  p_business_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_regla public.pricing_rules%rowtype;
+begin
+  if p_business_id is null then
+    return null;
+  end if;
+
+  select pr.* into v_regla
+  from public.pricing_rules pr
+  join public.businesses b on b.id = p_business_id
+  where pr.status = 'active'
+    and pr.effective_from <= now()
+    and (pr.effective_until is null or pr.effective_until > now())
+    and (
+      (pr.scope = 'business'      and pr.business_id = p_business_id)
+      or (pr.scope = 'business_type' and pr.target_name = b.type)
+      or (pr.scope = 'global')
+    )
+  order by case pr.scope
+             when 'business'      then 1
+             when 'business_type' then 2
+             when 'global'        then 3
+           end,
+           pr.effective_from desc
+  limit 1;
+
+  if v_regla.id is null then
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'rule_id',      v_regla.id,
+    'version',      v_regla.version,
+    'mode',         v_regla.markup_mode,
+    'strategy',     v_regla.strategy,
+    'percentage',   v_regla.percentage,
+    'fixed_amount', v_regla.fixed_amount,
+    'tiers',        v_regla.tiers,
+    'min_amount',   v_regla.min_amount,
+    'max_amount',   v_regla.max_amount
+  );
+end;
+$$;
+
+revoke all on function public.business_pricing_view(uuid) from public, anon, authenticated;
+grant execute on function public.business_pricing_view(uuid) to service_role;

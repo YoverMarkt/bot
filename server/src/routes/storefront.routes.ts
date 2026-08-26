@@ -12,6 +12,7 @@ import {
   buildStorefrontCatalog,
   canOrder,
   quoteCart,
+  reglaDeMargen,
   publicBusiness,
   storefrontStatus,
   type StorefrontBusiness,
@@ -40,6 +41,8 @@ interface StorefrontSessionRow {
 }
 
 interface StorefrontRouteDatabase {
+  /** La regla de margen vigente del negocio, o null si no hay ninguna. */
+  getBusinessPricingRule(businessId: string): Promise<Record<string, unknown> | null>
   getStorefrontPaymentMethods(businessId: string): Promise<Array<{
     code: string
     label: string
@@ -300,10 +303,18 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
     db.getStorefrontRecommendations(businessId),
   ])
 
+  // ⚠️ La regla se consulta UNA vez por catálogo, no por producto: es del
+  // negocio, no de cada plato. Falla hacia `null` —sin margen—, que es el lado
+  // seguro: el cliente vería el precio del comercio, nunca uno inflado por un
+  // error de lectura.
+  const pricing = reglaDeMargen(
+    await db.getBusinessPricingRule(businessId).catch(() => null),
+  )
+
   return res.json({
     business: business
       ? {
-        ...publicBusiness(business),
+        ...publicBusiness(business, pricing),
         paymentMethods: await db.getStorefrontPaymentMethods(business.id).catch(() => []),
       }
       : null,
@@ -318,6 +329,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
       optionGroups: optionGroups as never,
       options: options as never,
       recommendations: recommendations as never,
+      pricing,
     }),
   })
 })
@@ -758,6 +770,10 @@ router.post('/api/store/:slug/quote', cotizarLimiter, readStorefrontSession, asy
     db.getBusinessBySlug(String(req.params.slug || '').trim()),
   ])
 
+  const reglaPrecio = reglaDeMargen(
+    await db.getBusinessPricingRule(businessId).catch(() => null),
+  )
+
   const cotizacion = quoteCart({
     items: items as never,
     products: productos as never,
@@ -766,6 +782,7 @@ router.post('/api/store/:slug/quote', cotizarLimiter, readStorefrontSession, asy
     options: opciones as never,
     deliveryFee: Number((business as { delivery_fee?: unknown } | null)?.delivery_fee) || 0,
     fulfillment: String(body.fulfillment || 'pickup'),
+    pricing: reglaPrecio,
   })
 
   if (cotizacion.error) return res.status(400).json({ error: cotizacion.error })
