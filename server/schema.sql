@@ -10066,48 +10066,32 @@ set search_path = public, pg_temp
 as $$
 declare
   v_calc jsonb;
-  v_modo text;
-  v_markup numeric(10,2);
 begin
+  -- `create_storefront_order` inserta el pedido con subtotal 0 y lo actualiza
+  -- al final: sin esta condición se sellaría 0 y no volvería a mirarse.
   if coalesce(new.subtotal, 0) <= 0 then
     return new;
   end if;
 
+  -- El panel actualiza estos pedidos muchas veces (estado, aviso,
+  -- comprobante); recalcular en cada una sería trabajo tirado.
   if tg_op = 'UPDATE'
      and new.subtotal is not distinct from old.subtotal
-     and new.shipping is not distinct from old.shipping
      and new.pricing_rule_id is not distinct from old.pricing_rule_id then
     return new;
   end if;
 
+  -- Si el pedido ya tiene regla sellada se recalcula con ESA y no con la
+  -- vigente hoy: un pedido de febrero no puede empezar a cobrar el porcentaje
+  -- de marzo porque alguien le cambió el estado.
   v_calc := public.calculate_platform_markup(
     new.business_id,
     new.subtotal,
     new.pricing_rule_id
   );
 
-  v_markup := (v_calc ->> 'markup')::numeric;
-  v_modo   := coalesce(v_calc ->> 'markup_mode', 'absorbed');
-
-  -- ⚠️ MOSTRADOR NUNCA lleva margen sumado. Lo teclea el dueño con la persona
-  -- delante, cobrando el precio que él dice: subirle el total le haría cobrar
-  -- de más a un cliente que vino solo, sin que la plataforma lo trajera. Es el
-  -- mismo criterio con el que el mostrador queda fuera de todos los frenos.
-  -- Con `absorbed` se mantiene el comportamiento anterior para no cambiar en
-  -- silencio la liquidación de un camino que nadie pidió tocar.
-  if v_modo = 'on_top' and coalesce(new.source, '') <> 'storefront' then
-    v_markup := 0;
-  end if;
-
-  if v_modo = 'on_top' then
-    -- El comercio cobra su precio ENTERO y el margen se añade al total.
-    new.merchant_subtotal := round(new.subtotal, 2);
-    new.total := round(new.subtotal + v_markup + coalesce(new.shipping, 0), 2);
-  else
-    new.merchant_subtotal := round(new.subtotal - v_markup, 2);
-  end if;
-
-  new.platform_markup      := v_markup;
+  new.merchant_subtotal    := round(new.subtotal - (v_calc ->> 'markup')::numeric, 2);
+  new.platform_markup      := (v_calc ->> 'markup')::numeric;
   new.pricing_rule_id      := nullif(v_calc ->> 'rule_id', '')::uuid;
   new.pricing_rule_version := nullif(v_calc ->> 'rule_version', '')::integer;
 
@@ -10466,7 +10450,7 @@ alter table public.pricing_rules
   check (markup_mode in ('absorbed', 'on_top'));
 
 comment on column public.pricing_rules.markup_mode is
-  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25; `absorbed` se conserva porque los pedidos ya sellados con el deben seguir liquidandose como se cobraron.';
+  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25.'; hasta entonces el CHECK lo impide.';
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -13746,20 +13730,20 @@ $$;
 revoke all on function public.expire_unpaid_orders(integer) from public;
 grant execute on function public.expire_unpaid_orders(integer) to service_role;
 
--- ════════════════════════════════════════════════════════════════════════
--- EL MARGEN SE SUMA AL PRECIO (migration-2026-08-29-margen-sobre-el-precio.sql)
--- ════════════════════════════════════════════════════════════════════════
 
--- ── 3. Qué margen pintar en el catálogo ─────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════════════
+-- QUÉ MARGEN PINTAR EN EL CATÁLOGO
+-- Migración incremental: migration-2026-08-29-margen-sobre-el-precio.sql
+-- ════════════════════════════════════════════════════════════════════════
 --
--- El catálogo tiene que enseñar el precio que el cliente va a pagar, y para
--- eso necesita el porcentaje vigente ANTES de que exista un pedido. Se
--- devuelve la regla entera —no un número suelto— para que el servidor aplique
--- la MISMA jerarquía (negocio → tipo → global) sin reimplementarla.
+-- El catálogo tiene que enseñar el precio que el cliente va a pagar, y para eso
+-- necesita el porcentaje vigente ANTES de que exista un pedido. Se devuelve la
+-- regla entera —no un número suelto— para que el servidor aplique la MISMA
+-- jerarquía (negocio → tipo → global) sin reimplementarla.
 --
--- ⚠️ Devuelve `null` si no hay regla vigente: entonces no se pinta margen
--- ninguno y el cliente ve el precio del comercio. Falla hacia NO cobrar de
--- más, que es el lado seguro del error.
+-- ⚠️ Devuelve `null` si no hay regla vigente: entonces no se pinta margen y el
+-- cliente ve el precio del comercio. Falla hacia NO cobrar de más, que es el
+-- lado seguro del error.
 create or replace function public.business_pricing_view(
   p_business_id uuid
 )
@@ -13800,15 +13784,15 @@ begin
   end if;
 
   return jsonb_build_object(
-    'rule_id',     v_regla.id,
-    'version',     v_regla.version,
-    'mode',        v_regla.markup_mode,
-    'strategy',    v_regla.strategy,
-    'percentage',  v_regla.percentage,
+    'rule_id',      v_regla.id,
+    'version',      v_regla.version,
+    'mode',         v_regla.markup_mode,
+    'strategy',     v_regla.strategy,
+    'percentage',   v_regla.percentage,
     'fixed_amount', v_regla.fixed_amount,
-    'tiers',       v_regla.tiers,
-    'min_amount',  v_regla.min_amount,
-    'max_amount',  v_regla.max_amount
+    'tiers',        v_regla.tiers,
+    'min_amount',   v_regla.min_amount,
+    'max_amount',   v_regla.max_amount
   );
 end;
 $$;

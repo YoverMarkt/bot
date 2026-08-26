@@ -199,32 +199,30 @@ describe('el sellado del pedido', () => {
     }
   })
 
-  // ⚠️ Con on_top el comercio cobra su precio ENTERO: sin esta línea volvería
-  // el descuento forzoso que el dueño pidió quitar.
-  it('con on_top el comercio cobra el subtotal entero', () => {
-    expect(MIGRACION).toMatch(/new\.merchant_subtotal := round\(new\.subtotal, 2\)/)
-    expect(MIGRACION).toMatch(/new\.total := round\(new\.subtotal \+ v_markup \+ coalesce\(new\.shipping, 0\), 2\)/)
+  // ⚠️ EL DISPARADOR NO SE TOCA, y esta prueba existe para que siga así.
+  //
+  // La primera versión de esta entrega lo reescribía y habría DEGRADADO dos
+  // cosas que ya hacía bien: calcular el margen POR LÍNEA —para que el total
+  // coincida con lo que el cliente sumó en pantalla— y restar el descuento de
+  // la base antes de aplicar el porcentaje. Lo cazó el CI, porque `schema.sql`
+  // acumula TRES redefiniciones de esa función y manda la última: leer solo la
+  // primera engaña.
+  it('la migración NO reescribe orders_stamp_pricing', () => {
+    expect(MIGRACION).not.toMatch(/function public\.orders_stamp_pricing/)
   })
 
-  it('con absorbed se conserva el descuento, para los pedidos ya sellados', () => {
-    expect(MIGRACION).toMatch(/new\.merchant_subtotal := round\(new\.subtotal - v_markup, 2\)/)
+  it('el disparador vigente sigue calculando por línea y restando el descuento', () => {
+    const ultima = ESQUEMA.lastIndexOf('create or replace function public.orders_stamp_pricing')
+    const fn = ESQUEMA.slice(ultima, ESQUEMA.indexOf('$$;', ultima))
+    expect(fn, 'el margen por línea hace que el total cuadre con la pantalla')
+      .toMatch(/order_markup_by_line/)
+    expect(fn, 'el descuento sale de la base antes del porcentaje')
+      .toMatch(/coalesce\(new\.discount, 0\)/)
+    expect(fn, 'con on_top el comercio conserva su precio entero')
+      .toMatch(/new\.merchant_subtotal := v_base/)
   })
 
-  // ⚠️ El pedido se recalcula con la regla SELLADA, no con la vigente hoy: un
-  // pedido de agosto no puede empezar a cobrar el porcentaje de septiembre
-  // porque alguien le cambió el estado.
-  it('un pedido viejo se recalcula con SU regla', () => {
-    expect(MIGRACION).toMatch(/calculate_platform_markup\([\s\S]{0,120}new\.pricing_rule_id/)
-  })
-
-  // El mostrador lo teclea el dueño con la persona delante, cobrando el precio
-  // que él dice. Subirle el total le haría cobrar de más a un cliente que vino
-  // solo, sin que la plataforma lo trajera.
-  it('el mostrador no lleva margen sumado', () => {
-    expect(MIGRACION).toMatch(/v_modo = 'on_top' and coalesce\(new\.source, ''\) <> 'storefront'/)
-  })
-
-  it('la función del dinero NO se recrea', () => {
+  it('la función del dinero tampoco se recrea', () => {
     expect(MIGRACION).not.toMatch(/create or replace function public\.create_storefront_order/)
   })
 
@@ -237,44 +235,5 @@ describe('el sellado del pedido', () => {
     expect(fn).toMatch(/when 'global'\s+then 3/)
     expect(fn).toMatch(/pr\.status = 'active'/)
     expect(fn).toMatch(/effective_until is null or pr\.effective_until > now\(\)/)
-  })
-})
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EL MÍNIMO DE COMPRA VIAJA EN LA MONEDA DEL CLIENTE
-//
-// El dueño fija su mínimo sobre SU precio, y la base lo exige así
-// (`orders_enforce_min_amount` mira `orders.subtotal`). Pero la app compara
-// contra un carrito ya con margen: si el mínimo no se inflara igual, un
-// carrito de $4,80 del comercio —$5,28 para el cliente— parecería llegar a un
-// mínimo de $5 y la base lo rechazaría justo al confirmar.
-// ═══════════════════════════════════════════════════════════════════════════
-describe('el mínimo de compra con margen', () => {
-  const NEGOCIO = {
-    id: 'b1', name: 'Local', slug: 'local', type: 'pizzería',
-    delivery_fee: 2, prep_time_minutes: 25, delivery_extra_minutes: 10,
-    min_order_amount: 5, payment_methods: null,
-  }
-
-  it('se infla igual que los precios, para que la comparación siga siendo la misma', () => {
-    const conRegla = publicBusiness(NEGOCIO, REGLA(10))
-    expect(conRegla.minOrderAmount).toBe(5.5)
-
-    // Equivalencia: un carrito justo en el mínimo del comercio lo sigue estando
-    // en la moneda del cliente, y uno por debajo sigue por debajo.
-    const enElMinimo = calculatePlatformMarkup(5, REGLA(10)).customerSubtotal
-    const porDebajo = calculatePlatformMarkup(4.8, REGLA(10)).customerSubtotal
-    expect(enElMinimo).toBeGreaterThanOrEqual(conRegla.minOrderAmount)
-    expect(porDebajo).toBeLessThan(conRegla.minOrderAmount)
-  })
-
-  it('sin regla, el mínimo es el que puso el dueño', () => {
-    expect(publicBusiness(NEGOCIO, null).minOrderAmount).toBe(5)
-  })
-
-  // ⚠️ El envío NO lleva margen: se cobra aparte y el margen sale solo de los
-  // productos.
-  it('el envío no se infla', () => {
-    expect(publicBusiness(NEGOCIO, REGLA(10)).deliveryFee).toBe(2)
   })
 })

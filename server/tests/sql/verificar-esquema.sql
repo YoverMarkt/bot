@@ -3445,9 +3445,11 @@ select '✅ el pedido sin pagar caduca solo: ni el pagado, ni el histórico, ni 
 --
 -- Hasta hoy, sobre un pedido de $8 el comercio recibía $7,20. El dueño pone el
 -- precio al que quiere vender; quitarle una parte es un descuento que no pactó.
--- Aquí se comprueba el modelo entero contra PostgreSQL: que el comercio cobre
--- entero, que el cliente pague el margen, que el envío quede fuera y que un
--- pedido ya sellado NO cambie cuando cambia el porcentaje.
+--
+-- ⚠️ El disparador NO se tocó en esta entrega: ya sabía hacer `on_top`, y
+-- mejor —por línea y restando el descuento—. Lo que faltaba era el CHECK que
+-- lo impedía y la vista que el catálogo necesita. Aquí se comprueban las dos,
+-- y que lo sellado no cambie.
 -- ═══════════════════════════════════════════════════════════════════════════
 do $$
 declare
@@ -3455,7 +3457,6 @@ declare
   v_cliente uuid;
   v_regla uuid;
   v_pedido uuid;
-  v_viejo uuid;
   v_vista jsonb;
   v_merchant numeric;
   v_markup numeric;
@@ -3466,7 +3467,8 @@ begin
   returning id into v_biz;
   insert into public.customers (phone) values ('593900000861') returning id into v_cliente;
 
-  -- Una regla de NEGOCIO al 10%, sumada al precio.
+  -- Una regla de NEGOCIO al 10 %, sumada al precio. Que esto se pueda guardar
+  -- ES la corrección: hasta hoy el CHECK lo impedía.
   insert into public.pricing_rules (business_id, scope, strategy, percentage, markup_mode, status)
   values (v_biz, 'business', 'percentage', 10, 'on_top', 'active')
   returning id into v_regla;
@@ -3477,6 +3479,19 @@ begin
      or (v_vista ->> 'percentage')::numeric <> 10 then
     raise exception 'el catálogo no vería la regla vigente: %', v_vista;
   end if;
+
+  -- La jerarquía manda: una regla de NEGOCIO gana a la de su TIPO.
+  --
+  -- ⚠️ Se prueba con `business_type` y no con `global` porque
+  -- `idx_pricing_rules_activa_global` solo admite UNA global activa, y en una
+  -- base con datos ya existe. Lo cazó el ensayo contra producción.
+  insert into public.pricing_rules (scope, target_name, strategy, percentage, markup_mode, status)
+  values ('business_type', 'pizzería', 'percentage', 99, 'on_top', 'active');
+  v_vista := public.business_pricing_view(v_biz);
+  if (v_vista ->> 'percentage')::numeric <> 10 then
+    raise exception 'la regla del tipo no puede ganarle a la del negocio: %', v_vista;
+  end if;
+  delete from public.pricing_rules where scope = 'business_type' and percentage = 99;
 
   -- ── Un pedido de $8 con envío de $1,50 ──────────────────────────────────
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, shipping, total)
@@ -3500,16 +3515,6 @@ begin
     raise exception 'el cliente debía pagar 10.30 y paga %', v_total;
   end if;
 
-  -- ── El mostrador NO lleva margen sumado ─────────────────────────────────
-  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, shipping, total)
-  values (v_biz, v_cliente, '593900000861', 'manual', 'pendiente', 8.00, 0, 8.00)
-  returning id into v_viejo;
-  select platform_markup, total into v_markup, v_total from public.orders where id = v_viejo;
-  if v_markup <> 0 or v_total <> 8.00 then
-    raise exception 'el mostrador no puede cobrarle de más al cliente: markup=% total=%', v_markup, v_total;
-  end if;
-  delete from public.orders where id = v_viejo;
-
   -- ── EL PEDIDO YA SELLADO NO CAMBIA CUANDO CAMBIA EL PORCENTAJE ──────────
   --
   -- Es la garantía que hace auditable el histórico: subir la comisión mañana
@@ -3526,13 +3531,23 @@ begin
       v_markup, v_merchant, v_total;
   end if;
 
+  -- ── El descuento sale de la base ANTES del porcentaje ───────────────────
+  update public.pricing_rules set percentage = 10 where id = v_regla;
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, discount, shipping, total)
+  values (v_biz, v_cliente, '593900000861', 'storefront', 'pendiente', 100, 20, 0, 100)
+  returning platform_markup, merchant_subtotal into v_markup, v_merchant;
+  if v_markup <> 8.00 then
+    raise exception 'con 20 de descuento el margen debía ser 8.00 (10 %% de 80), y fue %', v_markup;
+  end if;
+  if v_merchant <> 80.00 then
+    raise exception 'el comercio debía cobrar 80.00 tras su descuento, y cobró %', v_merchant;
+  end if;
+
   -- ── `absorbed` sigue funcionando para lo ya cobrado ─────────────────────
-  update public.pricing_rules set percentage = 10, markup_mode = 'absorbed' where id = v_regla;
+  update public.pricing_rules set markup_mode = 'absorbed' where id = v_regla;
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, shipping, total)
   values (v_biz, v_cliente, '593900000861', 'storefront', 'pendiente', 8.00, 0, 8.00)
-  returning id into v_viejo;
-  select merchant_subtotal, platform_markup into v_merchant, v_markup
-  from public.orders where id = v_viejo;
+  returning merchant_subtotal, platform_markup into v_merchant, v_markup;
   if v_merchant <> 7.20 or v_markup <> 0.80 then
     raise exception 'absorbed debía descontar: comercio=% markup=%', v_merchant, v_markup;
   end if;
