@@ -33,7 +33,11 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const dinero = (v: number | string) => `$${Number(v || 0).toFixed(2)}`
 
+// ⚠️ `family` sigue AQUÍ aunque ya no se pueda crear desde el desplegable: la
+// lista tiene que saber pintar una regla antigua de ese ámbito. Se retira la
+// puerta de entrada, no la capacidad de leer lo que ya existe.
 const ETIQUETA_AMBITO: Record<PricingRule['scope'], string> = {
+  family: 'Una familia',
   business: 'Un negocio',
   business_type: 'Un tipo',
   global: 'Toda la plataforma',
