@@ -6,7 +6,7 @@ import {
   getPricingRules, replacePricingRule, simulateMarkup,
   type PricingRule, type PricingRuleDraft,
 } from '../clients/api'
-import { Archive, Calculator, Plus } from 'lucide-react'
+import { Archive, Calculator, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
@@ -70,7 +70,9 @@ const BORRADOR_INICIAL: PricingRuleDraft = {
   percentage: 10,
   min_amount: null,
   max_amount: null,
-  markup_mode: 'absorbed',
+  // El modelo de Umbani: el comercio cobra su precio entero y el margen se
+  // suma al del cliente.
+  markup_mode: 'on_top',
 }
 
 export default function Finance() {
@@ -111,6 +113,35 @@ export default function Finance() {
     qc.invalidateQueries({ queryKey: ['adm-pricing-rules'] })
     qc.invalidateQueries({ queryKey: ['adm-markup-summary'] })
     setError('')
+  }
+
+  /**
+   * Reemplazar = archivar la vieja y crear una versión nueva, en UNA operación.
+   *
+   * ⚠️ Esto existía entero —ruta, repositorio y mutación— y NO había forma de
+   * activarlo: `setReemplazando` solo se llamaba con `null`. Sin el botón, el
+   * único camino era archivar y luego crear, y entre los dos pasos la
+   * plataforma se queda SIN regla activa: un pedido que entre en ese hueco se
+   * cobraría sin margen. El reemplazo atómico existe justo para eso.
+   */
+  const cargarParaReemplazar = (r: PricingRule) => {
+    setReemplazando(r.id)
+    setError('')
+    setBorrador({
+      scope: r.scope,
+      business_id: r.business_id || '',
+      target_name: r.target_name || '',
+      strategy: r.strategy,
+      percentage: r.percentage ?? 10,
+      fixed_amount: r.fixed_amount ?? null,
+      tiers: r.tiers ?? null,
+      min_amount: r.min_amount ?? null,
+      max_amount: r.max_amount ?? null,
+      markup_mode: r.markup_mode,
+    })
+    // El formulario vive más abajo: sin esto, tocar el botón no parece hacer
+    // nada en una pantalla con la lista larga.
+    globalThis.scrollTo?.({ top: document.body.scrollHeight, behavior: 'smooth' })
   }
 
   const guardar = useMutation({
@@ -222,15 +253,30 @@ export default function Finance() {
                               </TableCell>
                               <TableCell className="text-right tabular-nums">{r.version}</TableCell>
                               <TableCell className="text-right">
-                                <Button
-                                  variant="ghost" size="sm"
-                                  disabled={archivar.isPending}
-                                  onClick={() => archivar.mutate(r.id)}
-                                >
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <Archive className="h-4 w-4" /> Archivar
-                                  </span>
-                                </Button>
+                                <div className="inline-flex items-center gap-1">
+                                  {/* Cambiar el porcentaje es REEMPLAZAR, no crear
+                                      otra: solo puede haber una regla activa por
+                                      destino, y hacerlo en dos pasos deja a la
+                                      plataforma sin margen entre medias. */}
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    disabled={guardar.isPending || archivar.isPending}
+                                    onClick={() => cargarParaReemplazar(r)}
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <RefreshCw className="h-4 w-4" /> Reemplazar
+                                    </span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    disabled={archivar.isPending}
+                                    onClick={() => archivar.mutate(r.id)}
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Archive className="h-4 w-4" /> Archivar
+                                    </span>
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
