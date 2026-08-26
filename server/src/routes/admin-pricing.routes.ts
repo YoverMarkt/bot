@@ -50,7 +50,12 @@ const { authAdmin }: ModuloAuth = require('../middleware/auth') as typeof import
 
 // `family` agrupa los 30 tipos clasificados en dos: una regla para «comida»
 // cubre 24. Antes había que crear 24 reglas iguales y una más por cada tipo.
-const SCOPES = new Set(['global', 'family', 'business_type', 'business'])
+// ⚠️ `family` se retira del panel el 2026-08-25: tenía CERO reglas y agrupaba
+// tipos que la plataforma todavía no tiene. La infraestructura sigue en la base
+// (`business_families`, y `calculate_platform_markup` la resuelve) por si vuelve
+// a hacer falta; lo que se cierra es la puerta de entrada, para que el
+// superadmin no elija un ámbito que hoy no gestiona nadie.
+const SCOPES = new Set(['global', 'business_type', 'business'])
 const STRATEGIES = new Set(['percentage', 'fixed', 'tiered'])
 // Los dos modos, desde el 2026-08-25. `on_top` estuvo cerrado hasta que el
 // catálogo, el carrito y el resumen pintaron el precio con margen — que era la
