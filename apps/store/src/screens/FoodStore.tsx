@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
+  Bike, ChevronDown, ChevronLeft, ClipboardList, Clock, Home, MapPin, Search, ShoppingBag,
+  ShoppingCart, X,
 } from 'lucide-react'
 import {
   createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
@@ -424,6 +425,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const total = orderTotal(lineas, entrega, business.deliveryFee)
   const unidades = cartCount(lineas)
   const horario = catalogo.todaysHours
+  /* La dirección que se enseña arriba. La primera guardada es la que usa el
+     checkout por defecto, así que es la que hay que mostrar: enseñar otra
+     prometería una entrega donde no va a ir. Sin ninguna guardada NO se
+     inventa un «Casa» que no existe — la barra invita a elegir. */
+  const direccionActiva = me?.addresses?.[0]?.address || null
   const portada = portadaRota ? null : foto(business.coverUrl, 'portada')
   const abierto = status === 'abierta'
 
@@ -433,7 +439,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const tarjeta = (producto: Product) => (
     <div
       key={producto.id}
-      className={`superficie relative overflow-hidden rounded-(--radius-tarjeta) shadow-sm transition ${
+      className={`superficie relative overflow-hidden rounded-(--radius-tarjeta) shadow-tarjeta transition ${
         producto.available ? '' : 'opacity-55'
       }`}
     >
@@ -454,11 +460,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             {producto.name}
           </span>
           {producto.description && (
-            <span className="mt-1 block line-clamp-2 text-[12px] leading-snug texto-tenue">
+            <span className="mt-1 block line-clamp-2 text-[12px] leading-snug texto-cuerpo">
               {producto.description}
             </span>
           )}
-          <span className="mt-2 block text-[16px] font-extrabold tracking-tight tabular-nums">
+          <span className="mt-2 block text-[19px] leading-none font-extrabold tracking-[-0.02em] tabular-nums">
             {producto.hasVariants && (
               <span className="text-[11px] font-semibold texto-tenue">desde </span>
             )}
@@ -475,7 +481,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           onClick={() => agregarAdicional(producto.id)}
           disabled={!puedePedir}
           aria-label={`Agregar ${producto.name}`}
-          className="acento absolute right-2.5 bottom-2.5 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-lg shadow-black/15 transition active:scale-95 disabled:opacity-40"
+          className="acento absolute right-2.5 bottom-2.5 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
         >
           +
         </button>
@@ -485,118 +491,36 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
 
   return (
     <div className="mx-auto min-h-full max-w-lg pb-32">
-      {/* ── Portada del local ── */}
-      {/* Lo primero que confirma al cliente que abrió el sitio correcto: quién
-          es, si está abierto y cuánto cuesta que se lo lleven. */}
-      <header className="tinta relative overflow-hidden rounded-b-[1.75rem] pt-seguro">
-        {/* La foto del local, a sangre y detrás de todo. Sin portada la
-            cabecera se queda como estaba —bloque de tinta— en vez de dejar un
-            hueco: hoy ningún negocio tiene una cargada. */}
-        {portada && (
-          <>
-            <img
-              src={portada}
-              alt=""
-              // Si la imagen no carga —el dueño la borró de Cloudinary, o la
-              // conexión falla— se retira en vez de dejar el icono de imagen
-              // rota presidiendo la tienda. La cabecera vuelve a ser el bloque
-              // de tinta, que es un estado digno.
-              onError={() => setPortadaRota(true)}
-              className="absolute inset-0 size-full object-cover"
-            />
-            {/* El degradado no es decoración: sin él, una foto clara deja el
-                nombre blanco ilegible, y el negocio no controla qué sube. */}
-            <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/55 to-black/25" />
-          </>
-        )}
-
-        <div className={`relative px-5 pb-5 ${portada ? 'pt-24' : ''}`}>
-        <div className="flex items-center gap-3">
-          {onVolver && (
-            <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
-              <ChevronLeft size={22} />
-            </button>
-          )}
-          {business.logoUrl && (
-            <img
-              src={foto(business.logoUrl, 'miniatura') || undefined}
-              alt=""
-              className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/25"
-            />
-          )}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[26px] leading-none font-extrabold tracking-tight">
-              {business.name}
-            </h1>
-            {business.slogan && (
-              <p className="mt-1.5 truncate text-[13px] opacity-70">{business.slogan}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Estado y horario, juntos a propósito: «Cerrado» a secas deja al
-            cliente sin saber cuándo volver. */}
-        <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px]">
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
-              abierto ? 'bg-emerald-400/20 text-emerald-300' : 'bg-white/15 text-white/70'
-            }`}
+      {/* ── Barra de ubicación ──────────────────────────────────────────
+          Lo primero de la pantalla, como en cualquier app de reparto: a
+          dónde va el pedido. No es decoración — abre el selector de
+          direcciones, y sin dirección guardada invita a poner una en vez de
+          fingir que ya la hay. */}
+      {entrega === 'delivery' && (
+        <div className="px-4 pt-seguro">
+          <button
+            onClick={() => setEnCuenta(true)}
+            className="flex w-full items-center gap-2.5 py-3 text-left"
           >
-            <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-400' : 'bg-white/50'}`} />
-            {abierto ? 'Abierto' : 'Cerrado'}
-          </span>
-          {horario && (
-            <span className="opacity-70 tabular-nums">
-              {horario.open} – {horario.close}
+            <span className="superficie grid size-10 shrink-0 place-items-center rounded-xl border borde-tema shadow-tarjeta">
+              <MapPin size={17} />
             </span>
-          )}
-          {/* El tiempo del modo elegido: quien retira no espera lo que tarda
-              el repartidor, y decirle lo mismo a los dos miente a uno. */}
-          <span className="opacity-70 tabular-nums">
-            ·
-            {' '}
-            {rangoDeEspera(
-              business.prepTimeMinutes
-              + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
-            )}
-          </span>
+            <span className="min-w-0 flex-1">
+              <span className="caption block texto-tenue">Entregar en</span>
+              <span className="titulo-m block truncate">
+                {direccionActiva || 'Elige tu dirección'}
+              </span>
+            </span>
+            <ChevronDown size={18} className="shrink-0 texto-tenue" />
+          </button>
         </div>
+      )}
 
-        {/* ── Cómo lo recibe ── */}
-        {/* Se elige aquí y se respeta en el carrito: es la misma decisión, no
-            dos. Cambia el envío que se suma al total y si se piden datos de
-            dirección al cerrar el pedido. */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5">
-          {([
-            {
-              id: 'delivery' as const,
-              icono: Bike,
-              texto: 'Entrega',
-              detalle: business.deliveryFee > 0 ? money(business.deliveryFee) : 'Gratis',
-            },
-            { id: 'pickup' as const, icono: ShoppingBag, texto: 'Retiro', detalle: 'Gratis' },
-          ]).map(({ id, icono: Icono, texto, detalle }) => (
-            <button
-              key={id}
-              onClick={() => setEntrega(id)}
-              aria-pressed={entrega === id}
-              className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-[13.5px] font-bold transition ${
-                entrega === id ? 'acento' : 'border-2 border-white/20 text-white'
-              }`}
-            >
-              <Icono size={16} />
-              {texto}
-              <span className={entrega === id ? 'opacity-70' : 'opacity-60'}>{detalle}</span>
-            </button>
-          ))}
-        </div>
-        </div>
-      </header>
-
-      {/* ── Buscador ── */}
-      <div className="px-4 pt-4">
-        <div className="superficie flex items-center gap-2.5 rounded-2xl border borde-tema px-4 py-3">
-          <Search size={17} className="shrink-0 texto-tenue" />
+      {/* ── Buscador ────────────────────────────────────────────────────
+          Sube por encima de la portada: quien ya sabe lo que quiere no
+          debería tener que pasar la foto para escribirlo. */}
+      <div className={`px-4 ${entrega === 'delivery' ? '' : 'pt-seguro'} pb-3`}>
+        <div className="superficie flex items-center gap-2.5 rounded-2xl px-4 py-3.5 shadow-tarjeta">
           <input
             ref={buscador}
             value={busqueda}
@@ -605,13 +529,141 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             aria-label="Buscar productos"
             className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
           />
-          {busqueda && (
-            <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
-              <X size={17} />
-            </button>
-          )}
+          {busqueda
+            ? (
+              <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
+                <X size={18} />
+              </button>
+            )
+            : <Search size={18} className="shrink-0 texto-tenue" />}
         </div>
       </div>
+
+      {/* ── El banner del local ─────────────────────────────────────────
+          Portada PEQUEÑA, no a sangre: confirma dónde estás sin comerse la
+          pantalla que el cliente vino a usar. El logo va encima, como la
+          foto de perfil de un negocio.
+
+          ⚠️ Sin portada NO se deja un hueco gris: la tarjeta se pinta con
+          un degradado del color del negocio, que es un estado digno y no un
+          error. Hoy ningún local tiene portada cargada. */}
+      <div className="px-4">
+        <div className="relative overflow-hidden rounded-[1.5rem] shadow-alzada">
+          {portada
+            ? (
+              <>
+                <img
+                  src={portada}
+                  alt=""
+                  onError={() => setPortadaRota(true)}
+                  className="h-32 w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/45 to-black/10" />
+              </>
+            )
+            : (
+              <div
+                className="h-32 w-full"
+                style={{
+                  backgroundImage:
+                    'linear-gradient(135deg, color-mix(in srgb, var(--acento) 85%, black) 0%,'
+                    + ' color-mix(in srgb, var(--acento) 45%, black) 100%)',
+                }}
+              />
+            )}
+
+          <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 p-4 text-white">
+            {onVolver && (
+              <button
+                onClick={onVolver}
+                aria-label="Volver"
+                className="absolute top-0 left-4 -translate-y-full pb-3"
+              >
+                <ChevronLeft size={22} />
+              </button>
+            )}
+            {business.logoUrl && (
+              <img
+                src={foto(business.logoUrl, 'miniatura') || undefined}
+                alt=""
+                className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/40"
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <h1 className="titulo-xl truncate">{business.name}</h1>
+              {business.slogan && (
+                <p className="caption mt-1 truncate opacity-85">{business.slogan}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Cómo lo recibe ─────────────────────────────────────────────
+          Se elige aquí y se respeta en el carrito: es la misma decisión, no
+          dos. Cambia el envío que se suma al total y si se piden datos de
+          dirección al cerrar el pedido.
+
+          ⚠️ Estuvo a punto de perderse al rediseñar la cabecera: vivía dentro
+          del bloque de tinta que se reemplazó. Sin él, el cliente no podría
+          elegir retiro y pagaría envío sin quererlo. */}
+      <div className="grid grid-cols-2 gap-2.5 px-4 pt-4">
+        {([
+          {
+            id: 'delivery' as const,
+            icono: Bike,
+            texto: 'Entrega',
+            detalle: business.deliveryFee > 0 ? money(business.deliveryFee) : 'Gratis',
+          },
+          { id: 'pickup' as const, icono: ShoppingBag, texto: 'Retiro', detalle: 'Gratis' },
+        ]).map(({ id, icono: Icono, texto, detalle }) => (
+          <button
+            key={id}
+            onClick={() => setEntrega(id)}
+            aria-pressed={entrega === id}
+            className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3.5 text-[13.5px] font-bold transition active:scale-[0.98] ${
+              entrega === id
+                ? 'tinta shadow-alzada'
+                : 'superficie texto-cuerpo shadow-tarjeta'
+            }`}
+          >
+            <Icono size={16} />
+            {texto}
+            <span className="opacity-60">{detalle}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Estado, horario y espera ────────────────────────────────────
+          Debajo del banner y sobre fondo claro: son los datos que deciden si
+          el cliente pide ahora o vuelve luego, y en la cabecera oscura se
+          leían peor. «Cerrado» a secas deja sin saber cuándo volver. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 pt-3 text-[13px]">
+        <span
+          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
+            abierto ? 'bg-emerald-50 text-emerald-700' : 'superficie texto-tenue border borde-tema'
+          }`}
+        >
+          <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-500' : 'bg-current opacity-50'}`} />
+          {abierto ? 'Abierto' : 'Cerrado'}
+        </span>
+        {horario && (
+          <span className="texto-cuerpo tabular-nums">
+            {horario.open} – {horario.close}
+          </span>
+        )}
+        {/* El tiempo del modo elegido: quien retira no espera lo que tarda el
+            repartidor, y decirle lo mismo a los dos miente a uno. */}
+        <span className="texto-tenue tabular-nums">·</span>
+        <span className="texto-cuerpo inline-flex items-center gap-1 tabular-nums">
+          <Clock size={13} />
+          {rangoDeEspera(
+            business.prepTimeMinutes
+            + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
+          )}
+        </span>
+      </div>
+
 
       {!puedePedir && (
         <div className="px-4 pt-3">

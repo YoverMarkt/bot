@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, X } from 'lucide-react'
 import { foto } from '../lib/imagen'
 import type { AnchoDeFoto } from '../lib/imagen'
@@ -158,13 +158,41 @@ export function Foto({ url, alto, uso, nombre }: {
       </div>
     )
   }
+  return <FotoCargable fuente={fuente} alto={alto} nombre={nombre} />
+}
+
+/**
+ * La imagen con su esqueleto debajo.
+ *
+ * ⚠️ Un hueco en blanco mientras la foto viaja parece que la app se rompió;
+ * un bloque que respira parece algo que viene. Importa más de lo que suena:
+ * esta tienda se abre con datos móviles desde el navegador de WhatsApp, y la
+ * primera pantalla son doce fotos a la vez.
+ *
+ * El brillo se apaga solo con `prefers-reduced-motion` (regla global del CSS).
+ */
+function FotoCargable({ fuente, alto, nombre }: {
+  fuente: string
+  alto: string
+  nombre: string
+}) {
+  const [cargada, setCargada] = useState(false)
   return (
-    <img
-      src={fuente}
-      alt={nombre}
-      loading="lazy"
-      decoding="async"
-      className={`${alto} w-full object-cover`}
-    />
+    <span className={`relative block ${alto} w-full overflow-hidden`}>
+      {!cargada && <span aria-hidden className="brillo absolute inset-0 block" />}
+      <img
+        src={fuente}
+        alt={nombre}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setCargada(true)}
+        // Si la foto no llega, el esqueleto se queda: es mejor que un icono
+        // de imagen rota presidiendo la tarjeta.
+        onError={() => setCargada(false)}
+        className={`${alto} w-full object-cover transition-opacity duration-300 ${
+          cargada ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+    </span>
   )
 }

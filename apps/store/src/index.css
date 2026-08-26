@@ -19,6 +19,17 @@
   --color-tinta: var(--tinta);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius-tarjeta: 1.5rem;
+
+  /* ── Sombras EN CAPAS ────────────────────────────────────────────────
+     Nunca una sola sombra plana: cada superficie lleva una fina de
+     CONTACTO —la que la pega al fondo— y una difusa de ELEVACIÓN. Una
+     sombra única se lee como recorte de plantilla; dos, como objeto. */
+  --shadow-tarjeta: 0 1px 2px rgb(20 24 26 / 0.04), 0 4px 16px -6px rgb(20 24 26 / 0.08);
+  --shadow-alzada: 0 2px 4px rgb(20 24 26 / 0.05), 0 12px 30px -10px rgb(20 24 26 / 0.14);
+  --shadow-flotante: 0 10px 40px -8px rgb(20 24 26 / 0.22);
+  /* El glow del acento sale del color DEL NEGOCIO, no de un verde fijo. */
+  --shadow-acento: 0 6px 16px -6px color-mix(in srgb, var(--acento) 45%, transparent);
+  --shadow-acento-alto: 0 14px 30px -10px color-mix(in srgb, var(--acento) 50%, transparent);
 }
 
 :root {
@@ -30,11 +41,19 @@
   --tinta: #0B0B0C;
   --tinta-texto: #FFFFFF;
 
-  --fondo: oklch(0.975 0 0);
-  --superficie: oklch(1 0 0);
-  --texto: oklch(0.16 0 0);
-  --tenue: oklch(0.52 0 0);
-  --linea: oklch(0.93 0 0);
+  /* ── Neutros ─────────────────────────────────────────────────────────
+     Off-white ligeramente CÁLIDO, no gris puro: la comida se ve apetitosa
+     sobre un fondo con temperatura y anémica sobre uno frío. Es la misma
+     razón por la que ninguna app de delivery usa blanco puro de fondo. */
+  --fondo: #F6F7F5;
+  --superficie: #FFFFFF;
+  --texto: #14181A;
+  /* Cuerpo de texto: NO se baja de aquí sobre blanco (contraste AA). */
+  --texto-cuerpo: #3D4548;
+  --tenue: #8A9296;
+  --linea: #ECEEEB;
+  /* Apetito, de uso escaso: badges tipo «Más pedida». Nunca como marca. */
+  --ascua: #F0542D;
   color-scheme: light;
 }
 
@@ -70,6 +89,60 @@ body {
 @utility superficie { background-color: var(--superficie); }
 @utility borde-tema { border-color: var(--linea); }
 @utility texto-tenue { color: var(--tenue); }
+
+/* Cuerpo de texto sobre blanco. Más oscuro que `texto-tenue`, que es para
+   metadatos: una descripción de producto en gris claro no se lee al sol. */
+@utility texto-cuerpo { color: var(--texto-cuerpo); }
+
+/* Ascua: solo para badges de apetito («Más pedida»). Nunca como marca. */
+@utility ascua { background-color: var(--ascua); color: #FFFFFF; }
+
+/* ── Jerarquía tipográfica ───────────────────────────────────────────────
+   El contraste ENTRE tamaños es lo que hace que una pantalla parezca
+   diseñada: un título de 26/800 junto a un caption de 12 se lee como
+   jerarquía; una escala uniforme de 14-16-18, como un formulario.
+   El `letter-spacing` negativo en los titulares es lo que separa una
+   tipografía compuesta de una puesta por defecto. */
+@utility titulo-xl { font-size: 1.625rem; line-height: 1.1; font-weight: 800; letter-spacing: -0.03em; }
+@utility titulo-l  { font-size: 1.25rem;  line-height: 1.2; font-weight: 800; letter-spacing: -0.02em; }
+@utility titulo-m  { font-size: 1rem;     line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
+@utility caption   { font-size: 0.75rem;  line-height: 1.3; font-weight: 500; letter-spacing: 0.01em; }
+
+/* ── Esqueleto con brillo ────────────────────────────────────────────────
+   Un bloque gris quieto parece un error; uno que respira, algo que viene.
+   ⚠️ Se apaga con `prefers-reduced-motion`: el brillo recorriendo la
+   pantalla es justo el tipo de movimiento que molesta a quien lo pidió. */
+@utility brillo {
+  background-image: linear-gradient(
+    90deg,
+    var(--linea) 0%,
+    color-mix(in srgb, var(--linea) 45%, white) 50%,
+    var(--linea) 100%
+  );
+  background-size: 200% 100%;
+  animation: brillo 1.4s ease-in-out infinite;
+}
+
+@keyframes brillo {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* El foco tiene que VERSE: esta app se usa con el teclado del navegador de
+   WhatsApp, y un anillo invisible deja al cliente sin saber dónde está. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--texto);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
 
 /* La barra inferior no puede quedar debajo del gesto de inicio del iPhone. */
 @utility pb-seguro { padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
