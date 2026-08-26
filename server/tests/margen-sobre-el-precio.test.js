@@ -237,3 +237,42 @@ describe('el sellado del pedido', () => {
     expect(fn).toMatch(/effective_until is null or pr\.effective_until > now\(\)/)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL MÍNIMO DE COMPRA VIAJA EN LA MONEDA DEL CLIENTE
+//
+// El dueño fija su mínimo sobre SU precio, y la base lo exige así
+// (`orders_enforce_min_amount` mira `orders.subtotal`). Pero la app compara
+// contra un carrito ya con margen: si el mínimo no se inflara igual, un
+// carrito de $4,80 del comercio —$5,28 para el cliente— parecería llegar a un
+// mínimo de $5 y la base lo rechazaría justo al confirmar.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('el mínimo de compra con margen', () => {
+  const NEGOCIO = {
+    id: 'b1', name: 'Local', slug: 'local', type: 'pizzería',
+    delivery_fee: 2, prep_time_minutes: 25, delivery_extra_minutes: 10,
+    min_order_amount: 5, payment_methods: null,
+  }
+
+  it('se infla igual que los precios, para que la comparación siga siendo la misma', () => {
+    const conRegla = publicBusiness(NEGOCIO, REGLA(10))
+    expect(conRegla.minOrderAmount).toBe(5.5)
+
+    // Equivalencia: un carrito justo en el mínimo del comercio lo sigue estando
+    // en la moneda del cliente, y uno por debajo sigue por debajo.
+    const enElMinimo = calculatePlatformMarkup(5, REGLA(10)).customerSubtotal
+    const porDebajo = calculatePlatformMarkup(4.8, REGLA(10)).customerSubtotal
+    expect(enElMinimo).toBeGreaterThanOrEqual(conRegla.minOrderAmount)
+    expect(porDebajo).toBeLessThan(conRegla.minOrderAmount)
+  })
+
+  it('sin regla, el mínimo es el que puso el dueño', () => {
+    expect(publicBusiness(NEGOCIO, null).minOrderAmount).toBe(5)
+  })
+
+  // ⚠️ El envío NO lleva margen: se cobra aparte y el margen sale solo de los
+  // productos.
+  it('el envío no se infla', () => {
+    expect(publicBusiness(NEGOCIO, REGLA(10)).deliveryFee).toBe(2)
+  })
+})

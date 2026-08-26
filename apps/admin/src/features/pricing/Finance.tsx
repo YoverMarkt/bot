@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
+import { BUSINESS_TYPE_OPTIONS } from '../clients/business-types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  archivePricingRule, createPricingRule, getBusinessFamilies, getClients, getMarkupSummary,
+  archivePricingRule, createPricingRule, getClients, getMarkupSummary,
   getPricingRules, replacePricingRule, simulateMarkup,
   type PricingRule, type PricingRuleDraft,
 } from '../clients/api'
@@ -32,9 +33,12 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const dinero = (v: number | string) => `$${Number(v || 0).toFixed(2)}`
 
+// ⚠️ `family` sigue AQUÍ aunque ya no se pueda crear desde el desplegable: la
+// lista tiene que saber pintar una regla antigua de ese ámbito. Se retira la
+// puerta de entrada, no la capacidad de leer lo que ya existe.
 const ETIQUETA_AMBITO: Record<PricingRule['scope'], string> = {
-  business: 'Un negocio',
   family: 'Una familia',
+  business: 'Un negocio',
   business_type: 'Un tipo',
   global: 'Toda la plataforma',
 }
@@ -79,7 +83,6 @@ export default function Finance() {
   const reglas = useQuery({ queryKey: ['adm-pricing-rules'], queryFn: getPricingRules })
   const resumen = useQuery({ queryKey: ['adm-markup-summary'], queryFn: getMarkupSummary })
   const negocios = useQuery({ queryKey: ['adm-clients-min'], queryFn: getClients })
-  const familias = useQuery({ queryKey: ['adm-families'], queryFn: getBusinessFamilies })
 
   // ¿Está la regla lo bastante completa como para poder simularla?
   //
@@ -89,7 +92,6 @@ export default function Finance() {
   const listaParaSimular = (
     (borrador.scope !== 'business' || !!borrador.business_id)
     && (borrador.scope !== 'business_type' || !!borrador.target_name)
-    && (borrador.scope !== 'family' || !!borrador.target_name)
     && (borrador.strategy !== 'percentage' || borrador.percentage != null)
     && (borrador.strategy !== 'fixed' || borrador.fixed_amount != null)
     && subtotal >= 0
@@ -308,7 +310,6 @@ export default function Finance() {
               >
                 <option value="business">Un negocio</option>
                 <option value="business_type">Un tipo de negocio</option>
-                <option value="family">Una familia (agrupa varios tipos)</option>
                 <option value="global">Toda la plataforma</option>
               </select>
             </div>
@@ -330,38 +331,29 @@ export default function Finance() {
               </div>
             )}
 
-            {/* La familia agrupa los tipos: una regla para «Comida» cubre
-                pizzería, hamburguesería, almuerzos, batidos y veinte más, en
-                vez de veinticuatro reglas iguales. */}
-            {borrador.scope === 'family' && (
+            {borrador.scope === 'business_type' && (
               <div>
-                <Label htmlFor="familia">Familia</Label>
+                <Label htmlFor="tipo">Tipo de negocio</Label>
+                {/* ⚠️ LISTA CERRADA, no texto libre. Escribiéndolo a mano se
+                    creó una regla con el tipo «Monster Pizza» —que es un
+                    NEGOCIO, no un tipo—: no casaba con nada y no se aplicó
+                    nunca, sin que nada avisara. El nombre tiene que coincidir
+                    exacto con `businesses.type` o la regla es decorativa. */}
                 <select
-                  id="familia"
+                  id="tipo"
                   className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={borrador.target_name || ''}
                   onChange={e => setBorrador({ ...borrador, target_name: e.target.value })}
                 >
-                  <option value="">Elige una…</option>
-                  {(familias.data || []).map(f => (
-                    <option key={f.code} value={f.code}>{f.label}</option>
+                  <option value="">Elige uno…</option>
+                  {BUSINESS_TYPE_OPTIONS.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Se aplica a todos los tipos de esa familia. Un tipo concreto
+                  Se aplica a todos los locales de ese tipo. Un negocio concreto
                   puede llevar su propia regla y gana sobre esta.
                 </p>
-              </div>
-            )}
-
-            {borrador.scope === 'business_type' && (
-              <div>
-                <Label htmlFor="tipo">Tipo de negocio</Label>
-                <Input
-                  id="tipo" className="mt-1" placeholder="pizzería"
-                  value={borrador.target_name || ''}
-                  onChange={e => setBorrador({ ...borrador, target_name: e.target.value })}
-                />
               </div>
             )}
 
