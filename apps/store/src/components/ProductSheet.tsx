@@ -190,7 +190,7 @@ export default function ProductSheet({
 
       <div className="space-y-6 p-4 pb-3">
         {product.description && (
-          <p className="text-[14px] leading-relaxed texto-tenue">{product.description}</p>
+          <p className="text-[14px] leading-relaxed texto-cuerpo">{product.description}</p>
         )}
 
         {product.variants.length > 0 && (
@@ -206,8 +206,10 @@ export default function ProductSheet({
                   <button
                     key={opcion.id}
                     onClick={() => setVariante(opcion)}
-                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
-                      activa ? 'border-marca bg-marca-suave' : 'borde-tema'
+                    className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99] ${
+                      activa
+                        ? 'acento border-transparent shadow-acento'
+                        : 'superficie borde-tema shadow-tarjeta'
                     }`}
                   >
                     <span className="text-[15px] font-semibold">{opcion.name}</span>
@@ -296,8 +298,17 @@ export default function ProductSheet({
                               price: opcion.price,
                               quantity: 1,
                             })}
-                            className={`rounded-xl border-2 px-3.5 py-2.5 text-[14px] font-bold transition ${
-                              activa ? 'border-marca bg-marca-suave text-marca' : 'borde-tema'
+                            // ⚠️ La opción activa va en acento SÓLIDO, no con el
+                            // acento de letra sobre su propio tinte: «un lima
+                            // sobre blanco no se lee al sol», que es la regla
+                            // escrita en `index.css`, y aquí se estaba
+                            // incumpliendo. `acento` trae su texto calculado por
+                            // luminancia, así que cualquier color del negocio
+                            // mantiene el contraste.
+                            className={`rounded-xl border-2 px-3.5 py-2.5 text-[14px] font-bold transition active:scale-95 ${
+                              activa
+                                ? 'acento border-transparent shadow-acento'
+                                : 'borde-tema texto-cuerpo'
                             }`}
                           >
                             {opcion.name}
@@ -330,7 +341,7 @@ export default function ProductSheet({
                   return (
                     <div
                       key={opcion.id}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                      className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99] ${
                         activa ? 'border-marca bg-marca-suave' : 'borde-tema'
                       } ${bloqueada ? 'opacity-40' : ''}`}
                     >
