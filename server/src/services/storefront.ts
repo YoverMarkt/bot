@@ -13,6 +13,7 @@
 // El tipo vive con el motor que lo usa, y se reexporta para que quien arma el
 // catálogo no tenga que saber de dónde sale.
 import { calculateProductPrice, type PricingStrategy } from './pricing'
+import { calculatePlatformMarkup, type MarkupRule } from './platform-pricing'
 export type { PricingStrategy }
 
 export interface StorefrontBusiness {
@@ -168,6 +169,58 @@ export function storefrontCapabilities(
   }
 }
 
+/**
+ * La regla de margen tal como llega de `business_pricing_view`, normalizada a
+ * lo que espera `platform-pricing.ts`. Devuelve `null` si no hay regla.
+ */
+export const reglaDeMargen = (crudo: unknown): MarkupRule | null => {
+  if (!crudo || typeof crudo !== 'object') return null
+  const r = crudo as Record<string, unknown>
+  const estrategia = String(r.strategy || '')
+  if (!estrategia) return null
+  return {
+    id: r.rule_id ? String(r.rule_id) : undefined,
+    strategy: estrategia as MarkupRule['strategy'],
+    percentage: r.percentage == null ? null : Number(r.percentage),
+    fixedAmount: r.fixed_amount == null ? null : Number(r.fixed_amount),
+    tiers: Array.isArray(r.tiers)
+      ? (r.tiers as { up_to?: number | null; amount?: number }[]).map(t => ({
+        upTo: t.up_to ?? null, amount: Number(t.amount) || 0,
+      }))
+      : null,
+    minAmount: r.min_amount == null ? null : Number(r.min_amount),
+    maxAmount: r.max_amount == null ? null : Number(r.max_amount),
+    markupMode: (r.mode === 'on_top' ? 'on_top' : 'absorbed'),
+    version: r.version == null ? undefined : Number(r.version),
+  }
+}
+
+/**
+ * El precio que VE el cliente: el del comercio más el margen de la plataforma.
+ *
+ * ⚠️ Solo se pinta con `percentage` y sin topes de pedido. `fixed` y `tiered`
+ * —y cualquier regla con `min_amount`/`max_amount`— son cantidades del PEDIDO
+ * ENTERO: repartirlas por producto daría un precio unitario que no existe, y
+ * al sumar el carrito no cuadraría con el cobro. En esos casos el precio se
+ * enseña tal cual y el margen aparece en la cotización, que es donde el
+ * importe del pedido ya está resuelto.
+ *
+ * ⚠️ Y solo con `on_top`. Con `absorbed` el margen sale del precio del
+ * comercio, así que el cliente ya está viendo lo que paga.
+ */
+export const precioDeVitrina = (
+  precio: number | null,
+  regla: MarkupRule | null,
+): number | null => {
+  if (precio == null) return precio
+  if (!regla || regla.markupMode !== 'on_top') return precio
+  if (regla.strategy !== 'percentage') return precio
+  if (regla.minAmount != null || regla.maxAmount != null) return precio
+  const pct = Number(regla.percentage) || 0
+  if (pct <= 0) return precio
+  return Math.round((precio * (1 + pct / 100) + Number.EPSILON) * 100) / 100
+}
+
 const money = (value: unknown): number | null => {
   const parsed = Number.parseFloat(String(value ?? ''))
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null
@@ -235,7 +288,16 @@ export function buildStorefrontCatalog(input: {
   optionGroups?: CatalogOptionGroup[]
   options?: CatalogOption[]
   recommendations?: CatalogRecommendation[]
+  /**
+   * La regla de margen vigente. Con `on_top` los precios que salen de aquí ya
+   * son los que paga el cliente — que es la condición que `pricing_rules`
+   * exigía antes de permitir ese modo.
+   */
+  pricing?: MarkupRule | null
 }) {
+  const regla = input.pricing ?? null
+  /** Atajo: el precio de vitrina de esta tienda. */
+  const vit = (precio: number | null): number | null => precioDeVitrina(precio, regla)
   const variantesPorProducto = new Map<string, CatalogVariant[]>()
   for (const variante of input.variants) {
     const lista = variantesPorProducto.get(variante.product_id) || []
@@ -309,8 +371,8 @@ export function buildStorefrontCatalog(input: {
       .map(variante => ({
         id: variante.id,
         name: variante.name,
-        price: money(variante.price) ?? 0,
-        priceSale: money(variante.price_sale),
+        price: vit(money(variante.price)) ?? 0,
+        priceSale: vit(money(variante.price_sale)),
       }))
 
     // Los extras del producto y los de sus etiquetas, sin repetir.
@@ -319,8 +381,8 @@ export function buildStorefrontCatalog(input: {
     const extras = [...extrasPorProducto.get(producto.id) || [], ...porEtiqueta]
     const vistos = new Set<string>()
 
-    const precioBase = money(producto.price)
-    const precioOferta = money(producto.price_sale)
+    const precioBase = vit(money(producto.price))
+    const precioOferta = vit(money(producto.price_sale))
     // Con variantes, el precio del producto es solo una referencia: "desde X".
     const desde = variantes.length
       ? Math.min(...variantes.map(v => v.priceSale ?? v.price))
@@ -351,7 +413,7 @@ export function buildStorefrontCatalog(input: {
               name: opcion.name,
               description: opcion.description || referido?.description || null,
               imageUrl: opcion.image_url || referido?.image_url || null,
-              price: money(opcion.price_adjustment) ?? 0,
+              price: vit(money(opcion.price_adjustment)) ?? 0,
               referencesProductId: opcion.references_product_id || null,
               defaultSelected: opcion.default_selected === true,
             }
@@ -405,7 +467,7 @@ export function buildStorefrontCatalog(input: {
           name: ofrecido.name,
           description: ofrecido.description || null,
           imageUrl: ofrecido.image_url || null,
-          price: money(ofrecido.price_sale) || money(ofrecido.price) || 0,
+          price: vit(money(ofrecido.price_sale) || money(ofrecido.price)) || 0,
         }
       })
       .filter(Boolean)
@@ -481,7 +543,7 @@ export function buildStorefrontCatalog(input: {
 }
 
 /** Lo que la app necesita saber del negocio. Nunca credenciales. */
-export function publicBusiness(business: StorefrontBusiness) {
+export function publicBusiness(business: StorefrontBusiness, pricing?: MarkupRule | null) {
   return {
     id: business.id,
     name: business.name || '',
@@ -515,7 +577,18 @@ export function publicBusiness(business: StorefrontBusiness) {
     // bloqueo y el enlace: decirlo cuando aún se puede hacer algo.
     //
     // `?? 0` y no `|| 0`: cero es «sin mínimo», un valor que el dueño elige.
-    minOrderAmount: Math.max(0, Number(business.min_order_amount ?? 0) || 0),
+    //
+    // ⚠️ VIAJA EN LA MONEDA DEL CLIENTE, con el mismo margen que los precios.
+    // El dueño fija su mínimo sobre SU precio y la base lo exige así
+    // (`orders_enforce_min_amount` mira `orders.subtotal`), pero la app compara
+    // contra un carrito ya con margen: sin inflarlo igual, un carrito de $4,80
+    // del comercio —$5,28 para el cliente— parecería llegar a un mínimo de $5
+    // y la base lo rechazaría al confirmar. Inflar los dos lados mantiene la
+    // comparación equivalente y el rechazo imposible.
+    minOrderAmount: precioDeVitrina(
+      Math.max(0, Number(business.min_order_amount ?? 0) || 0),
+      pricing ?? null,
+    ) ?? 0,
   }
 }
 
@@ -553,11 +626,22 @@ export interface CartQuote {
   error?: string
   lines: QuoteLine[]
   subtotal: number
+  /** Lo que recibe el comercio por sus productos: su precio, entero. */
+  merchantSubtotal: number
+  /** Lo que gana la plataforma sobre este pedido. */
+  platformMarkup: number
+  /** Lo que paga el cliente por los productos: con `on_top` incluye el margen. */
+  customerSubtotal: number
+  /** El porcentaje aplicado, para poder explicarlo después. */
+  markupPercentage: number | null
   shipping: number
   total: number
 }
 
-const vacia = (error: string): CartQuote => ({ error, lines: [], subtotal: 0, shipping: 0, total: 0 })
+const vacia = (error: string): CartQuote => ({
+  error, lines: [], subtotal: 0, shipping: 0, total: 0,
+  merchantSubtotal: 0, platformMarkup: 0, customerSubtotal: 0, markupPercentage: null,
+})
 
 export function quoteCart(input: {
   items: QuoteItemInput[]
@@ -567,6 +651,8 @@ export function quoteCart(input: {
   options: CatalogOption[]
   deliveryFee: number
   fulfillment: string
+  /** La regla de margen vigente, la misma que sella el pedido. */
+  pricing?: MarkupRule | null
 }): CartQuote {
   const porProducto = new Map(input.products.map(producto => [producto.id, producto]))
   const porVariante = new Map(input.variants.map(variante => [variante.id, variante]))
@@ -680,5 +766,26 @@ export function quoteCart(input: {
     : 0
   subtotal = Math.round(subtotal * 100) / 100
 
-  return { lines, subtotal, shipping, total: Math.round((subtotal + shipping) * 100) / 100 }
+  // ⚠️ UN SOLO REDONDEO, sobre el subtotal completo y nunca por línea: diez
+  // líneas redondeadas por separado se desvían del porcentaje pactado. Es el
+  // mismo cálculo que sella `orders_stamp_pricing`, así que la cotización y el
+  // cobro no pueden divergir.
+  //
+  // ⚠️ `subtotal` es y sigue siendo lo del COMERCIO. Lo que sube con `on_top`
+  // es lo que paga el cliente.
+  const margen = calculatePlatformMarkup(subtotal, input.pricing ?? null)
+  const total = Math.round((margen.customerSubtotal + shipping) * 100) / 100
+
+  return {
+    lines,
+    subtotal,
+    shipping,
+    total,
+    merchantSubtotal: margen.merchantSubtotal,
+    platformMarkup: margen.markup,
+    customerSubtotal: margen.customerSubtotal,
+    markupPercentage: input.pricing?.strategy === 'percentage'
+      ? (Number(input.pricing.percentage) || 0)
+      : null,
+  }
 }

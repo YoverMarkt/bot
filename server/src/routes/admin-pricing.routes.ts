@@ -52,10 +52,14 @@ const { authAdmin }: ModuloAuth = require('../middleware/auth') as typeof import
 // cubre 24. Antes había que crear 24 reglas iguales y una más por cada tipo.
 const SCOPES = new Set(['global', 'family', 'business_type', 'business'])
 const STRATEGIES = new Set(['percentage', 'fixed', 'tiered'])
-// Solo `absorbed`. `on_top` exige que el catálogo, el carrito y el resumen
-// pinten el precio con margen; hasta entonces el CHECK de la base lo impide y
-// aquí se rechaza con un mensaje que se entiende.
-const MODES = new Set(['absorbed'])
+// Los dos modos, desde el 2026-08-25. `on_top` estuvo cerrado hasta que el
+// catálogo, el carrito y el resumen pintaron el precio con margen — que era la
+// condición escrita en el CHECK de la base—; ahora existen y el freno se
+// levantó en `migration-2026-08-29-margen-sobre-el-precio.sql`.
+//
+// ⚠️ `absorbed` NO se retira: los pedidos ya sellados con él deben poder
+// seguir liquidándose como se cobraron.
+const MODES = new Set(['absorbed', 'on_top'])
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const isRecord = (v: unknown): v is Record<string, unknown> => (
@@ -88,9 +92,11 @@ const sanearRegla = (body: unknown): { error: string } | { rule: ReglaSaneada } 
     return { error: 'La estrategia tiene que ser percentage, fixed o tiered.' }
   }
 
-  const markupMode = String(body.markup_mode || 'absorbed').trim()
+  // El modelo del negocio es `on_top`: el comercio cobra su precio entero y el
+  // margen se suma al del cliente. Se mantiene como valor por defecto.
+  const markupMode = String(body.markup_mode || 'on_top').trim()
   if (!MODES.has(markupMode)) {
-    return { error: 'Por ahora el margen solo puede salir del precio del comercio.' }
+    return { error: 'El margen se suma al precio (on_top) o sale del precio del comercio (absorbed).' }
   }
 
   // Cada ámbito exige exactamente sus datos. Sin esto, una regla «de negocio»

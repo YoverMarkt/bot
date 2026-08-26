@@ -494,6 +494,28 @@ const isContactBlocked = async (businessId: string, phone: string): Promise<bool
 }
 
 /**
+ * La regla de margen vigente para este negocio, o `null` si no hay ninguna.
+ *
+ * Sale de `business_pricing_view`, que aplica la MISMA jerarquía que usa el
+ * cobro (negocio → tipo → global): reimplementarla aquí daría dos respuestas
+ * a la misma pregunta, y una de las dos acabaría cobrando distinto.
+ *
+ * ⚠️ Falla hacia `null` —sin margen— y no hacia un porcentaje inventado: si la
+ * consulta revienta, el cliente ve el precio del comercio. Equivocarse hacia
+ * NO cobrar de más es el único lado seguro de este error.
+ */
+const getBusinessPricingRule = async (
+  businessId: string,
+): Promise<Record<string, unknown> | null> => {
+  if (!businessId) return null
+  const { data, error } = await db.rpc('business_pricing_view', {
+    p_business_id: businessId,
+  })
+  if (error) return null
+  return (data as Record<string, unknown> | null) ?? null
+}
+
+/**
  * ¿Toca EXPLICARLE el bloqueo a este cliente? Una sola vez.
  *
  * Devuelve `true` en su primer intento tras ser bloqueado y `false` en todos
@@ -726,6 +748,7 @@ export = {
   claimMiniappReply,
   isContactBlocked,
   claimBlockedNotice,
+  getBusinessPricingRule,
   isCustomerBlocked,
   setContactBlocked,
   getBlockedPhones,

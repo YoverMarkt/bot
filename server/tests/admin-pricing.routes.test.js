@@ -91,6 +91,7 @@ describe('reglas de margen del superadmin', () => {
   describe('lo que no se puede guardar', () => {
     const rechaza = async (cambios, fragmento) => {
       vi.spyOn(db, 'createPricingRule').mockResolvedValue({ data: null, error: null })
+      db.createPricingRule.mockClear()
       const r = await dispatch('post', '/api/admin/pricing-rules', {
         auth: adminAuth(),
         body: { ...REGLA_VALIDA, ...cambios },
@@ -99,6 +100,17 @@ describe('reglas de margen del superadmin', () => {
       expect(r.body.error).toContain(fragmento)
       // Lo importante: ni siquiera se intentó escribir.
       expect(db.createPricingRule).not.toHaveBeenCalled()
+    }
+
+    const acepta = async (cambios) => {
+      vi.spyOn(db, 'createPricingRule').mockResolvedValue({ data: { id: 'r-1' }, error: null })
+      db.createPricingRule.mockClear()
+      const r = await dispatch('post', '/api/admin/pricing-rules', {
+        auth: adminAuth(),
+        body: { ...REGLA_VALIDA, ...cambios },
+      })
+      expect(r.status, JSON.stringify(cambios)).toBeLessThan(400)
+      expect(db.createPricingRule).toHaveBeenCalled()
     }
 
     it('un ámbito inventado', () => rechaza({ scope: 'galaxia' }, 'ámbito'))
@@ -136,10 +148,15 @@ describe('reglas de margen del superadmin', () => {
       rechaza({ min_amount: 5, max_amount: 2 }, 'mayor que el máximo'))
     it('un mínimo fuera de rango', () => rechaza({ min_amount: 99999 }, 'mínimo'))
 
-    // `on_top` exige que el catálogo, el carrito y el resumen pinten el precio
-    // con margen. Hasta entonces no se puede elegir: la base también lo impide.
-    it('el modo on_top, que el motor todavía no aplica', () =>
-      rechaza({ markup_mode: 'on_top' }, 'precio del comercio'))
+    // ⚠️ Esta prueba EXIGÍA lo contrario hasta el 2026-08-25: que `on_top`
+    // se rechazara. Su condición —que el catálogo, el carrito y el resumen
+    // pinten el precio con margen— se cumplió, así que el freno se levantó.
+    // Se reescribió para fijar la regla nueva, no se borró.
+    it('acepta los DOS modos, y ninguno más', async () => {
+      await acepta({ markup_mode: 'on_top' })
+      await acepta({ markup_mode: 'absorbed' })
+      await rechaza({ markup_mode: 'inventado' }, 'on_top')
+    })
   })
 
   describe('lo que sí se guarda', () => {
@@ -153,7 +170,10 @@ describe('reglas de margen del superadmin', () => {
       const enviado = guardada.mock.calls[0][0]
       expect(enviado).toMatchObject({
         scope: 'business', business_id: BIZ, strategy: 'percentage',
-        percentage: 10, min_amount: 0.5, max_amount: 3, markup_mode: 'absorbed',
+        // ⚠️ `on_top` es el DEFECTO desde el 2026-08-25: el comercio cobra su
+        // precio entero y el margen se suma al del cliente. Antes aquí ponía
+        // 'absorbed', que le descontaba el margen al dueño.
+        percentage: 10, min_amount: 0.5, max_amount: 3, markup_mode: 'on_top',
       })
       expect(enviado.notes).toBe('con espacios')
       // Una regla de negocio no puede arrastrar un nombre de tipo: sería
@@ -247,7 +267,11 @@ describe('reglas de margen del superadmin', () => {
       expect(r.status).toBe(200)
       // El techo protege al comercio de volumen: 4 % de 80 son 3.20.
       expect(r.body.markup).toBe(3)
-      expect(r.body.merchantSubtotal).toBe(77)
+      // ⚠️ Antes esperaba 77 (80 − 3): el margen se le descontaba al comercio.
+      // Desde el 2026-08-25 el comercio cobra su precio ENTERO y el margen se
+      // suma al del cliente, que es el modelo real del negocio.
+      expect(r.body.merchantSubtotal).toBe(80)
+      expect(r.body.customerSubtotal).toBe(83)
       expect(guardada).not.toHaveBeenCalled()
     })
 
