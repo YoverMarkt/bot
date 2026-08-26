@@ -10450,7 +10450,7 @@ alter table public.pricing_rules
   check (markup_mode in ('absorbed', 'on_top'));
 
 comment on column public.pricing_rules.markup_mode is
-  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25.'; hasta entonces el CHECK lo impide.';
+  '`on_top`: el margen se SUMA al precio y el comercio cobra entero. `absorbed`: se le descuenta. El modelo del negocio es `on_top` desde el 2026-08-25.';
 
 
 -- ════════════════════════════════════════════════════════════════════════
