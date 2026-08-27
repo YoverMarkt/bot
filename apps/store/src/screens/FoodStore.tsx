@@ -536,7 +536,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             recorte que ya viene hecho de Cloudinary (`RECORTE` en
             `lib/imagen.ts`): la foto llega con la forma exacta del hueco, así
             que `object-cover` no tiene nada que recortar por su cuenta. */}
-        <div className="relative aspect-video overflow-hidden rounded-b-4xl">
+        {/* Sin redondeo abajo, por decisión del dueño (2026-08-26): la portada
+            corta recta y el logo se apoya sobre esa línea. */}
+        <div className="relative aspect-video overflow-hidden">
           {portada
             ? (
                 <img

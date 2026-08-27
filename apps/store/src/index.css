@@ -1,5 +1,48 @@
 @import "tailwindcss";
 
+/* ── LA TIPOGRAFÍA DE LA TIENDA ──────────────────────────────────────────
+   Plus Jakarta Sans, elegida por el dueño el 2026-08-26 sobre su referencia
+   de diseño. Hasta entonces la app usaba la fuente del sistema: se veía
+   nativa, pero distinta en cada teléfono y sin identidad propia.
+
+   ⚠️ AUTOALOJADA, no servida por Google. Un `@import` a
+   `fonts.googleapis.com` mete dos conexiones nuevas —DNS + TLS a dos
+   dominios— antes de poder pintar una letra, y esta app se abre con datos
+   móviles desde el navegador de WhatsApp. Además le regala a Google la IP de
+   cada cliente que abre una tienda, que no es nuestro dato para regalar.
+
+   ⚠️ UN SOLO ARCHIVO. Es la versión VARIABLE (`font-weight: 200 800`), así
+   que los cinco pesos que usa la app —500, 600, 700, 800 y el 900 del `+`—
+   salen de los mismos 27,3 kB. Con archivos estáticos serían cinco
+   descargas. El 900 no existe en el rango y el navegador lo sujeta a 800:
+   es lo que se quiere, y no se nota.
+
+   ⚠️ SUBCONJUNTO LATINO, no la fuente completa. Cubre todo lo que esta app
+   escribe en español —acentos, ñ, «», el guion – de «35 – 45 min» y el × de
+   «2× Coca-Cola»—; el cirílico y el vietnamita habrían sido peso muerto.
+
+   ⚠️ `swap`: el texto se pinta YA con la fuente del sistema y cambia cuando
+   la propia llega. Con `block` la tienda arrancaría muda unos cientos de
+   milisegundos, y con `optional` la mayoría no llegaría a ver la fuente
+   nunca —esta app se abre una vez, desde un enlace—.
+
+   ⚠️ SIN `size-adjust` ni `*-override` aquí. Puestos en ESTA regla no ajustan
+   la fuente de respaldo: deforman la propia, que es justo la que se quiere
+   intacta. La técnica de igualar métricas exige una `@font-face` APARTE para
+   el respaldo, con valores medidos. Como el respaldo solo se ve unos
+   milisegundos y el `preload` del index.html acorta aún más esa ventana, se
+   acepta el pequeño reajuste al cambiar. */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/t/fuentes/plus-jakarta-sans-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* Tema de la tienda. Es la app que ve el CLIENTE FINAL, no el panel: manda la
    foto del producto, el precio se lee de un vistazo y el pulgar alcanza todo.
    Por eso no reutiliza el tema de los paneles.
@@ -17,7 +60,9 @@
   --color-marca: var(--acento);
   --color-marca-suave: var(--acento-suave);
   --color-tinta: var(--tinta);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* La propia primero; detrás, la del sistema, que es lo que se ve durante
+     los milisegundos del `swap` y lo que queda si la fuente no llegara. */
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius-tarjeta: 1.5rem;
 
   /* ── Sombras EN CAPAS ────────────────────────────────────────────────
