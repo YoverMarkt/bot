@@ -262,7 +262,11 @@ export default function CartSheet({
   const faltaParaElMinimo = minOrderAmount > 0
     ? Math.max(0, Math.round((minOrderAmount - subtotal) * 100) / 100)
     : 0
-  const envio = needsAddress(entrega) ? deliveryFee : 0
+  // ⚠️ Sin líneas no hay envío que cobrar. Igual que en `orderTotal`: el
+  // carrito vacío enseñaba «Envío $2.00» y «Total $2.00» sobre cero
+  // productos. Los dos sitios tienen que contar lo mismo o el desglose no
+  // sumaría el total que hay justo debajo.
+  const envio = lines.length && needsAddress(entrega) ? deliveryFee : 0
   const total = orderTotal(lines, entrega, deliveryFee)
 
   const enCarrito = paso === 'carrito'

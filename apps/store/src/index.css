@@ -63,7 +63,11 @@
   /* La propia primero; detrás, la del sistema, que es lo que se ve durante
      los milisegundos del `swap` y lo que queda si la fuente no llegara. */
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --radius-tarjeta: 1.5rem;
+  /* Menos redondeo, por decisión del dueño (2026-08-26): a 1,5 rem las
+     tarjetas se leían blandas. Vive en un token y no suelto por las pantallas
+     para que la tienda entera cambie de forma a la vez — la rejilla, el
+     resumen del pedido, la cuenta y los datos del banco. */
+  --radius-tarjeta: 1rem;
 
   /* ── Sombras EN CAPAS ────────────────────────────────────────────────
      Nunca una sola sombra plana: cada superficie lleva una fina de
@@ -224,6 +228,17 @@ body {
     linear-gradient(150deg,
       color-mix(in oklab, var(--acento) 26%, white) 0%,
       color-mix(in oklab, var(--acento) 10%, white) 100%);
+}
+
+/* El punto del local abierto. No es adorno: un punto quieto se lee como un
+   icono, y uno que late como algo que está pasando ahora. Se apaga solo con
+   `prefers-reduced-motion`, que es justo el movimiento que molesta. */
+@utility latido { animation: latido 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+@keyframes latido {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  70%  { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
 }
 
 @keyframes entrar {

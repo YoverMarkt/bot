@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bike, ChevronDown, ChevronLeft, ClipboardList, Clock, Home, MapPin, Search, ShoppingBag,
-  ShoppingCart, X,
+  Bike, ChevronDown, ChevronLeft, Clock, Home, MapPin, Plus, Search, ShoppingBag,
+  ShoppingCart, User, X,
 } from 'lucide-react'
 import {
   createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
@@ -51,6 +51,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [error, setError] = useState<string | null>(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  /**
+   * Si la barra de búsqueda está a la vista. Escondida gana una franja entera
+   * de la primera pantalla; la abre la pestaña «Buscar» de la barra de abajo.
+   *
+   * ⚠️ Cerrarla BORRA la búsqueda (ver el JSX): con texto escrito, la carta
+   * se sustituye por los resultados, y una barra escondida con texto dentro
+   * dejaría al cliente sin forma de volver a la carta.
+   */
+  const [buscando, setBuscando] = useState(false)
   /**
    * El pedido que se acaba de enviar. Vive aquí y no en el seguimiento porque
    * el resumen sale del CARRITO —que se vacía al confirmar— y del total
@@ -473,9 +482,14 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               onClick={() => agregarAdicional(producto.id)}
               disabled={!puedePedir}
               aria-label={`Agregar ${producto.name}`}
-              className="acento absolute right-2.5 bottom-2.5 z-10 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+              // ⚠️ El icono `Plus`, no el CARÁCTER «+». Con el carácter, lo que
+              // el flex centra es la caja de línea, no el signo: la tipografía
+              // le deja aire distinto arriba y abajo, así que la cruz quedaba
+              // alta dentro del círculo. Un icono SVG está centrado por
+              // geometría y además es el mismo trazo que el resto de la app.
+              className="acento absolute right-2.5 bottom-2.5 z-10 flex size-11 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
             >
-              +
+              <Plus size={22} strokeWidth={3} />
             </button>
           )}
         </div>
@@ -512,7 +526,10 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   )
 
   return (
-    <div className="mx-auto min-h-full max-w-lg pb-32">
+    // El hueco de abajo crece con el carrito: ahora «Ver pedido» se APILA
+    // sobre la barra en vez de taparla, así que entre las dos ocupan más y el
+    // último producto de la carta quedaría debajo.
+    <div className={`mx-auto min-h-full max-w-lg ${unidades > 0 ? 'pb-48' : 'pb-32'}`}>
       {/* ══ EL HÉROE ════════════════════════════════════════════════════
           Portada a sangre y ALTA, con el logo del negocio centrado
           solapando el borde. Es la ficha de local de cualquier app de
@@ -616,20 +633,39 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         {business.slogan && (
           <p className="mt-1.5 text-[13.5px] texto-cuerpo">{business.slogan}</p>
         )}
-        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[13px]">
+        {/* ── Abierto / Cerrado, diciendo HASTA CUÁNDO ──────────────────
+            Antes era la píldora y al lado el rango pelado «09:00 – 03:00»,
+            que obliga al cliente a mirar la hora de su teléfono y comparar.
+            Ahora la píldora dice lo único que necesita saber: si está
+            abierto, a qué hora cierra; si está cerrado, a qué hora abre.
+            ⚠️ El punto LATE solo con el local abierto, y solo ahí: un
+            indicador que parpadea sobre «Cerrado» diría que algo pasa. Se
+            apaga solo con `prefers-reduced-motion` (regla global). */}
+        <div className="mt-3 flex justify-center">
           <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
-              abierto ? 'bg-emerald-50 text-emerald-700' : 'bg-black/5 texto-cuerpo'
+            className={`inline-flex items-center gap-2 rounded-full py-1.5 pr-4 pl-3 text-[13px] font-bold shadow-tarjeta ${
+              abierto ? 'bg-emerald-50 text-emerald-800' : 'superficie texto-cuerpo'
             }`}
           >
-            <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-500' : 'bg-current opacity-50'}`} />
-            {abierto ? 'Abierto' : 'Cerrado'}
-          </span>
-          {horario && (
-            <span className="texto-cuerpo tabular-nums">
-              {horario.open} – {horario.close}
+            <span className="relative flex size-2">
+              {abierto && (
+                <span className="latido absolute inline-flex size-full rounded-full bg-emerald-500" />
+              )}
+              <span className={`relative inline-flex size-2 rounded-full ${
+                abierto ? 'bg-emerald-500' : 'bg-current opacity-40'
+              }`}
+              />
             </span>
-          )}
+            {abierto ? 'Abierto' : 'Cerrado'}
+            {horario && (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="font-semibold tabular-nums opacity-80">
+                  {abierto ? `cierra ${horario.close}` : `abre ${horario.open}`}
+                </span>
+              </>
+            )}
+          </span>
         </div>
       </div>
 
@@ -748,32 +784,45 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </div>
       )}
 
-      {/* ── Buscador ───────────────────────────────────────────────────
-          Baja hasta aquí, justo encima de la carta que busca. Estaba sobre
-          la portada para que quien ya sabe lo que quiere no tuviera que
-          pasar la foto; con el héroe nuevo eso partía la marca en dos —el
-          logo y el nombre quedaban debajo de un campo de formulario—. Aquí
-          sigue estando antes de un solo scroll, y ahora se lee como
-          «buscar en esta carta», que es lo que hace. */}
-      <div className="px-4 pt-4">
-        <div className="superficie flex items-center gap-2.5 rounded-2xl px-4 py-3.5 shadow-tarjeta">
-          <input
-            ref={buscador}
-            value={busqueda}
-            onChange={event => setBusqueda(event.target.value.slice(0, 60))}
-            placeholder={`Buscar en ${business.name}`}
-            aria-label="Buscar productos"
-            className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
-          />
-          {busqueda
-            ? (
-                <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
-                  <X size={18} />
-                </button>
-              )
-            : <Search size={18} className="shrink-0 texto-tenue" />}
+      {/* ── Buscador, ESCONDIDO hasta que hace falta ───────────────────
+          Ocupaba una franja fija de la primera pantalla para algo que casi
+          nadie usa al entrar: quien abre la carta de su pizzería la MIRA, y
+          buscar es lo que hace quien ya sabe el nombre. El dueño pidió ese
+          espacio de vuelta (2026-08-26), y se recupera sin perder la
+          función: lo abre la pestaña «Buscar» de la barra de abajo, que ya
+          existía y hasta hoy solo hacía scroll hasta aquí.
+
+          ⚠️ Al cerrarlo se BORRA la búsqueda, y eso no es un extra. Con
+          texto escrito, `resultados` sustituye la carta entera; si la barra
+          se pudiera esconder con el texto dentro, el cliente se quedaría
+          mirando tres resultados sin ningún control a la vista para volver a
+          la carta. Cerrar y limpiar tienen que ser el mismo gesto.
+
+          ⚠️ Y va PEGAJOSO arriba mientras está abierto: al filtrar, la lista
+          de abajo cambia bajo el dedo, y el campo que la está filtrando no
+          puede haberse ido con el scroll. */}
+      {buscando && (
+        <div className="superficie sticky top-0 z-40 px-4 py-3 shadow-tarjeta">
+          <div className="flex items-center gap-2.5 rounded-2xl bg-black/5 px-4 py-3">
+            <Search size={18} className="shrink-0 texto-tenue" />
+            <input
+              ref={buscador}
+              value={busqueda}
+              onChange={event => setBusqueda(event.target.value.slice(0, 60))}
+              placeholder={`Buscar en ${business.name}`}
+              aria-label="Buscar productos"
+              className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
+            />
+            <button
+              onClick={() => { setBusqueda(''); setBuscando(false) }}
+              aria-label="Cerrar búsqueda"
+              className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Pestañas de categoría, pegadas arriba ───────────────────────
           ⚠️ La activa va en TINTA, texto y subrayado, como la referencia —
@@ -851,89 +900,108 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </p>
       )}
 
-      {/* ── Barra inferior ── */}
-      {/* Tres destinos porque tres son los que tienen a dónde ir. El seguimiento
-          del pedido y la cuenta del cliente todavía no existen, y una pestaña
-          que no lleva a ninguna parte se siente rota. Cuando existan, entran
-          aquí sin tocar nada más. */}
-      <nav className="superficie fixed inset-x-0 bottom-0 z-40 border-t borde-tema">
-        <div className="mx-auto flex max-w-lg items-stretch px-2 pt-1.5 pb-seguro">
-          {([
-            {
-              id: 'inicio',
-              icono: Home,
-              texto: 'Inicio',
-              accion: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
-            },
-            {
-              id: 'buscar',
-              icono: Search,
-              texto: 'Buscar',
-              accion: () => {
-                buscador.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                buscador.current?.focus()
-              },
-            },
-            {
-              id: 'carrito',
-              icono: ShoppingCart,
-              texto: 'Carrito',
-              accion: () => unidades > 0 && setCarritoAbierto(true),
-              contador: unidades,
-            },
-            // ⚠️ Antes decía «Pedido» y abría el ÚLTIMO directamente. Servía
-            // mientras solo hubiera uno del que preocuparse; quien ha pedido
-            // cinco veces no tiene «un pedido», tiene un historial. Y desde
-            // que la pantalla de pago dejó de ofrecer atajo al seguimiento,
-            // hacía falta una puerta estable para mirar cómo va lo de uno.
-            {
-              id: 'cuenta',
-              icono: ClipboardList,
-              texto: 'Cuenta',
-              accion: () => setEnCuenta(true),
-            },
-          ]).map(({ id, icono: Icono, texto, accion, contador }) => (
-            <button
-              key={id}
-              onClick={accion}
-              className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold"
-            >
-              <span className="relative">
-                <Icono size={21} />
-                {Boolean(contador) && (
-                  <span className="acento absolute -top-1.5 -right-2.5 flex min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] leading-4.5 font-extrabold tabular-nums">
-                    {contador}
-                  </span>
-                )}
-              </span>
-              {texto}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* ══ EL PIE: «Ver pedido» ENCIMA de la barra, no tapándola ═══════
+          ⚠️ Esto era un fallo, no una decisión. La barra del carrito estaba
+          `fixed bottom-0 z-50` y la de navegación `fixed bottom-0 z-40`: con
+          una sola cosa en el carrito, «Ver pedido» se pintaba ENCIMA y hacía
+          desaparecer Inicio · Buscar · Carrito · Cuenta. El cliente añadía un
+          producto y perdía el menú de la app.
 
-      {/* ── Barra del carrito ── */}
-      {/* Va por encima de la barra inferior: con algo en el carrito, cerrar el
-          pedido es lo único que importa. */}
-      {unidades > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-50 px-4 pt-2 pb-seguro">
-          <button
-            onClick={() => setCarritoAbierto(true)}
-            className="tinta mx-auto flex w-full max-w-lg items-center justify-between rounded-[1.75rem] px-5 py-4 shadow-xl shadow-black/25 transition active:scale-[0.99]"
-          >
-            <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight">
-              <span className="acento flex size-7 items-center justify-center rounded-full text-[12px] font-extrabold tabular-nums">
-                {unidades}
+          Ahora las dos viven en el MISMO contenedor fijo, apiladas, así que
+          el carrito se apoya sobre la barra sin números mágicos: nada de
+          calcular a mano el alto de la navegación, que se desincroniza en
+          cuanto alguien le cambia un padding. */}
+      <div className="fixed inset-x-0 bottom-0 z-40">
+        {unidades > 0 && (
+          <div className="mx-auto max-w-lg px-4 pb-2">
+            <button
+              onClick={() => setCarritoAbierto(true)}
+              className="tinta flex w-full items-center justify-between rounded-[1.75rem] px-5 py-4 shadow-flotante transition active:scale-[0.99]"
+            >
+              <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight">
+                <span className="acento flex size-7 items-center justify-center rounded-full text-[12px] font-extrabold tabular-nums">
+                  {unidades}
+                </span>
+                Ver pedido
               </span>
-              Ver pedido
-            </span>
-            <span className="flex items-center gap-2 text-[19px] font-extrabold tracking-tight tabular-nums">
-              {money(total)}
-              <ShoppingCart size={18} />
-            </span>
-          </button>
-        </div>
-      )}
+              <span className="flex items-center gap-2 text-[19px] font-extrabold tracking-tight tabular-nums">
+                {money(total)}
+                <ShoppingCart size={18} />
+              </span>
+            </button>
+          </div>
+        )}
+
+        <nav className="superficie border-t borde-tema">
+          <div className="mx-auto flex max-w-lg items-stretch px-2 pt-1.5 pb-seguro">
+            {([
+              {
+                id: 'inicio',
+                icono: Home,
+                texto: 'Inicio',
+                accion: () => {
+                  setBusqueda('')
+                  setBuscando(false)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                },
+              },
+              // Abre la barra de búsqueda, que por defecto está escondida para
+              // no gastar una franja de la primera pantalla. Antes solo hacía
+              // scroll hasta un campo que siempre estaba a la vista.
+              {
+                id: 'buscar',
+                icono: Search,
+                texto: 'Buscar',
+                accion: () => {
+                  setBuscando(true)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  // El `focus` espera al pintado: el campo aún no existe en el
+                  // DOM en el momento del toque, así que enfocarlo ya sería
+                  // enfocar a nadie y el teclado no subiría.
+                  requestAnimationFrame(() => buscador.current?.focus())
+                },
+              },
+              // ⚠️ Abre SIEMPRE, también con el carrito vacío. Estaba como
+              // `unidades > 0 && setCarritoAbierto(true)`: con el carrito
+              // vacío el botón no hacía absolutamente nada —ni abría, ni
+              // avisaba— y se sentía roto. La hoja ya sabe decir «Tu carrito
+              // está vacío», que es una respuesta; el silencio no lo es.
+              {
+                id: 'carrito',
+                icono: ShoppingCart,
+                texto: 'Carrito',
+                accion: () => setCarritoAbierto(true),
+                contador: unidades,
+              },
+              // ⚠️ Antes decía «Pedido» y abría el ÚLTIMO directamente. Servía
+              // mientras solo hubiera uno del que preocuparse; quien ha pedido
+              // cinco veces no tiene «un pedido», tiene un historial.
+              {
+                id: 'cuenta',
+                icono: User,
+                texto: 'Cuenta',
+                accion: () => setEnCuenta(true),
+              },
+            ]).map(({ id, icono: Icono, texto, accion, contador }) => (
+              <button
+                key={id}
+                onClick={accion}
+                className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold transition active:scale-95"
+              >
+                <span className="relative">
+                  <Icono size={21} />
+                  {Boolean(contador) && (
+                    <span className="acento absolute -top-1.5 -right-2.5 flex min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] leading-4.5 font-extrabold tabular-nums">
+                      {contador}
+                    </span>
+                  )}
+                </span>
+                {texto}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
       <ProductSheet
         product={elegido}

@@ -472,6 +472,15 @@ describe('un adicional es una línea propia', () => {
     expect(orderTotal(carrito, 'onsite', 2)).toBe(7.5)
   })
 
+  // ⚠️ Este caso estuvo roto desde siempre y NADIE lo vio, porque el botón
+  // «Carrito» no abría nada con el carrito vacío: el fallo vivía detrás de un
+  // botón que no respondía. Al arreglar el botón (2026-08-26) apareció un
+  // «Total $2.00» sobre cero productos.
+  it('un carrito VACÍO no paga envío', () => {
+    expect(orderTotal([], 'delivery', 2)).toBe(0)
+    expect(orderTotal([], 'pickup', 2)).toBe(0)
+  })
+
   it('un envío ausente o negativo no descuenta del total', () => {
     const carrito = [linea({ unitPrice: 10 })]
     expect(orderTotal(carrito, 'delivery', 0)).toBe(10)
