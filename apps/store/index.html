@@ -6,6 +6,18 @@
     <meta name="robots" content="noindex, nofollow" />
     <!-- Un solo tema: la tienda es clara siempre (ver index.css). -->
     <meta name="theme-color" content="#0B0B0C" />
+    <!-- La fuente propia, pedida YA. Sin esto el navegador no se entera de que
+         existe hasta que termina de leer el CSS, y el cambio de la fuente del
+         sistema a la propia se ve a mitad de lectura. `crossorigin` es
+         obligatorio en un preload de fuente aunque el archivo sea nuestro: sin
+         él el navegador la descarga DOS veces. -->
+    <link
+      rel="preload"
+      href="/t/fuentes/plus-jakarta-sans-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <title>Tienda</title>
     <style>
       /* Esqueleto de arranque: se abre con datos móviles, así que la pantalla

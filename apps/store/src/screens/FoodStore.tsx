@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bike, ChevronLeft, ClipboardList, Clock, Home, Search, ShoppingBag, ShoppingCart, X,
+  Bike, ChevronDown, ChevronLeft, Clock, Home, MapPin, Plus, Search, ShoppingBag,
+  ShoppingCart, User, X,
 } from 'lucide-react'
 import {
   createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
@@ -50,6 +51,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const [error, setError] = useState<string | null>(null)
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
+  /**
+   * Si la barra de búsqueda está a la vista. Escondida gana una franja entera
+   * de la primera pantalla; la abre la pestaña «Buscar» de la barra de abajo.
+   *
+   * ⚠️ Cerrarla BORRA la búsqueda (ver el JSX): con texto escrito, la carta
+   * se sustituye por los resultados, y una barra escondida con texto dentro
+   * dejaría al cliente sin forma de volver a la carta.
+   */
+  const [buscando, setBuscando] = useState(false)
   /**
    * El pedido que se acaba de enviar. Vive aquí y no en el seguimiento porque
    * el resumen sale del CARRITO —que se vacía al confirmar— y del total
@@ -424,6 +434,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const total = orderTotal(lineas, entrega, business.deliveryFee)
   const unidades = cartCount(lineas)
   const horario = catalogo.todaysHours
+  /* La dirección que se enseña arriba. La primera guardada es la que usa el
+     checkout por defecto, así que es la que hay que mostrar: enseñar otra
+     prometería una entrega donde no va a ir. Sin ninguna guardada NO se
+     inventa un «Casa» que no existe — la barra invita a elegir. */
+  const direccionActiva = me?.addresses?.[0]?.address || null
   const portada = portadaRota ? null : foto(business.coverUrl, 'portada')
   const abierto = status === 'abierta'
 
@@ -433,181 +448,292 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const tarjeta = (producto: Product) => (
     <div
       key={producto.id}
-      className={`superficie relative overflow-hidden rounded-(--radius-tarjeta) shadow-sm transition ${
+      className={`superficie relative rounded-(--radius-tarjeta) shadow-tarjeta transition ${
         producto.available ? '' : 'opacity-55'
       }`}
     >
-      <button
-        onClick={() => setElegido(producto)}
-        className="block w-full text-left transition active:scale-[0.99]"
-      >
-        <span className="relative block">
-          <Foto url={producto.imageUrl} alto="aspect-[4/3]" uso="tarjeta" nombre={producto.name} />
+      {/* ⚠️ La foto y los textos NO van dentro de un botón, y el `+` tampoco:
+          serían botones anidados, que es HTML inválido. Lo que abre la ficha
+          es una CAPA sobre la tarjeta entera (`absolute inset-0`), declarada
+          ANTES que el `+` para que el `+` quede encima sin pelear por
+          z-index. Así se puede tocar la tarjeta completa y el `+` sigue
+          haciendo lo suyo. */}
+      <div className="overflow-hidden rounded-(--radius-tarjeta)">
+        <div className="relative h-36">
+          <Foto url={producto.imageUrl} alto="h-36" uso="tarjeta" nombre={producto.name} />
           {!producto.available && (
             <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-bold text-white">
               Agotado
             </span>
           )}
-        </span>
-        <span className="block px-3 pt-2.5 pb-3">
-          <span className="block text-[14.5px] leading-snug font-bold tracking-tight line-clamp-2">
-            {producto.name}
-          </span>
-          {producto.description && (
-            <span className="mt-1 block line-clamp-2 text-[12px] leading-snug texto-tenue">
-              {producto.description}
-            </span>
+
+          {/* El `+` agrega de un toque lo que no exige elegir nada. Si el
+              producto trae obligatorios, `agregarAdicional` abre su ficha en
+              vez de meterlo a ciegas: la base lo rechazaría igual.
+
+              ⚠️ Va DENTRO de la foto, no a caballo de su borde: montado en el
+              borde se comía la primera línea del nombre —«Doble Cheese
+              Burguer» quedaba debajo del círculo—. Y no es un botón anidado:
+              esto es un `div`, y la capa que abre la ficha es hermana suya.
+              El `z-10` es lo que lo mantiene por encima de esa capa, que va
+              después en el DOM. */}
+          {producto.available && (
+            <button
+              onClick={() => agregarAdicional(producto.id)}
+              disabled={!puedePedir}
+              aria-label={`Agregar ${producto.name}`}
+              // ⚠️ El icono `Plus`, no el CARÁCTER «+». Con el carácter, lo que
+              // el flex centra es la caja de línea, no el signo: la tipografía
+              // le deja aire distinto arriba y abajo, así que la cruz quedaba
+              // alta dentro del círculo. Un icono SVG está centrado por
+              // geometría y además es el mismo trazo que el resto de la app.
+              className="acento absolute right-2.5 bottom-2.5 z-10 flex size-11 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+            >
+              <Plus size={22} strokeWidth={3} />
+            </button>
           )}
-          <span className="mt-2 block text-[16px] font-extrabold tracking-tight tabular-nums">
+        </div>
+        <div className="px-3 pt-3 pb-3.5">
+          <p className="text-[14.5px] leading-snug font-bold tracking-tight line-clamp-2">
+            {producto.name}
+          </p>
+          {producto.description && (
+            <p className="mt-1 line-clamp-2 text-[12px] leading-snug texto-cuerpo">
+              {producto.description}
+            </p>
+          )}
+          {/* El precio en TINTA, no en el naranja de la referencia: allí ese
+              color señala una rebaja, y aquí no hay descuentos que señalar
+              —`Product` no lleva precio promocional—. Naranja permanente
+              sería color sin significado, y además `--ascua` da 3,49:1 sobre
+              blanco, por debajo del 4,5 que exige AA para texto. */}
+          <p className="mt-2 text-[19px] leading-none font-extrabold tracking-[-0.02em] tabular-nums">
             {producto.hasVariants && (
               <span className="text-[11px] font-semibold texto-tenue">desde </span>
             )}
             {money(producto.priceFrom)}
-          </span>
-        </span>
-      </button>
+          </p>
+        </div>
+      </div>
 
-      {/* El `+` agrega de un toque lo que no exige elegir nada. Si el producto
-          trae obligatorios, `agregarAdicional` abre su ficha en vez de meterlo
-          a ciegas: la base lo rechazaría igual. */}
-      {producto.available && (
-        <button
-          onClick={() => agregarAdicional(producto.id)}
-          disabled={!puedePedir}
-          aria-label={`Agregar ${producto.name}`}
-          className="acento absolute right-2.5 bottom-2.5 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-lg shadow-black/15 transition active:scale-95 disabled:opacity-40"
-        >
-          +
-        </button>
-      )}
+      <button
+        onClick={() => setElegido(producto)}
+        aria-label={`Ver ${producto.name}`}
+        className="absolute inset-0 rounded-(--radius-tarjeta)"
+      />
+
     </div>
   )
 
   return (
-    <div className="mx-auto min-h-full max-w-lg pb-32">
-      {/* ── Portada del local ── */}
-      {/* Lo primero que confirma al cliente que abrió el sitio correcto: quién
-          es, si está abierto y cuánto cuesta que se lo lleven. */}
-      <header className="tinta relative overflow-hidden rounded-b-[1.75rem] pt-seguro">
-        {/* La foto del local, a sangre y detrás de todo. Sin portada la
-            cabecera se queda como estaba —bloque de tinta— en vez de dejar un
-            hueco: hoy ningún negocio tiene una cargada. */}
-        {portada && (
-          <>
-            <img
-              src={portada}
-              alt=""
-              // Si la imagen no carga —el dueño la borró de Cloudinary, o la
-              // conexión falla— se retira en vez de dejar el icono de imagen
-              // rota presidiendo la tienda. La cabecera vuelve a ser el bloque
-              // de tinta, que es un estado digno.
-              onError={() => setPortadaRota(true)}
-              className="absolute inset-0 size-full object-cover"
-            />
-            {/* El degradado no es decoración: sin él, una foto clara deja el
-                nombre blanco ilegible, y el negocio no controla qué sube. */}
-            <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/55 to-black/25" />
-          </>
-        )}
+    // El hueco de abajo crece con el carrito: ahora «Ver pedido» se APILA
+    // sobre la barra en vez de taparla, así que entre las dos ocupan más y el
+    // último producto de la carta quedaría debajo.
+    <div className={`mx-auto min-h-full max-w-lg ${unidades > 0 ? 'pb-48' : 'pb-32'}`}>
+      {/* ══ EL HÉROE ════════════════════════════════════════════════════
+          Portada a sangre y ALTA, con el logo del negocio centrado
+          solapando el borde. Es la ficha de local de cualquier app de
+          reparto grande, y sustituye al banner pequeño del 2026-08-25 por
+          decisión del dueño (2026-08-26): aquel confirmaba dónde estabas,
+          pero no daba ninguna sensación de marca.
 
-        <div className={`relative px-5 pb-5 ${portada ? 'pt-24' : ''}`}>
-        <div className="flex items-center gap-3">
+          ⚠️ La foto llega al borde FÍSICO de la pantalla a propósito
+          —`viewport-fit=cover` en el index.html—, así que el héroe pasa por
+          debajo de la barra de estado y solo el botón de volver respeta el
+          `safe-area`. Si el héroe respetara el inset quedaría una franja
+          del color del fondo sobre la foto, que es justo lo que se ve roto.
+
+          ⚠️ Sin portada NO se deja un hueco gris: va un degradado del color
+          del negocio. Hoy Monster Pizza sí tiene una cargada. */}
+      <header className="relative">
+        {/* ⚠️ PROPORCIÓN, no alto fijo. Con `h-56` el marco cambiaba de forma
+            según el ancho de la pantalla —1,75:1 en un iPhone y 2,29:1 en el
+            `max-w-lg`—, así que la misma portada se recortaba distinto en cada
+            teléfono. En 16:9 el marco es siempre el mismo, y coincide con el
+            recorte que ya viene hecho de Cloudinary (`RECORTE` en
+            `lib/imagen.ts`): la foto llega con la forma exacta del hueco, así
+            que `object-cover` no tiene nada que recortar por su cuenta. */}
+        {/* Sin redondeo abajo, por decisión del dueño (2026-08-26): la portada
+            corta recta y el logo se apoya sobre esa línea. */}
+        <div className="relative aspect-video overflow-hidden">
+          {portada
+            ? (
+                <img
+                  src={portada}
+                  alt=""
+                  // Si el dueño la borró de Cloudinary se retira sola y queda
+                  // el degradado de marca: el icono de imagen rota no puede
+                  // ser la primera impresión de la tienda.
+                  onError={() => setPortadaRota(true)}
+                  className="size-full object-cover"
+                />
+              )
+            : (
+                <div
+                  className="size-full"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(150deg, color-mix(in srgb, var(--acento) 90%, black) 0%,'
+                      + ' color-mix(in srgb, var(--acento) 40%, black) 100%)',
+                  }}
+                />
+              )}
+          {/* El velo no es adorno: sin él, una portada clara deja el botón
+              de volver invisible, y el negocio elige qué sube. */}
+          <div className="absolute inset-0 bg-linear-to-b from-black/45 via-black/5 to-black/25" />
+
           {onVolver && (
-            <button onClick={onVolver} aria-label="Volver" className="-ml-1 shrink-0">
-              <ChevronLeft size={22} />
-            </button>
-          )}
-          {business.logoUrl && (
-            <img
-              src={foto(business.logoUrl, 'miniatura') || undefined}
-              alt=""
-              className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/25"
-            />
-          )}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[26px] leading-none font-extrabold tracking-tight">
-              {business.name}
-            </h1>
-            {business.slogan && (
-              <p className="mt-1.5 truncate text-[13px] opacity-70">{business.slogan}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Estado y horario, juntos a propósito: «Cerrado» a secas deja al
-            cliente sin saber cuándo volver. */}
-        <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px]">
-          <span
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
-              abierto ? 'bg-emerald-400/20 text-emerald-300' : 'bg-white/15 text-white/70'
-            }`}
-          >
-            <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-400' : 'bg-white/50'}`} />
-            {abierto ? 'Abierto' : 'Cerrado'}
-          </span>
-          {horario && (
-            <span className="opacity-70 tabular-nums">
-              {horario.open} – {horario.close}
-            </span>
-          )}
-          {/* El tiempo del modo elegido: quien retira no espera lo que tarda
-              el repartidor, y decirle lo mismo a los dos miente a uno. */}
-          <span className="opacity-70 tabular-nums">
-            ·
-            {' '}
-            {rangoDeEspera(
-              business.prepTimeMinutes
-              + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
-            )}
-          </span>
-        </div>
-
-        {/* ── Cómo lo recibe ── */}
-        {/* Se elige aquí y se respeta en el carrito: es la misma decisión, no
-            dos. Cambia el envío que se suma al total y si se piden datos de
-            dirección al cerrar el pedido. */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5">
-          {([
-            {
-              id: 'delivery' as const,
-              icono: Bike,
-              texto: 'Entrega',
-              detalle: business.deliveryFee > 0 ? money(business.deliveryFee) : 'Gratis',
-            },
-            { id: 'pickup' as const, icono: ShoppingBag, texto: 'Retiro', detalle: 'Gratis' },
-          ]).map(({ id, icono: Icono, texto, detalle }) => (
             <button
-              key={id}
-              onClick={() => setEntrega(id)}
-              aria-pressed={entrega === id}
-              className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-[13.5px] font-bold transition ${
-                entrega === id ? 'acento' : 'border-2 border-white/20 text-white'
-              }`}
+              onClick={onVolver}
+              aria-label="Volver"
+              className="absolute left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] flex size-10 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition active:scale-95"
             >
-              <Icono size={16} />
-              {texto}
-              <span className={entrega === id ? 'opacity-70' : 'opacity-60'}>{detalle}</span>
+              <ChevronLeft size={20} />
             </button>
-          ))}
+          )}
         </div>
+
+        {/* El logo, CENTRADO y solapando el borde del héroe. El anillo es
+            del color de la superficie, no blanco fijo, para que el recorte
+            siga siendo limpio si algún día la superficie cambia. */}
+        {/* ⚠️ `relative z-10`: sin contexto de apilado propio, el héroe —que es
+            `relative`— se pinta ENCIMA y le come la mitad de arriba al logo.
+            El margen negativo solapa, pero no decide quién va delante. */}
+        <div className="relative z-10 -mt-12 flex justify-center">
+          <div className="superficie size-24 rounded-full p-1 shadow-alzada">
+            {business.logoUrl
+              ? (
+                  <img
+                    src={foto(business.logoUrl, 'miniatura') || undefined}
+                    alt=""
+                    className="size-full rounded-full object-cover"
+                  />
+                )
+              : (
+                  <span className="marcador flex size-full items-center justify-center rounded-full text-[2rem] leading-none font-black opacity-40 select-none">
+                    {business.name.trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
+          </div>
         </div>
       </header>
 
-      {/* ── Buscador ── */}
+      {/* ── Quién es, y si atiende ahora ───────────────────────────────
+          Nombre centrado bajo el logo y, debajo, el ESTADO con su horario.
+
+          ⚠️ Aquí la referencia pinta «★ 4,8 (1.652) · FoodyPro+ · 0,1 mi» y
+          NADA de eso existe en este proyecto: no hay reseñas, ni programa
+          de fidelidad, ni distancia. Se toma el SITIO y la jerarquía —una
+          línea de metadatos centrada bajo el nombre— y se llena con lo
+          único que ahí es verdad: si el local está abierto y hasta qué
+          hora. Inventar un 4,8 sería el control que no controla nada, pero
+          además mintiéndole al cliente. */}
+      <div className="px-5 pt-3 text-center">
+        <h1 className="titulo-xl">{business.name}</h1>
+        {business.slogan && (
+          <p className="mt-1.5 text-[13.5px] texto-cuerpo">{business.slogan}</p>
+        )}
+        {/* ── Abierto / Cerrado, diciendo HASTA CUÁNDO ──────────────────
+            Antes era la píldora y al lado el rango pelado «09:00 – 03:00»,
+            que obliga al cliente a mirar la hora de su teléfono y comparar.
+            Ahora la píldora dice lo único que necesita saber: si está
+            abierto, a qué hora cierra; si está cerrado, a qué hora abre.
+            ⚠️ El punto LATE solo con el local abierto, y solo ahí: un
+            indicador que parpadea sobre «Cerrado» diría que algo pasa. Se
+            apaga solo con `prefers-reduced-motion` (regla global). */}
+        <div className="mt-3 flex justify-center">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full py-1.5 pr-4 pl-3 text-[13px] font-bold shadow-tarjeta ${
+              abierto ? 'bg-emerald-50 text-emerald-800' : 'superficie texto-cuerpo'
+            }`}
+          >
+            <span className="relative flex size-2">
+              {abierto && (
+                <span className="latido absolute inline-flex size-full rounded-full bg-emerald-500" />
+              )}
+              <span className={`relative inline-flex size-2 rounded-full ${
+                abierto ? 'bg-emerald-500' : 'bg-current opacity-40'
+              }`}
+              />
+            </span>
+            {abierto ? 'Abierto' : 'Cerrado'}
+            {horario && (
+              <>
+                <span className="opacity-30">·</span>
+                <span className="font-semibold tabular-nums opacity-80">
+                  {abierto ? `cierra ${horario.close}` : `abre ${horario.open}`}
+                </span>
+              </>
+            )}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Cómo llega, y a dónde ──────────────────────────────────────
+          La tarjeta de servicio de la referencia, con NUESTROS datos
+          reales: el tiempo sale de las dos columnas que pone el dueño, el
+          envío de `delivery_fee` y el mínimo de `min_order_amount`.
+
+          ⚠️ Aquí VIVE el selector Entrega/Retiro, que es la misma decisión
+          que la del carrito, no dos. Ya estuvo a punto de perderse una vez
+          al rediseñar la cabecera: sin él el cliente paga envío sin poder
+          elegir retiro. La referencia lo dibuja igual —dos iconos de modo
+          dentro de la píldora—, así que el sitio es el suyo.
+
+          ⚠️ La dirección solo aparece en ENTREGA: en retiro la fila entera
+          desaparece en vez de pedir un dato que nadie va a usar. */}
       <div className="px-4 pt-4">
-        <div className="superficie flex items-center gap-2.5 rounded-2xl border borde-tema px-4 py-3">
-          <Search size={17} className="shrink-0 texto-tenue" />
-          <input
-            ref={buscador}
-            value={busqueda}
-            onChange={event => setBusqueda(event.target.value.slice(0, 60))}
-            placeholder={`Buscar en ${business.name}`}
-            aria-label="Buscar productos"
-            className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
-          />
-          {busqueda && (
-            <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
-              <X size={17} />
+        <div className="superficie rounded-[1.75rem] shadow-tarjeta">
+          <div className="flex items-center gap-3 p-2.5">
+            <div className="flex shrink-0 gap-1 rounded-full bg-black/5 p-1">
+              {([
+                { id: 'delivery' as const, icono: Bike, etiqueta: 'Entrega a domicilio' },
+                { id: 'pickup' as const, icono: ShoppingBag, etiqueta: 'Retiro en el local' },
+              ]).map(({ id, icono: Icono, etiqueta }) => (
+                <button
+                  key={id}
+                  onClick={() => setEntrega(id)}
+                  aria-label={etiqueta}
+                  aria-pressed={entrega === id}
+                  className={`flex size-11 items-center justify-center rounded-full transition active:scale-95 ${
+                    entrega === id ? 'acento shadow-acento' : 'texto-cuerpo'
+                  }`}
+                >
+                  <Icono size={18} />
+                </button>
+              ))}
+            </div>
+            <div className="min-w-0 flex-1 pr-1">
+              <p className="titulo-m">
+                {entrega === 'delivery' ? 'Entrega' : 'Retiro'}
+                {' · '}
+                {rangoDeEspera(
+                  business.prepTimeMinutes
+                  + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
+                )}
+              </p>
+              <p className="caption mt-0.5 texto-cuerpo">
+                {entrega === 'delivery'
+                  ? `Envío ${business.deliveryFee > 0 ? money(business.deliveryFee) : 'gratis'}`
+                  : 'Sin costo de envío'}
+                {business.minOrderAmount > 0 && ` · Mínimo ${money(business.minOrderAmount)}`}
+              </p>
+            </div>
+          </div>
+
+          {entrega === 'delivery' && (
+            <button
+              onClick={() => setEnCuenta(true)}
+              className="flex w-full items-center gap-2.5 border-t borde-tema px-4 py-3 text-left transition active:bg-black/5"
+            >
+              <MapPin size={17} className="shrink-0 texto-cuerpo" />
+              <span className="min-w-0 flex-1">
+                <span className="caption block texto-tenue">Entregar en</span>
+                <span className="block truncate text-[14px] font-bold tracking-tight">
+                  {direccionActiva || 'Elige tu dirección'}
+                </span>
+              </span>
+              <ChevronDown size={18} className="shrink-0 texto-tenue" />
             </button>
           )}
         </div>
@@ -636,7 +762,11 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         <div className="px-4 pt-4">
           <button
             onClick={() => setAbrirPago(true)}
-            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left transition active:scale-[0.99] dark:border-amber-500/40 dark:bg-amber-500/10"
+            // Sin `dark:`. Esta app no tiene modo oscuro —`color-scheme: light`
+            // fijo en `index.css`—, pero la media query SÍ se dispara con el
+            // teléfono en oscuro: quedaba un ámbar al 10 % sobre página clara,
+            // o sea el aviso más importante de la portada casi sin fondo.
+            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left shadow-tarjeta transition active:scale-[0.99]"
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
               <Clock size={18} />
@@ -654,7 +784,53 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </div>
       )}
 
-      {/* ── Pestañas de categoría, pegadas arriba ── */}
+      {/* ── Buscador, ESCONDIDO hasta que hace falta ───────────────────
+          Ocupaba una franja fija de la primera pantalla para algo que casi
+          nadie usa al entrar: quien abre la carta de su pizzería la MIRA, y
+          buscar es lo que hace quien ya sabe el nombre. El dueño pidió ese
+          espacio de vuelta (2026-08-26), y se recupera sin perder la
+          función: lo abre la pestaña «Buscar» de la barra de abajo, que ya
+          existía y hasta hoy solo hacía scroll hasta aquí.
+
+          ⚠️ Al cerrarlo se BORRA la búsqueda, y eso no es un extra. Con
+          texto escrito, `resultados` sustituye la carta entera; si la barra
+          se pudiera esconder con el texto dentro, el cliente se quedaría
+          mirando tres resultados sin ningún control a la vista para volver a
+          la carta. Cerrar y limpiar tienen que ser el mismo gesto.
+
+          ⚠️ Y va PEGAJOSO arriba mientras está abierto: al filtrar, la lista
+          de abajo cambia bajo el dedo, y el campo que la está filtrando no
+          puede haberse ido con el scroll. */}
+      {buscando && (
+        <div className="superficie sticky top-0 z-40 px-4 py-3 shadow-tarjeta">
+          <div className="flex items-center gap-2.5 rounded-2xl bg-black/5 px-4 py-3">
+            <Search size={18} className="shrink-0 texto-tenue" />
+            <input
+              ref={buscador}
+              value={busqueda}
+              onChange={event => setBusqueda(event.target.value.slice(0, 60))}
+              placeholder={`Buscar en ${business.name}`}
+              aria-label="Buscar productos"
+              className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
+            />
+            <button
+              onClick={() => { setBusqueda(''); setBuscando(false) }}
+              aria-label="Cerrar búsqueda"
+              className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pestañas de categoría, pegadas arriba ───────────────────────
+          ⚠️ La activa va en TINTA, texto y subrayado, como la referencia —
+          no en el color del negocio. El subrayado era `border-(--acento)`:
+          con el lima de la plataforma eso es 1,19:1 contra el blanco, o
+          sea una pestaña «activa» sin marca visible. Un elemento gráfico
+          que porta información necesita 3:1, y el acento del negocio no lo
+          garantiza porque lo elige él. */}
       {!resultados && grupos.length > 1 && (
         <nav className="superficie sticky top-0 z-30 mt-4 border-b borde-tema">
           <div className="sin-barra flex gap-1 overflow-x-auto px-4">
@@ -663,9 +839,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
                 key={grupo.id}
                 ref={(nodo) => { pestanas.current[grupo.id] = nodo }}
                 onClick={() => irACategoria(grupo.id)}
-                className={`shrink-0 border-b-[3px] px-3 py-3 text-[14px] font-bold whitespace-nowrap transition ${
+                className={`shrink-0 border-b-[3px] px-3 py-3.5 text-[14.5px] font-bold tracking-tight whitespace-nowrap transition ${
                   categoriaActiva === grupo.id
-                    ? 'border-(--acento)'
+                    ? 'border-(--tinta) text-(--texto)'
                     : 'border-transparent texto-tenue'
                 }`}
               >
@@ -724,89 +900,108 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </p>
       )}
 
-      {/* ── Barra inferior ── */}
-      {/* Tres destinos porque tres son los que tienen a dónde ir. El seguimiento
-          del pedido y la cuenta del cliente todavía no existen, y una pestaña
-          que no lleva a ninguna parte se siente rota. Cuando existan, entran
-          aquí sin tocar nada más. */}
-      <nav className="superficie fixed inset-x-0 bottom-0 z-40 border-t borde-tema">
-        <div className="mx-auto flex max-w-lg items-stretch px-2 pt-1.5 pb-seguro">
-          {([
-            {
-              id: 'inicio',
-              icono: Home,
-              texto: 'Inicio',
-              accion: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
-            },
-            {
-              id: 'buscar',
-              icono: Search,
-              texto: 'Buscar',
-              accion: () => {
-                buscador.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                buscador.current?.focus()
-              },
-            },
-            {
-              id: 'carrito',
-              icono: ShoppingCart,
-              texto: 'Carrito',
-              accion: () => unidades > 0 && setCarritoAbierto(true),
-              contador: unidades,
-            },
-            // ⚠️ Antes decía «Pedido» y abría el ÚLTIMO directamente. Servía
-            // mientras solo hubiera uno del que preocuparse; quien ha pedido
-            // cinco veces no tiene «un pedido», tiene un historial. Y desde
-            // que la pantalla de pago dejó de ofrecer atajo al seguimiento,
-            // hacía falta una puerta estable para mirar cómo va lo de uno.
-            {
-              id: 'cuenta',
-              icono: ClipboardList,
-              texto: 'Cuenta',
-              accion: () => setEnCuenta(true),
-            },
-          ]).map(({ id, icono: Icono, texto, accion, contador }) => (
-            <button
-              key={id}
-              onClick={accion}
-              className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold"
-            >
-              <span className="relative">
-                <Icono size={21} />
-                {Boolean(contador) && (
-                  <span className="acento absolute -top-1.5 -right-2.5 flex min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] leading-4.5 font-extrabold tabular-nums">
-                    {contador}
-                  </span>
-                )}
-              </span>
-              {texto}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* ══ EL PIE: «Ver pedido» ENCIMA de la barra, no tapándola ═══════
+          ⚠️ Esto era un fallo, no una decisión. La barra del carrito estaba
+          `fixed bottom-0 z-50` y la de navegación `fixed bottom-0 z-40`: con
+          una sola cosa en el carrito, «Ver pedido» se pintaba ENCIMA y hacía
+          desaparecer Inicio · Buscar · Carrito · Cuenta. El cliente añadía un
+          producto y perdía el menú de la app.
 
-      {/* ── Barra del carrito ── */}
-      {/* Va por encima de la barra inferior: con algo en el carrito, cerrar el
-          pedido es lo único que importa. */}
-      {unidades > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-50 px-4 pt-2 pb-seguro">
-          <button
-            onClick={() => setCarritoAbierto(true)}
-            className="tinta mx-auto flex w-full max-w-lg items-center justify-between rounded-[1.75rem] px-5 py-4 shadow-xl shadow-black/25 transition active:scale-[0.99]"
-          >
-            <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight">
-              <span className="acento flex size-7 items-center justify-center rounded-full text-[12px] font-extrabold tabular-nums">
-                {unidades}
+          Ahora las dos viven en el MISMO contenedor fijo, apiladas, así que
+          el carrito se apoya sobre la barra sin números mágicos: nada de
+          calcular a mano el alto de la navegación, que se desincroniza en
+          cuanto alguien le cambia un padding. */}
+      <div className="fixed inset-x-0 bottom-0 z-40">
+        {unidades > 0 && (
+          <div className="mx-auto max-w-lg px-4 pb-2">
+            <button
+              onClick={() => setCarritoAbierto(true)}
+              className="tinta flex w-full items-center justify-between rounded-[1.75rem] px-5 py-4 shadow-flotante transition active:scale-[0.99]"
+            >
+              <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight">
+                <span className="acento flex size-7 items-center justify-center rounded-full text-[12px] font-extrabold tabular-nums">
+                  {unidades}
+                </span>
+                Ver pedido
               </span>
-              Ver pedido
-            </span>
-            <span className="flex items-center gap-2 text-[19px] font-extrabold tracking-tight tabular-nums">
-              {money(total)}
-              <ShoppingCart size={18} />
-            </span>
-          </button>
-        </div>
-      )}
+              <span className="flex items-center gap-2 text-[19px] font-extrabold tracking-tight tabular-nums">
+                {money(total)}
+                <ShoppingCart size={18} />
+              </span>
+            </button>
+          </div>
+        )}
+
+        <nav className="superficie border-t borde-tema">
+          <div className="mx-auto flex max-w-lg items-stretch px-2 pt-1.5 pb-seguro">
+            {([
+              {
+                id: 'inicio',
+                icono: Home,
+                texto: 'Inicio',
+                accion: () => {
+                  setBusqueda('')
+                  setBuscando(false)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                },
+              },
+              // Abre la barra de búsqueda, que por defecto está escondida para
+              // no gastar una franja de la primera pantalla. Antes solo hacía
+              // scroll hasta un campo que siempre estaba a la vista.
+              {
+                id: 'buscar',
+                icono: Search,
+                texto: 'Buscar',
+                accion: () => {
+                  setBuscando(true)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  // El `focus` espera al pintado: el campo aún no existe en el
+                  // DOM en el momento del toque, así que enfocarlo ya sería
+                  // enfocar a nadie y el teclado no subiría.
+                  requestAnimationFrame(() => buscador.current?.focus())
+                },
+              },
+              // ⚠️ Abre SIEMPRE, también con el carrito vacío. Estaba como
+              // `unidades > 0 && setCarritoAbierto(true)`: con el carrito
+              // vacío el botón no hacía absolutamente nada —ni abría, ni
+              // avisaba— y se sentía roto. La hoja ya sabe decir «Tu carrito
+              // está vacío», que es una respuesta; el silencio no lo es.
+              {
+                id: 'carrito',
+                icono: ShoppingCart,
+                texto: 'Carrito',
+                accion: () => setCarritoAbierto(true),
+                contador: unidades,
+              },
+              // ⚠️ Antes decía «Pedido» y abría el ÚLTIMO directamente. Servía
+              // mientras solo hubiera uno del que preocuparse; quien ha pedido
+              // cinco veces no tiene «un pedido», tiene un historial.
+              {
+                id: 'cuenta',
+                icono: User,
+                texto: 'Cuenta',
+                accion: () => setEnCuenta(true),
+              },
+            ]).map(({ id, icono: Icono, texto, accion, contador }) => (
+              <button
+                key={id}
+                onClick={accion}
+                className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold transition active:scale-95"
+              >
+                <span className="relative">
+                  <Icono size={21} />
+                  {Boolean(contador) && (
+                    <span className="acento absolute -top-1.5 -right-2.5 flex min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] leading-4.5 font-extrabold tabular-nums">
+                      {contador}
+                    </span>
+                  )}
+                </span>
+                {texto}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
       <ProductSheet
         product={elegido}

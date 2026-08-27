@@ -190,7 +190,7 @@ export default function ProductSheet({
 
       <div className="space-y-6 p-4 pb-3">
         {product.description && (
-          <p className="text-[14px] leading-relaxed texto-tenue">{product.description}</p>
+          <p className="text-[14px] leading-relaxed texto-cuerpo">{product.description}</p>
         )}
 
         {product.variants.length > 0 && (
@@ -206,8 +206,10 @@ export default function ProductSheet({
                   <button
                     key={opcion.id}
                     onClick={() => setVariante(opcion)}
-                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
-                      activa ? 'border-marca bg-marca-suave' : 'borde-tema'
+                    className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99] ${
+                      activa
+                        ? 'acento border-transparent shadow-acento'
+                        : 'superficie borde-tema shadow-tarjeta'
                     }`}
                   >
                     <span className="text-[15px] font-semibold">{opcion.name}</span>
@@ -241,7 +243,10 @@ export default function ProductSheet({
                       pizza», «2 Elige tu bebida». Sin el número, cinco bloques
                       seguidos parecen la misma lista repetida. */}
                   {esCombo && (
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-marca text-[11px] leading-none font-black text-white">
+                    // `acento`, no `bg-marca text-white`: sobre el lima de la
+                    // plataforma el número blanco desaparece. La utilidad trae
+                    // su color de texto calculado por luminancia.
+                    <span className="acento flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] leading-none font-black">
                       {indice + 1}
                     </span>
                   )}
@@ -249,8 +254,17 @@ export default function ProductSheet({
                 </span>
                 {minimo > 0
                   ? (
+                      // ⚠️ Las DOS ramas fallaban el contraste, y esta es la
+                      // insignia que dice si el cliente puede seguir: en falta
+                      // era `bg-marca text-white` (lima con letra blanca) y
+                      // cumplida `text-marca` sobre su propio tinte (1,19:1,
+                      // donde AA exige 4,5). El diseño pide «Obligatorio en el
+                      // color de marca, ✓ Listo en tono suave» y eso se
+                      // conserva entero: lo que cambia es que el color de marca
+                      // va de FONDO —con su letra calculada por luminancia— en
+                      // vez de ir en la letra.
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold normal-case ${
-                        cumplido ? 'bg-marca-suave text-marca' : 'bg-marca text-white'
+                        cumplido ? 'bg-marca-suave texto-cuerpo' : 'acento shadow-acento'
                       }`}
                       >
                         {cumplido ? '✓ Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}
@@ -296,8 +310,17 @@ export default function ProductSheet({
                               price: opcion.price,
                               quantity: 1,
                             })}
-                            className={`rounded-xl border-2 px-3.5 py-2.5 text-[14px] font-bold transition ${
-                              activa ? 'border-marca bg-marca-suave text-marca' : 'borde-tema'
+                            // ⚠️ La opción activa va en acento SÓLIDO, no con el
+                            // acento de letra sobre su propio tinte: «un lima
+                            // sobre blanco no se lee al sol», que es la regla
+                            // escrita en `index.css`, y aquí se estaba
+                            // incumpliendo. `acento` trae su texto calculado por
+                            // luminancia, así que cualquier color del negocio
+                            // mantiene el contraste.
+                            className={`rounded-xl border-2 px-3.5 py-2.5 text-[14px] font-bold transition active:scale-95 ${
+                              activa
+                                ? 'acento border-transparent shadow-acento'
+                                : 'borde-tema texto-cuerpo'
                             }`}
                           >
                             {opcion.name}
@@ -330,7 +353,7 @@ export default function ProductSheet({
                   return (
                     <div
                       key={opcion.id}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                      className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition active:scale-[0.99] ${
                         activa ? 'border-marca bg-marca-suave' : 'borde-tema'
                       } ${bloqueada ? 'opacity-40' : ''}`}
                     >

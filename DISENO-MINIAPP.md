@@ -47,56 +47,73 @@ El diagrama recorre el viaje entero, de WhatsApp a la entrega:
 
 ## 1. Portada del local
 
-De arriba abajo:
+**Rehecha el 2026-08-26 sobre una referencia nueva del dueño** (una ficha de
+local de app de reparto grande). Sustituye a la versión del 2026-08-25 —barra de
+ubicación, buscador arriba, banner pequeño de 8 rem con el logo a un lado—, que
+el dueño rechazó: confirmaba dónde estabas, pero no daba ninguna sensación de
+marca. El orden nuevo, de arriba abajo:
 
-- **Portada** a sangre completa, con el **logo** del negocio superpuesto.
-  Construida el 2026-08-07: `businesses.cover_url`, que el dueño sube desde
-  `Ajustes → Tu tienda` con el mismo camino que el logo (Cloudinary) y el mismo
-  CHECK (**solo https** — acaba en un `<img>` de una app pública, y dos reglas
-  distintas para el mismo riesgo se desincronizan).
-  · **Sin portada la cabecera se queda como estaba**, en bloque de tinta, en vez
-    de dejar un hueco.
-  · El **degradado sobre la foto no es decoración**: sin él, una portada clara
-    deja el nombre blanco ilegible, y el negocio elige qué sube.
-  · Si la imagen **no carga** —el dueño la borró de Cloudinary— se retira sola y
-    vuelve la cabecera de tinta: el icono de imagen rota no puede ser la primera
-    impresión de la tienda. Verificado con una URL inexistente.
-- **Nombre** del negocio en grande, y debajo el **estado**: una píldora verde
-  `Abierto` o gris `Cerrado`, con el horario del día al lado
-  (`09:00 – 01:00`). El horario sale de `todaysHours` (ver más abajo).
-- **Línea de servicio**: el **tiempo** está construido desde el 2026-08-06 y se
-  muestra como rango (`25 – 35 min`) junto al horario, cambiando según el modo:
-  quien retira no espera lo que tarda el repartidor. Sale de dos columnas que
-  pone el dueño (ver «Cuánto tarda el negocio», más abajo).
-  ⚠️ El **pedido mínimo** sigue sin construirse: no existe `min_order`, y
-  pintarlo obligaría además a que el checkout rechazara los carritos por
-  debajo, que es lógica de dinero y no de portada.
-- **Dos botones de modo**, uno junto al otro: `Entrega $2.00` y `Retiro gratis`.
-  El activo va con el color de marca; el otro, con borde. La decisión es **la
-  misma** que la del carrito: se elige aquí o allí y las dos pantallas la
-  reflejan (`ENTREGA_POR_DEFECTO`, `needsAddress` y `orderTotal` en
-  `apps/store/src/lib/cart.ts`, probadas una por una).
-- **Buscador** de ancho completo, con lupa a la izquierda.
-- ~~**Categorías en círculos**~~ **RETIRADAS el 2026-08-11.** Pintaban
-  exactamente la misma lista (`grupos`) que las pestañas pegajosas de justo
-  debajo: dos veces lo mismo, una encima de la otra. El sitio se lo gana el
-  **aviso de pago pendiente**, que es lo primero que se ve bajo el buscador.
-  ⚠️ Ese aviso reemplazó al secuestro: antes, reabrir la app con un pedido sin
-  pagar entraba DIRECTO a la pantalla de pago. Ahora se abre la tienda con el
-  aviso a la vista y se entra tocándolo — quien abrió la app para mirar la
-  carta puede mirarla, y el recordatorio no se pierde.
+- **HÉROE a sangre**, `h-56`, con las esquinas inferiores redondeadas
+  (`rounded-b-4xl`). Sale de `businesses.cover_url`.
+  · Llega al borde **físico** de la pantalla a propósito: con
+    `viewport-fit=cover`, respetar el inset dejaría una franja del color del
+    fondo sobre la foto. Solo el botón de volver respeta el `safe-area`.
+  · El **velo** (`from-black/45 via-black/5 to-black/25`) no es adorno: sin él
+    una portada clara deja el botón de volver invisible, y el negocio elige qué
+    sube.
+  · Si la imagen **no carga** se retira sola y queda un degradado del color del
+    negocio. Sin portada, ese degradado es el estado normal — nunca un hueco
+    gris ni un icono de imagen rota.
+  · **Botón de volver flotante** arriba a la izquierda, en un círculo
+    `bg-black/35` con `backdrop-blur`. Es el patrón de la referencia y funciona
+    sobre cualquier foto.
+- **LOGO CENTRADO**, `size-24`, redondo, con anillo del color de la superficie,
+  **solapando** el borde inferior del héroe (`-mt-12`).
+  ⚠️ Lleva `relative z-10`. Sin contexto de apilado propio, el héroe —que es
+  `relative`— se pinta ENCIMA y le come la mitad de arriba: el margen negativo
+  solapa, pero no decide quién va delante. Pasó al construirlo.
+  · Sin logo va la **inicial** sobre el tinte de marca (`marcador`), el mismo
+    que sostiene la rejilla.
+- **NOMBRE centrado** en `titulo-xl`, y el eslogan debajo si lo hay.
+- **Línea de metadatos centrada**: la píldora `Abierto`/`Cerrado` y el horario
+  del día (`todaysHours`).
+  ⚠️ Aquí la referencia pinta «★ 4,8 (1.652) · FoodyPro+ · 0,1 mi» y **nada de
+  eso existe**: no hay reseñas, ni fidelidad, ni distancia. Se toma el SITIO y
+  la jerarquía, y se llena con lo único que ahí es verdad. Un 4,8 inventado no
+  es copiar de más: es mentirle al cliente.
+- **TARJETA DE SERVICIO** (la píldora de la referencia), con datos reales:
+  · A la izquierda, el **selector Entrega/Retiro** como dos iconos dentro de una
+    píldora; el activo en `acento` sólido. La referencia lo dibuja igual, así
+    que el sitio es el suyo.
+    ⚠️ Es **la misma decisión** que la del carrito, no dos
+    (`ENTREGA_POR_DEFECTO`, `needsAddress`, `orderTotal`). Ya estuvo a punto de
+    perderse una vez al rediseñar la cabecera: sin él el cliente paga envío sin
+    poder elegir retiro.
+  · A la derecha, `Entrega · 35 – 45 min` y debajo el envío y el mínimo
+    (`delivery_fee`, `min_order_amount`). El tiempo cambia con el modo: quien
+    retira no espera lo que tarda el repartidor.
+  · **Segunda fila: la dirección** (`Entregar en …`), que abre Cuenta. Solo en
+    **entrega**: en retiro la fila entera desaparece en vez de pedir un dato
+    que nadie va a usar. Sin dirección guardada invita a elegir una, **no** se
+    inventa un «Casa» que no existe.
+- **Aviso de pago pendiente**, si lo hay. ⚠️ Reemplazó al secuestro: antes,
+  reabrir con un pedido sin pagar entraba DIRECTO a la pantalla de pago. Ahora
+  se abre la tienda con el aviso a la vista y se entra tocándolo.
+- **BUSCADOR** de ancho completo, justo encima de la carta que busca. Estuvo
+  arriba del todo entre el 2026-08-25 y el 2026-08-26 para no obligar a pasar la
+  foto; con el héroe nuevo eso partía la marca en dos —el logo y el nombre
+  quedaban debajo de un campo de formulario—.
+- ~~**Categorías en círculos**~~ **RETIRADAS el 2026-08-11.** Pintaban la misma
+  lista (`grupos`) que las pestañas de justo debajo.
 - **Barra inferior fija**: Inicio · Buscar · Carrito · **Cuenta**.
-  La cuarta decía «Pedido» y abría el ÚLTIMO pedido directamente. Servía
-  mientras solo hubiera uno del que preocuparse; quien ha pedido cinco veces
-  tiene un historial, no «un pedido». Desde el 2026-08-11 abre
-  `screens/Account.tsx`: sus pedidos y sus direcciones, con sitio para lo que
-  venga.
+  La cuarta decía «Pedido» y abría el ÚLTIMO pedido. Desde el 2026-08-11 abre
+  `screens/Account.tsx`: sus pedidos y sus direcciones.
   ⚠️ **La lista de pedidos es de solo lectura desde el 2026-08-12**: tocar uno
   abría su seguimiento, y esa pantalla ya no existe. Lo que se conserva es el
-  **estado en texto** junto a cada pedido (`COMO_VA`), y eso no es decorativo:
-  es el único sitio de la app donde el cliente puede comprobar por dónde va lo
-  suyo si el aviso de WhatsApp no llegara. Una fila que no lleva a ninguna
-  parte deja de ser un botón — fingir que sí es peor que no ofrecerlo.
+  **estado en texto** junto a cada pedido (`COMO_VA`), y no es decorativo: es el
+  único sitio de la app donde el cliente puede comprobar por dónde va lo suyo si
+  el aviso de WhatsApp no llegara. Una fila que no lleva a ninguna parte deja de
+  ser un botón — fingir que sí es peor que no ofrecerlo.
 
 ## 2. Catálogo
 

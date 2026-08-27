@@ -294,6 +294,16 @@ export const orderTotal = (
   fulfillment: Fulfillment,
   deliveryFee: number,
 ): number => {
+  // ⚠️ Un carrito VACÍO no paga envío. Sin esta salida el total de un carrito
+  // sin nada era el precio del envío —«Total $2.00» sobre cero productos—, y
+  // eso se hizo visible el 2026-08-26 al arreglar el botón «Carrito», que
+  // hasta entonces no abría nada con el carrito vacío: el fallo llevaba ahí
+  // desde siempre, escondido detrás de un botón que no respondía.
+  //
+  // Es solo lo que se PINTA: el importe que se cobra lo calcula el servidor,
+  // y allí un pedido sin líneas no existe. Pero el cliente no tiene por qué
+  // ver un cobro que nadie va a hacerle.
+  if (!lines.length) return 0
   const envio = needsAddress(fulfillment) ? Math.max(0, deliveryFee || 0) : 0
   return Math.round((cartTotal(lines) + envio) * 100) / 100
 }

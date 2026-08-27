@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, X } from 'lucide-react'
 import { foto } from '../lib/imagen'
 import type { AnchoDeFoto } from '../lib/imagen'
@@ -16,17 +16,21 @@ export function Boton({ children, onClick, disabled, variante = 'principal', typ
   // El principal es TINTA, no el color del negocio: así el botón que cierra el
   // pedido se lee igual aunque el dueño elija un color pálido. El acento se
   // reserva para señalar, no para todo.
+  //
+  // Cada variante lleva su sombra en capas —la que la despega del fondo—, y
+  // `disabled:shadow-none` la retira: un botón apagado que sigue flotando se
+  // lee como que se puede pulsar, que es justo lo contrario de lo que dice.
   const estilos = {
-    principal: 'tinta active:opacity-90 disabled:opacity-40',
-    suave: 'acento active:opacity-85 disabled:opacity-40',
-    linea: 'superficie border-2 borde-tema active:opacity-70 disabled:opacity-40',
+    principal: 'tinta shadow-alzada active:opacity-90 disabled:opacity-40 disabled:shadow-none',
+    suave: 'acento shadow-acento-alto active:opacity-85 disabled:opacity-40 disabled:shadow-none',
+    linea: 'superficie border-2 borde-tema shadow-tarjeta active:opacity-70 disabled:opacity-40 disabled:shadow-none',
   }[variante]
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`w-full rounded-2xl px-4 py-4 text-[15px] font-bold tracking-tight transition ${estilos}`}
+      className={`w-full rounded-2xl px-4 py-4 text-[15px] font-bold tracking-tight transition active:scale-[0.98] disabled:active:scale-100 ${estilos}`}
     >
       {children}
     </button>
@@ -158,13 +162,41 @@ export function Foto({ url, alto, uso, nombre }: {
       </div>
     )
   }
+  return <FotoCargable fuente={fuente} alto={alto} nombre={nombre} />
+}
+
+/**
+ * La imagen con su esqueleto debajo.
+ *
+ * ⚠️ Un hueco en blanco mientras la foto viaja parece que la app se rompió;
+ * un bloque que respira parece algo que viene. Importa más de lo que suena:
+ * esta tienda se abre con datos móviles desde el navegador de WhatsApp, y la
+ * primera pantalla son doce fotos a la vez.
+ *
+ * El brillo se apaga solo con `prefers-reduced-motion` (regla global del CSS).
+ */
+function FotoCargable({ fuente, alto, nombre }: {
+  fuente: string
+  alto: string
+  nombre: string
+}) {
+  const [cargada, setCargada] = useState(false)
   return (
-    <img
-      src={fuente}
-      alt={nombre}
-      loading="lazy"
-      decoding="async"
-      className={`${alto} w-full object-cover`}
-    />
+    <span className={`relative block ${alto} w-full overflow-hidden`}>
+      {!cargada && <span aria-hidden className="brillo absolute inset-0 block" />}
+      <img
+        src={fuente}
+        alt={nombre}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setCargada(true)}
+        // Si la foto no llega, el esqueleto se queda: es mejor que un icono
+        // de imagen rota presidiendo la tarjeta.
+        onError={() => setCargada(false)}
+        className={`${alto} w-full object-cover transition-opacity duration-300 ${
+          cargada ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+    </span>
   )
 }

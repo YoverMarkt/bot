@@ -262,7 +262,11 @@ export default function CartSheet({
   const faltaParaElMinimo = minOrderAmount > 0
     ? Math.max(0, Math.round((minOrderAmount - subtotal) * 100) / 100)
     : 0
-  const envio = needsAddress(entrega) ? deliveryFee : 0
+  // ⚠️ Sin líneas no hay envío que cobrar. Igual que en `orderTotal`: el
+  // carrito vacío enseñaba «Envío $2.00» y «Total $2.00» sobre cero
+  // productos. Los dos sitios tienen que contar lo mismo o el desglose no
+  // sumaría el total que hay justo debajo.
+  const envio = lines.length && needsAddress(entrega) ? deliveryFee : 0
   const total = orderTotal(lines, entrega, deliveryFee)
 
   const enCarrito = paso === 'carrito'
@@ -300,7 +304,7 @@ export default function CartSheet({
                     cliente confirmaba sin ver lo que había armado. Es la
                     pantalla donde más importa: es la última antes de pagar. */}
                 {detalleDeLinea(linea).map(texto => (
-                  <p key={texto} className="line-clamp-2 text-[12px] leading-snug texto-tenue">
+                  <p key={texto} className="line-clamp-2 text-[12px] leading-snug texto-cuerpo">
                     {texto}
                   </p>
                 ))}
@@ -342,8 +346,15 @@ export default function CartSheet({
               <button
                 key={id}
                 onClick={() => onEntrega(id)}
-                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-[14px] font-semibold transition ${
-                  entrega === id ? 'border-marca bg-marca-suave text-marca' : 'borde-tema'
+                // ⚠️ Acento SÓLIDO. Estaba como color de letra sobre su propio
+                // tinte, con 1,80:1 de contraste para el verde de Monster Pizza
+                // —AA exige 4,5— y 1,19:1 con el lima de la plataforma. La regla
+                // ya estaba escrita en `index.css`: «un lima sobre blanco no se
+                // lee al sol».
+                className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3.5 text-[14px] font-bold transition active:scale-[0.98] ${
+                  entrega === id
+                    ? 'acento border-transparent shadow-acento'
+                    : 'superficie borde-tema texto-cuerpo shadow-tarjeta'
                 }`}
               >
                 <Icono size={17} />
@@ -363,8 +374,10 @@ export default function CartSheet({
               {direcciones.map(direccion => (
                 <div
                   key={direccion.id}
-                  className={`flex w-full items-start gap-2 rounded-xl border px-4 py-3 transition ${
-                    elegida === direccion.id ? 'border-marca bg-marca-suave' : 'borde-tema'
+                  className={`flex w-full items-start gap-2 rounded-2xl border-2 px-4 py-3.5 transition ${
+                    elegida === direccion.id
+                      ? 'border-marca bg-marca-suave'
+                      : 'superficie borde-tema shadow-tarjeta'
                   }`}
                 >
                 <button
@@ -398,7 +411,9 @@ export default function CartSheet({
                               event.stopPropagation()
                               void capturar(direccion.id)
                             }}
-                            className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-marca"
+                            // Acción secundaria: va en tinta subrayada. En
+                            // acento no se leería (ver el contraste de arriba).
+                            className="mt-1 flex items-center gap-1 text-[12px] font-semibold underline underline-offset-2"
                           >
                             <Crosshair size={12} />
                             {ubicando === direccion.id ? 'Buscando…' : 'Agregar ubicación'}
@@ -461,8 +476,12 @@ export default function CartSheet({
                       <button
                         onClick={() => void capturar('nueva')}
                         disabled={ubicando === 'nueva'}
-                        className={`flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-[14px] font-semibold transition ${
-                          pin ? 'border-verde text-verde' : 'borde-tema text-marca'
+                        // ⚠️ En tinta, no en acento: el verde de Monster Pizza
+                        // da 1,80:1 sobre blanco y el lima 1,19:1 — AA exige
+                        // 4,5. Este botón pide permiso de ubicación, así que
+                        // tiene que leerse a la primera.
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-3 text-[14px] font-bold transition active:scale-[0.98] ${
+                          pin ? 'border-verde text-verde' : 'borde-tema texto-cuerpo shadow-tarjeta'
                         }`}
                       >
                         <Crosshair size={16} />

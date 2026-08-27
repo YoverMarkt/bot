@@ -45,3 +45,23 @@ describe('foto', () => {
     }
   })
 })
+
+describe('recorte de la portada', () => {
+  // ⚠️ El orden es lo único que hace que esto funcione, y las dos alternativas
+  // obvias fallan (medido contra la portada real de 740×339):
+  //   · `c_fill,…,w_1200` en UN tramo amplía 740 → 1200 y sube de 56 a 99 kB.
+  //   · `c_lfill` no recorta nada si el ancho pedido supera al original.
+  it('recorta a 16:9 ANTES de limitar el ancho, para no ampliar', () => {
+    const url = foto(CLOUDINARY, 'portada') || ''
+    expect(url).toContain('c_fill,g_auto,ar_16:9/')
+    expect(url.indexOf('c_fill')).toBeLessThan(url.indexOf('c_limit'))
+  })
+
+  // El recorte es SOLO de la portada: es la única que se pinta en un marco de
+  // proporción fija. Un producto en 16:9 perdería medio plato.
+  it('no recorta ninguna otra foto', () => {
+    for (const uso of ['miniatura', 'tarjeta', 'ficha'] as const) {
+      expect(foto(CLOUDINARY, uso)).not.toContain('c_fill')
+    }
+  })
+})
