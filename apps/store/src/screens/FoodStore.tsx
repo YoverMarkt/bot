@@ -529,7 +529,14 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           ⚠️ Sin portada NO se deja un hueco gris: va un degradado del color
           del negocio. Hoy Monster Pizza sí tiene una cargada. */}
       <header className="relative">
-        <div className="relative h-56 overflow-hidden rounded-b-4xl">
+        {/* ⚠️ PROPORCIÓN, no alto fijo. Con `h-56` el marco cambiaba de forma
+            según el ancho de la pantalla —1,75:1 en un iPhone y 2,29:1 en el
+            `max-w-lg`—, así que la misma portada se recortaba distinto en cada
+            teléfono. En 16:9 el marco es siempre el mismo, y coincide con el
+            recorte que ya viene hecho de Cloudinary (`RECORTE` en
+            `lib/imagen.ts`): la foto llega con la forma exacta del hueco, así
+            que `object-cover` no tiene nada que recortar por su cuenta. */}
+        <div className="relative aspect-video overflow-hidden rounded-b-4xl">
           {portada
             ? (
                 <img

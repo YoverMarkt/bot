@@ -47,6 +47,34 @@ const ANCHOS: Record<AnchoDeFoto, number> = {
   portada: 1200,
 }
 
+/**
+ * Recorte previo, ENCADENADO, y solo para la portada.
+ *
+ * El héroe de la tienda pinta la portada en un marco 16:9 con `object-cover`,
+ * así que el navegador se descargaba píxeles que el CSS iba a tirar — y los
+ * tiraba a ciegas, por el centro. La portada real de Monster Pizza es un
+ * banner 2,18:1: el recorte del navegador se comía el 20% del ancho y partía
+ * «24/7 FREE HOME DELIVERY» por la mitad.
+ *
+ * `c_fill,g_auto` recorta al 16:9 eligiendo la parte con contenido, y viaja
+ * ya recortada: menos bytes y sin recorte doble. Medido contra la portada
+ * real: 55.693 → 51.847 bytes, y el resultado conserva las pizzas y el
+ * titular enteros.
+ *
+ * ⚠️ Va ENCADENADO (`…/`) y ANTES del `c_limit,w_1200`, y ese orden es lo
+ * único que hace que funcione:
+ *   · `c_fill,…,w_1200` en un solo tramo **amplía** una portada de 740 px a
+ *     1200 y la deja en 99 kB — la misma regresión que documenta `c_limit`
+ *     más abajo, por la puerta de al lado. Medido.
+ *   · `c_lfill` (fill que no amplía) **no recorta nada** cuando el ancho
+ *     pedido supera al original: devuelve la imagen tal cual, 740×339.
+ * Recortando primero a resolución nativa y limitando después, el `c_limit`
+ * sigue impidiendo cualquier ampliación.
+ */
+const RECORTE: Partial<Record<AnchoDeFoto, string>> = {
+  portada: 'c_fill,g_auto,ar_16:9/',
+}
+
 /** El punto donde Cloudinary acepta transformaciones dentro de su URL. */
 const MARCA = '/image/upload/'
 
@@ -67,5 +95,5 @@ export const foto = (url: string | null | undefined, ancho: AnchoDeFoto): string
   // seguida de `_`: `f_auto,q_auto/v123/...` frente a `v123/...`.
   if (/^[a-z]{1,3}_/.test(despues)) return limpia
 
-  return `${antes}${MARCA}f_auto,q_auto,c_limit,w_${ANCHOS[ancho]}/${despues}`
+  return `${antes}${MARCA}${RECORTE[ancho] || ''}f_auto,q_auto,c_limit,w_${ANCHOS[ancho]}/${despues}`
 }
