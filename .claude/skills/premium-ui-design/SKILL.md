@@ -88,16 +88,32 @@ Tipografía: sans geométrica (Inter, Manrope o Geist). Pesos 500 / 700 / 800.
 - Texto de cuerpo mínimo #3D4548 sobre blanco (contraste AA).
 - **Copy en español** neutro (Ecuador/Colombia), tono apetitoso y directo.
 
-## Lo que NO se copia
+## Qué se toma de una referencia, y qué no
 
-De cualquier referencia visual (Careem, Rappi, Uber Eats, iFood) se toma la
-estructura y la jerarquía. **No** se copian marca, colores corporativos, textos
-literales, iconos, fotografías ni identidad visual. La plataforma tiene la suya.
+**Se toma todo lo que es OFICIO**: la estructura, la jerarquía, el ritmo
+vertical, los tamaños relativos, las proporciones, la retícula, las sombras, el
+tratamiento tipográfico, la forma de los controles y el orden en que aparecen
+las cosas. Eso es diseño de interfaz, no propiedad de nadie, y copiarlo bien es
+exactamente lo que separa una app premium de una genérica. Si la referencia
+pone el logo centrado solapando un héroe alto, se pone el logo centrado
+solapando un héroe alto.
 
-⚠️ Y no se pinta un control que no controle nada: un filtro «4.5+ Rated» sin
-sistema de ratings, o un «Best Sellers» que no ordena, es el mismo fallo de
-«construido y desconectado» que este proyecto lleva nueve veces pagando, solo
-que en la interfaz. Si el dato no existe, el control no se dibuja.
+⚠️ **Esta sección NO es un freno al parecido.** Se malinterpretó así el
+2026-08-25 y el resultado fue una portada tímida —banner pequeño, logo a un
+lado, horario en una línea suelta— que el dueño rechazó el 2026-08-26. Ante la
+duda entre parecerse más o menos a la referencia estructural, **parecerse más**.
+
+**No se toma la IDENTIDAD ajena**, que es otra cosa: el nombre y el logotipo de
+la marca (los arcos dorados, la M, el nombre «McDonald's»), sus colores
+corporativos, sus fotografías, sus textos literales, sus iconos propios. Nada de
+eso hace mejor a la app —el cliente que abre Monster Pizza quiere ver Monster
+Pizza— y además es de otro.
+
+⚠️ **Y no se copia un dato que no tenemos.** La referencia enseña «★ 4,8
+(1.652) · FoodyPro+ · 0,1 mi»: aquí no hay reseñas, ni fidelidad, ni distancia.
+Se toma el SITIO —una línea de metadatos centrada bajo el nombre— y se llena con
+lo que sí es verdad: si el local está abierto y hasta qué hora. Pintar un 4,8
+inventado no es copiar de más, es mentirle al cliente.
 
 ## Checklist antes de dar por terminada una pantalla
 

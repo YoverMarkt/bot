@@ -439,231 +439,260 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   const tarjeta = (producto: Product) => (
     <div
       key={producto.id}
-      className={`superficie relative overflow-hidden rounded-(--radius-tarjeta) shadow-tarjeta transition ${
+      className={`superficie relative rounded-(--radius-tarjeta) shadow-tarjeta transition ${
         producto.available ? '' : 'opacity-55'
       }`}
     >
-      <button
-        onClick={() => setElegido(producto)}
-        className="block w-full text-left transition active:scale-[0.99]"
-      >
-        <span className="relative block">
-          <Foto url={producto.imageUrl} alto="aspect-[4/3]" uso="tarjeta" nombre={producto.name} />
+      {/* ⚠️ La foto y los textos NO van dentro de un botón, y el `+` tampoco:
+          serían botones anidados, que es HTML inválido. Lo que abre la ficha
+          es una CAPA sobre la tarjeta entera (`absolute inset-0`), declarada
+          ANTES que el `+` para que el `+` quede encima sin pelear por
+          z-index. Así se puede tocar la tarjeta completa y el `+` sigue
+          haciendo lo suyo. */}
+      <div className="overflow-hidden rounded-(--radius-tarjeta)">
+        <div className="relative h-36">
+          <Foto url={producto.imageUrl} alto="h-36" uso="tarjeta" nombre={producto.name} />
           {!producto.available && (
             <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-bold text-white">
               Agotado
             </span>
           )}
-        </span>
-        <span className="block px-3 pt-2.5 pb-3">
-          <span className="block text-[14.5px] leading-snug font-bold tracking-tight line-clamp-2">
-            {producto.name}
-          </span>
-          {producto.description && (
-            <span className="mt-1 block line-clamp-2 text-[12px] leading-snug texto-cuerpo">
-              {producto.description}
-            </span>
+
+          {/* El `+` agrega de un toque lo que no exige elegir nada. Si el
+              producto trae obligatorios, `agregarAdicional` abre su ficha en
+              vez de meterlo a ciegas: la base lo rechazaría igual.
+
+              ⚠️ Va DENTRO de la foto, no a caballo de su borde: montado en el
+              borde se comía la primera línea del nombre —«Doble Cheese
+              Burguer» quedaba debajo del círculo—. Y no es un botón anidado:
+              esto es un `div`, y la capa que abre la ficha es hermana suya.
+              El `z-10` es lo que lo mantiene por encima de esa capa, que va
+              después en el DOM. */}
+          {producto.available && (
+            <button
+              onClick={() => agregarAdicional(producto.id)}
+              disabled={!puedePedir}
+              aria-label={`Agregar ${producto.name}`}
+              className="acento absolute right-2.5 bottom-2.5 z-10 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+            >
+              +
+            </button>
           )}
-          <span className="mt-2 block text-[19px] leading-none font-extrabold tracking-[-0.02em] tabular-nums">
+        </div>
+        <div className="px-3 pt-3 pb-3.5">
+          <p className="text-[14.5px] leading-snug font-bold tracking-tight line-clamp-2">
+            {producto.name}
+          </p>
+          {producto.description && (
+            <p className="mt-1 line-clamp-2 text-[12px] leading-snug texto-cuerpo">
+              {producto.description}
+            </p>
+          )}
+          {/* El precio en TINTA, no en el naranja de la referencia: allí ese
+              color señala una rebaja, y aquí no hay descuentos que señalar
+              —`Product` no lleva precio promocional—. Naranja permanente
+              sería color sin significado, y además `--ascua` da 3,49:1 sobre
+              blanco, por debajo del 4,5 que exige AA para texto. */}
+          <p className="mt-2 text-[19px] leading-none font-extrabold tracking-[-0.02em] tabular-nums">
             {producto.hasVariants && (
               <span className="text-[11px] font-semibold texto-tenue">desde </span>
             )}
             {money(producto.priceFrom)}
-          </span>
-        </span>
-      </button>
+          </p>
+        </div>
+      </div>
 
-      {/* El `+` agrega de un toque lo que no exige elegir nada. Si el producto
-          trae obligatorios, `agregarAdicional` abre su ficha en vez de meterlo
-          a ciegas: la base lo rechazaría igual. */}
-      {producto.available && (
-        <button
-          onClick={() => agregarAdicional(producto.id)}
-          disabled={!puedePedir}
-          aria-label={`Agregar ${producto.name}`}
-          className="acento absolute right-2.5 bottom-2.5 flex size-11 items-center justify-center rounded-full text-[22px] leading-none font-black shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
-        >
-          +
-        </button>
-      )}
+      <button
+        onClick={() => setElegido(producto)}
+        aria-label={`Ver ${producto.name}`}
+        className="absolute inset-0 rounded-(--radius-tarjeta)"
+      />
+
     </div>
   )
 
   return (
     <div className="mx-auto min-h-full max-w-lg pb-32">
-      {/* ── Barra de ubicación ──────────────────────────────────────────
-          Lo primero de la pantalla, como en cualquier app de reparto: a
-          dónde va el pedido. No es decoración — abre el selector de
-          direcciones, y sin dirección guardada invita a poner una en vez de
-          fingir que ya la hay. */}
-      {entrega === 'delivery' && (
-        <div className="px-4 pt-seguro">
-          <button
-            onClick={() => setEnCuenta(true)}
-            className="flex w-full items-center gap-2.5 py-3 text-left"
-          >
-            <span className="superficie grid size-10 shrink-0 place-items-center rounded-xl border borde-tema shadow-tarjeta">
-              <MapPin size={17} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="caption block texto-tenue">Entregar en</span>
-              <span className="titulo-m block truncate">
-                {direccionActiva || 'Elige tu dirección'}
-              </span>
-            </span>
-            <ChevronDown size={18} className="shrink-0 texto-tenue" />
-          </button>
-        </div>
-      )}
+      {/* ══ EL HÉROE ════════════════════════════════════════════════════
+          Portada a sangre y ALTA, con el logo del negocio centrado
+          solapando el borde. Es la ficha de local de cualquier app de
+          reparto grande, y sustituye al banner pequeño del 2026-08-25 por
+          decisión del dueño (2026-08-26): aquel confirmaba dónde estabas,
+          pero no daba ninguna sensación de marca.
 
-      {/* ── Buscador ────────────────────────────────────────────────────
-          Sube por encima de la portada: quien ya sabe lo que quiere no
-          debería tener que pasar la foto para escribirlo. */}
-      <div className={`px-4 ${entrega === 'delivery' ? '' : 'pt-seguro'} pb-3`}>
-        <div className="superficie flex items-center gap-2.5 rounded-2xl px-4 py-3.5 shadow-tarjeta">
-          <input
-            ref={buscador}
-            value={busqueda}
-            onChange={event => setBusqueda(event.target.value.slice(0, 60))}
-            placeholder={`Buscar en ${business.name}`}
-            aria-label="Buscar productos"
-            className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
-          />
-          {busqueda
-            ? (
-              <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
-                <X size={18} />
-              </button>
-            )
-            : <Search size={18} className="shrink-0 texto-tenue" />}
-        </div>
-      </div>
+          ⚠️ La foto llega al borde FÍSICO de la pantalla a propósito
+          —`viewport-fit=cover` en el index.html—, así que el héroe pasa por
+          debajo de la barra de estado y solo el botón de volver respeta el
+          `safe-area`. Si el héroe respetara el inset quedaría una franja
+          del color del fondo sobre la foto, que es justo lo que se ve roto.
 
-      {/* ── El banner del local ─────────────────────────────────────────
-          Portada PEQUEÑA, no a sangre: confirma dónde estás sin comerse la
-          pantalla que el cliente vino a usar. El logo va encima, como la
-          foto de perfil de un negocio.
-
-          ⚠️ Sin portada NO se deja un hueco gris: la tarjeta se pinta con
-          un degradado del color del negocio, que es un estado digno y no un
-          error. Hoy ningún local tiene portada cargada. */}
-      <div className="px-4">
-        <div className="relative overflow-hidden rounded-[1.5rem] shadow-alzada">
+          ⚠️ Sin portada NO se deja un hueco gris: va un degradado del color
+          del negocio. Hoy Monster Pizza sí tiene una cargada. */}
+      <header className="relative">
+        <div className="relative h-56 overflow-hidden rounded-b-4xl">
           {portada
             ? (
-              <>
                 <img
                   src={portada}
                   alt=""
+                  // Si el dueño la borró de Cloudinary se retira sola y queda
+                  // el degradado de marca: el icono de imagen rota no puede
+                  // ser la primera impresión de la tienda.
                   onError={() => setPortadaRota(true)}
-                  className="h-32 w-full object-cover"
+                  className="size-full object-cover"
                 />
-                <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/45 to-black/10" />
-              </>
-            )
+              )
             : (
-              <div
-                className="h-32 w-full"
-                style={{
-                  backgroundImage:
-                    'linear-gradient(135deg, color-mix(in srgb, var(--acento) 85%, black) 0%,'
-                    + ' color-mix(in srgb, var(--acento) 45%, black) 100%)',
-                }}
-              />
-            )}
-
-          <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 p-4 text-white">
-            {onVolver && (
-              <button
-                onClick={onVolver}
-                aria-label="Volver"
-                className="absolute top-0 left-4 -translate-y-full pb-3"
-              >
-                <ChevronLeft size={22} />
-              </button>
-            )}
-            {business.logoUrl && (
-              <img
-                src={foto(business.logoUrl, 'miniatura') || undefined}
-                alt=""
-                className="size-14 shrink-0 rounded-2xl bg-white/10 object-cover ring-2 ring-white/40"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <h1 className="titulo-xl truncate">{business.name}</h1>
-              {business.slogan && (
-                <p className="caption mt-1 truncate opacity-85">{business.slogan}</p>
+                <div
+                  className="size-full"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(150deg, color-mix(in srgb, var(--acento) 90%, black) 0%,'
+                      + ' color-mix(in srgb, var(--acento) 40%, black) 100%)',
+                  }}
+                />
               )}
-            </div>
+          {/* El velo no es adorno: sin él, una portada clara deja el botón
+              de volver invisible, y el negocio elige qué sube. */}
+          <div className="absolute inset-0 bg-linear-to-b from-black/45 via-black/5 to-black/25" />
+
+          {onVolver && (
+            <button
+              onClick={onVolver}
+              aria-label="Volver"
+              className="absolute left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] flex size-10 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition active:scale-95"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+        </div>
+
+        {/* El logo, CENTRADO y solapando el borde del héroe. El anillo es
+            del color de la superficie, no blanco fijo, para que el recorte
+            siga siendo limpio si algún día la superficie cambia. */}
+        {/* ⚠️ `relative z-10`: sin contexto de apilado propio, el héroe —que es
+            `relative`— se pinta ENCIMA y le come la mitad de arriba al logo.
+            El margen negativo solapa, pero no decide quién va delante. */}
+        <div className="relative z-10 -mt-12 flex justify-center">
+          <div className="superficie size-24 rounded-full p-1 shadow-alzada">
+            {business.logoUrl
+              ? (
+                  <img
+                    src={foto(business.logoUrl, 'miniatura') || undefined}
+                    alt=""
+                    className="size-full rounded-full object-cover"
+                  />
+                )
+              : (
+                  <span className="marcador flex size-full items-center justify-center rounded-full text-[2rem] leading-none font-black opacity-40 select-none">
+                    {business.name.trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
           </div>
+        </div>
+      </header>
+
+      {/* ── Quién es, y si atiende ahora ───────────────────────────────
+          Nombre centrado bajo el logo y, debajo, el ESTADO con su horario.
+
+          ⚠️ Aquí la referencia pinta «★ 4,8 (1.652) · FoodyPro+ · 0,1 mi» y
+          NADA de eso existe en este proyecto: no hay reseñas, ni programa
+          de fidelidad, ni distancia. Se toma el SITIO y la jerarquía —una
+          línea de metadatos centrada bajo el nombre— y se llena con lo
+          único que ahí es verdad: si el local está abierto y hasta qué
+          hora. Inventar un 4,8 sería el control que no controla nada, pero
+          además mintiéndole al cliente. */}
+      <div className="px-5 pt-3 text-center">
+        <h1 className="titulo-xl">{business.name}</h1>
+        {business.slogan && (
+          <p className="mt-1.5 text-[13.5px] texto-cuerpo">{business.slogan}</p>
+        )}
+        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[13px]">
+          <span
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
+              abierto ? 'bg-emerald-50 text-emerald-700' : 'bg-black/5 texto-cuerpo'
+            }`}
+          >
+            <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-500' : 'bg-current opacity-50'}`} />
+            {abierto ? 'Abierto' : 'Cerrado'}
+          </span>
+          {horario && (
+            <span className="texto-cuerpo tabular-nums">
+              {horario.open} – {horario.close}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* ── Cómo lo recibe ─────────────────────────────────────────────
-          Se elige aquí y se respeta en el carrito: es la misma decisión, no
-          dos. Cambia el envío que se suma al total y si se piden datos de
-          dirección al cerrar el pedido.
+      {/* ── Cómo llega, y a dónde ──────────────────────────────────────
+          La tarjeta de servicio de la referencia, con NUESTROS datos
+          reales: el tiempo sale de las dos columnas que pone el dueño, el
+          envío de `delivery_fee` y el mínimo de `min_order_amount`.
 
-          ⚠️ Estuvo a punto de perderse al rediseñar la cabecera: vivía dentro
-          del bloque de tinta que se reemplazó. Sin él, el cliente no podría
-          elegir retiro y pagaría envío sin quererlo. */}
-      <div className="grid grid-cols-2 gap-2.5 px-4 pt-4">
-        {([
-          {
-            id: 'delivery' as const,
-            icono: Bike,
-            texto: 'Entrega',
-            detalle: business.deliveryFee > 0 ? money(business.deliveryFee) : 'Gratis',
-          },
-          { id: 'pickup' as const, icono: ShoppingBag, texto: 'Retiro', detalle: 'Gratis' },
-        ]).map(({ id, icono: Icono, texto, detalle }) => (
-          <button
-            key={id}
-            onClick={() => setEntrega(id)}
-            aria-pressed={entrega === id}
-            className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3.5 text-[13.5px] font-bold transition active:scale-[0.98] ${
-              entrega === id
-                ? 'tinta shadow-alzada'
-                : 'superficie texto-cuerpo shadow-tarjeta'
-            }`}
-          >
-            <Icono size={16} />
-            {texto}
-            <span className="opacity-60">{detalle}</span>
-          </button>
-        ))}
-      </div>
+          ⚠️ Aquí VIVE el selector Entrega/Retiro, que es la misma decisión
+          que la del carrito, no dos. Ya estuvo a punto de perderse una vez
+          al rediseñar la cabecera: sin él el cliente paga envío sin poder
+          elegir retiro. La referencia lo dibuja igual —dos iconos de modo
+          dentro de la píldora—, así que el sitio es el suyo.
 
-      {/* ── Estado, horario y espera ────────────────────────────────────
-          Debajo del banner y sobre fondo claro: son los datos que deciden si
-          el cliente pide ahora o vuelve luego, y en la cabecera oscura se
-          leían peor. «Cerrado» a secas deja sin saber cuándo volver. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 pt-3 text-[13px]">
-        <span
-          className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-bold ${
-            abierto ? 'bg-emerald-50 text-emerald-700' : 'superficie texto-tenue border borde-tema'
-          }`}
-        >
-          <span className={`size-1.5 rounded-full ${abierto ? 'bg-emerald-500' : 'bg-current opacity-50'}`} />
-          {abierto ? 'Abierto' : 'Cerrado'}
-        </span>
-        {horario && (
-          <span className="texto-cuerpo tabular-nums">
-            {horario.open} – {horario.close}
-          </span>
-        )}
-        {/* El tiempo del modo elegido: quien retira no espera lo que tarda el
-            repartidor, y decirle lo mismo a los dos miente a uno. */}
-        <span className="texto-tenue tabular-nums">·</span>
-        <span className="texto-cuerpo inline-flex items-center gap-1 tabular-nums">
-          <Clock size={13} />
-          {rangoDeEspera(
-            business.prepTimeMinutes
-            + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
+          ⚠️ La dirección solo aparece en ENTREGA: en retiro la fila entera
+          desaparece en vez de pedir un dato que nadie va a usar. */}
+      <div className="px-4 pt-4">
+        <div className="superficie rounded-[1.75rem] shadow-tarjeta">
+          <div className="flex items-center gap-3 p-2.5">
+            <div className="flex shrink-0 gap-1 rounded-full bg-black/5 p-1">
+              {([
+                { id: 'delivery' as const, icono: Bike, etiqueta: 'Entrega a domicilio' },
+                { id: 'pickup' as const, icono: ShoppingBag, etiqueta: 'Retiro en el local' },
+              ]).map(({ id, icono: Icono, etiqueta }) => (
+                <button
+                  key={id}
+                  onClick={() => setEntrega(id)}
+                  aria-label={etiqueta}
+                  aria-pressed={entrega === id}
+                  className={`flex size-11 items-center justify-center rounded-full transition active:scale-95 ${
+                    entrega === id ? 'acento shadow-acento' : 'texto-cuerpo'
+                  }`}
+                >
+                  <Icono size={18} />
+                </button>
+              ))}
+            </div>
+            <div className="min-w-0 flex-1 pr-1">
+              <p className="titulo-m">
+                {entrega === 'delivery' ? 'Entrega' : 'Retiro'}
+                {' · '}
+                {rangoDeEspera(
+                  business.prepTimeMinutes
+                  + (entrega === 'delivery' ? business.deliveryExtraMinutes : 0),
+                )}
+              </p>
+              <p className="caption mt-0.5 texto-cuerpo">
+                {entrega === 'delivery'
+                  ? `Envío ${business.deliveryFee > 0 ? money(business.deliveryFee) : 'gratis'}`
+                  : 'Sin costo de envío'}
+                {business.minOrderAmount > 0 && ` · Mínimo ${money(business.minOrderAmount)}`}
+              </p>
+            </div>
+          </div>
+
+          {entrega === 'delivery' && (
+            <button
+              onClick={() => setEnCuenta(true)}
+              className="flex w-full items-center gap-2.5 border-t borde-tema px-4 py-3 text-left transition active:bg-black/5"
+            >
+              <MapPin size={17} className="shrink-0 texto-cuerpo" />
+              <span className="min-w-0 flex-1">
+                <span className="caption block texto-tenue">Entregar en</span>
+                <span className="block truncate text-[14px] font-bold tracking-tight">
+                  {direccionActiva || 'Elige tu dirección'}
+                </span>
+              </span>
+              <ChevronDown size={18} className="shrink-0 texto-tenue" />
+            </button>
           )}
-        </span>
+        </div>
       </div>
-
 
       {!puedePedir && (
         <div className="px-4 pt-3">
@@ -710,7 +739,40 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </div>
       )}
 
-      {/* ── Pestañas de categoría, pegadas arriba ── */}
+      {/* ── Buscador ───────────────────────────────────────────────────
+          Baja hasta aquí, justo encima de la carta que busca. Estaba sobre
+          la portada para que quien ya sabe lo que quiere no tuviera que
+          pasar la foto; con el héroe nuevo eso partía la marca en dos —el
+          logo y el nombre quedaban debajo de un campo de formulario—. Aquí
+          sigue estando antes de un solo scroll, y ahora se lee como
+          «buscar en esta carta», que es lo que hace. */}
+      <div className="px-4 pt-4">
+        <div className="superficie flex items-center gap-2.5 rounded-2xl px-4 py-3.5 shadow-tarjeta">
+          <input
+            ref={buscador}
+            value={busqueda}
+            onChange={event => setBusqueda(event.target.value.slice(0, 60))}
+            placeholder={`Buscar en ${business.name}`}
+            aria-label="Buscar productos"
+            className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
+          />
+          {busqueda
+            ? (
+                <button onClick={() => setBusqueda('')} aria-label="Borrar búsqueda" className="shrink-0 texto-tenue">
+                  <X size={18} />
+                </button>
+              )
+            : <Search size={18} className="shrink-0 texto-tenue" />}
+        </div>
+      </div>
+
+      {/* ── Pestañas de categoría, pegadas arriba ───────────────────────
+          ⚠️ La activa va en TINTA, texto y subrayado, como la referencia —
+          no en el color del negocio. El subrayado era `border-(--acento)`:
+          con el lima de la plataforma eso es 1,19:1 contra el blanco, o
+          sea una pestaña «activa» sin marca visible. Un elemento gráfico
+          que porta información necesita 3:1, y el acento del negocio no lo
+          garantiza porque lo elige él. */}
       {!resultados && grupos.length > 1 && (
         <nav className="superficie sticky top-0 z-30 mt-4 border-b borde-tema">
           <div className="sin-barra flex gap-1 overflow-x-auto px-4">
@@ -719,9 +781,9 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
                 key={grupo.id}
                 ref={(nodo) => { pestanas.current[grupo.id] = nodo }}
                 onClick={() => irACategoria(grupo.id)}
-                className={`shrink-0 border-b-[3px] px-3 py-3 text-[14px] font-bold whitespace-nowrap transition ${
+                className={`shrink-0 border-b-[3px] px-3 py-3.5 text-[14.5px] font-bold tracking-tight whitespace-nowrap transition ${
                   categoriaActiva === grupo.id
-                    ? 'border-(--acento)'
+                    ? 'border-(--tinta) text-(--texto)'
                     : 'border-transparent texto-tenue'
                 }`}
               >
