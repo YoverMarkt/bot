@@ -12,7 +12,7 @@
     "size": "node tests/presupuesto-tamano.mjs"
   },
   "dependencies": {
-    "lucide-react": "^1.24.0",
+    "@remixicon/react": "^4.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

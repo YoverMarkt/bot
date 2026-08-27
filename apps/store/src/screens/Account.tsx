@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, MapPin, Trash2 } from 'lucide-react'
+import {
+  RiArrowLeftSLine,
+  RiDeleteBin6Line,
+  RiMapPin2Line,
+} from '@remixicon/react'
 import { Aviso } from '../components/ui'
 import { getOrders } from '../lib/api'
 import { money } from '../lib/format'
@@ -109,7 +113,7 @@ export default function Account({
           aria-label="Volver"
           className="-ml-2 flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 active:bg-black/5"
         >
-          <ChevronLeft size={20} />
+          <RiArrowLeftSLine size={20} />
         </button>
         <h1 className="titulo-l">Mi cuenta</h1>
       </header>
@@ -216,7 +220,7 @@ export default function Account({
                 className="superficie flex items-center gap-3 rounded-(--radius-tarjeta) px-4 py-3.5 shadow-tarjeta"
               >
                 <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/5">
-                  <MapPin size={17} className="texto-cuerpo" />
+                  <RiMapPin2Line size={17} className="texto-cuerpo" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[14.5px] font-bold tracking-tight">{direccion.label}</span>
@@ -236,7 +240,7 @@ export default function Account({
                   aria-label={`Eliminar ${direccion.label}`}
                   className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90 active:bg-black/5"
                 >
-                  <Trash2 size={17} />
+                  <RiDeleteBin6Line size={17} />
                 </button>
               </div>
             ))}

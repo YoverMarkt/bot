@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ChevronLeft, X } from 'lucide-react'
+import {
+  RiArrowLeftSLine,
+  RiCloseLine,
+} from '@remixicon/react'
 import { foto } from '../lib/imagen'
 import type { AnchoDeFoto } from '../lib/imagen'
 
@@ -72,7 +75,7 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
               aria-label="Volver"
               className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
             >
-              <ChevronLeft size={20} />
+              <RiArrowLeftSLine size={20} />
             </button>
           )}
           <h2 className="flex-1 truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
@@ -81,7 +84,7 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
             aria-label="Cerrar"
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5"
           >
-            <X size={18} />
+            <RiCloseLine size={18} />
           </button>
         </div>
         {children}

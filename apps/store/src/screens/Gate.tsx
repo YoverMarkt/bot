@@ -1,4 +1,8 @@
-import { MessageCircle, Lock, Store as Tienda } from 'lucide-react'
+import {
+  RiLockLine,
+  RiStore2Line,
+  RiWhatsappLine,
+} from '@remixicon/react'
 import { Boton } from '../components/ui'
 import type { Business } from '../lib/types'
 
@@ -59,12 +63,12 @@ export default function Gate({ business, motivo }: {
           símbolo. El acento sólido se reserva para lo accionable, que aquí es
           el botón de abajo. */}
       <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <Lock size={24} />
+        <RiLockLine size={24} />
       </div>
 
       {business?.name && (
         <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
-          <Tienda size={14} />
+          <RiStore2Line size={14} />
           {business.name}
         </p>
       )}
@@ -78,7 +82,7 @@ export default function Gate({ business, motivo }: {
               <a href={textoWhatsapp(telefono)} className="block">
                 <Boton>
                   <span className="flex items-center justify-center gap-2">
-                    <MessageCircle size={18} />
+                    <RiWhatsappLine size={18} />
                     Pedir mi enlace por WhatsApp
                   </span>
                 </Boton>

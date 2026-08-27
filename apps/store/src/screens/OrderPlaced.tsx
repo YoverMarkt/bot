@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Check, Clock, MessageCircle, Phone, X } from 'lucide-react'
+import {
+  RiCheckLine,
+  RiCloseLine,
+  RiPhoneLine,
+  RiTimeLine,
+  RiWhatsappLine,
+} from '@remixicon/react'
 import PagoPendiente from '../components/PagoPendiente'
 import { getOrder } from '../lib/api'
 import { esEstadoFinal, estaCancelado } from '../lib/estado'
@@ -156,7 +162,7 @@ export default function OrderPlaced({
               una advertencia, y un negocio no elige el color de su mala
               noticia. */}
           <div className="flex size-18 items-center justify-center rounded-full bg-red-500 text-white shadow-alzada">
-            <X size={34} strokeWidth={3} />
+            <RiCloseLine size={34} />
           </div>
           <h1 className="titulo-xl mt-5">
             Pedido cancelado
@@ -173,7 +179,7 @@ export default function OrderPlaced({
               href={`tel:${llamar}`}
               className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
             >
-              <Phone size={18} />
+              <RiPhoneLine size={18} />
               Llamar al local
             </a>
           )}
@@ -202,7 +208,7 @@ export default function OrderPlaced({
           volviendo ? 'bg-amber-500 text-white shadow-alzada' : 'acento shadow-acento-alto'
         }`}
         >
-          {volviendo ? <Clock size={32} strokeWidth={2.5} /> : <Check size={34} strokeWidth={3} />}
+          {volviendo ? <RiTimeLine size={32} /> : <RiCheckLine size={34} />}
         </div>
 
         <h1 className="titulo-xl mt-5">
@@ -241,7 +247,7 @@ export default function OrderPlaced({
             <div className="flex items-center justify-between gap-3 px-4 py-3.5">
               <dt className="caption texto-tenue">Tiempo estimado</dt>
               <dd className="flex items-center gap-1.5 text-[14px] font-bold tabular-nums">
-                <Clock size={14} className="texto-tenue" />
+                <RiTimeLine size={14} className="texto-tenue" />
                 {espera}
               </dd>
             </div>
@@ -319,7 +325,7 @@ export default function OrderPlaced({
         <div className="superficie mt-6 w-full rounded-(--radius-tarjeta) px-4 py-4 text-left shadow-tarjeta">
           <div className="flex items-start gap-3">
             <span className="acento flex size-10 shrink-0 items-center justify-center rounded-full shadow-acento">
-              <MessageCircle size={19} />
+              <RiWhatsappLine size={19} />
             </span>
             <div className="min-w-0">
               <p className="titulo-m">
@@ -351,7 +357,7 @@ export default function OrderPlaced({
             rel="noreferrer"
             className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
           >
-            <MessageCircle size={18} />
+            <RiWhatsappLine size={18} />
             Volver a WhatsApp
           </a>
         )}

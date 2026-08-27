@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { MessageCircle, Phone, Store as Tienda } from 'lucide-react'
+import {
+  RiPhoneLine,
+  RiStore2Line,
+  RiWhatsappLine,
+} from '@remixicon/react'
 import { Boton } from '../components/ui'
 import type { Business } from '../lib/types'
 
@@ -57,12 +61,12 @@ export default function Confirmar({ business, onConfirmar }: {
           el lima de la plataforma, donde AA exige 4,5. Las dos puertas se
           pintan igual a propósito: el cliente puede ver las dos seguidas. */}
       <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <Phone size={24} />
+        <RiPhoneLine size={24} />
       </div>
 
       {business?.name && (
         <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
-          <Tienda size={14} />
+          <RiStore2Line size={14} />
           {business.name}
         </p>
       )}
@@ -117,7 +121,7 @@ export default function Confirmar({ business, onConfirmar }: {
           href={textoWhatsapp(business.phone)}
           className="mt-6 flex items-center justify-center gap-2 py-2 text-[14px] font-semibold texto-cuerpo"
         >
-          <MessageCircle size={16} />
+          <RiWhatsappLine size={16} />
           No es mi enlace, quiero el mío
         </a>
       )}

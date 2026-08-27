@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { Banknote, Bike, Crosshair, Landmark, MapPin, ShoppingBag, Trash2 } from 'lucide-react'
+import {
+  RiBankLine,
+  RiDeleteBin6Line,
+  RiEBikeLine,
+  RiFocus3Line,
+  RiMapPin2Line,
+  RiMoneyDollarCircleLine,
+  RiShoppingBag3Line,
+} from '@remixicon/react'
 import { Aviso, Boton, Contador, Hoja } from './ui'
 import { money } from '../lib/format'
 import { cartTotal, detalleDeLinea, lineTotal, needsAddress, orderTotal } from '../lib/cart'
@@ -8,10 +16,10 @@ import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod, StorePaymentMethod } from '../lib/types'
 
 /** Un icono por método. Uno que no esté en la lista cae en el genérico. */
-const ICONO_PAGO: Record<string, typeof Landmark> = {
-  transferencia: Landmark,
-  efectivo: Banknote,
-  pago_al_retirar: ShoppingBag,
+const ICONO_PAGO: Record<string, typeof RiBankLine> = {
+  transferencia: RiBankLine,
+  efectivo: RiMoneyDollarCircleLine,
+  pago_al_retirar: RiShoppingBag3Line,
 }
 
 // El carrito y el cierre del pedido, en una sola hoja.
@@ -225,8 +233,8 @@ export default function CartSheet({
   }
 
   const opcionesEntrega = [
-    { id: 'delivery' as const, icono: Bike, texto: 'A domicilio' },
-    { id: 'pickup' as const, icono: ShoppingBag, texto: 'Yo lo recojo' },
+    { id: 'delivery' as const, icono: RiEBikeLine, texto: 'A domicilio' },
+    { id: 'pickup' as const, icono: RiShoppingBag3Line, texto: 'Yo lo recojo' },
   ]
 
   // «Pago al retirar» no es cómo paga, es CUÁNDO: al pasar por el local. Solo
@@ -241,7 +249,7 @@ export default function CartSheet({
     .filter((m: StorePaymentMethod) => m.code !== 'pago_al_retirar' || !needsAddress(entrega))
     .map((m: StorePaymentMethod) => ({
       id: m.code as PaymentMethod,
-      icono: ICONO_PAGO[m.code] || Landmark,
+      icono: ICONO_PAGO[m.code] || RiBankLine,
       // El texto del catálogo manda; el matiz de entrega/retiro solo aplica
       // al efectivo, que es el único que cambia de significado según cómo se
       // reciba el pedido.
@@ -322,7 +330,7 @@ export default function CartSheet({
                     aria-label={`Quitar ${linea.product.name}`}
                     className="texto-tenue"
                   >
-                    <Trash2 size={17} />
+                    <RiDeleteBin6Line size={17} />
                   </button>
                 </div>
               </div>
@@ -384,7 +392,7 @@ export default function CartSheet({
                   onClick={() => setDireccionId(direccion.id)}
                   className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  <MapPin size={17} className="mt-0.5 shrink-0 texto-tenue" />
+                  <RiMapPin2Line size={17} className="mt-0.5 shrink-0 texto-tenue" />
                   <span className="min-w-0">
                     <span className="block text-[14px] font-semibold">{direccion.label}</span>
                     <span className="block text-[13px] texto-tenue">{direccion.address}</span>
@@ -397,7 +405,7 @@ export default function CartSheet({
                     {tieneUbicacion(direccion)
                       ? (
                           <span className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-verde">
-                            <Crosshair size={12} /> Ubicación guardada
+                            <RiFocus3Line size={12} /> Ubicación guardada
                           </span>
                         )
                       : (
@@ -415,7 +423,7 @@ export default function CartSheet({
                             // acento no se leería (ver el contraste de arriba).
                             className="mt-1 flex items-center gap-1 text-[12px] font-semibold underline underline-offset-2"
                           >
-                            <Crosshair size={12} />
+                            <RiFocus3Line size={12} />
                             {ubicando === direccion.id ? 'Buscando…' : 'Agregar ubicación'}
                           </span>
                         )}
@@ -430,7 +438,7 @@ export default function CartSheet({
                   aria-label={`Eliminar ${direccion.label}`}
                   className="-mr-1 shrink-0 rounded-full p-1.5 texto-tenue transition active:scale-90"
                 >
-                  <Trash2 size={16} />
+                  <RiDeleteBin6Line size={16} />
                 </button>
                 </div>
               ))}
@@ -484,7 +492,7 @@ export default function CartSheet({
                           pin ? 'border-verde text-verde' : 'borde-tema texto-cuerpo shadow-tarjeta'
                         }`}
                       >
-                        <Crosshair size={16} />
+                        <RiFocus3Line size={16} />
                         {ubicando === 'nueva'
                           ? 'Buscando tu ubicación…'
                           : pin
