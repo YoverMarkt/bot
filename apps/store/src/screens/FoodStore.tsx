@@ -1,8 +1,22 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bike, ChevronDown, ChevronLeft, Clock, Home, MapPin, Plus, Search, ShoppingBag,
-  ShoppingCart, User, X,
-} from 'lucide-react'
+  RiHome5Fill,
+  RiSearchFill,
+  RiShoppingCart2Fill,
+  RiUser3Fill,
+  RiAddLine,
+  RiArrowDownSLine,
+  RiArrowLeftSLine,
+  RiCloseLine,
+  RiEBikeLine,
+  RiHome5Line,
+  RiMapPin2Line,
+  RiSearchLine,
+  RiShoppingBag3Line,
+  RiShoppingCart2Line,
+  RiTimeLine,
+  RiUser3Line,
+} from '@remixicon/react'
 import {
   createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
 } from '../lib/api'
@@ -12,7 +26,7 @@ import {
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
-import { money, rangoDeEspera } from '../lib/format'
+import { hora12, money, rangoDeEspera } from '../lib/format'
 import { foto } from '../lib/imagen'
 import { randomId } from '../lib/session'
 import ProductSheet from '../components/ProductSheet'
@@ -22,6 +36,10 @@ import type { PedidoRecibido } from './OrderPlaced'
 import type { NuevaDireccion } from '../components/CartSheet'
 import type { Ubicacion } from '../lib/ubicacion'
 const Account = lazy(() => import('./Account'))
+// Diferida como `Account`: solo aparece en el PRIMER «Agregar» de quien no
+// tiene dirección guardada, así que no tiene por qué viajar en la primera
+// carga —que es la que se paga en clientes que cierran antes de que abra—.
+const DireccionRapida = lazy(() => import('../components/DireccionRapida'))
 import type {
   Business, CartLine, Catalog, Fulfillment, Me, PaymentMethod, Product, StoreStatus,
   TrackedOrder,
@@ -73,6 +91,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   /** Si el cliente tocó ese aviso y está en la pantalla de pago. */
   const [abrirPago, setAbrirPago] = useState(false)
   const [enCuenta, setEnCuenta] = useState(false)
+  /**
+   * La hoja que pide la dirección en el PRIMER «Agregar».
+   *
+   * ⚠️ Se ofrece UNA vez por visita (`yaPedimosDireccion`), no cada vez que se
+   * añade algo: repetirla en el segundo producto es acoso, no captación. Quien
+   * la cierre la vuelve a ver en el checkout, donde sí es obligatoria.
+   */
+  const [pidiendoDireccion, setPidiendoDireccion] = useState(false)
+  const yaPedimosDireccion = useRef(false)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
   const [portadaRota, setPortadaRota] = useState(false)
@@ -226,6 +253,33 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
       unitPrice: unitPrice(producto, null, [], []),
     }))
   }, [catalogo])
+
+  /**
+   * El momento de pedir la dirección: cuando el carrito deja de estar vacío.
+   *
+   * Se pide AQUÍ y no al entrar porque quien acaba de tocar «Agregar» ya
+   * decidió comprar —dar su dirección es parte de lo que vino a hacer—,
+   * mientras que al entrar sería un peaje antes de saber si le interesa. Ver
+   * el encabezado de `DireccionRapida.tsx`.
+   *
+   * Las cuatro condiciones importan:
+   *  · `lineas.length` — solo al pasar de vacío a con algo.
+   *  · `entrega === 'delivery'` — quien retira en el local no tiene a dónde
+   *    llevarle nada, y pedirle una dirección es pedir un dato que nadie usará.
+   *  · `me` cargado y sin direcciones — quien ya tiene una guardada no vuelve
+   *    a ver esto nunca.
+   *  · `yaPedimosDireccion` — una vez por visita, no en cada producto.
+   */
+  useEffect(() => {
+    if (!lineas.length || yaPedimosDireccion.current) return
+    if (entrega !== 'delivery') return
+    // `me` en nulo = todavía no respondió, o no hay sesión. En los dos casos
+    // se calla: preguntar sobre un estado que aún no se conoce enseñaría la
+    // hoja a quien ya tiene su dirección guardada.
+    if (!me || me.addresses?.length) return
+    yaPedimosDireccion.current = true
+    setPidiendoDireccion(true)
+  }, [lineas.length, entrega, me])
 
   const irACategoria = (id: string) => {
     saltando.current = true
@@ -489,7 +543,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               // geometría y además es el mismo trazo que el resto de la app.
               className="acento absolute right-2.5 bottom-2.5 z-10 flex size-11 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
             >
-              <Plus size={22} strokeWidth={3} />
+              <RiAddLine size={22} />
             </button>
           )}
         </div>
@@ -588,7 +642,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               aria-label="Volver"
               className="absolute left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] flex size-10 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition active:scale-95"
             >
-              <ChevronLeft size={20} />
+              <RiArrowLeftSLine size={20} />
             </button>
           )}
         </div>
@@ -660,8 +714,13 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             {horario && (
               <>
                 <span className="opacity-30">·</span>
+                {/* El horario COMPLETO, de apertura a cierre y en AM/PM, que es
+                    como se dice una hora aquí. Antes decía solo «cierra 03:00»:
+                    resolvía la pregunta del que ya está dentro, pero al que
+                    llega cerrado no le decía a qué hora abrir. Y en 24 h
+                    obligaba a traducir mentalmente. */}
                 <span className="font-semibold tabular-nums opacity-80">
-                  {abierto ? `cierra ${horario.close}` : `abre ${horario.open}`}
+                  {hora12(horario.open)} – {hora12(horario.close)}
                 </span>
               </>
             )}
@@ -687,8 +746,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           <div className="flex items-center gap-3 p-2.5">
             <div className="flex shrink-0 gap-1 rounded-full bg-black/5 p-1">
               {([
-                { id: 'delivery' as const, icono: Bike, etiqueta: 'Entrega a domicilio' },
-                { id: 'pickup' as const, icono: ShoppingBag, etiqueta: 'Retiro en el local' },
+                { id: 'delivery' as const, icono: RiEBikeLine, etiqueta: 'Entrega a domicilio' },
+                { id: 'pickup' as const, icono: RiShoppingBag3Line, etiqueta: 'Retiro en el local' },
               ]).map(({ id, icono: Icono, etiqueta }) => (
                 <button
                   key={id}
@@ -726,14 +785,14 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               onClick={() => setEnCuenta(true)}
               className="flex w-full items-center gap-2.5 border-t borde-tema px-4 py-3 text-left transition active:bg-black/5"
             >
-              <MapPin size={17} className="shrink-0 texto-cuerpo" />
+              <RiMapPin2Line size={17} className="shrink-0 texto-cuerpo" />
               <span className="min-w-0 flex-1">
                 <span className="caption block texto-tenue">Entregar en</span>
                 <span className="block truncate text-[14px] font-bold tracking-tight">
                   {direccionActiva || 'Elige tu dirección'}
                 </span>
               </span>
-              <ChevronDown size={18} className="shrink-0 texto-tenue" />
+              <RiArrowDownSLine size={18} className="shrink-0 texto-tenue" />
             </button>
           )}
         </div>
@@ -743,7 +802,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         <div className="px-4 pt-3">
           <Aviso tono="alerta">
             <span className="flex items-center gap-2">
-              <Clock size={15} />
+              <RiTimeLine size={15} />
               {status === 'cerrada'
                 ? 'Ahora está cerrado. Puedes ver la carta y volver cuando abra.'
                 : 'La tienda no está recibiendo pedidos en este momento.'}
@@ -769,7 +828,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
             className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left shadow-tarjeta transition active:scale-[0.99]"
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
-              <Clock size={18} />
+              <RiTimeLine size={18} />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[14px] font-bold">
@@ -779,7 +838,7 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
                 Tu pedido #{pagoPendiente.order_number} está guardado. Toca para pagarlo.
               </span>
             </span>
-            <ChevronLeft size={18} className="shrink-0 rotate-180 texto-tenue" />
+            <RiArrowLeftSLine size={18} className="shrink-0 rotate-180 texto-tenue" />
           </button>
         </div>
       )}
@@ -802,25 +861,53 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
           de abajo cambia bajo el dedo, y el campo que la está filtrando no
           puede haberse ido con el scroll. */}
       {buscando && (
-        <div className="superficie sticky top-0 z-40 px-4 py-3 shadow-tarjeta">
-          <div className="flex items-center gap-2.5 rounded-2xl bg-black/5 px-4 py-3">
-            <Search size={18} className="shrink-0 texto-tenue" />
-            <input
-              ref={buscador}
-              value={busqueda}
-              onChange={event => setBusqueda(event.target.value.slice(0, 60))}
-              placeholder={`Buscar en ${business.name}`}
-              aria-label="Buscar productos"
-              className="min-w-0 flex-1 bg-transparent text-[14.5px] outline-none placeholder:texto-tenue"
-            />
+        <div className="superficie sticky top-0 z-40 px-4 pt-3 pb-3 shadow-alzada">
+          <div className="flex items-center gap-2">
+            {/* La lupa dentro de una pastilla de acento: es el mismo lenguaje
+                que el selector de entrega y el `+` de las tarjetas — el acento
+                marca lo que está ACTIVO, y buscar lo está mientras esta barra
+                se ve. */}
+            <span className="acento flex size-11 shrink-0 items-center justify-center rounded-2xl shadow-acento">
+              <RiSearchLine size={20} />
+            </span>
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border-2 borde-tema px-4 py-2.5 focus-within:border-(--tinta)">
+              <input
+                ref={buscador}
+                value={busqueda}
+                onChange={event => setBusqueda(event.target.value.slice(0, 60))}
+                placeholder="¿Qué se te antoja?"
+                aria-label="Buscar productos"
+                className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none placeholder:font-medium placeholder:texto-tenue"
+              />
+              {busqueda && (
+                <button
+                  onClick={() => { setBusqueda(''); buscador.current?.focus() }}
+                  aria-label="Borrar lo escrito"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full bg-black/10 transition active:scale-90"
+                >
+                  <RiCloseLine size={14} />
+                </button>
+              )}
+            </div>
+            {/* Cerrar es una palabra, no una X más: con dos X seguidas —una
+                para borrar y otra para salir— nadie sabe cuál hace qué. */}
             <button
               onClick={() => { setBusqueda(''); setBuscando(false) }}
-              aria-label="Cerrar búsqueda"
-              className="-mr-1 flex size-8 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90"
+              className="shrink-0 px-1 text-[14px] font-bold texto-cuerpo transition active:scale-95"
             >
-              <X size={18} />
+              Cerrar
             </button>
           </div>
+
+          {/* Cuánto se encontró, dentro de la misma barra: el contador estaba
+              suelto sobre la lista y se iba con el primer scroll. */}
+          {busqueda.trim() && (
+            <p className="caption mt-2.5 px-1 texto-tenue">
+              {resultados?.length
+                ? `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'} para «${busqueda.trim()}»`
+                : `Nada con «${busqueda.trim()}»`}
+            </p>
+          )}
         </div>
       )}
 
@@ -852,14 +939,12 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
         </nav>
       )}
 
-      {/* ── Resultados de búsqueda ── */}
+      {/* ── Resultados de búsqueda ──────────────────────────────────────
+          Sin título propio: el recuento vive ahora DENTRO de la barra de
+          búsqueda, que va pegajosa arriba. Repetirlo aquí decía dos veces lo
+          mismo, y esta copia además se iba con el primer scroll. */}
       {resultados && (
-        <section className="px-4 pt-5">
-          <h2 className="mb-3 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            {resultados.length
-              ? `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'}`
-              : 'Sin resultados'}
-          </h2>
+        <section className="px-4 pt-4">
           {resultados.length
             ? <div className="grid grid-cols-2 gap-3">{resultados.map(tarjeta)}</div>
             : (
@@ -926,18 +1011,28 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               </span>
               <span className="flex items-center gap-2 text-[19px] font-extrabold tracking-tight tabular-nums">
                 {money(total)}
-                <ShoppingCart size={18} />
+                <RiShoppingCart2Line size={18} />
               </span>
             </button>
           </div>
         )}
 
+        {/* ⚠️ La barra activa RELLENA el icono, y esto es lo que separa una
+            app de una plantilla. Con todo en línea, las cuatro pestañas pesan
+            igual y ninguna dice dónde estás; el relleno lo dice sin leer, que
+            es como funcionan las barras de las apps grandes.
+
+            Se pasó de lucide a Remix el 2026-08-27 precisamente por esto:
+            lucide es SOLO línea —no tiene rellenos—, así que este estado no
+            se podía dibujar. Y de paso deja de ser el set por defecto de las
+            herramientas de IA, que era la queja del dueño. */}
         <nav className="superficie border-t borde-tema">
           <div className="mx-auto flex max-w-lg items-stretch px-2 pt-1.5 pb-seguro">
             {([
               {
                 id: 'inicio',
-                icono: Home,
+                icono: RiHome5Line,
+                iconoActivo: RiHome5Fill,
                 texto: 'Inicio',
                 accion: () => {
                   setBusqueda('')
@@ -950,7 +1045,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               // scroll hasta un campo que siempre estaba a la vista.
               {
                 id: 'buscar',
-                icono: Search,
+                icono: RiSearchLine,
+                iconoActivo: RiSearchFill,
                 texto: 'Buscar',
                 accion: () => {
                   setBuscando(true)
@@ -968,7 +1064,8 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               // está vacío», que es una respuesta; el silencio no lo es.
               {
                 id: 'carrito',
-                icono: ShoppingCart,
+                icono: RiShoppingCart2Line,
+                iconoActivo: RiShoppingCart2Fill,
                 texto: 'Carrito',
                 accion: () => setCarritoAbierto(true),
                 contador: unidades,
@@ -978,18 +1075,30 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
               // cinco veces no tiene «un pedido», tiene un historial.
               {
                 id: 'cuenta',
-                icono: User,
+                icono: RiUser3Line,
+                iconoActivo: RiUser3Fill,
                 texto: 'Cuenta',
                 accion: () => setEnCuenta(true),
               },
-            ]).map(({ id, icono: Icono, texto, accion, contador }) => (
+            ]).map(({ id, icono: Linea, iconoActivo: Relleno, texto, accion, contador }) => {
+              // Cuál está activa. `inicio` lo está mientras no haya nada
+              // abierto encima: es la pantalla en la que se está de verdad.
+              const activa = id === 'buscar' ? buscando
+                : id === 'carrito' ? carritoAbierto
+                  : id === 'inicio' ? !buscando && !carritoAbierto
+                    : false
+              const Icono = activa ? Relleno : Linea
+              return (
               <button
                 key={id}
                 onClick={accion}
-                className="relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold transition active:scale-95"
+                aria-current={activa ? 'page' : undefined}
+                className={`relative flex flex-1 flex-col items-center gap-1 py-1.5 text-[10.5px] font-bold transition active:scale-95 ${
+                  activa ? '' : 'texto-tenue'
+                }`}
               >
                 <span className="relative">
-                  <Icono size={21} />
+                  <Icono size={22} />
                   {Boolean(contador) && (
                     <span className="acento absolute -top-1.5 -right-2.5 flex min-w-4.5 items-center justify-center rounded-full px-1 text-[10px] leading-4.5 font-extrabold tabular-nums">
                       {contador}
@@ -998,10 +1107,24 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
                 </span>
                 {texto}
               </button>
-            ))}
+              )
+            })}
           </div>
         </nav>
       </div>
+
+      {/* Sin `fallback`: mientras baja, lo correcto es que no se vea nada.
+          Un esqueleto de hoja apareciendo y desapareciendo sobre la carta
+          molesta más que el cuarto de segundo que tarda. */}
+      {pidiendoDireccion && (
+        <Suspense fallback={null}>
+          <DireccionRapida
+            abierta
+            onCerrar={() => setPidiendoDireccion(false)}
+            onGuardar={nuevaDireccion}
+          />
+        </Suspense>
+      )}
 
       <ProductSheet
         product={elegido}

@@ -1,4 +1,7 @@
-import { MessageCircle, Smartphone } from 'lucide-react'
+import {
+  RiSmartphoneLine,
+  RiWhatsappLine,
+} from '@remixicon/react'
 import { Boton } from '../components/ui'
 import type { Business } from '../lib/types'
 
@@ -24,7 +27,7 @@ export default function DesktopGate({ business }: { business: Business | null })
           puertas (`Gate.tsx` y `Confirmar.tsx`): el color del negocio como
           LETRA no llega a AA. Las tres se pintan igual a propósito. */}
       <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <Smartphone size={24} />
+        <RiSmartphoneLine size={24} />
       </div>
 
       {business?.name && (
@@ -48,7 +51,7 @@ export default function DesktopGate({ business }: { business: Business | null })
           <a href={whatsapp} className="block">
             <Boton variante="linea">
               <span className="flex items-center justify-center gap-2">
-                <MessageCircle size={18} />
+                <RiWhatsappLine size={18} />
                 Escribir al negocio
               </span>
             </Boton>

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Copy, Landmark } from 'lucide-react'
+import {
+  RiBankLine,
+  RiFileCopyLine,
+} from '@remixicon/react'
 import { getPaymentInfo } from '../lib/api'
 import type { BankAccount } from '../lib/types'
 
@@ -63,7 +66,7 @@ export default function PagoPendiente({ slug }: { slug: string }) {
   return (
     <section className="w-full text-left">
       <h2 className="titulo-l mb-2.5 flex items-center gap-2 px-1">
-        <Landmark size={18} className="texto-tenue" />
+        <RiBankLine size={18} className="texto-tenue" />
         Para transferir
       </h2>
 
@@ -89,7 +92,7 @@ export default function PagoPendiente({ slug }: { slug: string }) {
                     copiado === String(valor) ? 'acento shadow-acento' : 'texto-tenue'
                   }`}
                   >
-                    <Copy size={15} />
+                    <RiFileCopyLine size={15} />
                   </span>
                 </button>
               )}

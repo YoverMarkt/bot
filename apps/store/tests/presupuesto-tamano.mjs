@@ -57,7 +57,32 @@ const DIST = path.join(RAIZ, 'dist')
 // a propósito —bajarlo a ras del número de hoy convierte cualquier pantalla
 // nueva en una alarma, y este guardián está para cazar dependencias, no
 // features—, pero el margen real vuelve a ser cómodo.
-const PRESUPUESTO_KB = 88
+// Medido el 2026-08-27: 90,4 kB. SUBE de 88 a 92 por una decisión del dueño,
+// no por descuido — que es el único motivo por el que este número se puede
+// mover, y por eso queda escrito aquí quién lo decidió y qué se compró.
+//
+// Se cambió el set de iconos de **lucide** a **Remix Icon**. El dueño lo pidió
+// así: «los iconos se ven muy hechos por IA». Tenía razón por una razón
+// concreta —lucide es el set por defecto de shadcn y de casi toda interfaz
+// generada por IA, así que se reconoce— y por otra que importa más: **lucide
+// es solo LÍNEA**. Sin variantes rellenas no se puede dibujar el estado activo
+// de la barra inferior, que es lo que hace que una barra se lea como una app y
+// no como una plantilla. Remix trae `Line` y `Fill` del mismo icono.
+//
+// El coste REAL, medido con la app entera migrada: **86,6 → 90,4 kB**, o sea
+// +3,8 kB por 26 iconos, cuatro de ellos en sus dos versiones. Los iconos de
+// Remix son trazados rellenos y llevan más datos de ruta que el trazo simple
+// de lucide; ese es todo el sobrecoste.
+//
+// ⚠️ Se midió antes **Phosphor**, que era el candidato obvio por su acabado:
+// **+13,2 kB**, porque cada icono suyo empaqueta SEIS variantes de peso —thin,
+// light, regular, bold, fill, duotone— y se descargan todas aunque se use una.
+// Su entrada `/dist/ssr` no cambió nada. Se descartó por eso, no por gusto.
+//
+// El margen queda en ~1,6 kB, igual de estrecho que antes y muy por debajo de
+// los ~10 kB de react-router: este guardián NO ha perdido nada de su capacidad
+// de cazar una dependencia que entre sin que nadie la decida.
+const PRESUPUESTO_KB = 92
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
