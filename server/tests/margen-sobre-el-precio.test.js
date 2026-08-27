@@ -276,3 +276,45 @@ describe('el mínimo de compra con margen', () => {
     expect(publicBusiness(NEGOCIO, REGLA(10)).deliveryFee).toBe(2)
   })
 })
+
+// ── EL NÚMERO POR EL QUE SE MANDA EL COMPROBANTE ──────────────────────────
+//
+// Desde que todos los locales viven en el marketplace, `whatsapp_number` y
+// `phone` son NULL para todos los negocios, siempre. Sin este respaldo la app
+// recibía `phone: null` y se apagaban cuatro salidas, entre ellas la única vía
+// para mandar el comprobante. No es cosmético: impide pagar.
+describe('el teléfono público cae al número del marketplace', () => {
+  const LOCAL = { id: 'b1', name: 'Monster Pizza', slug: 'monster-pizza' }
+  const PLATAFORMA = '+593991716574'
+
+  it('sin número propio, sale el de la plataforma', () => {
+    expect(publicBusiness(LOCAL, null, PLATAFORMA).phone).toBe(PLATAFORMA)
+  })
+
+  // ⚠️ El del LOCAL gana siempre. Un negocio con canal propio recibe a sus
+  // clientes en su número; mandarlos al del marketplace le quitaría la
+  // conversación y rompería `resolveBusinessChannel`, que enruta por ahí.
+  it('con número propio, el del local manda sobre el de la plataforma', () => {
+    expect(publicBusiness({ ...LOCAL, whatsapp_number: '+593900111222' }, null, PLATAFORMA).phone)
+      .toBe('+593900111222')
+    expect(publicBusiness({ ...LOCAL, phone: '+593900333444' }, null, PLATAFORMA).phone)
+      .toBe('+593900333444')
+  })
+
+  // Sin plataforma configurada se vuelve al estado anterior: null, y la app
+  // esconde los botones. Peor que tenerlos, pero mejor que mandar a nadie.
+  it('sin plataforma configurada devuelve null, no una cadena vacía', () => {
+    expect(publicBusiness(LOCAL, null, null).phone).toBeNull()
+    expect(publicBusiness(LOCAL).phone).toBeNull()
+  })
+
+  // ⚠️ Que salga el MISMO número para dos locales es correcto: por ahí
+  // escriben los clientes de todos. El pedido NO se desambigua por el número
+  // —sale del pedido—, así que esto no puede mezclar el dinero de dos locales.
+  it('dos locales distintos pueden compartir el número del marketplace', () => {
+    const a = publicBusiness({ ...LOCAL, id: 'b1' }, null, PLATAFORMA)
+    const b = publicBusiness({ ...LOCAL, id: 'b2', slug: 'cevicheria' }, null, PLATAFORMA)
+    expect(a.phone).toBe(b.phone)
+    expect(a.id).not.toBe(b.id)
+  })
+})
