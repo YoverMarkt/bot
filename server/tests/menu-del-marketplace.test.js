@@ -418,3 +418,33 @@ describe('intentar empezar otra cosa con un pedido abierto', () => {
     expect(fuente).toMatch(/vista\.vista === 'confirmando_reinicio'[\s\S]{0,400}soltarLocal: true/)
   })
 })
+
+// ── Quien DEBE un comprobante lee otra cosa (2026-08-30) ──────────────────
+//
+// Desde que el candado dura hasta que la foto llega, este es el mensaje que
+// más se va a leer del marketplace. `recordarPedidoEnProceso` dice
+// «Termínalo», y a quien ya hizo su pedido y solo debe la captura eso lo manda
+// a buscar un menú que ya completó.
+describe('el recordatorio del comprobante', () => {
+  it('dice qué falta y cómo salir, sin decir «termínalo»', async () => {
+    const { recordarComprobantePendiente } = await import('../dist/services/marketplace-menu.js')
+    const r = recordarComprobantePendiente({ name: 'Monster Pizza' })
+    expect(r.reply).toContain('Monster Pizza')
+    expect(r.reply.toLowerCase()).toContain('comprobante')
+    // La salida tiene que estar NOMBRADA: sin ella, quien quiera pedir en otro
+    // local se queda encerrado sin saber que hay puerta.
+    expect(r.reply.toLowerCase()).toContain('empezar de nuevo')
+    expect(r.reply.toLowerCase()).not.toContain('termínalo')
+  })
+
+  // ⚠️ Las opciones tienen que ser las MISMAS que el otro recordatorio:
+  // `resolverReinicio` las interpreta por su texto, así que un botón distinto
+  // sería un botón que nadie sabe leer.
+  it('ofrece exactamente las mismas dos opciones que el otro recordatorio', async () => {
+    const menu = await import('../dist/services/marketplace-menu.js')
+    const conComprobante = menu.recordarComprobantePendiente({ name: 'X' })
+    const enProceso = menu.recordarPedidoEnProceso({ name: 'X' })
+    expect(conComprobante.options).toEqual(enProceso.options)
+    expect(conComprobante.vista).toEqual(enProceso.vista)
+  })
+})

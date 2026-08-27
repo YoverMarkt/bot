@@ -464,6 +464,33 @@ export function recordarPedidoEnProceso(
   }
 }
 
+/**
+ * Lo que ve quien escribe DEBIENDO un comprobante.
+ *
+ * ⚠️ `recordarPedidoEnProceso` dice «Termínalo», y a quien debe una foto eso
+ * no le dice nada: su pedido ya está hecho, lo que falta es la captura. Desde
+ * el 2026-08-30 el candado dura hasta que el comprobante llega, así que este
+ * mensaje es el que más va a leerse — y tiene que decir las DOS cosas: qué
+ * falta, y cómo salir si prefiere pedir en otro sitio.
+ *
+ * ⚠️ Las opciones son LAS MISMAS que el otro recordatorio, y a propósito:
+ * `resolverReinicio` las interpreta por su texto, así que cambiarlas aquí
+ * dejaría al cliente tocando un botón que nadie sabe leer. Lo que cambia es
+ * lo que significan: «Seguir mi pedido» es «me quedo con él y mando la foto».
+ */
+export function recordarComprobantePendiente(
+  negocio: { name: string },
+): MarketplaceReply {
+  return {
+    reply: `Tienes un pedido en *${negocio.name}* esperando tu comprobante.\n\n`
+      + 'Mándanos aquí la foto de tu transferencia y el local empieza a '
+      + 'prepararlo 📸\n\n'
+      + 'Si prefieres dejarlo y pedir en otro local, elige *empezar de nuevo*.',
+    options: [SI_REINICIAR, NO_CONTINUAR],
+    vista: { vista: 'confirmando_reinicio', pagina: 0 },
+  }
+}
+
 /** La respuesta a la confirmación de reinicio. */
 export function resolverReinicio(
   mensaje: string,

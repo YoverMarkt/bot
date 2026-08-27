@@ -3558,3 +3558,116 @@ end;
 $$;
 
 select '✅ el margen se suma al precio: el comercio cobra entero, el envío queda fuera y lo sellado no cambia' as resultado;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL CANDADO DURA HASTA PAGAR, Y EL TOPE ES DE LA PERSONA (2026-08-30)
+--
+-- Nace del escenario que el dueño describió: pedir en un local, no pagar,
+-- escribir MENÚ, y repetir en el siguiente. Se colaba por dos sitios a la vez
+-- —el tope contaba por local, y el candado se soltaba al CREAR el pedido—, así
+-- que aquí se comprueban los dos y, sobre todo, que el freno NO se pase de
+-- listo: quien paga tiene que quedar libre.
+-- ═══════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  v_a uuid; v_b uuid; v_c uuid; v_d uuid;
+  v_cliente uuid;
+  v_pedido uuid;
+  v_bloqueado boolean;
+  v_local uuid;
+  v_falló boolean;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verif-candado-a', 'Pizzeria', 'pizzería', 'marketplace', true, true) returning id into v_a;
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verif-candado-b', 'Cevicheria', 'pizzería', 'marketplace', true, true) returning id into v_b;
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verif-candado-c', 'Asadero', 'pizzería', 'marketplace', true, true) returning id into v_c;
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verif-candado-d', 'Heladeria', 'pizzería', 'marketplace', true, true) returning id into v_d;
+
+  insert into public.customers (phone) values ('593900000900') returning id into v_cliente;
+
+  -- ── 1. EL SALTO ENTRE LOCALES ────────────────────────────────────────────
+  -- Uno en cada local: con el tope viejo —que contaba `business_id`— los tres
+  -- pasaban y el cuarto también, porque en ninguno llegaba a tres.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_a, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_b, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_c, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
+
+  -- El CUARTO local tiene que rebotar aunque en él no haya ni uno.
+  v_falló := false;
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+    values (v_d, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
+  exception when insufficient_privilege then
+    v_falló := true;
+  end;
+  if not v_falló then
+    raise exception 'el salto entre locales se coló: el 4.º pedido entró con tres sin pagar en Umbani';
+  end if;
+
+  -- ── 2. EL DE MOSTRADOR NO CUENTA ─────────────────────────────────────────
+  -- Lo teclea el dueño con la persona delante.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_d, v_cliente, '593900000900', 'manual', 'pendiente', 5, 5);
+
+  -- ── 3. PAGAR SUELTA EL CANDADO ───────────────────────────────────────────
+  insert into public.marketplace_conversations
+    (customer_id, current_state, selected_business_id, shopping_locked)
+  values (v_cliente, 'comprando', v_a, true);
+
+  -- Resolver UNO no basta: le quedan dos comprobantes pendientes.
+  update public.orders set status = 'preparacion'
+   where business_id = v_a and customer_id = v_cliente and status = 'esperando_pago';
+  select shopping_locked into v_bloqueado
+    from public.marketplace_conversations where customer_id = v_cliente;
+  if not v_bloqueado then
+    raise exception 'el candado se soltó con dos comprobantes todavía pendientes';
+  end if;
+
+  -- Resolver los dos que quedan sí lo suelta: ya no debe nada.
+  update public.orders set status = 'preparacion'
+   where customer_id = v_cliente and status = 'esperando_pago';
+  select shopping_locked, selected_business_id into v_bloqueado, v_local
+    from public.marketplace_conversations where customer_id = v_cliente;
+  if v_bloqueado then
+    raise exception 'el candado NO se soltó tras resolver todos los pedidos';
+  end if;
+  -- Soltar el candado suelta el local: el CHECK prohíbe estar bloqueado en
+  -- ninguna parte, y dejarlo elegido metería el siguiente mensaje en un local
+  -- que la persona ya terminó.
+  if v_local is not null then
+    raise exception 'el candado se soltó pero el local siguió elegido';
+  end if;
+
+  -- ── 4. Y VUELVE A PODER PEDIR ────────────────────────────────────────────
+  -- El freno estorba mientras se debe, no después. Si esto fallara, pagar
+  -- dejaría a la persona igual de bloqueada que no pagar.
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_d, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5)
+  returning id into v_pedido;
+
+  -- ── 5. MANDAR EL COMPROBANTE SUELTA EL CANDADO ───────────────────────────
+  -- `esperando_pago` → `pago_en_revision`: ya hizo su parte y espera al DUEÑO.
+  -- Retenerlo aquí sería impedirle pedir en otro local porque el local va
+  -- lento. El TOPE sí lo sigue contando: son dos preguntas distintas.
+  update public.marketplace_conversations
+     set shopping_locked = true, selected_business_id = v_d where customer_id = v_cliente;
+  update public.orders set status = 'pago_en_revision' where id = v_pedido;
+  select shopping_locked into v_bloqueado
+    from public.marketplace_conversations where customer_id = v_cliente;
+  if v_bloqueado then
+    raise exception 'mandar el comprobante NO soltó el candado';
+  end if;
+
+  delete from public.businesses where id in (v_a, v_b, v_c, v_d);
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ el candado dura hasta pagar y el tope cuenta en toda la plataforma, no por local' as resultado;

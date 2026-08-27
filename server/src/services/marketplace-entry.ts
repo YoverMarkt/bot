@@ -1,6 +1,7 @@
 import {
   esComandoMenu,
   paso,
+  recordarComprobantePendiente,
   recordarPedidoEnProceso,
   responderAlMenu,
   verCategorias,
@@ -444,7 +445,13 @@ export async function handleMarketplaceMessage(
 
   // ── 5. Un pedido a la vez ──────────────────────────────────────────
   if (estado.bloqueado && negocioActual) {
-    const respuesta = recordarPedidoEnProceso({ name: negocioActual.name })
+    // ⚠️ Dos textos, porque son dos situaciones. Quien está a medio armar su
+    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
+    // tiene que mandar una FOTO. Decirle «termínalo» al segundo lo deja
+    // buscando un menú que ya completó.
+    const respuesta = conversation?.current_state === 'esperando_comprobante'
+      ? recordarComprobantePendiente({ name: negocioActual.name })
+      : recordarPedidoEnProceso({ name: negocioActual.name })
     // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
     // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
     // «✅ Empezar de nuevo», y ese texto normalizado es uno de los
@@ -1046,20 +1053,42 @@ async function avanzarCheckout(input: {
     return
   }
 
-  // El pedido existe: la conversación suelta el carrito. Si el método pide
-  // comprobante, el pedido nació esperando pago y el buzón que ya existe
-  // adjunta la foto solo — por eso aquí no hay un paso más.
-  // El pedido existe: se suelta el local y el bloqueo. `clearBusiness` ya
-  // apaga `shopping_locked` en la base —sin negocio no significa nada—, pero
-  // se nombra igual para que la intención quede escrita aquí.
+  // ── El carrito se suelta; el CANDADO, solo si ya no debe nada ───────────
+  //
+  // ⚠️ Hasta el 2026-08-30 esto soltaba el bloqueo SIEMPRE, con un
+  // `clearBusiness: true` que además apaga `shopping_locked` en la base. O sea
+  // que crear el pedido dejaba vía libre para empezar otro en otro local sin
+  // haber mandado el comprobante — y sin escribir MENÚ siquiera. Combinado con
+  // un tope que contaba por local, el salto entre locales salía gratis:
+  // «pido aquí, no pago, pido allá».
+  //
+  // Ahora se distingue por el estado en que NACIÓ el pedido:
+  //
+  //   · `esperando_pago` (transferencia) — el cliente debe el comprobante. Se
+  //     suelta el carrito y la vista, pero el LOCAL y el candado se quedan.
+  //     Los suelta `orders_release_shopping_lock` cuando el pedido salga de
+  //     ese estado, y MENÚ sigue siendo la salida de siempre.
+  //   · Cualquier otro (efectivo, pago al retirar) — no debe nada: se suelta
+  //     todo como antes.
+  //
+  // ⚠️ El candado se suelta en la BASE, no aquí, y es deliberado: el pedido se
+  // resuelve por caminos que no pasan por este archivo —el botón del dueño, el
+  // barrido que caduca los impagados, y mañana los motorizados—. Un disparador
+  // los cubre todos; una línea de TypeScript solo cubre este.
+  // ⚠️ Se pregunta por el MÉTODO, no por `requires_proof`, porque es lo que
+  // mira la base: `create_storefront_order` hace
+  // `case when p_payment_method = 'transferencia' then 'esperando_pago' else
+  // 'pendiente' end`. Usar el otro campo daría dos reglas para lo mismo, y el
+  // día que se separen el candado quedaría puesto sobre pedidos que no deben
+  // nada — o suelto sobre los que sí.
+  const debeComprobante = elegido.code === 'transferencia'
   await database.advanceConversation(
     customer.id,
-    {
-      state: 'navegando',
-      clearFlow: true,
-      clearBusiness: true,
-      shoppingLocked: false,
-    },
+    debeComprobante
+      // Sin `clearBusiness`: apagaría el candado de paso, que es justo lo que
+      // aquí no se quiere. El local elegido se queda con él.
+      ? { state: 'esperando_comprobante', clearFlow: true }
+      : { state: 'navegando', clearFlow: true, clearBusiness: true, shoppingLocked: false },
     conversacion.version,
   )
 
