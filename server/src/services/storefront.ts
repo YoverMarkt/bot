@@ -542,8 +542,18 @@ export function buildStorefrontCatalog(input: {
   }
 }
 
-/** Lo que la app necesita saber del negocio. Nunca credenciales. */
-export function publicBusiness(business: StorefrontBusiness, pricing?: MarkupRule | null) {
+/**
+ * Lo que la app necesita saber del negocio. Nunca credenciales.
+ *
+ * `platformPhone` es el número del marketplace, y llega por parámetro en vez
+ * de leerse aquí porque esta función es SÍNCRONA y pura: se prueba sin base y
+ * sin ajustes. Quien la llama ya está en una ruta `async`.
+ */
+export function publicBusiness(
+  business: StorefrontBusiness,
+  pricing?: MarkupRule | null,
+  platformPhone?: string | null,
+) {
   return {
     id: business.id,
     name: business.name || '',
@@ -552,7 +562,35 @@ export function publicBusiness(business: StorefrontBusiness, pricing?: MarkupRul
     slogan: business.slogan || null,
     description: business.description || null,
     address: business.address || null,
-    phone: business.whatsapp_number || business.phone || null,
+    /**
+     * El WhatsApp al que el cliente escribe para ESTE local.
+     *
+     * ⚠️ El orden importa y el último eslabón es nuevo (2026-08-27). Desde que
+     * «todos los locales viven en el marketplace» (2026-08-23), el panel dejó
+     * de pedir el número propio y un disparador impide que un local se quede
+     * el de la plataforma — así que las dos primeras columnas son **null para
+     * todos los negocios, siempre**. El resultado: la app recibía
+     * `phone: null` y CUATRO salidas desaparecían calladas:
+     *
+     *   · «Volver a WhatsApp» del pedido recibido, que es por donde se manda
+     *     el comprobante — la única vía desde el 2026-08-12.
+     *   · «Llamar al local» de un pedido cancelado.
+     *   · «Pedir mi enlace por WhatsApp» de `Gate`, que deja sin salida a
+     *     quien recibió un enlace reenviado y nunca habló con el marketplace.
+     *   · «No es mi enlace, quiero el mío» de `Confirmar`.
+     *
+     * El resto del camino ya estaba construido: hay un buzón entero
+     * (`payment-proof-inbox`) dedicado a cazar el comprobante que llega al
+     * número del marketplace. La puerta existía; la app no sabía decir dónde
+     * estaba. Es la misma clase de fallo que este proyecto lleva cinco veces
+     * pagando — código correcto al que la configuración real no llega.
+     *
+     * ⚠️ Es el número de la PLATAFORMA, no el del dueño: por ahí escriben los
+     * clientes de todos los locales. Que aquí salga el mismo para varios
+     * negocios es correcto, y el pedido no se desambigua por el número — sale
+     * del PEDIDO. Ver `pedidosEsperandoComprobante`.
+     */
+    phone: business.whatsapp_number || business.phone || platformPhone || null,
     // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
     // `type`, que es exactamente lo que el proyecto decidió no hacer.
     capabilities: storefrontCapabilities(business),

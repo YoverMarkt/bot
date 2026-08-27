@@ -7,6 +7,8 @@ import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadPrivateMedia } from '../integrations/cloudinary'
 import { readStorefrontSession, requireStorefrontSession } from '../middleware/storefront'
+import { getPlatformPhone } from '../services/platform-channel'
+import { pedirComprobantePorChat } from '../services/payment-request-notice'
 import { checkSession, deviceFingerprint, hashToken, phoneMatchesSession } from '../services/storefront-session'
 import {
   buildStorefrontCatalog,
@@ -193,7 +195,11 @@ router.get('/api/store/:slug', async (req, res) => {
   }
   return res.json({
     business: {
-      ...publicBusiness(business),
+      // ⚠️ `catch(() => null)`: sin el número del marketplace la tienda abre
+      // igual, solo que sin los botones de WhatsApp. Que un fallo leyendo
+      // `server_settings` tumbe la PORTADA sería cambiar cuatro botones por
+      // una tienda que no carga.
+      ...publicBusiness(business, null, await getPlatformPhone().catch(() => null)),
       // Los métodos que ESE local acepta. La app los pinta; ya no los lleva
       // escritos a mano. Si la consulta falla se manda una lista vacía en vez
       // de romper la portada: el cliente puede mirar la carta igual, y el
@@ -314,7 +320,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
   return res.json({
     business: business
       ? {
-        ...publicBusiness(business, pricing),
+        ...publicBusiness(business, pricing, await getPlatformPhone().catch(() => null)),
         paymentMethods: await db.getStorefrontPaymentMethods(business.id).catch(() => []),
       }
       : null,
@@ -605,6 +611,25 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
   if (contactName && contactName.trim().length >= 2) {
     void db.setCustomerDisplayName(businessId, customerId, contactName.trim())
       .catch(() => { /* el pedido ya está: recordar el nombre no puede fallarlo */ })
+  }
+
+  // ── El aviso que cierra el ciclo mini app → WhatsApp ─────────────────────
+  //
+  // Quien pide por la mini app está en un NAVEGADOR: a su WhatsApp no le llega
+  // nada, y el comprobante tiene una sola vía desde el 2026-08-12, que es el
+  // chat. Sin este mensaje cierra la pestaña para ir al banco y vuelve sin
+  // ninguna conversación a la que responder con la foto.
+  //
+  // ⚠️ Solo si el pedido nació ESPERANDO PAGO. Un pedido en efectivo no debe
+  // recibir una petición de transferencia; lo comprueba también el propio
+  // aviso, pero preguntarlo aquí evita una consulta para casi todos.
+  //
+  // ⚠️ Sin `await`, igual que el nombre: el pedido YA está creado y el cliente
+  // tiene que ver su confirmación ahora. Esperar a un proveedor externo antes
+  // de responder cambiaría su tiempo por el de un mensaje — y si el canal
+  // estuviera lento, le diría que su pedido falló cuando no falló.
+  if (String((result.data as { status?: unknown } | null)?.status || '') === 'esperando_pago') {
+    void pedirComprobantePorChat(businessId, String((result.data as { id?: unknown }).id || ''))
   }
 
   return res.status(201).json(result.data)

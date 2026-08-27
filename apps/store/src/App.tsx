@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { RiCloseLine } from '@remixicon/react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
@@ -19,7 +20,17 @@ type Estado =
   | { fase: 'no_disponible' }
   | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
-  | { fase: 'lista'; business: Business; status: StoreStatus }
+  | {
+    fase: 'lista'
+    business: Business
+    status: StoreStatus
+    /**
+     * El enlace dejó de valer con la tienda ya abierta. Se pinta ENCIMA para
+     * no llevarse el carrito; sin esto la fase pasaba a 'bloqueada' y
+     * `FoodStore` se desmontaba entero.
+     */
+    bloqueo?: { business: Business | null; motivo: string | null }
+  }
 
 export default function App() {
   const slug = readSlug()
@@ -85,7 +96,26 @@ export default function App() {
       setConfirmando({ business })
       return true
     }
-    setEstado({ fase: 'bloqueada', business, motivo })
+    // ⚠️ ENCIMA de la tienda, no en lugar de ella (2026-08-27).
+    //
+    // `fase: 'bloqueada'` desmonta `FoodStore`, y con él se va el CARRITO. El
+    // momento en que esto salta es el peor posible: la tienda es pública, así
+    // que quien llega sin enlace mira la carta, elige, escribe su dirección…
+    // y el 401 aparece justo ahí. Perdía todo lo que llevaba y aterrizaba en
+    // una pantalla sin vuelta.
+    //
+    // Es exactamente el fallo que ya se corrigió con la confirmación del
+    // teléfono —«va ENCIMA de la tienda, no en lugar de ella»—, y volvía a
+    // estar aquí por el otro camino.
+    //
+    // ⚠️ Se pinta encima SOLO si la tienda ya está montada. Si el 401 llega
+    // durante la carga inicial no hay nada que conservar, y sustituir es lo
+    // correcto: una tienda a medias detrás de un aviso sería peor.
+    setEstado(actual => (
+      actual.fase === 'lista'
+        ? { ...actual, bloqueo: { business, motivo } }
+        : { fase: 'bloqueada', business, motivo }
+    ))
     return true
   }, [slug])
 
@@ -111,6 +141,36 @@ export default function App() {
   }
 
   const { business, status } = estado
+
+  /**
+   * El enlace dejó de valer con la tienda ya abierta.
+   *
+   * ⚠️ Lleva CERRAR, y no es un adorno: sin salida, esto sería la pantalla
+   * 'bloqueada' de siempre con otro nombre — el cliente se quedaría mirando un
+   * aviso con su carrito intacto detrás y sin forma de volver a él. Cerrando
+   * puede seguir viendo la carta, que es pública, y pedir su enlace cuando
+   * quiera. Lo que no podrá es cerrar el pedido, y eso se lo dirá el servidor
+   * otra vez.
+   */
+  const puertaDelEnlace = estado.bloqueo && (
+    <div className="fixed inset-0 z-[60] overflow-y-auto superficie">
+      <button
+        onClick={() => setEstado(actual => (
+          actual.fase === 'lista' ? { ...actual, bloqueo: undefined } : actual
+        ))}
+        // Etiqueta PROPIA, no un «Cerrar» más: la hoja del carrito que queda
+        // debajo tiene la suya, y dos controles con el mismo nombre accesible
+        // en la misma pantalla no se distinguen — ni con lector, ni al
+        // probarlo. Además dice a dónde vuelve, que es lo que tranquiliza a
+        // quien acaba de ver un aviso con su carrito detrás.
+        aria-label="Cerrar y volver a la carta"
+        className="absolute top-[calc(env(safe-area-inset-top)+1rem)] right-4 z-10 flex size-10 items-center justify-center rounded-full bg-black/5 transition active:scale-90"
+      >
+        <RiCloseLine size={20} />
+      </button>
+      <Gate business={estado.bloqueo.business || business} motivo={estado.bloqueo.motivo} />
+    </div>
+  )
 
   // ⚠️ La confirmación va ENCIMA, no en lugar de. Sustituyendo la tienda se
   // perdía el carrito entero: el cliente lo llenaba, tocaba confirmar,
@@ -142,6 +202,7 @@ export default function App() {
         onFalloEnlace={alFallarEnlace}
       />
       {puertaDelTelefono}
+      {puertaDelEnlace}
     </>
   )
 }

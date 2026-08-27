@@ -60,6 +60,24 @@ export const getPlatformChannel = async (): Promise<PlatformChannel | null> => {
 }
 
 /**
+ * El número público del marketplace, y NADA MÁS.
+ *
+ * Existe para que las credenciales no se acerquen a una ruta pública.
+ * `getPlatformChannel` devuelve también la API Key de YCloud y el signing
+ * secret; pasar ese objeto a algo que termina en un `res.json()` es cómo se
+ * filtra una credencial sin que nadie lo note en la revisión. Aquí solo sale
+ * el teléfono.
+ *
+ * ⚠️ Devuelve el número SOLO si el canal está completo, porque hereda la
+ * comprobación de `getPlatformChannel` (número **y** API Key). Y eso es lo
+ * que se quiere: con el número configurado pero sin credenciales, ese
+ * WhatsApp no recibe ni contesta nada. Mandar ahí a un cliente es peor que no
+ * darle ningún número — se quedaría escribiéndole a un buzón mudo.
+ */
+export const getPlatformPhone = async (): Promise<string | null> =>
+  (await getPlatformChannel())?.number ?? null
+
+/**
  * ¿Alguna de estas direcciones es el número de la plataforma?
  *
  * Se compara SIEMPRE normalizado: el mismo número llega como `+593…` desde
