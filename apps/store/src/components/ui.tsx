@@ -152,7 +152,15 @@ export function Marca({ activa, unica }: { activa: boolean; unica: boolean }) {
   )
 }
 
-/** +/− de cantidad. El control más tocado de toda la app. */
+/**
+ * +/− de cantidad. El control más tocado de toda la app.
+ *
+ * ⚠️ `size-11` (44 px), no `size-10`. El diseño pide dianas de 44×44 REALES y
+ * estos eran los últimos 40×40 que quedaban — doce, medidos en un iPhone. Es
+ * el control que más se toca de la tienda: entra en la ficha, en cada línea
+ * del carrito y en cada opción con contador, así que es justo donde un fallo
+ * de puntería se paga más veces.
+ */
 export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
   valor: number
   onCambiar: (valor: number) => void
@@ -165,7 +173,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.max(minimo, valor - 1))}
         disabled={valor <= minimo}
         aria-label="Quitar uno"
-        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
+        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
       >
         −
       </button>
@@ -174,7 +182,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.min(maximo, valor + 1))}
         disabled={valor >= maximo}
         aria-label="Agregar uno"
-        className="flex size-10 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
+        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
       >
         +
       </button>

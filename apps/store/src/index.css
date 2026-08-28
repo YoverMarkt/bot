@@ -120,7 +120,15 @@
 /* Utilidades del par acento/tinta, para no repetir var() por toda la app. */
 @utility acento { background-color: var(--acento); color: var(--acento-texto); }
 @utility tinta { background-color: var(--tinta); color: var(--tinta-texto); }
-@utility texto-acento-sobre-tinta { color: var(--acento); }
+
+/* ⚠️ Aquí vivía `texto-acento-sobre-tinta` (el acento como color de LETRA, que
+   sobre el negro sí contrasta). Se retiró el 2026-08-28: nació con el color de
+   marca y no llegó a usarla ni una pantalla. Tailwind ya no la emitía —no pesa
+   nada en el bundle—, pero una utilidad muerta en el sistema visual sí cuesta:
+   es la única que escribe el acento en la letra, y quien la encuentre buscando
+   cómo pintar algo con el color del negocio va a usarla sobre blanco, que es
+   justo el fallo que esta app lleva tres tandas corrigiendo. Si algún día hace
+   falta texto de acento sobre tinta, está en el historial. */
 
 html, body, #root { height: 100%; }
 
