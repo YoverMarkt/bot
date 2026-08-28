@@ -57,10 +57,25 @@ describe('recorte de la portada', () => {
     expect(url.indexOf('c_fill')).toBeLessThan(url.indexOf('c_limit'))
   })
 
-  // El recorte es SOLO de la portada: es la única que se pinta en un marco de
-  // proporción fija. Un producto en 16:9 perdería medio plato.
-  it('no recorta ninguna otra foto', () => {
-    for (const uso of ['miniatura', 'tarjeta', 'ficha'] as const) {
+  // La ficha del producto se recorta desde el 2026-08-27, cuando su héroe pasó
+  // de `h-52` a una PROPORCIÓN fija: la regla no era «solo la portada», era
+  // «solo lo que se pinta en un marco de proporción fija», y hasta esa fecha
+  // la portada era la única.
+  //
+  // ⚠️ En 4:3 y no en 16:9, que es justo lo que advertía el comentario
+  // anterior: «un producto en 16:9 perdería medio plato». Un plato se
+  // fotografía en vertical desde el móvil y necesita alto.
+  it('recorta la ficha a 4:3, también antes de limitar el ancho', () => {
+    const url = foto(CLOUDINARY, 'ficha') || ''
+    expect(url).toContain('c_fill,g_auto,ar_4:3/')
+    expect(url.indexOf('c_fill')).toBeLessThan(url.indexOf('c_limit'))
+  })
+
+  // Las otras dos NO se recortan, y por el mismo criterio: `miniatura` se
+  // pinta en cajas cuadradas pequeñas donde el recorte del navegador no se
+  // nota, y `tarjeta` vive en la rejilla de la portada, que no se tocó.
+  it('no recorta la miniatura ni la tarjeta', () => {
+    for (const uso of ['miniatura', 'tarjeta'] as const) {
       expect(foto(CLOUDINARY, uso)).not.toContain('c_fill')
     }
   })

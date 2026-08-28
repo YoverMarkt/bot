@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  RiAddLine,
   RiBankLine,
   RiDeleteBin6Line,
   RiEBikeLine,
@@ -7,8 +8,9 @@ import {
   RiMapPin2Line,
   RiMoneyDollarCircleLine,
   RiShoppingBag3Line,
+  RiShoppingCart2Line,
 } from '@remixicon/react'
-import { Aviso, Boton, Contador, Hoja } from './ui'
+import { Aviso, Boton, Contador, Foto, Hoja, Marca, ROTULO } from './ui'
 import { money } from '../lib/format'
 import { cartTotal, detalleDeLinea, lineTotal, needsAddress, orderTotal } from '../lib/cart'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
@@ -286,25 +288,57 @@ export default function CartSheet({
       onAtras={enCarrito ? undefined : () => setPaso('carrito')}
       titulo={enCarrito ? 'Tu carrito' : 'Finalizar pedido'}
     >
-      <div className="space-y-6 p-4">
+      {/* ⚠️ El cuerpo va sobre el OFF-WHITE, no sobre el blanco de la hoja:
+          con las tarjetas blancas sobre fondo blanco, lo único que las separa
+          es la sombra y esto se lee como un formulario. Mismo fondo que la
+          carta de la que el cliente viene. */}
+      <div className="fondo-app space-y-6 p-4">
         {/* ── PASO 1: solo lo que lleva ─────────────────────────────────── */}
         {enCarrito && !lines.length && (
-          <div className="py-10 text-center">
-            <p className="text-[15px] font-semibold">Tu carrito está vacío</p>
-            <p className="mt-1 text-[13px] texto-tenue">
+          <div className="py-12 text-center">
+            <span className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-black/5 texto-tenue">
+              <RiShoppingCart2Line size={28} />
+            </span>
+            <p className="titulo-m">Tu carrito está vacío</p>
+            <p className="mx-auto mt-1.5 max-w-64 text-[13.5px] leading-relaxed texto-cuerpo">
               Vuelve a la carta y agrega lo que quieras pedir.
             </p>
           </div>
         )}
 
         {enCarrito && (
-        <section className="space-y-3">
+        <section className="space-y-2.5">
           {lines.map(linea => (
-            <div key={linea.key} className="flex gap-3 border-b borde-tema pb-3 last:border-0">
+            /* ⚠️ Con FOTO, que es lo que pedía el diseño desde el principio
+               («líneas con foto pequeña, nombre, lo elegido, contador y
+               precio») y no estaba. Importa más aquí que en ninguna otra
+               pantalla: es lo último que el cliente mira antes de pagar, y
+               reconocer lo que lleva por la imagen es más rápido que leer
+               cuatro nombres. Sin foto queda el marcador con la inicial, que
+               hoy es el estado normal. */
+            <div
+              key={linea.key}
+              className="superficie flex gap-3 rounded-(--radius-tarjeta) p-3 shadow-tarjeta"
+            >
+              <div className="size-18 shrink-0 overflow-hidden rounded-xl">
+                <Foto
+                  url={linea.product.imageUrl}
+                  alto="h-18"
+                  uso="miniatura"
+                  nombre={linea.product.name}
+                />
+              </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] leading-snug font-semibold">{linea.product.name}</p>
+                <div className="flex items-start justify-between gap-2.5">
+                  <p className="min-w-0 text-[15px] leading-snug font-bold tracking-tight">
+                    {linea.product.name}
+                  </p>
+                  <span className="shrink-0 text-[15px] font-extrabold tracking-tight tabular-nums">
+                    {money(lineTotal(linea))}
+                  </span>
+                </div>
                 {linea.variant && (
-                  <p className="text-[13px] texto-tenue">{linea.variant.name}</p>
+                  <p className="text-[12.5px] leading-snug texto-cuerpo">{linea.variant.name}</p>
                 )}
                 {/* ⚠️ Lo que eligió, una línea por grupo. Faltaba: el carrito
                     pintaba solo `extras` —el sistema viejo— así que una pizza
@@ -312,31 +346,32 @@ export default function CartSheet({
                     cliente confirmaba sin ver lo que había armado. Es la
                     pantalla donde más importa: es la última antes de pagar. */}
                 {detalleDeLinea(linea).map(texto => (
-                  <p key={texto} className="line-clamp-2 text-[12px] leading-snug texto-cuerpo">
+                  <p key={texto} className="line-clamp-2 text-[12.5px] leading-snug texto-cuerpo">
                     {texto}
                   </p>
                 ))}
                 {linea.note && (
-                  <p className="mt-0.5 text-[12px] italic texto-tenue">“{linea.note}”</p>
+                  <p className="mt-0.5 text-[12.5px] leading-snug italic texto-cuerpo">
+                    «{linea.note}»
+                  </p>
                 )}
-                <div className="mt-2 flex items-center gap-3">
+                <div className="mt-2 flex items-center gap-2">
                   <Contador
                     valor={linea.quantity}
                     minimo={0}
                     onCambiar={cantidad => onCantidad(linea.key, cantidad)}
                   />
+                  {/* 44×44 reales: era un icono de 17 px sin caja, o sea una
+                      diana de 17 para una acción que quita algo del pedido. */}
                   <button
                     onClick={() => onCantidad(linea.key, 0)}
                     aria-label={`Quitar ${linea.product.name}`}
-                    className="texto-tenue"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90 active:bg-black/5"
                   >
                     <RiDeleteBin6Line size={17} />
                   </button>
                 </div>
               </div>
-              <span className="shrink-0 text-[15px] font-bold tabular-nums">
-                {money(lineTotal(linea))}
-              </span>
             </div>
           ))}
         </section>
@@ -346,9 +381,7 @@ export default function CartSheet({
         {!enCarrito && (
         <>
         <section>
-          <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            ¿Cómo lo quieres?
-          </h3>
+          <h3 className={ROTULO}>¿Cómo lo quieres?</h3>
           <div className="grid grid-cols-2 gap-2">
             {opcionesEntrega.map(({ id, icono: Icono, texto }) => (
               <button
@@ -359,7 +392,7 @@ export default function CartSheet({
                 // —AA exige 4,5— y 1,19:1 con el lima de la plataforma. La regla
                 // ya estaba escrita en `index.css`: «un lima sobre blanco no se
                 // lee al sol».
-                className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3.5 text-[14px] font-bold transition active:scale-[0.98] ${
+                className={`flex items-center justify-center gap-2 rounded-(--radius-tarjeta) border-2 px-3 py-4 text-[14px] font-bold transition active:scale-[0.98] ${
                   entrega === id
                     ? 'acento border-transparent shadow-acento'
                     : 'superficie borde-tema texto-cuerpo shadow-tarjeta'
@@ -375,36 +408,41 @@ export default function CartSheet({
         {/* ── A dónde ── */}
         {needsAddress(entrega) && (
           <section>
-            <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-              Dirección
-            </h3>
+            <h3 className={ROTULO}>Dirección</h3>
             <div className="space-y-2">
               {direcciones.map(direccion => (
                 <div
                   key={direccion.id}
-                  className={`flex w-full items-start gap-2 rounded-2xl border-2 px-4 py-3.5 transition ${
+                  className={`superficie flex w-full items-start gap-2 rounded-(--radius-tarjeta) border-2 px-4 py-3.5 transition ${
                     elegida === direccion.id
-                      ? 'border-marca bg-marca-suave'
-                      : 'superficie borde-tema shadow-tarjeta'
+                      ? 'border-(--tinta) bg-marca-suave'
+                      : 'borde-tema shadow-tarjeta'
                   }`}
                 >
                 <button
                   onClick={() => setDireccionId(direccion.id)}
                   className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  <RiMapPin2Line size={17} className="mt-0.5 shrink-0 texto-tenue" />
-                  <span className="min-w-0">
-                    <span className="block text-[14px] font-semibold">{direccion.label}</span>
-                    <span className="block text-[13px] texto-tenue">{direccion.address}</span>
+                  <RiMapPin2Line size={17} className="mt-0.5 shrink-0 texto-cuerpo" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14.5px] font-bold tracking-tight">{direccion.label}</span>
+                    <span className="block text-[13px] texto-cuerpo">{direccion.address}</span>
                     {direccion.reference && (
-                      <span className="block text-[12px] texto-tenue">{direccion.reference}</span>
+                      <span className="block text-[12.5px] texto-tenue">{direccion.reference}</span>
                     )}
                     {/* Las direcciones de siempre no tienen pin. Se ofrece
                         añadirlo aquí porque el cliente que ya tiene la suya
                         guardada es justo el que más pide. */}
                     {tieneUbicacion(direccion)
                       ? (
-                          <span className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-verde">
+                          /* ⚠️ `text-verde` NO EXISTÍA: no hay ningún
+                             `--color-verde` en el tema, así que Tailwind no
+                             emitía la clase y esto salía en el color
+                             heredado. Es el fallo silencioso de una utilidad
+                             mal escrita — no rompe el build, simplemente no
+                             existe. `emerald` es el mismo verde de acierto
+                             que ya usa `DireccionRapida`. */
+                          <span className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-emerald-700">
                             <RiFocus3Line size={12} /> Ubicación guardada
                           </span>
                         )
@@ -421,22 +459,28 @@ export default function CartSheet({
                             }}
                             // Acción secundaria: va en tinta subrayada. En
                             // acento no se leería (ver el contraste de arriba).
-                            className="mt-1 flex items-center gap-1 text-[12px] font-semibold underline underline-offset-2"
+                            // 18 px de alto medidos: con `py-2` la diana
+                            // llega a la altura de un dedo sin mover nada de
+                            // sitio, porque el hueco ya estaba en el margen.
+                            className="-my-1.5 mt-0.5 flex items-center gap-1 py-3.5 text-[12px] font-semibold underline underline-offset-2"
                           >
                             <RiFocus3Line size={12} />
                             {ubicando === direccion.id ? 'Buscando…' : 'Agregar ubicación'}
                           </span>
                         )}
                   </span>
+                  <Marca activa={elegida === direccion.id} unica />
                 </button>
                 {/* Borrar pide confirmación: está a un centímetro de elegir, y
                     perder una dirección por un dedo grande es una molestia que
-                    no se deshace. */}
+                    no se deshace.
+                    44×44 reales, como pide el diseño: iba en `p-1.5` sobre un
+                    icono de 16, o sea 28 px de diana para algo que borra. */}
                 <button
                   onClick={() => void borrarDireccion(direccion)}
                   disabled={borrando === direccion.id}
                   aria-label={`Eliminar ${direccion.label}`}
-                  className="-mr-1 shrink-0 rounded-full p-1.5 texto-tenue transition active:scale-90"
+                  className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-full texto-cuerpo transition active:scale-90 active:bg-black/5"
                 >
                   <RiDeleteBin6Line size={16} />
                 </button>
@@ -445,7 +489,7 @@ export default function CartSheet({
 
               {nuevaAbierta
                 ? (
-                    <div className="space-y-2 rounded-xl border borde-tema p-3">
+                    <div className="superficie space-y-2.5 rounded-(--radius-tarjeta) border-2 borde-tema p-3.5 shadow-tarjeta">
                       {/* ⚠️ Un `select` NATIVO, no cápsulas. Abre la rueda del
                           teléfono, ocupa una línea en vez de dos filas y pesa
                           cero. Pone el tipo Y la etiqueta a la vez: son lo
@@ -457,7 +501,7 @@ export default function CartSheet({
                             .find(item => item.valor === event.target.value)
                           if (tipo) setNueva({ ...nueva, buildingType: tipo.valor, label: tipo.texto })
                         }}
-                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
+                        className="w-full rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] font-semibold outline-none focus:border-(--tinta)"
                       >
                         {TIPOS_DE_EDIFICIO.map(tipo => (
                           <option key={tipo.valor} value={tipo.valor}>{tipo.texto}</option>
@@ -468,13 +512,13 @@ export default function CartSheet({
                         onChange={event => setNueva({ ...nueva, address: event.target.value.slice(0, 300) })}
                         rows={2}
                         placeholder="Calle, número, sector…"
-                        className="w-full resize-none rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
+                        className="w-full resize-none rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-(--tinta) placeholder:texto-tenue"
                       />
                       <input
                         value={nueva.reference}
                         onChange={event => setNueva({ ...nueva, reference: event.target.value.slice(0, 300) })}
                         placeholder="Referencia (casa azul, portón negro…)"
-                        className="w-full rounded-lg border borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-marca"
+                        className="w-full rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-(--tinta) placeholder:texto-tenue"
                       />
 
                       {/* ── El pin ──
@@ -488,8 +532,10 @@ export default function CartSheet({
                         // da 1,80:1 sobre blanco y el lima 1,19:1 — AA exige
                         // 4,5. Este botón pide permiso de ubicación, así que
                         // tiene que leerse a la primera.
-                        className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-3 text-[14px] font-bold transition active:scale-[0.98] ${
-                          pin ? 'border-verde text-verde' : 'borde-tema texto-cuerpo shadow-tarjeta'
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-3 py-3.5 text-[14px] font-bold transition active:scale-[0.98] ${
+                          pin
+                            ? 'border-emerald-500 text-emerald-700'
+                            : 'borde-tema texto-cuerpo shadow-tarjeta'
                         }`}
                       >
                         <RiFocus3Line size={16} />
@@ -539,11 +585,16 @@ export default function CartSheet({
                     </div>
                   )
                 : (
+                    /* El icono `RiAddLine`, no el CARÁCTER «+»: con el
+                       carácter, lo que se centra es la caja de línea y el
+                       signo queda alto respecto al texto. Mismo arreglo que
+                       ya se hizo en el `+` de la carta. */
                     <button
                       onClick={() => setNuevaAbierta(true)}
-                      className="w-full rounded-xl border border-dashed borde-tema px-4 py-3 text-[14px] font-semibold texto-tenue"
+                      className="flex w-full items-center justify-center gap-2 rounded-(--radius-tarjeta) border-2 border-dashed borde-tema px-4 py-3.5 text-[14px] font-bold texto-cuerpo transition active:scale-[0.98]"
                     >
-                      + Agregar dirección
+                      <RiAddLine size={17} />
+                      Agregar dirección
                     </button>
                   )}
             </div>
@@ -555,14 +606,17 @@ export default function CartSheet({
             domicilio: a quien retira no hay nada que indicarle. */}
         {needsAddress(entrega) && (
           <section>
-            <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-              Instrucciones <span className="normal-case">(opcional)</span>
+            <h3 className={ROTULO}>
+              <span>Instrucciones</span>
+              <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue">
+                Opcional
+              </span>
             </h3>
             <input
               value={instrucciones}
               onChange={event => setInstrucciones(event.target.value.slice(0, 300))}
               placeholder="Ej: llame al llegar, timbre roto…"
-              className="w-full rounded-xl border borde-tema bg-transparent px-3.5 py-3 text-[14px] outline-none focus:border-marca"
+              className="superficie w-full rounded-(--radius-tarjeta) border-2 borde-tema px-4 py-3.5 text-[14px] shadow-tarjeta outline-none focus:border-(--tinta) placeholder:texto-tenue"
             />
           </section>
         )}
@@ -571,23 +625,32 @@ export default function CartSheet({
         {/* La tarjeta NO está y no es un olvido: la plataforma no procesa
             cobros (regla inviolable #6). El negocio cobra por fuera. */}
         <section>
-          <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            ¿Cómo vas a pagar?
-          </h3>
+          <h3 className={ROTULO}>¿Cómo vas a pagar?</h3>
           <div className="space-y-2">
             {opcionesPago.map(({ id, icono: Icono, texto, detalle }) => (
+              /* ⚠️ Mismo arreglo que en las direcciones: el elegido se marcaba
+                 solo con `border-(--acento)`, y un borde lima sobre blanco da
+                 1,19:1. Ahora lo dicen el marco de tinta y la marca de
+                 selección; el tinte del acento se queda de fondo. */
               <button
                 key={id}
                 onClick={() => setPago(id)}
-                className={`flex w-full items-start gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition ${
-                  pagoEfectivo === id ? 'border-(--acento) bg-(--acento-suave)' : 'borde-tema'
+                className={`superficie flex w-full items-center gap-3 rounded-(--radius-tarjeta) border-2 px-4 py-3.5 text-left transition ${
+                  pagoEfectivo === id
+                    ? 'border-(--tinta) bg-marca-suave'
+                    : 'borde-tema shadow-tarjeta'
                 }`}
               >
-                <Icono size={18} className="mt-0.5 shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-bold">{texto}</span>
-                  <span className="block text-[12.5px] texto-tenue">{detalle}</span>
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/5">
+                  <Icono size={18} className="texto-cuerpo" />
                 </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14.5px] font-bold tracking-tight">{texto}</span>
+                  {detalle && (
+                    <span className="block text-[12.5px] leading-snug texto-cuerpo">{detalle}</span>
+                  )}
+                </span>
+                <Marca activa={pagoEfectivo === id} unica />
               </button>
             ))}
           </div>
@@ -595,17 +658,15 @@ export default function CartSheet({
 
         {/* ── Quién ── */}
         <section>
-          <h3 className="mb-2.5 text-[13px] font-bold tracking-wide uppercase texto-tenue">
-            A nombre de
-          </h3>
+          <h3 className={ROTULO}>A nombre de</h3>
           <input
             value={nombre}
             onChange={event => setNombreEscrito(event.target.value.slice(0, 120))}
             placeholder="Tu nombre"
-            className="w-full rounded-xl border borde-tema bg-transparent px-3.5 py-3 text-[14px] outline-none focus:border-marca"
+            className="superficie w-full rounded-(--radius-tarjeta) border-2 borde-tema px-4 py-3.5 text-[15px] font-semibold shadow-tarjeta outline-none focus:border-(--tinta) placeholder:font-normal placeholder:texto-tenue"
           />
           {me?.phone && (
-            <p className="mt-2 text-[12px] texto-tenue">
+            <p className="mt-2 px-1 text-[12.5px] texto-cuerpo">
               Te contactamos al {me.phone} — el mismo de WhatsApp.
             </p>
           )}
@@ -617,25 +678,35 @@ export default function CartSheet({
       </div>
 
       <div className="superficie sticky bottom-0 border-t borde-tema px-4 pt-3 pb-seguro">
+        {/* ⚠️ El desglose en `texto-cuerpo`, no en el gris de metadatos: a
+            13,5 px, `texto-tenue` da 3,17:1 sobre blanco y esto es lo que el
+            cliente comprueba antes de pagar. Es el mismo argumento que ya
+            estaba escrito para el resumen del pedido recibido. */}
         <div className="mb-3 space-y-1.5">
-          <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+          <div className="flex items-baseline justify-between text-[13.5px] texto-cuerpo">
             <span>Subtotal</span>
             <span className="tabular-nums">{money(subtotal)}</span>
           </div>
-          {minOrderAmount > 0 && (
-            <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+          {/* ⚠️ El mínimo solo cuando FALTA. Superado ya, esta fila decía
+              «Pedido mínimo $5.00» junto a un subtotal de $20.70: informa de un
+              requisito cumplido justo en la pantalla donde el cliente comprueba
+              lo que va a pagar, y cada línea de más ahí es una duda de más.
+              Cuando de verdad falta, sigue estando — y el botón dice además
+              cuánto. */}
+          {faltaParaElMinimo > 0 && (
+            <div className="flex items-baseline justify-between text-[13.5px] texto-cuerpo">
               <span>Pedido mínimo</span>
               <span className="tabular-nums">{money(minOrderAmount)}</span>
             </div>
           )}
-          <div className="flex items-baseline justify-between text-[13.5px] texto-tenue">
+          <div className="flex items-baseline justify-between text-[13.5px] texto-cuerpo">
             <span>Envío</span>
             <span className="tabular-nums">
               {entrega === 'pickup' ? 'Retiras en el local' : envio > 0 ? money(envio) : 'Gratis'}
             </span>
           </div>
-          <div className="flex items-baseline justify-between border-t borde-tema pt-2">
-            <span className="text-[14px] font-bold">Total</span>
+          <div className="flex items-baseline justify-between border-t borde-tema pt-2.5">
+            <span className="text-[15px] font-bold tracking-tight">Total</span>
             <span className="text-[24px] font-extrabold tracking-tight tabular-nums">{money(total)}</span>
           </div>
         </div>
@@ -675,7 +746,7 @@ export default function CartSheet({
                       : `Confirmar pedido · ${money(total)}`}
               </Boton>
             )}
-        <p className="mt-2.5 text-center text-[11.5px] texto-tenue">
+        <p className="mt-2.5 text-center text-[11.5px] texto-cuerpo">
           El negocio confirma tu pedido por WhatsApp y coordina el pago.
         </p>
       </div>

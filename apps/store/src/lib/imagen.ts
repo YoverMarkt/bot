@@ -73,6 +73,13 @@ const ANCHOS: Record<AnchoDeFoto, number> = {
  */
 const RECORTE: Partial<Record<AnchoDeFoto, string>> = {
   portada: 'c_fill,g_auto,ar_16:9/',
+  // La ficha del producto, por lo mismo: su héroe es un marco 4:3 a sangre, y
+  // sin recorte previo el navegador tira píxeles por el centro. Un plato
+  // fotografiado en vertical desde el móvil —que es como se fotografía un
+  // plato— perdía la mitad de arriba y la mitad de abajo a ciegas; `g_auto`
+  // se queda con la comida. 4:3 y no 16:9 porque un plato necesita alto: en
+  // 16:9 la ficha entera se lee como una portada, no como un producto.
+  ficha: 'c_fill,g_auto,ar_4:3/',
 }
 
 /** El punto donde Cloudinary acepta transformaciones dentro de su URL. */

@@ -143,6 +143,45 @@ los adicionales, y la que la base va a exigir igual al crear el pedido.
 
 ## 3. Ficha del producto
 
+**Rehecha el 2026-08-27** sobre el mismo lenguaje que la portada nueva. Su
+estructura era de la pasada anterior a la referencia que el dueño aprobó, así
+que compartía tipografía y tokens pero no la forma. Lo que cambió:
+
+- **La hoja abre SIN barra de título** (`Hoja` sin `titulo`), y por eso la foto
+  llega al borde de verdad. Con la barra encima, la foto arrancaba a 57 px y
+  esto se leía como un formulario con una imagen dentro. El nombre pasa a
+  vivir bajo la foto —donde el diseño siempre lo pidió— y el cerrar flota
+  sobre ella, igual que el botón de volver del héroe de la portada.
+  ⚠️ Su etiqueta es **«Volver a la carta»**, no «Cerrar»: el velo de la hoja ya
+  es un botón que se llama así, y dos controles con el mismo nombre accesible
+  en la misma pantalla no se distinguen.
+- **PROPORCIÓN, no alto fijo.** Estaba en `h-52`, así que el mismo plato se
+  recortaba distinto en cada teléfono — el fallo que ya se había corregido en
+  la portada, aquí por la puerta de al lado. Ahora **4:3**, y la foto llega ya
+  recortada a esa forma desde Cloudinary (`RECORTE` en `lib/imagen.ts`), con
+  `g_auto` quedándose con la comida.
+  ⚠️ **Sin foto la banda es MÁS CORTA** (`5/2`), y no es un capricho: hoy 15 de
+  los 17 productos no tienen imagen, así que el marcador es el estado normal.
+  En 4:3 era un rectángulo de color vacío que ocupaba el 40 % de la pantalla y
+  empujaba fuera de la vista justo lo que el botón pide elegir — se abría la
+  ficha diciendo «Elige tipo de masa» sin ningún tipo de masa a la vista. Con
+  foto el alto se gana porque hay algo que mirar; sin ella, el sitio es de las
+  opciones.
+- **Nombre, precio y descripción bajo la foto.** El precio no estaba en ningún
+  sitio para un producto simple: vivía dentro del texto del botón. Es el mismo
+  número que el cliente acaba de ver en la tarjeta de la carta.
+- **Cada grupo es una TARJETA con sus filas divididas**, sobre el off-white de
+  la carta (`@utility fondo-app`). Con las tarjetas blancas sobre el blanco de
+  la hoja, lo único que las separaba era la sombra.
+- **El relleno de los selectores va en `acento`** (`Marca` en `components/ui.tsx`),
+  no en `bg-marca` con el icono forzado a blanco: sobre el lima de la
+  plataforma un ✓ blanco desaparece. ⚠️ Es **la otra cara** del fallo del acento
+  como color de letra, y la que NO aparece buscando `text-marca`.
+- **El `+` de los adicionales** pasa a ser el mismo de la carta: `acento` con su
+  glow y el icono `RiAddLine`, no `bg-marca text-white` con el carácter «+».
+- El foco de la nota va en `--tinta`: un borde lima da 1,19:1 y el campo activo
+  no se distinguía del inactivo.
+
 - **Foto grande** arriba, a sangre.
 - Nombre, precio, descripción.
 - **Los grupos de opciones**, uno por sección, con su título en mayúsculas
@@ -216,7 +255,33 @@ cliente sin ver lo que está a punto de pagar.
 
 - Líneas con foto pequeña, nombre, lo elegido en texto tenue, contador y
   precio.
+  ⚠️ **La foto FALTABA hasta el 2026-08-27.** Estaba escrito aquí desde el
+  principio y la línea se pintaba sin ella. Importa más en esta pantalla que
+  en ninguna otra: es lo último que el cliente mira antes de pagar, y
+  reconocer lo que lleva por la imagen es más rápido que leer cuatro nombres.
+  Sin foto queda el marcador con la inicial, que hoy es el estado normal.
+  · Cada línea es una **tarjeta** sobre el off-white (`fondo-app`), no una fila
+    separada por una raya.
+  · **Lo elegido y la nota van en `texto-cuerpo`**, no en el gris de
+    metadatos: a 12,5 px, `texto-tenue` da 3,17:1 sobre blanco.
+  · La papelera pasa a **44×44 reales**: era un icono de 17 px sin caja, o sea
+    una diana de 17 para la acción que quita algo del pedido.
 - **Desglose**: subtotal, envío, total. El envío solo aparece en entrega.
+  ⚠️ **El mínimo solo se enseña cuando FALTA** (2026-08-27). Superado ya, la
+  fila decía «Pedido mínimo $5.00» junto a un subtotal de $20.70: informaba de
+  un requisito cumplido justo en la pantalla donde el cliente comprueba lo que
+  va a pagar. Cuando de verdad falta sigue estando, y el botón dice además
+  cuánto.
+- **Lo elegido —dirección y método de pago— se señala con MARCO DE TINTA y su
+  marca de selección**, no con `border-marca` ni `border-(--acento)`: un borde
+  lima sobre blanco da 1,19:1, así que la única señal de a qué casa iba el
+  pedido era prácticamente invisible. El tinte de marca se queda de fondo, que
+  sí es un uso legítimo del acento.
+  ⚠️ Aquí vivían además `text-verde` y `border-verde`, que **no existen**: no
+  hay ningún `--color-verde` en el tema, así que Tailwind no emitía nada y
+  «Ubicación guardada» salía en el color heredado. Es el fallo silencioso de
+  una utilidad mal escrita — no rompe el build, simplemente no existe. Vale la
+  pena recordarlo cada vez que se invente una clase nueva.
 - ~~**¿Para cuándo?**~~ **RETIRADO el 2026-08-07.** No está en el diagrama y el
   dueño pidió quitarlo. Se fue entero: la sección, `scheduleSlots`,
   `isValidSlot` y sus pruebas. ⚠️ Con ello se fue también lo que hacía de paso:
@@ -748,6 +813,13 @@ domicilios. Hoy `prep_time_minutes` es el único camino.
 - Imágenes con `loading="lazy"` y tamaño reservado, para que la lista no salte
   al cargar.
 - **Skeletons** mientras carga, no un spinner centrado.
+- **Lo que no se ve en una visita normal VIAJA APARTE.** Van diferidas
+  `Account`, `DireccionRapida` y —desde el 2026-08-27— las tres puertas:
+  `Gate`, `Confirmar` y `DesktopGate`. ⚠️ **`OrderPlaced` NO se difiere** aunque
+  sea la más grande: se pinta en el instante siguiente a confirmar un pedido, y
+  si el trozo no llegara, el cliente que acaba de comprar se quedaría sin su
+  número y sin los datos para transferir. Diferir tiene un precio y se paga
+  donde no duele.
 - Estados vacíos con texto útil: qué pasa y qué hacer.
 - Botones de al menos 44×44 px reales.
 - El teclado no puede tapar el campo activo ni el botón de confirmar.

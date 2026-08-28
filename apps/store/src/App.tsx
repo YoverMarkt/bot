@@ -1,14 +1,35 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { RiCloseLine } from '@remixicon/react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
 import { readSlug } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
-import Confirmar from './screens/Confirmar'
-import Gate from './screens/Gate'
-import DesktopGate from './screens/DesktopGate'
 import FoodStore from './screens/FoodStore'
+
+// ── LAS TRES PUERTAS VIAJAN APARTE ─────────────────────────────────────────
+//
+// Ninguna de las tres se ve en una visita normal, y las tres se descargaban en
+// la primera carga —la que se paga en clientes que cierran antes de que la
+// tienda abra—:
+//
+//   · `DesktopGate` solo sale en una COMPUTADORA, y esta app es para el
+//     teléfono: en el móvil es peso muerto al 100 %.
+//   · `Gate` solo sale con un enlace que no vale.
+//   · `Confirmar` solo cuando falta demostrar el número.
+//
+// ⚠️ Se difieren ESTAS y no la pantalla de pedido recibido, que era la otra
+// candidata por tamaño. Aquella se pinta en el instante siguiente a confirmar
+// un pedido: si el trozo no llegara, el cliente que acaba de comprar se
+// quedaría sin su número de pedido y sin los datos para transferir. Aquí lo
+// peor que pasa es que una pantalla que ya dice «esto no se puede usar» tarde
+// un instante más en decirlo.
+//
+// Cada una en su propio trozo, no en uno común: quien se topa con una puerta
+// no tiene por qué descargarse las otras dos.
+const Confirmar = lazy(() => import('./screens/Confirmar'))
+const Gate = lazy(() => import('./screens/Gate'))
+const DesktopGate = lazy(() => import('./screens/DesktopGate'))
 
 // Armazón de la tienda.
 //
@@ -132,12 +153,23 @@ export default function App() {
     )
   }
 
+  // Sin `fallback`: lo correcto mientras baja el trozo es que no se vea nada.
+  // Un esqueleto que aparece y desaparece en un cuarto de segundo molesta más
+  // que el propio cuarto de segundo — misma decisión que en `DireccionRapida`.
   if (estado.fase === 'escritorio') {
-    return <DesktopGate business={estado.business} />
+    return (
+      <Suspense fallback={null}>
+        <DesktopGate business={estado.business} />
+      </Suspense>
+    )
   }
 
   if (estado.fase === 'bloqueada') {
-    return <Gate business={estado.business} motivo={estado.motivo} />
+    return (
+      <Suspense fallback={null}>
+        <Gate business={estado.business} motivo={estado.motivo} />
+      </Suspense>
+    )
   }
 
   const { business, status } = estado
@@ -168,7 +200,9 @@ export default function App() {
       >
         <RiCloseLine size={20} />
       </button>
-      <Gate business={estado.bloqueo.business || business} motivo={estado.bloqueo.motivo} />
+      <Suspense fallback={null}>
+        <Gate business={estado.bloqueo.business || business} motivo={estado.bloqueo.motivo} />
+      </Suspense>
     </div>
   )
 
@@ -178,17 +212,19 @@ export default function App() {
   // checkout a medio llenar.
   const puertaDelTelefono = confirmando && (
     <div className="fixed inset-0 z-[60] overflow-y-auto superficie">
-      <Confirmar
-        business={confirmando.business}
-        onConfirmar={async (telefono) => {
-          const fallo = await confirmarTelefono(slug, telefono)
-          // El catálogo NO se recarga: la sesión ya está atada a este teléfono
-          // y la tienda sigue montada detrás, con su carrito intacto. Volver a
-          // pedirlo todo era justo lo que lo vaciaba.
-          if (!fallo) setConfirmando(null)
-          return fallo
-        }}
-      />
+      <Suspense fallback={null}>
+        <Confirmar
+          business={confirmando.business}
+          onConfirmar={async (telefono) => {
+            const fallo = await confirmarTelefono(slug, telefono)
+            // El catálogo NO se recarga: la sesión ya está atada a este
+            // teléfono y la tienda sigue montada detrás, con su carrito
+            // intacto. Volver a pedirlo todo era justo lo que lo vaciaba.
+            if (!fallo) setConfirmando(null)
+            return fallo
+          }}
+        />
+      </Suspense>
     </div>
   )
 
