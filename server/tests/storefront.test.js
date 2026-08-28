@@ -269,6 +269,12 @@ describe('la tienda del negocio', () => {
         description: null,
         address: null,
         phone: '+593991716574',
+        // ⚠️ Este negocio tiene número PROPIO, así que la bandera va en falso.
+        // No es un detalle: decide qué instrucciones lee quien llega sin
+        // enlace. Con el número del marketplace hay un paso más que nombrar
+        // —elegir el local dentro del chat de Umbani—, que es justo el paso
+        // que EMITE el enlace. Ver la prueba de abajo.
+        phoneIsPlatform: false,
         capabilities: { orders: true },
         brandColor: null,
         logoUrl: null,
@@ -285,6 +291,28 @@ describe('la tienda del negocio', () => {
         minOrderAmount: 0,
         deliveryExtraMinutes: 0,
       })
+    })
+
+    // ── La bandera del número (2026-08-30) ──────────────────────────────
+    //
+    // El enlace de la mini app NACE de elegir un local dentro del chat de
+    // Umbani: el cliente escribe, el bot enseña las categorías, elige, y ahí
+    // se le emite su sesión. Quien llega sin enlace necesita que se lo digan
+    // ASÍ. Decirle «escríbele al negocio» lo manda a buscar un WhatsApp que en
+    // el marketplace ningún local tiene.
+    it('avisa si el WhatsApp es el de la plataforma y no el del local', () => {
+      const sinCanal = { id: 'b1', name: 'Monster Pizza', slug: 'monster-pizza' }
+      expect(publicBusiness(sinCanal, null, '+593991716574')).toMatchObject({
+        phone: '+593991716574', phoneIsPlatform: true,
+      })
+      // Con número propio la bandera baja: ahí no hay ningún local que elegir.
+      expect(publicBusiness({ ...sinCanal, whatsapp_number: '+593900111222' }, null, '+593991716574'))
+        .toMatchObject({ phone: '+593900111222', phoneIsPlatform: false })
+      expect(publicBusiness({ ...sinCanal, phone: '+593900333444' }, null, '+593991716574'))
+        .toMatchObject({ phone: '+593900333444', phoneIsPlatform: false })
+      // Sin plataforma configurada no hay número ni bandera que levantar.
+      expect(publicBusiness(sinCanal, null, null))
+        .toMatchObject({ phone: null, phoneIsPlatform: false })
     })
 
     // Este número no solo se pinta: es el mismo con el que el servidor calcula

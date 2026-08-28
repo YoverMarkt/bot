@@ -22,6 +22,14 @@ export interface Business {
   description: string | null
   address: string | null
   phone: string | null
+  /**
+   * `true` si ese WhatsApp es el de UMBANI y no el del local.
+   *
+   * Cambia lo que la app le dice a quien no tiene enlace: en el marketplace el
+   * enlace nace de ELEGIR un local dentro del chat de Umbani, así que hay un
+   * paso más que nombrar. Con canal propio no lo hay.
+   */
+  phoneIsPlatform?: boolean
   capabilities: Capabilities
   /** Color del negocio. Nulo = el de la plataforma. */
   brandColor: string | null

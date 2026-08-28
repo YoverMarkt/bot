@@ -18,7 +18,8 @@ import {
   RiUser3Line,
 } from '@remixicon/react'
 import {
-  createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, setAddressLocation,
+  createAddress, createOrder, deleteAddress, getCatalog, getMe, getOrder, isLinkProblem,
+  setAddressLocation,
 } from '../lib/api'
 import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
@@ -100,6 +101,15 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
    */
   const [pidiendoDireccion, setPidiendoDireccion] = useState(false)
   const yaPedimosDireccion = useRef(false)
+  /**
+   * El error de `GET /me`, cuando es un problema de ENLACE (401).
+   *
+   * No es lo mismo que `me === null`: eso también vale mientras la petición
+   * viaja. Guardar el error deja saber que esta persona **no tiene sesión**, y
+   * es lo que permite avisarle en el primer «Agregar» en vez de dejarla llenar
+   * el carrito entero para enterarse al guardar la dirección.
+   */
+  const [sinSesion, setSinSesion] = useState<unknown>(null)
   // Una portada que no carga se descarta: mejor la cabecera de siempre que el
   // icono de imagen rota como primera impresión de la tienda.
   const [portadaRota, setPortadaRota] = useState(false)
@@ -144,10 +154,21 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
   }, [slug])
 
   useEffect(() => {
-    Promise.all([getCatalog(slug), getMe(slug).catch(() => null)])
-      .then(([datos, quien]) => {
+    // ⚠️ El fallo de `me` se GUARDA en vez de tragarse. `null` no distinguía
+    // «todavía no respondió» de «no hay sesión», y por eso la hoja del primer
+    // «Agregar» no le salía nunca a quien más la necesita: el que llegó sin
+    // enlace. Con el error a mano, la app sabe cuál de las dos cosas es.
+    Promise.all([
+      getCatalog(slug),
+      getMe(slug).then(
+        quien => ({ quien, fallo: null as unknown }),
+        fallo => ({ quien: null, fallo }),
+      ),
+    ])
+      .then(([datos, sesion]) => {
         setCatalogo(datos)
-        setMe(quien)
+        setMe(sesion.quien)
+        setSinSesion(isLinkProblem(sesion.fallo) ? sesion.fallo : null)
       })
       .catch(error => void onFalloEnlace(error))
   }, [slug, onFalloEnlace])
@@ -272,14 +293,32 @@ export default function FoodStore({ slug, business, status, onVolver, onFalloEnl
    */
   useEffect(() => {
     if (!lineas.length || yaPedimosDireccion.current) return
+
+    // ── Sin sesión: se avisa YA, no al guardar la dirección ────────────────
+    //
+    // ⚠️ Este caso NO tenía aviso, y era el peor: la carta es pública, así que
+    // quien llega sin enlace elegía, llenaba el carrito y solo al escribir su
+    // dirección descubría que no podía pedir. Se le dice en el primer
+    // «Agregar», que es cuando todavía no ha invertido nada.
+    //
+    // Va ANTES de la comprobación de dirección: sin sesión no hay dirección
+    // que guardar, y pedírsela sería un formulario que el servidor va a
+    // rechazar.
+    //
+    // No destruye el carrito: `onFalloEnlace` lo pinta ENCIMA de la tienda.
+    if (sinSesion) {
+      yaPedimosDireccion.current = true
+      void onFalloEnlace(sinSesion)
+      return
+    }
+
     if (entrega !== 'delivery') return
-    // `me` en nulo = todavía no respondió, o no hay sesión. En los dos casos
-    // se calla: preguntar sobre un estado que aún no se conoce enseñaría la
-    // hoja a quien ya tiene su dirección guardada.
+    // `me` en nulo aquí ya solo significa «todavía no respondió»: si no
+    // hubiera sesión, la rama de arriba lo habría atendido.
     if (!me || me.addresses?.length) return
     yaPedimosDireccion.current = true
     setPidiendoDireccion(true)
-  }, [lineas.length, entrega, me])
+  }, [lineas.length, entrega, me, sinSesion, onFalloEnlace])
 
   const irACategoria = (id: string) => {
     saltando.current = true
