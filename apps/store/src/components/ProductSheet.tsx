@@ -266,7 +266,7 @@ export default function ProductSheet({
         <button
           onClick={onCerrar}
           aria-label="Volver a la carta"
-          className="absolute top-3 right-3 flex size-10 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition active:scale-95"
+          className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm transition active:scale-95"
         >
           <RiCloseLine size={20} />
         </button>
@@ -461,11 +461,19 @@ export default function ProductSheet({
                   const bloqueada = !activa && lleno && !singleChoice(group)
 
                   return (
+                    /* ⚠️ El relleno vertical va DENTRO del botón, no en esta
+                       fila. Con `py-3.5` aquí, el botón interno medía 24 px de
+                       alto —medido en un iPhone— mientras la fila aparentaba
+                       56: tocar el borde de arriba o de abajo no hacía nada, y
+                       el cliente creía que la opción no respondía. El diseño
+                       pide dianas de 44×44 REALES, y «real» es justo esto.
+                       En `quantity` el relleno se queda aquí: ahí lo tocable
+                       no es la fila, es el contador, que trae el suyo. */
                     <div
                       key={opcion.id}
-                      className={`flex w-full items-center gap-3 px-4 py-3.5 text-left transition ${
-                        activa ? 'bg-marca-suave' : ''
-                      } ${bloqueada ? 'opacity-40' : ''}`}
+                      className={`flex w-full items-center gap-3 px-4 text-left transition ${
+                        group.selectionType === 'quantity' ? 'py-3' : ''
+                      } ${activa ? 'bg-marca-suave' : ''} ${bloqueada ? 'opacity-40' : ''}`}
                     >
                       {group.selectionType === 'quantity'
                         ? (
@@ -502,7 +510,7 @@ export default function ProductSheet({
                                 ? elegirUnica(group, seleccion)
                                 : alternarOpcion(group, seleccion))}
                               disabled={bloqueada}
-                              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                              className="flex min-w-0 flex-1 items-center gap-3 py-3.5 text-left"
                             >
                               {/* Una opción que ES un producto trae su foto:
                                   eligiendo entre tres pizzas, el nombre solo no
@@ -636,9 +644,9 @@ export default function ProductSheet({
                     onClick={() => onAgregarSuelto(reco.productId)}
                     disabled={!puedePedir}
                     aria-label={`Agregar ${reco.name}`}
-                    className="acento flex size-9 shrink-0 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+                    className="acento flex size-11 shrink-0 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
                   >
-                    <RiAddLine size={19} />
+                    <RiAddLine size={20} />
                   </button>
                 </div>
               ))}

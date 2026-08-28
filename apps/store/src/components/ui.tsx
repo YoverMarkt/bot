@@ -106,7 +106,7 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
               <button
                 onClick={onAtras}
                 aria-label="Volver"
-                className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+                className="-ml-2 flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95"
               >
                 <RiArrowLeftSLine size={20} />
               </button>
@@ -115,7 +115,7 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
             <button
               onClick={onCerrar}
               aria-label="Cerrar"
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5"
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-black/5"
             >
               <RiCloseLine size={18} />
             </button>

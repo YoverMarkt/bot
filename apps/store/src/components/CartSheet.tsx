@@ -459,7 +459,10 @@ export default function CartSheet({
                             }}
                             // Acción secundaria: va en tinta subrayada. En
                             // acento no se leería (ver el contraste de arriba).
-                            className="mt-1 flex items-center gap-1 text-[12px] font-semibold underline underline-offset-2"
+                            // 18 px de alto medidos: con `py-2` la diana
+                            // llega a la altura de un dedo sin mover nada de
+                            // sitio, porque el hueco ya estaba en el margen.
+                            className="-my-1.5 mt-0.5 flex items-center gap-1 py-3.5 text-[12px] font-semibold underline underline-offset-2"
                           >
                             <RiFocus3Line size={12} />
                             {ubicando === direccion.id ? 'Buscando…' : 'Agregar ubicación'}
