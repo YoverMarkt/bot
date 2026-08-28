@@ -821,7 +821,13 @@ domicilios. Hoy `prep_time_minutes` es el único camino.
   número y sin los datos para transferir. Diferir tiene un precio y se paga
   donde no duele.
 - Estados vacíos con texto útil: qué pasa y qué hacer.
-- Botones de al menos 44×44 px reales.
+- **Botones de al menos 44×44 px REALES**, y «real» es la palabra que importa:
+  se mide el elemento que responde al toque, no lo que aparenta la fila. En la
+  ficha el relleno vertical estaba en el contenedor y el botón vivía dentro, así
+  que la fila aparentaba 56 px y la diana medía **24** — tocar su borde no hacía
+  nada. No lo enseña ninguna captura: sale midiendo
+  `getBoundingClientRect()` sobre `button, [role=button], a[href]` con
+  Playwright. **Conviene repetir esa medición en cada pantalla nueva.**
 - El teclado no puede tapar el campo activo ni el botón de confirmar.
 
 ---
