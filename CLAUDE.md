@@ -251,11 +251,68 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 
 ## 8. HIGIENE DE GIT
 
+### La regla de oro: **una sola rama viva, y es `main`**
+
+Decidida el 2026-08-28, después de encontrar **132 ramas** acumuladas en el
+remoto. Ninguna guardaba trabajo —todas eran de PRs ya fusionados— pero cada
+una era una copia vieja del código esperando a confundir a alguien. La local
+del último PR, por ejemplo, conservaba el `size-10` de las dianas, la utilidad
+muerta que se había retirado y el `check` sin los tests de la tienda: **una
+rama abandonada no protege trabajo, resucita decisiones ya revertidas.**
+
+**El ciclo se cierra SIEMPRE, en el mismo turno:**
+
+```
+rama → trabajo → verificación → PR → CI en verde → merge → despliegue → comprobar en producción
+```
+
+Nada de «lo dejo en un PR y mañana veo». Un trabajo que no llegó a `main` no
+está hecho, y a los tres días nadie recuerda en qué estado quedó.
+
+- **Ramas de vida corta.** Nacen del `main` de hoy y mueren al fusionarse. Si
+  una rama sobrevive más de un par de días, el problema es el tamaño del
+  cambio: pártelo.
+- **GitHub borra la rama al fusionar** (`delete_branch_on_merge`, activado el
+  2026-08-28). No hay que acordarse de nada. Al terminar, `git fetch --prune`
+  y borrar también la local.
+- **Cada PR se fusiona o se cierra con su motivo escrito.** Un PR cerrado sin
+  explicación es trabajo perdido que nadie sabe si hacía falta. El ejemplo a
+  seguir es el #231: se cerró diciendo qué se rescataba (las tres guardas del
+  ejecutor, ya en #272) y qué se descartaba por obsoleto — así, un mes después,
+  se pudo borrar su rama con la certeza de no perder nada.
+- **Un punto histórico es una ETIQUETA, no una rama.** El respaldo de WhatsApp
+  Flows vive en `respaldo-whatsapp-flows`: una etiqueta es inmutable, no se
+  trabaja sobre ella por error y no ensucia la lista de ramas.
+
+⚠️ **Lo que MIENTE al comprobar si una rama se puede borrar** (aprendido a base
+de equivocarse):
+- `git branch --no-merged` marca como «sin fusionar» todo lo fusionado con
+  **squash**, porque el commit resultante tiene otro SHA.
+- `git diff main rama` cuenta además lo que `main` cambió **después**, así que
+  una rama perfectamente fusionada aparenta tener «74 archivos que main no
+  tiene».
+- `git fetch` **no purga**: las referencias `origin/*` locales sobreviven a
+  ramas borradas hace meses. Sin `--prune`, la lista local dice 10 cuando el
+  remoto tiene 132.
+
+**Lo que sí decide**, y solo esto: el estado del PR (`gh pr list --head <rama>
+--state all`) o buscar su commit de squash en main
+(`git log origin/main --grep="(#NNN)"`). Si el PR está `MERGED`, el código está
+en `main` y la rama sobra; GitHub conserva sus commits en la pestaña del PR.
+
+### Lo de siempre
+
 - **Commits pequeños y descriptivos**, en español (ej: "fix: monto mensual no se guardaba al editar cliente").
 - **Punto limpio antes de un cambio grande**: confirma que el árbol está estable o haz commit de lo pendiente primero.
 - **NUNCA** `git reset --hard`, `git clean -fd`, ni borrar ramas sin **confirmación explícita** del usuario.
 - **NUNCA** subir `server/.env` (ya está en `.gitignore`). Si una credencial entra al diff, deténte y avisa.
 - Trabaja en rama si el cambio es grande; no commitees en `main` sin pedirlo.
+
+### `main` está protegida, y se aplica también a los admins
+
+Exige PR, los **seis** checks del CI en verde, estar al día con `main`, y
+prohíbe force-push y borrado. No se debilita para «salir del paso»: si el CI
+molesta, es que el CI está diciendo algo.
 
 ---
 
