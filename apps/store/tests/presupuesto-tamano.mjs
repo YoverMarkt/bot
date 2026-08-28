@@ -82,6 +82,23 @@ const DIST = path.join(RAIZ, 'dist')
 // El margen queda en ~1,6 kB, igual de estrecho que antes y muy por debajo de
 // los ~10 kB de react-router: este guardián NO ha perdido nada de su capacidad
 // de cazar una dependencia que entre sin que nadie la decida.
+// Medido el 2026-08-27, después de rehacer la ficha y el carrito: 90,4 kB.
+// El número NO se mueve, y esta vez la nota es para explicar por qué BAJA
+// (91,0 → 90,4) justo cuando entran dos pantallas rediseñadas.
+//
+// Se difirieron las TRES PUERTAS —`Gate`, `Confirmar` y `DesktopGate`—, que
+// suman ~2,9 kB y no se ven en una visita normal: `DesktopGate` solo en una
+// computadora (o sea, nunca en el público de esta app), `Gate` solo con un
+// enlace que no vale y `Confirmar` solo cuando falta demostrar el número.
+//
+// ⚠️ Se difirieron ESAS y no `OrderPlaced`, que era la candidata obvia por
+// tamaño: aquella se pinta en el instante siguiente a confirmar un pedido, y
+// si el trozo no llegara el cliente que acaba de comprar se quedaría sin su
+// número de pedido y sin los datos para transferir. Diferir tiene un precio y
+// se paga donde no duele.
+//
+// Es la salida que este guardián prefiere y así está escrito arriba: antes de
+// subir el número, mirar qué se está descargando de más.
 const PRESUPUESTO_KB = 92
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {

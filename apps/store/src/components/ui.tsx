@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   RiArrowLeftSLine,
+  RiCheckLine,
   RiCloseLine,
 } from '@remixicon/react'
 import { foto } from '../lib/imagen'
@@ -8,6 +9,25 @@ import type { AnchoDeFoto } from '../lib/imagen'
 
 // Piezas compartidas de la tienda. Deliberadamente pocas y sin librería de
 // componentes: la tienda vive de cargar rápido.
+
+/**
+ * La lista de una sección: tarjeta blanca con sus filas divididas.
+ *
+ * Vive aquí y no en cada pantalla porque la ficha y el carrito tienen que
+ * verse iguales — son las dos que más se tocan al pedir, una detrás de otra, y
+ * dos copias de la misma cadena se desincronizan a la primera.
+ */
+export const LISTA = 'superficie divide-y divide-(--linea) overflow-hidden rounded-(--radius-tarjeta) shadow-tarjeta'
+
+/**
+ * El rótulo de cada sección: mayúsculas pequeñas, como pide el diseño.
+ *
+ * ⚠️ En `texto-cuerpo`, no en `texto-tenue`. Este rótulo es lo que dice si un
+ * grupo es obligatorio o hasta cuántas cosas se pueden elegir; a 12 px, el gris
+ * de metadatos da 3,17:1 sobre blanco y no se lee al sol — que es donde se abre
+ * esta app.
+ */
+export const ROTULO = 'mb-2.5 flex items-baseline justify-between gap-3 px-1 text-[12px] font-extrabold tracking-[0.08em] uppercase texto-cuerpo'
 
 export function Boton({ children, onClick, disabled, variante = 'principal', type = 'button' }: {
   children: ReactNode
@@ -47,6 +67,18 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
   /** Si el contenido tiene pasos, la flecha vuelve al anterior en vez de cerrar. */
   onAtras?: () => void
   children: ReactNode
+  /**
+   * Sin título NO se pinta la barra, y el contenido empieza en el borde de la
+   * hoja.
+   *
+   * ⚠️ Existe para la ficha del producto, donde el diseño pide la foto «grande
+   * arriba, A SANGRE»: con la barra encima, la foto arrancaba a 57 px del
+   * borde y la hoja se leía como un formulario con una imagen dentro. Es el
+   * mismo patrón del héroe de la portada, y quien lo use tiene que poner su
+   * propio botón de cerrar —flotando sobre la foto— porque el de la barra se
+   * va con ella. El carrito sigue con barra: no tiene foto que enseñar, y
+   * además necesita la flecha de volver al paso anterior.
+   */
   titulo?: string
 }) {
   // Con la hoja abierta el fondo no debe desplazarse: se pierde el sitio.
@@ -66,30 +98,57 @@ export function Hoja({ abierta, onCerrar, onAtras, children, titulo }: {
         className="absolute inset-0 bg-black/50"
       />
       <div className="animar-hoja superficie relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.75rem] sm:mb-6 sm:rounded-[1.75rem]">
-        <div className="superficie sticky top-0 z-10 flex items-center gap-2 border-b borde-tema px-5 py-4">
-          {/* Volver un paso NO es cerrar: quien está en el checkout y toca la
-              flecha quiere revisar su carrito, no perder el pedido entero. */}
-          {onAtras && (
+        {titulo && (
+          <div className="superficie sticky top-0 z-10 flex items-center gap-2 border-b borde-tema px-5 py-4">
+            {/* Volver un paso NO es cerrar: quien está en el checkout y toca la
+                flecha quiere revisar su carrito, no perder el pedido entero. */}
+            {onAtras && (
+              <button
+                onClick={onAtras}
+                aria-label="Volver"
+                className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+              >
+                <RiArrowLeftSLine size={20} />
+              </button>
+            )}
+            <h2 className="flex-1 truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
             <button
-              onClick={onAtras}
-              aria-label="Volver"
-              className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+              onClick={onCerrar}
+              aria-label="Cerrar"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5"
             >
-              <RiArrowLeftSLine size={20} />
+              <RiCloseLine size={18} />
             </button>
-          )}
-          <h2 className="flex-1 truncate pr-3 text-[19px] font-extrabold tracking-tight">{titulo}</h2>
-          <button
-            onClick={onCerrar}
-            aria-label="Cerrar"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-black/5"
-          >
-            <RiCloseLine size={18} />
-          </button>
-        </div>
+          </div>
+        )}
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * El relleno de un selector marcado: la ficha y el carrito lo usan igual.
+ *
+ * ⚠️ `acento` SÓLIDO, que trae su color de texto calculado por luminancia
+ * (`aplicarColorDeMarca`). Estaba como `bg-marca text-white`: con el lima de la
+ * plataforma, un ✓ blanco sobre lima desaparece. Es exactamente el mismo fallo
+ * de contraste que el acento como color de letra, del revés — y este no salía
+ * buscando `text-marca`.
+ *
+ * La FORMA la decide quien lo pinta: círculo para «una sola», cuadrado para
+ * «varias». Es lo que se entiende sin leer nada, y en la ficha sale de
+ * `singleChoice()` para que forma y comportamiento no puedan contradecirse.
+ */
+export function Marca({ activa, unica }: { activa: boolean; unica: boolean }) {
+  return (
+    <span
+      className={`flex size-6 shrink-0 items-center justify-center border-2 transition ${
+        unica ? 'rounded-full' : 'rounded-md'
+      } ${activa ? 'acento border-transparent shadow-acento' : 'borde-tema'}`}
+    >
+      {activa && <RiCheckLine size={14} />}
+    </span>
   )
 }
 

@@ -213,6 +213,17 @@ body {
   &::-webkit-scrollbar { display: none; }
 }
 
+/* El fondo off-white DENTRO de una hoja.
+   Las hojas son `superficie` (blancas), así que una tarjeta blanca con sombra
+   encima de otra blanca solo se distingue por la sombra: se lee como un
+   formulario con recuadros, no como las tarjetas de la portada. Con el mismo
+   off-white cálido del cuerpo de la app debajo, la ficha y el carrito hablan
+   el idioma de la carta — que es de donde el cliente viene de tocar.
+   No se reutiliza `banda` para esto aunque el color sea el mismo: aquella es
+   el separador entre secciones y confundirlas haría ilegible el próximo
+   cambio de cualquiera de las dos. */
+@utility fondo-app { background-color: var(--fondo); }
+
 /* La banda que separa una sección de otra. El ojo encuentra el corte sin leer:
    con las secciones pegadas, diecisiete productos seguidos parecen una sola
    lista larga y la pestaña de arriba deja de explicar dónde estás. */
