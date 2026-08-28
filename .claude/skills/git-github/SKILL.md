@@ -12,6 +12,43 @@ Llevar el repositorio de forma profesional: historial limpio, commits atómicos 
 2. **Nunca subas `server/.env`.** Verifica con `git check-ignore server/.env` y revisa el stage con `git diff --staged --name-only` antes de cada commit. Si una credencial entra al diff → **detente y avisa**.
 3. **Acciones destructivas requieren confirmación EXPLÍCITA del usuario:** `git reset --hard`, `git clean -fd`, `git push --force`, borrar ramas, `git checkout .` que descarte trabajo. Ante la duda, no lo hagas.
 
+## El ciclo se cierra SIEMPRE, en el mismo turno
+
+```
+rama → trabajo → verificación → PR → CI en verde → merge → despliegue → comprobar en producción
+```
+
+**Un trabajo que no llegó a `main` no está hecho.** Nada de dejarlo en un PR
+«para mañana»: a los tres días nadie recuerda en qué estado quedó, y el
+repositorio acumula copias viejas del código. Ver CLAUDE.md §8.
+
+⚠️ **Al terminar, la rama muere.** GitHub la borra sola al fusionar
+(`delete_branch_on_merge`, activado el 2026-08-28); la local se borra a mano
+con `git fetch --prune` + `git branch -d`.
+
+⚠️ **Un PR que se cierra sin fusionar necesita su motivo ESCRITO**: qué se
+rescata, qué se descarta y dónde vive lo rescatado. Sin eso, un mes después
+nadie sabe si esa rama guarda algo que hace falta.
+
+⚠️ **Un punto histórico es una ETIQUETA, no una rama** (`respaldo-whatsapp-flows`).
+Inmutable, no se trabaja sobre ella y no ensucia la lista.
+
+### ⚠️ Antes de borrar una rama: qué miente y qué decide
+
+| Herramienta | Qué dice | Por qué MIENTE |
+|---|---|---|
+| `git branch --no-merged` | «sin fusionar» | El **squash** crea otro SHA: marca como pendiente todo lo fusionado así |
+| `git diff main rama` | «74 archivos que main no tiene» | Cuenta también lo que `main` cambió **después** de fusionarla |
+| `git branch -r` | la lista de ramas | `git fetch` **no purga**: sobreviven referencias de ramas borradas hace meses. Hace falta `--prune` |
+
+**Lo que decide, y solo esto:**
+```bash
+gh pr list --head <rama> --state all --json number,state   # ¿MERGED?
+git log origin/main --oneline --grep="(#NNN)"              # ¿su commit está en main?
+```
+Si el PR está `MERGED`, el código está en `main` y la rama sobra. GitHub
+conserva sus commits en la pestaña del PR aunque la rama se borre.
+
 ## Estrategia de ramas
 - **No commitees directo en `main`** para features o cambios grandes (CLAUDE.md §8). Crea una rama:
   ```bash
