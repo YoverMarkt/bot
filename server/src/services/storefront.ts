@@ -591,6 +591,25 @@ export function publicBusiness(
      * del PEDIDO. Ver `pedidosEsperandoComprobante`.
      */
     phone: business.whatsapp_number || business.phone || platformPhone || null,
+    /**
+     * Si ese WhatsApp es el del MARKETPLACE y no el del local.
+     *
+     * La app necesita saberlo porque las instrucciones son distintas, y darle
+     * la equivocada deja a la persona escribiendo a donde no debe:
+     *
+     *   · Número de Umbani → «escríbele a Umbani y elige tu local». El enlace
+     *     nace de ESA elección: el bot enseña las categorías, la persona elige,
+     *     y `mandarElEnlace` emite su sesión.
+     *   · Número propio del local → «escríbele al negocio», que es el flujo de
+     *     siempre para quien tiene su propio canal.
+     *
+     * ⚠️ Se manda un booleano y no el número comparado en la app: el cliente
+     * no tiene por qué recibir el número de la plataforma para compararlo, y
+     * comparar teléfonos en dos sitios acaba en dos normalizaciones distintas.
+     */
+    phoneIsPlatform: Boolean(
+      !business.whatsapp_number && !business.phone && platformPhone,
+    ),
     // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
     // `type`, que es exactamente lo que el proyecto decidió no hacer.
     capabilities: storefrontCapabilities(business),
