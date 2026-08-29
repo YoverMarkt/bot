@@ -119,6 +119,17 @@ const getCustomerAddresses = async (businessId: string, customerId: string) => {
   return data || []
 }
 
+/**
+ * Cómo se compara una dirección con otra para saber si son LA MISMA.
+ *
+ * Sin tildes, sin mayúsculas y sin espacios de más: «Av. Amazonas  N34» y
+ * «av. amazonas n34» son la misma casa escrita dos veces, y quien las teclea
+ * en el móvil de una tienda no está pensando en eso.
+ */
+const mismaDireccion = (texto: string): string => texto
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/\s+/g, ' ').trim()
+
 const createCustomerAddress = async (input: {
   businessId: string
   customerId: string
@@ -132,6 +143,54 @@ const createCustomerAddress = async (input: {
   courierNotes?: string | null
   isDefault?: boolean
 }) => {
+  // ── LA MISMA CASA NO SE GUARDA DOS VECES ─────────────────────────────────
+  //
+  // ⚠️ Esto no es pulcritud: es la red que faltaba bajo un fallo real. Si la
+  // app no consigue leer la libreta del cliente —un 401 al arrancar, la sesión
+  // que se estrena, la red— le enseña «no tienes direcciones» y la persona
+  // escribe la suya otra vez. El resultado, medido en producción el
+  // 2026-08-29: **12 direcciones para un cliente, siete de ellas borradas a
+  // mano por él**, y la misma calle repetida cinco veces.
+  //
+  // La app ya se arregló para recargar quién es al estrenar sesión, pero esa
+  // defensa vive en el teléfono. Esta vive DONDE SE ESCRIBE, así que aguanta
+  // aunque el frontend falle por un motivo que nadie ha previsto todavía.
+  //
+  // Reutilizar en vez de rechazar: quien manda esto cree que está guardando su
+  // dirección, y devolverle la que ya tenía es exactamente lo que esperaba —
+  // con su id, que es lo que el checkout necesita para dejarla elegida.
+  //
+  // ⚠️ Solo mira las ACTIVAS. Una que el cliente borró y vuelve a escribir es
+  // una decisión suya de recuperarla, no un duplicado.
+  const existentes = await getCustomerAddresses(input.businessId, input.customerId)
+  const repetida = (existentes as { id: string; address?: string | null }[])
+    .find(item => mismaDireccion(String(item.address || '')) === mismaDireccion(input.address))
+
+  if (repetida) {
+    // Se refresca lo que SÍ puede haber mejorado: el pin, la referencia y cómo
+    // la llama. Un cliente que vuelve a escribirla suele estar corrigiendo algo.
+    const { data, error } = await db
+      .from('customer_addresses')
+      .update({
+        label: input.label || 'Casa',
+        reference: input.reference || null,
+        // El pin solo se pisa si viene uno nuevo: perder el que ya estaba
+        // porque esta vez el navegador negó el permiso sería un paso atrás.
+        ...(input.latitude != null && input.longitude != null
+          ? { latitude: input.latitude, longitude: input.longitude, accuracy_m: input.accuracyM ?? null }
+          : {}),
+        building_type: input.buildingType ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('business_id', input.businessId)
+      .eq('customer_id', input.customerId)
+      .eq('id', repetida.id)
+      .select(CAMPOS_DE_LA_DIRECCION)
+      .single()
+    fail(error, 'No se pudo guardar la dirección')
+    return data
+  }
+
   const { data, error } = await db
     .from('customer_addresses')
     .insert({
