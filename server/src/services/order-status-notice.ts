@@ -17,6 +17,8 @@ export const avisarAlCliente = async (
   businessId: string,
   orderId: string,
   status: string,
+  /** Las faltas de pago del cliente, cuando el aviso es de expiración. */
+  falta?: import('./order-notify').FaltaDePago | null,
 ): Promise<void> => {
   try {
     // Se RECLAMA el aviso antes de redactarlo: el reclamo es atómico y solo lo
@@ -40,7 +42,7 @@ export const avisarAlCliente = async (
 
     const negocio = await db.getBusinessById(businessId)
     if (!negocio) return
-    const enviado = await notify.notificarCambioDePedido(negocio, pedido, status)
+    const enviado = await notify.notificarCambioDePedido(negocio, pedido, status, falta)
 
     // Salió: se cierra el evento y el worker no lo tocará. Si no salió, se
     // deja en la cola y el worker lo reintentará pasada su ventana.
