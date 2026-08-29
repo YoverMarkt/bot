@@ -100,7 +100,31 @@ describe('el aviso al bloqueado', () => {
   // explicación. Sin esto, el segundo bloqueo sería mudo para siempre.
   it('desbloquear limpia la marca', () => {
     const repo = leer('src/db/repositories/storefront.ts')
+    // Hasta el `update`, no un número fijo de caracteres: el bloque creció al
+    // documentar por qué también se limpia `blocked_until` (2026-08-29), y un
+    // `slice(0, 900)` dejó de alcanzar lo que comprobaba.
     const fn = repo.slice(repo.indexOf('const setContactBlocked'))
-    expect(fn.slice(0, 900)).toMatch(/blocked_notified_at: null/)
+    const update = fn.slice(0, fn.indexOf('fail(error'))
+    expect(update).toMatch(/blocked_notified_at: null/)
+  })
+
+  /**
+   * ⚠️ Los DOS botones del dueño limpian `blocked_until` (2026-08-29).
+   *
+   * Sin esto, «Bloquear» a quien tuvo un bloqueo automático antes NO surtía
+   * efecto —`blocked_at` puesto con un `blocked_until` vencido no es ni
+   * permanente ni temporal— y «Desbloquear» dejaba bloqueado a quien tuviera
+   * uno vigente. El dueño pulsaba y no pasaba nada, en los dos sentidos.
+   */
+  it('bloquear y desbloquear mandan sobre el automático pendiente', () => {
+    const repo = leer('src/db/repositories/storefront.ts')
+    const fn = repo.slice(repo.indexOf('const setContactBlocked'))
+    const update = fn.slice(0, fn.indexOf('fail(error'))
+    // Se comprueban las DOS ramas por su forma, y no contando apariciones: el
+    // comentario que explica el arreglo también dice `blocked_until: null`, y
+    // contar lo incluía. Lo que importa es que esté en el objeto, no en la
+    // prosa que lo justifica.
+    expect(update).toMatch(/\{ blocked_at: ahora, blocked_until: null/)
+    expect(update).toMatch(/blocked_at: null, blocked_until: null/)
   })
 })

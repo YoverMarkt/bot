@@ -14246,6 +14246,50 @@ revoke all on function public.storefront_customer_blocked(uuid, uuid)
 grant execute on function public.storefront_customer_blocked(uuid, uuid)
   to service_role;
 
+-- ── LOS BLOQUEADOS QUE VE EL DUEÑO EN SU PANEL ────────────────────────────
+-- migration-2026-08-29-el-panel-y-los-botones.sql. El panel listaba
+-- `blocked_at is not null` a secas, y el bloqueo temporal también pone
+-- `blocked_at`: a los 30 minutos el cliente ya podía pedir y el panel seguía
+-- diciendo «Bloqueado» para siempre. Cuarta copia de la regla en aparecer.
+--
+-- ⚠️ Llama a `storefront_customer_block_state` fila por fila en vez de repetir
+-- la condición: no se sincronizan cuatro reglas, se deja una.
+create or replace function public.business_blocked_contacts(
+  p_business_id uuid
+)
+returns table (
+  phone     text,
+  until     timestamptz,
+  permanent boolean
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    c.phone,
+    -- Del ESTADO, no de la columna: un `blocked_until` vencido no es un plazo.
+    nullif(estado.value ->> 'until', '')::timestamptz as until,
+    (estado.value ->> 'permanent')::boolean           as permanent
+  from public.business_customers as bc
+  join public.customers as c on c.id = bc.customer_id
+  cross join lateral (
+    select public.storefront_customer_block_state(bc.business_id, bc.customer_id) as value
+  ) as estado
+  where bc.business_id = p_business_id
+    and (estado.value ->> 'blocked')::boolean
+  order by c.phone;
+$$;
+
+comment on function public.business_blocked_contacts(uuid) is
+  'Los contactos bloqueados AHORA de un negocio, con su plazo. Usa la misma '
+  'regla que el disparador de pedidos: un temporal cumplido desaparece solo.';
+
+revoke all on function public.business_blocked_contacts(uuid)
+  from public, anon, authenticated;
+grant execute on function public.business_blocked_contacts(uuid) to service_role;
+
 -- ── 4. Bloquear un rato, y decir hasta cuándo ──────────────────────────────
 --
 -- Devuelve `{blocked_until, minutes}` para que el aviso pueda prometer el

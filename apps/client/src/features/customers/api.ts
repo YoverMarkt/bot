@@ -39,7 +39,25 @@ export const getCustomers = () => api<Customer[]>('/api/client/customers')
 // consulta el bloqueo, y cerrarlo es una decisión pendiente — con un número
 // compartido, «bloqueado por quién» no tiene respuesta hasta que el cliente
 // elige local.
-export const getBlocked = () => api<string[]>('/api/client/blocked')
+/** Un contacto bloqueado, con su plazo si el bloqueo caduca solo. */
+export interface Bloqueado {
+  phone: string
+  /** Hasta cuándo. Nulo en el del dueño, que no caduca. */
+  until: string | null
+  /** `true` = lo puso el dueño y solo él lo levanta. */
+  permanent: boolean
+}
+
+/**
+ * Los bloqueados AHORA MISMO.
+ *
+ * ⚠️ Devuelve objetos y no una lista de teléfonos desde el 2026-08-29. Antes
+ * el servidor listaba a todo el que tuviera `blocked_at`, y el bloqueo
+ * automático de Umbani también lo pone: un cliente que ya había cumplido sus
+ * 30 minutos seguía saliendo «Bloqueado» aquí para siempre, mientras la
+ * tienda le dejaba pedir. El dueño decidía sobre un dato falso.
+ */
+export const getBlocked = () => api<Bloqueado[]>('/api/client/blocked')
 
 /**
  * Bloquear impide PEDIR: `POST /api/store/:slug/orders` responde 403 y el

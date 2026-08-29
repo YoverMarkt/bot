@@ -85,7 +85,7 @@ describe('bloqueo de contactos', () => {
   // podría entrar en ninguna parte y uno de ventas se quedaría sin poder
   // bloquear a quien le pide para molestar.
   it('lo gobierna el permiso de ventas, no el de una pantalla retirada', async () => {
-    vi.spyOn(db, 'getBlockedPhones').mockResolvedValue([])
+    vi.spyOn(db, 'getBlockedContacts').mockResolvedValue([])
 
     expect((await dispatch('get', '/api/client/blocked')).status).toBe(401)
     expect((await dispatch('get', '/api/client/blocked', {
@@ -97,15 +97,48 @@ describe('bloqueo de contactos', () => {
   })
 
   it('lee los bloqueados del negocio del JWT, nunca de un parámetro', async () => {
-    const leer = vi.spyOn(db, 'getBlockedPhones').mockResolvedValue(['593990978367'])
+    const leer = vi.spyOn(db, 'getBlockedContacts').mockResolvedValue([
+      { phone: '593990978367', until: null, permanent: true },
+    ])
 
     const response = await dispatch('get', '/api/client/blocked', {
       auth: authorization(),
       body: { business_id: 'business-b' },
     })
 
-    expect(response.body).toEqual(['593990978367'])
+    expect(response.body).toEqual([
+      { phone: '593990978367', until: null, permanent: true },
+    ])
     expect(leer).toHaveBeenCalledWith('business-a')
+  })
+
+  /**
+   * ⚠️ La lista lleva el PLAZO desde el 2026-08-29, y no es un adorno.
+   *
+   * Antes devolvía teléfonos sueltos y el servidor listaba a todo el que
+   * tuviera `blocked_at`. El bloqueo automático de Umbani también lo pone, así
+   * que un cliente que ya había cumplido sus 30 minutos —y que la tienda
+   * dejaba pedir— seguía saliendo «Bloqueado» en el panel para siempre. El
+   * dueño decidía sobre un dato falso.
+   */
+  it('cada bloqueado viaja con su plazo, para distinguir los dos tipos', async () => {
+    vi.spyOn(db, 'getBlockedContacts').mockResolvedValue([
+      { phone: '593990978367', until: null, permanent: true },
+      { phone: '593991112222', until: '2026-08-29T07:30:00.000Z', permanent: false },
+    ])
+
+    const response = await dispatch('get', '/api/client/blocked', {
+      auth: authorization(),
+    })
+
+    expect(response.status).toBe(200)
+    const [delDueno, automatico] = response.body
+    // El del dueño no promete plazo: no caduca, y solo él lo levanta.
+    expect(delDueno.permanent).toBe(true)
+    expect(delDueno.until).toBeNull()
+    // El automático sí, porque se va solo y el panel tiene que poder decirlo.
+    expect(automatico.permanent).toBe(false)
+    expect(automatico.until).toBe('2026-08-29T07:30:00.000Z')
   })
 
   it('bloquea y desbloquea sobre el negocio autenticado', async () => {

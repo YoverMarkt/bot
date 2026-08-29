@@ -39,7 +39,13 @@ interface ModuloDb {
     phone: string,
     blocked: boolean,
   ): Promise<{ blocked: boolean }>
-  getBlockedPhones(businessId: string): Promise<string[]>
+  getBlockedContacts(businessId: string): Promise<{
+    phone: string
+    /** Hasta cuándo, solo en los temporales vigentes. */
+    until: string | null
+    /** El del dueño: no caduca, lo levanta él. */
+    permanent: boolean
+  }[]>
 }
 const db: ModuloDb = require('../db') as typeof import('../db')
 interface ModuloAuth {
@@ -68,10 +74,16 @@ function databaseFailure(
 }
 
 /**
- * Los números que este negocio tiene bloqueados.
+ * Los números que este negocio tiene bloqueados AHORA MISMO.
  *
  * Van en su propia consulta porque son pocos —y en casi todos los negocios,
  * ninguno—, así que no encarecen la pantalla que los pinta.
+ *
+ * ⚠️ Devuelve objetos con su PLAZO desde el 2026-08-29, no una lista de
+ * teléfonos. Antes listaba `blocked_at is not null` y mentía: el bloqueo
+ * temporal también pone `blocked_at`, así que un cliente que ya había cumplido
+ * sus 30 minutos —y que la base y el chat dejaban pedir— seguía apareciendo
+ * «Bloqueado» en el panel para siempre. El dueño decidía sobre un dato falso.
  */
 router.get(
   '/api/client/blocked',
@@ -80,7 +92,7 @@ router.get(
   async (req, res) => {
     const businessId = getClientBusinessId(req)
     try {
-      return res.json(await db.getBlockedPhones(businessId))
+      return res.json(await db.getBlockedContacts(businessId))
     } catch (error) {
       return databaseFailure(
         res, 'leer números bloqueados',

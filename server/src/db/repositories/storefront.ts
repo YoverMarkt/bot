@@ -713,63 +713,57 @@ const claimBlockedNotice = async (
   return data === true
 }
 
-/** Lo mismo cuando ya se sabe QUIÉN es: el camino de la mini app. */
-const isCustomerBlocked = async (businessId: string, customerId: string): Promise<boolean> => {
-  if (!businessId || !customerId) return false
-  const { data, error } = await db
-    .from('business_customers')
-    .select('blocked_at,blocked_until')
-    .eq('business_id', businessId)
-    .eq('customer_id', customerId)
-    .maybeSingle()
-  fail(error, 'No se pudo comprobar el bloqueo')
-  return estaBloqueado(data as { blocked_at?: string | null; blocked_until?: string | null } | null)
-}
-
 /**
- * ¿Está bloqueado AHORA?
+ * Lo mismo cuando ya se sabe QUIÉN es: el camino de la mini app.
  *
- * Las dos formas se distinguen por si el bloqueo tiene fin:
- *  · `blocked_at` sin `blocked_until` → **permanente**, el que pone el dueño a
- *    mano. Solo él lo levanta.
- *  · `blocked_until` con fecha → **temporal**: caduca solo, sin que nadie haga
- *    nada, y por eso el aviso al cliente sí puede prometer el plazo.
- *
- * ⚠️ Vive aquí Y en `storefront_customer_blocked` (PostgreSQL), y las dos
- * tienen que contestar lo mismo: esta atiende la ruta y aquella el disparador
- * que cierra la carrera al insertar. Si se toca una, se toca la otra — hay una
- * prueba de esquema que ejecuta la de la base con los cuatro casos.
+ * ⚠️ Pregunta a la BASE, como todo lo demás desde el 2026-08-29. Aquí vivía
+ * una copia de la regla (`estaBloqueado`) y esa fue la tercera de cuatro: cada
+ * copia acaba contestando distinto, y esta decide si un pedido se crea.
  */
-const estaBloqueado = (
-  fila: { blocked_at?: string | null; blocked_until?: string | null } | null,
-): boolean => {
-  if (!fila) return false
-  const hasta = fila.blocked_until
-  if (hasta) return new Date(hasta).getTime() > Date.now()
-  return Boolean(fila.blocked_at)
-}
+const isCustomerBlocked = async (businessId: string, customerId: string): Promise<boolean> => (
+  (await customerBlockState(businessId, customerId)).blocked
+)
 
 /**
- * Los teléfonos bloqueados de un negocio, para que el panel los marque.
+ * Los contactos bloqueados AHORA de un negocio, con su plazo.
  *
  * Se consultan aparte y no dentro de la lista de conversaciones a propósito:
  * son POCOS —y en casi todos los negocios, ninguno—, mientras que la lista de
- * chats se pide cada pocos segundos. Un `join` ahí correría sin parar por un
- * dato que casi siempre está vacío; esta consulta usa el índice parcial
- * `idx_business_customers_bloqueados`, que solo indexa las filas bloqueadas.
+ * chats se pide cada pocos segundos.
+ *
+ * ⚠️ Lo calcula la BASE (`business_blocked_contacts`), que a su vez llama a
+ * `storefront_customer_block_state` fila por fila. Aquí había un
+ * `.not('blocked_at', 'is', null)` —la CUARTA copia de la regla— y mentía: el
+ * bloqueo temporal también pone `blocked_at`, así que a los 30 minutos el
+ * cliente ya podía pedir y el panel seguía diciendo «Bloqueado» para siempre.
+ * Lo vio el dueño mirando su pantalla de Clientes el 2026-08-29.
+ *
+ * ⚠️ Devuelve el PLAZO además del teléfono: es lo que deja al panel distinguir
+ * «Bloqueado por ti» de «Bloqueado 20 min», que son dos cosas distintas — una
+ * la levanta el dueño y la otra se va sola.
  */
-const getBlockedPhones = async (businessId: string): Promise<string[]> => {
+const getBlockedContacts = async (businessId: string): Promise<{
+  phone: string
+  until: string | null
+  permanent: boolean
+}[]> => {
   if (!businessId) return []
-  const { data, error } = await db
-    .from('business_customers')
-    .select('customers!inner(phone)')
-    .eq('business_id', businessId)
-    .not('blocked_at', 'is', null)
+  const { data, error } = await db.rpc('business_blocked_contacts', {
+    p_business_id: businessId,
+  })
   fail(error, 'No se pudieron leer los números bloqueados')
-  const filas = (data || []) as { customers?: { phone?: string | null } | null }[]
+  const filas = (data || []) as {
+    phone?: string | null
+    until?: string | null
+    permanent?: boolean | null
+  }[]
   return filas
-    .map(fila => String(fila.customers?.phone || '').trim())
-    .filter(Boolean)
+    .map(fila => ({
+      phone: String(fila.phone || '').trim(),
+      until: fila.until ?? null,
+      permanent: fila.permanent === true,
+    }))
+    .filter(fila => Boolean(fila.phone))
 }
 
 /**
@@ -792,13 +786,26 @@ const setContactBlocked = async (
   const { error } = await db
     .from('business_customers')
     .update(bloqueado
-      ? { blocked_at: ahora, updated_at: ahora }
+      // ⚠️ `blocked_until: null` al BLOQUEAR, y es un arreglo, no una limpieza
+      // de cortesía (2026-08-29). Sin él, bloquear a quien tuvo un bloqueo
+      // automático antes NO surtía efecto: la regla dice que un bloqueo es
+      // permanente cuando `blocked_at` está puesto Y `blocked_until` es nulo,
+      // así que con un `blocked_until` vencido no era ni permanente ni
+      // temporal — el dueño pulsaba «Bloquear», el panel le decía «Cliente
+      // bloqueado», y esa persona seguía pudiendo pedir. La decisión del dueño
+      // manda sobre cualquier automático pendiente.
+      ? { blocked_at: ahora, blocked_until: null, updated_at: ahora }
       // Desbloquear limpia también `blocked_notified_at`: si el dueño lo
       // vuelve a bloquear más adelante, esa es una decisión NUEVA y merece su
       // propia explicación.
+      //
+      // ⚠️ Y `blocked_until`, por lo mismo al revés: sin él, desbloquear a
+      // quien tenía un temporal vigente lo dejaba bloqueado igual mientras el
+      // panel ya lo mostraba libre. Cuando el dueño perdona, perdona entero.
       : {
-        blocked_at: null, blocked_notified_at: null, muted_until: null,
-        reply_count: 0, reply_window_start: null, updated_at: ahora,
+        blocked_at: null, blocked_until: null, blocked_notified_at: null,
+        muted_until: null, reply_count: 0, reply_window_start: null,
+        updated_at: ahora,
       })
     .eq('business_id', businessId)
     .eq('customer_id', customer.id)
@@ -947,9 +954,8 @@ export = {
   claimBlockedNotice,
   getBusinessPricingRule,
   isCustomerBlocked,
-  estaBloqueado,
   setContactBlocked,
-  getBlockedPhones,
+  getBlockedContacts,
   bindStorefrontSession,
   getBusinessCustomer,
   setCustomerDisplayName,
