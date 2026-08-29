@@ -92,6 +92,54 @@ describe('qué estados se avisan', () => {
     // pasó el tiempo, y lo que se quiere es que vuelva a pedir.
     expect(texto).not.toBe(textoDelAviso(NEGOCIO, PEDIDO, 'cancelado'))
   })
+
+  // ── LAS TRES FALTAS ───────────────────────────────────────────────────
+  //
+  // El 2026-08-28 un mismo teléfono dejó SEIS pedidos sin pagar en el mismo
+  // local: pedía, no transfería, el pedido caducaba, el candado se soltaba y
+  // volvía a pedir. Ahora abandonar tiene consecuencia, y el aviso lo dice.
+  it('a la PRIMERA falta no amenaza: solo se le pasó el tiempo', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
+      strikes: 1, blocked: false, limit: 3,
+    })
+    expect(texto).toMatch(/comprobante/i)
+    // Ni cuenta atrás ni advertencia: a la primera casi siempre es un despiste,
+    // y avisar ahí suena a amenaza por nada.
+    expect(texto).not.toMatch(/no podrás/i)
+    expect(texto).not.toMatch(/Van \d/)
+  })
+
+  it('a la SEGUNDA avisa cuántas le quedan, antes de agotarlas', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
+      strikes: 2, blocked: false, limit: 3,
+    })
+    expect(texto).toMatch(/Van 2 pedidos/)
+    expect(texto).toMatch(/uno más/i)
+    expect(texto).toMatch(/no podrás seguir pidiendo/i)
+    // Avisar ANTES es lo que separa una norma de un castigo: un bloqueo que
+    // llega sin aviso previo se lee como que la app falló.
+    expect(texto).not.toMatch(/🚫/)
+  })
+
+  it('a la TERCERA bloquea, y no promete que sea temporal', () => {
+    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
+      strikes: 3, blocked: true, limit: 3,
+    })
+    expect(texto).toMatch(/Ya no puedes pedir/i)
+    expect(texto).toMatch(/políticas de Umbani/i)
+    // ⚠️ `blocked_at` no caduca solo. Prometer una espera que nadie va a
+    // cumplir es mentirle al cliente — la misma razón por la que se descartó
+    // el «bloqueo temporal».
+    expect(texto).not.toMatch(/temporal|24 horas|mañana|vuelve en/i)
+    // Se le dice que no pierde la plataforma entera: la falta es de ESTE local.
+    expect(texto).toMatch(/demás locales/i)
+  })
+
+  it('sin datos de faltas, el aviso es el de siempre', () => {
+    // El registro puede fallar, y eso no puede cambiar lo que lee el cliente.
+    expect(textoDelAviso(NEGOCIO, PEDIDO, 'expirado', null))
+      .toBe(textoDelAviso(NEGOCIO, PEDIDO, 'expirado'))
+  })
 })
 
 // El cliente esperando algo que no va a llegar es el que no vuelve a pedir.

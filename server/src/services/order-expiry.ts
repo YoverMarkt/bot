@@ -48,7 +48,17 @@ export const expireUnpaidOrders = async (): Promise<number> => {
     // forma atómica y sale por el canal del negocio, así que dispararlos a la
     // vez solo amontonaría peticiones al proveedor sin ganar nada.
     for (const pedido of expirados) {
-      await notice.avisarAlCliente(pedido.business_id, pedido.order_id, 'expirado')
+      // ── La falta se anota ANTES de avisar ────────────────────────────────
+      //
+      // ⚠️ En este orden a propósito: el aviso tiene que poder decir cuántas
+      // van y si esta fue la última. Avisando primero, el cliente recibiría
+      // «te queda una» justo después de haberse quedado sin ninguna.
+      //
+      // Si el registro falla se avisa igual: el pedido ya caducó y enterarse
+      // es lo que no puede faltar. `registerUnpaidExpiry` devuelve ceros en
+      // ese caso, que el aviso lee como «no hay nada que advertir».
+      const falta = await db.registerUnpaidExpiry(pedido.business_id, pedido.order_id)
+      await notice.avisarAlCliente(pedido.business_id, pedido.order_id, 'expirado', falta)
     }
     return expirados.length
   } catch (error) {

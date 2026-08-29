@@ -157,12 +157,24 @@ const lineasDelPedido = (pedido: PedidoParaAvisar): string[] => {
  * Devuelve `null` si el estado no es de los que se avisan, en vez de un texto
  * vacío: así quien llama no manda un WhatsApp en blanco.
  */
+/**
+ * Cuántos pedidos ha dejado caducar este cliente en ESTE local, y si el último
+ * lo dejó bloqueado. Viaja hasta aquí para que el aviso pueda decir la verdad
+ * en vez de un genérico.
+ */
+export interface FaltaDePago {
+  strikes: number
+  blocked: boolean
+  limit: number
+}
+
 export const textoDelAviso = (
   // El teléfono hace falta para el aviso de cancelación: ahí lo único útil que
   // se le puede ofrecer al cliente es a quién llamar.
   negocio: Pick<BusinessRecord, 'name' | 'phone'>,
   pedido: PedidoParaAvisar,
   status: string,
+  falta?: FaltaDePago | null,
 ): string | null => {
   const numero = pedido.order_number ? ` #${pedido.order_number}` : ''
   const lineas: string[] = []
@@ -211,11 +223,43 @@ export const textoDelAviso = (
   // deja pensando que el local le falló, cuando lo que falta es su
   // comprobante — y lo que se quiere es que VUELVA a pedir, no que se ofenda.
   if (status === 'expirado') {
+    // ── El tercero se queda fuera de ESTE local ──────────────────────────
+    //
+    // ⚠️ Se avisa ANTES de llegar al tope, y eso es lo que separa una norma de
+    // un castigo: un cliente al que le caduca el primer pedido casi siempre se
+    // distrajo, y merece saber que hay una cuenta antes de agotarla. Un
+    // bloqueo que llega sin aviso previo se lee como que la app falló.
+    //
+    // ⚠️ El texto del bloqueo NO promete que sea temporal: `blocked_at` no
+    // caduca solo, y prometer una espera que nadie va a cumplir es mentirle al
+    // cliente. Se le dice a quién escribir, que es lo único que puede hacer.
+    if (falta?.blocked) {
+      lineas.push(`🚫 *Ya no puedes pedir en ${negocio.name}*`)
+      lineas.push('')
+      lineas.push(`Dejaste ${falta.strikes} pedidos sin pagar en este local, `
+        + 'así que se cerró tu acceso por incumplir las políticas de Umbani.')
+      lineas.push('')
+      lineas.push('Sigues pudiendo pedir en los demás locales. Si crees que es '
+        + 'un error, escríbele al local para que lo revise.')
+      return lineas.join('\n')
+    }
+
     lineas.push(`⌛ *Tu pedido${numero} se canceló*`)
     lineas.push('')
     lineas.push('No alcanzamos a recibir tu comprobante de pago, así que '
       + `${negocio.name} liberó el pedido.`)
     lineas.push('')
+
+    // Cuántas le quedan. Solo cuando ya lleva más de una: decírselo a la
+    // primera suena a amenaza por un despiste.
+    const restantes = falta ? falta.limit - falta.strikes : 0
+    if (falta && falta.strikes > 1 && restantes > 0) {
+      lineas.push(`⚠️ Van ${falta.strikes} pedidos tuyos sin pagar aquí. `
+        + `${restantes === 1 ? 'Si dejas uno más' : `Si dejas ${restantes} más`}`
+        + ', no podrás seguir pidiendo en este local.')
+      lineas.push('')
+    }
+
     lineas.push('Si todavía lo quieres, puedes volver a pedirlo cuando gustes. '
       + 'Escribe *MENÚ* para empezar de nuevo.')
     return lineas.join('\n')
@@ -274,11 +318,12 @@ export const crearNotificadorDePedidos = (dependencias: NotificarDependencias) =
     negocio: BusinessRecord,
     pedido: PedidoParaAvisar,
     status: string,
+    falta?: FaltaDePago | null,
   ): Promise<boolean> {
     const telefono = String(pedido.contact_phone || '').trim()
     if (!esDestinatarioValido(telefono)) return false
 
-    const texto = textoDelAviso(negocio, pedido, status)
+    const texto = textoDelAviso(negocio, pedido, status, falta)
     // Un estado que no se avisa no manda un mensaje vacío: no manda nada.
     if (!texto) return false
 
