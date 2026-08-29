@@ -355,9 +355,14 @@ test('se puede bloquear un número que nunca compró', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)
   let bloqueado: string | null = null
+  // ⚠️ La lista devuelve OBJETOS con su plazo desde el 2026-08-29, no
+  // teléfonos sueltos: el panel tiene que distinguir el bloqueo del dueño
+  // —que no caduca— del automático de Umbani, que se va solo.
   await page.route('**/api/client/blocked', route => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify(bloqueado ? [bloqueado] : []),
+    body: JSON.stringify(
+      bloqueado ? [{ phone: bloqueado, until: null, permanent: true }] : [],
+    ),
   }))
   await page.route('**/api/client/blocked/*', route => {
     bloqueado = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() || '')
@@ -391,12 +396,15 @@ test('se puede bloquear un número que nunca compró', async ({ page }) => {
 test('desde Clientes se puede bloquear y desbloquear', async ({ page }) => {
   await seedClientSession(page)
   await mockClientApi(page)
-  let bloqueados: string[] = []
+  let bloqueados: { phone: string; until: string | null; permanent: boolean }[] = []
   await page.route('**/api/client/blocked', route => route.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify(bloqueados),
   }))
   await page.route('**/api/client/blocked/*', route => {
-    bloqueados = ['593999000111']
+    // `permanent: true` = lo bloqueó el DUEÑO, que es lo que acaba de pasar.
+    // Por eso el botón que sale después dice «Desbloquear» y no «Levantar
+    // ahora»: ese segundo es para el automático, que caduca solo.
+    bloqueados = [{ phone: '593999000111', until: null, permanent: true }]
     return route.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify({ blocked: true }),
     })

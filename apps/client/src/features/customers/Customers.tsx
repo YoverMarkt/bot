@@ -231,8 +231,14 @@ function Directory() {
         </>
       )}
       <Bloqueados
+        // ⚠️ `filter(Boolean)` antes de nada: si la lista llegara con una fila
+        // sin teléfono —un despliegue a medias, un proxy que devuelve otra
+        // forma— los `key` de React se repetirían y la sección se vería rota.
+        // Es la misma defensa que el `Array.isArray` de arriba, por el mismo
+        // motivo: un dato accesorio no puede estropear la pantalla.
         numeros={listaBloqueados
-          .map(fila => fila.phone)
+          .map(fila => String(fila?.phone || '').trim())
+          .filter(Boolean)
           .filter(phone => !customers.some(c => soloDigitos(c.phone) === soloDigitos(phone)))}
         onBloquear={phone => mBlock.mutate({ phone, blocked: true })}
         onDesbloquear={phone => mBlock.mutate({ phone, blocked: false })}
