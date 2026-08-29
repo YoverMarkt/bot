@@ -42,16 +42,14 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 ## 2. STACK OFICIAL (no se cambia sin pedido explícito)
 
-- **Node.js** ≥ 22 + **Express** ^4.19
-- **Supabase (PostgreSQL)** vía `@supabase/supabase-js` ^2.43, con **pgvector** (RAG)
-- **Auth:** `jsonwebtoken` ^9 (JWT) + `bcryptjs` ^2.4
-- **IA (multi-proveedor):** `openai` ^6.45 (OpenAI + compatible Groq), `@anthropic-ai/sdk` ^0.24 (Claude), Gemini (API nativo vía `axios`), Groq (vía SDK OpenAI con baseURL)
-- **WhatsApp:** YCloud (principal) y Meta Graph API — vía `axios`
-- **Telegram:** `telegraf` ^4.16
-- **HTTP:** `axios` ^1.7 · **Rate limit:** `express-rate-limit` ^8.5 · **CORS:** `cors`
-- **Túnel local:** `cloudflared` (solo desarrollo; no forma parte del deploy)
-- **Frontend:** React + Vite + TypeScript + Tailwind CSS + shadcn/ui
-- **Calidad:** TypeScript estricto + ESLint/Oxlint + Vitest + Playwright E2E + GitHub Actions CI
+> 🧾 **La lista de dependencias con sus versiones se retiró el 2026-08-29.**
+> `package.json` la dice entera y siempre al día, mientras que una copia aquí
+> envejece en silencio. Lo que NO dice el manifiesto —y por eso se queda— es
+> la regla: **este stack está cerrado.** Node ≥ 22 + Express, Supabase con
+> pgvector, JWT + bcrypt, WhatsApp por YCloud y Meta, Telegram por telegraf,
+> React + Vite + TypeScript + Tailwind + shadcn/ui. Cambiar cualquiera de esas
+> piezas —o añadir una sexta librería para algo que ya resuelve una de ellas—
+> necesita **pedido explícito del dueño**, no la conveniencia de una tarea.
 
 ---
 
@@ -147,20 +145,12 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
 - **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
-- **El alta no pregunta lo que se deduce del tipo** (2026-08-22). Salen «Ventas por el bot» y «Mini app de la tienda»: eran **dos decisiones que salen de lo mismo** (`takes_orders` y `storefront_enabled` los deriva el tipo), y en su lugar va una línea que dice cómo va a atender — que es lo que el superadmin quería saber al elegir el tipo. ⚠️ **El plan solo pacta la mensualidad**: el desplegable y el resumen dejan de enseñar cupos de contactos y mensajes. Los cupos **se siguen guardando y Medición sigue alertando los excesos**; lo que cambia es que no se negocian al dar de alta. El payload no cambia.
-- **El número del marketplace se verifica** (`/api/admin/verify-platform-channel`, 2026-08-22). Mismo botón que un negocio con canal propio, y **la misma comprobación**: consultar YCloud y confirmar que ese número está vinculado a la cuenta. Solo cambia de dónde salen las credenciales — `server_settings`, no la ficha de un negocio. ⚠️ Acepta lo tecleado **sin guardar**, para validar una key antes de dejarla puesta. ⚠️ Y avisa de lo que YCloud no puede decir: **sin Signing Secret ni Endpoint ID el webhook rechaza en producción (503)** y el número queda mudo aunque la key sea correcta.
-- **El alta por API estaba ROTA y nadie lo veía** (`admin-clients.routes.ts`, corregido 2026-08-21). Al retirar la IA, la base dejó su CHECK en `('menu','miniapp')` pero la ruta se quedó con `CHAT_MODES = ['menu','ai','miniapp']` y, peor, con `'ai'` de valor por defecto. Un alta que no nombrara `chat_mode` escribía `'ai'`, `create_business_onboarding` lo rechazaba y **el negocio no se creaba**. No saltó nunca porque el modal siempre manda un valor válido: solo reventaba por API. ⚠️ El defecto pasa a **`menu`** y no a `miniapp`, por lo mismo que la columna: el menú atiende con cualquier catálogo, mientras que la mini app exige pedidos Y tienda encendidos.
 - **Capacidades por negocio:** `businesses.takes_orders` es la fuente de verdad de si el bot cierra pedidos; el tipo solo la recomienda al crear y nunca sobrescribe decisiones manuales ni negocios existentes. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
-- **El dueño configura, la mini app obedece:** el motor de opciones se administra desde `Catálogo → Personalización` (`apps/client/src/features/catalog/OptionsManager.tsx` sobre `product-options.routes.ts`). Todo lo que el dueño cree ahí —grupos, opciones, plantillas, estrategias de precio— sale en su mini app **sin tocar código**: esa es la promesa entera del motor. El saneamiento de la ruta replica los CHECK de la base a propósito, para que el dueño lea «el máximo tiene que ser 1» en vez de un error de restricción de PostgreSQL. Verificado de punta a punta: crear un grupo obligatorio en el panel y verlo aparecer en `/api/store/:slug/catalog`.
-- **Los dos botones del pago NO hacen lo mismo.** «Solo confirmar el pago» anota `payment_confirmed_at` y **no mueve el pedido ni avisa al cliente**; «Aceptar el pago y preparar» anota el pago, arranca la cocina **y manda el WhatsApp**. El primero existe para el rato en que el dueño ya vio la transferencia pero no va a encender la cocina —y desde el 2026-08-11 hace algo más importante: es lo ÚNICO que libera al cliente de la pantalla de pago cuando mandó el comprobante por WhatsApp. Se llaman así porque con «Marcar pago recibido» el dueño no distinguía uno de otro.
-- **Cuánto tarda el negocio:** `businesses.prep_time_minutes` (listo) y `businesses.delivery_extra_minutes` (llevarlo) los pone **el dueño**; el tipo solo recomienda el valor de arranque (`prepTimeForBusinessType`: heladería 10, pizzería 25, asadero 40), igual que las plantillas y las capacidades — y **jamás pisa a un negocio existente**. ⚠️ No es un texto de portada: `prep_time_minutes` decide **desde qué hora se puede programar**, y por eso la lista de franjas y su validación salen de la MISMA función (`prepOptions` en `storefront.routes.ts`). Estaba fijo en 30 para todos; separar los dos usos deja que la validación acepte horas que la lista no ofrecía.
-- **Pedidos programados: RETIRADOS el 2026-08-07.** El «¿Para cuándo?» del checkout, `scheduleSlots` e `isValidSlot` se eliminaron por decisión del dueño — no están en el diagrama de referencia. **Consecuencia deliberada: con el local `cerrada` ya NO se puede pedir**, ni siquiera para más tarde; la tienda solo acepta pedidos inmediatos. La columna `orders.scheduled_for` y el parámetro `p_scheduled_for` de `create_storefront_order` siguen en la base (la ruta manda `null`): quitarlos obligaría a recrear la función del dinero por un campo que ya nadie llena. Si algún día vuelven, el motor está en el historial del PR #177.
 - **Arranque seguro:** `server/src/config/environment.ts` valida antes de abrir el puerto las credenciales críticas, `BASE_URL`, el fallback opcional `YCLOUD_WEBHOOK_SECRET` si existe y el secreto Telegram cuando aplica. El signing secret de YCloud se guarda preferentemente por negocio y valida la cabecera `YCloud-Signature`. Producción falla cerrado en vez de publicar un healthcheck verde con configuración incompleta.
 - **Contraseñas nuevas:** superadmin, dueños y empleados usan un mínimo de 12 caracteres; siempre se almacenan con bcrypt y nunca se devuelven en APIs.
 - **Sesiones cliente vigentes:** `activeClientGuard` revalida cada 15 segundos como máximo que usuario y negocio sigan activos, y reemplaza rol/permisos del JWT por los valores actuales de la base. Eliminar un usuario, suspender un negocio o revocar permisos falla cerrado sin esperar siete días.
 - **Túnel local (`server/src/services/tunnel.ts`):** solo se usa en desarrollo; inicia y detiene `cloudflared` mediante dependencias inyectables, expone únicamente estado serializable (`url`, `active`, `provider`, `startedAt`) y nunca filtra el proceso hijo en respuestas administrativas. En producción la URL pública sale de `BASE_URL`.
 - **Grafo interno del servidor:** los módulos bajo `server/src/` se enlazan directamente entre `db`, `services`, `integrations`, `middleware` y `routes`; comandos, pruebas y Railway ejecutan el resultado compilado en `server/dist/`.
-- **EL MARGEN SE SUMA AL PRECIO, no se le quita al dueño** (2026-08-25). Hasta esa fecha el modo era `absorbed`: sobre un pedido de $8 el cliente pagaba $8, el comercio recibía **$7,20** y la plataforma $0,80 — y los datos lo confirmaban (5 pedidos: los clientes pagaron $64,95 y el comercio recibió $47,25). **El dueño pone el precio al que quiere vender; quitarle una parte es un descuento forzoso que nunca pactó.** Ahora con `on_top`: el comercio cobra **$8 enteros**, la plataforma suma $0,80 y el cliente paga $8,80. ⚠️ `on_top` estaba escrito desde el 2026-08-16 y un CHECK lo impedía a propósito «hasta que el catálogo, el carrito y el resumen pinten el precio con margen»: el freno se levantó **cuando esa condición se cumplió**, no antes. ⚠️ **`orders.subtotal` NO cambia de significado**: sigue siendo lo del comercio, y con `on_top` es exactamente su liquidación; lo que sube es `total`. Guardarlo ya inflado obligaría a dividir hacia atrás, y una división con redondeo deja de cuadrar. ⚠️ **Un solo redondeo**, sobre el subtotal completo y nunca por línea. ⚠️ **El envío queda FUERA**: $8 + 10% + $1,50 = $10,30, jamás el 10% de $9,50. ⚠️ **El mostrador no lleva margen sumado**: lo teclea el dueño con la persona delante, sin que la plataforma trajera a ese cliente. ⚠️ **El mínimo de compra viaja inflado al catálogo** para que la app compare en la misma moneda que la base, o un carrito de $4,80 parecería llegar a un mínimo de $5 y reventaría al confirmar. ⚠️ **`absorbed` NO se retira**: los pedidos ya sellados deben seguir liquidándose como se cobraron, y `orders_stamp_pricing` recalcula con la regla SELLADA en el pedido, nunca con la vigente hoy. ⚠️ El catálogo solo pinta margen con `percentage` y sin topes: `fixed` y `tiered` son cantidades del PEDIDO ENTERO y repartirlas por producto daría un precio unitario que no existe.
 - **Nombres:** `camelCase` en TypeScript/JavaScript; columnas y tablas en `snake_case`.
 
 
@@ -172,7 +162,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 64 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 72 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -235,6 +225,14 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - El comprobante llega por el CHAT, y esa es ya la única puerta
 - Una foto borrosa no cuesta una venta
 - El comprobante NO es público:
+- El alta no pregunta lo que se deduce del tipo
+- El número del marketplace se verifica
+- El alta por API estaba ROTA y nadie lo veía
+- El dueño configura, la mini app obedece
+- Los dos botones del pago NO hacen lo mismo
+- Cuánto tarda el negocio
+- Pedidos programados: RETIRADOS el 2026-08-07
+- EL MARGEN SE SUMA AL PRECIO, no se le quita al dueño
 - El horario puede CRUZAR LA MEDIANOCHE.
 - Lo que gana la plataforma (`pricing_rules` + `calculate_platform_markup`):
 - El acumulado y el cierre de mes (`platform_markup_summary`, `settle_month_commission`):
@@ -256,6 +254,14 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Mini app de la tienda** → [DECISIONES.md](DECISIONES.md#mini-app-de-la-tienda)
 - **El horario del dueño manda sobre todos los modos** → [DECISIONES.md](DECISIONES.md#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - **Lo que gana la plataforma (motor de margen)** → [DECISIONES.md](DECISIONES.md#lo-que-gana-la-plataforma)
+- **Qué pide el alta de un negocio** → [DECISIONES.md](DECISIONES.md#el-alta-no-pregunta-lo-que-se-deduce-del-tipo)
+- **Verificar el número del marketplace** → [DECISIONES.md](DECISIONES.md#el-número-del-marketplace-se-verifica)
+- **El alta por API y sus modos de chat** → [DECISIONES.md](DECISIONES.md#el-alta-por-api-estaba-rota-y-nadie-lo-veía)
+- **El motor de opciones del catálogo** → [DECISIONES.md](DECISIONES.md#el-dueño-configura-la-mini-app-obedece)
+- **Los dos botones del pago** → [DECISIONES.md](DECISIONES.md#los-dos-botones-del-pago-no-hacen-lo-mismo)
+- **Cuánto tarda el negocio (prep_time)** → [DECISIONES.md](DECISIONES.md#cuánto-tarda-el-negocio)
+- **Pedidos programados (retirados)** → [DECISIONES.md](DECISIONES.md#pedidos-programados-retirados-el-2026-08-07)
+- **Cómo se suma el margen al precio** → [DECISIONES.md](DECISIONES.md#el-margen-se-suma-al-precio-no-se-le-quita-al-dueño)
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 ---

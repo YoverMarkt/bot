@@ -577,3 +577,41 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 - **El acumulado y el cierre de mes (`platform_markup_summary`, `settle_month_commission`):** se suma sobre **`sales` y no sobre `orders`** — un pedido aceptado todavía no es dinero, la venta nace al ENTREGAR. De ahí salen dos cosas gratis: un pedido cancelado nunca llega a `sales` y no genera comisión, y una venta anulada deja de contar. ⚠️ **El mes termina en Ecuador, no en UTC**: `sold_at` es `timestamptz` y sin `at time zone 'America/Guayaquil'` una venta de las 20:00 del día 31 se facturaba en el mes siguiente — son las cinco últimas horas de cada día, la franja de más ventas. El cierre corre solo a diario (mes actual y anterior), es **idempotente porque RECALCULA y escribe el valor absoluto**, y **nunca reescribe un mes ya `paid`**: si una venta se anula después de liquidar, se descuenta del siguiente. `billing.amount` sigue siendo la CUOTA; la comisión va en `commission_amount` y el total es la suma. ⚠️ Pensado para muchos negocios: es **una operación por conjuntos, no un bucle** —con 5.000 locales un bucle son 5.000 idas y vueltas— y `idx_sales_cierre` existe porque el índice anterior empieza por `business_id` y no sirve para un rango de fechas global.
 
+---
+
+<!-- Movidos desde la sección 7 de CLAUDE.md el 2026-08-29 (/doctor).
+     Son el razonamiento de UNA pieza concreta: solo hacen falta al
+     tocarla, y en CLAUDE.md se pagaban en cada sesión. Ni una palabra
+     recortada; lo único que cambia es cuándo se leen. -->
+
+## El alta no pregunta lo que se deduce del tipo
+
+- **El alta no pregunta lo que se deduce del tipo** (2026-08-22). Salen «Ventas por el bot» y «Mini app de la tienda»: eran **dos decisiones que salen de lo mismo** (`takes_orders` y `storefront_enabled` los deriva el tipo), y en su lugar va una línea que dice cómo va a atender — que es lo que el superadmin quería saber al elegir el tipo. ⚠️ **El plan solo pacta la mensualidad**: el desplegable y el resumen dejan de enseñar cupos de contactos y mensajes. Los cupos **se siguen guardando y Medición sigue alertando los excesos**; lo que cambia es que no se negocian al dar de alta. El payload no cambia.
+
+## El número del marketplace se verifica
+
+- **El número del marketplace se verifica** (`/api/admin/verify-platform-channel`, 2026-08-22). Mismo botón que un negocio con canal propio, y **la misma comprobación**: consultar YCloud y confirmar que ese número está vinculado a la cuenta. Solo cambia de dónde salen las credenciales — `server_settings`, no la ficha de un negocio. ⚠️ Acepta lo tecleado **sin guardar**, para validar una key antes de dejarla puesta. ⚠️ Y avisa de lo que YCloud no puede decir: **sin Signing Secret ni Endpoint ID el webhook rechaza en producción (503)** y el número queda mudo aunque la key sea correcta.
+
+## El alta por API estaba ROTA y nadie lo veía
+
+- **El alta por API estaba ROTA y nadie lo veía** (`admin-clients.routes.ts`, corregido 2026-08-21). Al retirar la IA, la base dejó su CHECK en `('menu','miniapp')` pero la ruta se quedó con `CHAT_MODES = ['menu','ai','miniapp']` y, peor, con `'ai'` de valor por defecto. Un alta que no nombrara `chat_mode` escribía `'ai'`, `create_business_onboarding` lo rechazaba y **el negocio no se creaba**. No saltó nunca porque el modal siempre manda un valor válido: solo reventaba por API. ⚠️ El defecto pasa a **`menu`** y no a `miniapp`, por lo mismo que la columna: el menú atiende con cualquier catálogo, mientras que la mini app exige pedidos Y tienda encendidos.
+
+## El dueño configura, la mini app obedece
+
+- **El dueño configura, la mini app obedece:** el motor de opciones se administra desde `Catálogo → Personalización` (`apps/client/src/features/catalog/OptionsManager.tsx` sobre `product-options.routes.ts`). Todo lo que el dueño cree ahí —grupos, opciones, plantillas, estrategias de precio— sale en su mini app **sin tocar código**: esa es la promesa entera del motor. El saneamiento de la ruta replica los CHECK de la base a propósito, para que el dueño lea «el máximo tiene que ser 1» en vez de un error de restricción de PostgreSQL. Verificado de punta a punta: crear un grupo obligatorio en el panel y verlo aparecer en `/api/store/:slug/catalog`.
+
+## Los dos botones del pago NO hacen lo mismo
+
+- **Los dos botones del pago NO hacen lo mismo.** «Solo confirmar el pago» anota `payment_confirmed_at` y **no mueve el pedido ni avisa al cliente**; «Aceptar el pago y preparar» anota el pago, arranca la cocina **y manda el WhatsApp**. El primero existe para el rato en que el dueño ya vio la transferencia pero no va a encender la cocina —y desde el 2026-08-11 hace algo más importante: es lo ÚNICO que libera al cliente de la pantalla de pago cuando mandó el comprobante por WhatsApp. Se llaman así porque con «Marcar pago recibido» el dueño no distinguía uno de otro.
+
+## Cuánto tarda el negocio
+
+- **Cuánto tarda el negocio:** `businesses.prep_time_minutes` (listo) y `businesses.delivery_extra_minutes` (llevarlo) los pone **el dueño**; el tipo solo recomienda el valor de arranque (`prepTimeForBusinessType`: heladería 10, pizzería 25, asadero 40), igual que las plantillas y las capacidades — y **jamás pisa a un negocio existente**. ⚠️ No es un texto de portada: `prep_time_minutes` decide **desde qué hora se puede programar**, y por eso la lista de franjas y su validación salen de la MISMA función (`prepOptions` en `storefront.routes.ts`). Estaba fijo en 30 para todos; separar los dos usos deja que la validación acepte horas que la lista no ofrecía.
+
+## Pedidos programados: RETIRADOS el 2026-08-07
+
+- **Pedidos programados: RETIRADOS el 2026-08-07.** El «¿Para cuándo?» del checkout, `scheduleSlots` e `isValidSlot` se eliminaron por decisión del dueño — no están en el diagrama de referencia. **Consecuencia deliberada: con el local `cerrada` ya NO se puede pedir**, ni siquiera para más tarde; la tienda solo acepta pedidos inmediatos. La columna `orders.scheduled_for` y el parámetro `p_scheduled_for` de `create_storefront_order` siguen en la base (la ruta manda `null`): quitarlos obligaría a recrear la función del dinero por un campo que ya nadie llena. Si algún día vuelven, el motor está en el historial del PR #177.
+
+## EL MARGEN SE SUMA AL PRECIO, no se le quita al dueño
+
+- **EL MARGEN SE SUMA AL PRECIO, no se le quita al dueño** (2026-08-25). Hasta esa fecha el modo era `absorbed`: sobre un pedido de $8 el cliente pagaba $8, el comercio recibía **$7,20** y la plataforma $0,80 — y los datos lo confirmaban (5 pedidos: los clientes pagaron $64,95 y el comercio recibió $47,25). **El dueño pone el precio al que quiere vender; quitarle una parte es un descuento forzoso que nunca pactó.** Ahora con `on_top`: el comercio cobra **$8 enteros**, la plataforma suma $0,80 y el cliente paga $8,80. ⚠️ `on_top` estaba escrito desde el 2026-08-16 y un CHECK lo impedía a propósito «hasta que el catálogo, el carrito y el resumen pinten el precio con margen»: el freno se levantó **cuando esa condición se cumplió**, no antes. ⚠️ **`orders.subtotal` NO cambia de significado**: sigue siendo lo del comercio, y con `on_top` es exactamente su liquidación; lo que sube es `total`. Guardarlo ya inflado obligaría a dividir hacia atrás, y una división con redondeo deja de cuadrar. ⚠️ **Un solo redondeo**, sobre el subtotal completo y nunca por línea. ⚠️ **El envío queda FUERA**: $8 + 10% + $1,50 = $10,30, jamás el 10% de $9,50. ⚠️ **El mostrador no lleva margen sumado**: lo teclea el dueño con la persona delante, sin que la plataforma trajera a ese cliente. ⚠️ **El mínimo de compra viaja inflado al catálogo** para que la app compare en la misma moneda que la base, o un carrito de $4,80 parecería llegar a un mínimo de $5 y reventaría al confirmar. ⚠️ **`absorbed` NO se retira**: los pedidos ya sellados deben seguir liquidándose como se cobraron, y `orders_stamp_pricing` recalcula con la regla SELLADA en el pedido, nunca con la vigente hoy. ⚠️ El catálogo solo pinta margen con `percentage` y sin topes: `fixed` y `tiered` son cantidades del PEDIDO ENTERO y repartirlas por producto daría un precio unitario que no existe.
