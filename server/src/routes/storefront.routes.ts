@@ -89,6 +89,12 @@ interface StorefrontRouteDatabase {
     customerId: string,
     name: string,
   ): Promise<{ error: unknown }>
+  /** El dinero OFICIAL del pedido, leído de la fila ya sellada por el disparador. */
+  getOrderMoney(businessId: string, orderId: string): Promise<{
+    subtotal: number | string | null
+    shipping: number | string | null
+    total: number | string | null
+  } | null>
   createStorefrontOrder(input: Record<string, unknown>): Promise<{
     data: unknown
     error: { message?: string; code?: string } | null
@@ -632,7 +638,23 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     void pedirComprobantePorChat(businessId, String((result.data as { id?: unknown }).id || ''))
   }
 
-  return res.status(201).json(result.data)
+  // ── El total que se le devuelve al cliente sale de la FILA ──────────────
+  //
+  // ⚠️ No de lo que calculó la RPC. `create_storefront_order` devuelve su
+  // propia cuenta (`subtotal + envío`), y el disparador `orders_stamp_pricing`
+  // corre DESPUÉS: en modo `on_top` suma el margen de la plataforma al total.
+  //
+  // El efecto era de dinero, no de pintura: la pantalla de «pedido recibido»
+  // enseñaba $12.99 —y ese es el número que el cliente copia para transferir—
+  // sobre un pedido que la base guardaba en $14.09. Siete pedidos nacieron así
+  // antes de que se viera; ninguno llegó a pagarse, pero el siguiente sí.
+  //
+  // Si la relectura fallara se devuelve lo que hay: el pedido está creado y
+  // dejar al cliente sin confirmación por un total sería peor que un total
+  // corto. Lo vigila la prueba de que los dos números coinciden.
+  const creado = (result.data || {}) as Record<string, unknown>
+  const oficial = await db.getOrderMoney(businessId, String(creado.id || ''))
+  return res.status(201).json(oficial ? { ...creado, ...oficial } : creado)
 })
 
 // ── Seguimiento del pedido ────────────────────────────────────────────────

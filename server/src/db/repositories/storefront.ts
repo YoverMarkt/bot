@@ -312,6 +312,36 @@ const createStorefrontOrder = async (input: {
 })
 
 /**
+ * El dinero OFICIAL del pedido, leído de la fila ya sellada.
+ *
+ * ⚠️ Existe porque `create_storefront_order` devuelve su propia cuenta
+ * —`subtotal + envío`— y esa cuenta se queda CORTA: el disparador
+ * `orders_stamp_pricing` corre después (BEFORE UPDATE) y, en modo `on_top`,
+ * suma el margen de la plataforma al total. El resultado era que la app
+ * enseñaba $12.99 sobre un pedido que la base guardaba en $14.09, y ese es el
+ * número que el cliente iba a transferir: pagaba $1.10 de menos en cada
+ * pedido, y el descuadre lo comía el negocio.
+ *
+ * Se lee la fila en vez de recrear la RPC a propósito: la regla del proyecto
+ * es no tocar las funciones del dinero por algo que se resuelve fuera, porque
+ * copiar la versión equivocada desde `schema.sql` cuesta más de lo que arregla.
+ *
+ * Sin `contact_phone` en el filtro porque lo llama la ruta que ACABA de crear
+ * el pedido con esos datos; el id es de un pedido recién nacido y el negocio
+ * ya está comprobado.
+ */
+const getOrderMoney = async (businessId: string, orderId: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .select('subtotal,shipping,total')
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error || !data) return null
+  return data as { subtotal: number | string | null; shipping: number | string | null; total: number | string | null }
+}
+
+/**
  * Registra la huella del comprobante y avisa si esa imagen ya se usó.
  *
  * ⚠️ La búsqueda de duplicados es GLOBAL —un comprobante reutilizado en otro
@@ -765,6 +795,7 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   createStorefrontOrder,
+  getOrderMoney,
   getStorefrontOrders,
   getStorefrontOrder,
   attachStorefrontPaymentProof,

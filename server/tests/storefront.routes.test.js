@@ -208,6 +208,11 @@ describe('crear pedido desde la mini app', () => {
     // segundos: crear un pedido comprueba antes que el cliente no esté
     // bloqueado.
     vi.spyOn(db, 'isCustomerBlocked').mockResolvedValue(false)
+    // Y lo mismo al terminar: la ruta relee la fila para devolver el total
+    // SELLADO (con el margen que suma el disparador) en vez del que calculó la
+    // RPC. Por defecto se devuelve `null`, que es el camino de «no se pudo
+    // releer»: cada prueba que le importe el dinero lo espía a su manera.
+    vi.spyOn(db, 'getOrderMoney').mockResolvedValue(null)
   })
   afterEach(() => vi.restoreAllMocks())
 
@@ -232,6 +237,62 @@ describe('crear pedido desde la mini app', () => {
     expect(crear).not.toHaveBeenCalled()
     // Y no se le dice «estás bloqueado»: quien molesta busca una reacción.
     expect(respuesta.body.error).not.toMatch(/bloquead/i)
+  })
+
+  // ── EL TOTAL QUE VE EL CLIENTE ES EL DE LA FILA ─────────────────────────
+  //
+  // ⚠️ `create_storefront_order` devuelve SU cuenta —`subtotal + envío`— y el
+  // disparador `orders_stamp_pricing` corre después: en modo `on_top` suma el
+  // margen de la plataforma al total. La ruta devolvía lo primero, así que la
+  // app enseñaba $12.99 sobre un pedido que la base guardaba en $14.09 — y ese
+  // es justo el número que el cliente copia para transferir. Siete pedidos
+  // reales nacieron con esa diferencia de $1.10.
+  //
+  // Estas dos pruebas existen para que los dos números no se puedan volver a
+  // separar sin que alguien se entere.
+  it('devuelve el total SELLADO en la fila, no el que calculó la RPC', async () => {
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      // Lo que la RPC calcula: subtotal + envío, sin el margen.
+      data: { id: 'pedido-1', subtotal: 10.99, shipping: 2, total: 12.99, items: 1 },
+      error: null,
+    })
+    // Lo que el disparador dejó escrito de verdad.
+    const leer = vi.spyOn(db, 'getOrderMoney').mockResolvedValue({
+      subtotal: 10.99, shipping: 2, total: 14.09,
+    })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(leer).toHaveBeenCalledWith('negocio-a', 'pedido-1')
+    // El total del cliente es el de la fila, con el margen incluido.
+    expect(Number(respuesta.body.total)).toBe(14.09)
+    // Y NO el que devolvió la RPC.
+    expect(Number(respuesta.body.total)).not.toBe(12.99)
+    // El identificador no se pierde por el camino.
+    expect(respuesta.body.id).toBe('pedido-1')
+  })
+
+  it('si no se puede releer la fila, el pedido igual se confirma', async () => {
+    // El pedido YA está creado. Dejar al cliente sin confirmación por no poder
+    // releer un total sería peor que devolver el que se tiene.
+    vi.spyOn(db, 'createStorefrontOrder').mockResolvedValue({
+      data: { id: 'pedido-2', subtotal: 10, shipping: 0, total: 10 }, error: null,
+    })
+    vi.spyOn(db, 'getOrderMoney').mockResolvedValue(null)
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'post', {
+      storefront: { businessId: 'negocio-a', customerId: 'cliente-1', contactPhone: '+593999' },
+      params: { slug: 'pizzeria' },
+      body: { items: [{ productId: 'producto-1', quantity: 1 }] },
+    })
+
+    expect(respuesta.status).toBe(201)
+    expect(respuesta.body.id).toBe('pedido-2')
   })
 
   it('descarta cualquier precio que mande el teléfono', async () => {
