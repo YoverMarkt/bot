@@ -111,7 +111,10 @@ const pedidosEsperandoComprobante = async (
 ) => {
   let consulta = db
     .from('orders')
-    .select('id, business_id, order_number, total, contact_phone, created_at, businesses(name)')
+    // ⚠️ `customer_id` viaja desde el 2026-09-01: es a quien se le cuenta el
+    // rechazo cuando la imagen no era un comprobante, y el local sale de aquí
+    // —del PEDIDO— nunca del número por el que llegó la foto.
+    .select('id, business_id, customer_id, order_number, total, contact_phone, created_at, businesses(name)')
     .eq('status', 'esperando_pago')
     .is('payment_proof_url', null)
     .is('payment_confirmed_at', null)
@@ -245,6 +248,49 @@ const registerUnpaidExpiry = async (
   return data as { strikes: number; blocked: boolean; limit: number }
 }
 
+/**
+ * Anota que este cliente mandó una imagen que NO era un comprobante, y lo
+ * bloquea un rato al segundo seguido.
+ *
+ * La compuerta ya rechazaba la foto y le pedía la captura buena. Lo que
+ * faltaba es que INSISTIR tuviera consecuencia: quien manda dos seguidas está
+ * probando, no equivocándose.
+ *
+ * ⚠️ El bloqueo que pone es TEMPORAL, y eso importa más aquí que en los
+ * pedidos sin pagar: la visión se equivoca. Una captura movida, un banco con
+ * un diseño raro, una transferencia hecha desde la cuenta de un familiar. Con
+ * media hora fuera, el cliente honesto vuelve esa misma noche; con un bloqueo
+ * permanente se habría perdido la venta y el cliente.
+ */
+const registerRejectedReceipt = async (
+  businessId: string,
+  customerId: string,
+): Promise<{ strikes: number; blocked: boolean; limit: number; minutes?: number | null }> => {
+  const { data, error } = await db.rpc('register_rejected_receipt', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+  })
+  // Que no se pueda contar NO puede impedir la respuesta al cliente: sigue
+  // necesitando saber que su foto no servía.
+  if (error || !data) return { strikes: 0, blocked: false, limit: 2 }
+  return data as { strikes: number; blocked: boolean; limit: number; minutes?: number | null }
+}
+
+/**
+ * Pone a cero los rechazos: llegó un comprobante bueno.
+ *
+ * Cuenta la INSISTENCIA, no el historial. Quien mandó una borrosa, luego la
+ * buena, y dentro de tres semanas otra borrosa, no es el que está probando a
+ * ver si cuela algo — y sin esto acabaría bloqueado por dos despistes
+ * separados por meses.
+ */
+const clearRejectedReceipts = async (businessId: string, customerId: string): Promise<void> => {
+  await db.rpc('clear_rejected_receipts', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+  })
+}
+
 const claimOrderNotification = async (
   businessId: string,
   orderId: string,
@@ -340,5 +386,7 @@ export = {
   claimOrderNotification,
   expireUnpaidOrders,
   registerUnpaidExpiry,
+  registerRejectedReceipt,
+  clearRejectedReceipts,
   pedidosEsperandoComprobante,
 }

@@ -3626,6 +3626,79 @@ $$;
 select '✅ el bloqueo temporal caduca solo, no pisa el del dueño, y dos faltas bastan' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- INSISTIR CON IMÁGENES QUE NO SON UN PAGO CUESTA (2026-09-01)
+--
+-- La compuerta ya rechazaba la foto de un perro y pedía la captura buena. Lo
+-- que faltaba es que la SEGUNDA seguida tuviera consecuencia.
+--
+-- ⚠️ El contador se pone a CERO con un comprobante bueno: cuenta la
+-- insistencia, no el historial. Sin eso, un cliente fiel acabaría bloqueado
+-- por dos despistes separados por meses — y esa es la parte que más fácil se
+-- rompe al tocar esto, así que se ejecuta.
+do $$
+declare
+  v_biz     uuid;
+  v_cliente uuid;
+  v_r       jsonb;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled, block_minutes)
+  values ('verificacion-rechazos', 'Local Rechazos', 'pizzería', 'marketplace', true, true, 45)
+  returning id into v_biz;
+
+  insert into public.customers (phone) values ('593900000951') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id) values (v_biz, v_cliente);
+
+  -- 1ª imagen que no es un pago: cuenta, avisa, NO bloquea.
+  v_r := public.register_rejected_receipt(v_biz, v_cliente);
+  if (v_r ->> 'strikes')::int <> 1 or (v_r ->> 'blocked')::boolean then
+    raise exception 'el primer rechazo no debía bloquear: %', v_r;
+  end if;
+  if public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'el primer rechazo dejó al cliente bloqueado';
+  end if;
+
+  -- 2ª: bloquea, y con los minutos DE ESTE LOCAL.
+  v_r := public.register_rejected_receipt(v_biz, v_cliente);
+  if (v_r ->> 'strikes')::int <> 2 or not (v_r ->> 'blocked')::boolean then
+    raise exception 'el segundo rechazo TENÍA que bloquear: %', v_r;
+  end if;
+  if (v_r ->> 'minutes')::int <> 45 then
+    raise exception 'el bloqueo no tomó los minutos del local: %', v_r;
+  end if;
+  if not public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'el segundo rechazo no bloqueó de verdad';
+  end if;
+
+  -- ⚠️ Y un comprobante BUENO borra la cuenta.
+  perform public.clear_rejected_receipts(v_biz, v_cliente);
+  if (select rejected_receipts from public.business_customers
+      where business_id = v_biz and customer_id = v_cliente) <> 0 then
+    raise exception 'un comprobante bueno no puso a cero la cuenta';
+  end if;
+
+  -- ⚠️ Pero NO levanta el bloqueo que ya estaba: son dos cosas distintas, y
+  -- mandar una captura buena después de quedar fuera no reabre el local.
+  if not public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'limpiar los rechazos levantó el bloqueo';
+  end if;
+
+  -- Tras limpiar, vuelve a hacer falta insistir dos veces.
+  update public.business_customers
+  set blocked_at = null, blocked_until = null
+  where business_id = v_biz and customer_id = v_cliente;
+  v_r := public.register_rejected_receipt(v_biz, v_cliente);
+  if (v_r ->> 'strikes')::int <> 1 or (v_r ->> 'blocked')::boolean then
+    raise exception 'la cuenta no arrancó de cero tras el comprobante bueno: %', v_r;
+  end if;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone = '593900000951';
+end;
+$$;
+
+select '✅ dos imágenes que no son un pago bloquean un rato, y una buena pone la cuenta a cero' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- EL MARGEN SE SUMA AL PRECIO, NO SE LE QUITA AL DUEÑO (2026-08-25)
 --
 -- Hasta hoy, sobre un pedido de $8 el comercio recibía $7,20. El dueño pone el

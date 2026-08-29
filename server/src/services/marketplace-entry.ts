@@ -16,7 +16,8 @@ import { optionTitle } from './bot-menu-flow'
 import * as checkout from './marketplace-checkout'
 import {
   esComprobante, esComprobanteAmbiguo, esFotoQueNoEsComprobante,
-  preguntaDeQueLocal, RESPUESTA_COMPROBANTE, RESPUESTA_NO_ES_COMPROBANTE,
+  preguntaDeQueLocal, rechazoDelMarcador, RESPUESTA_COMPROBANTE,
+  respuestaNoEsComprobante,
 } from './payment-proof-inbox'
 import type { InboundLocation } from './inbound-webhook'
 import type {
@@ -382,7 +383,13 @@ export async function handleMarketplaceMessage(
     return
   }
   if (esFotoQueNoEsComprobante(text)) {
-    await send(RESPUESTA_NO_ES_COMPROBANTE, [])
+    // ⚠️ La consecuencia viaja DENTRO del marcador, igual que los nombres del
+    // comprobante ambiguo: quien lo escribió ya consultó la base, y volver a
+    // consultarla aquí sería pagar dos veces por el mismo dato.
+    //
+    // Sin cola —los marcadores que ya circulaban antes de esto— la respuesta
+    // es exactamente la de siempre.
+    await send(respuestaNoEsComprobante(rechazoDelMarcador(text)), [])
     return
   }
   if (esComprobanteAmbiguo(text)) {

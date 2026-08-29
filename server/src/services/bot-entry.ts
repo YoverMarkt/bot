@@ -175,6 +175,18 @@ const adjuntarComprobante = crearBuzonDeComprobantes({
     const ingest = require('./receipt-ingest') as typeof import('./receipt-ingest')
     return ingest.registrarComprobante(input)
   },
+  // Insistir con imágenes que no son un pago cuesta: a la segunda seguida, el
+  // local se cierra un rato para ese cliente. El bloqueo es TEMPORAL a
+  // propósito — la visión se equivoca, y media hora fuera no pierde a un
+  // cliente honesto con la captura movida.
+  contarRechazo: (businessId, customerId) => {
+    const db = require('../db') as typeof import('../db')
+    return db.registerRejectedReceipt(businessId, customerId)
+  },
+  olvidarRechazos: (businessId, customerId) => {
+    const db = require('../db') as typeof import('../db')
+    return db.clearRejectedReceipts(businessId, customerId)
+  },
 })
 
 function imageQuery(identified: string): string {

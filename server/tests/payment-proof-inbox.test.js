@@ -269,3 +269,109 @@ describe('un comprobante con pagos pendientes en dos locales', () => {
     expect(esComprobanteAmbiguo('[foto]')).toBe(false)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INSISTIR CON IMÁGENES QUE NO SON UN PAGO CUESTA (2026-09-01)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// La compuerta ya rechazaba la foto y pedía la captura buena. Lo que faltaba
+// es que la SEGUNDA seguida tuviera consecuencia: quien manda dos está
+// probando, no equivocándose.
+describe('la compuerta cuenta los rechazos', () => {
+  const conCliente = { ...PEDIDO_ESPERANDO, customer_id: 'cliente-1' }
+
+  const montarConVision = (rechazo) => {
+    const pedidos = [{ ...conCliente, business_id: 'negocio-1', businesses: { name: 'El Puerto' } }]
+    const espias = {
+      pedidosEsperando: vi.fn().mockResolvedValue(pedidos.filter(p => esperaComprobante(p))),
+      subirPrivado: vi.fn().mockResolvedValue({ url: 'https://nube/x.jpg', public_id: 'x' }),
+      adjuntar: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      registrarError: vi.fn().mockResolvedValue(undefined),
+      // La visión dice que NO es un comprobante.
+      analizarImagen: vi.fn().mockResolvedValue({ ok: true, esComprobante: false }),
+      contarRechazo: vi.fn().mockResolvedValue(rechazo),
+      olvidarRechazos: vi.fn().mockResolvedValue(undefined),
+    }
+    return { adjuntar: crearBuzonDeComprobantes(espias), espias }
+  }
+
+  it('cuenta el rechazo al local DEL PEDIDO, no al del número', async () => {
+    const { adjuntar, espias } = montarConVision({ strikes: 1, blocked: false, limit: 2 })
+    const r = await adjuntar(null, '593990978367', FOTO, 'image/jpeg')
+
+    expect(r.noEsComprobante).toBe(true)
+    expect(espias.contarRechazo).toHaveBeenCalledWith('negocio-1', 'cliente-1')
+    expect(r.rechazo).toEqual({ strikes: 1, blocked: false, limit: 2 })
+  })
+
+  // ⚠️ LA ALARMA DEL DUEÑO. Adjuntar mueve el pedido a `pago_en_revision` y se
+  // la enciende; por eso la compuerta corta ANTES. Sin esto, cada foto de un
+  // perro le sonaría como si fuera un pago — que es justo lo que el dueño
+  // pidió evitar.
+  it('NO adjunta ni sube nada, así que la alarma no suena', async () => {
+    const { adjuntar, espias } = montarConVision({ strikes: 1, blocked: false, limit: 2 })
+    await adjuntar(null, '593990978367', FOTO, 'image/jpeg')
+
+    expect(espias.adjuntar).not.toHaveBeenCalled()
+    // Y tampoco se paga almacenamiento por una foto que no era un pago.
+    expect(espias.subirPrivado).not.toHaveBeenCalled()
+  })
+
+  it('el bloqueo del segundo rechazo viaja en el resultado', async () => {
+    const { adjuntar } = montarConVision({ strikes: 2, blocked: true, limit: 2, minutes: 30 })
+    const r = await adjuntar(null, '593990978367', FOTO, 'image/jpeg')
+
+    expect(r.rechazo.blocked).toBe(true)
+    expect(r.rechazo.minutes).toBe(30)
+  })
+
+  // ⚠️ Contar NUNCA puede impedir la respuesta: el cliente sigue necesitando
+  // saber qué mandar.
+  it('si contar falla, la foto se rechaza igual', async () => {
+    const { adjuntar, espias } = montarConVision(null)
+    espias.contarRechazo.mockRejectedValue(new Error('la base no responde'))
+
+    const r = await adjuntar(null, '593990978367', FOTO, 'image/jpeg')
+    expect(r.noEsComprobante).toBe(true)
+    expect(r.rechazo).toBeUndefined()
+  })
+
+  it('un comprobante BUENO pone la cuenta a cero', async () => {
+    const { adjuntar, espias } = montarConVision({ strikes: 0, blocked: false, limit: 2 })
+    // Esta vez la visión sí lo reconoce.
+    espias.analizarImagen.mockResolvedValue({ ok: true, esComprobante: true })
+
+    const r = await adjuntar(null, '593990978367', FOTO, 'image/jpeg')
+
+    expect(r.adjuntado).toBe(true)
+    expect(espias.olvidarRechazos).toHaveBeenCalledWith('negocio-1', 'cliente-1')
+  })
+})
+
+// El marcador lleva la consecuencia dentro, como el del comprobante ambiguo
+// lleva los nombres: quien lo escribe ya consultó la base.
+describe('el marcador de la foto rechazada', () => {
+  const { textoDeFotoQueNoEsComprobante, rechazoDelMarcador, esFotoQueNoEsComprobante } =
+    require('../dist/services/payment-proof-inbox')
+
+  it('lleva cuántas van, y se puede desempaquetar', () => {
+    const texto = textoDeFotoQueNoEsComprobante({ strikes: 1, blocked: false, limit: 2 })
+    expect(esFotoQueNoEsComprobante(texto)).toBe(true)
+    expect(rechazoDelMarcador(texto)).toEqual({ strikes: 1, blocked: false, limit: 2 })
+  })
+
+  it('lleva el bloqueo con sus minutos', () => {
+    const texto = textoDeFotoQueNoEsComprobante({ strikes: 2, blocked: true, limit: 2, minutes: 45 })
+    expect(rechazoDelMarcador(texto).blocked).toBe(true)
+    expect(rechazoDelMarcador(texto).minutes).toBe(45)
+  })
+
+  // ⚠️ Los marcadores SIN cola son los que ya circulaban antes de esto. Tienen
+  // que seguir reconociéndose, o un mensaje a medio camino dejaría al cliente
+  // sin respuesta.
+  it('un marcador viejo, sin cola, sigue valiendo', () => {
+    const viejo = textoDeFotoQueNoEsComprobante()
+    expect(esFotoQueNoEsComprobante(viejo)).toBe(true)
+    expect(rechazoDelMarcador(viejo)).toBeUndefined()
+  })
+})
