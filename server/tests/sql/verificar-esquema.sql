@@ -3699,6 +3699,82 @@ $$;
 select '✅ dos imágenes que no son un pago bloquean un rato, y una buena pone la cuenta a cero' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- UN SOLO PEDIDO SIN PAGAR A LA VEZ (2026-09-02)
+--
+-- Lo encontró el dueño probando: pidió, no pagó, volvió al chat, le dieron un
+-- enlace nuevo y creó OTRO pedido. El primero se quedó en el limbo. Con el tope
+-- de 3 podía repetirlo tres veces, y el dueño veía tres comandas de la misma
+-- persona por un solo pedido real.
+--
+-- Se ejecuta el disparador insertando de verdad, porque lo que hay que
+-- demostrar es que RECHAZA — y un `raise` que no salta no se ve leyendo.
+do $$
+declare
+  v_biz   uuid;
+  v_cli   uuid;
+  v_uno   uuid;
+  v_error text;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-un-pedido', 'Local Un Pedido', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+  insert into public.customers (phone) values ('593900000961') returning id into v_cli;
+
+  -- El primero entra sin problema.
+  insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+  values (v_biz, v_cli, '593900000961', 'esperando_pago', 10, 10, 'storefront')
+  returning id into v_uno;
+
+  -- ⚠️ El SEGUNDO tiene que ser rechazado mientras el primero espera pago.
+  begin
+    insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+    values (v_biz, v_cli, '593900000961', 'esperando_pago', 10, 10, 'storefront');
+    raise exception 'se pudo crear un segundo pedido debiendo un comprobante';
+  exception when insufficient_privilege then
+    get stacked diagnostics v_error = message_text;
+    if v_error not like '%comprobante%' then
+      raise exception 'rechazó, pero con el mensaje equivocado: %', v_error;
+    end if;
+  end;
+
+  -- ⚠️ Y tampoco en OTRO local: el número es único para todo Umbani, así que
+  -- la heladería no tiene forma de saber que debe algo en la pizzería.
+  declare v_otro uuid;
+  begin
+    insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+    values ('verificacion-un-pedido-2', 'Otro Local', 'pizzería', 'marketplace', true, true)
+    returning id into v_otro;
+    begin
+      insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+      values (v_otro, v_cli, '593900000961', 'esperando_pago', 10, 10, 'storefront');
+      raise exception 'pudo pedir en otro local debiendo un comprobante';
+    exception when insufficient_privilege then
+      null;
+    end;
+    delete from public.businesses where id = v_otro;
+  end;
+
+  -- ⚠️ Al MANDAR el comprobante (`pago_en_revision`) vuelve a poder pedir: ya
+  -- no debe nada, espera al dueño. Retenerlo ahí sería castigarlo porque el
+  -- local va lento.
+  update public.orders set status = 'pago_en_revision' where id = v_uno;
+  insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+  values (v_biz, v_cli, '593900000961', 'pendiente', 10, 10, 'storefront');
+
+  -- Y un pedido que NO viene de la tienda nunca se frena: el de mostrador lo
+  -- teclea el dueño con la persona delante, y si quiere meter cinco seguidos
+  -- es su cocina y su decisión.
+  insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+  values (v_biz, v_cli, 'mostrador', 'esperando_pago', 10, 10, 'manual');
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone = '593900000961';
+end;
+$$;
+
+select '✅ un solo pedido sin pagar a la vez, en toda la plataforma, sin frenar al que ya mandó su comprobante' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- EL MARGEN SE SUMA AL PRECIO, NO SE LE QUITA AL DUEÑO (2026-08-25)
 --
 -- Hasta hoy, sobre un pedido de $8 el comercio recibía $7,20. El dueño pone el
@@ -3848,25 +3924,30 @@ begin
   insert into public.customers (phone) values ('593900000900') returning id into v_cliente;
 
   -- ── 1. EL SALTO ENTRE LOCALES ────────────────────────────────────────────
-  -- Uno en cada local: con el tope viejo —que contaba `business_id`— los tres
-  -- pasaban y el cuarto también, porque en ninguno llegaba a tres.
+  --
+  -- ⚠️ Esta comprobación cambió el 2026-09-02, y el cambio es que el freno se
+  -- ENDURECIÓ. Antes montaba tres pedidos sin pagar —uno por local— y exigía
+  -- que rebotara el CUARTO. Ahora rebota el SEGUNDO: quien debe un comprobante
+  -- no puede encargar nada más, ni en el mismo local ni en otro.
+  --
+  -- Lo pidió el dueño tras encontrar el hueco probando: pedía, no pagaba,
+  -- volvía al chat y creaba otro. El tope de 3 protegía la cocina del local,
+  -- no el bolsillo de nadie.
   insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
   values (v_a, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
-  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
-  values (v_b, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
-  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
-  values (v_c, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
 
-  -- El CUARTO local tiene que rebotar aunque en él no haya ni uno.
+  -- El SEGUNDO local tiene que rebotar aunque en él no haya ni un pedido: el
+  -- número es único para todo Umbani, así que la cevichería no tiene forma de
+  -- saber que este cliente debe algo en la pizzería.
   v_falló := false;
   begin
     insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
-    values (v_d, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
+    values (v_b, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5);
   exception when insufficient_privilege then
     v_falló := true;
   end;
   if not v_falló then
-    raise exception 'el salto entre locales se coló: el 4.º pedido entró con tres sin pagar en Umbani';
+    raise exception 'el salto entre locales se coló: se pudo pedir en otro local debiendo un comprobante';
   end if;
 
   -- ── 2. EL DE MOSTRADOR NO CUENTA ─────────────────────────────────────────
@@ -3879,13 +3960,25 @@ begin
     (customer_id, current_state, selected_business_id, shopping_locked)
   values (v_cliente, 'comprando', v_a, true);
 
-  -- Resolver UNO no basta: le quedan dos comprobantes pendientes.
+  -- ⚠️ El escenario de DOS pendientes se monta con un UPDATE, no insertando:
+  -- desde el 2026-09-02 el disparador `orders_limit_open_per_customer` impide
+  -- crear un segundo pedido debiendo un comprobante, así que por la vía normal
+  -- ya no puede ocurrir. La defensa del candado sigue haciendo falta —quedan
+  -- los pedidos históricos y los que no vienen de la tienda—, y es justo lo
+  -- que esta comprobación protege: soltarlo con uno pendiente sería premiar el
+  -- pago parcial con vía libre.
+  -- Se convierte en uno de la TIENDA, que es lo que mira el candado: un
+  -- `manual` no cuenta ahí, igual que no cuenta para el tope.
+  update public.orders set status = 'esperando_pago', source = 'storefront'
+   where business_id = v_d and customer_id = v_cliente and source = 'manual';
+
+  -- Resolver UNO no basta: le queda otro comprobante pendiente.
   update public.orders set status = 'preparacion'
    where business_id = v_a and customer_id = v_cliente and status = 'esperando_pago';
   select shopping_locked into v_bloqueado
     from public.marketplace_conversations where customer_id = v_cliente;
   if not v_bloqueado then
-    raise exception 'el candado se soltó con dos comprobantes todavía pendientes';
+    raise exception 'el candado se soltó con un comprobante todavía pendiente';
   end if;
 
   -- Resolver los dos que quedan sí lo suelta: ya no debe nada.
