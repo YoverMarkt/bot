@@ -66,6 +66,19 @@ export default function App() {
    * todo sigue donde estaba.
    */
   const [confirmando, setConfirmando] = useState<{ business: Business | null } | null>(null)
+  /**
+   * Cuántas veces se ha estrenado sesión en esta visita.
+   *
+   * ⚠️ Existe por un fallo que el cliente sufría cada vez: al confirmar el
+   * teléfono NO se volvía a preguntar quién es, así que `me` se quedaba en el
+   * `null` con el que había fallado antes — y con él, su libreta de
+   * direcciones. La persona veía «no tienes direcciones», escribía la suya
+   * otra vez, y acababa con la misma casa repetida tres veces.
+   *
+   * Es un contador y no un booleano porque lo que hace falta es DISPARAR de
+   * nuevo el efecto, y un `true` que ya era `true` no dispara nada.
+   */
+  const [sesionesNuevas, setSesionesNuevas] = useState(0)
 
   const cargar = useCallback(async () => {
     if (!slug) return setEstado({ fase: 'no_disponible' })
@@ -220,7 +233,16 @@ export default function App() {
             // El catálogo NO se recarga: la sesión ya está atada a este
             // teléfono y la tienda sigue montada detrás, con su carrito
             // intacto. Volver a pedirlo todo era justo lo que lo vaciaba.
-            if (!fallo) setConfirmando(null)
+            //
+            // ⚠️ Pero SÍ hay que volver a preguntar QUIÉN ES. Acaba de
+            // demostrar su número, así que ahora el servidor puede devolver su
+            // nombre y sus direcciones; sin esto se quedaba con el `me` en
+            // nulo del intento anterior y su libreta parecía vacía. Solo eso
+            // se recarga: es una petición pequeña y no toca el carrito.
+            if (!fallo) {
+              setConfirmando(null)
+              setSesionesNuevas(veces => veces + 1)
+            }
             return fallo
           }}
         />
@@ -235,6 +257,7 @@ export default function App() {
         slug={slug}
         business={business}
         status={status}
+        sesionesNuevas={sesionesNuevas}
         onFalloEnlace={alFallarEnlace}
       />
       {puertaDelTelefono}
