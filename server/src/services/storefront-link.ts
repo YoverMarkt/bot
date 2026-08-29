@@ -7,12 +7,22 @@
 //     una URL acabaría inventando tokens y mandando a la gente a una pantalla
 //     de error. Aquí no hay margen: la URL se construye con el slug real y un
 //     token recién creado.
-//  2. **Cada enlace es nuevo, y ninguno caduca.** El token solo se guarda
-//     hasheado, así que un enlace ya enviado no se puede reconstruir. Pedirlo
-//     otra vez genera otro y el anterior sigue vivo: no se revoca a propósito,
-//     para no romperle el pedido a quien lo tenga abierto. Lo que impide que
-//     un enlace reenviado sirva no es el reloj, es tener que confirmar el
-//     número de WhatsApp al que se emitió.
+//  2. **UNO VIVO A LA VEZ, y ninguno caduca.** El token solo se guarda
+//     hasheado, así que un enlace ya enviado no se puede reconstruir. Ninguno
+//     vence por reloj: lo que impide que un enlace reenviado sirva es tener
+//     que confirmar el número de WhatsApp al que se emitió.
+//
+//     ⚠️ Pero emitir uno nuevo REVOCA los de los demás locales (2026-09-03).
+//     Hasta esa fecha no se revocaba nada —`revoked_at` existía, lo miraba
+//     `checkSession`, y nadie lo escribía jamás—, así que quien había pedido
+//     en cinco locales tenía cinco enlaces vivos en su chat y podía subir tres
+//     mensajes y volver a cualquiera con la conversación puesta en otro sitio.
+//     El candado del chat no se enteraba, porque el enlace no pasa por el chat.
+//
+//     ⚠️ NO se revoca el del propio local (vaciaría el carrito que la persona
+//     tiene abierto) ni el de un local donde queda un pedido en
+//     `esperando_pago` (los datos bancarios viven detrás de la sesión). Las
+//     dos excepciones las decide la RPC.
 //  3. **Con cooldown.** Sin él, cada "hola" crearía una sesión y llenaría la
 //     tabla; y el cliente vería el mismo enlace repetido, que parece un bot roto.
 
@@ -39,7 +49,18 @@ interface LinkDatabase {
     contactPhone: string
     /** Nulo = el enlace no caduca. */
     expiresAt: string | null
-  }): Promise<unknown>
+  }): Promise<{ id?: string } | null>
+  /**
+   * Revoca los demás enlaces vivos de esta persona.
+   *
+   * Opcional a propósito: es una MEJORA sobre el comportamiento anterior, y un
+   * servicio construido sin ella (los tests que solo miran la URL) tiene que
+   * seguir emitiendo enlaces igual.
+   */
+  revokeOtherStorefrontSessions?(
+    customerId: string,
+    keepSessionId: string,
+  ): Promise<number>
 }
 
 /** No se manda el mismo enlace en cada mensaje: molesta y llena la tabla. */
@@ -217,7 +238,7 @@ export function createStorefrontLinkService(dependencies: {
         name: input.name || null,
       })
       const { token, tokenHash } = createSessionToken()
-      await database.createStorefrontSession({
+      const sesion = await database.createStorefrontSession({
         businessId: business.id,
         customerId: customer.id,
         tokenHash,
@@ -225,6 +246,17 @@ export function createStorefrontLinkService(dependencies: {
         // Sin caducidad: lo que protege el enlace es el teléfono, no el reloj.
         expiresAt: null,
       })
+
+      // ⚠️ Después de crear la nueva, nunca antes: la RPC necesita saber cuál
+      // conservar, y revocar primero dejaría a la persona un instante sin
+      // ningún enlace vivo. Si algo falla aquí NO se pierde el enlace —el
+      // `catch` de fuera devolvería null y el cliente se quedaría sin tienda
+      // por una limpieza—, así que se traga aparte.
+      if (sesion?.id && database.revokeOtherStorefrontSessions) {
+        await database
+          .revokeOtherStorefrontSessions(customer.id, sesion.id)
+          .catch(() => 0)
+      }
       const url = buildStorefrontUrl({
         baseUrl: readBaseUrl(),
         slug: business.slug,

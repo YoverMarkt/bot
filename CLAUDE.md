@@ -165,14 +165,14 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 
 
 
-> 📚 **Las 62 decisiones de implementación se movieron a [DECISIONES.md](DECISIONES.md) el 2026-08-25.**
+> 📚 **Las decisiones de implementación se movieron a [DECISIONES.md](DECISIONES.md) el 2026-08-25.**
 > Eran 92.700 caracteres —unos 23.000 tokens— cargándose en CADA sesión para
 > explicar piezas que solo se tocan de una en una. **No se recortó una palabra**:
 > están enteras allí. Consulta la que toque tu tarea ANTES de tocarla —
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 62 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 64 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -182,6 +182,8 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - Un local nuevo NACE en el marketplace
 - Un negocio puede no tener canal propio
 - Un pedido a la vez, y MENÚ como salida
+- El enlace es de UN SOLO USO: uno vivo a la vez
+- «Seguir mi pedido» DEVUELVE el enlace
 - Buscar sin IA
 - El menú del marketplace
 - «Hola» recibe la bienvenida, no un reproche

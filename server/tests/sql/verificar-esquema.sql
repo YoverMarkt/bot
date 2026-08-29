@@ -4022,3 +4022,102 @@ end;
 $$;
 
 select '✅ el candado dura hasta pagar y el tope cuenta en toda la plataforma, no por local' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- UN ENLACE VIVO A LA VEZ (2026-09-03)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `revoke_other_storefront_sessions` cierra el agujero de los enlaces: el chat
+-- impedía ir hacia atrás desde el 2026-08-30, pero los enlaces emitidos se
+-- quedaban vivos para siempre y NADIE escribía `revoked_at` jamás.
+--
+-- Se ejecuta con los tres casos que la pueden romper, porque plpgsql no valida
+-- su cuerpo hasta que corre: el enlace de otro local cae, el del local que
+-- DEBE dinero no, y sin sesión que conservar no se toca nada.
+do $$
+declare
+  v_pizza     uuid;
+  v_ceviche   uuid;
+  v_helado    uuid;
+  v_cliente   uuid;
+  v_s_pizza   uuid;
+  v_s_cevi    uuid;
+  v_s_helado  uuid;
+  v_s_nueva   uuid;
+  v_revocadas integer;
+  v_estado    timestamptz;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values
+    ('pizza-enlace-v', 'Pizza', 'pizzeria', 'ycloud', '+593900666001', '+593900666001', true, 'miniapp'),
+    ('cevi-enlace-v', 'Cevichería', 'restaurante', 'ycloud', '+593900666002', '+593900666002', true, 'miniapp'),
+    ('helado-enlace-v', 'Heladería', 'heladeria', 'ycloud', '+593900666003', '+593900666003', true, 'miniapp');
+
+  select id into v_pizza   from businesses where slug = 'pizza-enlace-v';
+  select id into v_ceviche from businesses where slug = 'cevi-enlace-v';
+  select id into v_helado  from businesses where slug = 'helado-enlace-v';
+
+  insert into public.customers (phone) values ('593900666100') returning id into v_cliente;
+
+  -- Tres enlaces vivos de tres locales: el agujero, tal cual estaba.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_pizza,   v_cliente, repeat('a', 64), '593900666100', null) returning id into v_s_pizza;
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_ceviche, v_cliente, repeat('b', 64), '593900666100', null) returning id into v_s_cevi;
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_helado,  v_cliente, repeat('c', 64), '593900666100', null) returning id into v_s_helado;
+
+  -- En la pizzería quedó un pedido sin pagar: los datos bancarios viven detrás
+  -- de esa sesión, así que es intocable.
+  insert into public.orders (
+    business_id, customer_id, contact_phone, source, status, subtotal, total
+  ) values (v_pizza, v_cliente, '593900666100', 'storefront', 'esperando_pago', 9, 9);
+
+  -- Elige la heladería: enlace nuevo de ese local.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_helado, v_cliente, repeat('d', 64), '593900666100', null) returning id into v_s_nueva;
+
+  v_revocadas := public.revoke_other_storefront_sessions(v_cliente, v_s_nueva);
+  if v_revocadas <> 1 then
+    raise exception 'debía revocar solo el enlace de la cevichería y revocó %', v_revocadas;
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_cevi;
+  if v_estado is null then
+    raise exception 'el enlace de OTRO local siguió vivo: se puede volver hacia atrás';
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_pizza;
+  if v_estado is not null then
+    raise exception 'se revocó el enlace de un local con un pedido SIN PAGAR';
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_helado;
+  if v_estado is not null then
+    raise exception 'se revocó un enlace del MISMO local recién entregado';
+  end if;
+
+  -- Resuelto el pedido, la pizzería deja de estar protegida.
+  update public.orders set status = 'pago_en_revision'
+   where business_id = v_pizza and customer_id = v_cliente;
+  v_revocadas := public.revoke_other_storefront_sessions(v_cliente, v_s_nueva);
+  if v_revocadas <> 1 then
+    raise exception 'pagado el pedido, el enlace de la pizzería debía caer: %', v_revocadas;
+  end if;
+
+  -- Sin sesión que conservar no se toca nada: falla hacia dejar enlaces vivos.
+  v_revocadas := public.revoke_other_storefront_sessions(
+    v_cliente, '00000000-0000-0000-0000-000000000000'
+  );
+  if v_revocadas <> 0 then
+    raise exception 'con una sesión inexistente revocó % enlaces', v_revocadas;
+  end if;
+
+  delete from businesses where id in (v_pizza, v_ceviche, v_helado);
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ un enlace vivo a la vez: cae el de otro local, sobrevive el del local vigente y el que debe dinero' as resultado;
