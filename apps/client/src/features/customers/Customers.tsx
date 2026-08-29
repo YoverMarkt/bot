@@ -50,6 +50,36 @@ export default function Customers() {
 /** Mismos dígitos: el teléfono llega con `+` por un canal y sin él por otro. */
 const soloDigitos = (phone: string) => String(phone || '').replace(/\D/g, '')
 
+/**
+ * Qué dice la insignia de un bloqueado.
+ *
+ * ⚠️ Son DOS cosas distintas y el panel las pintaba igual:
+ *
+ *   · **Bloqueado por ti** — lo puso el dueño, no caduca, solo él lo levanta.
+ *   · **Bloqueado 25 min** — lo puso Umbani por incumplir las políticas, y se
+ *     va solo cuando pasa el plazo.
+ *
+ * Hasta el 2026-08-29 las dos salían como «Bloqueado» y el automático **no
+ * desaparecía nunca de esta pantalla**, aunque el cliente ya pudiera pedir.
+ * El dueño lo preguntó mirando su lista: «¿ese tiempo va con el de bloqueado
+ * aquí en el panel, o tengo que quitarlo yo?».
+ */
+const etiquetaDelBloqueo = (
+  estado: { until: string | null; permanent: boolean },
+): string => {
+  if (estado.permanent || !estado.until) return 'Bloqueado por ti'
+  const restan = new Date(estado.until).getTime() - Date.now()
+  // Sin plazo legible se dice lo neutro: nunca un «0 min» que parece un error.
+  if (!Number.isFinite(restan) || restan <= 0) return 'Bloqueado'
+  const minutos = Math.ceil(restan / 60000)
+  if (minutos >= 60) {
+    const horas = Math.floor(minutos / 60)
+    const sueltos = minutos % 60
+    return sueltos ? `Bloqueado ${horas} h ${sueltos} min` : `Bloqueado ${horas} h`
+  }
+  return `Bloqueado ${minutos} min`
+}
+
 // ── Directorio: quiénes te han comprado, cuánto y hace cuánto ──
 function Directory() {
   const qc = useQueryClient()
@@ -69,10 +99,23 @@ function Directory() {
   // El panel compara SIEMPRE normalizado: la ficha guarda `593…` y el pedido
   // llega como `+593…`. Sin eso un bloqueado volvía a salir como si no lo
   // estuviera en cuanto se recargaba la pantalla.
-  const bloqueados = useMemo(
-    () => new Set((Array.isArray(blocked) ? blocked : []).map(soloDigitos)),
-    [blocked],
-  )
+  //
+  // ⚠️ Un MAPA y ya no un `Set` de teléfonos (2026-08-29): hay dos clases de
+  // bloqueo y el dueño necesita distinguirlas. El suyo no caduca y solo él lo
+  // levanta; el automático de Umbani se va solo, y hasta ahora el panel los
+  // pintaba igual — así que un cliente que ya podía pedir seguía saliendo
+  // «Bloqueado» aquí para siempre.
+  const bloqueados = useMemo(() => {
+    const mapa = new Map<string, { until: string | null; permanent: boolean }>()
+    for (const fila of (Array.isArray(blocked) ? blocked : [])) {
+      if (!fila?.phone) continue
+      mapa.set(soloDigitos(fila.phone), {
+        until: fila.until ?? null,
+        permanent: fila.permanent === true,
+      })
+    }
+    return mapa
+  }, [blocked])
   const listaBloqueados = Array.isArray(blocked) ? blocked : []
 
   const mBlock = useMutation({
@@ -133,7 +176,11 @@ function Directory() {
                     <TableCell className="tabular-nums">{c.orders}</TableCell>
                     <TableCell>
                       {bloqueados.has(soloDigitos(c.phone))
-                        ? <Badge variant="secondary" className="bg-destructive/10 text-destructive">Bloqueado</Badge>
+                        ? (
+                            <Badge variant="secondary" className="bg-destructive/10 text-destructive">
+                              {etiquetaDelBloqueo(bloqueados.get(soloDigitos(c.phone))!)}
+                            </Badge>
+                          )
                         : <Badge variant="secondary" className={STATUS_BADGE[c.status].cls}>{STATUS_BADGE[c.status].label}</Badge>}
                     </TableCell>
                     <TableCell className="w-[1%] text-right">
@@ -143,7 +190,14 @@ function Directory() {
                           size="sm"
                           onClick={() => mBlock.mutate({ phone: c.phone, blocked: false })}
                         >
-                          <Undo2 /> Desbloquear
+                          {/* «Levantar ahora» en el automático: no lo bloqueaste
+                              tú, así que «Desbloquear» suena a deshacer algo que
+                              no hiciste. Lo que hace el botón es adelantar el
+                              final del plazo, y eso sí lo decide el dueño. */}
+                          <Undo2 />
+                          {bloqueados.get(soloDigitos(c.phone))!.permanent
+                            ? 'Desbloquear'
+                            : 'Levantar ahora'}
                         </Button>
                       ) : (
                         <ConfirmAction
@@ -165,11 +219,21 @@ function Directory() {
               </TableBody>
             </Table>
           </Card>
+          {/* El dueño preguntó esto mirando esta misma lista: si el bloqueo
+              con plazo se lo tenía que quitar él. La respuesta va donde surge
+              la duda, no en un manual que nadie abre. */}
           <p className="text-xs text-muted-foreground/80 mt-2.5">{filtered.length} cliente(s){search ? ' (filtrados)' : ''} · "Inactivo" = sin comprar hace más de 60 días.</p>
+          <p className="text-xs text-muted-foreground/80 mt-1">
+            <span className="text-destructive">Bloqueado por ti</span> lo levantas tú.{' '}
+            <span className="text-destructive">Bloqueado 25 min</span> lo puso Umbani por incumplir
+            las políticas y se va solo al cumplirse el plazo — no tienes que hacer nada.
+          </p>
         </>
       )}
       <Bloqueados
-        numeros={listaBloqueados.filter(phone => !customers.some(c => soloDigitos(c.phone) === soloDigitos(phone)))}
+        numeros={listaBloqueados
+          .map(fila => fila.phone)
+          .filter(phone => !customers.some(c => soloDigitos(c.phone) === soloDigitos(phone)))}
         onBloquear={phone => mBlock.mutate({ phone, blocked: true })}
         onDesbloquear={phone => mBlock.mutate({ phone, blocked: false })}
       />
@@ -219,6 +283,7 @@ function Bloqueados({ numeros, onBloquear, onDesbloquear }: {
         <p className="text-xs text-muted-foreground">
           Un bloqueado no puede hacer pedidos en tu tienda, ni siquiera con su enlace guardado,
           y el menú de Umbani deja de ofrecerle tu local. No se le avisa de nada.
+          El que bloqueas tú no caduca: se queda hasta que lo levantes.
         </p>
       </div>
 

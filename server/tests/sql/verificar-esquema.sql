@@ -4233,3 +4233,105 @@ end;
 $$;
 
 select '✅ un solo bloqueo: el disparador y las pantallas comparten la regla, y el temporal caduca de verdad' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LOS BLOQUEADOS QUE VE EL DUEÑO (2026-08-29)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- La pregunta del dueño mirando su pantalla de Clientes: «¿ese tiempo va con
+-- el de bloqueado aquí en el panel?». No iba: el panel listaba `blocked_at is
+-- not null` y el bloqueo temporal también pone `blocked_at`, así que a los 30
+-- minutos el cliente ya podía pedir y el panel seguía diciendo «Bloqueado».
+--
+-- Cuarta copia de la regla en aparecer. Ahora la lista la calcula la MISMA
+-- función que usa el disparador de pedidos, y se ejecuta con los cuatro
+-- estados para que no puedan volver a separarse.
+do $$
+declare
+  v_local    uuid;
+  v_perm     uuid;
+  v_temporal uuid;
+  v_cumplido uuid;
+  v_libre    uuid;
+  v_filas    integer;
+  v_hasta    timestamptz;
+  v_esperm   boolean;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values (
+    'panel-bloqueo-v', 'Panel', 'pizzeria', 'ycloud',
+    '+593900222001', '+593900222001', true, 'miniapp'
+  ) returning id into v_local;
+
+  insert into public.customers (phone) values ('593900222101') returning id into v_perm;
+  insert into public.customers (phone) values ('593900222102') returning id into v_temporal;
+  insert into public.customers (phone) values ('593900222103') returning id into v_cumplido;
+  insert into public.customers (phone) values ('593900222104') returning id into v_libre;
+
+  insert into public.business_customers (business_id, customer_id, blocked_at, blocked_until)
+  values
+    (v_local, v_perm,     now(),                      null),
+    (v_local, v_temporal, now(),                      now() + interval '20 minutes'),
+    (v_local, v_cumplido, now() - interval '2 hours', now() - interval '1 hour'),
+    (v_local, v_libre,    null,                       null);
+
+  select count(*) into v_filas from public.business_blocked_contacts(v_local);
+  if v_filas <> 2 then
+    raise exception 'el panel debía listar 2 bloqueados y listó %', v_filas;
+  end if;
+
+  -- EL FALLO QUE VEÍA EL DUEÑO: el que cumplió su castigo desaparece solo.
+  if exists (
+    select 1 from public.business_blocked_contacts(v_local) where phone = '593900222103'
+  ) then
+    raise exception 'un bloqueo temporal CUMPLIDO seguía saliendo en el panel';
+  end if;
+  if exists (
+    select 1 from public.business_blocked_contacts(v_local) where phone = '593900222104'
+  ) then
+    raise exception 'un cliente sin bloquear salió en la lista';
+  end if;
+
+  -- El permanente no promete plazo; el temporal sí. Es lo que deja al panel
+  -- decir «Bloqueado por ti» o «Bloqueado 20 min» sin adivinar.
+  select until, permanent into v_hasta, v_esperm
+  from public.business_blocked_contacts(v_local) where phone = '593900222101';
+  if not v_esperm or v_hasta is not null then
+    raise exception 'el bloqueo del dueño salió con plazo o sin marcar permanente';
+  end if;
+
+  select until, permanent into v_hasta, v_esperm
+  from public.business_blocked_contacts(v_local) where phone = '593900222102';
+  if v_esperm or v_hasta is null then
+    raise exception 'el bloqueo temporal salió sin plazo o marcado permanente';
+  end if;
+
+  -- ── Y LOS DOS BOTONES DEL PANEL ─────────────────────────────────────────
+  --
+  -- «Bloquear» limpia `blocked_until`: la decisión del dueño manda sobre
+  -- cualquier automático pendiente. Sin esto, bloquear a quien tuvo un
+  -- temporal antes NO surtía efecto — ni permanente (blocked_until no nulo)
+  -- ni temporal (vencido).
+  update public.business_customers
+     set blocked_at = now(), blocked_until = null
+   where business_id = v_local and customer_id = v_cumplido;
+  if not public.storefront_customer_blocked(v_local, v_cumplido) then
+    raise exception 'el dueño bloqueó a quien tuvo un temporal y NO quedó bloqueado';
+  end if;
+
+  -- «Desbloquear» lo limpia todo: cuando el dueño perdona, perdona entero.
+  update public.business_customers
+     set blocked_at = null, blocked_until = null
+   where business_id = v_local and customer_id = v_temporal;
+  if public.storefront_customer_blocked(v_local, v_temporal) then
+    raise exception 'el dueño desbloqueó y el cliente siguió bloqueado';
+  end if;
+
+  delete from businesses where id = v_local;
+  delete from public.customers where id in (v_perm, v_temporal, v_cumplido, v_libre);
+end;
+$$;
+
+select '✅ el panel lista solo a los bloqueados AHORA, con su plazo, y los dos botones del dueño mandan' as resultado;
