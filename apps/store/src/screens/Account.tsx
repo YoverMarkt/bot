@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   RiArrowLeftSLine,
+  RiArrowRightSLine,
   RiDeleteBin6Line,
   RiMapPin2Line,
+  RiShoppingBag3Line,
 } from '@remixicon/react'
 import { Aviso } from '../components/ui'
 import { getOrders } from '../lib/api'
@@ -80,6 +82,9 @@ const cuando = (iso: string) => {
   })
 }
 
+/** En qué está mirando el cliente. */
+type Vista = 'inicio' | 'pedidos' | 'direcciones'
+
 export default function Account({
   slug, me, onVolver, onBorrarDireccion,
 }: {
@@ -90,6 +95,14 @@ export default function Account({
 }) {
   const [pedidos, setPedidos] = useState<TrackedOrder[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * ⚠️ Las dos secciones dejan de ir APILADAS (2026-08-28, pedido del dueño).
+   * Con los pedidos arriba y las direcciones debajo, quien entraba a cambiar
+   * una dirección tenía que pasar por encima de su historial entero — y cuanto
+   * más compra un cliente, más largo es ese scroll. Ahora la cuenta es una
+   * portada con dos puertas, y cada una abre su pantalla.
+   */
+  const [vista, setVista] = useState<Vista>('inicio')
 
   useEffect(() => {
     getOrders(slug)
@@ -98,6 +111,13 @@ export default function Account({
   }, [slug])
 
   const direcciones: Address[] = me?.addresses || []
+  // La flecha vuelve un paso, no dos: desde una sección se vuelve a la portada
+  // de la cuenta, y solo desde ahí a la tienda. Es la misma regla que la hoja
+  // del carrito, donde la flecha vuelve al carrito y no cierra el pedido.
+  const atras = () => (vista === 'inicio' ? onVolver() : setVista('inicio'))
+  const titulo = vista === 'pedidos' ? 'Mis pedidos'
+    : vista === 'direcciones' ? 'Mis direcciones'
+      : 'Mi cuenta'
 
   return (
     <div className="mx-auto min-h-dvh max-w-md pb-24">
@@ -109,28 +129,69 @@ export default function Account({
           `env()` vale 0 y queda exactamente el aire de antes. */}
       <header className="superficie sticky top-0 z-30 flex items-center gap-2 px-4 pt-seguro pb-4 shadow-tarjeta">
         <button
-          onClick={onVolver}
+          onClick={atras}
           aria-label="Volver"
           className="-ml-2 flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 active:bg-black/5"
         >
           <RiArrowLeftSLine size={20} />
         </button>
-        <h1 className="titulo-l">Mi cuenta</h1>
+        <h1 className="titulo-l">{titulo}</h1>
       </header>
 
       <div className="space-y-7 px-4 pt-5">
-        {me?.phone && (
+        {me?.phone && vista === 'inicio' && (
           <p className="caption texto-cuerpo">
             Tus pedidos y direcciones en este local, ligados a tu WhatsApp {me.phone}.
           </p>
         )}
 
-        {/* ── Mis pedidos ── */}
-        <section>
-          <h2 className="titulo-l mb-2.5 px-1">
-            Mis pedidos
-          </h2>
+        {/* ── La portada de la cuenta: dos puertas ──────────────────────
+            Cada una dice CUÁNTO hay dentro, que es lo que decide si vale la
+            pena entrar. Un contador en cero se dice con palabras («todavía
+            ninguno»), no con un 0 suelto: un cero se lee como un error. */}
+        {vista === 'inicio' && (
+          <div className="space-y-2.5">
+            {([
+              {
+                id: 'pedidos' as const,
+                icono: RiShoppingBag3Line,
+                texto: 'Mis pedidos',
+                detalle: pedidos === null
+                  ? 'Cargando…'
+                  : pedidos.length === 0
+                    ? 'Todavía no has pedido nada'
+                    : `${pedidos.length} ${pedidos.length === 1 ? 'pedido' : 'pedidos'}`,
+              },
+              {
+                id: 'direcciones' as const,
+                icono: RiMapPin2Line,
+                texto: 'Mis direcciones',
+                detalle: direcciones.length === 0
+                  ? 'Ninguna guardada todavía'
+                  : `${direcciones.length} ${direcciones.length === 1 ? 'dirección' : 'direcciones'}`,
+              },
+            ]).map(({ id, icono: Icono, texto, detalle }) => (
+              <button
+                key={id}
+                onClick={() => setVista(id)}
+                className="superficie flex w-full items-center gap-3.5 rounded-(--radius-tarjeta) px-4 py-4 text-left shadow-tarjeta transition active:scale-[0.99]"
+              >
+                <span className="acento grid size-11 shrink-0 place-items-center rounded-2xl shadow-acento">
+                  <Icono size={20} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="titulo-m block">{texto}</span>
+                  <span className="caption mt-0.5 block texto-cuerpo">{detalle}</span>
+                </span>
+                <RiArrowRightSLine size={20} className="shrink-0 texto-tenue" />
+              </button>
+            ))}
+          </div>
+        )}
 
+        {/* ── Mis pedidos ── */}
+        {vista === 'pedidos' && (
+        <section>
           {error && <Aviso tono="alerta">{error}</Aviso>}
 
           {/* Esqueleto con la forma de la lista, no una rueda girando: así la
@@ -198,13 +259,11 @@ export default function Account({
             })}
           </div>
         </section>
+        )}
 
         {/* ── Mis direcciones ── */}
+        {vista === 'direcciones' && (
         <section>
-          <h2 className="titulo-l mb-2.5 px-1">
-            Mis direcciones
-          </h2>
-
           {direcciones.length === 0 && (
             <div className="rounded-(--radius-tarjeta) border border-dashed borde-tema px-4 py-6 text-center">
               <p className="text-[13px] texto-cuerpo">
@@ -246,6 +305,7 @@ export default function Account({
             ))}
           </div>
         </section>
+        )}
       </div>
     </div>
   )
