@@ -7,7 +7,7 @@ import type { ParsedBotOutput } from './bot-tags'
 import type { MenuFlowInput, MenuFlowResult } from './bot-menu-flow'
 import {
   RESPUESTA_COMPROBANTE, esComprobante, esComprobanteAmbiguo, preguntaDeQueLocal,
-  RESPUESTA_NO_ES_COMPROBANTE, esFotoQueNoEsComprobante,
+  respuestaNoEsComprobante, rechazoDelMarcador, esFotoQueNoEsComprobante,
 } from './payment-proof-inbox'
 import type {
   BotMediaBusiness,
@@ -537,8 +537,11 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     // está silenciado, esto no responde y cae al silencio de abajo.
     if (esFotoQueNoEsComprobante(text) && reclamo.permitido) {
       await marcarLeido()
-      await send(RESPUESTA_NO_ES_COMPROBANTE)
-      await database.saveMessage(business.id, phone, 'assistant', RESPUESTA_NO_ES_COMPROBANTE)
+      // La consecuencia viaja dentro del marcador; sin ella, el texto de
+      // siempre. Ver `respuestaNoEsComprobante`.
+      const respuesta = respuestaNoEsComprobante(rechazoDelMarcador(text), business.name)
+      await send(respuesta)
+      await database.saveMessage(business.id, phone, 'assistant', respuesta)
       logger.log(`🖼️  [${business.name}] la foto de ${phone} no era un comprobante`)
       return
     }

@@ -635,12 +635,35 @@ const isCustomerBlocked = async (businessId: string, customerId: string): Promis
   if (!businessId || !customerId) return false
   const { data, error } = await db
     .from('business_customers')
-    .select('blocked_at')
+    .select('blocked_at,blocked_until')
     .eq('business_id', businessId)
     .eq('customer_id', customerId)
     .maybeSingle()
   fail(error, 'No se pudo comprobar el bloqueo')
-  return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
+  return estaBloqueado(data as { blocked_at?: string | null; blocked_until?: string | null } | null)
+}
+
+/**
+ * ¿Está bloqueado AHORA?
+ *
+ * Las dos formas se distinguen por si el bloqueo tiene fin:
+ *  · `blocked_at` sin `blocked_until` → **permanente**, el que pone el dueño a
+ *    mano. Solo él lo levanta.
+ *  · `blocked_until` con fecha → **temporal**: caduca solo, sin que nadie haga
+ *    nada, y por eso el aviso al cliente sí puede prometer el plazo.
+ *
+ * ⚠️ Vive aquí Y en `storefront_customer_blocked` (PostgreSQL), y las dos
+ * tienen que contestar lo mismo: esta atiende la ruta y aquella el disparador
+ * que cierra la carrera al insertar. Si se toca una, se toca la otra — hay una
+ * prueba de esquema que ejecuta la de la base con los cuatro casos.
+ */
+const estaBloqueado = (
+  fila: { blocked_at?: string | null; blocked_until?: string | null } | null,
+): boolean => {
+  if (!fila) return false
+  const hasta = fila.blocked_until
+  if (hasta) return new Date(hasta).getTime() > Date.now()
+  return Boolean(fila.blocked_at)
 }
 
 /**
@@ -839,6 +862,7 @@ export = {
   claimBlockedNotice,
   getBusinessPricingRule,
   isCustomerBlocked,
+  estaBloqueado,
   setContactBlocked,
   getBlockedPhones,
   bindStorefrontSession,

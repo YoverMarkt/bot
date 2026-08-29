@@ -166,6 +166,27 @@ export interface FaltaDePago {
   strikes: number
   blocked: boolean
   limit: number
+  /** Hasta cuándo dura el bloqueo temporal, si lo hubo. */
+  blocked_until?: string | null
+  /** Cuántos minutos dura, para poder decirlo en cristiano. */
+  minutes?: number | null
+}
+
+/**
+ * «30 minutos», «2 horas», «1 día». En palabras, no en un número pelado.
+ *
+ * ⚠️ Se dice el PLAZO y no la hora exacta: «puedes volver a las 21:47» obliga
+ * al cliente a mirar el reloj y a fiarse de que el nuestro coincide con el
+ * suyo. «En 30 minutos» se entiende sin comparar nada.
+ */
+export const enPalabras = (minutos?: number | null): string => {
+  const m = Number(minutos)
+  if (!Number.isFinite(m) || m <= 0) return 'un rato'
+  if (m < 60) return `${m} ${m === 1 ? 'minuto' : 'minutos'}`
+  const horas = Math.round(m / 60)
+  if (horas < 24) return `${horas} ${horas === 1 ? 'hora' : 'horas'}`
+  const dias = Math.round(horas / 24)
+  return `${dias} ${dias === 1 ? 'día' : 'días'}`
 }
 
 export const textoDelAviso = (
@@ -234,13 +255,18 @@ export const textoDelAviso = (
     // caduca solo, y prometer una espera que nadie va a cumplir es mentirle al
     // cliente. Se le dice a quién escribir, que es lo único que puede hacer.
     if (falta?.blocked) {
-      lineas.push(`🚫 *Ya no puedes pedir en ${negocio.name}*`)
+      // ⚠️ Ahora SÍ se promete el plazo, y es un cambio de fondo: hasta el
+      // 2026-09-01 el bloqueo no caducaba, así que decir «vuelve en un rato»
+      // habría sido mentir. Con `blocked_until` el plazo se cumple solo, sin
+      // que nadie lo levante — y por eso se puede decir.
+      const plazo = enPalabras(falta.minutes)
+      lineas.push(`🚫 *No puedes pedir en ${negocio.name} por ${plazo}*`)
       lineas.push('')
       lineas.push(`Dejaste ${falta.strikes} pedidos sin pagar en este local, `
         + 'así que se cerró tu acceso por incumplir las políticas de Umbani.')
       lineas.push('')
-      lineas.push('Sigues pudiendo pedir en los demás locales. Si crees que es '
-        + 'un error, escríbele al local para que lo revise.')
+      lineas.push(`Pasados los ${plazo} podrás volver a pedir aquí con normalidad. `
+        + 'Mientras tanto puedes pedir en los demás locales.')
       return lineas.join('\n')
     }
 
@@ -252,11 +278,14 @@ export const textoDelAviso = (
 
     // Cuántas le quedan. Solo cuando ya lleva más de una: decírselo a la
     // primera suena a amenaza por un despiste.
+    // ⚠️ Con el límite en DOS, la advertencia va desde la PRIMERA falta: si
+    // esperara a la segunda, el aviso llegaría en el mismo mensaje que el
+    // bloqueo y no serviría para nada. Avisar antes es lo que separa una norma
+    // de un castigo.
     const restantes = falta ? falta.limit - falta.strikes : 0
-    if (falta && falta.strikes > 1 && restantes > 0) {
-      lineas.push(`⚠️ Van ${falta.strikes} pedidos tuyos sin pagar aquí. `
-        + `${restantes === 1 ? 'Si dejas uno más' : `Si dejas ${restantes} más`}`
-        + ', no podrás seguir pidiendo en este local.')
+    if (falta && restantes > 0) {
+      lineas.push(`⚠️ ${restantes === 1 ? 'Si dejas otro pedido sin pagar' : `Si dejas ${restantes} pedidos más sin pagar`}`
+        + ', no podrás pedir en este local durante un rato.')
       lineas.push('')
     }
 

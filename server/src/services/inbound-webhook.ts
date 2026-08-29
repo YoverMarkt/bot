@@ -189,6 +189,8 @@ export interface InboundWebhookDependencies {
      * Solo se pone con el análisis encendido y ante el vacío absoluto.
      */
     noEsComprobante?: boolean
+    /** Qué pasó por insistir con imágenes que no son un pago. */
+    rechazo?: { strikes: number; blocked: boolean; limit: number; minutes?: number | null }
   }>
 }
 
@@ -566,7 +568,7 @@ export function createInboundWebhookProcessor(
             : comprobante.ambiguos?.length
               ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
               : comprobante.noEsComprobante
-                ? textoDeFotoQueNoEsComprobante()
+                ? textoDeFotoQueNoEsComprobante(comprobante.rechazo)
                 : null
         } catch (error) {
           logger.log(
@@ -747,7 +749,7 @@ export function createInboundWebhookProcessor(
           : comprobante.ambiguos?.length
             ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
             : comprobante.noEsComprobante
-              ? textoDeFotoQueNoEsComprobante()
+              ? textoDeFotoQueNoEsComprobante(comprobante.rechazo)
               : '[foto]',
         businessIdentifier,
         options,

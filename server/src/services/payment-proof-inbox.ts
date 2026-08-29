@@ -83,6 +83,8 @@ export interface ComprobanteDependencias {
   ): Promise<Array<{
     id: string
     business_id: string
+    /** A quién se le cuenta un rechazo de comprobante. */
+    customer_id?: string | null
     order_number: number | null
     contact_phone: string | null
     /** Lo que hay que cobrar: con esto se compara el monto del comprobante. */
@@ -99,6 +101,20 @@ export interface ComprobanteDependencias {
    * que es también lo que pasa con el análisis apagado. Falla abierto.
    */
   analizarImagen?(imagen: Buffer, mimeType?: string | null): Promise<ResultadoVision>
+  /**
+   * Anota que la imagen NO era un comprobante y dice si eso ya bloqueó.
+   *
+   * Opcional como el resto: sin ella la compuerta sigue funcionando igual,
+   * solo que insistir no cuesta nada.
+   */
+  contarRechazo?(businessId: string, customerId: string): Promise<{
+    strikes: number
+    blocked: boolean
+    limit: number
+    minutes?: number | null
+  }>
+  /** Pone a cero los rechazos porque llegó uno bueno. */
+  olvidarRechazos?(businessId: string, customerId: string): Promise<void>
   // `phash` es la huella perceptual que calcula Cloudinary al subir: caza la
   // misma imagen recortada o recomprimida, que es lo que hace WhatsApp al
   // reenviarla. Opcional porque un fallo calculándola no puede impedir que el
@@ -155,6 +171,14 @@ export interface ResultadoComprobante {
    * el negocio no paga almacenamiento por una foto que no era un pago.
    */
   noEsComprobante?: boolean
+  /**
+   * Qué pasó por mandar una imagen que no era un pago: cuántas van y si esta
+   * dejó al cliente fuera del local un rato.
+   *
+   * Solo viaja cuando `noEsComprobante` es cierto. Sin contador configurado no
+   * viene, y la respuesta es la de siempre.
+   */
+  rechazo?: { strikes: number; blocked: boolean; limit: number; minutes?: number | null }
   /** El número, para poder nombrarlo en la respuesta al cliente. */
   orderNumber?: number | null
   /**
@@ -240,7 +264,25 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
         ? await dependencias.analizarImagen(imagen, mimeType).catch(() => undefined)
         : undefined
       if (analisis?.ok && !analisis.esComprobante) {
-        return { adjuntado: false, noEsComprobante: true }
+        // ── Insistir cuesta ──────────────────────────────────────────────
+        //
+        // Rechazar la foto y pedir la buena ya se hacía. Lo que faltaba es que
+        // la segunda seguida tuviera consecuencia: quien manda dos está
+        // probando, no equivocándose.
+        //
+        // ⚠️ El local sale del PEDIDO, como todo en este archivo — nunca del
+        // número por el que llegó la foto, que en el marketplace es el mismo
+        // para todos.
+        //
+        // ⚠️ Y NUNCA lanza: si contar falla, el cliente recibe igual la
+        // respuesta que le dice qué mandar. Enterarse es lo que no puede
+        // faltar.
+        const clienteDelPedido = String(pedido.customer_id || '')
+        const rechazo = dependencias.contarRechazo && clienteDelPedido
+          ? await dependencias.contarRechazo(localDelPedido, clienteDelPedido)
+            .catch(() => undefined)
+          : undefined
+        return { adjuntado: false, noEsComprobante: true, rechazo }
       }
 
       const subida = await dependencias.subirPrivado(imagen, localDelPedido)
@@ -253,6 +295,17 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
         publicId: subida.public_id,
       })
       if (error) throw new Error(error.message || 'La base rechazó el comprobante')
+
+      // Llegó uno bueno: la cuenta de rechazos vuelve a cero. Se cuenta la
+      // INSISTENCIA, no el historial — quien mandó una borrosa, luego la
+      // buena, y dentro de un mes otra borrosa, no está probando nada.
+      //
+      // Sin `await` y sin poder fallar: el comprobante ya está donde tiene que
+      // estar, y olvidar un contador no puede deshacerlo.
+      if (dependencias.olvidarRechazos && pedido.customer_id) {
+        void dependencias.olvidarRechazos(localDelPedido, String(pedido.customer_id))
+          .catch(() => { /* el contador se limpiará al siguiente bueno */ })
+      }
 
       // La huella va DESPUÉS de adjuntar, y sin `await` en el camino del
       // cliente: el comprobante ya está donde tiene que estar, y un fallo
@@ -321,8 +374,48 @@ export const RESPUESTA_COMPROBANTE =
  */
 export const MARCA_NO_ES_COMPROBANTE = 'una imagen que no parece un pago'
 
-export const textoDeFotoQueNoEsComprobante = (): string =>
-  `[el cliente envió ${MARCA_NO_ES_COMPROBANTE}]`
+/**
+ * El marcador, con la consecuencia dentro.
+ *
+ * ⚠️ Viaja EN EL TEXTO igual que el del comprobante ambiguo lleva los nombres
+ * de los locales, y por el mismo motivo: quien lo escribe ya consultó la base,
+ * y volver a consultarla donde se responde sería pagar dos veces por el mismo
+ * dato. El formato es `|n/N` (van n de N) y `|bloqueado:minutos`.
+ */
+export const textoDeFotoQueNoEsComprobante = (
+  rechazo?: { strikes: number; blocked: boolean; limit: number; minutes?: number | null },
+): string => {
+  if (!rechazo) return `[el cliente envió ${MARCA_NO_ES_COMPROBANTE}]`
+  const cola = rechazo.blocked
+    ? `|bloqueado:${rechazo.minutes ?? ''}`
+    : `|${rechazo.strikes}/${rechazo.limit}`
+  return `[el cliente envió ${MARCA_NO_ES_COMPROBANTE}${cola}]`
+}
+
+/**
+ * Desempaqueta lo que el marcador lleva dentro.
+ *
+ * Devuelve `undefined` para un marcador sin cola —los que ya circulaban antes
+ * de esto—, y entonces la respuesta es la de siempre.
+ */
+export const rechazoDelMarcador = (texto: unknown): {
+  strikes: number; blocked: boolean; limit: number; minutes?: number | null
+} | undefined => {
+  const t = String(texto || '')
+  const i = t.indexOf(MARCA_NO_ES_COMPROBANTE)
+  if (i < 0) return undefined
+  const cola = t.slice(i + MARCA_NO_ES_COMPROBANTE.length).replace(/\]$/, '')
+  if (!cola.startsWith('|')) return undefined
+
+  const dato = cola.slice(1)
+  if (dato.startsWith('bloqueado:')) {
+    const min = Number(dato.slice('bloqueado:'.length))
+    return { strikes: 0, blocked: true, limit: 0, minutes: Number.isFinite(min) ? min : null }
+  }
+  const [n, total] = dato.split('/').map(Number)
+  if (!Number.isFinite(n) || !Number.isFinite(total)) return undefined
+  return { strikes: n, blocked: false, limit: total }
+}
 
 export const esFotoQueNoEsComprobante = (texto: unknown): boolean =>
   String(texto || '').includes(MARCA_NO_ES_COMPROBANTE)
@@ -342,6 +435,54 @@ export const RESPUESTA_NO_ES_COMPROBANTE =
   '🧾 Recibimos tu imagen, pero no parece el comprobante de la transferencia.\n\n'
   + 'Mándanos la captura de tu banco donde se vea el *valor*, la *fecha* y el '
   + '*número de referencia*, y registramos tu pago enseguida.'
+
+/**
+ * Lo que se le responde según CUÁNTAS lleva.
+ *
+ * ⚠️ Se avisa en la primera de lo que pasa en la segunda. Un bloqueo que llega
+ * sin aviso previo se lee como que la app falló — es la misma regla que rige
+ * los pedidos sin pagar, y la que separa una norma de un castigo.
+ *
+ * ⚠️ Y ninguno de los dos textos acusa a nadie. Puede ser una foto mandada por
+ * error o una captura movida; el tono es el de alguien que quiere cobrar, no
+ * el de un guardia. Solo el del bloqueo nombra las políticas, porque para
+ * entonces ya hubo un aviso por delante.
+ */
+export const respuestaNoEsComprobante = (
+  rechazo?: { strikes: number; blocked: boolean; limit: number; minutes?: number | null },
+  nombreDelLocal?: string | null,
+): string => {
+  if (!rechazo) return RESPUESTA_NO_ES_COMPROBANTE
+
+  if (rechazo.blocked) {
+    const plazo = enPalabrasElPlazo(rechazo.minutes)
+    const local = nombreDelLocal ? ` en ${nombreDelLocal}` : ''
+    return `🚫 *No puedes pedir${local} por ${plazo}*\n\n`
+      + 'Mandaste varias imágenes que no eran comprobantes de pago, así que se '
+      + 'cerró tu acceso por incumplir las políticas de Umbani.\n\n'
+      + `Pasados los ${plazo} podrás volver a pedir con normalidad. Mientras `
+      + 'tanto puedes pedir en los demás locales.'
+  }
+
+  const quedan = rechazo.limit - rechazo.strikes
+  if (quedan > 0) {
+    return `${RESPUESTA_NO_ES_COMPROBANTE}\n\n`
+      + '⚠️ Si la siguiente tampoco es un comprobante, no podrás pedir en este '
+      + 'local durante un rato.'
+  }
+  return RESPUESTA_NO_ES_COMPROBANTE
+}
+
+/** «30 minutos», «2 horas», «1 día». El mismo criterio que en los avisos. */
+const enPalabrasElPlazo = (minutos?: number | null): string => {
+  const m = Number(minutos)
+  if (!Number.isFinite(m) || m <= 0) return 'un rato'
+  if (m < 60) return `${m} ${m === 1 ? 'minuto' : 'minutos'}`
+  const horas = Math.round(m / 60)
+  if (horas < 24) return `${horas} ${horas === 1 ? 'hora' : 'horas'}`
+  const dias = Math.round(horas / 24)
+  return `${dias} ${dias === 1 ? 'día' : 'días'}`
+}
 
 /** Marcador de que la foto era un comprobante pero no se sabe de qué local. */
 export const MARCA_COMPROBANTE_AMBIGUO = 'un comprobante sin local claro'
