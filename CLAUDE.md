@@ -162,7 +162,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 74 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 75 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -174,6 +174,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - Un pedido a la vez, y MENÚ como salida
 - UNA SOLA definición de «bloqueado», y la mini app la respeta
 - La bienvenida de Umbani, y la pantalla del bloqueado
+- El enlace del marketplace sale como BOTÓN, y el visto azul se marca
 - El enlace es de UN SOLO USO: uno vivo a la vez
 - «Seguir mi pedido» DEVUELVE el enlace
 - Buscar sin IA

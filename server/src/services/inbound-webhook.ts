@@ -856,10 +856,24 @@ const processor = createInboundWebhookProcessor({
     const platform = require('./platform-channel') as typeof import('./platform-channel')
     const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
     const acciones = require('./bot-actions') as typeof import('./bot-actions')
+    // ⚠️ EL VISTO AZUL Y EL «ESCRIBIENDO…», antes de contestar (2026-08-29).
+    //
+    // `sendTyping` hace las DOS cosas y solo lo llamaba `bot-entry`, el camino
+    // de los negocios con canal propio. Quien escribía a Umbani —o sea, todos
+    // los clientes de hoy— veía su mensaje con un solo tic hasta que llegaba
+    // la respuesta, que en un chat de venta se lee como «no me están
+    // leyendo». Se espera a propósito: el visto tiene que aterrizar ANTES que
+    // la respuesta, o no sirve de nada.
+    //
+    // Nunca lanza y nunca bloquea la atención: si falla, se contesta igual.
+    await platform.marcarLeidoPorLaPlataforma(inboundId)
+
     await entry.handleMarketplaceMessage({ from, text, location, inboundId }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
+      // El enlace, como botón «Ver la carta». Cae al texto si no sale.
+      sendLink: mensaje => platform.enviarEnlacePorLaPlataforma(from, mensaje),
       // ⚠️ Cómo se pide lo decide el TIPO de local, no cuántos productos
       // tiene (corrección del dueño, 2026-08-23). Antes vivía aquí un umbral
       // en `server_settings` —la «regla de los 20»— y mandaba una pizzería de

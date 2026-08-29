@@ -160,6 +160,18 @@ export interface MarketplaceEntryDeps {
   }): Promise<string | null>
   send(reply: string, options: string[]): Promise<void>
   /**
+   * El enlace de la tienda como BOTÓN de WhatsApp.
+   *
+   * Opcional: si no está, o si devuelve `false`, se manda el texto de siempre.
+   * Un botón que no sale no puede costar el enlace — sin enlace no hay pedido.
+   */
+  sendLink?(mensaje: {
+    body: string
+    url: string
+    label: string
+    footer?: string | null
+  }): Promise<boolean>
+  /**
    * ¿Este TIPO de local se pide dentro del chat, o se le manda el enlace?
    *
    * ⚠️ Lo decide cuánto hay que ELEGIR para armar el pedido, no cuántos
@@ -780,6 +792,26 @@ async function mandarElEnlace(
     return
   }
 
+  // ⚠️ BOTÓN primero, y el texto solo si el botón no sale (2026-08-29).
+  //
+  // Una URL cruda ocupa tres líneas, se parte en pantallas estrechas y se lee
+  // como publicidad: la gente no la toca. `sendLinkButton` y
+  // `storefrontInviteButton` existían desde el 2026-08-12 para el canal propio
+  // y **nadie los llamaba desde el marketplace**, que es donde están hoy todos
+  // los clientes.
+  //
+  // ⚠️ La etiqueta va SIN EMOJI y corta: WhatsApp la limita a 20 BYTES y un
+  // emoji gasta cuatro. El adorno se queda en el cuerpo, que admite 1024.
+  const enviadoComoBoton = deps.sendLink
+    ? await deps.sendLink({
+      body: `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇`,
+      url,
+      label: 'Ver la carta',
+      footer: 'Para volver al inicio, escribe MENÚ',
+    }).catch(() => false)
+    : false
+  if (enviadoComoBoton) return
+
   await send(
     `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇\n${url}\n\n`
     + 'Cuando termines te aviso por aquí mismo. Para volver al inicio, escribe *MENÚ*.',
@@ -827,6 +859,17 @@ async function devolverElEnlace(
     await send(respuesta.reply, respuesta.options)
     return
   }
+
+  // Mismo botón que al entregar el local: es el mismo enlace y el mismo toque.
+  const enviadoComoBoton = deps.sendLink && !respuesta.options.length
+    ? await deps.sendLink({
+      body: respuesta.reply,
+      url,
+      label: 'Ver la carta',
+      footer: 'Para volver al inicio, escribe MENÚ',
+    }).catch(() => false)
+    : false
+  if (enviadoComoBoton) return
 
   await send(`${respuesta.reply}\n\nSigue aquí 👇\n${url}`, respuesta.options)
 }

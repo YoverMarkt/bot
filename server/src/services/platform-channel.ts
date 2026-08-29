@@ -105,7 +105,16 @@ interface CanalDeSalida {
     options: { id: string; title: string; description?: string }[],
     listButtonText?: string,
   ): Promise<boolean>
+  sendLinkButton(
+    business: unknown,
+    to: string,
+    message: { body: string; url: string; label: string; footer?: string | null },
+  ): Promise<boolean>
+  sendTyping(business: unknown, inboundId?: string | null): Promise<void>
 }
+
+/** El marcador que `conCanalDePlataforma` cambia por las credenciales reales. */
+const MARCADOR = { id: null, whatsapp_provider: 'marketplace' }
 
 /**
  * Manda un mensaje por el número de la plataforma.
@@ -148,4 +157,54 @@ export const enviarPorLaPlataforma = async (
     return
   }
   await whatsapp.sendText(negocio, to, reply)
+}
+
+/**
+ * El enlace de la tienda, como BOTÓN nativo de WhatsApp.
+ *
+ * ⚠️ Una URL cruda en el chat ocupa tres líneas, se parte en pantallas
+ * estrechas y se lee como publicidad — la gente no la toca. El botón dice lo
+ * mismo con una línea y un toque, y es como se manda por el canal propio desde
+ * el 2026-08-12. El marketplace seguía mandando la URL pelada: `sendLinkButton`
+ * y `storefrontInviteButton` existían y **nadie los llamaba desde aquí**.
+ *
+ * ⚠️ Devuelve `false` en vez de lanzar, y quien llama cae al TEXTO de siempre.
+ * Un botón que no sale no puede costar el enlace: sin enlace no hay pedido.
+ *
+ * ⚠️ La etiqueta la recorta YCloud a 20 BYTES (`clipBytes`). «Ver la carta»
+ * son 12; un emoji ahí gastaría cuatro de golpe, y por eso el adorno se queda
+ * en el cuerpo, que admite 1024.
+ */
+export const enviarEnlacePorLaPlataforma = async (
+  to: string,
+  mensaje: { body: string; url: string; label: string; footer?: string | null },
+): Promise<boolean> => {
+  const whatsapp = require('../integrations/whatsapp') as CanalDeSalida
+  try {
+    return await whatsapp.sendLinkButton(MARCADOR, to, mensaje)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * El visto azul y el «escribiendo…» del número de Umbani.
+ *
+ * ⚠️ El marketplace NO los mandaba: `sendTyping` —que hace las dos cosas— solo
+ * lo llamaba `bot-entry`, el camino de los negocios con canal propio. Quien
+ * escribía a Umbani veía su mensaje con un solo tic hasta que llegaba la
+ * respuesta, que en un chat de venta se lee como «no me están leyendo».
+ *
+ * ⚠️ Best-effort de verdad: `sendTyping` no lanza —resuelve el canal dentro de
+ * su propio `try` y usa `allSettled`—, pero se envuelve igual. Ningún adorno
+ * puede impedir que se conteste.
+ */
+export const marcarLeidoPorLaPlataforma = async (
+  inboundId?: string | null,
+): Promise<void> => {
+  if (!inboundId) return
+  const whatsapp = require('../integrations/whatsapp') as CanalDeSalida
+  try {
+    await whatsapp.sendTyping(MARCADOR, inboundId)
+  } catch { /* el visto azul nunca puede costar la respuesta */ }
 }
