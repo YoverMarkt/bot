@@ -94,6 +94,15 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 > 🔍 **Las capas de verificación (qué comprueba cada una, qué NO, y de qué incidente nació) están en [VERIFICACION.md](VERIFICACION.md).** Léelo antes de tocar el CI, el esquema o las migraciones.
 
+> ⚠️ **«Desplegado» solo se dice después de `verify:deploy`.** El 2026-08-29
+> cuatro despliegues se quedaron colgados en Railway y producción sirvió el
+> código de la mañana durante horas — con un arreglo de DINERO entre lo que se
+> creía en vivo, que el dueño descubrió probando la app. Engañó que
+> `gh api deployments` los listaba: esa API devuelve el último despliegue
+> **pedido**, no el que corre. Ahora `/api/health` informa del commit vivo y
+> `npm run verify:deploy -w @botpanel/server -- <url>` lo compara con `HEAD`.
+> **Comprobar que EXISTE un despliegue no es comprobar que su código CORRE.**
+
 
 ---
 

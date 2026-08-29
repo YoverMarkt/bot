@@ -284,6 +284,22 @@ app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
   res.status(ok ? 200 : 503).json({
     ok,
     time: new Date().toISOString(),
+    // ── QUÉ CÓDIGO ESTÁ CORRIENDO DE VERDAD ──────────────────────────────
+    //
+    // ⚠️ Existe por un fallo real del 2026-08-29, y de los caros: cuatro
+    // despliegues seguidos se quedaron colgados en Railway y producción siguió
+    // sirviendo el código de la mañana. Como la API de GitHub SÍ listaba esos
+    // despliegues, se dio por hecho que habían llegado — y durante horas se
+    // dijo «verificado en producción» sobre arreglos que no estaban ahí,
+    // incluido uno de dinero. El dueño lo descubrió probando la app.
+    //
+    // Comprobar que EXISTE un despliegue no es comprobar que su código corre.
+    // Esto lo hace comprobable de un vistazo: `npm run verify:deploy` compara
+    // este valor con el commit que se acaba de fusionar y falla si no coinciden.
+    //
+    // Railway inyecta la variable sola. En local no existe y vale 'local',
+    // que es exactamente lo que hay que ver ahí.
+    version: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
     webhook_inbox: {
       running: webhookInboxWorker.isRunning(),
       ready: webhookInboxWorker.isReady(),

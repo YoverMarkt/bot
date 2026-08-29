@@ -48,7 +48,34 @@ despliegue **terminó** antes de seguir — no que arrancó.
 > ⚠️ La URL real de producción está en la memoria del proyecto, y **no** es la
 > que dice la guía de despliegue. Confírmala antes de apuntar nada a ella.
 
-## 3. Comprobar contra producción de verdad
+## 3. PRIMERO: ¿está corriendo lo que fusionaste?
+
+```bash
+npm run verify:deploy -w @botpanel/server -- https://LA-URL-REAL
+```
+
+Compara el commit que informa `/api/health` con el `HEAD` local. Si no
+coinciden, **para aquí**: todo lo que compruebes después estará mirando el
+código viejo.
+
+⚠️ **Esto no es burocracia, es la lección del 2026-08-29.** Cuatro despliegues
+seguidos se quedaron colgados en Railway (`in_progress`, sin reemplazar nunca
+al contenedor) y producción sirvió el código de la mañana durante horas. Se dio
+por desplegado porque la API de GitHub listaba esos despliegues — pero
+`gh api deployments --jq '.[0].sha'` devuelve **el último que se PIDIÓ**, no el
+que corre. Entre lo que se creyó desplegado había un arreglo de dinero: el
+cliente veía $12.99 sobre un pedido de $14.09, y lo descubrió el dueño
+probando la app.
+
+**Comprobar que existe un despliegue no es comprobar que su código corre.**
+Lo único que lo demuestra es preguntárselo al servidor que está atendiendo.
+
+Si falla:
+- Mira el panel de Railway: el despliegue puede estar colgado o haber fallado.
+- Un commit vacío a `main` (`git commit --allow-empty`) vuelve a dispararlo.
+- Y hasta que `verify:deploy` pase, **no digas que algo está en producción**.
+
+## 4. Comprobar contra producción de verdad
 
 ```bash
 npm run verify:smoke -w @botpanel/server -- https://LA-URL-REAL
@@ -63,7 +90,7 @@ estuvo roto meses sin que nadie lo notara.
 > y lo borra en el `finally`. Si el borrado falla, lo grita con el id: bórralo
 > a mano. Nunca manda WhatsApp (costaría dinero y gastaría el saldo).
 
-## 4. Mirar el canal, que es lo que se rompe en silencio
+## 5. Mirar el canal, que es lo que se rompe en silencio
 
 Un bot mudo no da error: simplemente nadie responde, y te enteras cuando un
 cliente se queja. En julio de 2026 fueron **cinco días**.
