@@ -98,41 +98,44 @@ describe('qué estados se avisan', () => {
   // El 2026-08-28 un mismo teléfono dejó SEIS pedidos sin pagar en el mismo
   // local: pedía, no transfería, el pedido caducaba, el candado se soltaba y
   // volvía a pedir. Ahora abandonar tiene consecuencia, y el aviso lo dice.
-  it('a la PRIMERA falta no amenaza: solo se le pasó el tiempo', () => {
+  // ⚠️ El límite bajó de TRES a DOS el 2026-08-31, por decisión del dueño tras
+  // ver seis pedidos sin pagar del mismo teléfono en un día. Con dos, la
+  // advertencia tiene que ir en la PRIMERA: si esperara a la segunda llegaría
+  // en el mismo mensaje que el bloqueo y no serviría de nada.
+  it('a la PRIMERA falta avisa de la consecuencia, sin bloquear', () => {
     const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
-      strikes: 1, blocked: false, limit: 3,
+      strikes: 1, blocked: false, limit: 2,
     })
     expect(texto).toMatch(/comprobante/i)
-    // Ni cuenta atrás ni advertencia: a la primera casi siempre es un despiste,
-    // y avisar ahí suena a amenaza por nada.
-    expect(texto).not.toMatch(/no podrás/i)
-    expect(texto).not.toMatch(/Van \d/)
-  })
-
-  it('a la SEGUNDA avisa cuántas le quedan, antes de agotarlas', () => {
-    const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
-      strikes: 2, blocked: false, limit: 3,
-    })
-    expect(texto).toMatch(/Van 2 pedidos/)
-    expect(texto).toMatch(/uno más/i)
-    expect(texto).toMatch(/no podrás seguir pidiendo/i)
-    // Avisar ANTES es lo que separa una norma de un castigo: un bloqueo que
-    // llega sin aviso previo se lee como que la app falló.
+    expect(texto).toMatch(/otro pedido sin pagar/i)
+    expect(texto).toMatch(/no podrás pedir/i)
+    // Avisar no es castigar: todavía puede pedir.
     expect(texto).not.toMatch(/🚫/)
   })
 
-  it('a la TERCERA bloquea, y no promete que sea temporal', () => {
+  it('a la SEGUNDA bloquea, y SÍ promete el plazo', () => {
     const texto = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', {
-      strikes: 3, blocked: true, limit: 3,
+      strikes: 2, blocked: true, limit: 2, minutes: 30,
     })
-    expect(texto).toMatch(/Ya no puedes pedir/i)
+    expect(texto).toMatch(/No puedes pedir/i)
     expect(texto).toMatch(/políticas de Umbani/i)
-    // ⚠️ `blocked_at` no caduca solo. Prometer una espera que nadie va a
-    // cumplir es mentirle al cliente — la misma razón por la que se descartó
-    // el «bloqueo temporal».
-    expect(texto).not.toMatch(/temporal|24 horas|mañana|vuelve en/i)
-    // Se le dice que no pierde la plataforma entera: la falta es de ESTE local.
+    // ⚠️ Esto es lo contrario de lo que decía esta prueba hasta el 2026-09-01,
+    // y el cambio es de fondo: entonces `blocked_at` no caducaba, así que
+    // prometer una espera era mentir. Ahora `blocked_until` la cumple solo.
+    expect(texto).toMatch(/30 minutos/)
+    expect(texto).toMatch(/podrás volver a pedir/i)
+    // Y sigue sin perder la plataforma entera: la falta es de ESTE local.
     expect(texto).toMatch(/demás locales/i)
+  })
+
+  it('el plazo se dice en palabras, no en un número pelado', () => {
+    const media = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', { strikes: 2, blocked: true, limit: 2, minutes: 120 })
+    expect(media).toMatch(/2 horas/)
+    const dia = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', { strikes: 2, blocked: true, limit: 2, minutes: 1440 })
+    expect(dia).toMatch(/1 día/)
+    // Sin dato, no se inventa una cifra.
+    const vago = textoDelAviso(NEGOCIO, PEDIDO, 'expirado', { strikes: 2, blocked: true, limit: 2 })
+    expect(vago).toMatch(/un rato/)
   })
 
   it('sin datos de faltas, el aviso es el de siempre', () => {

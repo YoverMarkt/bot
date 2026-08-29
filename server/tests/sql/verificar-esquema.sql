@@ -3480,16 +3480,18 @@ begin
     raise exception 'la primera falta no debía bloquear: %', v_r;
   end if;
 
-  -- Segunda: sigue sin bloquear. Es la que avisa.
+  -- ⚠️ Segunda: AHORA SÍ bloquea. El límite bajó de 3 a 2 el 2026-08-31, y
+  -- esta comprobación decía lo contrario — para eso está.
   v_r := public.register_unpaid_expiry(v_biz, v_pedido);
-  if (v_r ->> 'strikes')::int <> 2 or (v_r ->> 'blocked')::boolean then
-    raise exception 'la segunda falta no debía bloquear: %', v_r;
+  if (v_r ->> 'strikes')::int <> 2 or not (v_r ->> 'blocked')::boolean then
+    raise exception 'la segunda falta TENÍA que bloquear: %', v_r;
   end if;
 
-  -- Tercera: bloquea, y lo dice.
+  -- ⚠️ El límite bajó a DOS el 2026-08-31, así que la segunda YA bloqueó
+  -- arriba. La tercera solo comprueba que seguir contando no rompe nada.
   v_r := public.register_unpaid_expiry(v_biz, v_pedido);
   if (v_r ->> 'strikes')::int <> 3 or not (v_r ->> 'blocked')::boolean then
-    raise exception 'la tercera falta TENÍA que bloquear: %', v_r;
+    raise exception 'la tercera falta TENÍA que seguir bloqueando: %', v_r;
   end if;
 
   select blocked_at into v_bloqueo from public.business_customers
@@ -3498,8 +3500,9 @@ begin
     raise exception 'el bloqueo no llegó a la fila';
   end if;
 
-  -- ⚠️ Y una cuarta no PISA la fecha del bloqueo: si el dueño lo desbloquea y
-  -- vuelve a caer, la fecha original importa para saber qué pasó.
+  -- ⚠️ Y una cuarta no PISA `blocked_at`: si el dueño lo desbloquea y vuelve a
+  -- caer, la fecha original importa para saber qué pasó. Lo que sí se renueva
+  -- es `blocked_until`, que es de ESTE bloqueo.
   v_r := public.register_unpaid_expiry(v_biz, v_pedido);
   if (select blocked_at from public.business_customers
       where business_id = v_biz and customer_id = v_cliente) <> v_bloqueo then
@@ -3518,7 +3521,109 @@ begin
 end;
 $$;
 
-select '✅ tres pedidos sin pagar bloquean en ESE local, avisando antes y sin cruzar negocios' as resultado;
+select '✅ dos pedidos sin pagar bloquean en ESE local, avisando antes y sin cruzar negocios' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL BLOQUEO CADUCA SOLO (2026-09-01)
+--
+-- Hasta hoy `blocked_at` era para siempre y el aviso al cliente no podía
+-- prometer un plazo. Ahora hay dos formas y tienen que distinguirse bien:
+-- permanente (el del dueño) y temporal (el automático, que vuelve solo).
+--
+-- Se EJECUTA `storefront_customer_blocked` en los cuatro casos, porque es la
+-- función que decide si alguien puede comprar: si contestara mal, o deja pedir
+-- a un bloqueado o deja fuera para siempre a quien cumplió su plazo.
+do $$
+declare
+  v_biz     uuid;
+  v_cliente uuid;
+  v_pedido  uuid;
+  v_r       jsonb;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled, block_minutes)
+  values ('verificacion-bloqueo-temporal', 'Local Bloqueo', 'pizzería', 'marketplace', true, true, 30)
+  returning id into v_biz;
+
+  insert into public.customers (phone) values ('593900000941') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id) values (v_biz, v_cliente);
+
+  -- 1. Sin nada puesto: puede pedir.
+  if public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'un cliente sin bloquear salió bloqueado';
+  end if;
+
+  -- 2. Bloqueo TEMPORAL vigente: no puede.
+  v_r := public.block_customer_temporarily(v_biz, v_cliente, 'prueba');
+  if (v_r ->> 'minutes')::int <> 30 then
+    raise exception 'el bloqueo no tomó los minutos del local: %', v_r;
+  end if;
+  if not public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'el bloqueo temporal no bloquea';
+  end if;
+
+  -- ⚠️ Y se puede volver a avisar: es un bloqueo NUEVO, aunque ya se le
+  -- hubiera explicado uno anterior.
+  if (select blocked_notified_at from public.business_customers
+      where business_id = v_biz and customer_id = v_cliente) is not null then
+    raise exception 'el bloqueo nuevo no reabrió el aviso';
+  end if;
+
+  -- 3. CADUCADO: vuelve a poder pedir SOLO, sin que nadie lo levante.
+  update public.business_customers
+  set blocked_until = now() - interval '1 minute'
+  where business_id = v_biz and customer_id = v_cliente;
+  if public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'un bloqueo temporal vencido sigue bloqueando';
+  end if;
+
+  -- 4. PERMANENTE (el del dueño): sin fin, y no caduca nunca.
+  update public.business_customers
+  set blocked_at = now(), blocked_until = null
+  where business_id = v_biz and customer_id = v_cliente;
+  if not public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'el bloqueo permanente del dueño dejó de bloquear';
+  end if;
+
+  -- ⚠️ Y un bloqueo automático NO puede pisar la decisión del dueño
+  -- convirtiéndola en 30 minutos.
+  v_r := public.block_customer_temporarily(v_biz, v_cliente, 'intento');
+  if not coalesce((v_r ->> 'permanente')::boolean, false) then
+    raise exception 'un bloqueo temporal pisó el permanente del dueño: %', v_r;
+  end if;
+  if not public.storefront_customer_blocked(v_biz, v_cliente) then
+    raise exception 'el permanente se perdió tras el intento temporal';
+  end if;
+
+  -- 5. Y el contador de pedidos: al SEGUNDO bloquea, no al tercero.
+  update public.business_customers
+  set blocked_at = null, blocked_until = null, unpaid_expiries = 0
+  where business_id = v_biz and customer_id = v_cliente;
+
+  insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+  values (v_biz, v_cliente, '593900000941', 'expirado', 10, 10, 'storefront')
+  returning id into v_pedido;
+
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (v_r ->> 'strikes')::int <> 1 or (v_r ->> 'blocked')::boolean then
+    raise exception 'la primera falta no debía bloquear: %', v_r;
+  end if;
+
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (v_r ->> 'strikes')::int <> 2 or not (v_r ->> 'blocked')::boolean then
+    raise exception 'la SEGUNDA falta tenía que bloquear: %', v_r;
+  end if;
+  -- Y el bloqueo que pone es TEMPORAL: tiene fin.
+  if (select blocked_until from public.business_customers
+      where business_id = v_biz and customer_id = v_cliente) is null then
+    raise exception 'el bloqueo por pedidos sin pagar salió permanente';
+  end if;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone = '593900000941';
+end;
+$$;
+
+select '✅ el bloqueo temporal caduca solo, no pisa el del dueño, y dos faltas bastan' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EL MARGEN SE SUMA AL PRECIO, NO SE LE QUITA AL DUEÑO (2026-08-25)
