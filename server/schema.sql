@@ -3160,6 +3160,78 @@ $$;
 revoke all on function public.cleanup_storefront_sessions(integer)
   from public, anon, authenticated;
 
+-- ── UN ENLACE VIVO A LA VEZ ────────────────────────────────────────────────
+-- migration-2026-09-03-enlace-de-un-uso.sql. `revoked_at` existía desde el
+-- principio, lo miraba `checkSession`… y nadie lo escribía nunca: quien había
+-- pedido en cinco locales tenía cinco enlaces vivos y podía volver a
+-- cualquiera con la conversación puesta en otro sitio.
+--
+-- ⚠️ Dos excepciones, y las dos evitan un callejón sin salida: el local que se
+-- acaba de entregar (matarlo vaciaría el carrito que la persona tiene abierto)
+-- y cualquier local donde quede un pedido en `esperando_pago` (los datos
+-- bancarios viven detrás de la sesión). Falla hacia NO revocar.
+create or replace function public.revoke_other_storefront_sessions(
+  p_customer_id     uuid,
+  p_keep_session_id uuid
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_local_vigente uuid;
+  v_revocadas     integer;
+begin
+  if p_customer_id is null or p_keep_session_id is null then
+    return 0;
+  end if;
+
+  select business_id into v_local_vigente
+    from public.storefront_sessions
+   where id = p_keep_session_id;
+
+  -- Revocar de más deja a un cliente legítimo fuera de su tienda; dejar un
+  -- enlace viejo vivo un rato más es recuperable.
+  if v_local_vigente is null then
+    return 0;
+  end if;
+
+  with revocadas as (
+    update public.storefront_sessions as sesion
+       set revoked_at = now()
+     where sesion.customer_id = p_customer_id
+       and sesion.revoked_at is null
+       and sesion.id <> p_keep_session_id
+       and sesion.business_id <> v_local_vigente
+       and not exists (
+         select 1
+           from public.orders as pedido
+          where pedido.customer_id  = p_customer_id
+            and pedido.business_id  = sesion.business_id
+            and pedido.source       = 'storefront'
+            and pedido.status       = 'esperando_pago'
+       )
+    returning 1
+  )
+  select count(*)::integer into v_revocadas from revocadas;
+
+  return coalesce(v_revocadas, 0);
+end;
+$$;
+
+comment on function public.revoke_other_storefront_sessions(uuid, uuid) is
+  'Un enlace vivo a la vez por persona. Conserva el del local recién entregado '
+  'y el de cualquier local donde quede un pedido en esperando_pago.';
+
+revoke all on function public.revoke_other_storefront_sessions(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.revoke_other_storefront_sessions(uuid, uuid)
+  to service_role;
+
+create index if not exists idx_storefront_sessions_por_cliente
+  on public.storefront_sessions (customer_id) where revoked_at is null;
+
 -- ── PEDIDOS DESDE LA MINI APP ──────────────────────────────
 -- create_order_with_items valida el precio contra products.price, asi que
 -- rechazaria un pedido con variantes. La tienda tiene su propia RPC: la app

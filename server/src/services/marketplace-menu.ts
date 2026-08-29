@@ -491,20 +491,30 @@ export function recordarComprobantePendiente(
   }
 }
 
-/** La respuesta a la confirmación de reinicio. */
+/**
+ * La respuesta a la confirmación de reinicio.
+ *
+ * ⚠️ `continua` NO es lo contrario de `reinicia`: son TRES respuestas, no dos.
+ * «Empezar de nuevo» reinicia, «Seguir mi pedido» continúa, y cualquier otra
+ * cosa no es ninguna de las dos —se vuelve a preguntar—. Quien llama necesita
+ * distinguir la segunda de la tercera para devolverle el enlace solo a quien
+ * dijo que sigue; deducirlo de `options.length === 0` funcionaba, pero ataba
+ * una decisión de flujo a cuántos botones lleva un mensaje.
+ */
 export function resolverReinicio(
   mensaje: string,
   estado: EstadoDeCompra,
   categorias: MarketplaceCategory[],
-): { reinicia: boolean; respuesta: MarketplaceReply } {
+): { reinicia: boolean; continua: boolean; respuesta: MarketplaceReply } {
   const elegida = elegir(mensaje, [SI_REINICIAR, NO_CONTINUAR])
 
   if (elegida === SI_REINICIAR) {
-    return { reinicia: true, respuesta: verCategorias(categorias, 0) }
+    return { reinicia: true, continua: false, respuesta: verCategorias(categorias, 0) }
   }
   if (elegida === NO_CONTINUAR) {
     return {
       reinicia: false,
+      continua: true,
       respuesta: {
         reply: estado.negocio
           ? `Perfecto, sigues en *${estado.negocio.name}*. Termina tu pedido cuando quieras 👍`
@@ -518,6 +528,7 @@ export function resolverReinicio(
   // por un «ok» ambiguo es lo único que no tiene vuelta atrás.
   return {
     reinicia: false,
+    continua: false,
     respuesta: {
       reply: `${NO_ENTENDI}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
       options: [SI_REINICIAR, NO_CONTINUAR],

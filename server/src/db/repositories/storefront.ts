@@ -339,6 +339,28 @@ const cleanupStorefrontSessions = async (days = 2) => db.rpc(
   { p_days: days },
 )
 
+/**
+ * Un enlace vivo a la vez: al emitir uno se revocan los demás de esa persona.
+ *
+ * ⚠️ Dos excepciones, y las decide la RPC porque son una sola pregunta a la
+ * base: el local que se acaba de entregar (matar su sesión vaciaría el carrito
+ * que la persona tiene abierto) y cualquier local donde quede un pedido en
+ * `esperando_pago` (los datos bancarios viven detrás de la sesión).
+ *
+ * Devuelve cuántos cayeron. Falla hacia NO revocar.
+ */
+const revokeOtherStorefrontSessions = async (
+  customerId: string,
+  keepSessionId: string,
+): Promise<number> => {
+  const { data, error } = await db.rpc('revoke_other_storefront_sessions', {
+    p_customer_id: customerId,
+    p_keep_session_id: keepSessionId,
+  })
+  fail(error, 'No se pudieron revocar los enlaces anteriores')
+  return Number(data ?? 0)
+}
+
 // El pedido de la tienda: la RPC resuelve cada precio desde la base. Aquí solo
 // se traducen los nombres de los parámetros.
 const createStorefrontOrder = async (input: {
@@ -877,6 +899,7 @@ export = {
   claimStorefrontSession,
   touchStorefrontSession,
   cleanupStorefrontSessions,
+  revokeOtherStorefrontSessions,
   createStorefrontOrder,
   getOrderMoney,
   getStorefrontOrders,

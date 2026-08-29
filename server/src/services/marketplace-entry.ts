@@ -72,6 +72,8 @@ export interface MarketplaceEntryDatabase {
     slug: string | null
     storefront_enabled?: boolean | null
     takes_orders?: boolean | null
+    /** El tipo decide si se pide en el chat o por la mini app. */
+    type?: string | null
   } | null>
   getProducts(businessId: string): Promise<unknown[]>
   getMenuModifiers?(businessId: string): Promise<unknown[]>
@@ -410,10 +412,30 @@ export async function handleMarketplaceMessage(
 
   // ── 2. ¿Estaba respondiendo a «¿tiro tu pedido?» ───────────────────
   if (vista.vista === 'confirmando_reinicio') {
-    const { reinicia, respuesta } = resolverReinicio(text, estado, categorias)
+    const { reinicia, continua, respuesta } = resolverReinicio(text, estado, categorias)
     await guardar(deps, customer.id, conversation?.version, respuesta, {
       soltarLocal: reinicia,
     })
+    // ⚠️ «Seguir mi pedido» DEVUELVE EL ENLACE (2026-09-03).
+    //
+    // Hasta ahora contestaba «Termina tu pedido cuando quieras 👍» y nada más:
+    // una calle sin salida para quien escribió MENÚ justamente porque no
+    // encontraba su enlace —lo borró, lo perdió entre mensajes, cambió de
+    // teléfono—. Sus dos opciones eran tirar el pedido o seguir sin poder
+    // entrar.
+    //
+    // Es la salida que el dueño puso como condición del enlace estricto:
+    // «escribes MENÚ y listo». Sin esto, «estricto» sería una trampa.
+    //
+    // ⚠️ Emitirlo NO le mata la sesión que ya tenga abierta: la revocación
+    // respeta el local vigente a propósito, o recargar con un token nuevo le
+    // vaciaría el carrito.
+    if (continua && conversation?.selected_business_id) {
+      await devolverElEnlace(
+        deps, customer, from, conversation.selected_business_id, respuesta,
+      )
+      return
+    }
     await send(respuesta.reply, respuesta.options)
     return
   }
@@ -763,6 +785,50 @@ async function mandarElEnlace(
     + 'Cuando termines te aviso por aquí mismo. Para volver al inicio, escribe *MENÚ*.',
     [],
   )
+}
+
+/**
+ * «Seguir mi pedido»: se le recuerda dónde está y se le devuelve su enlace.
+ *
+ * ⚠️ Solo con los locales de MINI APP. En los que se piden dentro del chat no
+ * hay enlace que dar —el pedido se arma aquí mismo—, y el siguiente mensaje ya
+ * lo devuelve a su menú.
+ *
+ * ⚠️ Falla hacia el texto de siempre. Quedarse sin enlace no puede dejar sin
+ * respuesta a alguien que acaba de decir que sigue con su pedido.
+ */
+async function devolverElEnlace(
+  deps: MarketplaceEntryDeps,
+  customer: { id: string; name: string | null },
+  phone: string,
+  businessId: string,
+  respuesta: MarketplaceReply,
+): Promise<void> {
+  const { database, send, logger } = deps
+  const business = await database.getBusinessById(businessId).catch(() => null)
+
+  const enElChat = business
+    ? await deps.tipoPideEnChat(business.type).catch(() => false)
+    : false
+  if (!business || enElChat) {
+    await send(respuesta.reply, respuesta.options)
+    return
+  }
+
+  const url = await deps.issueLink({
+    business,
+    phone,
+    name: customer.name,
+    // Lo acaba de pedir con todas las letras: el cooldown no aplica.
+    force: true,
+  })
+  if (!url) {
+    logger?.log(`⚠️  [marketplace] «seguir mi pedido» sin enlace para ${business.slug}`)
+    await send(respuesta.reply, respuesta.options)
+    return
+  }
+
+  await send(`${respuesta.reply}\n\nSigue aquí 👇\n${url}`, respuesta.options)
 }
 
 /**
