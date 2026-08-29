@@ -1,6 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { RiCloseLine, RiStore2Line } from '@remixicon/react'
-import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
+import {
+  ApiError, confirmarTelefono, getStore, isBlocked, isLinkProblem,
+} from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
 import { readSlug } from './lib/session'
@@ -30,6 +32,9 @@ import FoodStore from './screens/FoodStore'
 const Confirmar = lazy(() => import('./screens/Confirmar'))
 const Gate = lazy(() => import('./screens/Gate'))
 const DesktopGate = lazy(() => import('./screens/DesktopGate'))
+// La cuarta puerta, y la más reciente (2026-08-29): el local bloqueó a esta
+// persona. Se difiere igual que las otras — no se ve en una visita normal.
+const Bloqueado = lazy(() => import('./screens/Bloqueado'))
 
 // Armazón de la tienda.
 //
@@ -41,6 +46,16 @@ type Estado =
   | { fase: 'no_disponible' }
   | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
+  /**
+   * El LOCAL bloqueó a esta persona. Distinto de 'bloqueada', que habla del
+   * enlace: aquí el enlace es válido y suyo, lo que no puede es comprar.
+   */
+  | {
+    fase: 'vetado'
+    business: Business | null
+    until: string | null
+    permanent: boolean
+  }
   | {
     fase: 'lista'
     business: Business
@@ -94,6 +109,23 @@ export default function App() {
       // El color del negocio se aplica en cuanto se conoce, antes de pintar el
       // catálogo: así nadie ve el verde por defecto y luego un salto de color.
       aplicarColorDeMarca(datos.business?.brandColor)
+
+      // ⚠️ EL BLOQUEO GANA A TODO, y va antes de montar nada (2026-08-29).
+      //
+      // La portada es la única respuesta que recibe un bloqueado, y trae
+      // `blocked` justo para esto. Si se comprobara más tarde —al pedir el
+      // catálogo, o peor, al confirmar— esta persona ya habría recorrido la
+      // carta entera buscando cómo pedir. Es exactamente lo que pasó el
+      // 2026-08-29 con el pedido #74.
+      if (datos.blocked) {
+        return setEstado({
+          fase: 'vetado',
+          business: datos.business,
+          until: datos.blocked.until,
+          permanent: datos.blocked.permanent,
+        })
+      }
+
       if (!enMovil) return setEstado({ fase: 'escritorio', business: datos.business })
       // La carta se ve sin enlace: un enlace de comida se reenvía, se pega en
       // una historia y se busca, y quien llegue tiene que poder mirar antes de
@@ -118,6 +150,22 @@ export default function App() {
    * ofrecer el WhatsApp del negocio.
    */
   const alFallarEnlace = useCallback(async (error: unknown) => {
+    // ⚠️ El bloqueo se mira PRIMERO y sustituye la tienda entera, al revés que
+    // los problemas de enlace —que se pintan encima para no llevarse el
+    // carrito—. Aquí llevárselo es lo correcto: ese carrito no va a poder
+    // convertirse en un pedido, y dejarlo a la vista invita a intentarlo.
+    if (isBlocked(error)) {
+      const detalle = error instanceof ApiError ? error : null
+      let business: Business | null = null
+      try { business = (await getStore(slug)).business } catch { business = null }
+      setEstado({
+        fase: 'vetado',
+        business,
+        until: detalle?.until ?? null,
+        permanent: detalle?.permanent === true,
+      })
+      return true
+    }
     if (!isLinkProblem(error)) return false
     const motivo = error instanceof ApiError ? error.reason : null
     let business: Business | null = null
@@ -187,6 +235,21 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <Gate business={estado.business} motivo={estado.motivo} />
+      </Suspense>
+    )
+  }
+
+  if (estado.fase === 'vetado') {
+    return (
+      <Suspense fallback={null}>
+        <Bloqueado
+          business={estado.business}
+          until={estado.until}
+          permanent={estado.permanent}
+          // Cumplido el plazo se recarga de verdad: el estado del bloqueo lo
+          // decide el servidor, y volver a preguntárselo es lo único honesto.
+          onReintentar={() => { void cargar() }}
+        />
       </Suspense>
     )
   }

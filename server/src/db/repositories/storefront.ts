@@ -591,18 +591,79 @@ const claimMiniappReply = async (
  * vacío, que aquí significaría «no está bloqueado» — el peor fallo posible
  * para un bloqueo.
  */
-const isContactBlocked = async (businessId: string, phone: string): Promise<boolean> => {
+/**
+ * Lo que hay que saber de un bloqueo para poder explicarlo.
+ *
+ * ⚠️ El tipo va ESCRITO EN LÍNEA y no como `interface` con nombre: este
+ * archivo termina en `export =`, que no admite otros `export`, y sin exportar
+ * el nombre TypeScript no puede describir `db` para quien lo importa
+ * («cannot be named», TS4023). Escrito así viaja estructuralmente y no hay
+ * nada que exportar.
+ */
+type EstadoDeBloqueo = {
+  blocked: boolean
+  /** Del dueño: no caduca, y por eso no promete plazo. */
+  permanent: boolean
+  /** Hasta cuándo, solo en los temporales que siguen vigentes. */
+  until: string | null
+}
+
+const SIN_BLOQUEO = { blocked: false, permanent: false, until: null }
+
+/**
+ * El estado del bloqueo de esta persona en este local.
+ *
+ * ⚠️ Lo responde la BASE (`storefront_customer_block_state`) y no TypeScript,
+ * y ese es el arreglo entero del 2026-08-29. Aquí vivía una segunda regla
+ * —`Boolean(blocked_at)`— que se contradecía con la del disparador de pedidos:
+ * con un bloqueo temporal ya VENCIDO el chat decía «bloqueado» y la base
+ * dejaba insertar. Por esa grieta entró el pedido #74. Ahora solo hay una
+ * respuesta, y la da quien también decide si el `insert` pasa.
+ *
+ * ⚠️ Falla ABIERTO (`SIN_BLOQUEO`): dejar fuera a un cliente legítimo por un
+ * fallo nuestro es peor que dejar entrar a un bloqueado, que además choca
+ * contra el disparador al confirmar.
+ */
+const customerBlockState = async (
+  businessId: string,
+  customerId: string,
+): Promise<{ blocked: boolean; permanent: boolean; until: string | null }> => {
+  if (!businessId || !customerId) return SIN_BLOQUEO
+  const { data, error } = await db.rpc('storefront_customer_block_state', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+  })
+  if (error) return SIN_BLOQUEO
+  const estado = (data || {}) as Partial<EstadoDeBloqueo>
+  return {
+    blocked: estado.blocked === true,
+    permanent: estado.permanent === true,
+    until: estado.until ?? null,
+  }
+}
+
+/** El mismo estado, pero llegando por el TELÉFONO — que es lo que trae el chat. */
+const contactBlockState = async (
+  businessId: string,
+  phone: string,
+): Promise<{ blocked: boolean; permanent: boolean; until: string | null }> => {
   const digitos = String(phone || '').replace(/\D/g, '')
-  if (!businessId || !digitos) return false
+  if (!businessId || !digitos) return SIN_BLOQUEO
   const { data, error } = await db
     .from('business_customers')
-    .select('blocked_at,customers!inner(phone)')
+    .select('customer_id,customers!inner(phone)')
     .eq('business_id', businessId)
     .eq('customers.phone', digitos)
     .maybeSingle()
-  fail(error, 'No se pudo comprobar el bloqueo')
-  return Boolean((data as { blocked_at?: string | null } | null)?.blocked_at)
+  if (error) return SIN_BLOQUEO
+  const customerId = (data as { customer_id?: string } | null)?.customer_id
+  if (!customerId) return SIN_BLOQUEO
+  return customerBlockState(businessId, customerId)
 }
+
+const isContactBlocked = async (businessId: string, phone: string): Promise<boolean> => (
+  (await contactBlockState(businessId, phone)).blocked
+)
 
 /**
  * La regla de margen vigente para este negocio, o `null` si no hay ninguna.
@@ -881,6 +942,8 @@ export = {
   claimStorefrontLinkSend,
   claimMiniappReply,
   isContactBlocked,
+  contactBlockState,
+  customerBlockState,
   claimBlockedNotice,
   getBusinessPricingRule,
   isCustomerBlocked,

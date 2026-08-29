@@ -14172,6 +14172,54 @@ alter table public.businesses
 comment on column public.businesses.block_minutes is
   'Cuánto dura un bloqueo temporal en este local, en minutos (1 min a 7 días). Lo ajusta el dueño en Ajustes.';
 
+-- ── LA ÚNICA RESPUESTA A «¿ESTÁ BLOQUEADO?» ────────────────────────────────
+-- migration-2026-08-29-un-solo-bloqueo.sql. Había DOS reglas —el chat miraba
+-- `blocked_at` a secas, la base miraba la regla completa— y con un bloqueo
+-- temporal ya vencido se contradecían: el chat negaba el local y el disparador
+-- dejaba insertar el pedido. Por esa grieta entró el pedido #74 el 2026-08-29.
+--
+-- ⚠️ Devuelve el ESTADO y no un booleano porque las pantallas tienen que decir
+-- hasta cuándo: «no puedes pedir» sin plazo es lo que hace que la gente
+-- escriba al local. El permanente no lleva plazo a propósito — prometer uno
+-- que no se cumple es cómo nació el fallo del número del 2026-08-23.
+create or replace function public.storefront_customer_block_state(
+  p_business_id uuid,
+  p_customer_id uuid
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+    (
+      select jsonb_build_object(
+        'blocked',    (bc.blocked_at is not null and bc.blocked_until is null)
+                   or (bc.blocked_until is not null and bc.blocked_until > now()),
+        'permanent',  bc.blocked_at is not null and bc.blocked_until is null,
+        'until',      case
+                        when bc.blocked_until is not null and bc.blocked_until > now()
+                        then bc.blocked_until
+                      end
+      )
+      from public.business_customers as bc
+      where bc.business_id = p_business_id
+        and bc.customer_id = p_customer_id
+    ),
+    jsonb_build_object('blocked', false, 'permanent', false, 'until', null)
+  );
+$$;
+
+comment on function public.storefront_customer_block_state(uuid, uuid) is
+  'La ÚNICA respuesta a «¿está bloqueado?». El chat, la mini app y el '
+  'disparador de pedidos la comparten para no poder contradecirse.';
+
+revoke all on function public.storefront_customer_block_state(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.storefront_customer_block_state(uuid, uuid)
+  to service_role;
+
 -- ── 3. Quién está bloqueado AHORA ──────────────────────────────────────────
 --
 -- ⚠️ Se recrea la función que ya usaban el disparador y la ruta, en vez de
@@ -14187,17 +14235,9 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
-  select exists (
-    select 1
-    from public.business_customers
-    where business_id = p_business_id
-      and customer_id = p_customer_id
-      and (
-        -- Permanente: el del dueño. Se reconoce porque no tiene fin.
-        (blocked_at is not null and blocked_until is null)
-        -- Temporal: solo mientras no haya pasado su hora.
-        or (blocked_until is not null and blocked_until > now())
-      )
+  select coalesce(
+    (public.storefront_customer_block_state(p_business_id, p_customer_id) ->> 'blocked')::boolean,
+    false
   );
 $$;
 

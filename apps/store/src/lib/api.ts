@@ -14,19 +14,47 @@ export class ApiError extends Error {
   readonly status: number
   readonly reason: string | null
   readonly code: string | null
+  /** Hasta cuándo dura el bloqueo, si el rechazo es `bloqueado` y es temporal. */
+  readonly until: string | null
+  /** El bloqueo del dueño: no caduca, así que no promete plazo. */
+  readonly permanent: boolean
 
-  constructor(status: number, message: string, reason?: string, code?: string) {
+  constructor(
+    status: number,
+    message: string,
+    reason?: string,
+    code?: string,
+    extra?: { until?: string | null; permanent?: boolean },
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.reason = reason || null
     this.code = code || null
+    this.until = extra?.until ?? null
+    this.permanent = extra?.permanent === true
   }
 }
 
 /** ¿Este fallo significa que el enlace no sirve para este teléfono? */
 export const isLinkProblem = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 401
+
+/**
+ * ¿El local bloqueó a esta persona?
+ *
+ * ⚠️ Es 403 y NO 401, y la diferencia importa: con un 401 la app manda a pedir
+ * otro enlace, y aquí el enlace está perfecto — pedir otro no arreglaría nada.
+ * Tratarlos igual dejaba al cliente pidiendo enlaces en bucle.
+ */
+export const isBlocked = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 403 && error.reason === 'bloqueado'
+
+/** Hasta cuándo dura el bloqueo. Nulo en el permanente: no hay plazo. */
+export interface Bloqueo {
+  until: string | null
+  permanent: boolean
+}
 
 const request = async <T>(
   path: string,
@@ -64,14 +92,30 @@ const request = async <T>(
       String(payload.error || 'No pudimos completar la operación'),
       typeof payload.reason === 'string' ? payload.reason : undefined,
       typeof payload.code === 'string' ? payload.code : undefined,
+      {
+        until: typeof payload.until === 'string' ? payload.until : null,
+        permanent: payload.permanent === true,
+      },
     )
   }
   return payload as T
 }
 
-/** Portada. Es lo ÚNICO que responde sin enlace válido. */
-export const getStore = (slug: string) =>
-  request<{ business: Business; status: StoreStatus; canOrder: boolean }>(`/${slug}`)
+/**
+ * Portada. Es lo ÚNICO que responde sin enlace válido.
+ *
+ * ⚠️ Y lo único que responde a un BLOQUEADO. Trae `blocked` para que la app lo
+ * sepa antes de montar la tienda: el 2026-08-29 alguien bloqueado abrió un
+ * enlace viejo, recorrió la carta entera y llegó a crear un pedido. La portada
+ * lleva el nombre y el logo del local y nada accionable, así que es
+ * exactamente lo que hace falta para pintarle el aviso.
+ */
+export const getStore = (slug: string) => request<{
+  business: Business
+  status: StoreStatus
+  canOrder: boolean
+  blocked: Bloqueo | null
+}>(`/${slug}`)
 
 export const getCatalog = (slug: string) => request<Catalog>(`/${slug}/catalog`)
 

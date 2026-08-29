@@ -4121,3 +4121,115 @@ end;
 $$;
 
 select '✅ un enlace vivo a la vez: cae el de otro local, sobrevive el del local vigente y el que debe dinero' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- UNA SOLA DEFINICIÓN DE «BLOQUEADO» (2026-08-29)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El dueño, probando de madrugada, entró a la tienda estando bloqueado y creó
+-- el pedido #74. Se coló porque «bloqueado» se respondía en dos sitios con dos
+-- reglas: el chat miraba `blocked_at` a secas y la base miraba la regla
+-- completa. Con un bloqueo temporal YA VENCIDO —`blocked_at` puesto,
+-- `blocked_until` en el pasado— el chat decía «bloqueado» y el disparador
+-- decía «adelante».
+--
+-- Se ejecutan los cuatro estados, incluido ese, y se comprueba que el booleano
+-- que usa el disparador NUNCA se separa del estado que ven las pantallas.
+do $$
+declare
+  v_local   uuid;
+  v_cliente uuid;
+  v_estado  jsonb;
+  v_pedido  uuid;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values (
+    'bloqueo-uno-v', 'Bloqueo', 'pizzeria', 'ycloud',
+    '+593900444001', '+593900444001', true, 'miniapp'
+  ) returning id into v_local;
+
+  insert into public.customers (phone) values ('593900444100') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id)
+  values (v_local, v_cliente);
+
+  -- ── 1. Sin bloqueo: pide con normalidad ─────────────────────────────────
+  v_estado := public.storefront_customer_block_state(v_local, v_cliente);
+  if (v_estado->>'blocked')::boolean then
+    raise exception 'un cliente sin bloqueo salió bloqueado: %', v_estado;
+  end if;
+
+  -- ── 2. Permanente (el del dueño): sin plazo que prometer ────────────────
+  update public.business_customers set blocked_at = now(), blocked_until = null
+   where business_id = v_local and customer_id = v_cliente;
+  v_estado := public.storefront_customer_block_state(v_local, v_cliente);
+  if not (v_estado->>'blocked')::boolean or not (v_estado->>'permanent')::boolean then
+    raise exception 'el bloqueo del dueño no salió permanente: %', v_estado;
+  end if;
+  if v_estado->>'until' is not null then
+    raise exception 'un bloqueo permanente NO puede prometer plazo: %', v_estado;
+  end if;
+
+  -- Y el disparador lo respeta: el pedido NO entra.
+  begin
+    insert into public.orders (
+      business_id, customer_id, contact_phone, source, status, subtotal, total
+    ) values (v_local, v_cliente, '593900444100', 'storefront', 'esperando_pago', 5, 5);
+    raise exception 'un cliente BLOQUEADO pudo crear un pedido';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  -- ── 3. Temporal vigente: bloquea y dice hasta cuándo ────────────────────
+  update public.business_customers
+     set blocked_at = now(), blocked_until = now() + interval '30 minutes'
+   where business_id = v_local and customer_id = v_cliente;
+  v_estado := public.storefront_customer_block_state(v_local, v_cliente);
+  if not (v_estado->>'blocked')::boolean then
+    raise exception 'el bloqueo temporal vigente no bloqueó: %', v_estado;
+  end if;
+  if (v_estado->>'permanent')::boolean or v_estado->>'until' is null then
+    raise exception 'un bloqueo temporal tiene que decir hasta cuándo y no ser permanente: %', v_estado;
+  end if;
+
+  -- ── 4. EL CASO QUE SE COLÓ ──────────────────────────────────────────────
+  --
+  -- Temporal VENCIDO con `blocked_at` todavía puesto. Ya cumplió su castigo:
+  -- las dos respuestas —la de la pantalla y la del disparador— tienen que
+  -- decir que puede pedir, y el pedido tiene que ENTRAR.
+  update public.business_customers
+     set blocked_at = now() - interval '2 hours',
+         blocked_until = now() - interval '1 hour'
+   where business_id = v_local and customer_id = v_cliente;
+  v_estado := public.storefront_customer_block_state(v_local, v_cliente);
+  if (v_estado->>'blocked')::boolean then
+    raise exception 'un bloqueo temporal VENCIDO siguió bloqueando: %', v_estado;
+  end if;
+  if public.storefront_customer_blocked(v_local, v_cliente) then
+    raise exception 'el booleano se separó del estado: la grieta del #74 sigue abierta';
+  end if;
+
+  insert into public.orders (
+    business_id, customer_id, contact_phone, source, status, subtotal, total
+  ) values (v_local, v_cliente, '593900444100', 'storefront', 'esperando_pago', 5, 5)
+  returning id into v_pedido;
+  if v_pedido is null then
+    raise exception 'cumplido el castigo, el pedido debía entrar';
+  end if;
+
+  -- ── 5. El booleano y el estado NUNCA se separan ─────────────────────────
+  update public.business_customers
+     set blocked_at = now(), blocked_until = now() + interval '10 minutes'
+   where business_id = v_local and customer_id = v_cliente;
+  if public.storefront_customer_blocked(v_local, v_cliente)
+     <> (public.storefront_customer_block_state(v_local, v_cliente)->>'blocked')::boolean then
+    raise exception 'el booleano y el estado se contradicen';
+  end if;
+
+  delete from businesses where id = v_local;
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ un solo bloqueo: el disparador y las pantallas comparten la regla, y el temporal caduca de verdad' as resultado;
