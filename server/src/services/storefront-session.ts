@@ -49,6 +49,15 @@ export type SessionRejection =
   | 'otro_negocio'
   /** Hay que confirmar el número de WhatsApp antes de entrar. */
   | 'necesita_telefono'
+  /**
+   * El local bloqueó a esta persona.
+   *
+   * ⚠️ NO es un problema del enlace: el enlace es suyo y es válido. Por eso se
+   * responde 403 y no 401 —no hay credencial que arreglar— y por eso la app
+   * pinta una pantalla distinta: mandarla a «pide tu enlace» la dejaría dando
+   * vueltas pidiendo enlaces que tampoco funcionarían.
+   */
+  | 'bloqueado'
 
 export interface StorefrontSessionRecord {
   id: string
@@ -192,6 +201,8 @@ export function rejectionMessage(reason: SessionRejection): string {
       return 'Este enlace ya venció. Escríbele al negocio por WhatsApp y te enviará uno nuevo.'
     case 'revocada':
       return 'Este enlace ya no está disponible. Escríbele al negocio por WhatsApp para continuar.'
+    case 'bloqueado':
+      return 'Ahora mismo no puedes hacer pedidos aquí.'
     default:
       return 'Este enlace no es válido. Escríbele al negocio por WhatsApp para hacer tu pedido.'
   }

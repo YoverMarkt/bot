@@ -6,7 +6,9 @@ import { conOpcionesAgrupadas } from '../services/order-detail'
 import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadPrivateMedia } from '../integrations/cloudinary'
-import { readStorefrontSession, requireStorefrontSession } from '../middleware/storefront'
+import {
+  readStorefrontBlock, readStorefrontSession, requireStorefrontSession,
+} from '../middleware/storefront'
 import { getPlatformPhone } from '../services/platform-channel'
 import { pedirComprobantePorChat } from '../services/payment-request-notice'
 import { checkSession, deviceFingerprint, hashToken, phoneMatchesSession } from '../services/storefront-session'
@@ -193,13 +195,32 @@ const readStatus = async (business: StorefrontBusiness | null) => {
 // ── Portada: lo único que se ve sin enlace ─────────────────────────────────
 // Quien reciba un enlace reenviado cae aquí: ve el nombre del negocio y su
 // WhatsApp para pedir el suyo. Nada más: ni catálogo, ni precios, ni clientes.
-router.get('/api/store/:slug', async (req, res) => {
+router.get('/api/store/:slug', readStorefrontBlock, async (req, res) => {
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
   const { status, hours } = await readStatus(business)
   if (!business?.id || status === 'no_disponible') {
     return res.status(404).json({ error: 'Esta tienda no está disponible' })
   }
   return res.json({
+    /**
+     * ⚠️ La portada es la ÚNICA pantalla que recibe un bloqueado, y lleva
+     * `blocked` para que la app lo sepa ANTES de montar la tienda.
+     *
+     * El 2026-08-29 el dueño, bloqueado, abrió un enlace viejo, recorrió la
+     * carta entera y creó el pedido #74. La app no tenía forma de saberlo: se
+     * enteraba —como mucho— al confirmar. Aquí se entera en la primera
+     * petición, y pinta el aviso en vez del catálogo.
+     *
+     * ⚠️ Va con el nombre y el logo del local (lo de siempre) y NADA
+     * accionable: ni carta, ni precios, ni checkout. Eso lo rechaza el 403 de
+     * `readStorefrontSession` y, en último término, el disparador de la base.
+     */
+    blocked: req.storefrontBlock
+      ? {
+        until: req.storefrontBlock.until,
+        permanent: req.storefrontBlock.permanent,
+      }
+      : null,
     business: {
       // ⚠️ `catch(() => null)`: sin el número del marketplace la tienda abre
       // igual, solo que sin los botones de WhatsApp. Que un fallo leyendo

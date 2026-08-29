@@ -115,12 +115,80 @@ describe('rutas de la mini app', () => {
     expect(bloque).toMatch(/if \(session\)\s*req\.storefront = session/)
   })
 
-  it('las rutas sin sesión son exactamente esas tres, y no más', () => {
-    for (const path of [PUBLICA, ENLACE_CORTO]) {
-      const ruta = rutas.find(r => r.path === path)
-      expect(ruta, path).toBeTruthy()
-      expect(ruta.handlers, path).toBe(1)
-    }
+  it('el enlace corto no lleva NADA delante: es solo una redirección', () => {
+    const ruta = rutas.find(r => r.path === ENLACE_CORTO)
+    expect(ruta).toBeTruthy()
+    expect(ruta.handlers).toBe(1)
+  })
+
+  /**
+   * La PORTADA lleva dos handlers desde el 2026-08-29, y el segundo es
+   * `readStorefrontBlock`. No es una sesión: no rechaza a nadie ni exige
+   * token — solo mira si quien abre está BLOQUEADO, para que la app pinte el
+   * aviso en vez de montar la tienda.
+   *
+   * Se comprueba cuál es, y no solo cuántos hay: el guardián original exigía
+   * exactamente uno para que a nadie se le colara un middleware por descuido.
+   * Aflojarlo a «dos o menos» le quitaría los dientes; lo que se hace es
+   * nombrar el que se añadió a propósito.
+   */
+  it('la portada solo añade el lector de bloqueo, y nada con sesión', () => {
+    const ruta = rutas.find(r => r.path === PUBLICA)
+    expect(ruta).toBeTruthy()
+    expect(ruta.handlers).toBe(2)
+
+    // Se mira SOLO la línea de la ruta, no un bloque del archivo: lo que se
+    // afirma es qué middlewares lleva ESTA ruta, y un `slice` largo acaba
+    // leyendo los de la siguiente.
+    const fuente = fs.readFileSync('dist/routes/storefront.routes.js', 'utf8')
+    const desde = fuente.indexOf(`'${PUBLICA}'`)
+    const linea = fuente.slice(desde, fuente.indexOf('\n', desde))
+    expect(linea).toContain('readStorefrontBlock')
+    // Y NO los que exigen o resuelven sesión: la portada es pública.
+    expect(linea).not.toContain('requireStorefrontSession')
+    expect(linea).not.toContain('readStorefrontSession,')
+  })
+
+  /**
+   * El lector de bloqueo de la portada NUNCA rechaza.
+   *
+   * Es lo que permite que un bloqueado reciba el nombre y el logo del local
+   * —y con eso un aviso que reconoce como suyo— en vez de un error pelado. La
+   * defensa son los 403 de los otros dos middlewares, no este.
+   */
+  it('el lector de bloqueo de la portada no rechaza a nadie', () => {
+    const fuente = fs.readFileSync('dist/middleware/storefront.js', 'utf8')
+    // Desde su DEFINICIÓN, no desde la línea de exports del principio.
+    const bloque = fuente.slice(fuente.indexOf('const readStorefrontBlock ='))
+    expect(bloque).toContain('storefrontBlock')
+    expect(bloque).not.toContain('reject(')
+  })
+
+  /**
+   * Y los dos middlewares que SÍ defienden rechazan el bloqueo.
+   *
+   * Es la puerta que faltaba el 2026-08-29: la tienda no miraba el bloqueo en
+   * ningún sitio, así que alguien bloqueado entró por un enlace viejo,
+   * recorrió la carta y creó el pedido #74.
+   */
+  it('exigir y leer sesión rechazan a quien está bloqueado', () => {
+    const fuente = fs.readFileSync('dist/middleware/storefront.js', 'utf8')
+    // La comprobación vive en el resolutor COMÚN: una por ruta se olvida.
+    const comun = fuente.slice(fuente.indexOf('const resolveStorefront ='))
+    expect(comun).toContain('customerBlockState')
+    expect(comun).toContain("reason: 'bloqueado'")
+
+    const opcional = fuente.slice(fuente.indexOf('const readStorefrontSession ='))
+    expect(opcional).toMatch(/reason === 'bloqueado'/)
+  })
+
+  /** El bloqueo es 403 y con plazo, no un 401 que mande a pedir otro enlace. */
+  it('el bloqueo responde 403 y dice hasta cuándo', () => {
+    const fuente = fs.readFileSync('dist/middleware/storefront.js', 'utf8')
+    const bloque = fuente.slice(fuente.indexOf('const reject ='))
+    expect(bloque).toContain('403')
+    expect(bloque).toContain('until')
+    expect(bloque).toContain('permanent')
   })
 
   // La verificación no lleva sesión, pero SÍ tiene que llevar freno: es donde

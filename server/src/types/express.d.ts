@@ -36,6 +36,15 @@ declare global {
        * pedido sin cliente. Aquí solo hay negocio, y no puede confundirse.
        */
       storeBusinessId?: string
+      /**
+       * El bloqueo de quien abre la PORTADA con su enlace.
+       *
+       * Va aparte de `storefront` porque la portada es la única pantalla que
+       * un bloqueado SÍ debe recibir: es lo que permite pintarle el aviso con
+       * el nombre y el logo del local en vez de un error pelado. El catálogo y
+       * todo lo que escribe lo rechazan con 403 antes de llegar a la ruta.
+       */
+      storefrontBlock?: { blocked: boolean; permanent: boolean; until: string | null }
     }
   }
 }

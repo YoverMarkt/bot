@@ -20,32 +20,49 @@
     />
     <title>Tienda</title>
     <style>
-      /* Esqueleto de arranque: se abre con datos móviles, así que la pantalla
-         no puede quedarse en blanco mientras baja el JavaScript. React lo
-         reemplaza al montar. */
-      :root { --f:#fafafa; --s:#ffffff; --h:#e8e8e8; }
+      /* ── LA BIENVENIDA DE UMBANI ──────────────────────────────────────────
+         Lo PRIMERO que se ve al abrir el enlace, antes de que baje una sola
+         línea de JavaScript. Se abre con datos móviles, así que la pantalla no
+         puede quedarse en blanco.
+
+         ⚠️ Sustituye al esqueleto de tarjetas que había aquí (2026-08-29), y
+         no es un cambio de gusto: aquel esqueleto DIBUJABA LA TIENDA —hero,
+         pestañas, filas de producto— antes de saber quién estaba entrando. A
+         un cliente bloqueado le enseñaba la forma de la carta y le decía «esto
+         se está cargando», que es justo la señal de «sigue intentando». El
+         dueño lo vivió: bloqueado, abrió un enlace viejo, recorrió la carta y
+         creó un pedido que nadie podía pagar.
+
+         Esta pantalla no promete nada del local: dice de dónde viene el enlace
+         y espera. Después, React decide — la tienda, o el aviso de bloqueo. */
+      :root { --f:#fafafa; --t:#0B0B0C; --m:#6b6b70; }
       html, body { margin:0; background:var(--f); }
-      /* Mismo respeto por la barra de estado que la cabecera de React: este
-         esqueleto es lo PRIMERO que se ve, y si arranca bajo el notch la app
-         parece rota antes siquiera de cargar. */
-      .vz-boot { padding:16px; padding-top:calc(env(safe-area-inset-top) + 16px); }
-      .vz-h { background:var(--h); border-radius:10px; animation:vz 1.5s ease-in-out infinite; }
-      .vz-hero { height:132px; border-radius:14px; margin-bottom:16px; }
-      .vz-chips { display:flex; gap:8px; margin-bottom:18px; }
-      .vz-chips .vz-h { height:34px; width:88px; border-radius:999px; }
-      .vz-row { display:flex; gap:12px; margin-bottom:14px; }
-      .vz-row .vz-h:first-child { width:84px; height:84px; flex:none; }
-      .vz-row .vz-h:last-child { flex:1; height:84px; }
-      @keyframes vz { 0%,100%{opacity:1} 50%{opacity:.45} }
+      .vz-boot {
+        min-height:100svh; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; gap:14px;
+        padding:24px; padding-top:calc(env(safe-area-inset-top) + 24px);
+        font-family:'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        color:var(--t); text-align:center;
+      }
+      .vz-logo {
+        width:64px; height:64px; border-radius:20px; display:flex;
+        align-items:center; justify-content:center; font-size:30px;
+        background:#fff; box-shadow:0 8px 24px rgba(11,11,12,.10);
+        animation:vz-late .9s ease-in-out infinite alternate;
+      }
+      .vz-t { font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0; }
+      .vz-s { font-size:13.5px; font-weight:600; color:var(--m); margin:0; }
+      /* Late, no gira: un spinner dice «esto va lento». Esto dice «ya casi». */
+      @keyframes vz-late { from{transform:scale(1)} to{transform:scale(1.06)} }
+      /* Quien pide menos movimiento no recibe ninguno. */
+      @media (prefers-reduced-motion: reduce) { .vz-logo { animation:none } }
     </style>
   </head>
   <body>
     <div id="root"><div class="vz-boot">
-      <div class="vz-h vz-hero"></div>
-      <div class="vz-chips"><div class="vz-h"></div><div class="vz-h"></div><div class="vz-h"></div></div>
-      <div class="vz-row"><div class="vz-h"></div><div class="vz-h"></div></div>
-      <div class="vz-row"><div class="vz-h"></div><div class="vz-h"></div></div>
-      <div class="vz-row"><div class="vz-h"></div><div class="vz-h"></div></div>
+      <div class="vz-logo">🛍️</div>
+      <p class="vz-t">Bienvenido a Umbani</p>
+      <p class="vz-s">Abriendo tu tienda…</p>
     </div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
