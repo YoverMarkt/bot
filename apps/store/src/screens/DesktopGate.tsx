@@ -2,7 +2,7 @@ import {
   RiSmartphoneLine,
   RiWhatsappLine,
 } from '@remixicon/react'
-import { Boton } from '../components/ui'
+import { Boton, LocalDeLaPuerta, SelloDePuerta } from '../components/ui'
 import type { Business } from '../lib/types'
 
 // Lo que ve quien abre el enlace en una computadora (normalmente, un clic desde
@@ -23,26 +23,22 @@ export default function DesktopGate({ business }: { business: Business | null })
 
   return (
     <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
-      {/* Icono en tinta sobre el tinte de marca, igual que las otras dos
-          puertas (`Gate.tsx` y `Confirmar.tsx`): el color del negocio como
-          LETRA no llega a AA. Las tres se pintan igual a propósito. */}
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <RiSmartphoneLine size={24} />
-      </div>
+      {/* Las tres puertas se pintan igual a propósito. */}
+      <LocalDeLaPuerta nombre={business?.name} logoUrl={business?.logoUrl} />
 
-      {business?.name && (
-        <p className="caption mb-2 font-bold texto-cuerpo">{business.name}</p>
-      )}
+      <SelloDePuerta><RiSmartphoneLine size={26} /></SelloDePuerta>
 
-      <h1 className="text-[26px] leading-tight font-extrabold tracking-tight">
+      <h1 className="titulo-xl">
         Abre este enlace desde tu celular
       </h1>
-      <p className="mt-3 text-[15px] leading-relaxed texto-tenue">
+      {/* En `texto-cuerpo`, no en el gris de metadatos: esto es la explicación
+          de por qué no puede pasar, no un pie de página. */}
+      <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
         La tienda está hecha para el teléfono. Busca el mensaje en tu WhatsApp del celular
         y toca el enlace desde ahí.
       </p>
 
-      <div className="mt-6 rounded-xl bg-black/5 px-4 py-3.5 text-[13px] leading-relaxed texto-tenue">
+      <div className="superficie mt-6 rounded-(--radius-tarjeta) px-4 py-4 text-[13.5px] leading-relaxed texto-cuerpo shadow-tarjeta">
         Tu enlace sigue intacto: abrirlo aquí no lo gastó.
       </div>
 

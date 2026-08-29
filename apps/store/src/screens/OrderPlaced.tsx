@@ -335,7 +335,13 @@ export default function OrderPlaced({
               </p>
               <p className="mt-1.5 text-[14px] leading-relaxed texto-cuerpo">
                 {transferencia
-                  ? 'Envía la captura de tu transferencia al chat del local. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.'
+                  // ⚠️ «a Umbani», no «al local». En el marketplace el número
+                  // que el cliente tiene en su chat es el de la PLATAFORMA: el
+                  // local no tiene canal propio, así que mandarlo «al chat del
+                  // local» es mandarlo a un WhatsApp que no existe. Es el mismo
+                  // arreglo que ya se hizo en `Gate.tsx` con «escríbele al
+                  // negocio».
+                  ? `Envía la captura de tu transferencia al chat de ${business.phoneIsPlatform ? 'Umbani' : 'el local'}. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.`
                   : entrega === 'delivery'
                     ? 'Te escribimos cuando el local empiece a prepararlo, cuando salga para tu dirección y cuando llegue.'
                     : 'Te escribimos cuando el local empiece a prepararlo y cuando esté listo para que pases a retirarlo.'}

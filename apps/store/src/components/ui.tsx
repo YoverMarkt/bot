@@ -153,6 +153,62 @@ export function Marca({ activa, unica }: { activa: boolean; unica: boolean }) {
 }
 
 /**
+ * La cabecera de una PUERTA: el local, con su logo.
+ *
+ * Las tres puertas —enlace ajeno, confirmar número, abierto en el PC— decían el
+ * nombre del negocio en una línea de texto con un iconito genérico. Quien llega
+ * ahí acaba de tocar un enlace de comida: enseñarle el LOGO del local es lo que
+ * convierte «una app que falló» en «la tienda de Monster Pizza me está diciendo
+ * algo».
+ *
+ * Sin logo queda la inicial sobre el tinte de marca, el mismo marcador que
+ * sostiene la rejilla y la portada.
+ */
+export function LocalDeLaPuerta({ nombre, logoUrl }: {
+  nombre?: string | null
+  logoUrl?: string | null
+}) {
+  const limpio = String(nombre || '').trim()
+  if (!limpio) return null
+  const src = foto(logoUrl || null, 'miniatura')
+  return (
+    <div className="mb-7 flex items-center gap-3">
+      <span className="superficie size-12 shrink-0 overflow-hidden rounded-2xl p-1 shadow-tarjeta">
+        {src
+          ? <img src={src} alt="" className="size-full rounded-xl object-cover" />
+          : (
+              <span className="marcador flex size-full items-center justify-center rounded-xl text-[1.1rem] leading-none font-black opacity-40 select-none">
+                {limpio.charAt(0).toUpperCase()}
+              </span>
+            )}
+      </span>
+      <span className="min-w-0">
+        <span className="caption block texto-tenue">Estás en</span>
+        <span className="block truncate text-[15px] font-extrabold tracking-tight">{limpio}</span>
+      </span>
+    </div>
+  )
+}
+
+/**
+ * El símbolo de una puerta: por qué no se puede pasar.
+ *
+ * ⚠️ En TINTA sobre el tinte de marca, nunca con el acento como color de letra:
+ * el color del negocio da 1,80:1 con el verde real de Monster Pizza y 1,19:1
+ * con el lima de la plataforma, donde AA exige 4,5. El tinte de fondo sí es un
+ * uso legítimo del acento —es fondo, no letra— y deja la marca presente sin
+ * apagar el símbolo. El acento sólido se reserva para lo accionable, que en
+ * estas pantallas es el botón de abajo.
+ */
+export function SelloDePuerta({ children }: { children: ReactNode }) {
+  return (
+    <div className="mb-6 flex size-16 items-center justify-center rounded-[1.25rem] bg-marca-suave shadow-tarjeta">
+      {children}
+    </div>
+  )
+}
+
+/**
  * +/− de cantidad. El control más tocado de toda la app.
  *
  * ⚠️ `size-11` (44 px), no `size-10`. El diseño pide dianas de 44×44 REALES y

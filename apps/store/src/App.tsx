@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { RiCloseLine } from '@remixicon/react'
+import { RiCloseLine, RiStore2Line } from '@remixicon/react'
 import { ApiError, confirmarTelefono, getStore, isLinkProblem } from './lib/api'
 import { isMobileDevice } from './lib/device'
 import { aplicarColorDeMarca } from './lib/marca'
@@ -157,9 +157,15 @@ export default function App() {
 
   if (estado.fase === 'no_disponible') {
     return (
-      <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12 text-center">
-        <h1 className="text-[22px] font-extrabold">Esta tienda no está disponible</h1>
-        <p className="mt-2.5 text-[15px] texto-tenue">
+      // La cuarta puerta. Se pinta como las otras tres —sello, titular fuerte y
+      // explicación en cuerpo de texto— porque para el cliente es la misma
+      // clase de noticia: no puede pasar, y quiere saber por qué.
+      <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
+        <div className="mb-6 flex size-16 items-center justify-center rounded-[1.25rem] bg-marca-suave shadow-tarjeta">
+          <RiStore2Line size={26} />
+        </div>
+        <h1 className="titulo-xl">Esta tienda no está disponible</h1>
+        <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
           Puede que el negocio la haya desactivado. Escríbele por WhatsApp y te atiende igual.
         </p>
       </div>
