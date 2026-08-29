@@ -514,8 +514,16 @@ export default function FoodStore({
           id: pagoPendiente.id,
           order_number: pagoPendiente.order_number,
           total: pagoPendiente.total,
-          subtotal: Number(pagoPendiente.total) || 0,
-          envio: 0,
+          // ⚠️ El envío sale del PEDIDO, no de un cero. Estaba fijado a 0, así
+          // que el desglose enseñaba «1× Burger Pack $12.09» y debajo «Total
+          // $14.09» sin decir de dónde salían los $2.00 del reparto — y este
+          // es el número que el cliente está a punto de transferir.
+          //
+          // El subtotal se deriva restando: así los dos renglones suman
+          // exactamente el total oficial, en vez de tomar el `subtotal` de la
+          // fila, que es lo del COMERCIO y no incluye el margen.
+          envio: Number(pagoPendiente.shipping) || 0,
+          subtotal: (Number(pagoPendiente.total) || 0) - (Number(pagoPendiente.shipping) || 0),
           // Lo que pidió, tal como lo congeló la base —y ya agrupado por el
           // servidor—. Aquí no hay carrito del que sacarlo: el cliente cerró
           // la app hace rato.

@@ -1,9 +1,8 @@
 import {
   RiLockLine,
-  RiStore2Line,
   RiWhatsappLine,
 } from '@remixicon/react'
-import { Boton } from '../components/ui'
+import { Boton, LocalDeLaPuerta, SelloDePuerta } from '../components/ui'
 import type { Business } from '../lib/types'
 
 // Lo que ve quien NO puede usar la tienda.
@@ -98,23 +97,13 @@ export default function Gate({ business, motivo }: {
 
   return (
     <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 pt-[calc(env(safe-area-inset-top)+3rem)] pb-12">
-      {/* ⚠️ El candado va en TINTA sobre el tinte de marca, no en `text-marca`.
-          El color del negocio como color de LETRA da 1,80:1 sobre blanco con
-          el verde real de Monster Pizza y 1,19:1 con el lima de la plataforma,
-          donde AA exige 4,5. El tinte de fondo sí es un uso legítimo del
-          acento —es fondo, no letra— y deja la marca presente sin apagar el
-          símbolo. El acento sólido se reserva para lo accionable, que aquí es
-          el botón de abajo. */}
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <RiLockLine size={24} />
-      </div>
+      {/* El local con su LOGO, no una línea de texto con un iconito: quien
+          llega aquí acaba de tocar un enlace de comida, y ver la marca del
+          sitio es lo que convierte «una app que falló» en «Monster Pizza me
+          está diciendo algo». */}
+      <LocalDeLaPuerta nombre={business?.name} logoUrl={business?.logoUrl} />
 
-      {business?.name && (
-        <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
-          <RiStore2Line size={14} />
-          {business.name}
-        </p>
-      )}
+      <SelloDePuerta><RiLockLine size={26} /></SelloDePuerta>
 
       <h1 className="titulo-xl">{titulo}</h1>
       <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">{detalle(donde)}</p>
@@ -133,7 +122,7 @@ export default function Gate({ business, motivo }: {
             </div>
           )
         : (
-            <p className="superficie mt-8 rounded-2xl px-4 py-3.5 text-[13.5px] texto-cuerpo shadow-tarjeta">
+            <p className="superficie mt-8 rounded-(--radius-tarjeta) px-4 py-4 text-[13.5px] leading-relaxed texto-cuerpo shadow-tarjeta">
               Contacta al negocio para recibir tu enlace.
             </p>
           )}

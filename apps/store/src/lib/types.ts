@@ -260,6 +260,15 @@ export interface TrackedOrder {
   order_number: number
   status: string
   total: number | string | null
+  /**
+   * El envío que se cobró en ESTE pedido.
+   *
+   * ⚠️ Viaja desde el 2026-08-31 porque sin él la pantalla del comprobante no
+   * cuadraba: quien vuelve debiendo veía «1× Burger Pack $12.09» y debajo
+   * «Total $14.09», con los $2.00 del reparto en ningún sitio. El salto sin
+   * explicar es justo lo que hace dudar de un total que se va a transferir.
+   */
+  shipping?: number | string | null
   currency?: string | null
   fulfillment: Fulfillment | null
   created_at: string

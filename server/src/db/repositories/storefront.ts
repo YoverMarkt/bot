@@ -691,7 +691,7 @@ const bindStorefrontSession = async (sessionId: string, deviceHash: string) => {
  * compila. La alternativa era un cast, que es justo lo que se quitó de esta
  * capa.
  */
-const CAMPOS_DEL_SEGUIMIENTO = 'id,order_number,status,total,currency,fulfillment,created_at,payment_confirmed_at,order_items(product_name,variant_name,extras_names,item_note,quantity,line_total,order_item_options(option_group_name,option_name,quantity,group_sort))' as const
+const CAMPOS_DEL_SEGUIMIENTO = 'id,order_number,status,total,shipping,currency,fulfillment,created_at,payment_confirmed_at,order_items(product_name,variant_name,extras_names,item_note,quantity,line_total,order_item_options(option_group_name,option_name,quantity,group_sort))' as const
 
 /**
  * Los pedidos de UN cliente en ESTE negocio, para su pestaña de Cuenta.

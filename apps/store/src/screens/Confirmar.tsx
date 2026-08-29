@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import {
   RiPhoneLine,
-  RiStore2Line,
   RiWhatsappLine,
 } from '@remixicon/react'
-import { Boton } from '../components/ui'
+import { Boton, LocalDeLaPuerta, SelloDePuerta } from '../components/ui'
 import type { Business } from '../lib/types'
 
 // La puerta del enlace.
@@ -55,21 +54,12 @@ export default function Confirmar({ business, onConfirmar }: {
 
   return (
     <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 pt-[calc(env(safe-area-inset-top)+3rem)] pb-12">
-      {/* ⚠️ El icono va en TINTA sobre el tinte de marca, no en `text-marca` —
-          mismo motivo y misma solución que en `Gate.tsx`: el color del negocio
-          como LETRA da 1,80:1 con el verde real de Monster Pizza y 1,19:1 con
-          el lima de la plataforma, donde AA exige 4,5. Las dos puertas se
-          pintan igual a propósito: el cliente puede ver las dos seguidas. */}
-      <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-marca-suave shadow-tarjeta">
-        <RiPhoneLine size={24} />
-      </div>
+      {/* Las tres puertas se pintan IGUAL a propósito: el cliente puede verlas
+          seguidas —enlace ajeno, confirmar número— y si cada una tuviera su
+          composición parecerían tres apps distintas fallando. */}
+      <LocalDeLaPuerta nombre={business?.name} logoUrl={business?.logoUrl} />
 
-      {business?.name && (
-        <p className="caption mb-2 flex items-center gap-1.5 font-bold texto-cuerpo">
-          <RiStore2Line size={14} />
-          {business.name}
-        </p>
-      )}
+      <SelloDePuerta><RiPhoneLine size={26} /></SelloDePuerta>
 
       <h1 className="titulo-xl">
         Confirma tu número
@@ -95,10 +85,13 @@ export default function Confirmar({ business, onConfirmar }: {
           value={telefono}
           onChange={(evento) => { setTelefono(evento.target.value); setError(null) }}
           placeholder="Ej. 0999 111 222"
-          // El borde de foco SÍ puede ser el color del negocio: es un borde,
-          // no letra. Y el anillo de foco global de `index.css` sigue encima
-          // para quien navega con teclado.
-          className="superficie w-full rounded-2xl border-2 borde-tema px-4 py-4 text-[17px] font-semibold tracking-tight shadow-tarjeta outline-none focus:border-marca"
+          // ⚠️ El foco en TINTA, no en el color del negocio. Aquí decía que un
+          // borde sí podía llevar el acento «porque es borde, no letra», y no
+          // se sostiene: un borde de foco PORTA INFORMACIÓN —dice dónde estás
+          // escribiendo— y por eso necesita 3:1, que el lima de la plataforma
+          // (1,19:1) no da. Además ahora todos los campos de la app enfocan
+          // igual: ficha, checkout, dirección y este.
+          className="superficie w-full rounded-(--radius-tarjeta) border-2 borde-tema px-4 py-4 text-[17px] font-semibold tracking-tight shadow-tarjeta outline-none focus:border-(--tinta)"
         />
 
         {error && (
