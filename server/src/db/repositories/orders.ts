@@ -218,6 +218,33 @@ const expireUnpaidOrders = async (
   return (data || []) as { order_id: string; business_id: string; order_number: number | null }[]
 }
 
+/**
+ * Anota que este cliente dejó caducar un pedido sin pagar, y lo bloquea al
+ * tercero.
+ *
+ * ⚠️ Se cuenta por CLIENTE y NEGOCIO. Quien abandona en una pizzería puede ser
+ * impecable en la heladería de al lado, y bloquearlo en toda la plataforma por
+ * lo que hizo en un local sería un castigo que no puede ni entender ni
+ * resolver.
+ *
+ * Devuelve cuántas van y si esta fue la última, para que el aviso diga la
+ * verdad en vez de un genérico. El cliente del pedido lo resuelve la propia
+ * función: así no hay forma de sumarle una falta a un tercero.
+ */
+const registerUnpaidExpiry = async (
+  businessId: string,
+  orderId: string,
+): Promise<{ strikes: number; blocked: boolean; limit: number }> => {
+  const { data, error } = await db.rpc('register_unpaid_expiry', {
+    p_business_id: businessId,
+    p_order_id: orderId,
+  })
+  // Que no se pueda contar la falta NO puede impedir el aviso: el pedido ya
+  // caducó y el cliente tiene que enterarse igual.
+  if (error || !data) return { strikes: 0, blocked: false, limit: 3 }
+  return data as { strikes: number; blocked: boolean; limit: number }
+}
+
 const claimOrderNotification = async (
   businessId: string,
   orderId: string,
@@ -312,5 +339,6 @@ export = {
   confirmOrderPayment,
   claimOrderNotification,
   expireUnpaidOrders,
+  registerUnpaidExpiry,
   pedidosEsperandoComprobante,
 }

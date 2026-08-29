@@ -136,13 +136,34 @@ describe('el barrido', () => {
       { order_id: 'ord-2', business_id: 'biz-1', order_number: 8 },
     ])
     const aviso = vi.spyOn(notice, 'avisarAlCliente').mockResolvedValue(undefined)
+    // La falta se anota antes de avisar, para que el mensaje pueda decir
+    // cuántas van y si esta fue la última.
+    const anotar = vi.spyOn(db, 'registerUnpaidExpiry')
+      .mockResolvedValue({ strikes: 1, blocked: false, limit: 3 })
     vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await expect(mod.expireUnpaidOrders()).resolves.toBe(2)
     expect(aviso).toHaveBeenCalledTimes(2)
+    expect(anotar).toHaveBeenCalledTimes(2)
     // El estado del aviso es `expirado`, no `cancelado`: son mensajes distintos.
-    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-1', 'expirado')
-    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-2', 'expirado')
+    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-1', 'expirado', { strikes: 1, blocked: false, limit: 3 })
+    expect(aviso).toHaveBeenCalledWith('biz-1', 'ord-2', 'expirado', { strikes: 1, blocked: false, limit: 3 })
+  })
+
+  // ⚠️ El registro de la falta NO puede impedir el aviso: el pedido ya caducó
+  // y enterarse es lo que no puede faltar. `registerUnpaidExpiry` devuelve
+  // ceros si algo va mal, y el aviso los lee como «nada que advertir».
+  it('si no se puede anotar la falta, el cliente se entera igual', async () => {
+    const { mod, db, notice } = cargar()
+    vi.spyOn(db, 'expireUnpaidOrders').mockResolvedValue([
+      { order_id: 'ord-1', business_id: 'biz-1', order_number: 7 },
+    ])
+    const aviso = vi.spyOn(notice, 'avisarAlCliente').mockResolvedValue(undefined)
+    vi.spyOn(db, 'registerUnpaidExpiry').mockResolvedValue({ strikes: 0, blocked: false, limit: 3 })
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await expect(mod.expireUnpaidOrders()).resolves.toBe(1)
+    expect(aviso).toHaveBeenCalledTimes(1)
   })
 
   it('sin nada que expirar no manda un solo mensaje', async () => {

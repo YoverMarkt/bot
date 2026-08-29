@@ -3340,8 +3340,14 @@ begin
     ('593900000841'), ('593900000842'), ('593900000843'),
     ('593900000844'), ('593900000845');
 
-  -- Nace en 120 minutos: ningún local existente cambia de comportamiento.
-  if (select payment_window_minutes from public.businesses where id = v_biz) <> 120 then
+  -- ⚠️ Nace en 15 minutos desde el 2026-08-31. Eran 120, y esta comprobación
+  -- existe justo para que el número no se mueva sin que alguien lo decida:
+  -- cazó este cambio a la primera. Dos horas es tiempo de sobra para
+  -- transferir, y mientras tanto el pedido ocupa el candado del cliente y la
+  -- cabeza del dueño. Medido contra lo que tarda de verdad una transferencia
+  -- —abrir el banco, buscar la cuenta, el código de un solo uso, volver y
+  -- mandar la foto— son unos 8 minutos.
+  if (select payment_window_minutes from public.businesses where id = v_biz) <> 15 then
     raise exception 'el valor de arranque de la ventana de pago cambió sin querer';
   end if;
 
@@ -3439,6 +3445,80 @@ end;
 $$;
 
 select '✅ el pedido sin pagar caduca solo: ni el pagado, ni el histórico, ni el de mostrador' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- QUIEN DEJA TRES PEDIDOS SIN PAGAR SE QUEDA FUERA DE ESE LOCAL (2026-08-31)
+--
+-- Un mismo teléfono dejó SEIS pedidos sin pagar en Monster Pizza: pedía, no
+-- transfería, el pedido caducaba, el candado se soltaba y volvía a pedir.
+-- Se EJECUTA la función, no se comprueba que exista: una que existe y cuenta
+-- mal bloquea a un cliente honesto o no frena a ninguno.
+do $$
+declare
+  v_biz      uuid;
+  v_cliente  uuid;
+  v_pedido   uuid;
+  v_r        jsonb;
+  v_bloqueo  timestamptz;
+begin
+  insert into public.businesses (slug, name, type, whatsapp_provider, takes_orders, storefront_enabled)
+  values ('verificacion-faltas', 'Local Faltas', 'pizzería', 'marketplace', true, true)
+  returning id into v_biz;
+
+  insert into public.customers (phone) values ('593900000931')
+  returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id)
+  values (v_biz, v_cliente);
+
+  insert into public.orders (business_id, customer_id, contact_phone, status, subtotal, total, source)
+  values (v_biz, v_cliente, '593900000931', 'expirado', 10, 10, 'storefront')
+  returning id into v_pedido;
+
+  -- Primera falta: cuenta, pero NO bloquea.
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (v_r ->> 'strikes')::int <> 1 or (v_r ->> 'blocked')::boolean then
+    raise exception 'la primera falta no debía bloquear: %', v_r;
+  end if;
+
+  -- Segunda: sigue sin bloquear. Es la que avisa.
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (v_r ->> 'strikes')::int <> 2 or (v_r ->> 'blocked')::boolean then
+    raise exception 'la segunda falta no debía bloquear: %', v_r;
+  end if;
+
+  -- Tercera: bloquea, y lo dice.
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (v_r ->> 'strikes')::int <> 3 or not (v_r ->> 'blocked')::boolean then
+    raise exception 'la tercera falta TENÍA que bloquear: %', v_r;
+  end if;
+
+  select blocked_at into v_bloqueo from public.business_customers
+  where business_id = v_biz and customer_id = v_cliente;
+  if v_bloqueo is null then
+    raise exception 'el bloqueo no llegó a la fila';
+  end if;
+
+  -- ⚠️ Y una cuarta no PISA la fecha del bloqueo: si el dueño lo desbloquea y
+  -- vuelve a caer, la fecha original importa para saber qué pasó.
+  v_r := public.register_unpaid_expiry(v_biz, v_pedido);
+  if (select blocked_at from public.business_customers
+      where business_id = v_biz and customer_id = v_cliente) <> v_bloqueo then
+    raise exception 'la cuarta falta pisó la fecha del bloqueo';
+  end if;
+
+  -- ⚠️ Un pedido de OTRO negocio no suma faltas aquí: quien abandona en una
+  -- pizzería puede ser impecable en la heladería de al lado.
+  v_r := public.register_unpaid_expiry(gen_random_uuid(), v_pedido);
+  if (v_r ->> 'strikes')::int <> 0 then
+    raise exception 'una falta se contó cruzando negocios: %', v_r;
+  end if;
+
+  delete from public.businesses where id = v_biz;
+  delete from public.customers where phone = '593900000931';
+end;
+$$;
+
+select '✅ tres pedidos sin pagar bloquean en ESE local, avisando antes y sin cruzar negocios' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EL MARGEN SE SUMA AL PRECIO, NO SE LE QUITA AL DUEÑO (2026-08-25)
