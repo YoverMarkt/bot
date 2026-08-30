@@ -68,6 +68,19 @@ export interface PedidoEsperandoPago {
 /** Los estados en los que una foto es, casi con seguridad, el comprobante. */
 const ESPERANDO_PAGO = 'esperando_pago'
 
+/**
+ * Lo que se sabe del comprobante DESPUÉS de compararlo con el pedido.
+ *
+ * `critica` solo viaja cuando hay una señal de las que no admiten duda —el
+ * dinero fue a otra cuenta, o es menos de lo que cuesta—. `limpio` significa
+ * que no salió ninguna señal preocupante, y es lo único que autoriza a
+ * decirle al cliente que sus datos cuadran.
+ */
+export interface CuadreDelComprobante {
+  critica: { flag_type: string; description: string } | null
+  limpio: boolean
+}
+
 export interface ComprobanteDependencias {
   /** El último pedido de ese contacto en ese negocio. */
   /**
@@ -100,6 +113,22 @@ export interface ComprobanteDependencias {
    * antes de que el análisis existiera —se adjunta todo y decide el dueño—,
    * que es también lo que pasa con el análisis apagado. Falla abierto.
    */
+  /**
+   * ¿Lo leído CUADRA con este pedido y con la cuenta del local?
+   *
+   * ⚠️ Es una segunda pregunta, distinta de `analizarImagen`. Aquella responde
+   * «¿esto es siquiera un pago?» —la portería—; esta responde «¿es ESTE pago?».
+   * Un comprobante perfecto de una transferencia a otra persona pasa la
+   * primera y falla la segunda.
+   *
+   * ⚠️ Opcional y falla ABIERTO, como todo aquí: sin ella, o si revienta, se
+   * adjunta y decide el dueño, que es lo que se hacía antes.
+   */
+  comprobarCuadre?(input: {
+    businessId: string
+    analisis: unknown
+    esperado: { total: number; createdAt: string | null }
+  }): Promise<CuadreDelComprobante | undefined>
   analizarImagen?(imagen: Buffer, mimeType?: string | null): Promise<ResultadoVision>
   /**
    * Anota que la imagen NO era un comprobante y dice si eso ya bloqueó.
@@ -171,6 +200,23 @@ export interface ResultadoComprobante {
    * el negocio no paga almacenamiento por una foto que no era un pago.
    */
   noEsComprobante?: boolean
+  /**
+   * El comprobante es un pago de verdad, pero NO es este pago.
+   *
+   * Solo con señales críticas: cuenta de destino distinta o monto menor. Con
+   * cualquier otra duda se adjunta y decide el dueño — un falso rechazo deja
+   * tirado a alguien que sí pagó.
+   */
+  noCuadra?: { flag_type: string; description: string }
+  /**
+   * `true` cuando lo leído cuadró sin una sola señal preocupante.
+   *
+   * ⚠️ NO significa «pago confirmado» y el texto que lo usa tampoco lo dice:
+   * una imagen se puede editar. Significa «lo que se ve encaja con tu pedido»,
+   * que es lo que el cliente necesita saber para quedarse tranquilo mientras
+   * el dueño mira.
+   */
+  datosCuadran?: boolean
   /**
    * Qué pasó por mandar una imagen que no era un pago: cuántas van y si esta
    * dejó al cliente fuera del local un rato.
@@ -285,6 +331,38 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
         return { adjuntado: false, noEsComprobante: true, rechazo }
       }
 
+      // ── ¿Es un pago, pero es ESTE pago? ─────────────────────────────
+      //
+      // La compuerta de arriba responde «¿esto es siquiera un comprobante?».
+      // Esta responde «¿es el de este pedido?»: un comprobante perfecto de una
+      // transferencia a otra persona pasa la primera y falla esta.
+      //
+      // ⚠️ Va ANTES de subir, por lo mismo que la otra: un comprobante que no
+      // cuadra no cuesta almacenamiento y no le enciende la alarma al dueño.
+      //
+      // ⚠️ Solo cortan las señales CRÍTICAS —cuenta de destino distinta, monto
+      // menor—, nunca el nombre de quien paga. La gente transfiere desde la
+      // cuenta de su pareja, de su madre o del negocio, y rechazar por eso
+      // tiraría pagos buenos: el propio análisis ya decidió no marcar el
+      // beneficiario por esa razón. Lo que identifica el destino es la CUENTA.
+      //
+      // ⚠️ FALLA ABIERTO: sin la dependencia, con el análisis apagado o si
+      // revienta, se adjunta y decide el dueño — lo de siempre.
+      let cuadre: CuadreDelComprobante | undefined
+      if (dependencias.comprobarCuadre && analisis?.ok) {
+        cuadre = await dependencias.comprobarCuadre({
+          businessId: localDelPedido,
+          analisis,
+          esperado: {
+            total: Number(pedido.total ?? 0),
+            createdAt: pedido.created_at ?? null,
+          },
+        }).catch(() => undefined)
+      }
+      if (cuadre?.critica) {
+        return { adjuntado: false, noCuadra: cuadre.critica }
+      }
+
       const subida = await dependencias.subirPrivado(imagen, localDelPedido)
       const { error } = await dependencias.adjuntar({
         businessId: localDelPedido,
@@ -329,7 +407,11 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
         })
       }
 
-      return { adjuntado: true, orderNumber: pedido.order_number ?? null }
+      return {
+        adjuntado: true,
+        orderNumber: pedido.order_number ?? null,
+        datosCuadran: cuadre?.limpio === true,
+      }
     } catch (error) {
       // El cliente recibe su respuesta igual: esto es una mejora del camino,
       // no el camino. Callarlo sería peor —el dueño creería tener un
@@ -359,10 +441,73 @@ export const textoDelComprobante = (orderNumber?: number | null): string =>
 export const esComprobante = (texto: string): boolean =>
   String(texto || '').includes(MARCA_COMPROBANTE)
 
+/**
+ * El marcador dice además si lo leído CUADRÓ.
+ *
+ * ⚠️ La cola `|cuadra` viaja dentro del texto, igual que la del rechazo lleva
+ * los strikes: quien lo escribe ya hizo la comparación, y rehacerla donde se
+ * responde sería pagar dos veces por mirar la misma imagen.
+ */
+export const textoDelComprobanteQueCuadra = (orderNumber?: number | null): string =>
+  `${textoDelComprobante(orderNumber)}|cuadra`
+
+export const comprobanteCuadra = (texto: unknown): boolean =>
+  String(texto ?? '').includes(`${MARCA_COMPROBANTE}`) && String(texto ?? '').includes('|cuadra')
+
 /** Lo que se le responde. No lleva el enlace: ya pidió, ya pagó. */
 export const RESPUESTA_COMPROBANTE =
   'Recibimos tu comprobante 🙌 El local lo está revisando y te avisamos '
   + 'en cuanto empiece a prepararlo.'
+
+/**
+ * El acuse cuando lo leído cuadra con el pedido.
+ *
+ * ⚠️ Dice «los datos coinciden», NO «pago confirmado», y la diferencia no es
+ * de estilo: una imagen se puede editar, generar o reutilizar. Ningún estado
+ * del comprobante confirma un pago — es una regla del proyecto con pruebas que
+ * la vigilan. Lo que esta frase promete es lo único cierto: que lo que se ve
+ * encaja con este pedido, y que el dueño lo va a mirar igual.
+ */
+export const RESPUESTA_COMPROBANTE_CUADRA =
+  'Recibimos tu comprobante 🙌 *Los datos coinciden con tu pedido.*\n\n'
+  + 'El local lo revisa y te avisamos en cuanto empiece a prepararlo.'
+
+/**
+ * Marcador de que el comprobante es un pago, pero NO este pago.
+ *
+ * ⚠️ Inconfundible con los otros tres: `esComprobante()` busca la subcadena
+ * «su comprobante de pago», y un texto que la contuviera le diría al cliente
+ * que su pago quedó registrado cuando fue rechazado — justo el error que no se
+ * puede cometer aquí.
+ */
+export const MARCA_COMPROBANTE_NO_CUADRA = 'un pago que no corresponde a este pedido'
+
+export const textoDeComprobanteQueNoCuadra = (motivo?: string | null): string =>
+  `[el cliente envió ${MARCA_COMPROBANTE_NO_CUADRA}${motivo ? `|${motivo}` : ''}]`
+
+export const esComprobanteQueNoCuadra = (texto: unknown): boolean =>
+  String(texto ?? '').includes(MARCA_COMPROBANTE_NO_CUADRA)
+
+/** El motivo viaja dentro del marcador; sin él se responde lo genérico. */
+export const motivoDelDescuadre = (texto: unknown): string | null => {
+  const bruto = String(texto ?? '')
+  const i = bruto.indexOf(`${MARCA_COMPROBANTE_NO_CUADRA}|`)
+  if (i < 0) return null
+  return bruto.slice(i + MARCA_COMPROBANTE_NO_CUADRA.length + 1).replace(/\]$/, '').trim() || null
+}
+
+/**
+ * Lo que se le responde a quien mandó un pago que no es el suyo.
+ *
+ * ⚠️ NO acusa a nadie. Puede ser la captura equivocada de la galería, o un
+ * pago a otra persona hecho por error. El tono es el de alguien que quiere
+ * cobrar, no el de un guardia — y se le dice QUÉ pasó, porque «no cuadra» sin
+ * más le deja mandando la misma imagen otra vez.
+ */
+export const respuestaComprobanteNoCuadra = (motivo?: string | null): string =>
+  '🧾 Recibimos tu comprobante, pero no corresponde a este pedido.\n\n'
+  + (motivo ? `${motivo}.\n\n` : '')
+  + 'Revisa que sea la transferencia correcta y mándanosla de nuevo 📸'
 
 /**
  * Marcador de que la foto NO era un comprobante.

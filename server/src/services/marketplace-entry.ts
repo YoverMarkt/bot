@@ -19,6 +19,11 @@ import {
   esComprobante, esComprobanteAmbiguo, esFotoQueNoEsComprobante,
   preguntaDeQueLocal, rechazoDelMarcador, RESPUESTA_COMPROBANTE,
   respuestaNoEsComprobante,
+  comprobanteCuadra,
+  esComprobanteQueNoCuadra,
+  motivoDelDescuadre,
+  RESPUESTA_COMPROBANTE_CUADRA,
+  respuestaComprobanteNoCuadra,
 } from './payment-proof-inbox'
 import type { InboundLocation } from './inbound-webhook'
 import type {
@@ -393,8 +398,23 @@ export async function handleMarketplaceMessage(
   // antes que nada, aunque ninguno de estos marcadores pueda confundirse con
   // él. Y NO toca el estado de la conversación: el carrito, el local elegido y
   // la vista se quedan exactamente donde estaban.
+  // ⚠️ El que NO CUADRA va PRIMERO, y el orden importa: su marcador contiene
+  // «un pago que no corresponde a este pedido», que no lleva la subcadena de
+  // `esComprobante`, pero dejarlo detrás sería confiar en esa separación para
+  // siempre. Aquí el error caro es decirle «recibimos tu comprobante» a quien
+  // pagó a otra cuenta: se iría a esperar una comida que nadie va a preparar.
+  if (esComprobanteQueNoCuadra(text)) {
+    await send(respuestaComprobanteNoCuadra(motivoDelDescuadre(text)), [])
+    return
+  }
   if (esComprobante(text)) {
-    await send(RESPUESTA_COMPROBANTE, [])
+    // Con el análisis encendido y todo cuadrando se le dice, porque es lo que
+    // de verdad tranquiliza mientras el dueño mira. Sin análisis, el de
+    // siempre.
+    await send(
+      comprobanteCuadra(text) ? RESPUESTA_COMPROBANTE_CUADRA : RESPUESTA_COMPROBANTE,
+      [],
+    )
     return
   }
   if (esFotoQueNoEsComprobante(text)) {

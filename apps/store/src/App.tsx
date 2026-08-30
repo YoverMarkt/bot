@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { RiCloseLine, RiStore2Line } from '@remixicon/react'
+import { RiCloseLine } from '@remixicon/react'
 import {
   ApiError, confirmarTelefono, getStore, isBlocked, isLinkProblem,
 } from './lib/api'
@@ -35,6 +35,11 @@ const DesktopGate = lazy(() => import('./screens/DesktopGate'))
 // La cuarta puerta, y la más reciente (2026-08-29): el local bloqueó a esta
 // persona. Se difiere igual que las otras — no se ve en una visita normal.
 const Bloqueado = lazy(() => import('./screens/Bloqueado'))
+// Y la quinta: la tienda no cargó. Distinto de que no exista — ver `cargar`.
+const SinConexion = lazy(() => import('./screens/SinConexion'))
+// Y la sexta. Vivía escrita a mano aquí, en el paquete principal, para una
+// pantalla que en una visita normal no se ve nunca.
+const NoDisponible = lazy(() => import('./screens/NoDisponible'))
 
 // Armazón de la tienda.
 //
@@ -44,6 +49,14 @@ const Bloqueado = lazy(() => import('./screens/Bloqueado'))
 type Estado =
   | { fase: 'cargando' }
   | { fase: 'no_disponible' }
+  /**
+   * No se pudo CARGAR, que no es lo mismo que no existir.
+   *
+   * Sin esta fase los dos casos caían en 'no_disponible', y esa pantalla dice
+   * «puede que el negocio la haya desactivado»: se le echaba la culpa al local
+   * por un problema del teléfono, y sin ofrecer reintentar.
+   */
+  | { fase: 'sin_conexion' }
   | { fase: 'escritorio'; business: Business | null }
   | { fase: 'bloqueada'; business: Business | null; motivo: string | null }
   /**
@@ -133,12 +146,17 @@ export default function App() {
       // lleva a `Gate` o a confirmar el teléfono — ver `alFallarEnlace`.
       setEstado({ fase: 'lista', business: datos.business, status: datos.status })
     } catch (error) {
+      // ⚠️ 404 y «no cargó» son cosas DISTINTAS (2026-08-30). El 404 significa
+      // que el negocio no existe o está apagado, y ahí reintentar no arregla
+      // nada. Cualquier otro fallo —sin datos, un 502, el servidor tardando—
+      // es del camino, y decirle a esa persona «puede que el negocio la haya
+      // desactivado» es culpar al local de un problema de su teléfono.
       if (error instanceof ApiError && error.status === 404) {
         return setEstado({ fase: 'no_disponible' })
       }
       // Ni siquiera se pudo leer la portada; en un PC igual toca decir por qué.
       if (!enMovil) return setEstado({ fase: 'escritorio', business: null })
-      setEstado({ fase: 'no_disponible' })
+      setEstado({ fase: 'sin_conexion' })
     }
   }, [slug])
 
@@ -205,24 +223,23 @@ export default function App() {
 
   if (estado.fase === 'no_disponible') {
     return (
-      // La cuarta puerta. Se pinta como las otras tres —sello, titular fuerte y
-      // explicación en cuerpo de texto— porque para el cliente es la misma
-      // clase de noticia: no puede pasar, y quiere saber por qué.
-      <div className="animar-entrada mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-12">
-        <div className="mb-6 flex size-16 items-center justify-center rounded-[1.25rem] bg-marca-suave shadow-tarjeta">
-          <RiStore2Line size={26} />
-        </div>
-        <h1 className="titulo-xl">Esta tienda no está disponible</h1>
-        <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
-          Puede que el negocio la haya desactivado. Escríbele por WhatsApp y te atiende igual.
-        </p>
-      </div>
+      <Suspense fallback={null}>
+        <NoDisponible />
+      </Suspense>
     )
   }
 
   // Sin `fallback`: lo correcto mientras baja el trozo es que no se vea nada.
   // Un esqueleto que aparece y desaparece en un cuarto de segundo molesta más
   // que el propio cuarto de segundo — misma decisión que en `DireccionRapida`.
+  if (estado.fase === 'sin_conexion') {
+    return (
+      <Suspense fallback={null}>
+        <SinConexion onReintentar={() => { void cargar() }} />
+      </Suspense>
+    )
+  }
+
   if (estado.fase === 'escritorio') {
     return (
       <Suspense fallback={null}>

@@ -99,7 +99,20 @@ const DIST = path.join(RAIZ, 'dist')
 //
 // Es la salida que este guardián prefiere y así está escrito arriba: antes de
 // subir el número, mirar qué se está descargando de más.
-const PRESUPUESTO_KB = 92
+// 92 → 93 el 2026-08-30, y queda escrito por qué, que es para lo que sirve
+// este número.
+//
+// Entró: la pantalla de bloqueo y la de sin conexión, el campo `blocked` de la
+// portada y los dos campos nuevos de `ApiError`. Nada de eso es una librería —
+// son ramas de decisión que la app no tenía y que evitan tres pantallas que
+// mentían: la que enseñaba la carta a un bloqueado, la que culpaba al local de
+// un fallo de red, y la que no ofrecía reintentar.
+//
+// ⚠️ ANTES de subirlo se sacó peso de verdad: `NoDisponible` vivía escrita a
+// mano en `App.tsx` —o sea, en el paquete principal— para una pantalla que en
+// una visita normal no se ve nunca. Ahora viaja aparte, como las otras cinco
+// puertas. Subir el número fue el último recurso, no el primero.
+const PRESUPUESTO_KB = 93
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
