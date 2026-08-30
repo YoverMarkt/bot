@@ -12,6 +12,74 @@ referencia no se pierda entre sesiones, de máquina a máquina o dentro de un me
 
 ---
 
+---
+
+## Inventario completo de pantallas (2026-08-30)
+
+El diagrama de arriba recorre el viaje de COMPRA, y por eso solo nombra cinco.
+Pero la app tiene **catorce estados con pantalla**, y las nueve que faltaban
+existían sin estar escritas en ninguna parte — así fue como se descubrió que a
+una le faltaba diseño y otra mentía.
+
+Este inventario se hizo porque el dueño lo pidió: «verifica si falta alguna».
+
+### El viaje de compra (las del diagrama)
+
+| # | Pantalla | Archivo |
+|---|---|---|
+| 1 | Portada del local | `screens/FoodStore.tsx` |
+| 2 | Catálogo | `screens/FoodStore.tsx` |
+| 3 | Ficha del producto | `components/ProductSheet.tsx` |
+| 4 | Carrito y checkout | `components/CartSheet.tsx` |
+| 5 | Pedido recibido | `screens/OrderPlaced.tsx` |
+
+### Lo que sostiene el viaje
+
+| Pantalla | Archivo | Cuándo se ve |
+|---|---|---|
+| Bienvenida de Umbani | `index.html` (arranque) | Siempre, antes de que baje el JS |
+| Dirección rápida | `components/DireccionRapida.tsx` | Al llenar el carrito por primera vez |
+| Aviso de pago pendiente | `components/PagoPendiente.tsx` | Al volver debiendo el comprobante |
+| Cuenta | `screens/Account.tsx` | Pestaña «Cuenta» |
+
+### Las seis puertas
+
+Ninguna se ve en una visita normal, **todas viajan aparte** del paquete
+principal, y cada una responde a una pregunta distinta. Confundirlas es lo que
+hacía que la app mintiera:
+
+| Puerta | Archivo | Qué dice | Por qué NO es otra |
+|---|---|---|---|
+| Enlace no válido | `screens/Gate.tsx` | «Pide el tuyo» | Habla del ENLACE |
+| Confirmar número | `screens/Confirmar.tsx` | «Confirma tu WhatsApp» | No es un rechazo: es un paso |
+| En computadora | `screens/DesktopGate.tsx` | «Ábrelo en tu teléfono» | Es del DISPOSITIVO |
+| Bloqueado | `screens/Bloqueado.tsx` | «Ahora no puedes pedir aquí» | El enlace es válido; la persona no puede comprar |
+| No disponible | `screens/NoDisponible.tsx` | «El negocio la desactivó» | Reintentar NO arregla nada |
+| Sin conexión | `screens/SinConexion.tsx` | «Volver a intentar» | Reintentar SÍ arregla |
+
+⚠️ **Las dos últimas eran UNA sola hasta el 2026-08-30**, y ahí estaba el
+agujero: un fallo de red mostraba «puede que el negocio la haya desactivado»,
+culpando al local de un problema del teléfono y sin ofrecer reintentar. El
+cliente se iba creyendo que el local había cerrado.
+
+### Estados que NO llevan pantalla propia, y es correcto
+
+- **Tienda cerrada o suspendida** → aviso en línea sobre el catálogo. El
+  cliente puede seguir mirando la carta y volver cuando abra; sacarlo a una
+  pantalla sería cerrarle una puerta que no está cerrada.
+- **Carrito vacío** → estado dentro de la hoja del carrito.
+- **Búsqueda sin resultados** → línea bajo el buscador.
+- **Catálogo vacío** → «El negocio todavía no cargó su carta».
+- **Seguimiento del pedido** → **retirado el 2026-08-12** a propósito: el viaje
+  termina donde empezó, en el chat.
+
+### La regla que salió de este inventario
+
+**Cada puerta responde a UNA pregunta, y dos preguntas distintas nunca
+comparten pantalla.** Cuando se juntan, el texto acaba siendo verdad para un
+caso y mentira para el otro — que es exactamente lo que pasaba con «no cargó» y
+«no existe», y lo que casi pasa cada vez que se añade un motivo más a `Gate`.
+
 ## Principios
 
 1. **Móvil primero, y de verdad.** Se abre desde el navegador interno de
