@@ -492,6 +492,33 @@ export function recordarComprobantePendiente(
 }
 
 /**
+ * Lo que ve quien YA mandó su comprobante y espera al local.
+ *
+ * ⚠️ Es un TERCER mensaje, y hace falta: `recordarComprobantePendiente` le
+ * pide una foto que esta persona acaba de mandar, y `recordarPedidoEnProceso`
+ * le dice «termínalo» a un pedido que ya terminó. Los dos suenan a que el bot
+ * no se enteró.
+ *
+ * ⚠️ **Sin los botones de reinicio, a diferencia de los otros dos.** Aquí ya
+ * hay dinero transferido: ofrecer «✅ Empezar de nuevo» a un toque de distancia
+ * invita a abandonar un pedido pagado, y eso no tiene vuelta atrás. Quien de
+ * verdad quiera salir escribe MENÚ, que sigue preguntándole antes de tirar
+ * nada — la salida existe, solo que no está en un botón que se toca sin leer.
+ */
+export function recordarPagoEnRevision(
+  negocio: { name: string },
+): MarketplaceReply {
+  return {
+    reply: `🧾 Tu pedido en *${negocio.name}* está en revisión.\n\n`
+      + 'El local está comprobando tu pago y te avisamos aquí mismo en cuanto '
+      + 'empiece a prepararlo 👨‍🍳\n\n'
+      + 'Mientras tanto no hace falta que hagas nada.',
+    options: [],
+    vista: { vista: 'negocios', pagina: 0 },
+  }
+}
+
+/**
  * La respuesta a la confirmación de reinicio.
  *
  * ⚠️ `continua` NO es lo contrario de `reinicia`: son TRES respuestas, no dos.

@@ -13409,39 +13409,52 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  -- Los dos estados en los que el cliente ya encargó y el local aún no dijo
+  -- que sí. `pendiente` (efectivo) queda fuera: no lleva comprobante.
+  v_retienen constant text[] := array['esperando_pago', 'pago_en_revision'];
 begin
-  -- ⚠️ SOLO `esperando_pago`, y no los tres estados que cuenta el tope de
-  -- arriba. Son dos preguntas distintas y confundirlas castiga a quien no debe:
-  --
-  --   · El TOPE protege la COCINA del local: cuenta comandas que el dueño aún
-  --     no ha mirado, y ahí `pendiente` y `pago_en_revision` sí molestan.
-  --   · El CANDADO responde «¿esta persona debe algo?». En `pago_en_revision`
-  --     ya mandó su comprobante y en `pendiente` (efectivo) no debe nada: los
-  --     dos esperan que el DUEÑO mire. Retener el candado ahí sería impedirle
-  --     pedir en otro local porque el local va lento — castigar al cliente por
-  --     algo que no depende de él.
-  --
-  -- La regla del dueño era «tiene que enviar el comprobante»; `esperando_pago`
-  -- es exactamente ese estado y ningún otro.
-  if old.status <> 'esperando_pago' or new.status = 'esperando_pago' then
-    return new;
-  end if;
-
   if new.customer_id is null then
     return new;
   end if;
 
+  -- ── Sigue debiendo: el candado se queda ─────────────────────────────────
+  if new.status = any(v_retienen) then
+    -- Pero la conversación tiene que saber en cuál de los dos está, o el bot
+    -- le pedirá la foto a quien acaba de mandarla.
+    if new.status = 'pago_en_revision' and old.status <> 'pago_en_revision' then
+      begin
+        update public.marketplace_conversations as conv
+           set current_state = 'pago_en_revision',
+               version       = conv.version + 1,
+               updated_at    = now()
+         where conv.customer_id = new.customer_id
+           and conv.shopping_locked = true
+           and conv.selected_business_id = new.business_id;
+      exception when others then
+        -- El pedido ya avanzó: un fallo aquí no puede tumbarlo.
+        null;
+      end;
+    end if;
+    return new;
+  end if;
+
+  -- ── Salió de los estados que retienen: se suelta ────────────────────────
+  if not (old.status = any(v_retienen)) then
+    return new;
+  end if;
+
   begin
-    -- ⚠️ Solo se suelta si no le quedan OTROS comprobantes pendientes. Alguien
-    -- con dos pedidos a medias que paga uno sigue debiendo el otro; soltarle
-    -- el candado ahí sería premiar el pago parcial con vía libre.
+    -- ⚠️ Solo si no le quedan OTROS pedidos reteniendo. Alguien con dos a
+    -- medias que resuelve uno sigue debiendo el otro; soltarle el candado ahí
+    -- sería premiar el pago parcial con vía libre.
     if exists (
       select 1
       from public.orders as otro
       where otro.customer_id = new.customer_id
         and otro.id <> new.id
         and otro.source = 'storefront'
-        and otro.status = 'esperando_pago'
+        and otro.status = any(v_retienen)
     ) then
       return new;
     end if;
@@ -13461,8 +13474,6 @@ begin
      where conv.customer_id = new.customer_id
        and conv.shopping_locked = true;
   exception when others then
-    -- El pedido ya avanzó. Un fallo soltando el candado se traga: lo peor que
-    -- pasa es que la persona escriba MENÚ, que es la salida de siempre.
     null;
   end;
 
@@ -13475,9 +13486,11 @@ create trigger orders_release_shopping_lock
   after update of status on public.orders
   for each row execute function public.orders_release_shopping_lock();
 
--- El disparador busca «otros pedidos abiertos de esta persona» sin filtrar por
--- local, que es justo lo que el índice existente NO cubre: el suyo empieza por
--- `business_id`. Sin este, cada resolución de pedido recorrería `orders`.
+comment on function public.orders_release_shopping_lock() is
+  'El candado dura mientras el pedido esté en esperando_pago o pago_en_revision. '
+  'Al entrar en revisión marca la conversación para que el bot no pida una foto '
+  'que ya llegó. Decisión del dueño 2026-08-30: Umbani cerrado en WhatsApp.';
+
 create index if not exists idx_orders_abiertos_por_persona
   on public.orders (customer_id, status, created_at)
   where source = 'storefront';

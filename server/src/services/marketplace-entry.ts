@@ -2,6 +2,7 @@ import {
   esComandoMenu,
   paso,
   recordarComprobantePendiente,
+  recordarPagoEnRevision,
   recordarPedidoEnProceso,
   responderAlMenu,
   verCategorias,
@@ -490,9 +491,16 @@ export async function handleMarketplaceMessage(
     // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
     // tiene que mandar una FOTO. Decirle «termínalo» al segundo lo deja
     // buscando un menú que ya completó.
-    const respuesta = conversation?.current_state === 'esperando_comprobante'
-      ? recordarComprobantePendiente({ name: negocioActual.name })
-      : recordarPedidoEnProceso({ name: negocioActual.name })
+    // ⚠️ TRES mensajes, no dos (2026-08-30). Quien está a medio armar su
+    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
+    // tiene que mandar una FOTO; y quien YA la mandó no tiene que hacer nada
+    // —solo esperar—. Decirle «mándanos la foto» a quien acaba de mandarla, o
+    // «termínalo» a un pedido terminado, suena a que el bot no se enteró.
+    const respuesta = conversation?.current_state === 'pago_en_revision'
+      ? recordarPagoEnRevision({ name: negocioActual.name })
+      : conversation?.current_state === 'esperando_comprobante'
+        ? recordarComprobantePendiente({ name: negocioActual.name })
+        : recordarPedidoEnProceso({ name: negocioActual.name })
     // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
     // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
     // «✅ Empezar de nuevo», y ese texto normalizado es uno de los
@@ -507,6 +515,12 @@ export async function handleMarketplaceMessage(
     // lo único que no tiene vuelta atrás.
     await guardar(deps, customer.id, conversation?.version, respuesta, {
       soltarLocal: false,
+      // ⚠️ El estado del PAGO no se pisa. `guardar` escribe 'navegando' salvo
+      // en la confirmación de reinicio, y eso borraría el
+      // `pago_en_revision` que puso el disparador al llegar el comprobante —
+      // con él perdido, el siguiente mensaje volvería a decir «termínalo» a
+      // alguien que ya pagó.
+      conservarEstado: conversation?.current_state === 'pago_en_revision',
     })
     await send(respuesta.reply, respuesta.options)
     return
@@ -1237,14 +1251,31 @@ async function guardar(
   customerId: string,
   version: number | undefined,
   respuesta: MarketplaceReply,
-  opciones: { soltarLocal: boolean },
+  opciones: {
+    soltarLocal: boolean
+    /**
+     * No tocar `current_state`.
+     *
+     * La RPC hace `coalesce(p_state, conv.current_state)`, así que un nulo lo
+     * conserva. Hace falta para los estados que NO los pone el menú sino la
+     * base —`pago_en_revision`, que escribe el disparador al llegar el
+     * comprobante—: escribir 'navegando' encima los borraría y el bot
+     * respondería lo de antes de pagar.
+     */
+    conservarEstado?: boolean
+  },
 ): Promise<void> {
   await deps.database.advanceConversation(
     customerId,
     {
-      state: respuesta.vista.vista === 'confirmando_reinicio'
-        ? 'confirmando_reinicio'
-        : 'navegando',
+      // `undefined`, no `null`: el repositorio hace `patch.state ?? null` y la
+      // RPC `coalesce(p_state, conv.current_state)`, así que omitirlo conserva
+      // el estado. Ponerlo en `null` explícito choca con el tipo del parche.
+      state: opciones.conservarEstado
+        ? undefined
+        : respuesta.vista.vista === 'confirmando_reinicio'
+          ? 'confirmando_reinicio'
+          : 'navegando',
       flowState: { vista: respuesta.vista },
       ...(opciones.soltarLocal ? { clearBusiness: true } : {}),
     },
