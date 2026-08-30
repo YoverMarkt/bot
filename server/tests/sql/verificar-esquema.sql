@@ -4003,17 +4003,47 @@ begin
   values (v_d, v_cliente, '593900000900', 'storefront', 'esperando_pago', 5, 5)
   returning id into v_pedido;
 
-  -- ── 5. MANDAR EL COMPROBANTE SUELTA EL CANDADO ───────────────────────────
-  -- `esperando_pago` → `pago_en_revision`: ya hizo su parte y espera al DUEÑO.
-  -- Retenerlo aquí sería impedirle pedir en otro local porque el local va
-  -- lento. El TOPE sí lo sigue contando: son dos preguntas distintas.
+  -- ── 5. MANDAR EL COMPROBANTE **NO** SUELTA EL CANDADO ────────────────────
+  --
+  -- ⚠️ ESTA AFIRMACIÓN SE INVIRTIÓ EL 2026-08-30, y se deja escrito por qué.
+  -- Hasta esa fecha esta misma prueba exigía lo CONTRARIO: que `esperando_pago`
+  -- → `pago_en_revision` soltara el candado, con el argumento de que retenerlo
+  -- sería castigar al cliente porque el local va lento.
+  --
+  -- El argumento sigue siendo cierto y el dueño lo conoce: se le expuso y
+  -- eligió cerrar. Pesó algo que aquel análisis no vio — con el candado suelto
+  -- el cliente quedaba SIN LOCAL, así que su siguiente mensaje caía en el menú
+  -- del marketplace y recibía «🙏 No te entendí, ¿qué deseas pedir?». Lo vivió
+  -- con el pedido #75, mandando una foto mientras su comprobante estaba en
+  -- revisión: el bot lo invitó a pedir en otro sitio.
+  --
+  -- El TOPE sigue contándolo igual: son dos preguntas distintas.
   update public.marketplace_conversations
-     set shopping_locked = true, selected_business_id = v_d where customer_id = v_cliente;
+     set shopping_locked = true, selected_business_id = v_d,
+         current_state = 'esperando_comprobante'
+   where customer_id = v_cliente;
   update public.orders set status = 'pago_en_revision' where id = v_pedido;
   select shopping_locked into v_bloqueado
     from public.marketplace_conversations where customer_id = v_cliente;
+  if not v_bloqueado then
+    raise exception 'mandar el comprobante soltó el candado: Umbani dejó de estar cerrado';
+  end if;
+
+  -- Y la conversación tiene que SABER que la foto ya llegó, o el bot le pedirá
+  -- a esta persona una captura que acaba de mandar.
+  if (select current_state from public.marketplace_conversations
+       where customer_id = v_cliente) <> 'pago_en_revision' then
+    raise exception 'la conversación no supo que el comprobante está en revisión';
+  end if;
+
+  -- ── 6. Y LO SUELTA CUANDO EL LOCAL LO ACEPTA ─────────────────────────────
+  -- Es lo que impide que «cerrado» signifique «atrapado»: el candado se va en
+  -- cualquier salida —aceptado, cancelado, rechazado o caducado—.
+  update public.orders set status = 'preparacion' where id = v_pedido;
+  select shopping_locked into v_bloqueado
+    from public.marketplace_conversations where customer_id = v_cliente;
   if v_bloqueado then
-    raise exception 'mandar el comprobante NO soltó el candado';
+    raise exception 'aceptar el pedido NO soltó el candado';
   end if;
 
   delete from public.businesses where id in (v_a, v_b, v_c, v_d);
@@ -4021,7 +4051,7 @@ begin
 end;
 $$;
 
-select '✅ el candado dura hasta pagar y el tope cuenta en toda la plataforma, no por local' as resultado;
+select '✅ el candado dura hasta que el local ACEPTA, no hasta el comprobante, y el tope cuenta en toda la plataforma' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- UN ENLACE VIVO A LA VEZ (2026-09-03)

@@ -162,7 +162,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 76 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 78 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -172,6 +172,8 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - Un local nuevo NACE en el marketplace
 - Un negocio puede no tener canal propio
 - Un pedido a la vez, y MENÚ como salida
+- Umbani es CERRADO: el comprobante no suelta el candado
+- Tres situaciones, tres mensajes
 - UNA SOLA definición de «bloqueado», y la mini app la respeta
 - La bienvenida de Umbani, y la pantalla del bloqueado
 - El panel del dueño y sus dos botones, con la misma regla
