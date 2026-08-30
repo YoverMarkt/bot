@@ -79,7 +79,13 @@ describe('adjuntar el comprobante que llegó por el chat', () => {
     // Llega CON el «+», como lo manda WhatsApp.
     const resultado = await adjuntar('negocio-a', '+593990978367', FOTO)
 
-    expect(resultado).toEqual({ adjuntado: true, orderNumber: 43 })
+    // ⚠️ `datosCuadran: false` sin haber fallado nada: este montaje no
+    // inyecta `comprobarCuadre`, así que no se comparó con el pedido. Falso
+    // significa «no se pudo afirmar que cuadre», no «no cuadra» — y por eso lo
+    // único que cambia es el texto del acuse, nunca si se adjunta.
+    expect(resultado).toEqual({
+      adjuntado: true, orderNumber: 43, datosCuadran: false,
+    })
     // ⚠️ El local sale del PEDIDO ('negocio-1'), no del canal por el que llegó
     // la foto ('negocio-a'). Con un solo número para todo el marketplace, ese
     // canal no dice de quién es el pago.

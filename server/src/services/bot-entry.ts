@@ -164,6 +164,17 @@ const adjuntarComprobante = crearBuzonDeComprobantes({
    * el análisis apagado devuelve `motivo: 'apagado'` sin llamar a nadie ni
    * gastar un céntimo, y el buzón se comporta exactamente como siempre.
    */
+  /**
+   * ¿Es un pago, pero es ESTE pago?
+   *
+   * Segunda pregunta, distinta de `analizarImagen`. Aquella es la portería
+   * —«¿esto es siquiera un comprobante?»—; esta compara lo leído con el pedido
+   * y con la cuenta del local. Solo las señales CRÍTICAS cortan.
+   */
+  comprobarCuadre: (input) => {
+    const ingest = require('./receipt-ingest') as typeof import('./receipt-ingest')
+    return ingest.cuadreDelComprobante(input)
+  },
   analizarImagen: (imagen, mimeType) => {
     const vision = require('./receipt-vision') as typeof import('./receipt-vision')
     return vision.analizarComprobante(imagen, mimeType)

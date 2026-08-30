@@ -279,10 +279,86 @@ export const crearRegistroDeComprobantes = (dependencias: {
   }
 }
 
+/**
+ * ¿Lo leído CUADRA con este pedido?
+ *
+ * Es la segunda pregunta del comprobante, y la que faltaba. `analizarComprobante`
+ * responde «¿esto es siquiera un pago?» —la portería—; esta responde «¿es ESTE
+ * pago?». Un comprobante impecable de una transferencia a otra persona pasa la
+ * primera y falla esta.
+ *
+ * ⚠️ Reutiliza `compararConElPedido`, la MISMA comparación que puntúa el
+ * comprobante para el panel del dueño. Una segunda comparación aquí acabaría
+ * contestando distinto que la del panel, y el dueño vería un comprobante en
+ * verde que el bot rechazó.
+ *
+ * ⚠️ Solo `severity: 'critica'` corta, y hoy eso son dos señales:
+ * `cuenta_incorrecta` (el dinero fue a otra cuenta) y `monto_menor` (pagó menos
+ * de lo que cuesta). El NOMBRE de quien paga no corta nunca — la gente
+ * transfiere desde la cuenta de su pareja, de su madre o del negocio, y el
+ * propio análisis ya decidió no marcar el beneficiario por eso mismo.
+ *
+ * ⚠️ Una regla puesta en cero APAGA su señal, y entonces deja de cortar: el
+ * dueño puede desactivar cualquiera desde `receipt_risk_rules` sin desplegar.
+ *
+ * ⚠️ Falla hacia NO cortar: sin cuenta bancaria cargada, sin datos leídos o
+ * ante cualquier excepción devuelve `{ critica: null, limpio: false }` — se
+ * adjunta y decide el dueño, que es lo que se hacía antes de esto.
+ */
+export const crearCuadreDelComprobante = (dependencias: {
+  database: Pick<ReceiptIngestDatabase, 'getBusinessBankAccount'>
+  settings?: { get(key: 'receipt_risk_rules'): Promise<string | null> }
+}) => async (input: {
+  businessId: string
+  analisis: unknown
+  esperado: { total: number; createdAt: string | null }
+}): Promise<{
+  critica: { flag_type: string; description: string } | null
+  limpio: boolean
+}> => {
+  const vacio = { critica: null, limpio: false }
+  try {
+    const analisis = input.analisis as { ok?: boolean; datos?: unknown } | null
+    if (!analisis?.ok || !analisis.datos) return vacio
+
+    const reglas = leerReglas(
+      dependencias.settings
+        ? await dependencias.settings.get('receipt_risk_rules').catch(() => null)
+        : null,
+    )
+    const cuenta = dependencias.database.getBusinessBankAccount
+      ? await dependencias.database.getBusinessBankAccount(input.businessId).catch(() => null)
+      : null
+
+    const senales = compararConElPedido(
+      analisis.datos as never,
+      { ...input.esperado, cuenta },
+      reglas,
+    )
+    const critica = senales.find(senal => senal.severity === 'critica') || null
+    return {
+      critica: critica
+        ? { flag_type: critica.flag_type, description: critica.description }
+        : null,
+      // Limpio = ni una señal que preocupe. Las de severidad `baja` son las que
+      // CONFIRMAN que algo cuadra («la cuenta es la del negocio»), así que no
+      // cuentan como problema.
+      limpio: !senales.some(senal => senal.severity !== 'baja'),
+    }
+  } catch {
+    return vacio
+  }
+}
+
 const database: ReceiptIngestDatabase = require('../db') as unknown as ReceiptIngestDatabase
 
 export const registrarComprobante = crearRegistroDeComprobantes({
   database,
   settings: require('./settings') as { get(key: 'receipt_risk_rules'): Promise<string | null> },
   logger: console,
+})
+
+export const cuadreDelComprobante = crearCuadreDelComprobante({
+  database,
+  settings: require('./settings') as { get(key: 'receipt_risk_rules'): Promise<string | null> },
 })

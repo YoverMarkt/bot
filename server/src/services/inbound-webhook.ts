@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { atiendeSinIA } from './chat-mode'
 import {
-  textoDelComprobante, textoDelComprobanteAmbiguo, textoDeFotoQueNoEsComprobante,
+  textoDeComprobanteQueNoCuadra, textoDelComprobante, textoDelComprobanteAmbiguo,
+  textoDelComprobanteQueCuadra, textoDeFotoQueNoEsComprobante,
 } from './payment-proof-inbox'
 import { metaGraphUrl } from '../config/meta-graph'
 import {
@@ -191,6 +192,13 @@ export interface InboundWebhookDependencies {
     noEsComprobante?: boolean
     /** Qué pasó por insistir con imágenes que no son un pago. */
     rechazo?: { strikes: number; blocked: boolean; limit: number; minutes?: number | null }
+    /**
+     * Es un pago de verdad, pero NO este pago: fue a otra cuenta o por menos
+     * dinero. Pasa la portería y falla el cuadre, así que no se adjunta.
+     */
+    noCuadra?: { flag_type: string; description: string }
+    /** Lo leído cuadró sin una sola señal preocupante. No confirma el pago. */
+    datosCuadran?: boolean
   }>
 }
 
@@ -564,12 +572,21 @@ export function createInboundWebhookProcessor(
             null, payload.from, foto.data, foto.mimeType,
           )
           textoDeLaFoto = comprobante.adjuntado
-            ? textoDelComprobante(comprobante.orderNumber)
+            // ⚠️ CUATRO marcadores desde el 2026-08-30, no tres. El nuevo
+            // —«no corresponde a este pedido»— es un pago de verdad que fue a
+            // otra cuenta o por menos dinero: pasa la portería y falla el
+            // cuadre. Decirle a esa persona «recibimos tu comprobante» sería
+            // prometerle que su pedido va cuando no va.
+            ? (comprobante.datosCuadran
+                ? textoDelComprobanteQueCuadra(comprobante.orderNumber)
+                : textoDelComprobante(comprobante.orderNumber))
             : comprobante.ambiguos?.length
               ? textoDelComprobanteAmbiguo(comprobante.ambiguos)
-              : comprobante.noEsComprobante
-                ? textoDeFotoQueNoEsComprobante(comprobante.rechazo)
-                : null
+              : comprobante.noCuadra
+                ? textoDeComprobanteQueNoCuadra(comprobante.noCuadra.description)
+                : comprobante.noEsComprobante
+                  ? textoDeFotoQueNoEsComprobante(comprobante.rechazo)
+                  : null
         } catch (error) {
           logger.log(
             `⚠️  [marketplace] no se pudo procesar el comprobante: ${
