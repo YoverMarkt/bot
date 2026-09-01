@@ -14460,6 +14460,7 @@ declare
   v_limite  constant integer := 2;
   v_faltas  integer;
   v_bloqueo jsonb;
+  v_muertos integer := 0;
 begin
   update public.business_customers
   set rejected_receipts = rejected_receipts + 1,
@@ -14479,15 +14480,49 @@ begin
     p_business_id, p_customer_id, 'comprobantes que no lo eran'
   );
 
+  -- ── El pedido muere con el bloqueo ──────────────────────────────────────
+  --
+  -- ⚠️ Va DESPUÉS de bloquear y en la misma transacción: si el bloqueo falla,
+  -- el pedido no se toca. Lo contrario —matar el pedido y no bloquear— dejaría
+  -- al cliente sin comanda y con vía libre para abrir otra.
+  --
+  -- `orders_release_shopping_lock` se encarga del resto: al salir de
+  -- `esperando_pago` suelta el candado y el local, así que el siguiente
+  -- mensaje de esta persona cae en el menú y ve las categorías. Esa es la
+  -- tercera cosa que pedía el dueño, y sale sola de esta.
+  with muertos as (
+    update public.orders
+       set status = 'expirado',
+           updated_at = now()
+     where business_id = p_business_id
+       and customer_id = p_customer_id
+       and status = 'esperando_pago'
+       and coalesce(source, '') = 'storefront'
+       -- Sin comprobante bueno adjunto: si lo hubiera, estaría en
+       -- `pago_en_revision` y le tocaría mirarlo al dueño.
+       and payment_proof_url is null
+       and payment_confirmed_at is null
+    returning 1
+  )
+  select count(*)::integer into v_muertos from muertos;
+
   return jsonb_build_object(
     'strikes', v_faltas,
     'blocked', true,
     'limit', v_limite,
     'blocked_until', v_bloqueo -> 'blocked_until',
-    'minutes', v_bloqueo -> 'minutes'
+    'minutes', v_bloqueo -> 'minutes',
+    -- Cuántas comandas se cerraron. Sirve para decírselo al cliente sin
+    -- volver a consultar la base donde se responde.
+    'expired', v_muertos
   );
 end;
 $$;
+
+comment on function public.register_rejected_receipt(uuid, uuid) is
+  'Cuenta comprobantes que no lo eran. Al segundo bloquea el local un rato Y '
+  'deja EXPIRADOS sus pedidos sin pagar ahí: la comanda no puede sobrevivir a '
+  'quien ya no puede pagarla. No cuenta como impago — sería castigar dos veces.';
 
 revoke all on function public.register_rejected_receipt(uuid, uuid)
   from public, anon, authenticated;

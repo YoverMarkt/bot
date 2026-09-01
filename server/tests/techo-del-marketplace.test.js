@@ -248,7 +248,14 @@ describe('el aviso al bloqueado', () => {
     expect(texto).toMatch(/pausó tus pedidos/i)
     expect(texto).toMatch(/otros locales/i)
     // El bloqueo es de UN local: nunca se le echa de Umbani entero.
-    expect(texto).toMatch(/MENÚ/)
+    //
+    // ⚠️ Antes se comprobaba que el texto dijera «MENÚ». Desde el 2026-09-02
+    // la salida no se teclea: se le dan las CATEGORÍAS en el mismo mensaje,
+    // que es lo que el dueño pidió tras probarlo —«que me salgan las demás
+    // categorías, porque sí puedo pedir en otros locales»—. Lo que se vigila
+    // sigue siendo lo mismo: que la salida EXISTA y sea tomable.
+    const conOpciones = enviados.filter(e => e.options?.length)
+    expect(conOpciones.length, 'el bloqueado se quedó sin ninguna salida').toBeGreaterThan(0)
   })
 
   it('a partir de la segunda vuelve el mensaje neutro', async () => {
