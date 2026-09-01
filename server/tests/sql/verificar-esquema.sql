@@ -4600,3 +4600,92 @@ end;
 $$;
 
 select '✅ la pizarra se limpia cuando el local acepta: solo ahí, solo en ese local y una vez por pedido' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL PEDIDO AVISA A LA CONVERSACIÓN (2026-09-04)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El checkout DEL CHAT marcaba `esperando_comprobante`; el de la MINI APP
+-- —por donde pide todo el mundo hoy— no tocaba la conversación. Con el estado
+-- en `navegando`, el bot le decía «termínalo» a quien ya había pedido y solo
+-- debía el comprobante. Lo vivió el dueño el 2026-09-04.
+--
+-- Y quien pulsa «Empezar de nuevo» está avisando de que deja el pedido: ahora
+-- se cancela en el momento en vez de dejarlo caducar y sumarle una falta.
+-- Avisar y desaparecer no pueden costar lo mismo.
+do $$
+declare
+  v_local   uuid;
+  v_cliente uuid;
+  v_pedido  uuid;
+  v_conPago uuid;
+  v_estado  text;
+  v_n       integer;
+  v_impagos integer;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values (
+    'aviso-uno-v', 'Pizza', 'pizzeria', 'ycloud',
+    '+593900222501', '+593900222501', true, 'miniapp'
+  ) returning id into v_local;
+
+  insert into public.customers (phone) values ('593900222600') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id) values (v_local, v_cliente);
+  insert into public.marketplace_conversations (
+    customer_id, selected_business_id, shopping_locked, current_state
+  ) values (v_cliente, v_local, true, 'navegando');
+
+  -- ── 1. CREAR EL PEDIDO MARCA LA CONVERSACIÓN ────────────────────────────
+  -- Es el fallo que vivió el dueño: pidió por la mini app y el bot le siguió
+  -- diciendo «termínalo».
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_local, v_cliente, '593900222600', 'storefront', 'esperando_pago', 9, 9)
+  returning id into v_pedido;
+
+  select current_state into v_estado
+    from public.marketplace_conversations where customer_id = v_cliente;
+  if v_estado <> 'esperando_comprobante' then
+    raise exception 'crear el pedido no avisó a la conversación: %', v_estado;
+  end if;
+
+  -- ── 2. ABANDONAR A PROPÓSITO CANCELA ────────────────────────────────────
+  v_n := public.cancel_unpaid_order_on_purpose(v_local, v_cliente);
+  if v_n <> 1 then
+    raise exception 'debía cancelar 1 pedido y canceló %', v_n;
+  end if;
+  select status into v_estado from public.orders where id = v_pedido;
+  if v_estado <> 'cancelado' then
+    raise exception 'el pedido abandonado a propósito quedó en %', v_estado;
+  end if;
+
+  -- ── 3. Y NO se cuenta como impago ───────────────────────────────────────
+  -- Avisar y desaparecer no pueden costar lo mismo.
+  select unpaid_expiries into v_impagos
+    from public.business_customers where business_id = v_local and customer_id = v_cliente;
+  if coalesce(v_impagos, 0) <> 0 then
+    raise exception 'irse avisando contó como impago: %', v_impagos;
+  end if;
+
+  -- ── 4. Con la foto ya mandada, el cliente NO puede retirarlo ────────────
+  insert into public.orders (
+    business_id, customer_id, contact_phone, source, status, subtotal, total, payment_proof_url
+  ) values (v_local, v_cliente, '593900222600', 'storefront', 'esperando_pago', 7, 7, 'https://x/y.jpg')
+  returning id into v_conPago;
+
+  v_n := public.cancel_unpaid_order_on_purpose(v_local, v_cliente);
+  if v_n <> 0 then
+    raise exception 'canceló un pedido que YA tenía comprobante: %', v_n;
+  end if;
+  select status into v_estado from public.orders where id = v_conPago;
+  if v_estado <> 'esperando_pago' then
+    raise exception 'se tocó un pedido con comprobante: %', v_estado;
+  end if;
+
+  delete from businesses where id = v_local;
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ el pedido avisa a la conversación, e irse avisando cancela sin contar como impago' as resultado;

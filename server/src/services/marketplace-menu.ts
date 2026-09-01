@@ -418,6 +418,15 @@ export interface EstadoDeCompra {
   /** El local en el que está, si eligió uno. */
   negocio?: { name: string; slug: string } | null
   bloqueado: boolean
+  /**
+   * Ya pidió y debe la transferencia.
+   *
+   * Cambia lo que se le responde a «Seguir mi pedido»: a quien está a medio
+   * armar el carrito se le dice que lo termine; a quien ya pidió, que mande la
+   * foto. Decirle «termínalo» a un pedido terminado suena a que el bot no se
+   * enteró — y es lo que pasaba hasta el 2026-09-04.
+   */
+  esperandoComprobante?: boolean
 }
 
 /**
@@ -539,13 +548,29 @@ export function resolverReinicio(
     return { reinicia: true, continua: false, respuesta: verCategorias(categorias, 0) }
   }
   if (elegida === NO_CONTINUAR) {
+    // ⚠️ Lo que falta NO es lo mismo según dónde esté (2026-09-04). A quien ya
+    // pidió y debe la transferencia, «termina tu pedido cuando quieras» le
+    // suena a que el bot no se enteró — el pedido está terminado, lo que falta
+    // es la foto. Lo vivió el dueño: pidió por la mini app, escribió «hola» y
+    // recibió ese texto con el enlace de la carta.
+    //
+    // ⚠️ Y se le nombra MENÚ como salida, a propósito: quien no piensa pagar
+    // tiene que saber que puede irse diciéndolo, porque irse avisando cancela
+    // el pedido y no le cuesta una falta. Callarlo empuja al abandono
+    // silencioso, que es justo lo que se quiere evitar.
+    const debeComprobante = estado.esperandoComprobante === true
     return {
       reinicia: false,
       continua: true,
       respuesta: {
-        reply: estado.negocio
-          ? `Perfecto, sigues en *${estado.negocio.name}*. Termina tu pedido cuando quieras 👍`
-          : 'Perfecto 👍',
+        reply: !estado.negocio
+          ? 'Perfecto 👍'
+          : debeComprobante
+            ? `Tu pedido en *${estado.negocio.name}* está esperando tu comprobante.\n\n`
+              + 'Mándanos aquí la foto de tu transferencia —*a tu nombre*— y el '
+              + 'local empieza a prepararlo 📸\n\n'
+              + 'Si prefieres dejarlo, escribe *MENÚ*.'
+            : `Perfecto, sigues en *${estado.negocio.name}*. Termina tu pedido cuando quieras 👍`,
         options: [],
         vista: { vista: 'negocios', pagina: 0 },
       },
