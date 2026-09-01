@@ -415,7 +415,10 @@ describe('intentar empezar otra cosa con un pedido abierto', () => {
     )
     expect(entrada.handleMarketplaceMessage).toBeTypeOf('function')
     // La rama existe y suelta el local, que es lo que rompe el bucle.
-    expect(fuente).toMatch(/vista\.vista === 'confirmando_reinicio'[\s\S]{0,400}soltarLocal: true/)
+    expect(fuente).toMatch(// La ventana se amplió el 2026-09-04: entre la comprobación y el guardado
+    // entra ahora `abandonarPedido`, que cancela el pedido sin pagar de quien
+    // se va AVISANDO para que no le cueste una falta al caducar.
+    /vista\.vista === 'confirmando_reinicio'[\s\S]{0,900}soltarLocal: true/)
   })
 })
 

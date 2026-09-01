@@ -118,6 +118,13 @@ export interface MarketplaceEntryDatabase {
    * perfectamente: lo que falta es un asadero dado de alta.
    */
   marketplaceKnownTerm?(query: string): Promise<string | null>
+  /**
+   * Cancela el pedido sin pagar de esta persona en este local.
+   *
+   * Solo cuando el cliente dice que lo deja. Opcional: sin ella el pedido
+   * caduca solo a los 15 minutos, que es lo que pasaba antes.
+   */
+  cancelUnpaidOrderOnPurpose?(businessId: string, customerId: string): Promise<number>
   /** ¿Este local bloqueó a este teléfono? */
   isContactBlocked?(businessId: string, phone: string): Promise<boolean>
   /**
@@ -352,6 +359,10 @@ export async function handleMarketplaceMessage(
       ? { name: negocioActual.name, slug: negocioActual.slug || '' }
       : null,
     bloqueado: Boolean(conversation?.shopping_locked),
+    // Lo pone el disparador `orders_mark_awaiting_receipt` al crear el pedido,
+    // venga de la mini app o del chat. Sin él, a quien ya pidió se le decía
+    // «termina tu pedido» — el pedido estaba terminado y faltaba la foto.
+    esperandoComprobante: conversation?.current_state === 'esperando_comprobante',
   }
   const vista = vistaDe(conversation?.flow_state ?? null)
 
@@ -370,6 +381,12 @@ export async function handleMarketplaceMessage(
     // lo demás —cualquier otro texto vuelve a preguntar—, porque tirar un
     // carrito es lo único que no tiene vuelta atrás.
     if (vista.vista === 'confirmando_reinicio') {
+      // ⚠️ También aquí se cancela. Escribir MENÚ dos veces es la OTRA puerta
+      // para abandonar —«✅ Empezar de nuevo» normaliza a un COMANDO_MENU, así
+      // que el botón entra por aquí, no por el paso 2—. Si solo cancelara una
+      // de las dos, la mitad de los abandonos avisados seguirían caducando y
+      // sumando falta.
+      await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
       const respuesta = verCategorias(categorias, 0)
       await guardar(deps, customer.id, conversation?.version, respuesta, {
         soltarLocal: true,
@@ -476,8 +493,20 @@ export async function handleMarketplaceMessage(
   // ── 2. ¿Estaba respondiendo a «¿tiro tu pedido?» ───────────────────
   if (vista.vista === 'confirmando_reinicio') {
     const { reinicia, continua, respuesta } = resolverReinicio(text, estado, categorias)
+
+    if (reinicia) {
+      await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
+    }
+
     await guardar(deps, customer.id, conversation?.version, respuesta, {
       soltarLocal: reinicia,
+      // ⚠️ Mientras NO reinicie, el estado del pago se conserva: si se pisara
+      // con 'navegando', el «Seguir mi pedido» siguiente volvería a decir
+      // «termínalo» a quien ya pidió. Al reiniciar da igual — el local se
+      // suelta entero.
+      conservarEstado: !reinicia
+        && (conversation?.current_state === 'esperando_comprobante'
+          || conversation?.current_state === 'pago_en_revision'),
     })
     // ⚠️ «Seguir mi pedido» DEVUELVE EL ENLACE (2026-09-03).
     //
@@ -570,7 +599,11 @@ export async function handleMarketplaceMessage(
       // `pago_en_revision` que puso el disparador al llegar el comprobante —
       // con él perdido, el siguiente mensaje volvería a decir «termínalo» a
       // alguien que ya pagó.
-      conservarEstado: conversation?.current_state === 'pago_en_revision',
+      // ⚠️ Los DOS estados que pone la BASE, no solo el de revisión: sin
+      // conservar `esperando_comprobante`, el primer recordatorio lo borraba y
+      // el «Seguir mi pedido» siguiente volvía a decir «termínalo».
+      conservarEstado: conversation?.current_state === 'pago_en_revision'
+        || conversation?.current_state === 'esperando_comprobante',
     })
     await send(respuesta.reply, respuesta.options)
     return
@@ -894,6 +927,37 @@ async function mandarElEnlace(
     + 'Cuando termines te aviso por aquí mismo. Para volver al inicio, escribe *MENÚ*.',
     [],
   )
+}
+
+/**
+ * El cliente dijo en voz alta que deja su pedido: se cancela en el momento.
+ *
+ * ⚠️ Hasta el 2026-09-04 ese pedido seguía vivo hasta caducar, y al caducar le
+ * sumaba una falta de «pedido sin pagar» — la MISMA que suma quien nunca
+ * volvió a contestar. **Avisar y desaparecer no pueden costar lo mismo**, o no
+ * hay ningún motivo para avisar; y sin motivo para avisar, todos los
+ * abandonos son silenciosos.
+ *
+ * ⚠️ Lo llaman las DOS puertas de reinicio: el botón «✅ Empezar de nuevo»
+ * —que normaliza a un `COMANDO_MENU` y entra por el paso 1— y la respuesta a
+ * la confirmación. Si solo lo hiciera una, la mitad de los abandonos avisados
+ * seguirían costando una falta.
+ *
+ * ⚠️ Falla en silencio: si cancelar no sale, el pedido caduca solo a los 15
+ * minutos como siempre. Nunca puede impedirle reiniciar.
+ */
+async function abandonarPedido(
+  deps: MarketplaceEntryDeps,
+  businessId: string | null | undefined,
+  customerId: string,
+): Promise<void> {
+  if (!businessId || !deps.database.cancelUnpaidOrderOnPurpose) return
+  const cancelados = await deps.database
+    .cancelUnpaidOrderOnPurpose(businessId, customerId)
+    .catch(() => 0)
+  if (cancelados) {
+    deps.logger?.log(`🚪 [marketplace] se fue avisando: ${cancelados} pedido(s) cancelado(s)`)
+  }
 }
 
 /**

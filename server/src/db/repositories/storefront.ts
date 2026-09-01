@@ -349,6 +349,29 @@ const cleanupStorefrontSessions = async (days = 2) => db.rpc(
  *
  * Devuelve cuántos cayeron. Falla hacia NO revocar.
  */
+/**
+ * Cancela el pedido sin pagar de esta persona en este local.
+ *
+ * Solo se llama cuando el cliente dice en voz alta que lo deja («Empezar de
+ * nuevo»). Cancelar y caducar no significan lo mismo: caducar es que se acabó
+ * el tiempo, cancelar es que alguien decidió — y el historial del dueño tiene
+ * que poder distinguirlo.
+ *
+ * ⚠️ No cuenta como impago: irse avisando no puede costar lo mismo que
+ * desaparecer, o nadie avisaría.
+ */
+const cancelUnpaidOrderOnPurpose = async (
+  businessId: string,
+  customerId: string,
+): Promise<number> => {
+  const { data, error } = await db.rpc('cancel_unpaid_order_on_purpose', {
+    p_business_id: businessId,
+    p_customer_id: customerId,
+  })
+  fail(error, 'No se pudo cancelar el pedido')
+  return Number(data ?? 0)
+}
+
 const revokeOtherStorefrontSessions = async (
   customerId: string,
   keepSessionId: string,
@@ -975,6 +998,7 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   revokeOtherStorefrontSessions,
+  cancelUnpaidOrderOnPurpose,
   createStorefrontOrder,
   getOrderMoney,
   getStorefrontOrders,

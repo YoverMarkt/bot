@@ -13543,6 +13543,96 @@ comment on function public.orders_clear_customer_strikes() is
   'borra: se cuenta la racha, no el historial. Misma regla que ya seguía '
   'rejected_receipts, ahora también para unpaid_expiries.';
 
+-- ── 1. El pedido nuevo marca la conversación ───────────────────────────────
+create or replace function public.orders_mark_awaiting_receipt()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.customer_id is null
+     or coalesce(new.source, '') <> 'storefront'
+     or new.status <> 'esperando_pago' then
+    return new;
+  end if;
+
+  begin
+    update public.marketplace_conversations as conv
+       set current_state = 'esperando_comprobante',
+           version       = conv.version + 1,
+           updated_at    = now()
+     where conv.customer_id = new.customer_id
+       -- Solo si está en ESE local: si la conversación anda en otro sitio,
+       -- pisarle el estado la sacaría de donde está.
+       and conv.selected_business_id = new.business_id
+       and conv.current_state <> 'esperando_comprobante';
+  exception when others then
+    -- El pedido ya existe. Un fallo marcando la conversación no puede
+    -- deshacerlo: lo peor que pasa es que el bot dé el mensaje de antes.
+    null;
+  end;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_mark_awaiting_receipt on public.orders;
+create trigger orders_mark_awaiting_receipt
+  after insert on public.orders
+  for each row execute function public.orders_mark_awaiting_receipt();
+
+comment on function public.orders_mark_awaiting_receipt() is
+  'Al crear un pedido que espera transferencia, la conversación pasa a '
+  'esperando_comprobante. Sin esto el bot decía «termínalo» a quien ya había '
+  'pedido: el checkout del chat avisaba y el de la mini app no.';
+
+-- ── 2. Abandonar a propósito CANCELA, no caduca ────────────────────────────
+create or replace function public.cancel_unpaid_order_on_purpose(
+  p_business_id uuid,
+  p_customer_id uuid
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_cancelados integer;
+begin
+  if p_business_id is null or p_customer_id is null then
+    return 0;
+  end if;
+
+  with cancelados as (
+    update public.orders
+       set status = 'cancelado',
+           updated_at = now()
+     where business_id = p_business_id
+       and customer_id = p_customer_id
+       and status = 'esperando_pago'
+       and coalesce(source, '') = 'storefront'
+       -- Con la foto ya mandada, el pedido es del dueño: el cliente no puede
+       -- retirarlo por su cuenta.
+       and payment_proof_url is null
+       and payment_confirmed_at is null
+    returning 1
+  )
+  select count(*)::integer into v_cancelados from cancelados;
+
+  return coalesce(v_cancelados, 0);
+end;
+$$;
+
+comment on function public.cancel_unpaid_order_on_purpose(uuid, uuid) is
+  'El cliente dijo en voz alta que deja el pedido: se cancela en el momento en '
+  'vez de dejarlo caducar. Avisar y desaparecer no pueden costar lo mismo.';
+
+revoke all on function public.cancel_unpaid_order_on_purpose(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.cancel_unpaid_order_on_purpose(uuid, uuid)
+  to service_role;
+
 create index if not exists idx_orders_abiertos_por_persona
   on public.orders (customer_id, status, created_at)
   where source = 'storefront';
