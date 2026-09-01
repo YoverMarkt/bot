@@ -802,9 +802,15 @@ const setContactBlocked = async (
       // ⚠️ Y `blocked_until`, por lo mismo al revés: sin él, desbloquear a
       // quien tenía un temporal vigente lo dejaba bloqueado igual mientras el
       // panel ya lo mostraba libre. Cuando el dueño perdona, perdona entero.
+      // ⚠️ Y los DOS contadores a cero (2026-09-03). Sin esto, el dueño
+      // levantaba el bloqueo y el cliente seguía a UN paso del siguiente: con
+      // `unpaid_expiries` en 4 y el límite en 2, el próximo pedido que se le
+      // caducara lo bloqueaba otra vez, media hora, y otra vez, y otra. El
+      // perdón duraba hasta el primer tropiezo, que no es perdonar.
       : {
         blocked_at: null, blocked_until: null, blocked_notified_at: null,
         muted_until: null, reply_count: 0, reply_window_start: null,
+        unpaid_expiries: 0, rejected_receipts: 0,
         updated_at: ahora,
       })
     .eq('business_id', businessId)
