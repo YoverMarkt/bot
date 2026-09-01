@@ -120,9 +120,15 @@ describe('los otros dos recordatorios siguen igual', () => {
   })
 
   it('a quien está a medio armar su pedido se le dice que lo termine', async () => {
+    // ⚠️ «Estás pidiendo en X», no «tienes un pedido en proceso» (2026-09-05).
+    // El estado `en_local` significa que el enlace ya salió y todavía NO hay
+    // pedido: el candado se pone al ELEGIR el local. Decirle a esa persona que
+    // tiene un pedido en proceso era sencillamente falso, y el dueño lo cazó
+    // probándolo con 0 pedidos abiertos en la base.
     const { deps, enviados } = armar('en_local')
     await handle({ from: '593999111222', text: 'hola' }, deps)
-    expect(enviados.at(-1).reply).toMatch(/pedido en proceso/i)
+    expect(enviados.at(-1).reply).toMatch(/Estás pidiendo en/i)
+    expect(enviados.at(-1).reply).toMatch(/Termínalo/i)
     expect(enviados.at(-1).options.join(' ')).toMatch(/Empezar de nuevo/)
   })
 })

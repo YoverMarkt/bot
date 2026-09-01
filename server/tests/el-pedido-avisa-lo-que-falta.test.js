@@ -188,3 +188,57 @@ describe('el texto no promete lo que el sistema no hace', () => {
     expect(r.respuesta.reply).toMatch(/pregunto antes/i)
   })
 })
+
+describe('MENÚ mata todo proceso', () => {
+  // Decisión del dueño (2026-09-05), tras probarlo: «se supone que MENÚ mata
+  // todo proceso, es la palabra clave y más fuerte». Y tenía razón dos veces:
+  // el mensaje del enlace dice «para volver al inicio, escribe MENÚ», y la
+  // pregunta que salía era además FALSA — el candado se pone al ELEGIR el
+  // local, así que decía «tienes un pedido en proceso» a quien acababa de
+  // recibir la carta y no tenía ninguno.
+
+  it('con el local elegido va DIRECTO a las categorías', async () => {
+    const { deps, enviados } = armar('en_local')
+    await handle({ from: '593999111222', text: 'menu' }, deps)
+
+    const ultimo = enviados.at(-1)
+    expect(ultimo.options).toContain('🍕 Pizzerías')
+    expect(ultimo.reply).not.toMatch(/pedido en proceso/i)
+    expect(ultimo.reply).not.toMatch(/¿Qué prefieres\?/i)
+  })
+
+  it('y suelta el local: MENÚ es salir, no preguntar si se quiere salir', async () => {
+    const { deps, database } = armar('en_local')
+    await handle({ from: '593999111222', text: 'menu' }, deps)
+    const patches = database.advanceConversation.mock.calls.map(c => c[1])
+    expect(patches.some(p => p.clearBusiness)).toBe(true)
+  })
+
+  it('cancela el pedido sin pagar: avisar no puede costar una falta', async () => {
+    // Si solo soltara el local, ese pedido caducaría a los 15 minutos y le
+    // sumaría una falta de «pedido sin pagar» — la misma que suma quien nunca
+    // volvió a contestar. Escribir MENÚ es avisar.
+    const { deps, database } = armar('esperando_comprobante')
+    await handle({ from: '593999111222', text: 'menu' }, deps)
+    expect(database.cancelUnpaidOrderOnPurpose).toHaveBeenCalledWith('biz-1', 'cli-1')
+  })
+
+  it('pero CUALQUIER OTRA COSA sí recuerda lo que hay abierto', async () => {
+    // La pregunta no desapareció: sale ante otro texto o una foto, que es
+    // cuando de verdad hace falta avisar de que hay algo a medias.
+    const { deps, enviados, database } = armar('en_local')
+    // ⚠️ Con la vista normal, no la de confirmación: el montaje de este
+    // archivo deja `confirmando_reinicio` para probar los botones, y con esa
+    // vista cualquier texto cae en el paso 2 en vez de en el recordatorio.
+    database.getConversation.mockResolvedValue({
+      current_state: 'en_local',
+      selected_business_id: 'biz-1',
+      shopping_locked: true,
+      flow_state: { vista: { vista: 'negocios', categoria: 'pizzerias', pagina: 0 } },
+      version: 5,
+    })
+    await handle({ from: '593999111222', text: 'quiero pizza' }, deps)
+    expect(enviados.at(-1).reply).toMatch(/Estás pidiendo en/i)
+    expect(enviados.at(-1).options.join(' ')).toMatch(/Empezar de nuevo/)
+  })
+})
