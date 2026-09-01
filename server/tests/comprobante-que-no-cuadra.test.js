@@ -202,16 +202,20 @@ describe('los cuatro marcadores', () => {
     expect(esComprobanteQueNoCuadra(marca)).toBe(false)
   })
 
-  it('el motivo viaja dentro y llega al cliente', () => {
+  it('el motivo viaja dentro del marcador, para el DUEÑO', () => {
+    // ⚠️ CAMBIÓ el 2026-09-01: antes esta prueba exigía que el motivo llegara
+    // al CLIENTE. Ya no. Nombrarle qué comprobación falló parecía amable y era
+    // un manual — le enseñaba qué dato retocar para que colara la próxima. El
+    // motivo sigue existiendo y va al panel del dueño, que es quien decide.
     const marca = textoDeComprobanteQueNoCuadra('La cuenta de destino NO es la del negocio')
     expect(motivoDelDescuadre(marca)).toContain('NO es la del negocio')
     expect(respuestaComprobanteNoCuadra(motivoDelDescuadre(marca)))
-      .toContain('NO es la del negocio')
+      .not.toContain('NO es la del negocio')
   })
 
-  it('sin motivo se responde lo genérico, no un texto a medias', () => {
+  it('sin motivo se responde exactamente lo mismo', () => {
     expect(motivoDelDescuadre(textoDeComprobanteQueNoCuadra())).toBeNull()
-    expect(respuestaComprobanteNoCuadra(null)).toMatch(/no corresponde a este pedido/i)
+    expect(respuestaComprobanteNoCuadra(null)).toMatch(/no coincide con este pedido/i)
   })
 })
 
@@ -227,5 +231,140 @@ describe('los dos acuses', () => {
 
   it('el de siempre sigue intacto para cuando no se pudo comparar', () => {
     expect(RESPUESTA_COMPROBANTE).toMatch(/revisando/i)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE CORTA ES LA CONTRADICCIÓN, NO LA SEVERIDAD (2026-09-01)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Decisión del dueño: «todos los datos de un comprobante tienen que coincidir;
+// lo único que por ahora podemos dejar en revisión es si el comprobante lo paga
+// de otra cuenta, pero eso el cliente no debe saberlo».
+//
+// De ahí salen dos reglas que conviene no confundir:
+//
+//   · Una CONTRADICCIÓN —un dato que está y no cuadra— rechaza sola.
+//   · Una AUSENCIA —un dato que no se pudo leer— nunca rechaza: eso no dice
+//     que el pago sea falso, dice que la foto salió mal.
+
+describe('las contradicciones rechazan, aunque no sean críticas', () => {
+  it('otra MONEDA rechaza', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, currency: 'COP' }),
+      esperado: { ...PEDIDO, currency: 'USD' },
+    })
+    expect(r.critica?.flag_type).toBe('moneda_distinta')
+  })
+
+  it('una captura VIEJA reciclada rechaza', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, transaction_date: '2026-08-01' }),
+      esperado: { ...PEDIDO, createdAt: '2026-08-30T00:00:00Z' },
+    })
+    expect(r.critica?.flag_type).toBe('fecha_antigua')
+  })
+
+  it('una fecha del FUTURO rechaza', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, transaction_date: '2026-12-31' }),
+      esperado: { ...PEDIDO, createdAt: '2026-08-30T00:00:00Z' },
+    })
+    expect(r.critica?.flag_type).toBe('fecha_futura')
+  })
+})
+
+describe('las AUSENCIAS nunca rechazan', () => {
+  // Una foto borrosa no cuesta una venta. Es la misma regla que ya rige la
+  // portería, y la razón por la que esto se lista por nombre y no por
+  // severidad: `sin_banco` es `alta` y aun así no puede cortar.
+  it.each([
+    ['sin banco legible', { bank_name: '' }],
+    ['sin referencia', { reference_number: '' }],
+    ['sin fecha', { transaction_date: '' }],
+  ])('%s se adjunta y decide el dueño', async (_titulo, roto) => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, ...roto }),
+      esperado: PEDIDO,
+    })
+    expect(r.critica).toBeNull()
+  })
+})
+
+describe('que pague OTRA PERSONA va a revisión, no al rechazo', () => {
+  const PEDIDO_CON_NOMBRE = { ...PEDIDO, clienteNombre: 'Yover Rosado Conforme' }
+
+  it('no rechaza: pagar desde la cuenta de la pareja es normal', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, sender_name: 'Maria Fernanda Loor' }),
+      esperado: PEDIDO_CON_NOMBRE,
+    })
+    expect(r.critica).toBeNull()
+  })
+
+  it('pero NO se declara limpio: el dueño tiene que mirarlo', async () => {
+    // Es toda la diferencia entre «lo dejamos pasar» y «lo dejamos en
+    // revisión». Sin esto, al cliente se le diría que sus datos coinciden.
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, sender_name: 'Maria Fernanda Loor' }),
+      esperado: PEDIDO_CON_NOMBRE,
+    })
+    expect(r.limpio).toBe(false)
+  })
+
+  it('el mismo pagador sí queda limpio', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, sender_name: 'Rosado Conforme Yover Sandy' }),
+      esperado: PEDIDO_CON_NOMBRE,
+    })
+    expect(r.critica).toBeNull()
+    expect(r.limpio).toBe(true)
+  })
+
+  it('sin nombre en el pedido no se inventa una señal', async () => {
+    const cuadre = armar()
+    const r = await cuadre({
+      businessId: 'biz-1',
+      analisis: analisis({ ...PAGO_BUENO, sender_name: 'Quien Sea' }),
+      esperado: PEDIDO,
+    })
+    expect(r.critica).toBeNull()
+    expect(r.limpio).toBe(true)
+  })
+})
+
+describe('al cliente NO se le dice qué comprobación falló', () => {
+  it('el mensaje es UNO solo, sea cual sea el motivo', () => {
+    // Nombrar el motivo parecía amable y era un manual: al que lo intenta le
+    // enseña qué dato retocar para que cuele la próxima.
+    const porCuenta = respuestaComprobanteNoCuadra('La cuenta de destino NO es la del negocio')
+    const porMonto = respuestaComprobanteNoCuadra('El comprobante es por $5 y el pedido cuesta $14')
+    expect(porCuenta).toBe(porMonto)
+    expect(porCuenta).not.toMatch(/cuenta de destino|monto|\$5/)
+  })
+
+  it('y siempre pide el comprobante A SU NOMBRE', () => {
+    expect(respuestaComprobanteNoCuadra(null)).toMatch(/a tu nombre/i)
+  })
+
+  it('el motivo sigue existiendo para el DUEÑO, en el marcador', () => {
+    // Lo que se le oculta al cliente no se pierde: va al historial que el
+    // dueño lee en su panel.
+    const marca = textoDeComprobanteQueNoCuadra('La cuenta de destino NO es la del negocio')
+    expect(motivoDelDescuadre(marca)).toContain('NO es la del negocio')
   })
 })

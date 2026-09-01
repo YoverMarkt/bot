@@ -39,9 +39,20 @@ export interface LoEsperado {
     account_number?: string | null
     holder_name?: string | null
   } | null
+  /**
+   * El nombre con el que se hizo el pedido (`orders.contact_name`).
+   *
+   * Sirve para una sola señal —`pagado_por_otro`— y esa señal **no rechaza
+   * nunca**: pagar desde la cuenta de la pareja, de la madre o del negocio es
+   * normal. Lo que hace es que el dueño lo VEA y decida, que es la única
+   * forma honesta de tratarlo.
+   */
+  clienteNombre?: string | null
 }
 
 export interface LoDetectado {
+  /** Quién paga. El OCR ya lo leía y nadie lo miraba. */
+  sender_name?: string | null
   amount?: string | null
   currency?: string | null
   destination_account?: string | null
@@ -67,6 +78,7 @@ export interface ReglasDeRiesgo {
   cuenta_coincide: number
   beneficiario_coincide: number
   monto_mayor: number
+  pagado_por_otro: number
   monto_menor: number
   cuenta_incorrecta: number
   moneda_distinta: number
@@ -113,6 +125,10 @@ export const REGLAS_POR_DEFECTO: ReglasDeRiesgo = {
   patron_debil: 45,
   // No se pudo leer: ni acusa ni absuelve, solo pide ojos humanos.
   ilegible: 30,
+  // ⚠️ Paga OTRA persona. Puntúa poco a propósito: es lo más común de lo
+  // «raro» —se paga desde la cuenta de la pareja, de la madre o del negocio—
+  // y nunca debe rechazar por sí sola. Existe para que el dueño lo vea.
+  pagado_por_otro: 15,
   dias_de_gracia: 2,
 }
 
@@ -316,6 +332,27 @@ export const compararConElPedido = (
   // ⚠️ Que NO coincida no se marca como señal propia: el titular legal y el
   // nombre comercial casi nunca se escriben igual, y marcarlo llenaría de rojo
   // los pagos buenos. La cuenta es el dato que de verdad identifica el destino.
+
+  // ── ¿Paga la misma persona que pidió? ──
+  //
+  // ⚠️ NO rechaza, y es deliberado: pagar desde la cuenta de la pareja, de la
+  // madre o del negocio es lo normal, no un fraude. Se marca para que el dueño
+  // lo mire y decida — decisión del dueño el 2026-09-01: «lo único que por
+  // ahora podemos dejar en revisión es si el comprobante lo paga de otra
+  // cuenta».
+  //
+  // ⚠️ Y al cliente NO se le dice. La instrucción que recibe es siempre la
+  // misma —«el comprobante tiene que estar a tu nombre»—, dicha por delante y
+  // no como reproche: contarle cuándo se tolera es enseñarle cuándo cuela.
+  const mismoPagador = mismoBeneficiario(detectado.sender_name, esperado.clienteNombre)
+  if (mismoPagador === false) {
+    anotar(
+      'pagado_por_otro', 'media',
+      `El comprobante lo paga ${String(detectado.sender_name).trim()} y el pedido `
+      + `es de ${String(esperado.clienteNombre).trim()}`,
+      reglas.pagado_por_otro,
+    )
+  }
 
   // ── La fecha ──
   const fecha = soloFecha(detectado.transaction_date)

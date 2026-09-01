@@ -63,6 +63,8 @@ export interface PedidoEsperandoPago {
    * que devolverle a la base la que ella tiene escrita.
    */
   contact_phone?: unknown
+  /** Con quién se pidió. Se compara contra el ordenante del comprobante. */
+  contact_name?: string | null
 }
 
 /** Los estados en los que una foto es, casi con seguridad, el comprobante. */
@@ -100,6 +102,13 @@ export interface ComprobanteDependencias {
     customer_id?: string | null
     order_number: number | null
     contact_phone: string | null
+    /**
+     * Con quién se pidió. Se compara contra el ORDENANTE del comprobante.
+     *
+     * ⚠️ Que no coincida NO rechaza: pagar desde la cuenta de la pareja, de la
+     * madre o del negocio es lo normal. Se marca para que el dueño lo vea.
+     */
+    contact_name?: string | null
     /** Lo que hay que cobrar: con esto se compara el monto del comprobante. */
     total?: number | null
     /** Cuándo se pidió: con esto se detecta una captura vieja reciclada. */
@@ -127,7 +136,11 @@ export interface ComprobanteDependencias {
   comprobarCuadre?(input: {
     businessId: string
     analisis: unknown
-    esperado: { total: number; createdAt: string | null }
+    esperado: {
+      total: number
+      createdAt: string | null
+      clienteNombre?: string | null
+    }
   }): Promise<CuadreDelComprobante | undefined>
   analizarImagen?(imagen: Buffer, mimeType?: string | null): Promise<ResultadoVision>
   /**
@@ -171,7 +184,13 @@ export interface ComprobanteDependencias {
      * pedirlo: mirar dos veces la misma imagen se paga dos veces.
      */
     analisis?: ResultadoVision
-    esperado?: { total: number; currency?: string | null; createdAt?: string | null }
+    esperado?: {
+      total: number
+      currency?: string | null
+      createdAt?: string | null
+      /** Con quién se pidió, para la señal `pagado_por_otro` que ve el dueño. */
+      clienteNombre?: string | null
+    }
   }): Promise<unknown>
   adjuntar(input: {
     businessId: string
@@ -356,6 +375,7 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
           esperado: {
             total: Number(pedido.total ?? 0),
             createdAt: pedido.created_at ?? null,
+            clienteNombre: pedido.contact_name ?? null,
           },
         }).catch(() => undefined)
       }
@@ -403,6 +423,7 @@ export const crearBuzonDeComprobantes = (dependencias: ComprobanteDependencias) 
           esperado: {
             total: Number(pedido.total ?? 0),
             createdAt: pedido.created_at ?? null,
+            clienteNombre: pedido.contact_name ?? null,
           },
         })
       }
@@ -488,7 +509,10 @@ export const textoDeComprobanteQueNoCuadra = (motivo?: string | null): string =>
 export const esComprobanteQueNoCuadra = (texto: unknown): boolean =>
   String(texto ?? '').includes(MARCA_COMPROBANTE_NO_CUADRA)
 
-/** El motivo viaja dentro del marcador; sin él se responde lo genérico. */
+/**
+ * El motivo viaja dentro del marcador, y **es para el DUEÑO**, no para el
+ * cliente: queda en el historial que él lee en su panel.
+ */
 export const motivoDelDescuadre = (texto: unknown): string | null => {
   const bruto = String(texto ?? '')
   const i = bruto.indexOf(`${MARCA_COMPROBANTE_NO_CUADRA}|`)
@@ -497,17 +521,28 @@ export const motivoDelDescuadre = (texto: unknown): string | null => {
 }
 
 /**
- * Lo que se le responde a quien mandó un pago que no es el suyo.
+ * Lo que se le responde a quien mandó un comprobante que no cuadra.
  *
- * ⚠️ NO acusa a nadie. Puede ser la captura equivocada de la galería, o un
- * pago a otra persona hecho por error. El tono es el de alguien que quiere
- * cobrar, no el de un guardia — y se le dice QUÉ pasó, porque «no cuadra» sin
- * más le deja mandando la misma imagen otra vez.
+ * ⚠️ **UNO SOLO, y no dice qué falló** (decisión del dueño, 2026-09-01). Antes
+ * nombraba el motivo —«la cuenta de destino no es la del negocio»— y eso, que
+ * parecía amable, es un manual: al que lo intenta le enseña exactamente qué
+ * dato tiene que retocar para que cuele la próxima. El motivo sigue existiendo
+ * y va al panel del dueño, que es quien tiene que saberlo.
+ *
+ * ⚠️ **Y NO acusa a nadie.** Puede ser la captura equivocada de la galería o un
+ * pago hecho por error. El tono es el de alguien que quiere cobrar, no el de un
+ * guardia — la misma regla que ya rige el rechazo de una foto que no es un pago.
+ *
+ * ⚠️ **La instrucción es siempre la misma**: el comprobante tiene que estar a
+ * su nombre. Se dice por delante, en todas partes y sin que haya pasado nada,
+ * para que el día que se rechace uno no parezca una norma inventada sobre la
+ * marcha.
  */
-export const respuestaComprobanteNoCuadra = (motivo?: string | null): string =>
-  '🧾 Recibimos tu comprobante, pero no corresponde a este pedido.\n\n'
-  + (motivo ? `${motivo}.\n\n` : '')
-  + 'Revisa que sea la transferencia correcta y mándanosla de nuevo 📸'
+export const respuestaComprobanteNoCuadra = (_motivo?: string | null): string =>
+  '🧾 Recibimos tu comprobante, pero no coincide con este pedido.\n\n'
+  + 'Por tu seguridad, el comprobante tiene que ser el de *esta* transferencia '
+  + 'y estar *a tu nombre*.\n\n'
+  + 'Revísalo y mándanoslo de nuevo 📸'
 
 /**
  * Marcador de que la foto NO era un comprobante.
@@ -578,7 +613,7 @@ export const esFotoQueNoEsComprobante = (texto: unknown): boolean =>
  */
 export const RESPUESTA_NO_ES_COMPROBANTE =
   '🧾 Recibimos tu imagen, pero no parece el comprobante de la transferencia.\n\n'
-  + 'Mándanos la captura de tu banco donde se vea el *valor*, la *fecha* y el '
+  + 'Mándanos la captura de tu banco, *a tu nombre*, donde se vea el *valor*, la *fecha* y el '
   + '*número de referencia*, y registramos tu pago enseguida.'
 
 /**
