@@ -87,12 +87,24 @@ begin
   end if;
 
   -- Un negocio no puede tener dos cuotas del mismo mes.
+  --
+  -- ⚠️ El mes se calcula en la zona del NEGOCIO, igual que `create_business_onboarding`
+  -- (`timezone('America/Guayaquil', now())`), y NO con `current_date`, que en
+  -- el contenedor es UTC.
+  --
+  -- Con `current_date` esta comprobación falla las primeras 5 horas UTC del
+  -- día 1 de cada mes: en Ecuador todavía es el último día del mes anterior,
+  -- así que el alta reclama —correctamente— el mes que se va, y la prueba
+  -- intentaba insertar el que entra. No colisionan, y el verificador acusaba
+  -- al esquema de un fallo que era suyo. Encontrado el 2026-09-01 auditando,
+  -- y habría bloqueado TODOS los PRs durante esa ventana.
   begin
     insert into billing (business_id, amount, currency, status, period_start, period_end)
     values (
       v_nuevo, 25, 'USD', 'pending',
-      date_trunc('month', current_date)::date,
-      (date_trunc('month', current_date) + interval '1 month - 1 day')::date
+      date_trunc('month', timezone('America/Guayaquil', now()))::date,
+      (date_trunc('month', timezone('America/Guayaquil', now()))
+        + interval '1 month - 1 day')::date
     );
     raise exception 'La base aceptó dos cuotas del mismo mes para el mismo negocio';
   exception when sqlstate '23505' then
@@ -2561,24 +2573,30 @@ begin
 
   -- 12. EL CIERRE DE MES lleva la comisión a la factura.
   --
+  -- ⚠️ El mes va en la zona del NEGOCIO —`America/Guayaquil`—, igual que en
+  -- `create_business_onboarding`, y no en UTC. Con `now()` a secas esto fallaba
+  -- las primeras 5 horas UTC del día 1 de cada mes: la factura la había creado
+  -- el alta para el mes que en Ecuador todavía corría, y el cierre la buscaba
+  -- en el que ya había entrado en UTC. No la encontraba y devolvía NULL.
+  --
   -- Es idempotente por naturaleza: no suma, RECALCULA desde `sales`. Correrlo
   -- dos veces tiene que dar el mismo número, o un reintento tras un fallo de
   -- red cobraría el doble.
   update public.sales set status = 'completada' where order_id = v_pedido;
 
-  v_cierre := public.settle_month_commission(date_trunc('month', now())::date);
+  v_cierre := public.settle_month_commission(date_trunc('month', timezone('America/Guayaquil', now()))::date);
   select commission_amount into v_suma
   from public.billing
-  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  where business_id = v_biz and period_start = date_trunc('month', timezone('America/Guayaquil', now()))::date;
   if coalesce(v_suma, -1) <> 10 then
     raise exception 'el cierre debería dejar 10.00 de comisión, dejó %', v_suma;
   end if;
 
-  perform public.settle_month_commission(date_trunc('month', now())::date);
-  perform public.settle_month_commission(date_trunc('month', now())::date);
+  perform public.settle_month_commission(date_trunc('month', timezone('America/Guayaquil', now()))::date);
+  perform public.settle_month_commission(date_trunc('month', timezone('America/Guayaquil', now()))::date);
   select commission_amount into v_suma
   from public.billing
-  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  where business_id = v_biz and period_start = date_trunc('month', timezone('America/Guayaquil', now()))::date;
   if v_suma <> 10 then
     raise exception 'tres cierres seguidos cambiaron el importe: %', v_suma;
   end if;
@@ -2586,20 +2604,20 @@ begin
   -- La CUOTA no se toca: `amount` es el servicio, la comisión va aparte.
   select amount into v_suma
   from public.billing
-  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  where business_id = v_biz and period_start = date_trunc('month', timezone('America/Guayaquil', now()))::date;
   if v_suma is null then
     raise exception 'el cierre borró la cuota mensual';
   end if;
 
   -- Un mes ya PAGADO no se reescribe: una factura emitida es un hecho.
   update public.billing set status = 'paid'
-  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  where business_id = v_biz and period_start = date_trunc('month', timezone('America/Guayaquil', now()))::date;
   update public.orders set subtotal = 500, total = 500 where id = v_pedido;
   update public.sales set total = 500 where order_id = v_pedido;
-  perform public.settle_month_commission(date_trunc('month', now())::date);
+  perform public.settle_month_commission(date_trunc('month', timezone('America/Guayaquil', now()))::date);
   select commission_amount into v_suma
   from public.billing
-  where business_id = v_biz and period_start = date_trunc('month', now())::date;
+  where business_id = v_biz and period_start = date_trunc('month', timezone('America/Guayaquil', now()))::date;
   if v_suma <> 10 then
     raise exception 'se reescribió un mes ya pagado: quedó en %', v_suma;
   end if;
