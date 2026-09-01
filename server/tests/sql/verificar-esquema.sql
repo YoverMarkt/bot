@@ -4383,3 +4383,134 @@ end;
 $$;
 
 select '✅ el panel lista solo a los bloqueados AHORA, con su plazo, y los dos botones del dueño mandan' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- EL COMPROBANTE FALSO DEJA EL PEDIDO EXPIRADO (2026-09-02)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Lo encontró el dueño probando: mandó dos comprobantes falsos, se bloqueó
+-- —bien—, escribió «hola» y recibió «tienes un pedido en proceso». El pedido
+-- seguía vivo en `esperando_pago`, así que el candado no se soltaba, el dueño
+-- veía en su panel una comanda que nadie iba a pagar, y seguía contando contra
+-- el tope de pedidos abiertos.
+--
+-- Ahora el bloqueo mata el pedido, y de ahí sale todo lo demás solo.
+do $$
+declare
+  v_local   uuid;
+  v_otro    uuid;
+  v_cliente uuid;
+  v_p1      uuid;
+  v_p2      uuid;
+  v_ajeno   uuid;
+  v_r       jsonb;
+  v_estado  text;
+  v_locked  boolean;
+  v_impagos integer;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values
+    ('falso-uno-v', 'Pizza', 'pizzeria', 'ycloud', '+593900666301', '+593900666301', true, 'miniapp'),
+    ('falso-dos-v', 'Otra', 'pizzeria', 'ycloud', '+593900666302', '+593900666302', true, 'miniapp');
+  select id into v_local from businesses where slug = 'falso-uno-v';
+  select id into v_otro  from businesses where slug = 'falso-dos-v';
+
+  insert into public.customers (phone) values ('593900666400') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id) values (v_local, v_cliente);
+  insert into public.business_customers (business_id, customer_id) values (v_otro, v_cliente);
+  insert into public.marketplace_conversations (
+    customer_id, selected_business_id, shopping_locked, current_state
+  ) values (v_cliente, v_local, true, 'esperando_comprobante');
+
+  -- ── ESCENARIO REAL: UN pedido esperando su comprobante ──────────────────
+  --
+  -- ⚠️ Se inserta como MOSTRADOR y se convierte en pedido de TIENDA con un
+  -- update: `orders_limit_open_per_customer` es BEFORE INSERT y solo mira
+  -- `source = 'storefront'`. Se cambia solo `source`, nunca el estado, para no
+  -- disparar `orders_release_shopping_lock` (es `after update of status`).
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_local, v_cliente, '593900666400', 'manual', 'esperando_pago', 9, 9)
+  returning id into v_p1;
+  update public.orders set source = 'storefront' where id = v_p1;
+
+  -- 1. La PRIMERA imagen mala avisa y no mata nada.
+  v_r := public.register_rejected_receipt(v_local, v_cliente);
+  if (v_r->>'blocked')::boolean then
+    raise exception 'la PRIMERA imagen mala no puede bloquear: %', v_r;
+  end if;
+  select status into v_estado from public.orders where id = v_p1;
+  if v_estado <> 'esperando_pago' then
+    raise exception 'la primera falta mató el pedido: %', v_estado;
+  end if;
+
+  -- 2. La SEGUNDA bloquea Y deja el pedido EXPIRADO.
+  v_r := public.register_rejected_receipt(v_local, v_cliente);
+  if not (v_r->>'blocked')::boolean or (v_r->>'expired')::integer <> 1 then
+    raise exception 'la segunda debía bloquear y expirar 1: %', v_r;
+  end if;
+  select status into v_estado from public.orders where id = v_p1;
+  if v_estado <> 'expirado' then
+    raise exception 'el pedido sin pagar debía quedar EXPIRADO, quedó %', v_estado;
+  end if;
+
+  -- 3. Y EL CANDADO SE SUELTA SOLO. Es lo que hace que el siguiente mensaje
+  -- del cliente vea las categorías en vez de «tienes un pedido en proceso»,
+  -- que es lo que el dueño vivió el 2026-09-02.
+  select shopping_locked into v_locked
+    from public.marketplace_conversations where customer_id = v_cliente;
+  if v_locked then
+    raise exception 'expirado el pedido, el candado siguió puesto';
+  end if;
+
+  -- 4. Y NO se cuenta además como impago: ya se le bloqueó por los
+  -- comprobantes, y sumarle una falta de «pedido sin pagar» sería cobrarle dos
+  -- castigos por el mismo acto.
+  select unpaid_expiries into v_impagos
+    from public.business_customers
+   where business_id = v_local and customer_id = v_cliente;
+  if coalesce(v_impagos, 0) <> 0 then
+    raise exception 'el comprobante falso contó además como impago: %', v_impagos;
+  end if;
+
+  -- ── AISLAMIENTO: lo que NO es suyo no se toca ───────────────────────────
+  --
+  -- Se prueba aparte porque en producción no pueden coexistir —#296 deja UN
+  -- pedido sin pagar a la vez—, pero la función tiene que filtrar igual: un
+  -- histórico o un pedido de mostrador podrían estar ahí.
+  update public.business_customers
+     set rejected_receipts = 0, blocked_at = null, blocked_until = null
+   where business_id = v_local and customer_id = v_cliente;
+
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_otro, v_cliente, '593900666400', 'manual', 'esperando_pago', 5, 5)
+  returning id into v_ajeno;
+  insert into public.orders (
+    business_id, customer_id, contact_phone, source, status, subtotal, total, payment_proof_url
+  ) values (v_local, v_cliente, '593900666400', 'manual', 'esperando_pago', 7, 7, 'https://x/y.jpg')
+  returning id into v_p2;
+  update public.orders set source = 'storefront' where id in (v_ajeno, v_p2);
+
+  perform public.register_rejected_receipt(v_local, v_cliente);
+  v_r := public.register_rejected_receipt(v_local, v_cliente);
+  -- Ninguno de los dos entra: uno es de otro local, el otro ya tiene su foto.
+  if (v_r->>'expired')::integer <> 0 then
+    raise exception 'expiró pedidos que no debía: %', v_r;
+  end if;
+
+  select status into v_estado from public.orders where id = v_ajeno;
+  if v_estado <> 'esperando_pago' then
+    raise exception 'se expiró un pedido de OTRO local: %', v_estado;
+  end if;
+  select status into v_estado from public.orders where id = v_p2;
+  if v_estado <> 'esperando_pago' then
+    raise exception 'se expiró un pedido que YA tenía comprobante: %', v_estado;
+  end if;
+
+  delete from businesses where id in (v_local, v_otro);
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ el comprobante falso bloquea, expira su pedido, suelta el candado y no cuenta dos veces' as resultado;

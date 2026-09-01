@@ -424,7 +424,37 @@ export async function handleMarketplaceMessage(
     //
     // Sin cola —los marcadores que ya circulaban antes de esto— la respuesta
     // es exactamente la de siempre.
-    await send(respuestaNoEsComprobante(rechazoDelMarcador(text)), [])
+    const rechazo = rechazoDelMarcador(text)
+
+    // ⚠️ AL BLOQUEAR, se ofrecen las DEMÁS CATEGORÍAS (2026-09-02).
+    //
+    // El mensaje ya decía «mientras tanto puedes pedir en los demás locales» y
+    // no daba ninguno: el cliente leía una salida que no podía tomar. El dueño
+    // lo pidió con estas palabras: «que me salgan las demás categorías, porque
+    // sí puedo pedir en otros locales».
+    //
+    // ⚠️ Se puede porque el bloqueo es del LOCAL, no de la plataforma. Y se
+    // puede AHORA porque al bloquear se expira su pedido, así que ya no queda
+    // nada retenido — antes de eso, ofrecerle categorías lo habría llevado
+    // contra el muro de «tienes un pedido en proceso».
+    //
+    // ⚠️ Con opciones hay que GUARDAR la vista, o tocar una categoría se lee
+    // con la vista anterior y el cliente tiene que tocarla dos veces. Es el
+    // fallo del 2026-08-24, y aquí volvería a entrar por esta puerta.
+    if (rechazo?.blocked) {
+      const portada = verCategorias(categorias, 0)
+      const respuesta = {
+        ...portada,
+        reply: `${respuestaNoEsComprobante(rechazo)}\n\n${portada.reply}`,
+      }
+      await guardar(deps, customer.id, conversation?.version, respuesta, {
+        soltarLocal: true,
+      })
+      await send(respuesta.reply, respuesta.options)
+      return
+    }
+
+    await send(respuestaNoEsComprobante(rechazo), [])
     return
   }
   if (esComprobanteAmbiguo(text)) {
@@ -740,17 +770,30 @@ async function entregarLocal(
     const toca = database.claimBlockedNotice
       ? await database.claimBlockedNotice(negocio.id, customer.id).catch(() => false)
       : false
+    // ⚠️ También aquí las CATEGORÍAS (2026-09-02): el texto ofrecía «escribe
+    // MENÚ para elegir otro local» y hacía teclear para llegar a una lista que
+    // cabe en el mismo mensaje. El bloqueo es del LOCAL; los demás siguen
+    // abiertos para esta persona.
+    const otras = verCategorias(await database.getMarketplaceCategories().catch(() => []), 0)
     await deps.send(
       toca
         ? `⛔ *${negocio.name}* pausó tus pedidos.\n\n`
           + 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger. '
           + 'Si crees que es un error, comunícate directamente con el local '
           + 'para resolverlo.\n\n'
-          + 'Mientras tanto puedes pedir en otros locales: escribe *MENÚ*.'
+          + 'Mientras tanto puedes pedir en otros locales 👇'
         : `😕 *${negocio.name}* no está recibiendo pedidos tuyos ahora mismo. `
-          + 'Escribe *MENÚ* para elegir otro local.',
-      [],
+          + 'Elige otro local aquí abajo 👇',
+      otras.options,
     )
+    // Con opciones, la vista se guarda o el toque siguiente no se entiende.
+    if (otras.options.length) {
+      await database.advanceConversation(
+        customer.id,
+        { state: 'navegando', flowState: { vista: otras.vista }, clearBusiness: true },
+        version,
+      ).catch(() => ({ conflicto: false }))
+    }
     return
   }
 
