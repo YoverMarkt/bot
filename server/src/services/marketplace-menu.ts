@@ -569,7 +569,20 @@ export function resolverReinicio(
             ? `Tu pedido en *${estado.negocio.name}* está esperando tu comprobante.\n\n`
               + 'Mándanos aquí la foto de tu transferencia —*a tu nombre*— y el '
               + 'local empieza a prepararlo 📸\n\n'
-              + 'Si prefieres dejarlo, escribe *MENÚ*.'
+              // ⚠️ «y te pregunto antes de soltarlo» NO es un adorno
+              // (2026-09-05). Este texto decía «escribe MENÚ» a secas, y MENÚ
+              // con un pedido en marcha PREGUNTA antes de tirarlo. El dueño
+              // escribió MENÚ esperando salir y recibió una pregunta: el
+              // mensaje prometía una salida directa que el sistema no da.
+              //
+              // Se arregla el TEXTO y no la conducta a propósito. Desde el
+              // 2026-09-04 «Empezar de nuevo» CANCELA el pedido de verdad, y
+              // hay un caso que no se puede distinguir: quien ya transfirió y
+              // todavía no mandó la foto se ve igual que quien no ha pagado
+              // nada. Un MENÚ directo le cancelaría el pedido con el dinero ya
+              // enviado. Un toque de más no le cuesta nada a quien sí quería
+              // irse; el error contrario sí se paga.
+              + 'Si prefieres dejarlo, escribe *MENÚ* y te pregunto antes de soltarlo.'
             : `Perfecto, sigues en *${estado.negocio.name}*. Termina tu pedido cuando quieras 👍`,
         options: [],
         vista: { vista: 'negocios', pagina: 0 },

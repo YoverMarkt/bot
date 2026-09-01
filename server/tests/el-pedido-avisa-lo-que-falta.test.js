@@ -168,3 +168,23 @@ describe('a quien debe el comprobante NO se le manda la carta', () => {
     expect(deps.sendLink).toHaveBeenCalled()
   })
 })
+
+describe('el texto no promete lo que el sistema no hace', () => {
+  // El dueño escribió MENÚ esperando salir —porque el mensaje se lo decía— y
+  // recibió una pregunta. MENÚ con un pedido en marcha SIEMPRE pregunta antes
+  // de tirarlo, y desde el 2026-09-04 «Empezar de nuevo» lo cancela de verdad.
+  //
+  // Se arregla el texto y no la conducta: hay un caso que no se puede
+  // distinguir —quien ya transfirió y no mandó la foto se ve igual que quien
+  // no pagó nada— y un MENÚ directo le cancelaría el pedido con el dinero
+  // enviado.
+  it('avisa de que MENÚ pregunta antes de soltar el pedido', () => {
+    const r = resolverReinicio(NO_CONTINUAR, {
+      negocio: { name: 'Monster Pizza', slug: 'monster-pizza' },
+      bloqueado: true,
+      esperandoComprobante: true,
+    }, [])
+    expect(r.respuesta.reply).toMatch(/MENÚ/)
+    expect(r.respuesta.reply).toMatch(/pregunto antes/i)
+  })
+})
