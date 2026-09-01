@@ -139,3 +139,32 @@ describe('irse AVISANDO cancela el pedido', () => {
     expect(patch.state).toBeUndefined()
   })
 })
+
+describe('a quien debe el comprobante NO se le manda la carta', () => {
+  // El dueño lo dijo probándolo el 2026-09-04: «no debería darme la opción de
+  // ver la carta porque tengo que completar el pedido para hacer otro».
+  //
+  // El botón dice «Ver la carta» y esa es la invitación equivocada: esa
+  // persona no puede pedir nada más hasta cerrar lo que ya pidió. Su enlace
+  // sigue vivo unos mensajes más arriba, así que no se queda sin los datos
+  // para transferir — lo único que se retira es la invitación a seguir mirando.
+
+  it('«Seguir mi pedido» responde SIN enlace cuando debe la foto', async () => {
+    const { deps, enviados } = armar('esperando_comprobante')
+    await handle({ from: '593999111222', text: NO_CONTINUAR }, deps)
+
+    expect(deps.sendLink).not.toHaveBeenCalled()
+    expect(deps.issueLink).not.toHaveBeenCalled()
+    const ultimo = enviados.at(-1)
+    expect(ultimo.reply).toMatch(/esperando tu comprobante/i)
+    expect(ultimo.reply).not.toMatch(/http/)
+  })
+
+  it('pero a quien está a medio armar el carrito SÍ se le manda', async () => {
+    // Ahí volver a la carta es justo lo que necesita: el pedido no existe
+    // todavía.
+    const { deps } = armar('en_local')
+    await handle({ from: '593999111222', text: NO_CONTINUAR }, deps)
+    expect(deps.sendLink).toHaveBeenCalled()
+  })
+})
