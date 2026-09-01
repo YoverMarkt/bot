@@ -394,11 +394,16 @@ export async function handleMarketplaceMessage(
       await send(respuesta.reply, respuesta.options)
       return
     }
+    // ⚠️ MENÚ suelta SIEMPRE, y cancela lo que hubiera sin pagar (2026-09-05).
+    //
+    // Ya no hay una rama que pregunte: `responderAlMenu` devuelve las
+    // categorías pase lo que pase. Escribir MENÚ es avisar de que se deja el
+    // pedido, y avisar no puede costar una falta — por eso se cancela en vez
+    // de dejarlo caducar, igual que hace «✅ Empezar de nuevo».
+    await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
     const respuesta = responderAlMenu(estado, categorias)
-    // Solo se suelta el local cuando NO hay que preguntar nada. Con un pedido
-    // en marcha la respuesta es la pregunta, y el carrito sigue donde estaba.
     await guardar(deps, customer.id, conversation?.version, respuesta, {
-      soltarLocal: respuesta.vista.vista !== 'confirmando_reinicio',
+      soltarLocal: true,
     })
     await send(respuesta.reply, respuesta.options)
     return
@@ -593,7 +598,13 @@ export async function handleMarketplaceMessage(
       ? recordarPagoEnRevision({ name: negocioActual.name })
       : conversation?.current_state === 'esperando_comprobante'
         ? recordarComprobantePendiente({ name: negocioActual.name })
-        : recordarPedidoEnProceso({ name: negocioActual.name })
+        // ⚠️ `en_local` = el enlace ya salió y NO hay pedido todavía. Sin
+        // esto el mensaje decía «tienes un pedido en proceso» a quien acababa
+        // de recibir la carta, que es sencillamente falso.
+        : recordarPedidoEnProceso(
+          { name: negocioActual.name },
+          conversation?.current_state === 'en_local',
+        )
     // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
     // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
     // «✅ Empezar de nuevo», y ese texto normalizado es uno de los

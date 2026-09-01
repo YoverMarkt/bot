@@ -341,18 +341,30 @@ describe('el comando MENÚ', () => {
 })
 
 describe('volver al menú con un pedido en marcha', () => {
-  it('NO borra nada sin preguntar', async () => {
-    const { responderAlMenu, SI_REINICIAR, NO_CONTINUAR } =
-      await import('../dist/services/marketplace-menu.js')
-    // El cliente pudo escribir «menú» buscando ayuda, no queriendo tirar lo
-    // que llevaba — y la mini app de ese local sigue abierta en su teléfono.
+  it('va DIRECTO a las categorías, sin preguntar', async () => {
+    const { responderAlMenu } = await import('../dist/services/marketplace-menu.js')
+    // ⚠️ ESTA AFIRMACIÓN SE INVIRTIÓ EL 2026-09-05, y queda escrito por qué.
+    // Hasta esa fecha MENÚ preguntaba «¿empezar de nuevo o seguir?» en cuanto
+    // había un local elegido. El dueño lo probó y tenía razón dos veces:
+    //
+    //  · «MENÚ mata todo proceso, es la palabra clave y más fuerte», y el
+    //    propio mensaje del enlace dice «para volver al inicio, escribe MENÚ»;
+    //  · y la pregunta era FALSA en el caso más común — el candado se pone al
+    //    ELEGIR el local, así que a quien acababa de recibir el enlace se le
+    //    decía «tienes un pedido en proceso» sin tener ninguno (comprobado
+    //    contra producción: 0 pedidos abiertos).
+    //
+    // La pregunta NO desapareció: sale ante cualquier OTRA cosa —otro texto,
+    // una foto—, que es cuando de verdad hace falta avisar.
     const r = responderAlMenu(
       { bloqueado: true, negocio: { name: 'El Puerto', slug: 'el-puerto' } },
       CATEGORIAS,
     )
-    expect(r.vista.vista).toBe('confirmando_reinicio')
-    expect(r.reply).toContain('El Puerto')
-    expect(r.options).toEqual([SI_REINICIAR, NO_CONTINUAR])
+    expect(r.vista.vista).toBe('categorias')
+    expect(r.options).toEqual(['🍕 Pizzerías', '🍔 Hamburguesas', '🐟 Mariscos y ceviches'])
+    // Quien llega aquí con un pedido sin pagar lo tiene CANCELADO por el
+    // llamador, no caducado: avisar no puede costar una falta.
+    expect(r.reply).not.toContain('El Puerto')
   })
 
   it('sin pedido en marcha, vuelve al menú directo', async () => {

@@ -440,15 +440,30 @@ export function responderAlMenu(
   estado: EstadoDeCompra,
   categorias: MarketplaceCategory[],
 ): MarketplaceReply {
-  if (estado.bloqueado && estado.negocio) {
-    return {
-      reply: `Tienes un pedido en proceso en *${estado.negocio.name}*.\n\n`
-        + 'Si vuelves al menú, ese pedido se queda sin terminar.\n\n'
-        + '¿Qué prefieres?',
-      options: [SI_REINICIAR, NO_CONTINUAR],
-      vista: { vista: 'confirmando_reinicio', pagina: 0 },
-    }
-  }
+  // ⚠️ MENÚ VA DIRECTO, SIEMPRE (decisión del dueño, 2026-09-05).
+  //
+  // Hasta ahora preguntaba «¿empezar de nuevo o seguir?» en cuanto había un
+  // local elegido. El dueño lo probó y lo dijo con razón: «se supone que MENÚ
+  // mata todo proceso, es la palabra clave y más fuerte».
+  //
+  // ⚠️ Y la pregunta era además FALSA en el caso más común. El candado se pone
+  // al ELEGIR el local, antes de que exista ningún pedido: el dueño eligió
+  // Monster Pizza, recibió el enlace, escribió MENÚ y le contestó «tienes un
+  // pedido en proceso» **sin tener ninguno**. Comprobado contra producción: 0
+  // pedidos abiertos. Se le pedía confirmar el descarte de algo que no existía.
+  //
+  // ⚠️ Y el propio mensaje del enlace dice «Para volver al inicio, escribe
+  // MENÚ». Prometer una salida y luego pedir permiso es lo que hace que la
+  // gente deje de creerse los textos.
+  //
+  // La pregunta NO desaparece: sigue saliendo ante cualquier OTRA cosa —otro
+  // texto, una foto—, que es cuando de verdad hace falta avisar de que hay
+  // algo abierto. Ver `recordarPedidoEnProceso` y `recordarComprobantePendiente`.
+  //
+  // ⚠️ Quien llega aquí con un pedido sin pagar lo tiene CANCELADO por el
+  // llamador, no caducado: escribir MENÚ es avisar, y avisar no puede costar
+  // una falta. El riesgo que queda —quien transfirió y aún no mandó la foto—
+  // se le expuso al dueño antes de decidir.
   return verCategorias(categorias, 0)
 }
 
@@ -460,9 +475,19 @@ export function responderAlMenu(
  */
 export function recordarPedidoEnProceso(
   negocio: { name: string },
+  /**
+   * `true` cuando solo hay un local elegido y todavía NINGÚN pedido.
+   *
+   * ⚠️ Sin esto el mensaje mentía: el candado se pone al elegir el local, así
+   * que a quien acababa de recibir el enlace se le decía «tienes un pedido en
+   * proceso» sin tener ninguno. Comprobado contra producción el 2026-09-05.
+   */
+  sinPedidoTodavia = false,
 ): MarketplaceReply {
   return {
-    reply: `Tienes un pedido en proceso en *${negocio.name}*.\n\n`
+    reply: (sinPedidoTodavia
+      ? `Estás pidiendo en *${negocio.name}*.\n\n`
+      : `Tienes un pedido en proceso en *${negocio.name}*.\n\n`)
       + 'Termínalo, o elige empezar de nuevo aquí abajo 👇',
     // ⚠️ Antes decía «escribe *MENÚ*» y no ofrecía nada. Escribir MENÚ llevaba
     // a una pregunta que MENÚ no podía responder, así que el cliente se quedaba

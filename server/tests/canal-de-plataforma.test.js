@@ -349,16 +349,28 @@ describe('el menú del marketplace, de punta a punta', () => {
       expect(ctx.conversacion.valor.selected_business_id).toBeNull()
     })
 
-    it('MENÚ con un pedido abierto PREGUNTA antes de tirarlo', async () => {
+    it('MENÚ con un pedido abierto va DIRECTO a las categorías', async () => {
+    // ⚠️ ESTA AFIRMACIÓN SE INVIRTIÓ EL 2026-09-05, y queda escrito por qué.
+    // Hasta esa fecha MENÚ preguntaba «¿empezar de nuevo o seguir?» en cuanto
+    // había un local elegido. El dueño lo probó y tenía razón dos veces:
+    //
+    //  · «MENÚ mata todo proceso, es la palabra clave y más fuerte», y el
+    //    propio mensaje del enlace dice «para volver al inicio, escribe MENÚ»;
+    //  · y la pregunta era FALSA en el caso más común — el candado se pone al
+    //    ELEGIR el local, así que a quien acababa de recibir el enlace se le
+    //    decía «tienes un pedido en proceso» sin tener ninguno (comprobado
+    //    contra producción: 0 pedidos abiertos).
+    //
+    // La pregunta NO desapareció: sale ante cualquier OTRA cosa —otro texto,
+    // una foto—, que es cuando de verdad hace falta avisar.
       const ctx = armar()
       conPedidoAbierto(ctx)
       await handle({ from: '593990978367', text: 'menú' }, ctx.deps)
       const ultimo = ctx.enviados.at(-1)
-      expect(ultimo.options).toHaveLength(2)
-      // ⚠️ Y NO suelta el local mientras pregunta: el cliente pudo escribir
-      // «menú» buscando ayuda, no queriendo perder lo que llevaba.
+      expect(ultimo.options).toEqual(['🍕 Pizzerías', '🍽️ Almuerzos'])
+      // Y suelta el local: MENÚ es salir, no preguntar si se quiere salir.
       const patches = ctx.database.advanceConversation.mock.calls.map(c => c[1])
-      expect(patches.every(p => !p.clearBusiness)).toBe(true)
+      expect(patches.some(p => p.clearBusiness)).toBe(true)
     })
 
     it('MENÚ sin pedido abierto vuelve a la portada directo', async () => {

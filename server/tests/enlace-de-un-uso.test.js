@@ -253,7 +253,11 @@ describe('con un local elegido no se vuelve atrás', () => {
     await handle({ from: '593999111222', text: '⬅️ Volver' }, deps)
 
     const ultimo = enviados.at(-1)
-    expect(ultimo.reply).toMatch(/pedido en proceso/i)
+    // ⚠️ «Estás pidiendo en X» desde el 2026-09-05: con el estado `en_local`
+    // el enlace ya salió pero NO hay pedido, y el texto anterior lo afirmaba.
+    // Lo que esta prueba vigila sigue siendo lo mismo: que «Volver» no cambie
+    // de local.
+    expect(ultimo.reply).toMatch(/Estás pidiendo en|pedido en proceso/i)
     expect(ultimo.reply).toContain('Monster Pizza')
     // Y NO la lista de categorías, que es a donde lleva «Volver» sin candado.
     expect(ultimo.options).toEqual([SI_REINICIAR, NO_CONTINUAR])
