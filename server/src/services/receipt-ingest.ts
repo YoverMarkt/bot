@@ -280,6 +280,25 @@ export const crearRegistroDeComprobantes = (dependencias: {
 }
 
 /**
+ * Las señales que RECHAZAN un comprobante sin pasar por el dueño.
+ *
+ * Todas dicen lo mismo: hay un dato que está y contradice al pedido. Lo que no
+ * está en esta lista no rechaza — ni la ausencia de un dato (foto borrosa) ni
+ * que pague otra persona (lo normal en una familia).
+ *
+ * ⚠️ Se listan por NOMBRE y no por severidad a propósito: la severidad dice
+ * cuánto preocupa, no si es una contradicción. `sin_banco` es `alta` y no
+ * puede rechazar; `pagado_por_otro` es `media` y tampoco.
+ */
+const CONTRADICE = new Set([
+  'cuenta_incorrecta',
+  'monto_menor',
+  'moneda_distinta',
+  'fecha_futura',
+  'fecha_antigua',
+])
+
+/**
  * ¿Lo leído CUADRA con este pedido?
  *
  * Es la segunda pregunta del comprobante, y la que faltaba. `analizarComprobante`
@@ -311,7 +330,7 @@ export const crearCuadreDelComprobante = (dependencias: {
 }) => async (input: {
   businessId: string
   analisis: unknown
-  esperado: { total: number; createdAt: string | null }
+  esperado: { total: number; createdAt: string | null; clienteNombre?: string | null }
 }): Promise<{
   critica: { flag_type: string; description: string } | null
   limpio: boolean
@@ -335,7 +354,23 @@ export const crearCuadreDelComprobante = (dependencias: {
       { ...input.esperado, cuenta },
       reglas,
     )
-    const critica = senales.find(senal => senal.severity === 'critica') || null
+    // ⚠️ Lo que corta son las CONTRADICCIONES, no la severidad (2026-09-01).
+    //
+    // Decisión del dueño: «todos los datos de un comprobante tienen que
+    // coincidir». Una contradicción es un dato que ESTÁ y no cuadra: el dinero
+    // fue a otra cuenta, es menos de lo que cuesta, otra moneda, o la fecha no
+    // puede ser la de este pedido.
+    //
+    // ⚠️ La AUSENCIA de un dato nunca corta —`sin_banco`, `sin_referencia`,
+    // `sin_fecha`, `ilegible`—. Eso no dice que el pago sea falso, dice que la
+    // foto salió mal, y rechazar ahí es la forma más rápida de perder a alguien
+    // que pagó de verdad. Es la misma regla que ya rige la portería.
+    //
+    // ⚠️ Y `pagado_por_otro` tampoco corta, aunque sea una contradicción:
+    // pagar desde la cuenta de la pareja o de la madre es lo normal. Va a
+    // revisión para que lo vea el dueño.
+    const contradice = senales.find(senal => CONTRADICE.has(senal.flag_type)) || null
+    const critica = contradice
     return {
       critica: critica
         ? { flag_type: critica.flag_type, description: critica.description }

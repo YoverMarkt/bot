@@ -162,7 +162,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 81 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 82 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -175,6 +175,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - Umbani es CERRADO: el comprobante no suelta el candado
 - Tres situaciones, tres mensajes
 - El comprobante que NO cuadra se rechaza solo
+- Que pague OTRA persona va a REVISIÓN, y el cliente no se entera
 - Cuatro marcadores, y ninguno se puede confundir
 - Dos puertas más en la mini app
 - UNA SOLA definición de «bloqueado», y la mini app la respeta

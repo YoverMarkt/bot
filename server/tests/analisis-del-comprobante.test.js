@@ -537,7 +537,12 @@ describe('LA COMPUERTA: la foto que no es un comprobante', () => {
 
     expect(registrarHuella).toHaveBeenCalledWith(expect.objectContaining({
       analisis,
-      esperado: { total: 20, createdAt: '2026-08-22T14:00:00Z' },
+      // ⚠️ `clienteNombre` viaja desde el 2026-09-01: es con lo que se compara
+      // el ORDENANTE. Que no coincida no rechaza —pagar desde la cuenta de la
+      // pareja es normal— pero el dueño tiene que verlo marcado.
+      esperado: {
+        total: 20, createdAt: '2026-08-22T14:00:00Z', clienteNombre: null,
+      },
     }))
   })
 

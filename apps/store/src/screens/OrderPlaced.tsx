@@ -341,7 +341,12 @@ export default function OrderPlaced({
                   // local» es mandarlo a un WhatsApp que no existe. Es el mismo
                   // arreglo que ya se hizo en `Gate.tsx` con «escríbele al
                   // negocio».
-                  ? `Envía la captura de tu transferencia al chat de ${business.phoneIsPlatform ? 'Umbani' : 'el local'}. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.`
+                  // ⚠️ «a tu nombre» se dice POR DELANTE, sin que haya pasado
+                  // nada (2026-09-01). Es la instrucción, no un reproche: si
+                  // solo apareciera al rechazar un comprobante, parecería una
+                  // norma inventada sobre la marcha justo cuando la persona
+                  // ya transfirió.
+                  ? `Envía la captura de tu transferencia al chat de ${business.phoneIsPlatform ? 'Umbani' : 'el local'}. Tiene que estar a tu nombre. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.`
                   : entrega === 'delivery'
                     ? 'Te escribimos cuando el local empiece a prepararlo, cuando salga para tu dirección y cuando llegue.'
                     : 'Te escribimos cuando el local empiece a prepararlo y cuando esté listo para que pases a retirarlo.'}

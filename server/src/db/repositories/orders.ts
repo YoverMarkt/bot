@@ -114,7 +114,10 @@ const pedidosEsperandoComprobante = async (
     // ⚠️ `customer_id` viaja desde el 2026-09-01: es a quien se le cuenta el
     // rechazo cuando la imagen no era un comprobante, y el local sale de aquí
     // —del PEDIDO— nunca del número por el que llegó la foto.
-    .select('id, business_id, customer_id, order_number, total, contact_phone, created_at, businesses(name)')
+    // ⚠️ `contact_name` viaja desde el 2026-09-01: es con lo que se compara
+    // el ORDENANTE del comprobante. No rechaza —pagar desde la cuenta de
+    // la pareja es normal— pero el dueño tiene que verlo.
+    .select('id, business_id, customer_id, order_number, total, contact_phone, contact_name, created_at, businesses(name)')
     .eq('status', 'esperando_pago')
     .is('payment_proof_url', null)
     .is('payment_confirmed_at', null)
@@ -132,6 +135,8 @@ const pedidosEsperandoComprobante = async (
     order_number: number | null
     total: number | null
     contact_phone: string | null
+    /** Con quién se pidió: se compara contra el ordenante del comprobante. */
+    contact_name: string | null
     // Ya venía en el `select` pero no estaba declarado, así que el análisis no
     // lo veía: es con lo que se detecta un comprobante viejo reciclado.
     created_at: string | null

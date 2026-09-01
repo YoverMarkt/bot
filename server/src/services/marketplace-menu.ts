@@ -483,7 +483,7 @@ export function recordarComprobantePendiente(
 ): MarketplaceReply {
   return {
     reply: `Tienes un pedido en *${negocio.name}* esperando tu comprobante.\n\n`
-      + 'Mándanos aquí la foto de tu transferencia y el local empieza a '
+      + 'Mándanos aquí la foto de tu transferencia —a tu nombre— y el local empieza a '
       + 'prepararlo 📸\n\n'
       + 'Si prefieres dejarlo y pedir en otro local, elige *empezar de nuevo*.',
     options: [SI_REINICIAR, NO_CONTINUAR],
