@@ -128,3 +128,45 @@ describe('el aviso al bloqueado', () => {
     expect(update).toMatch(/blocked_at: null, blocked_until: null/)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PERDONAR ES PERDONAR ENTERO (2026-09-03)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Salió de una pregunta del dueño sobre el contador de pedidos expirados.
+// `unpaid_expiries` no se ponía a cero NUNCA: ni comprando bien, ni con el
+// «Desbloquear» del panel. Con el límite en 2 y el contador en 4, el dueño
+// levantaba el bloqueo y el cliente seguía a UN paso del siguiente — el
+// próximo pedido que se le caducara lo bloqueaba otra vez.
+//
+// El perdón duraba hasta el primer tropiezo, que no es perdonar.
+
+describe('desbloquear limpia también la pizarra', () => {
+  const leerFuente = () => {
+    const fs = require('node:fs')
+    const repo = fs.readFileSync('src/db/repositories/storefront.ts', 'utf8')
+    const fn = repo.slice(repo.indexOf('const setContactBlocked'))
+    return fn.slice(0, fn.indexOf('fail(error'))
+  }
+
+  it('pone a cero los DOS contadores al desbloquear', () => {
+    const update = leerFuente()
+    // La rama que desbloquea: la que pone `blocked_at: null`.
+    const desbloquea = update.slice(update.indexOf('blocked_at: null'))
+    expect(desbloquea).toContain('unpaid_expiries: 0')
+    expect(desbloquea).toContain('rejected_receipts: 0')
+  })
+
+  it('y NO los toca al bloquear: ahí no se perdona nada', () => {
+    // Bloquear es lo contrario de perdonar. Borrarle la pizarra al castigarlo
+    // le regalaría dos faltas limpias en cuanto se levante el bloqueo.
+    // Se mira el OBJETO de la rama que bloquea, no un tramo del archivo: el
+    // comentario que explica el arreglo nombra los dos contadores, y cortar
+    // por posición lo metía dentro.
+    const update = leerFuente()
+    const objeto = update.match(/\{ blocked_at: ahora[^}]*\}/)
+    expect(objeto, 'no se encontró la rama que bloquea').toBeTruthy()
+    expect(objeto[0]).not.toContain('unpaid_expiries')
+    expect(objeto[0]).not.toContain('rejected_receipts')
+  })
+})

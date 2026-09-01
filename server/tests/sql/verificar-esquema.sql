@@ -4514,3 +4514,89 @@ end;
 $$;
 
 select '✅ el comprobante falso bloquea, expira su pedido, suelta el candado y no cuenta dos veces' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LA PIZARRA SE LIMPIA CUANDO EL LOCAL ACEPTA (2026-09-03)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `unpaid_expiries` no se ponía a cero NUNCA: ni comprando bien, ni pagando
+-- puntual, ni con el «Desbloquear» del dueño. El límite son 2, así que alguien
+-- que dejó dos pedidos tirados hace un año quedaba marcado de por vida — y
+-- cada pedido que se le caducara volvía a bloquearlo 30 minutos, para siempre.
+--
+-- En un local con clientes reales eso golpea sobre todo a los que MÁS piden,
+-- que son los que tienen más ocasiones de que se les pase la ventana una vez.
+--
+-- Ahora se cuenta la RACHA, no el historial — la misma regla que ya seguía
+-- `rejected_receipts`, escrita en el código desde entonces.
+do $$
+declare
+  v_local   uuid;
+  v_otro    uuid;
+  v_cliente uuid;
+  v_pedido  uuid;
+  v_faltas  integer;
+  v_fotos   integer;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values
+    ('pizarra-uno-v', 'Pizza', 'pizzeria', 'ycloud', '+593900444301', '+593900444301', true, 'miniapp'),
+    ('pizarra-dos-v', 'Otra', 'pizzeria', 'ycloud', '+593900444302', '+593900444302', true, 'miniapp');
+  select id into v_local from businesses where slug = 'pizarra-uno-v';
+  select id into v_otro  from businesses where slug = 'pizarra-dos-v';
+
+  insert into public.customers (phone) values ('593900444400') returning id into v_cliente;
+  insert into public.business_customers (business_id, customer_id, unpaid_expiries, rejected_receipts)
+  values (v_local, v_cliente, 4, 3);
+  insert into public.business_customers (business_id, customer_id, unpaid_expiries, rejected_receipts)
+  values (v_otro, v_cliente, 2, 1);
+
+  insert into public.orders (business_id, customer_id, contact_phone, source, status, subtotal, total)
+  values (v_local, v_cliente, '593900444400', 'storefront', 'pago_en_revision', 9, 9)
+  returning id into v_pedido;
+
+  -- ── 1. Mientras el local no lo acepte, la pizarra NO se toca ────────────
+  update public.orders set status = 'cancelado' where id = v_pedido;
+  select unpaid_expiries into v_faltas
+    from public.business_customers where business_id = v_local and customer_id = v_cliente;
+  if v_faltas <> 4 then
+    raise exception 'cancelar un pedido limpió la pizarra: %', v_faltas;
+  end if;
+
+  -- ── 2. Aceptarlo SÍ la limpia ───────────────────────────────────────────
+  update public.orders set status = 'preparacion' where id = v_pedido;
+  select unpaid_expiries, rejected_receipts into v_faltas, v_fotos
+    from public.business_customers where business_id = v_local and customer_id = v_cliente;
+  if v_faltas <> 0 or v_fotos <> 0 then
+    raise exception 'el local aceptó y la pizarra no se limpió: impagos=% fotos=%', v_faltas, v_fotos;
+  end if;
+
+  -- ── 3. Y SOLO en ese local ──────────────────────────────────────────────
+  -- La confianza se gana con quien se compra: haber sido buen cliente en una
+  -- pizzería no dice nada de cómo se porta uno en otra.
+  select unpaid_expiries into v_faltas
+    from public.business_customers where business_id = v_otro and customer_id = v_cliente;
+  if v_faltas <> 2 then
+    raise exception 'se limpió la pizarra de OTRO local: %', v_faltas;
+  end if;
+
+  -- ── 4. Avanzar dentro del grupo no vuelve a escribir ────────────────────
+  -- `preparacion` → `en_camino` es el mismo pedido avanzando, no una segunda
+  -- demostración.
+  update public.business_customers set unpaid_expiries = 1
+   where business_id = v_local and customer_id = v_cliente;
+  update public.orders set status = 'en_camino' where id = v_pedido;
+  select unpaid_expiries into v_faltas
+    from public.business_customers where business_id = v_local and customer_id = v_cliente;
+  if v_faltas <> 1 then
+    raise exception 'avanzar dentro del grupo volvió a limpiar: %', v_faltas;
+  end if;
+
+  delete from businesses where id in (v_local, v_otro);
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ la pizarra se limpia cuando el local acepta: solo ahí, solo en ese local y una vez por pedido' as resultado;

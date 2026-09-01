@@ -13491,6 +13491,58 @@ comment on function public.orders_release_shopping_lock() is
   'Al entrar en revisión marca la conversación para que el bot no pida una foto '
   'que ya llegó. Decisión del dueño 2026-08-30: Umbani cerrado en WhatsApp.';
 
+create or replace function public.orders_clear_customer_strikes()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  -- El local lo dio por bueno. Desde `confirmado` en adelante ya hay una
+  -- decisión del dueño detrás.
+  v_aceptados constant text[] := array[
+    'confirmado', 'aceptado', 'preparacion',
+    'listo_para_retiro', 'en_camino', 'completado'
+  ];
+begin
+  if new.customer_id is null then
+    return new;
+  end if;
+
+  -- Solo al ENTRAR en el grupo: pasar de `preparacion` a `en_camino` no es una
+  -- segunda demostración, es el mismo pedido avanzando.
+  if not (new.status = any(v_aceptados)) or old.status = any(v_aceptados) then
+    return new;
+  end if;
+
+  begin
+    update public.business_customers
+       set unpaid_expiries   = 0,
+           rejected_receipts = 0,
+           updated_at        = now()
+     where business_id = new.business_id
+       and customer_id = new.customer_id
+       -- Sin esto se escribiría una fila en cada pedido de cada cliente bueno,
+       -- que son casi todos.
+       and (unpaid_expiries > 0 or rejected_receipts > 0);
+  exception when others then
+    null;
+  end;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_clear_customer_strikes on public.orders;
+create trigger orders_clear_customer_strikes
+  after update of status on public.orders
+  for each row execute function public.orders_clear_customer_strikes();
+
+comment on function public.orders_clear_customer_strikes() is
+  'Cuando el local ACEPTA un pedido, la pizarra de esa persona en ese local se '
+  'borra: se cuenta la racha, no el historial. Misma regla que ya seguía '
+  'rejected_receipts, ahora también para unpaid_expiries.';
+
 create index if not exists idx_orders_abiertos_por_persona
   on public.orders (customer_id, status, created_at)
   where source = 'storefront';
