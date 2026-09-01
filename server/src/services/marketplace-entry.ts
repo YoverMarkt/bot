@@ -522,7 +522,21 @@ export async function handleMarketplaceMessage(
     // ⚠️ Emitirlo NO le mata la sesión que ya tenga abierta: la revocación
     // respeta el local vigente a propósito, o recargar con un token nuevo le
     // vaciaría el carrito.
-    if (continua && conversation?.selected_business_id) {
+    // ⚠️ A quien DEBE el comprobante NO se le manda el enlace (2026-09-04).
+    //
+    // El botón dice «Ver la carta», y esa es exactamente la invitación
+    // equivocada: esta persona no puede pedir nada más hasta cerrar lo que ya
+    // pidió. El dueño lo dijo probándolo: «no debería darme la opción de ver
+    // la carta porque tengo que completar el pedido para hacer otro».
+    //
+    // ⚠️ No la deja sin nada: su enlace SIGUE VIVO —está unos mensajes más
+    // arriba en el mismo chat, y la revocación respeta el local vigente— y los
+    // datos para transferir viven ahí. Lo único que se retira es la invitación
+    // a seguir mirando, que es lo que sobra.
+    //
+    // El enlace SÍ se manda a quien está a medio armar el carrito: ahí volver
+    // a la carta es justo lo que necesita.
+    if (continua && conversation?.selected_business_id && !estado.esperandoComprobante) {
       await devolverElEnlace(
         deps, customer, from, conversation.selected_business_id, respuesta,
       )
