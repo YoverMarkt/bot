@@ -72,8 +72,58 @@ export const VOLVER = '⬅️ Volver'
 export const PAGINA = 9
 
 const SALUDO = '👋 ¡Hola! Bienvenido a *Umbani*.'
+
+/**
+ * La bienvenida de quien VUELVE al inicio: MENÚ y «✅ Empezar de nuevo».
+ *
+ * ⚠️ Es un texto aparte del `SALUDO` a propósito. «Bienvenido a Umbani» se le
+ * dice a quien llega; a quien ya está dentro y vuelve al inicio se le reconoce
+ * que vuelve. Hasta el 2026-09-06 escribir MENÚ devolvía «¿Qué deseas pedir?»
+ * a secas, y el dueño lo dijo probándolo: sonaba «como una pregunta simple»,
+ * sin nada delante.
+ *
+ * ⚠️ NO cuesta un mensaje de más. Va dentro del mismo envío que la lista de
+ * categorías —la línea de más es texto, no otro mensaje—, así que el motivo
+ * que tenía escrito la prueba («sería un mensaje que se paga») no era cierto.
+ * Lo que sí se evita es saludar en mitad de la navegación: ver `verCategorias`.
+ */
+const REGRESO = '👋 ¡Qué bueno tenerte de vuelta en *Umbani*!'
+
 const PREGUNTA = '¿Qué deseas pedir?'
-const NO_ENTENDI = '🙏 No te entendí. Elige una opción de la lista 👇'
+
+/**
+ * La portada cuando el cliente NO eligió de la lista.
+ *
+ * ⚠️ Dice qué se puede hacer aquí, no solo que se falló. `PREGUNTA` a secas
+ * detrás de un reproche deja al cliente sin saber por qué su mensaje no valía
+ * —sobre todo si mandó una foto—, y este chat solo hace una cosa: llevar al
+ * local correcto.
+ */
+const GUIA = 'Por este chat se pide en *Umbani*: elige una categoría y te llevo al local 👇'
+
+const NO_ENTENDI = '🙏 Eso no lo pude entender.'
+
+/**
+ * Lo que se responde a un mensaje que NO es texto.
+ *
+ * ⚠️ Estas claves son los marcadores literales que pone `inbound-webhook.ts`
+ * cuando llega una foto, un audio o una ubicación al número del marketplace y
+ * no hay nada que hacer con ellos (sin pedido esperando pago, la media ni
+ * siquiera se descarga). Antes caían aquí como texto cualquiera y recibían el
+ * mismo «no te entendí» que un «asdfghjkl»: el dueño mandó una foto probando y
+ * lo vio. Decirle a alguien que no se le entendió cuando lo que hizo fue
+ * mandar una foto perfectamente clara es de las cosas que hacen que una app
+ * parezca tonta — misma lección que `marketplaceKnownTerm` con «pollo».
+ *
+ * ⚠️ Van SIN reproche: no se equivocó de opción, mandó algo que este chat
+ * todavía no usa. Y lo que sigue —la guía o la lista donde estaba— le dice qué
+ * sí puede hacer.
+ */
+const ADJUNTOS = new Map<string, string>([
+  ['[foto]', '📷 Recibí tu foto, pero por aquí no me sirve todavía.'],
+  ['[nota de voz]', '🎤 Recibí tu nota de voz, pero por aquí todavía no puedo escucharla.'],
+  ['[ubicacion]', '📍 Recibí tu ubicación, pero ahora mismo no me hace falta.'],
+])
 
 /** Sin acentos ni mayúsculas: el cliente escribe «pizzerias» y también vale. */
 const normalizar = (valor: string): string => String(valor || '')
@@ -125,6 +175,38 @@ export function esSaludo(mensaje: string): boolean {
     PALABRAS_DE_SALUDO.has(palabra.replace(/(.)\1+$/, '$1'))
   ))
 }
+
+/**
+ * Lo que se le dice a quien mandó algo que este chat no usa, en vez del
+ * reproche de siempre.
+ *
+ * Devuelve `null` cuando el mensaje es texto de verdad — entonces manda
+ * `NO_ENTENDI`. Se compara sobre el texto NORMALIZADO, así que las claves van
+ * sin tilde aunque el marcador real sea «[ubicación]».
+ */
+const textoDeAdjunto = (mensaje: string): string | null => (
+  ADJUNTOS.get(normalizar(mensaje)) ?? null
+)
+
+/**
+ * ¿Lo que llegó fue una foto, un audio o una ubicación en vez de texto?
+ *
+ * ⚠️ Lo usa `marketplace-entry` para NO mandar «[foto]» a la búsqueda de
+ * locales. Eran dos consultas a la base —la búsqueda y el diccionario de
+ * términos— por cada foto suelta, y ninguna de las dos puede encontrar nada:
+ * el marcador no es algo que el cliente quiera comer.
+ */
+export const esAdjuntoSinTexto = (mensaje: string): boolean => (
+  textoDeAdjunto(mensaje) !== null
+)
+
+/** Con qué se abre la portada: nada, la bienvenida, o el «de vuelta». */
+const cabecera = (saludar: boolean | 'vuelta'): string => (
+  saludar === 'vuelta' ? `${REGRESO}\n\n` : saludar ? `${SALUDO}\n\n` : ''
+)
+
+/** El encabezado del «no casó con la lista», según lo que llegó. */
+const reproche = (mensaje: string): string => textoDeAdjunto(mensaje) ?? NO_ENTENDI
 
 const etiquetaCategoria = (categoria: MarketplaceCategory): string => (
   categoria.emoji ? `${categoria.emoji} ${categoria.label}` : categoria.label
@@ -181,11 +263,21 @@ export function elegir(mensaje: string, opciones: string[]): string | null {
   return null
 }
 
-/** La portada: las categorías que hoy tienen locales detrás. */
+/**
+ * La portada: las categorías que hoy tienen locales detrás.
+ *
+ * `saludar` tiene TRES estados, no dos (2026-09-06):
+ *   · `false` — repintado normal. Es el de «⬅️ Volver» y el de una categoría
+ *     que se quedó sin locales: el cliente no se ha ido a ninguna parte, y
+ *     saludarlo ahí leería como si hubiera vuelto al principio.
+ *   · `true` — llega por primera vez, o saludó. Recibe `SALUDO`.
+ *   · `'vuelta'` — volvió al inicio a propósito (MENÚ, «✅ Empezar de nuevo»).
+ *     Recibe `REGRESO`.
+ */
 export function verCategorias(
   categorias: MarketplaceCategory[],
   pagina = 0,
-  saludar = false,
+  saludar: boolean | 'vuelta' = false,
 ): MarketplaceReply {
   if (!categorias.length) {
     return {
@@ -196,7 +288,7 @@ export function verCategorias(
   }
   const { hayMas, opciones } = paginar(categorias, pagina, etiquetaCategoria)
   return {
-    reply: `${saludar ? `${SALUDO}\n\n` : ''}${PREGUNTA}`,
+    reply: `${cabecera(saludar)}${PREGUNTA}`,
     options: [...opciones, ...(hayMas ? [VER_MAS] : [])],
     vista: { vista: 'categorias', pagina },
   }
@@ -313,7 +405,7 @@ export function paso(input: PasoInput): MarketplaceReply {
     // para que el llamador busque de nuevo antes de reprocharle nada.
     const repetir = verResultados(vista.consulta, negocios, vista.pagina)
     if (repintar || esSaludo(mensaje)) return repetir
-    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
+    return { ...repetir, reply: `${reproche(mensaje)}\n\n${repetir.reply}`, noEntendido: true }
   }
 
   if (vista.vista === 'negocios' && vista.categoria) {
@@ -344,7 +436,7 @@ export function paso(input: PasoInput): MarketplaceReply {
     // ya está dentro de una categoría, y darle la bienvenida otra vez leería
     // como si hubiera vuelto al principio.
     if (repintar || esSaludo(mensaje)) return repetir
-    return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
+    return { ...repetir, reply: `${reproche(mensaje)}\n\n${repetir.reply}`, noEntendido: true }
   }
 
   // Estamos en la portada.
@@ -371,8 +463,15 @@ export function paso(input: PasoInput): MarketplaceReply {
       categorias, vista.pagina, Boolean(input.primerContacto) || saluda,
     )
   }
+  // ⚠️ Aquí NO se repite `PREGUNTA`, se explica (2026-09-06). «No te entendí.
+  // ¿Qué deseas pedir?» deja al cliente sin saber qué esperaba el bot — y el
+  // caso más común no es fallar una opción, es mandar una foto.
   const repetir = verCategorias(categorias, vista.pagina)
-  return { ...repetir, reply: `${NO_ENTENDI}\n\n${repetir.reply}`, noEntendido: true }
+  return {
+    ...repetir,
+    reply: `${reproche(mensaje)}\n\n${GUIA}`,
+    noEntendido: true,
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -464,7 +563,12 @@ export function responderAlMenu(
   // llamador, no caducado: escribir MENÚ es avisar, y avisar no puede costar
   // una falta. El riesgo que queda —quien transfirió y aún no mandó la foto—
   // se le expuso al dueño antes de decidir.
-  return verCategorias(categorias, 0)
+  //
+  // ⚠️ Y se saluda DE VUELTA (2026-09-06). Quien escribe MENÚ vuelve al
+  // inicio, no navega: recibía «¿Qué deseas pedir?» a secas, que es lo que el
+  // dueño describió como «una pregunta simple» al probarlo. No cuesta un
+  // mensaje más — la línea viaja dentro del mismo envío que las categorías.
+  return verCategorias(categorias, 0, 'vuelta')
 }
 
 /**
@@ -570,7 +674,13 @@ export function resolverReinicio(
   const elegida = elegir(mensaje, [SI_REINICIAR, NO_CONTINUAR])
 
   if (elegida === SI_REINICIAR) {
-    return { reinicia: true, continua: false, respuesta: verCategorias(categorias, 0) }
+    // Vuelve al inicio igual que MENÚ, así que se le saluda igual: son la
+    // misma puerta, una tocada y otra escrita.
+    return {
+      reinicia: true,
+      continua: false,
+      respuesta: verCategorias(categorias, 0, 'vuelta'),
+    }
   }
   if (elegida === NO_CONTINUAR) {
     // ⚠️ Lo que falta NO es lo mismo según dónde esté (2026-09-04). A quien ya
@@ -620,7 +730,7 @@ export function resolverReinicio(
     reinicia: false,
     continua: false,
     respuesta: {
-      reply: `${NO_ENTENDI}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
+      reply: `${reproche(mensaje)}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
       options: [SI_REINICIAR, NO_CONTINUAR],
       vista: { vista: 'confirmando_reinicio', pagina: 0 },
     },
