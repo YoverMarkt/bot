@@ -45,7 +45,7 @@ import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 import productOptionsRouter = require('./routes/product-options.routes')
 import catalogStructureRouter = require('./routes/catalog-structure.routes')
 import storefrontRouter = require('./routes/storefront.routes')
-import { cachearEstaticos } from './lib/cache-estaticos'
+import { cachearEstaticos, enviarHtmlDeSpa } from './lib/cache-estaticos'
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
@@ -215,14 +215,14 @@ app.use(express.json({
 const clientDist = path.join(projectRoot, 'apps/client/dist')
 const adminDist = path.join(projectRoot, 'apps/admin/dist')
 app.use('/app', express.static(clientDist, { setHeaders: cachearEstaticos }))
-app.get('/app/*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+app.get('/app/*', (_req, res) => enviarHtmlDeSpa(res, path.join(clientDist, 'index.html')))
 app.use('/app-admin', express.static(adminDist, { setHeaders: cachearEstaticos }))
-app.get('/app-admin/*', (_req, res) => res.sendFile(path.join(adminDist, 'index.html')))
+app.get('/app-admin/*', (_req, res) => enviarHtmlDeSpa(res, path.join(adminDist, 'index.html')))
 // Mini app del negocio: /t/<slug>. La ruta es corta a propósito, porque el
 // enlace viaja dentro de un mensaje de WhatsApp.
 const storeDist = path.join(projectRoot, 'apps/store/dist')
 app.use('/t', express.static(storeDist, { setHeaders: cachearEstaticos }))
-app.get('/t/*', (_req, res) => res.sendFile(path.join(storeDist, 'index.html')))
+app.get('/t/*', (_req, res) => enviarHtmlDeSpa(res, path.join(storeDist, 'index.html')))
 // Páginas legales públicas de Vezzper (sin login): las necesita Meta y las ven
 // los clientes. Se sirven como HTML estático desde server/public.
 const legalRoot = path.join(serverRoot, 'public')

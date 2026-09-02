@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { cachearEstaticos, esInmutable } = require('../dist/lib/cache-estaticos')
+const {
+  cachearEstaticos, esInmutable, enviarHtmlDeSpa, SIN_CACHE,
+} = require('../dist/lib/cache-estaticos')
 const router = require('../dist/routes/storefront.routes')
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -48,6 +50,26 @@ describe('qué se guarda el navegador y qué no', () => {
     expect(html).toContain('no-store')
     expect(html).not.toContain('immutable')
     expect(html).not.toContain('max-age=31536000')
+  })
+
+  // ⚠️ ESTA ES LA PRUEBA QUE FALTABA, y el hueco se vio MIDIENDO PRODUCCIÓN,
+  // no leyendo el código (2026-09-06). `/t/<slug>` nunca casa con un archivo
+  // del disco —no existe un archivo con el nombre del negocio—, así que no lo
+  // sirve `express.static` sino el comodín `/t/*`, y `res.sendFile` NO pasa
+  // por `setHeaders`. La prueba de arriba decía la verdad sobre una función
+  // que, para el HTML de verdad, nadie ejecutaba.
+  it('el HTML del comodín /t/<slug> también sale sin caché', () => {
+    let cabecera = null
+    let enviado = null
+    enviarHtmlDeSpa({
+      setHeader: (k, v) => { if (k === 'Cache-Control') cabecera = v },
+      sendFile: (ruta) => { enviado = ruta },
+    }, '/apps/store/dist/index.html')
+
+    expect(cabecera).toBe(SIN_CACHE)
+    expect(cabecera).toContain('no-store')
+    // Y sigue enviando el archivo: la cabecera no puede costar la respuesta.
+    expect(enviado).toBe('/apps/store/dist/index.html')
   })
 
   it('lo que no lleva hash se guarda poco, no para siempre', () => {

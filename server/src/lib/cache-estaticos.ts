@@ -18,6 +18,9 @@
 
 import type { Response } from 'express'
 
+/** La cabecera del HTML de una SPA: no se guarda, nunca. */
+export const SIN_CACHE = 'no-cache, no-store, must-revalidate'
+
 /** Un año. Lo máximo que la especificación recomienda anunciar. */
 const UN_ANIO = 31536000
 
@@ -55,4 +58,29 @@ export const cachearEstaticos = (response: Response, filePath: string): void => 
       // corrección tarde en verse.
       : 'public, max-age=3600',
   )
+}
+
+/**
+ * Sirve el `index.html` de una SPA con la cabecera correcta.
+ *
+ * ⚠️ EXISTE PORQUE `setHeaders` NO SE APLICA AQUÍ, y se descubrió midiendo
+ * producción, no leyendo el código (2026-09-06). Las rutas comodín
+ * —`/t/*`, `/app/*`, `/app-admin/*`— no las atiende `express.static`: cuando
+ * la ruta no casa con ningún archivo del disco (que es SIEMPRE en `/t/<slug>`,
+ * porque no existe un archivo con el nombre del negocio) responde el
+ * `res.sendFile` del comodín, que **no pasa por `setHeaders`**.
+ *
+ * Resultado antes de esto: `cachearEstaticos` marcaba el `.html` con
+ * `no-store`, la prueba lo comprobaba y pasaba… y el HTML que de verdad
+ * recibía el cliente salía con el `public, max-age=0` por defecto de
+ * `sendFile`. La función era correcta y nadie la ejecutaba para ese caso — el
+ * patrón «construido y desconectado» que persigue la skill `camino-real`.
+ *
+ * En la práctica `max-age=0` también revalida, así que no llegó a romper nada;
+ * lo que rompía era la confianza en la prueba, que afirmaba algo cierto sobre
+ * una función que no estaba en el camino.
+ */
+export const enviarHtmlDeSpa = (response: Response, htmlPath: string): void => {
+  response.setHeader('Cache-Control', SIN_CACHE)
+  response.sendFile(htmlPath)
 }
