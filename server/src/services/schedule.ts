@@ -51,6 +51,28 @@ const minutosDe = (hora: string): number => {
 }
 
 /**
+ * El cierre, con «23:59» entendido como el FINAL DEL DÍA.
+ *
+ * ⚠️ Nace de cómo configura el dueño de verdad (2026-09-02). Su modelo es
+ * partir la noche en dos filas —«lunes 08:00–23:59» y «martes 00:00–03:00»—
+ * en vez de cruzar la medianoche, y es más claro: no hay que preguntarse a
+ * qué día pertenece una madrugada.
+ *
+ * Pero el tramo se evalúa con el cierre EXCLUIDO (`minutos < cierra`), así que
+ * «hasta las 23:59» dejaba la tienda cerrada durante **un minuto entero**
+ * justo antes de medianoche — a las 23:59:30 el cliente veía «Cerrado» y se
+ * iba, en hora punta.
+ *
+ * Nadie escribe 23:59 queriendo cerrar sesenta segundos antes de las doce: lo
+ * escribe queriendo decir «hasta el final». Se trata como 24:00, que es lo que
+ * significa, y con eso las dos filas del dueño encajan sin hueco.
+ */
+const cierreEfectivo = (hora: string): number => {
+  const minutos = minutosDe(hora)
+  return minutos === MINUTOS_DEL_DIA - 1 ? MINUTOS_DEL_DIA : minutos
+}
+
+/**
  * ¿Está el negocio abierto a esta hora, según la fila de ese día?
  *
  * ⚠️ El horario puede CRUZAR LA MEDIANOCHE. «09:00 a 01:00» significa que la
@@ -64,7 +86,7 @@ const minutosDe = (hora: string): number => {
  */
 const dentroDelTramo = (config: ScheduleRecord, minutos: number): boolean => {
   const abre = minutosDe(config.open_time)
-  const cierra = minutosDe(config.close_time)
+  const cierra = cierreEfectivo(config.close_time)
   // Cierre ANTERIOR a la apertura = el tramo salta al día siguiente.
   //
   // Estrictamente menor, no «menor o igual»: «00:00 a 00:00» es un tramo de
@@ -108,7 +130,7 @@ const turnoVigente = (
   const hoy = active.find(day => day.day_of_week === diaDeHoy)
   if (hoy && minutos >= minutosDe(hoy.open_time) && dentroDelTramo(hoy, minutos)) {
     const abre = minutosDe(hoy.open_time)
-    const cierra = minutosDe(hoy.close_time)
+    const cierra = cierreEfectivo(hoy.close_time)
     // Si cruza, cierra MAÑANA: lo que falta pasa por la medianoche.
     vivos.push({
       config: hoy,
@@ -119,9 +141,9 @@ const turnoVigente = (
   // Y la cola del de ayer, si de verdad cruzaba la medianoche.
   const vispera = active.find(day => day.day_of_week === (diaDeHoy + 6) % 7)
   if (vispera
-    && minutosDe(vispera.close_time) < minutosDe(vispera.open_time)
-    && minutos < minutosDe(vispera.close_time)) {
-    vivos.push({ config: vispera, faltan: minutosDe(vispera.close_time) - minutos })
+    && cierreEfectivo(vispera.close_time) < minutosDe(vispera.open_time)
+    && minutos < cierreEfectivo(vispera.close_time)) {
+    vivos.push({ config: vispera, faltan: cierreEfectivo(vispera.close_time) - minutos })
   }
 
   if (!vivos.length) return null
@@ -193,4 +215,57 @@ function todaysHours(
     : null
 }
 
-export { scheduleToText, buildScheduleMessage, isOutsideHours, todaysHours }
+
+/**
+ * Cuándo vuelve a abrir, para el cliente que llega con la tienda cerrada.
+ *
+ * ⚠️ Nace de un fallo que el dueño vio en su teléfono (2026-09-02): a la 01:10
+ * de un miércoles con el miércoles configurado de 08:00 a 02:00, la portada
+ * decía «Cerrado · 8:00 AM – 2:00 AM». El estado era CORRECTO —esa madrugada
+ * pertenece al martes, que cerraba a las 22:00— pero cualquiera lee «cierra a
+ * las 2 AM», mira el reloj y piensa que debería poder pedir. Le pasó a él, que
+ * conoce el sistema.
+ *
+ * El rango del día solo informa cuando está ABIERTO. Cerrado, lo único que
+ * importa es a qué hora se puede volver.
+ *
+ * ⚠️ Devuelve `null` si ya está abierto: no hay ninguna apertura que anunciar,
+ * y el llamador enseña el rango vigente.
+ *
+ * `inDays` es 0 hoy, 1 mañana y hasta 6 para el resto — así el texto puede
+ * decir «hoy», «mañana» o «el jueves» sin que la app recalcule el día.
+ */
+function proximaApertura(
+  schedule: ScheduleRecord[] | null | undefined,
+  now = new Date(),
+): { open: string; inDays: number; dayName: string } | null {
+  const active = activeDays(schedule)
+  if (!active.length) return null
+  const { minutos, dia } = minutosLocales(now)
+
+  // Abierto ahora: no hay nada que anunciar.
+  if (turnoVigente(active, minutos, dia)) return null
+
+  // Se recorre la semana desde hoy. Los días sin tramo se saltan, que es lo
+  // que permite anunciar «el jueves» a un local que solo abre ese día.
+  for (let salto = 0; salto < 7; salto += 1) {
+    const cual = (dia + salto) % 7
+    const tramo = active.find(day => day.day_of_week === cual)
+    if (!tramo) continue
+    // ⚠️ HOY solo cuenta si su apertura todavía no ha pasado. Si ya son las
+    // 23:00 y el tramo de hoy abría a las 08:00, ese tren se fue: lo que viene
+    // es el de mañana. Sin esta comprobación se anunciaría una apertura en
+    // pasado, que es peor que no decir nada.
+    if (salto === 0 && minutos >= minutosDe(tramo.open_time)) continue
+    return {
+      open: tramo.open_time.slice(0, 5),
+      inDays: salto,
+      dayName: DAY_NAMES[cual],
+    }
+  }
+  return null
+}
+
+export {
+  scheduleToText, buildScheduleMessage, isOutsideHours, todaysHours, proximaApertura,
+}

@@ -27,7 +27,7 @@ import {
 } from '../lib/cart'
 import { Aviso, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
-import { hora12, money, rangoDeEspera } from '../lib/format'
+import { hora12, money, rangoDeEspera, cuandoAbre } from '../lib/format'
 import { foto } from '../lib/imagen'
 import { randomId } from '../lib/session'
 import ProductSheet from '../components/ProductSheet'
@@ -567,6 +567,8 @@ export default function FoodStore({
   const total = orderTotal(lineas, entrega, business.deliveryFee)
   const unidades = cartCount(lineas)
   const horario = catalogo.todaysHours
+  // Solo viene con la tienda cerrada; abierta es `null` y manda el rango.
+  const apertura = catalogo.nextOpen
   /* La dirección que se enseña arriba. La primera guardada es la que usa el
      checkout por defecto, así que es la que hay que mostrar: enseñar otra
      prometería una entrega donde no va a ir. Sin ninguna guardada NO se
@@ -804,16 +806,24 @@ export default function FoodStore({
               />
             </span>
             {abierto ? 'Abierto' : 'Cerrado'}
-            {horario && (
+            {/* ⚠️ ABIERTA enseña el rango; CERRADA, cuándo vuelve a abrir
+                (2026-09-02). El comentario de aquí ya prometía esto —«si está
+                cerrado, a qué hora abre»— y el código enseñaba el rango en los
+                dos casos.
+
+                Y no era cosmético: con un horario que cruza la medianoche
+                —miércoles 08:00–02:00— la píldora decía «Cerrado · 8:00 AM –
+                2:00 AM» a la 01:10, y eso se lee como un fallo de la app. El
+                estado era correcto (esa madrugada es del martes, que cerró a
+                las 22:00), pero nadie lo deduce de un rango. El dueño lo vio
+                en su teléfono y preguntó cuál era el error. */}
+            {(abierto ? horario : apertura) && (
               <>
                 <span className="opacity-30">·</span>
-                {/* El horario COMPLETO, de apertura a cierre y en AM/PM, que es
-                    como se dice una hora aquí. Antes decía solo «cierra 03:00»:
-                    resolvía la pregunta del que ya está dentro, pero al que
-                    llega cerrado no le decía a qué hora abrir. Y en 24 h
-                    obligaba a traducir mentalmente. */}
                 <span className="font-semibold tabular-nums opacity-80">
-                  {hora12(horario.open)} – {hora12(horario.close)}
+                  {abierto
+                    ? `${hora12(horario!.open)} – ${hora12(horario!.close)}`
+                    : cuandoAbre(apertura)}
                 </span>
               </>
             )}
@@ -897,7 +907,9 @@ export default function FoodStore({
             <span className="flex items-center gap-2">
               <RiTimeLine size={15} />
               {status === 'cerrada'
-                ? 'Ahora está cerrado. Puedes ver la carta y volver cuando abra.'
+                // «volver cuando abra» no dice cuándo, y era la mitad del
+                // problema: el cliente tiene que adivinar a qué hora volver.
+                ? `Ahora está cerrado.${apertura ? ` ${cuandoAbre(apertura)}.` : ''} Puedes ver la carta mientras tanto.`
                 : 'La tienda no está recibiendo pedidos en este momento.'}
             </span>
           </Aviso>

@@ -162,7 +162,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > cada una existe porque algo falló.
 
 <details>
-<summary>Índice de las 91 (búscalas por título en DECISIONES.md)</summary>
+<summary>Índice de las 92 (búscalas por título en DECISIONES.md)</summary>
 
 - El dueño escribe una BIENVENIDA, no un prompt
 - Quedan DOS modos de atención
@@ -183,6 +183,7 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - Las defensas son para TODOS los locales
 - El pedido AVISA a la conversación, y quien se va avisando no paga la multa
 - MENÚ mata todo proceso, y el recordatorio deja de mentir
+- Cerrado dice CUÁNDO abre, y «23:59» es el final del día
 - La mini app abría lenta, y una cabecera explicaba casi todo
 - El bot reconoce a quien VUELVE, y nombra lo que no es texto
 - Cuatro marcadores, y ninguno se puede confundir
