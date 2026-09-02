@@ -6,6 +6,7 @@ import {
   recordarPedidoEnProceso,
   responderAlMenu,
   verCategorias,
+  esAdjuntoSinTexto,
   verResultados,
   resolverReinicio,
   type MarketplaceBusiness,
@@ -387,7 +388,8 @@ export async function handleMarketplaceMessage(
       // de las dos, la mitad de los abandonos avisados seguirían caducando y
       // sumando falta.
       await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
-      const respuesta = verCategorias(categorias, 0)
+      // 'vuelta': vuelve al inicio a propósito, igual que `responderAlMenu`.
+      const respuesta = verCategorias(categorias, 0, 'vuelta')
       await guardar(deps, customer.id, conversation?.version, respuesta, {
         soltarLocal: true,
       })
@@ -691,7 +693,14 @@ export async function handleMarketplaceMessage(
   //
   // ⚠️ Falla hacia el mensaje de siempre: si la búsqueda revienta o no
   // encuentra nada, el cliente recibe exactamente lo que recibía antes.
-  if (respuesta.noEntendido && !conversation?.selected_business_id) {
+  // ⚠️ Un ADJUNTO no se busca (2026-09-06). «[foto]», «[nota de voz]» y
+  // «[ubicación]» son marcadores que pone el webhook, no algo que el cliente
+  // quiera comer: mandarlos a la búsqueda eran DOS consultas a la base por
+  // cada foto suelta —los locales y el diccionario de términos— que no pueden
+  // encontrar nada. El menú ya le respondió nombrando lo que mandó.
+  if (respuesta.noEntendido
+    && !esAdjuntoSinTexto(text)
+    && !conversation?.selected_business_id) {
     const encontrados = await buscarLocales(deps, text)
     if (encontrados.length) {
       const resultados = verResultados(text, encontrados, 0)

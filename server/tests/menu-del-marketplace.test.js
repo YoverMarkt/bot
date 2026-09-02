@@ -116,7 +116,7 @@ describe('navegar', () => {
     const r = paso({
       mensaje: 'aaaa', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
-    expect(r.reply).toMatch(/No te entendí/)
+    expect(r.reply).toMatch(/no lo pude entender/)
     expect(r.options).toContain('🍕 Pizzerías')
   })
 
@@ -155,7 +155,7 @@ describe('repintar la vista tras elegir una categoría', () => {
 
   it('con el mensaje vacío pinta los locales SIN reprochar nada', () => {
     const r = paso({ mensaje: '', vista: enNegocios, categorias: CATEGORIAS, negocios })
-    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).not.toContain('no lo pude entender')
     expect(r.reply).toContain('Elige un local')
     expect(r.options).toContain('Pizza Uno')
   })
@@ -165,7 +165,7 @@ describe('repintar la vista tras elegir una categoría', () => {
       mensaje: '', vista: { vista: 'categorias', pagina: 0 },
       categorias: CATEGORIAS, negocios: [],
     })
-    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).not.toContain('no lo pude entender')
   })
 
   // ⚠️ Lo que NO puede perderse: quien de verdad escribe cualquier cosa
@@ -175,7 +175,7 @@ describe('repintar la vista tras elegir una categoría', () => {
       mensaje: 'quiero un helado de mora',
       vista: enNegocios, categorias: CATEGORIAS, negocios,
     })
-    expect(r.reply).toContain('No te entendí')
+    expect(r.reply).toContain('no lo pude entender')
     expect(r.options).toContain('Pizza Uno')
   })
 
@@ -190,7 +190,7 @@ describe('repintar la vista tras elegir una categoría', () => {
     const pintada = paso({
       mensaje: '', vista: elegida.vista, categorias: CATEGORIAS, negocios,
     })
-    expect(pintada.reply).not.toContain('No te entendí')
+    expect(pintada.reply).not.toContain('no lo pude entender')
 
     const local = paso({
       mensaje: 'Pizza Uno', vista: pintada.vista, categorias: CATEGORIAS, negocios,
@@ -211,7 +211,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: true,
     })
-    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).not.toContain('no lo pude entender')
     expect(r.reply).toContain('Bienvenido')
     expect(r.options.length).toBeGreaterThan(0)
   })
@@ -228,7 +228,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: false,
     })
-    expect(r.reply).not.toContain('No te entendí')
+    expect(r.reply).not.toContain('no lo pude entender')
     expect(r.reply).toContain('Bienvenido')
     expect(r.options.length).toBeGreaterThan(0)
   })
@@ -242,7 +242,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: false,
     })
-    expect(r.reply).toContain('No te entendí')
+    expect(r.reply).toContain('no lo pude entender')
   })
 })
 
@@ -461,5 +461,136 @@ describe('el recordatorio del comprobante', () => {
     const enProceso = menu.recordarPedidoEnProceso({ name: 'X' })
     expect(conComprobante.options).toEqual(enProceso.options)
     expect(conComprobante.vista).toEqual(enProceso.vista)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VOLVER AL INICIO SE RECONOCE, Y LO QUE NO ES TEXTO SE NOMBRA
+//
+// Los dos los probó el dueño en su teléfono el 2026-09-06:
+//
+//   · escribió MENÚ y recibió «¿Qué deseas pedir?» a secas — «como una
+//     pregunta simple», sin nada delante;
+//   · subió una foto cualquiera y recibió el mismo «no te entendí» que
+//     recibiría un «asdfghjkl». La foto se entendió perfectamente: lo que
+//     pasa es que este chat todavía no hace nada con ella.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('la bienvenida de vuelta', () => {
+  it('MENÚ saluda de vuelta y ofrece las categorías', async () => {
+    const { responderAlMenu } = await import('../dist/services/marketplace-menu.js')
+    const r = responderAlMenu({ bloqueado: false, negocio: null }, CATEGORIAS)
+    expect(r.reply).toContain('vuelta')
+    expect(r.reply).toContain('Umbani')
+    expect(r.reply).toContain('¿Qué deseas pedir?')
+    expect(r.options).toContain('🍕 Pizzerías')
+  })
+
+  it('«✅ Empezar de nuevo» saluda igual: es la misma puerta', async () => {
+    const menu = await import('../dist/services/marketplace-menu.js')
+    const { reinicia, respuesta } = menu.resolverReinicio(
+      menu.SI_REINICIAR, { bloqueado: true, negocio: { name: 'X', slug: 'x' } }, CATEGORIAS,
+    )
+    expect(reinicia).toBe(true)
+    expect(respuesta.reply).toContain('vuelta')
+    expect(respuesta.options).toContain('🍕 Pizzerías')
+  })
+
+  // ⚠️ Lo que NO puede pasar: saludar en mitad de la navegación. Quien toca
+  // «⬅️ Volver» no ha vuelto al principio de nada, y darle la bienvenida ahí
+  // leería como si el bot le hubiera perdido el hilo.
+  it('pero «⬅️ Volver» NO saluda: el cliente no se ha ido a ninguna parte', () => {
+    const r = paso({
+      mensaje: VOLVER,
+      vista: { vista: 'negocios', categoria: 'pizzerias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [neg('pizza-uno', 'Pizza Uno')],
+    })
+    expect(r.vista.vista).toBe('categorias')
+    expect(r.reply).not.toContain('vuelta')
+    expect(r.reply).toContain('¿Qué deseas pedir?')
+  })
+
+  // El saludo del primer contacto NO cambia: sigue siendo «Bienvenido a
+  // Umbani», que es lo que se le dice a quien llega, no a quien vuelve.
+  it('y quien llega por primera vez sigue recibiendo SU bienvenida', () => {
+    const r = paso({
+      mensaje: 'Hola', vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [], primerContacto: true,
+    })
+    expect(r.reply).toContain('Bienvenido a')
+    expect(r.reply).not.toContain('vuelta')
+  })
+})
+
+describe('lo que llega y no es texto', () => {
+  const enPortada = { vista: 'categorias', pagina: 0 }
+
+  it('una foto se responde COMO foto, no como una opción equivocada', () => {
+    const r = paso({
+      mensaje: '[foto]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).toContain('foto')
+    expect(r.reply).not.toContain('no lo pude entender')
+    // Y sigue siendo un «no casó»: el llamador necesita la señal.
+    expect(r.noEntendido).toBe(true)
+    expect(r.options).toContain('🍕 Pizzerías')
+  })
+
+  it('una nota de voz y una ubicación, igual', () => {
+    const voz = paso({
+      mensaje: '[nota de voz]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
+    })
+    expect(voz.reply).toContain('voz')
+    expect(voz.reply).not.toContain('no lo pude entender')
+
+    const donde = paso({
+      mensaje: '[ubicación]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
+    })
+    expect(donde.reply).toContain('ubicación')
+    expect(donde.reply).not.toContain('no lo pude entender')
+  })
+
+  // Dentro de una categoría la lista de locales se repinta igual que siempre:
+  // lo único que cambia es el encabezado.
+  it('con una lista de locales delante, repinta la lista', () => {
+    const r = paso({
+      mensaje: '[foto]',
+      vista: { vista: 'negocios', categoria: 'pizzerias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [neg('pizza-uno', 'Pizza Uno')],
+    })
+    expect(r.reply).toContain('foto')
+    expect(r.reply).toContain('Elige un local')
+    expect(r.options).toContain('Pizza Uno')
+  })
+
+  // ⚠️ El texto de verdad sigue recibiendo el reproche: quien escribe
+  // «asdfghjkl» tiene que saber que no se le entendió.
+  it('un texto suelto SÍ recibe el reproche de siempre', () => {
+    const r = paso({
+      mensaje: 'asdfghjkl', vista: enPortada, categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).toContain('no lo pude entender')
+    expect(r.reply).not.toContain('foto')
+  })
+
+  // La portada del «no casó» explica qué se hace aquí en vez de repetir la
+  // pregunta: era lo que dejaba al cliente sin saber qué esperaba el bot.
+  it('la portada dice qué se puede hacer, no solo que falló', () => {
+    const r = paso({
+      mensaje: 'asdfghjkl', vista: enPortada, categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).toContain('elige una categoría')
+    expect(r.options).toContain('🍕 Pizzerías')
+  })
+
+  // ⚠️ Un objeto indexado por texto del CLIENTE heredaría el prototipo: quien
+  // escribiera «constructor» recibiría una función como respuesta. Por eso el
+  // catálogo de adjuntos es un Map.
+  it('«constructor» es un texto cualquiera, no una respuesta del prototipo', async () => {
+    const { esAdjuntoSinTexto } = await import('../dist/services/marketplace-menu.js')
+    expect(esAdjuntoSinTexto('constructor')).toBe(false)
+    expect(esAdjuntoSinTexto('toString')).toBe(false)
+    expect(esAdjuntoSinTexto('[foto]')).toBe(true)
+    // El marcador real lleva tilde; la comparación va sobre el normalizado.
+    expect(esAdjuntoSinTexto('[ubicación]')).toBe(true)
   })
 })
