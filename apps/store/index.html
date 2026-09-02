@@ -18,6 +18,25 @@
       type="font/woff2"
       crossorigin
     />
+    <!-- ⚠️ AQUÍ NO SE ADELANTA LA PRIMERA PETICIÓN, y se probó (2026-09-06).
+         La idea era lanzar `fetch('/api/store/<slug>')` desde el HTML para no
+         esperar a que baje React. Se escribió, y se retiró antes de subirla:
+
+         La portada decide si esta persona está BLOQUEADA, y lo decide leyendo
+         las cabeceras `x-storefront-token` y `x-storefront-device` que pone
+         `request()` en `lib/api.ts`. Un fetch suelto aquí no las lleva, así
+         que habría respondido `blocked: null` a un cliente bloqueado — y la
+         app le habría montado la tienda entera. Es EXACTAMENTE el incidente
+         del pedido #74 (2026-08-29), que costó la pantalla `Bloqueado`.
+
+         Replicar aquí la lectura del token sería tener la sesión escrita en
+         dos sitios, y el día que una cambie la otra falla EN SILENCIO y hacia
+         el lado inseguro. Se gana medio segundo y se arriesga la defensa que
+         más caro costó: no compensa.
+
+         Lo que sí se hizo por rendimiento está en `server/src/index.ts`
+         (`cachearEstaticos`), que ataca el problema de verdad: ~1 s por visita
+         revalidando archivos inmutables. -->
     <title>Tienda</title>
     <style>
       /* ── LA BIENVENIDA DE UMBANI ──────────────────────────────────────────
@@ -44,14 +63,20 @@
         font-family:'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
         color:var(--t); text-align:center;
       }
+      /* ⚠️ GRANDE, pero sin frenar nada (decisión del dueño, 2026-09-06).
+         Se agranda el logo (64→96) y el título (19→27) para que la marca se
+         vea de verdad al abrir. Lo que NO se hace es garantizarle un tiempo
+         mínimo en pantalla: se va en cuanto la tienda está lista. Añadir una
+         espera artificial para lucir la marca sería empeorar a propósito justo
+         lo que se estaba arreglando en la misma sesión. */
       .vz-logo {
-        width:64px; height:64px; border-radius:20px; display:flex;
-        align-items:center; justify-content:center; font-size:30px;
-        background:#fff; box-shadow:0 8px 24px rgba(11,11,12,.10);
+        width:96px; height:96px; border-radius:28px; display:flex;
+        align-items:center; justify-content:center; font-size:46px;
+        background:#fff; box-shadow:0 12px 34px rgba(11,11,12,.12);
         animation:vz-late .9s ease-in-out infinite alternate;
       }
-      .vz-t { font-size:19px; font-weight:800; letter-spacing:-.02em; margin:0; }
-      .vz-s { font-size:13.5px; font-weight:600; color:var(--m); margin:0; }
+      .vz-t { font-size:27px; font-weight:800; letter-spacing:-.03em; margin:0; line-height:1.15; }
+      .vz-s { font-size:15px; font-weight:600; color:var(--m); margin:0; }
       /* Late, no gira: un spinner dice «esto va lento». Esto dice «ya casi». */
       @keyframes vz-late { from{transform:scale(1)} to{transform:scale(1.06)} }
       /* Quien pide menos movimiento no recibe ninguno. */

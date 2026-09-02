@@ -41,8 +41,15 @@ interface StorefrontSessionRow {
 
 const db: StorefrontDatabase = require('../db') as typeof import('../db')
 
-/** El token viaja en la cabecera; la URL solo lleva el slug del negocio. */
-const readToken = (req: Request): string => {
+/**
+ * El token viaja en la cabecera; la URL solo lleva el slug del negocio.
+ *
+ * ⚠️ Se EXPORTA para que el limitador por sesión (`storefront.routes.ts`) lea
+ * el token exactamente igual que la puerta que lo valida. Dos lecturas
+ * distintas del mismo dato acabarían divergiendo, y el día que pasara, el
+ * limitador dejaría de contar sin que nada fallara.
+ */
+export const readToken = (req: Request): string => {
   const header = req.headers['x-storefront-token']
   if (typeof header === 'string' && header.trim()) return header.trim()
   const query = (req.query || {}).session
