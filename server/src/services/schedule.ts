@@ -72,6 +72,55 @@ const dentroDelTramo = (config: ScheduleRecord, minutos: number): boolean => {
   return minutos >= abre && minutos < cierra
 }
 
+/**
+ * El turno que está corriendo AHORA MISMO, o `null` si no hay ninguno.
+ *
+ * ⚠️ UNA SOLA función decide esto, y esa es la corrección de fondo
+ * (2026-09-02). `isOutsideHours` miraba HOY primero y `todaysHours` miraba la
+ * VÍSPERA primero, así que las dos podían responder sobre turnos distintos: la
+ * portada decía «Abierto» con el horario de otro día al lado. Lo vivió el
+ * dueño con Monster Pizza —martes 09:00–01:00, miércoles 00:00–03:00— a las
+ * 00:08 de un miércoles: estado «Abierto», horario «09:00 – 01:00».
+ *
+ * ⚠️ La regla no es «hoy primero» ni «ayer primero», y por eso no basta con
+ * invertir el orden: es **por qué** un tramo está vigente.
+ *
+ *   · Si el de HOY ya arrancó (`minutos >= abre`), es el de hoy. El miércoles
+ *     de 00:00 a 03:00 arranca a las 00:00, así que a las 00:08 manda él.
+ *   · Si el de hoy solo parece vivo por la COLA de un cruce —«09:00 a 01:00»
+ *     mirado a las 00:30, cuando aún no han dado las 09:00— esa cola no es
+ *     suya: pertenece al turno de ayer. Manda la víspera.
+ *
+ * Sin esa distinción, un negocio con el jueves 09:00–01:00 y el miércoles
+ * CERRADO aparecía abierto a las 00:30 del jueves —`dentroDelTramo` solo mira
+ * minutos, no días— y aceptaba pedidos nueve horas antes de abrir.
+ */
+const turnoVigente = (
+  active: ScheduleRecord[],
+  minutos: number,
+  diaDeHoy: number,
+): ScheduleRecord | null => {
+  const hoy = active.find(day => day.day_of_week === diaDeHoy)
+  // El de hoy, solo si ya llegó su hora de apertura.
+  if (hoy && minutos >= minutosDe(hoy.open_time) && dentroDelTramo(hoy, minutos)) {
+    return hoy
+  }
+  // Si no, la cola del de ayer, y solo si de verdad cruzaba la medianoche.
+  const vispera = active.find(day => day.day_of_week === (diaDeHoy + 6) % 7)
+  if (vispera
+    && minutosDe(vispera.close_time) < minutosDe(vispera.open_time)
+    && minutos < minutosDe(vispera.close_time)) {
+    return vispera
+  }
+  return null
+}
+
+/** Los minutos del día en hora de Ecuador, que es la que manda aquí. */
+const minutosLocales = (now: Date): { minutos: number; dia: number } => {
+  const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+  return { minutos: local.getHours() * 60 + local.getMinutes(), dia: local.getDay() }
+}
+
 // Evalúa la hora local de Ecuador. Sin horario activo no bloquea la atención.
 function isOutsideHours(
   schedule: ScheduleRecord[] | null | undefined,
@@ -79,20 +128,8 @@ function isOutsideHours(
 ): boolean {
   const active = activeDays(schedule)
   if (!active.length) return false
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
-  const minutes = local.getHours() * 60 + local.getMinutes()
-
-  // El tramo de HOY, y también el de AYER si se alargaba pasada la medianoche:
-  // a las 00:30 de un jueves, quien sigue abierto es el turno del miércoles.
-  const hoy = active.find(day => day.day_of_week === local.getDay())
-  if (hoy && dentroDelTramo(hoy, minutes)) return false
-
-  const ayer = active.find(day => day.day_of_week === (local.getDay() + 6) % 7)
-  if (ayer && minutosDe(ayer.close_time) < minutosDe(ayer.open_time)
-    && minutes < minutosDe(ayer.close_time)) {
-    return false
-  }
-  return true
+  const { minutos, dia } = minutosLocales(now)
+  return turnoVigente(active, minutos, dia) === null
 }
 
 /**
@@ -103,6 +140,11 @@ function isOutsideHours(
  * miércoles: enseñar el del jueves diría «abre a las 09:00» junto a una píldora
  * verde de «Abierto», y las dos cosas no pueden ser ciertas a la vez.
  *
+ * ⚠️ Pero cuando el de HOY ya arrancó, manda el de hoy aunque el de ayer siga
+ * vivo. Es el caso que reportó el dueño: a las 00:08 de un miércoles que abre
+ * de 00:00 a 03:00, con el martes vivo hasta la 01:00, se enseñaba el del
+ * martes — y el cliente leía que cerraba a la 01:00 cuando quedaban dos horas.
+ *
  * Devuelve null cuando ese día no se abre, y la portada calla en vez de
  * inventar un horario.
  */
@@ -112,21 +154,15 @@ function todaysHours(
 ): { open: string; close: string } | null {
   const active = activeDays(schedule)
   if (!active.length) return null
+  const { minutos, dia } = minutosLocales(now)
 
-  const local = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
-  const minutos = local.getHours() * 60 + local.getMinutes()
-
-  // Primero la víspera, y solo si de verdad sigue viva: es la que manda en la
-  // madrugada. Si no alcanza, el tramo de hoy.
-  const vispera = active.find(day => day.day_of_week === (local.getDay() + 6) % 7)
-  if (vispera
-    && minutosDe(vispera.close_time) < minutosDe(vispera.open_time)
-    && minutos < minutosDe(vispera.close_time)) {
-    return { open: vispera.open_time.slice(0, 5), close: vispera.close_time.slice(0, 5) }
-  }
-
-  const hoy = active.find(day => day.day_of_week === local.getDay())
-  return hoy ? { open: hoy.open_time.slice(0, 5), close: hoy.close_time.slice(0, 5) } : null
+  const enCurso = turnoVigente(active, minutos, dia)
+  // Sin turno en curso se enseña el de hoy, que es lo que permite decir a qué
+  // hora abre. Si hoy no se abre, no hay nada honesto que enseñar.
+  const mostrar = enCurso ?? active.find(day => day.day_of_week === dia)
+  return mostrar
+    ? { open: mostrar.open_time.slice(0, 5), close: mostrar.close_time.slice(0, 5) }
+    : null
 }
 
 export { scheduleToText, buildScheduleMessage, isOutsideHours, todaysHours }
