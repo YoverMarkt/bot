@@ -7,7 +7,7 @@ import type { ScheduleRecord } from '../db/types'
 import { MEDIA_LIMITS, mapMulterError, validateMediaFile } from '../lib/media'
 import { isConfigured, uploadPrivateMedia } from '../integrations/cloudinary'
 import {
-  readStorefrontBlock, readStorefrontSession, requireStorefrontSession,
+  readStorefrontBlock, readStorefrontSession, readToken, requireStorefrontSession,
 } from '../middleware/storefront'
 import { getPlatformPhone } from '../services/platform-channel'
 import { pedirComprobantePorChat } from '../services/payment-request-notice'
@@ -145,7 +145,44 @@ const orderLimiter = rateLimit({
   message: { error: 'Demasiados intentos de pedido, espera un momento' },
 })
 
-router.use('/api/store', storeLimiter)
+/**
+ * El tope por ENLACE, que se suma al de IP.
+ *
+ * ⚠️ Los dos ejes son necesarios porque cada uno tapa el agujero del otro
+ * (2026-09-06):
+ *
+ *   · Solo por IP —lo que había— falla en las dos direcciones con datos
+ *     móviles. Muchos clientes salen por la MISMA IP del operador (CGNAT), así
+ *     que uno que molesta se come el cupo de vecinos que no han hecho nada; y
+ *     al revés, quien apaga y enciende los datos estrena IP y vuelve a tener
+ *     el cupo entero. La dirección no identifica a nadie en un teléfono.
+ *   · Solo por sesión no protege del que llega SIN enlace, que es quien puede
+ *     raspar el catálogo público.
+ *
+ * Juntos, el que trae enlace responde por su enlace y el que no, por su IP.
+ * Ninguno de los dos se esquiva cambiando de eje.
+ *
+ * ⚠️ La clave es el HASH del token, nunca el token: las claves del limitador
+ * viven en memoria y se asoman en volcados y trazas. Es el mismo hash con el
+ * que la sesión se busca en la base, así que «una clave» es exactamente «una
+ * sesión».
+ *
+ * ⚠️ Más holgado que el de IP a propósito (60 < 90). Este cuenta a UNA persona
+ * con su enlace; el de IP puede estar contando a varias a la vez, y estrecharlo
+ * aquí castigaría al cliente legítimo que navega rápido.
+ */
+const sesionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Sin enlace no hay a quién contarle: de ese se ocupa `storeLimiter`.
+  skip: (req) => !readToken(req),
+  keyGenerator: (req) => `sesion:${hashToken(readToken(req))}`,
+  message: { error: 'Demasiadas peticiones, espera un momento' },
+})
+
+router.use('/api/store', storeLimiter, sesionLimiter)
 router.use('/s', storeLimiter)
 
 // ── Enlace corto: /s/<token> ───────────────────────────────────────────────
@@ -343,6 +380,30 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
   const pricing = reglaDeMargen(
     await db.getBusinessPricingRule(businessId).catch(() => null),
   )
+
+  // ── El catálogo se puede guardar UNOS SEGUNDOS ────────────────────────
+  //
+  // Es la petición más cara de la app: 13 consultas y ~2 s de espera medidos
+  // contra producción el 2026-09-06. Y su contenido es el MISMO para todo el
+  // que mira este local — no lleva ni una línea del cliente que pregunta.
+  //
+  // ⚠️ `private`, NO `public`, y la diferencia es una defensa. Con `public`,
+  // un proxy compartido podría guardarse este 200 y servírselo después a
+  // alguien BLOQUEADO, que debe recibir el 403 de `readStorefrontSession`. El
+  // navegador de cada cliente sí lo guarda —que es de donde sale la mejora
+  // real, porque hoy no hay CDN delante— y ningún intermediario puede repartir
+  // la carta a quien el local no quiere atender.
+  //
+  // ⚠️ `Vary` sobre la cabecera de sesión: si algún día esto pasara a `public`,
+  // dos personas con enlaces distintos no compartirían entrada de caché. Es
+  // barato ahora y evita que ese cambio futuro sea silenciosamente inseguro.
+  //
+  // ⚠️ 30 s, no más: el `status` de abierto/cerrado y los precios viajan aquí.
+  // Medio minuto de desfase no le cambia nada a nadie —y el dinero lo revalida
+  // `create_storefront_order` contra la base, nunca este JSON—, pero un TTL
+  // largo dejaría a un local recién abierto pareciendo cerrado.
+  res.setHeader('Cache-Control', 'private, max-age=30, stale-while-revalidate=120')
+  res.setHeader('Vary', 'x-storefront-token')
 
   return res.json({
     business: business
