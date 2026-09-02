@@ -191,9 +191,39 @@ marca. El orden nuevo, de arriba abajo:
 - **Bandas grises** separando secciones, para que el ojo encuentre el corte sin
   leer.
 - **Tarjetas de producto en rejilla de DOS COLUMNAS**, con la **foto arriba a
-  sangre** (proporción 4:3) y debajo nombre, descripción en dos líneas como
-  máximo y precio. El botón `+` circular va **sobre la foto**, abajo a la
-  derecha. El precio promocional va junto al tachado.
+  sangre** (proporción 4:3) y debajo, **en este orden: nombre → precio →
+  descripción** (dos líneas como máximo). El botón `+` circular va **sobre la
+  foto**, abajo a la derecha. El precio promocional va junto al tachado.
+
+  ⚠️ **El precio va pegado al nombre, no al final** (2026-09-06, referencia del
+  dueño). Antes la descripción se colaba entre los dos, y en una rejilla eso
+  deja el dato que decide la compra al final de un bloque de texto gris. El
+  nombre va en negrita y el precio medio punto por debajo en peso: los dos en
+  negrita al mismo tamaño competían y no había primera lectura.
+
+  ⚠️ **La tarjeta NO tiene caja ni sombra, y el contraste va al revés**: la
+  foto es un bloque redondeado sobre el gris de la app, el texto va suelto y la
+  sección es blanca. Antes eran tarjetas blancas sobre gris. Se invirtió para
+  que en la rejilla mande la fotografía y no el contorno de la caja. Sin el
+  fondo blanco de la sección, una foto con fondo gris sobre app gris se queda
+  sin contorno y la rejilla se deshace.
+
+  ⚠️ **El `+` es BLANCO con anillo y sombra**, no del color de marca. Sobre una
+  foto clara lo que lo separa del fondo es la sombra y el anillo, no el color
+  —un círculo blanco sin contorno desaparece sobre un plato claro en mantel
+  blanco—.
+
+  ⚠️ **El `+` va DENTRO de la foto, y se probó lo contrario el 2026-09-06.**
+  Montado a caballo del borde —como parecía en la referencia— hay que reservar
+  32 px antes del nombre para que el círculo no se lo coma, y la rejilla queda
+  desarmada. Es la misma cicatriz que ya existía: «Doble Cheese Burguer»
+  quedaba debajo del círculo. En la referencia el círculo también está dentro;
+  lo único que cambia de verdad es su color.
+
+  ⚠️ **Se probó reservar dos líneas de alto para el nombre y se DESCARTÓ**
+  (2026-09-06). La idea era alinear los precios de las dos columnas para poder
+  compararlos bajando la vista; el efecto real, visto en captura, fue separar
+  el nombre de su precio con un hueco vacío. La referencia tampoco los alinea.
 - **Agotado**: la tarjeta baja de opacidad, lleva su etiqueta sobre la foto y
   el `+` desaparece.
 
