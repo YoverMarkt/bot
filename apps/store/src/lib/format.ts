@@ -67,9 +67,13 @@ export const cuandoAbre = (
   proxima: { open: string; inDays: number; dayName: string } | null | undefined,
 ): string | null => {
   if (!proxima?.open) return null
-  const hora = hora12(proxima.open)
-  if (proxima.inDays === 0) return `Abre hoy ${hora}`
-  if (proxima.inDays === 1) return `Abre mañana ${hora}`
-  // «Abre el jueves 8:00 AM» — en minúscula, que va dentro de una frase.
-  return `Abre el ${String(proxima.dayName || '').toLocaleLowerCase('es')} ${hora}`
+  // Un solo `return`: la tienda se descarga con datos móviles y cada rama
+  // repetida son bytes que paga el cliente. Lo vigila `presupuesto-tamano`.
+  const cuando = proxima.inDays === 0
+    ? 'hoy'
+    : proxima.inDays === 1
+      ? 'mañana'
+      // «Abre el jueves 8:00 AM» — en minúscula, que va dentro de una frase.
+      : `el ${String(proxima.dayName || '').toLowerCase()}`
+  return `Abre ${cuando} ${hora12(proxima.open)}`
 }
