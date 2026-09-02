@@ -146,6 +146,115 @@ describe('servicio de horarios del bot', () => {
     })
   })
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // CON DOS TURNOS VIVOS MANDA EL QUE CIERRA MÁS TARDE
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('turnos que se solapan', () => {
+    // El dueño PUEDE solapar turnos, y es su decisión: «el lunes de 9 de la
+    // mañana a 2 de la madrugada» y «el miércoles de 00:00 a 5». El horario es
+    // suyo; aquí solo se respeta.
+    const lunesLargo = [
+      { day_of_week: 1, open_time: '09:00:00', close_time: '06:00:00', is_active: true },
+      { day_of_week: 2, open_time: '00:00:00', close_time: '02:00:00', is_active: true },
+    ]
+
+    it('enseña el turno que de verdad decide hasta cuándo se puede pedir', () => {
+      // Martes 00:30: viven el lunes (hasta las 06:00) y el martes (hasta las
+      // 02:00). Antes se enseñaba el más corto y el cliente creía que le
+      // quedaba media hora teniendo cuatro y media.
+      expect(scheduleService.todaysHours(lunesLargo, new Date('2026-09-01T05:30:00Z')))
+        .toEqual({ open: '09:00', close: '06:00' })
+    })
+
+    it('y sigue siendo el mismo cuando el corto ya cerró', () => {
+      // 02:30: el martes cerró a las 02:00, el lunes sigue.
+      expect(scheduleService.todaysHours(lunesLargo, new Date('2026-09-01T07:30:00Z')))
+        .toEqual({ open: '09:00', close: '06:00' })
+      expect(scheduleService.isOutsideHours(lunesLargo, new Date('2026-09-01T07:30:00Z')))
+        .toBe(false)
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // LA INVARIANTE: EL CIERRE QUE SE ENSEÑA ES EL CIERRE DE VERDAD
+  //
+  // ⚠️ Esta prueba no comprueba un caso: recorre la SEMANA ENTERA minuto a
+  // minuto sobre varias configuraciones y exige dos cosas en todas ellas.
+  // Existe porque esta familia de fallos ya se ha manifestado por dos lados
+  // distintos —enseñar el turno de ayer teniendo el de hoy vivo, y enseñar el
+  // más corto de dos solapados— y ninguno lo cazó una prueba de caso.
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('estado y horario nunca se contradicen', () => {
+    const escenarios = {
+      'el del dueño (lunes 9–2, miércoles 0–5)': [
+        { day_of_week: 1, open_time: '09:00:00', close_time: '02:00:00', is_active: true },
+        { day_of_week: 3, open_time: '00:00:00', close_time: '05:00:00', is_active: true },
+      ],
+      'Monster Pizza': [
+        { day_of_week: 0, open_time: '09:00:00', close_time: '05:00:00', is_active: true },
+        { day_of_week: 1, open_time: '08:00:00', close_time: '05:00:00', is_active: true },
+        { day_of_week: 2, open_time: '09:00:00', close_time: '01:00:00', is_active: true },
+        { day_of_week: 3, open_time: '00:00:00', close_time: '03:00:00', is_active: true },
+        { day_of_week: 4, open_time: '09:00:00', close_time: '01:00:00', is_active: true },
+        { day_of_week: 5, open_time: '08:00:00', close_time: '01:00:00', is_active: true },
+        { day_of_week: 6, open_time: '08:00:00', close_time: '05:00:00', is_active: true },
+      ],
+      'turnos solapados (lunes 9–6, martes 0–2)': [
+        { day_of_week: 1, open_time: '09:00:00', close_time: '06:00:00', is_active: true },
+        { day_of_week: 2, open_time: '00:00:00', close_time: '02:00:00', is_active: true },
+      ],
+      'un solo día, sin vecinos': [
+        { day_of_week: 4, open_time: '09:00:00', close_time: '01:00:00', is_active: true },
+      ],
+    }
+    // Domingo 2026-08-30, 00:00 en Ecuador (UTC−5).
+    const DOMINGO = Date.UTC(2026, 7, 30, 5)
+    const minutosDe = hhmm => {
+      const [h, m] = hhmm.split(':').map(Number)
+      return h * 60 + (m || 0)
+    }
+    const horaLocal = (t) => {
+      const l = new Date(t.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+      return l.getHours() * 60 + l.getMinutes()
+    }
+
+    for (const [nombre, horario] of Object.entries(escenarios)) {
+      it(`${nombre}: mientras diga abierto, el horario contiene la hora`, () => {
+        for (let m = 0; m < 7 * 24 * 60; m += 5) {
+          const t = new Date(DOMINGO + m * 60e3)
+          if (scheduleService.isOutsideHours(horario, t)) continue
+          const v = scheduleService.todaysHours(horario, t)
+          expect(v, `${nombre} @ minuto ${m}`).not.toBe(null)
+          const ahora = horaLocal(t)
+          const abre = minutosDe(v.open)
+          const cierra = minutosDe(v.close)
+          const dentro = cierra < abre
+            ? (ahora >= abre || ahora < cierra)
+            : (ahora >= abre && ahora < cierra)
+          expect(dentro, `${nombre} @ minuto ${m}: abierto pero enseña ${v.open}–${v.close}`)
+            .toBe(true)
+        }
+      })
+
+      it(`${nombre}: el cierre que enseña es el minuto en que cierra`, () => {
+        // ⚠️ Esto es lo que cazaba el fallo de los turnos solapados: enseñar un
+        // cierre ANTES del real deja al cliente creyendo que no le da tiempo.
+        for (let m = 5; m < 7 * 24 * 60; m += 5) {
+          const antes = new Date(DOMINGO + (m - 5) * 60e3)
+          const ahora = new Date(DOMINGO + m * 60e3)
+          const cerrabaAntes = scheduleService.isOutsideHours(horario, antes)
+          const cierraAhora = scheduleService.isOutsideHours(horario, ahora)
+          if (cerrabaAntes || !cierraAhora) continue
+          // Justo cerró: lo que se enseñaba un momento antes tiene que ser el
+          // turno que acaba de terminar.
+          const v = scheduleService.todaysHours(horario, antes)
+          expect(minutosDe(v.close), `${nombre}: cerró en el minuto ${horaLocal(ahora)} enseñando ${v.open}–${v.close}`)
+            .toBe(horaLocal(ahora))
+        }
+      })
+    }
+  })
+
   it('mantiene una implementación TypeScript única para horarios', () => {
     const service = fs.readFileSync(new URL('../src/services/schedule.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')

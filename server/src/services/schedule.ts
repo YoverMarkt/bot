@@ -42,6 +42,8 @@ function buildScheduleMessage(
   return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
 }
 
+const MINUTOS_DEL_DIA = 24 * 60
+
 /** Los minutos desde medianoche de un «HH:MM» del panel. */
 const minutosDe = (hora: string): number => {
   const [h, m] = String(hora).split(':').map(Number)
@@ -100,19 +102,45 @@ const turnoVigente = (
   minutos: number,
   diaDeHoy: number,
 ): ScheduleRecord | null => {
-  const hoy = active.find(day => day.day_of_week === diaDeHoy)
+  const vivos: { config: ScheduleRecord; faltan: number }[] = []
+
   // El de hoy, solo si ya llegó su hora de apertura.
+  const hoy = active.find(day => day.day_of_week === diaDeHoy)
   if (hoy && minutos >= minutosDe(hoy.open_time) && dentroDelTramo(hoy, minutos)) {
-    return hoy
+    const abre = minutosDe(hoy.open_time)
+    const cierra = minutosDe(hoy.close_time)
+    // Si cruza, cierra MAÑANA: lo que falta pasa por la medianoche.
+    vivos.push({
+      config: hoy,
+      faltan: cierra < abre ? (MINUTOS_DEL_DIA - minutos) + cierra : cierra - minutos,
+    })
   }
-  // Si no, la cola del de ayer, y solo si de verdad cruzaba la medianoche.
+
+  // Y la cola del de ayer, si de verdad cruzaba la medianoche.
   const vispera = active.find(day => day.day_of_week === (diaDeHoy + 6) % 7)
   if (vispera
     && minutosDe(vispera.close_time) < minutosDe(vispera.open_time)
     && minutos < minutosDe(vispera.close_time)) {
-    return vispera
+    vivos.push({ config: vispera, faltan: minutosDe(vispera.close_time) - minutos })
   }
-  return null
+
+  if (!vivos.length) return null
+
+  // ⚠️ CON DOS TURNOS VIVOS MANDA EL QUE CIERRA MÁS TARDE (2026-09-02).
+  //
+  // Es el turno que de verdad decide hasta cuándo se puede pedir, y por eso es
+  // el único honesto que enseñar. El dueño puede solapar turnos —«el lunes de
+  // 9 de la mañana a 2 de la madrugada» y «el miércoles de 00:00 a 5»— y esa
+  // es su decisión: el horario es suyo y aquí solo se respeta.
+  //
+  // Sin esta regla se enseñaba el más corto de los dos. Con el lunes de
+  // 09:00 a 06:00 y el martes de 00:00 a 02:00, a las 00:30 del martes decía
+  // «Abierto · cierra a las 02:00» y el local seguía abierto hasta las 06:00:
+  // el cliente creía que le quedaba media hora teniendo cuatro y media.
+  //
+  // Es el MISMO fallo que el del 2026-09-02 —enseñar un turno que no es el que
+  // manda— visto desde el otro lado, y por eso se arregla en el mismo sitio.
+  return vivos.sort((a, b) => b.faltan - a.faltan)[0].config
 }
 
 /** Los minutos del día en hora de Ecuador, que es la que manda aquí. */
