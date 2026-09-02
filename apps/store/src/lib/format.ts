@@ -51,3 +51,29 @@ export const rangoDeEspera = (minutos: number): string => {
   const desde = Math.max(1, Math.round(minutos))
   return `${desde} – ${desde + 10} min`
 }
+
+/**
+ * Cuándo vuelve a abrir, dicho como lo diría una persona.
+ *
+ * ⚠️ Nace del fallo del 2026-09-02: con la tienda cerrada se enseñaba el rango
+ * del día («8:00 AM – 2:00 AM») y a la 01:10 eso se lee como un error de la
+ * app —«si cierra a las 2, ¿por qué no puedo pedir?»—. Cerrado, lo único que
+ * importa es a qué hora volver.
+ *
+ * `inDays` viene resuelto del servidor: 0 hoy, 1 mañana, y el nombre del día
+ * para el resto. Así no hay dos sitios calculando qué día es.
+ */
+export const cuandoAbre = (
+  proxima: { open: string; inDays: number; dayName: string } | null | undefined,
+): string | null => {
+  if (!proxima?.open) return null
+  // Un solo `return`: la tienda se descarga con datos móviles y cada rama
+  // repetida son bytes que paga el cliente. Lo vigila `presupuesto-tamano`.
+  const cuando = proxima.inDays === 0
+    ? 'hoy'
+    : proxima.inDays === 1
+      ? 'mañana'
+      // «Abre el jueves 8:00 AM» — en minúscula, que va dentro de una frase.
+      : `el ${String(proxima.dayName || '').toLowerCase()}`
+  return `Abre ${cuando} ${hora12(proxima.open)}`
+}

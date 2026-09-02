@@ -255,6 +255,121 @@ describe('servicio de horarios del bot', () => {
     }
   })
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // CUÁNDO VUELVE A ABRIR
+  //
+  // El dueño lo vio en su teléfono a la 01:10 de un miércoles (2026-09-02):
+  // «Cerrado · 8:00 AM – 2:00 AM». El estado era CORRECTO —esa madrugada
+  // pertenece al martes, que cerró a las 22:00— pero nadie deduce eso de un
+  // rango: se lee «cierra a las 2 AM», se mira el reloj, y parece un fallo.
+  // Cerrado, lo único que sirve es a qué hora volver.
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('la próxima apertura', () => {
+    // El horario que tenía el dueño en ese momento.
+    const suyo = [
+      { day_of_week: 2, open_time: '08:00:00', close_time: '22:00:00', is_active: true },
+      { day_of_week: 3, open_time: '08:00:00', close_time: '02:00:00', is_active: true },
+    ]
+
+    it('el caso exacto del dueño: 01:10 de un miércoles → abre HOY a las 08:00', () => {
+      // Miércoles 01:10 en Ecuador = 06:10 UTC.
+      expect(scheduleService.proximaApertura(suyo, new Date('2026-09-02T06:10:00Z')))
+        .toEqual({ open: '08:00', inDays: 0, dayName: 'Miércoles' })
+    })
+
+    it('con la tienda ABIERTA no anuncia nada: manda el rango', () => {
+      // Miércoles 12:00: está abierto, no hay apertura que anunciar.
+      expect(scheduleService.proximaApertura(suyo, new Date('2026-09-02T17:00:00Z')))
+        .toBe(null)
+    })
+
+    // ⚠️ Si ya son las 23:00 y el tramo de hoy abría a las 08:00, ese tren se
+    // fue: anunciar «abre hoy a las 08:00» sería una apertura en pasado, que
+    // es peor que no decir nada.
+    it('si la apertura de hoy YA PASÓ, anuncia la de mañana', () => {
+      const soloMartes = [
+        { day_of_week: 2, open_time: '08:00:00', close_time: '10:00:00', is_active: true },
+        { day_of_week: 3, open_time: '09:00:00', close_time: '18:00:00', is_active: true },
+      ]
+      // Martes 12:00: el martes cerró a las 10:00. Toca el miércoles.
+      expect(scheduleService.proximaApertura(soloMartes, new Date('2026-09-01T17:00:00Z')))
+        .toEqual({ open: '09:00', inDays: 1, dayName: 'Miércoles' })
+    })
+
+    it('salta los días cerrados y nombra el día que toca', () => {
+      // Solo abre los domingos. Un lunes, la próxima es dentro de seis días.
+      const soloDomingo = [
+        { day_of_week: 0, open_time: '11:00:00', close_time: '20:00:00', is_active: true },
+      ]
+      expect(scheduleService.proximaApertura(soloDomingo, new Date('2026-08-31T17:00:00Z')))
+        .toEqual({ open: '11:00', inDays: 6, dayName: 'Domingo' })
+    })
+
+    it('sin ningún día activo no inventa una apertura', () => {
+      expect(scheduleService.proximaApertura([], new Date('2026-09-02T06:10:00Z'))).toBe(null)
+      expect(scheduleService.proximaApertura([
+        { day_of_week: 3, open_time: '08:00:00', close_time: '22:00:00', is_active: false },
+      ], new Date('2026-09-02T06:10:00Z'))).toBe(null)
+    })
+
+    // ⚠️ La coherencia con el resto: nunca puede haber estado cerrado SIN
+    // saber cuándo abre, mientras exista algún día activo. Si eso pasara, la
+    // portada volvería a quedarse sin nada que decirle al cliente.
+    it('cerrado siempre sabe decir cuándo abre, toda la semana', () => {
+      const DOMINGO = Date.UTC(2026, 7, 30, 5)
+      for (let m = 0; m < 7 * 24 * 60; m += 5) {
+        const t = new Date(DOMINGO + m * 60e3)
+        if (!scheduleService.isOutsideHours(suyo, t)) continue
+        expect(scheduleService.proximaApertura(suyo, t), `minuto ${m}`).not.toBe(null)
+      }
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // «23:59» ES EL FINAL DEL DÍA, NO UN MINUTO ANTES
+  //
+  // El dueño configura así (2026-09-02), y es más claro que cruzar la
+  // medianoche: «lunes 08:00–23:59» y «martes 00:00–03:00», cada día dentro de
+  // sus 24 h. Palabras suyas: «cada día tiene 24 horas; si quiero atender toda
+  // la noche pongo en el próximo día la hora que corresponde».
+  //
+  // El tramo se evalúa con el cierre EXCLUIDO, así que su modelo dejaba la
+  // tienda cerrada UN MINUTO ENTERO antes de medianoche — en hora punta.
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('la noche partida en dos días', () => {
+    const partido = [
+      { day_of_week: 1, open_time: '08:00:00', close_time: '23:59:00', is_active: true },
+      { day_of_week: 2, open_time: '00:00:00', close_time: '03:00:00', is_active: true },
+    ]
+    // Lunes 2026-08-31, hora de Ecuador = UTC−5.
+    const utc = hora => new Date(`2026-09-01T${hora}:00Z`)
+
+    it('no deja un hueco justo antes de medianoche', () => {
+      // 23:58 y 23:59 del lunes = 04:58 y 04:59 UTC del martes.
+      expect(scheduleService.isOutsideHours(partido, utc('04:58'))).toBe(false)
+      expect(scheduleService.isOutsideHours(partido, utc('04:59'))).toBe(false)
+    })
+
+    it('y enlaza con el tramo del día siguiente sin cortes', () => {
+      expect(scheduleService.isOutsideHours(partido, utc('05:00'))).toBe(false) // 00:00 mar
+      expect(scheduleService.isOutsideHours(partido, utc('05:30'))).toBe(false) // 00:30
+      expect(scheduleService.isOutsideHours(partido, utc('07:59'))).toBe(false) // 02:59
+      expect(scheduleService.isOutsideHours(partido, utc('08:00'))).toBe(true)  // 03:00
+    })
+
+    // ⚠️ Lo que NO puede cambiar: un cierre normal sigue siendo excluyente, o
+    // un negocio que cierra a las 22:00 seguiría abierto a las 22:00.
+    it('un cierre normal sigue cerrando a su hora', () => {
+      const normal = [
+        { day_of_week: 1, open_time: '08:00:00', close_time: '22:00:00', is_active: true },
+      ]
+      expect(scheduleService.isOutsideHours(normal, new Date('2026-08-31T02:59:00Z'))).toBe(true)
+      expect(scheduleService.isOutsideHours(normal, new Date('2026-08-31T14:00:00Z'))).toBe(false)
+      expect(scheduleService.isOutsideHours(normal, new Date('2026-09-01T02:59:00Z'))).toBe(false)
+      expect(scheduleService.isOutsideHours(normal, new Date('2026-09-01T03:00:00Z'))).toBe(true)
+    })
+  })
+
   it('mantiene una implementación TypeScript única para horarios', () => {
     const service = fs.readFileSync(new URL('../src/services/schedule.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')

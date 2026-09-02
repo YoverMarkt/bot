@@ -173,12 +173,29 @@ export interface TodaysHours {
   close: string
 }
 
+export interface ProximaApertura {
+  /** «HH:MM» en 24 h; la app la formatea a AM/PM. */
+  open: string
+  /** 0 = hoy · 1 = mañana · 2-6 = ese día de la semana. */
+  inDays: number
+  /** «Miércoles». Ya viene resuelto para no recalcular el día en la app. */
+  dayName: string
+}
+
 export interface Catalog {
   business: Business | null
   status: StoreStatus
   canOrder: boolean
   /** El horario que se enseña en la portada, junto a la píldora de estado. */
   todaysHours?: TodaysHours | null
+  /**
+   * Cuándo vuelve a abrir. Solo viene con la tienda CERRADA.
+   *
+   * ⚠️ Es lo único que le sirve a quien llega fuera de horario. El rango del
+   * día induce a error cuando cruza la medianoche: «Cerrado · 8:00 AM – 2:00
+   * AM» leído a la 01:10 parece un fallo de la app, y el dueño lo vivió.
+   */
+  nextOpen?: ProximaApertura | null
   categories: Category[]
   products: Product[]
   uncategorized: number

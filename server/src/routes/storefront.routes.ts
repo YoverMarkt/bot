@@ -122,6 +122,10 @@ const schedule: {
     schedule: ScheduleRecord[] | null | undefined,
     now?: Date,
   ): { open: string; close: string } | null
+  proximaApertura(
+    schedule: ScheduleRecord[] | null | undefined,
+    now?: Date,
+  ): { open: string; inDays: number; dayName: string } | null
 } = require('../services/schedule') as typeof import('../services/schedule')
 
 const router = createRouter()
@@ -226,6 +230,11 @@ const readStatus = async (business: StorefrontBusiness | null) => {
     // El horario vigente, para la píldora de la portada. Va junto al estado y
     // no dentro del negocio porque depende de QUÉ HORA ES, no de quién es.
     hours: schedule.todaysHours(businessSchedule || []),
+    // ⚠️ Y CUÁNDO VUELVE A ABRIR, que es lo único que le importa a quien llega
+    // con la tienda cerrada (2026-09-02). El rango del día a secas hacía que
+    // «Cerrado · 8:00 AM – 2:00 AM» se leyera a la 01:10 como un error de la
+    // app. Es `null` mientras está abierta: ahí no hay nada que anunciar.
+    nextOpen: schedule.proximaApertura(businessSchedule || []),
   }
 }
 
@@ -234,7 +243,7 @@ const readStatus = async (business: StorefrontBusiness | null) => {
 // WhatsApp para pedir el suyo. Nada más: ni catálogo, ni precios, ni clientes.
 router.get('/api/store/:slug', readStorefrontBlock, async (req, res) => {
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
-  const { status, hours } = await readStatus(business)
+  const { status, hours, nextOpen } = await readStatus(business)
   if (!business?.id || status === 'no_disponible') {
     return res.status(404).json({ error: 'Esta tienda no está disponible' })
   }
@@ -273,6 +282,7 @@ router.get('/api/store/:slug', readStorefrontBlock, async (req, res) => {
     status,
     canOrder: canOrder(status),
     todaysHours: hours,
+    nextOpen,
   })
 })
 
@@ -359,7 +369,7 @@ router.post('/api/store/:slug/session/verify', verifyLimiter, async (req, res) =
 router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) => {
   const businessId = req.storeBusinessId!
   const business = await db.getBusinessBySlug(String(req.params.slug || '').trim())
-  const { status, hours } = await readStatus(business)
+  const { status, hours, nextOpen } = await readStatus(business)
 
   const [
     categories, products, variants, extras, optionGroups, options, recommendations,
@@ -415,6 +425,7 @@ router.get('/api/store/:slug/catalog', readStorefrontSession, async (req, res) =
     status,
     canOrder: canOrder(status),
     todaysHours: hours,
+    nextOpen,
     ...buildStorefrontCatalog({
       categories: categories as never,
       products: products as never,

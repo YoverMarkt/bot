@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hora12 } from '../src/lib/format'
+import { cuandoAbre, hora12 } from '../src/lib/format'
 
 describe('hora12', () => {
   // ⚠️ Las dos que rompen cualquier versión ingenua, y son justo las que este
@@ -30,5 +30,41 @@ describe('hora12', () => {
     for (const malo of ['', null, undefined, 'abierto', '99:99']) {
       expect(hora12(malo)).toBe(String(malo ?? '').trim())
     }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUÁNDO ABRE, DICHO COMO LO DIRÍA UNA PERSONA
+//
+// El dueño vio a la 01:10 de un miércoles: «Cerrado · 8:00 AM – 2:00 AM». El
+// estado era correcto, pero el rango se lee como una contradicción. Cerrado,
+// lo único que sirve es a qué hora volver.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('cuandoAbre', () => {
+  it('dice hoy, mañana o el día que toque', () => {
+    expect(cuandoAbre({ open: '08:00', inDays: 0, dayName: 'Miércoles' }))
+      .toBe('Abre hoy 8:00 AM')
+    expect(cuandoAbre({ open: '08:00', inDays: 1, dayName: 'Jueves' }))
+      .toBe('Abre mañana 8:00 AM')
+    // En minúscula: va dentro de una frase, no empieza oración.
+    expect(cuandoAbre({ open: '11:30', inDays: 6, dayName: 'Domingo' }))
+      .toBe('Abre el domingo 11:30 AM')
+  })
+
+  it('en AM/PM, que es como se dice una hora aquí', () => {
+    expect(cuandoAbre({ open: '13:00', inDays: 0, dayName: 'Lunes' }))
+      .toBe('Abre hoy 1:00 PM')
+    expect(cuandoAbre({ open: '00:00', inDays: 1, dayName: 'Lunes' }))
+      .toBe('Abre mañana 12:00 AM')
+  })
+
+  // ⚠️ El servidor solo manda `nextOpen` con la tienda cerrada, y una versión
+  // vieja del servidor no lo manda nunca. La app no puede romperse por eso:
+  // se queda sin la frase, no sin pantalla. Comprobado en captura contra
+  // producción antes de desplegar el servidor nuevo.
+  it('sin dato no inventa nada', () => {
+    expect(cuandoAbre(null)).toBe(null)
+    expect(cuandoAbre(undefined)).toBe(null)
+    expect(cuandoAbre({ open: '', inDays: 0, dayName: 'Lunes' })).toBe(null)
   })
 })

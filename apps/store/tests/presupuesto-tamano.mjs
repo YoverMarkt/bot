@@ -112,7 +112,28 @@ const DIST = path.join(RAIZ, 'dist')
 // mano en `App.tsx` —o sea, en el paquete principal— para una pantalla que en
 // una visita normal no se ve nunca. Ahora viaja aparte, como las otras cinco
 // puertas. Subir el número fue el último recurso, no el primero.
-const PRESUPUESTO_KB = 93
+//
+// 93 → 94 el 2026-09-02, y también queda escrito por qué.
+//
+// Entró: `cuandoAbre` y la rama que enseña «Abre hoy 8:00 AM» en vez del rango
+// cuando la tienda está cerrada. Son unos 100 bytes gzip y no es una librería:
+// es el arreglo de un texto que hacía que la portada se contradijera sola
+// —«Cerrado · 8:00 AM – 2:00 AM» leído a la 01:10— y que el dueño confundió
+// con un fallo de la app. Si a él le pasó, a un cliente le pasa seguro.
+//
+// ⚠️ Se intentó que cupiera antes de tocar el número: `cuandoAbre` se compactó
+// a un solo `return` en vez de tres ramas. No bastó por unas decenas de bytes.
+//
+// ⚠️ Y se DESCARTÓ la optimización grande a propósito. `ProductSheet` (703
+// líneas) y `CartSheet` (755) viajan en el paquete principal y **ninguno se ve
+// en la primera pantalla**: diferirlos sacaría muchos kilobytes de golpe. Pero
+// los dos son el camino del DINERO —la ficha del producto y el checkout— y
+// montarlos con `lazy` obliga a decidir qué pasa con la animación de salida al
+// cerrarlos, que hoy depende de que estén siempre montados. Cambiar eso por
+// 100 bytes es arriesgar el flujo de compra para ganar una cifra. Queda
+// anotado como la palanca de verdad para el día que el presupuesto apriete
+// —vale varios kB, no decenas de bytes— y ese día se hace con su prueba.
+const PRESUPUESTO_KB = 94
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
