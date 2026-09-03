@@ -384,6 +384,36 @@ const revokeOtherStorefrontSessions = async (
   return Number(data ?? 0)
 }
 
+/**
+ * Revoca TODOS los enlaces vivos de un cliente. Lo usa MENÚ.
+ *
+ * ⚠️ Nace de una prueba del dueño (2026-09-03): escribió MENÚ, recibió las
+ * categorías… y el botón «Ver la carta» de arriba **seguía abriendo el local
+ * anterior**. Sus palabras: «todo lo de la palabra menú hacia arriba debería
+ * morirse». Y no era solo estético: MENÚ suelta el candado de «un pedido a la
+ * vez», así que por ese enlace viejo se podía armar un pedido en un local
+ * mientras se navegaba otro — justo lo que el candado existe para impedir.
+ *
+ * ⚠️ Es un UPDATE directo y no una RPC a propósito: la que existe
+ * (`revoke_other_storefront_sessions`) conserva una sesión por contrato y
+ * rechaza un `keep` nulo, así que no sabe revocarlas todas. Añadir una RPC
+ * gemela para una condición más simple sería una migración por nada.
+ *
+ * Devuelve cuántas revocó. No lanza si no había ninguna: MENÚ se escribe
+ * muchas veces sin tener enlace abierto.
+ */
+const revokeAllStorefrontSessions = async (customerId: string): Promise<number> => {
+  if (!customerId) return 0
+  const { data, error } = await db
+    .from('storefront_sessions')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('customer_id', customerId)
+    .is('revoked_at', null)
+    .select('id')
+  fail(error, 'No se pudieron revocar los enlaces del cliente')
+  return (data || []).length
+}
+
 // El pedido de la tienda: la RPC resuelve cada precio desde la base. Aquí solo
 // se traducen los nombres de los parámetros.
 const createStorefrontOrder = async (input: {
@@ -998,6 +1028,7 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   revokeOtherStorefrontSessions,
+  revokeAllStorefrontSessions,
   cancelUnpaidOrderOnPurpose,
   createStorefrontOrder,
   getOrderMoney,

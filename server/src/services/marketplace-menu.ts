@@ -216,6 +216,33 @@ const cabecera = (saludar: boolean | 'vuelta'): string => (
   saludar === 'vuelta' ? `${REGRESO}\n\n` : saludar ? `${SALUDO}\n\n` : ''
 )
 
+/**
+ * Lo que se le dice a quien manda una foto TENIENDO local elegido y sin pedido.
+ *
+ * ⚠️ Es distinto del texto del menú, y por eso no se reutiliza: allí el cliente
+ * está eligiendo local y basta con «por aquí no me sirve»; aquí ya está dentro
+ * de un local y lo que necesita saber es que **su foto no es un comprobante
+ * porque todavía no ha pedido nada**. Sin esa mitad, quien manda una captura
+ * puede creer que acaba de pagar.
+ *
+ * Devuelve `null` cuando el mensaje es texto de verdad: entonces manda el
+ * recordatorio de siempre, sin nada delante.
+ */
+export const textoDeAdjuntoRecibido = (mensaje: string): string | null => {
+  const clave = normalizar(mensaje)
+  if (clave === '[foto]') {
+    return '📷 Recibí tu foto, pero todavía no es un comprobante: aún no has '
+      + 'hecho tu pedido.'
+  }
+  if (clave === '[nota de voz]') {
+    return '🎤 Recibí tu nota de voz, pero por aquí todavía no puedo escucharla.'
+  }
+  if (clave === '[ubicacion]') {
+    return '📍 Recibí tu ubicación. Te la pediré al finalizar el pedido, no antes.'
+  }
+  return null
+}
+
 /** El encabezado del «no casó con la lista», según lo que llegó. */
 const reproche = (mensaje: string): string => textoDeAdjunto(mensaje) ?? NO_ENTENDI
 
@@ -817,11 +844,25 @@ export function resolverReinicio(
   }
   // No entendió: se repite la pregunta, no se decide por él. Tirar un carrito
   // por un «ok» ambiguo es lo único que no tiene vuelta atrás.
+  //
+  // ⚠️ UN SALUDO NO ES UNA TONTERÍA (2026-09-03). «Hola» recibía «Eso no lo
+  // pude entender», y el dueño lo dijo probándolo: «un hola se puede entender».
+  // Se entiende perfectamente — lo que pasa es que no responde a la pregunta.
+  // Se le recuerda dónde está en vez de reprocharle, que es lo mismo que ya
+  // hacía el menú desde el 2026-08-25 y que aquí faltaba.
+  //
+  // ⚠️ El reproche NO desaparece: «asdfghjkl» lo sigue recibiendo. Lo que se
+  // separa es «escribió algo que no toca» de «escribió cualquier cosa».
+  const cabecera = esSaludo(mensaje)
+    ? (estado.negocio
+      ? `Estás pidiendo en *${estado.negocio.name}*.`
+      : '👋 ¡Hola!')
+    : reproche(mensaje)
   return {
     reinicia: false,
     continua: false,
     respuesta: {
-      reply: `${reproche(mensaje)}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
+      reply: `${cabecera}\n\n¿Empezamos de nuevo o sigues con tu pedido?`,
       options: [SI_REINICIAR, NO_CONTINUAR],
       vista: { vista: 'confirmando_reinicio', pagina: 0 },
     },

@@ -7,6 +7,7 @@ import {
   responderAlMenu,
   verCategorias,
   esAdjuntoSinTexto,
+  textoDeAdjuntoRecibido,
   verResultados,
   resolverReinicio,
   type MarketplaceBusiness,
@@ -59,6 +60,12 @@ export interface MarketplaceEntryDatabase {
    * como salía antes de 2026-09-03.
    */
   getSchedulesFor?(businessIds: string[]): Promise<Map<string, ScheduleRecord[]>>
+  /**
+   * Revoca todos los enlaces vivos del cliente. Lo llama MENÚ.
+   * Opcional: sin ella el enlace anterior sigue vivo, que es como estaba
+   * antes del 2026-09-03.
+   */
+  revokeAllStorefrontSessions?(customerId: string): Promise<number>
   resolveMarketplaceCustomer(phone: string): Promise<{ id: string; name: string | null }>
   getConversation(customerId: string): Promise<{
     current_state: string
@@ -396,6 +403,7 @@ export async function handleMarketplaceMessage(
       // de las dos, la mitad de los abandonos avisados seguirían caducando y
       // sumando falta.
       await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
+      await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
       // 'vuelta': vuelve al inicio a propósito, igual que `responderAlMenu`.
       const respuesta = verCategorias(categorias, 0, 'vuelta')
       await guardar(deps, customer.id, conversation?.version, respuesta, {
@@ -411,6 +419,11 @@ export async function handleMarketplaceMessage(
     // pedido, y avisar no puede costar una falta — por eso se cancela en vez
     // de dejarlo caducar, igual que hace «✅ Empezar de nuevo».
     await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
+    // ⚠️ LOS DOS CAMINOS de MENÚ revocan, y conectar solo uno dejaría la mitad
+    // de los MENÚ con el enlace vivo: aquí entra el MENÚ escrito, y arriba el
+    // que llega estando en la pregunta de reinicio —donde además cae el botón
+    // «✅ Empezar de nuevo», porque su texto normaliza a un COMANDO_MENU—.
+    await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
     const respuesta = responderAlMenu(estado, categorias)
     await guardar(deps, customer.id, conversation?.version, respuesta, {
       soltarLocal: true,
@@ -627,7 +640,25 @@ export async function handleMarketplaceMessage(
     // ⚠️ `soltarLocal: false`: aquí solo se PREGUNTA. El carrito y el local
     // siguen donde estaban hasta que el cliente confirme — tirar un carrito es
     // lo único que no tiene vuelta atrás.
-    await guardar(deps, customer.id, conversation?.version, respuesta, {
+    // ⚠️ SE NOMBRA LO QUE LLEGÓ, y solo aquí (2026-09-03). El dueño mandó una
+    // foto teniendo local elegido y recibió «Estás pidiendo en Monster Pizza»,
+    // que es cierto pero no dice nada de su foto: se queda sin saber si llegó,
+    // si servía, o si acaba de pagar sin querer.
+    //
+    // ⚠️ NO se aplica a quien DEBE un comprobante ni a quien lo tiene en
+    // revisión, y ese corte es el punto: ahí una foto es justo lo que se
+    // espera. Si una llega hasta aquí en ese estado es porque el buzón no pudo
+    // procesarla, y decirle «esto no es un comprobante» sería lo contrario de
+    // la verdad. Esos dos casos conservan su mensaje intacto.
+    const adjunto = conversation?.current_state !== 'esperando_comprobante'
+      && conversation?.current_state !== 'pago_en_revision'
+      ? textoDeAdjuntoRecibido(text)
+      : null
+    const conAviso = adjunto
+      ? { ...respuesta, reply: `${adjunto}\n\n${respuesta.reply}` }
+      : respuesta
+
+    await guardar(deps, customer.id, conversation?.version, conAviso, {
       soltarLocal: false,
       // ⚠️ El estado del PAGO no se pisa. `guardar` escribe 'navegando' salvo
       // en la confirmación de reinicio, y eso borraría el
@@ -640,7 +671,7 @@ export async function handleMarketplaceMessage(
       conservarEstado: conversation?.current_state === 'pago_en_revision'
         || conversation?.current_state === 'esperando_comprobante',
     })
-    await send(respuesta.reply, respuesta.options)
+    await send(conAviso.reply, conAviso.options)
     return
   }
 
@@ -1080,6 +1111,41 @@ async function mandarElEnlace(
  * ⚠️ Falla en silencio: si cancelar no sale, el pedido caduca solo a los 15
  * minutos como siempre. Nunca puede impedirle reiniciar.
  */
+/**
+ * MENÚ mata el enlace anterior, salvo cuando el cliente lo necesita.
+ *
+ * ⚠️ Hasta el 2026-09-03 MENÚ soltaba el local pero dejaba **el enlace vivo**:
+ * el botón «Ver la carta» de unos mensajes más arriba seguía abriendo la
+ * tienda anterior. Y como MENÚ también quita el candado de «un pedido a la
+ * vez», por ahí se podía armar un pedido en un local mientras se navegaba
+ * otro. El dueño lo pidió con estas palabras: «todo lo de la palabra menú
+ * hacia arriba debería morirse».
+ *
+ * ⚠️ LA EXCEPCIÓN LA MARCÓ ÉL MISMO, y es la mitad importante: quien tiene un
+ * pedido **esperando comprobante** o **en revisión** conserva su enlace. Ahí
+ * la mini app es por donde manda su captura y por donde ve cómo va lo suyo;
+ * revocárselo le dejaría un pedido pagado sin forma de rematarlo.
+ *
+ * ⚠️ Falla en SILENCIO: si la revocación revienta, MENÚ sigue funcionando como
+ * siempre. Es una limpieza, no una defensa — la defensa de verdad es el 403
+ * de `readStorefrontSession` y el candado de la conversación.
+ */
+async function matarEnlaceAnterior(
+  deps: MarketplaceEntryDeps,
+  customerId: string,
+  estadoActual: string | null | undefined,
+): Promise<void> {
+  const necesitaSuEnlace = estadoActual === 'esperando_comprobante'
+    || estadoActual === 'pago_en_revision'
+  if (necesitaSuEnlace || !deps.database.revokeAllStorefrontSessions) return
+  const revocados = await deps.database
+    .revokeAllStorefrontSessions(customerId)
+    .catch(() => 0)
+  if (revocados) {
+    deps.logger?.log(`🔗 [marketplace] MENÚ revocó ${revocados} enlace(s) anterior(es)`)
+  }
+}
+
 async function abandonarPedido(
   deps: MarketplaceEntryDeps,
   businessId: string | null | undefined,
