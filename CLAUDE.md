@@ -161,104 +161,11 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 > están enteras allí. Consulta la que toque tu tarea ANTES de tocarla —
 > cada una existe porque algo falló.
 
-<details>
-<summary>Índice de las 93 (búscalas por título en DECISIONES.md)</summary>
+> Los títulos de las 93 se listan con `grep '^## ' DECISIONES.md` — se retiró
+> de aquí la copia el 2026-09-03 porque costaba ~1.100 tokens en CADA sesión
+> para decir lo que ese comando dice en un segundo, y el archivo ya se señala
+> dos veces: en la tabla de la cabecera y en la lista de piezas de abajo.
 
-- El dueño escribe una BIENVENIDA, no un prompt
-- Quedan DOS modos de atención
-- Con qué modo NACE cada tipo
-- Cómo pide cada tipo: cuánto hay que ELEGIR, no cuántos productos hay
-- El alta pide OCHO campos, no veintiuno
-- Un local nuevo NACE en el marketplace
-- Un negocio puede no tener canal propio
-- Un pedido a la vez, y MENÚ como salida
-- Umbani es CERRADO: el comprobante no suelta el candado
-- Tres situaciones, tres mensajes
-- El comprobante que NO cuadra se rechaza solo
-- Que pague OTRA persona va a REVISIÓN, y el cliente no se entera
-- La cuenta del panel manda sobre todo
-- El comprobante falso deja el pedido EXPIRADO
-- Un bloqueo de local NO es un bloqueo de Umbani
-- Se cuenta la RACHA, no el historial
-- Las defensas son para TODOS los locales
-- El pedido AVISA a la conversación, y quien se va avisando no paga la multa
-- MENÚ mata todo proceso, y el recordatorio deja de mentir
-- El local cerrado se ve, pero se ve CERRADO
-- Cerrado dice CUÁNDO abre, y «23:59» es el final del día
-- La mini app abría lenta, y una cabecera explicaba casi todo
-- El bot reconoce a quien VUELVE, y nombra lo que no es texto
-- Cuatro marcadores, y ninguno se puede confundir
-- Dos puertas más en la mini app
-- UNA SOLA definición de «bloqueado», y la mini app la respeta
-- La bienvenida de Umbani, y la pantalla del bloqueado
-- El panel del dueño y sus dos botones, con la misma regla
-- El enlace del marketplace sale como BOTÓN, y el visto azul se marca
-- El enlace es de UN SOLO USO: uno vivo a la vez
-- «Seguir mi pedido» DEVUELVE el enlace
-- Buscar sin IA
-- El menú del marketplace
-- «Hola» recibe la bienvenida, no un reproche
-- Las opciones del chat salen del MISMO motor que la mini app
-- El bloqueo de «un pedido a la vez» SE ACTIVA
-- Rechazar el comprobante avisa al cliente
-- El checkout dentro del chat
-- WhatsApp puede mandar una UBICACIÓN
-- Cómo se pide lo decide el TIPO del local, no cuántos productos tiene
-- El carrito del menú sale de la memoria
-- El canal de la plataforma
-- La cola durable admite un mensaje sin local
-- La conversación del marketplace
-- Citas: RETIRADAS el 2026-08-16
-- Hospedaje: RETIRADO el 2026-08-16
-- Catálogo de arranque (`server/src/services/business-templates.ts`):
-- El desplegable solo ofrece comida y retail
-- Grupos de opciones:
-- Motor universal de productos:
-- Un doble toque no crea dos pedidos:
-- Complemento incluido ≠ adicional independiente:
-- El pago puede llegar por fuera de la app.
-- El aviso que falla se reintenta
-- El pedido sin pagar CADUCA SOLO
-- Los avisos al cliente
-- Lo que pidió el cliente se cuenta ENTERO y agrupado
-- El pedido se queda con la dirección, no con un puntero.
-- El mismo teléfono vive con y sin el `+`.
-- Quien escribe por molestar tiene dos frenos, y son distintos a propósito
-- El local del comprobante sale del PEDIDO, nunca del número
-- El número de la plataforma NO se lo puede quedar un local
-- Se retira el canal propio del panel
-- Se retira CONVERSACIONES del panel del dueño
-- El BLOQUEO sobrevive y se muda a Clientes
-- El mínimo de compra y el tope por hora
-- Nadie deja diez pedidos abiertos
-- El bloqueo de PLATAFORMA
-- El marketplace ya no responde sin límite
-- Se puede bloquear a quien NUNCA compró
-- El bloqueo alcanza al menú del marketplace
-- El umbral de silencio pasa de 12 h a 24
-- El superadmin mira el MARKETPLACE, no un bot por local
-- Una sola decisión dice si un local existe para el cliente
-- Lo que se retira del panel del superadmin
-- El simulador prueba el MARKETPLACE
-- El comprobante tiene HUELLA, y el duplicado se caza
-- El comprobante se LEE, se puntúa y el dueño lo ve
-- El comprobante que llega al NÚMERO DEL MARKETPLACE ya no se pierde
-- El comprobante llega por el CHAT, y esa es ya la única puerta
-- Una foto borrosa no cuesta una venta
-- El comprobante NO es público:
-- El alta no pregunta lo que se deduce del tipo
-- El número del marketplace se verifica
-- El alta por API estaba ROTA y nadie lo veía
-- El dueño configura, la mini app obedece
-- Los dos botones del pago NO hacen lo mismo
-- Cuánto tarda el negocio
-- Pedidos programados: RETIRADOS el 2026-08-07
-- EL MARGEN SE SUMA AL PRECIO, no se le quita al dueño
-- El horario puede CRUZAR LA MEDIANOCHE.
-- Lo que gana la plataforma (`pricing_rules` + `calculate_platform_markup`):
-- El acumulado y el cierre de mes (`platform_markup_summary`, `settle_month_commission`):
-
-</details>
 
 ### Piezas con razonamiento largo — léelo ANTES de tocarlas
 
@@ -379,14 +286,13 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 | Sacar un cambio a producción: migraciones, despliegue, humo, salud del canal | **ship** |
 | Hay un error, bug o comportamiento inesperado | **debugging** |
 | Crear feature/endpoint/etiqueta nueva o cambiar comportamiento que otros consumen | **documentacion** |
-| Crear o editar el system prompt de un bot de cliente (pizzería, perfumería, supermercado…) | **prompts-de-bots** |
 | Crear o modificar gráficos, dashboards, KPIs o visualizaciones en el panel | **graficos-dashboard** (usa la bundled **dataviz**) |
 | Crear, migrar o revisar pantallas React y componentes del sistema visual | **shadcn-ui** |
 
 **Combinaciones frecuentes:**
 - "Agrega una tabla/campo nuevo" → base-de-datos + arquitecto-saas + tester-saas + documentacion.
 - "Cambia el login / cómo se guardan las keys" → seguridad-saas + arquitecto-saas + tester-saas.
-- "El bot responde mal / no detecta venta" → debugging + (prompts-de-bots si es del prompt) + tester-saas.
+- "El bot responde mal / no detecta venta" → debugging + tester-saas.
 - "Revisa esto antes de subirlo" → revisor-pr.
 
 ---
