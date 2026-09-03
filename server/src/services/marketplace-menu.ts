@@ -32,6 +32,17 @@ export interface MarketplaceBusiness {
   name: string
   type: string
   prep_min: number | null
+  /**
+   * ¿Está atendiendo AHORA? `undefined` cuando no se pudo averiguar.
+   *
+   * ⚠️ Los tres estados importan. `false` es «cerrado, díselo»; `undefined` es
+   * «no lo sé», y ahí se pinta como siempre en vez de marcarlo cerrado por si
+   * acaso: llamar cerrado a un local que está abierto le cuesta ventas de
+   * verdad, y la consulta del horario puede fallar.
+   */
+  abierto?: boolean
+  /** A qué hora abre, ya resuelto, para el que está cerrado. */
+  abre?: { open: string; inDays: number; dayName: string } | null
 }
 
 /** Dónde está el cliente dentro del menú. Se guarda en `flow_state`. */
@@ -212,7 +223,69 @@ const etiquetaCategoria = (categoria: MarketplaceCategory): string => (
   categoria.emoji ? `${categoria.emoji} ${categoria.label}` : categoria.label
 )
 
-const etiquetaNegocio = (negocio: MarketplaceBusiness): string => negocio.name
+/**
+ * Cómo se lee un local en la lista.
+ *
+ * ⚠️ El cerrado lleva una LUNA delante y nada más, y esa es toda la libertad
+ * que hay: WhatsApp recorta los títulos a 20 caracteres, y un título recortado
+ * es un título IMPOSIBLE DE ELEGIR — pasó con «✅ Sí, empezar de nuevo», que
+ * volvía cortado y no casaba con nada, dejando al cliente en bucle. Un emoji
+ * cabe; «· Cerrado» no. La hora de apertura va en el TEXTO del mensaje, que no
+ * tiene ese límite.
+ */
+const LUNA = '🌙'
+
+const etiquetaNegocio = (negocio: MarketplaceBusiness): string => (
+  negocio.abierto === false ? `${LUNA} ${negocio.name}` : negocio.name
+)
+
+/**
+ * Los abiertos primero, y entre iguales se respeta el orden que trajo la base.
+ *
+ * ⚠️ `sort` en JavaScript es estable desde ES2019, así que esto NO revuelve
+ * los locales: solo baja los cerrados al final. Y los de estado desconocido
+ * cuentan como abiertos, que es el lado que no cuesta ventas.
+ */
+const abiertosPrimero = (locales: MarketplaceBusiness[]): MarketplaceBusiness[] => (
+  locales.slice().sort((a, b) => (
+    Number(a.abierto === false) - Number(b.abierto === false)
+  ))
+)
+
+/**
+ * La línea que dice a qué hora abren los cerrados de esta pantalla.
+ *
+ * Va en el cuerpo del mensaje porque ahí no hay límite de caracteres, y solo
+ * nombra a los que se están viendo: prometer horarios de locales que no están
+ * en la lista es ruido.
+ */
+/**
+ * «08:00» → «8:00 AM». Es como se dice una hora en Ecuador y Colombia, y es lo
+ * mismo que enseña la mini app: el cliente ve el mismo formato en los dos
+ * sitios. Una hora que no se entiende se devuelve tal cual — mejor «08:00» que
+ * un «NaN:00 AM» delante del cliente.
+ */
+const hora12 = (hhmm: string): string => {
+  const partes = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || '').trim())
+  if (!partes) return String(hhmm || '')
+  const horas = Number(partes[0].slice(0, 2))
+  if (!Number.isInteger(horas) || horas < 0 || horas > 23) return String(hhmm)
+  const doce = horas % 12 === 0 ? 12 : horas % 12
+  return `${doce}:${partes[2]} ${horas < 12 ? 'AM' : 'PM'}`
+}
+
+const avisoDeCerrados = (mostrados: MarketplaceBusiness[]): string => {
+  const cerrados = mostrados.filter(n => n.abierto === false)
+  if (!cerrados.length) return ''
+  const lineas = cerrados.map((n) => {
+    if (!n.abre?.open) return `${LUNA} ${n.name} · cerrado`
+    const cuando = n.abre.inDays === 0
+      ? 'hoy'
+      : n.abre.inDays === 1 ? 'mañana' : `el ${n.abre.dayName.toLocaleLowerCase('es')}`
+    return `${LUNA} ${n.name} · abre ${cuando} ${hora12(n.abre.open)}`
+  })
+  return `\n\n${lineas.join('\n')}`
+}
 
 /** El trozo de lista que toca, más «Ver más» si queda algo detrás. */
 function paginar<T>(todos: T[], pagina: number, etiqueta: (item: T) => string) {
@@ -309,9 +382,14 @@ export function verNegocios(
       vista: { vista: 'negocios', categoria: categoria.code, pagina: 0 },
     }
   }
-  const { hayMas, opciones } = paginar(negocios, pagina, etiquetaNegocio)
+  // ⚠️ Los abiertos primero (2026-09-03). Un local cerrado en lo alto de la
+  // lista es el primero que toca el cliente, y el que peor puede acabar: mira
+  // la carta, arma el pedido y se topa con el cierre al confirmar.
+  const { mostrados, hayMas, opciones } = paginar(
+    abiertosPrimero(negocios), pagina, etiquetaNegocio,
+  )
   return {
-    reply: `${etiquetaCategoria(categoria)}\n\nElige un local 👇`,
+    reply: `${etiquetaCategoria(categoria)}\n\nElige un local 👇${avisoDeCerrados(mostrados)}`,
     options: [...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER],
     vista: { vista: 'negocios', categoria: categoria.code, pagina },
   }
@@ -332,9 +410,12 @@ export function verResultados(
   pagina = 0,
 ): MarketplaceReply {
   const limpia = String(consulta || '').trim().slice(0, 60)
-  const { hayMas, opciones } = paginar(negocios, pagina, etiquetaNegocio)
+  // Misma regla que en la carta: los que atienden ahora, arriba.
+  const { mostrados, hayMas, opciones } = paginar(
+    abiertosPrimero(negocios), pagina, etiquetaNegocio,
+  )
   return {
-    reply: `🔎 Esto encontré para *${limpia}*:`,
+    reply: `🔎 Esto encontré para *${limpia}*:${avisoDeCerrados(mostrados)}`,
     options: [...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER],
     vista: { vista: 'busqueda', consulta: limpia, pagina },
   }
@@ -383,7 +464,12 @@ export function paso(input: PasoInput): MarketplaceReply {
   // MISMO camino (`negocioElegido`): un local es un local, venga del menú o de
   // haber escrito «quiero ceviche».
   if (vista.vista === 'busqueda' && vista.consulta) {
-    const { mostrados, hayMas, opciones } = paginar(negocios, vista.pagina, etiquetaNegocio)
+    // ⚠️ EL MISMO ORDEN que al pintar, o el cliente toca el tercero y recibe
+    // otro: `verNegocios` y `verResultados` bajan los cerrados al final, así
+    // que aquí hay que paginar sobre esa misma lista para resolver qué tocó.
+    const { mostrados, hayMas, opciones } = paginar(
+      abiertosPrimero(negocios), vista.pagina, etiquetaNegocio,
+    )
     const elegida = elegir(mensaje, [
       ...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER,
     ])
@@ -413,7 +499,12 @@ export function paso(input: PasoInput): MarketplaceReply {
     // La categoría dejó de tener locales mientras el cliente miraba.
     if (!categoria) return verCategorias(categorias, 0)
 
-    const { mostrados, hayMas, opciones } = paginar(negocios, vista.pagina, etiquetaNegocio)
+    // ⚠️ EL MISMO ORDEN que al pintar, o el cliente toca el tercero y recibe
+    // otro: `verNegocios` y `verResultados` bajan los cerrados al final, así
+    // que aquí hay que paginar sobre esa misma lista para resolver qué tocó.
+    const { mostrados, hayMas, opciones } = paginar(
+      abiertosPrimero(negocios), vista.pagina, etiquetaNegocio,
+    )
     const elegida = elegir(mensaje, [
       ...opciones, ...(hayMas ? [VER_MAS] : []), VOLVER,
     ])
