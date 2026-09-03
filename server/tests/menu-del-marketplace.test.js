@@ -707,3 +707,74 @@ describe('los locales cerrados en la lista', () => {
     expect(r.reply).toContain('abre hoy 8:00 AM')
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UN SALUDO NO ES UNA TONTERÍA, Y UNA FOTO SE NOMBRA
+//
+// Probado por el dueño en su teléfono (2026-09-03) con el local ya elegido:
+//
+//   · mandó una foto  → «Estás pidiendo en Monster Pizza» (cierto, pero no
+//     decía nada de su foto: se quedaba sin saber si llegó o si servía);
+//   · escribió «Hola» → «Eso no lo pude entender», y sus palabras fueron
+//     «un hola se puede entender».
+//
+// El reproche NO desaparece: lo que se separa es «escribió algo que no toca»
+// de «escribió cualquier cosa».
+// ═══════════════════════════════════════════════════════════════════════════
+describe('lo que se responde con un local ya elegido', () => {
+  const enLocal = { bloqueado: true, negocio: { name: 'Monster Pizza', slug: 'monster' } }
+
+  const resolver = async (mensaje, estado = enLocal) => {
+    const { resolverReinicio } = await import('../dist/services/marketplace-menu.js')
+    return resolverReinicio(mensaje, estado, CATEGORIAS)
+  }
+
+  it('un saludo recibe dónde está, no un reproche', async () => {
+    for (const saludo of ['Hola', 'buenas', 'qué tal', 'hola buenas noches']) {
+      const { respuesta } = await resolver(saludo)
+      expect(respuesta.reply, saludo).toContain('Monster Pizza')
+      expect(respuesta.reply, saludo).not.toContain('no lo pude entender')
+    }
+  })
+
+  // ⚠️ Lo que NO puede perderse: quien escribe cualquier cosa sí tiene que
+  // saber que no se le entendió, o la pregunta se vuelve ruido.
+  it('pero una tontería SIGUE recibiendo el reproche', async () => {
+    const { respuesta } = await resolver('asdfghjkl')
+    expect(respuesta.reply).toContain('no lo pude entender')
+  })
+
+  // ⚠️ Y los dos botones se conservan en los dos casos: `resolverReinicio` los
+  // interpreta por su texto, así que perderlos dejaría al cliente encerrado.
+  it('las dos salidas siguen ahí, se salude o no', async () => {
+    const menu = await import('../dist/services/marketplace-menu.js')
+    for (const mensaje of ['Hola', 'asdfghjkl']) {
+      const { respuesta } = await resolver(mensaje)
+      expect(respuesta.options, mensaje).toEqual([menu.SI_REINICIAR, menu.NO_CONTINUAR])
+      expect(respuesta.vista.vista, mensaje).toBe('confirmando_reinicio')
+    }
+  })
+
+  it('sin local elegido, el saludo también se responde con calma', async () => {
+    const { respuesta } = await resolver('Hola', { bloqueado: false, negocio: null })
+    expect(respuesta.reply).not.toContain('no lo pude entender')
+    expect(respuesta.reply).toContain('Hola')
+  })
+
+  it('la foto se nombra Y dice que aún no es un comprobante', async () => {
+    const { textoDeAdjuntoRecibido } = await import('../dist/services/marketplace-menu.js')
+    const foto = textoDeAdjuntoRecibido('[foto]')
+    expect(foto).toContain('foto')
+    // Las dos mitades: que llegó, y por qué todavía no vale.
+    expect(foto).toContain('comprobante')
+    expect(foto).toContain('no has hecho tu pedido')
+  })
+
+  it('la voz y la ubicación también, y un texto no', async () => {
+    const { textoDeAdjuntoRecibido } = await import('../dist/services/marketplace-menu.js')
+    expect(textoDeAdjuntoRecibido('[nota de voz]')).toContain('voz')
+    expect(textoDeAdjuntoRecibido('[ubicación]')).toContain('ubicación')
+    expect(textoDeAdjuntoRecibido('hola')).toBe(null)
+    expect(textoDeAdjuntoRecibido('quiero una pizza')).toBe(null)
+  })
+})
