@@ -326,3 +326,30 @@ function FotoCargable({ fuente, alto, nombre }: {
     </span>
   )
 }
+
+/**
+ * La bienvenida de Umbani mientras la app carga.
+ *
+ * ⚠️ Vive aquí, y no en `App.tsx`, porque hacen falta DOS pantallas de carga
+ * seguidas y con una sola no basta (2026-09-03):
+ *
+ *   · `App` espera la PORTADA y monta `FoodStore`;
+ *   · `FoodStore` espera el CATÁLOGO, que es otra petición.
+ *
+ * Cada una tenía su `return null`, así que el cliente veía la marca, luego
+ * blanco, luego la tienda. Se arregló el primero y el segundo siguió dando
+ * tres segundos en blanco en producción — el fallo parecía resuelto en local
+ * porque la medición se cortaba antes de llegar a esa fase.
+ *
+ * ⚠️ Es un CALCO del bloque de `index.html` y usa sus mismas clases
+ * (`vz-boot`, `vz-logo`, `vz-t`, `vz-s`): así los tres relevos —HTML → App →
+ * FoodStore— son invisibles y no cuesta ni un byte de CSS nuevo. Si cambia el
+ * texto o el logo, hay que cambiarlo también allí.
+ */
+export const Bienvenida = () => (
+  <div className="vz-boot">
+    <div className="vz-logo">🛍️</div>
+    <p className="vz-t">Bienvenido a Umbani</p>
+    <p className="vz-s">Abriendo tu tienda…</p>
+  </div>
+)

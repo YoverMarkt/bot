@@ -35,6 +35,8 @@ import { readFileSync } from 'node:fs'
 // ═══════════════════════════════════════════════════════════════════════════
 
 const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const tienda = readFileSync(new URL('../src/screens/FoodStore.tsx', import.meta.url), 'utf8')
+const ui = readFileSync(new URL('../src/components/ui.tsx', import.meta.url), 'utf8')
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
 describe('el arranque no deja la pantalla en blanco', () => {
@@ -46,12 +48,25 @@ describe('el arranque no deja la pantalla en blanco', () => {
     expect(linea[1]).not.toMatch(/^null/)
   })
 
+  // ⚠️ SON DOS ESPERAS SEGUIDAS, y vigilar solo la primera no basta: se
+  // arregló la de `App` y el blanco SIGUIÓ tres segundos en producción, porque
+  // `FoodStore` espera el catálogo con su propio `return null`.
+  it('la espera del CATÁLOGO tampoco deja la pantalla vacía', () => {
+    // ⚠️ Se comprueban las DOS caras y no una regex sola: `!catalogo` aparece
+    // también dentro de un `useMemo` que devuelve `[]`, y una regex laxa
+    // atrapaba esa línea en vez de la del render.
+    expect(tienda, 'la espera del catálogo volvió a pintar el vacío')
+      .not.toMatch(/if \(!catalogo\) return null/)
+    expect(tienda, 'desapareció la espera del catálogo; revisa este guardián')
+      .toMatch(/if \(!catalogo\) return <Bienvenida/)
+  })
+
   it('el componente existe y dice lo mismo que el HTML', () => {
-    expect(app).toContain('const Bienvenida')
+    expect(ui).toContain('export const Bienvenida')
     // ⚠️ Las dos copias tienen que decir lo mismo o el relevo se nota: el
     // cliente vería cambiar el texto a mitad de carga.
     for (const trozo of ['Bienvenido a Umbani', 'Abriendo tu tienda']) {
-      expect(app, `falta «${trozo}» en App.tsx`).toContain(trozo)
+      expect(ui, `falta «${trozo}» en ui.tsx`).toContain(trozo)
       expect(html, `falta «${trozo}» en index.html`).toContain(trozo)
     }
   })
@@ -59,7 +74,7 @@ describe('el arranque no deja la pantalla en blanco', () => {
   it('y reutiliza las clases del HTML, sin CSS nuevo', () => {
     // Si no comparten clases, el tamaño y la posición saltan en el relevo.
     for (const clase of ['vz-boot', 'vz-logo', 'vz-t', 'vz-s']) {
-      expect(app, `App.tsx no usa .${clase}`).toContain(clase)
+      expect(ui, `ui.tsx no usa .${clase}`).toContain(clase)
       expect(html, `index.html no define .${clase}`).toContain(clase)
     }
   })

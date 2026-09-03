@@ -8,6 +8,7 @@ import { aplicarColorDeMarca } from './lib/marca'
 import { readSlug } from './lib/session'
 import type { Business, StoreStatus } from './lib/types'
 import FoodStore from './screens/FoodStore'
+import { Bienvenida } from './components/ui'
 
 // ── LAS TRES PUERTAS VIAJAN APARTE ─────────────────────────────────────────
 //
@@ -80,26 +81,6 @@ type Estado =
      */
     bloqueo?: { business: Business | null; motivo: string | null }
   }
-
-/**
- * La bienvenida de Umbani, en React.
- *
- * ⚠️ Es un CALCO del bloque que ya está en `index.html`, y usa sus mismas
- * clases (`vz-boot`, `vz-logo`, `vz-t`, `vz-s`) a propósito: así el relevo
- * entre el HTML y React es invisible —mismo tamaño, misma posición, misma
- * animación— y no cuesta ni un byte de CSS nuevo.
- *
- * ⚠️ Si alguien cambia el texto o el logo, hay que cambiarlo en LOS DOS
- * SITIOS. Es el precio de que la primera pantalla no dependa de que baje el
- * JavaScript, y a cambio el cliente ve la marca desde el primer instante.
- */
-const Bienvenida = () => (
-  <div className="vz-boot">
-    <div className="vz-logo">🛍️</div>
-    <p className="vz-t">Bienvenido a Umbani</p>
-    <p className="vz-s">Abriendo tu tienda…</p>
-  </div>
-)
 
 export default function App() {
   const slug = readSlug()
