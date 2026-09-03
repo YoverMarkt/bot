@@ -81,6 +81,26 @@ type Estado =
     bloqueo?: { business: Business | null; motivo: string | null }
   }
 
+/**
+ * La bienvenida de Umbani, en React.
+ *
+ * ⚠️ Es un CALCO del bloque que ya está en `index.html`, y usa sus mismas
+ * clases (`vz-boot`, `vz-logo`, `vz-t`, `vz-s`) a propósito: así el relevo
+ * entre el HTML y React es invisible —mismo tamaño, misma posición, misma
+ * animación— y no cuesta ni un byte de CSS nuevo.
+ *
+ * ⚠️ Si alguien cambia el texto o el logo, hay que cambiarlo en LOS DOS
+ * SITIOS. Es el precio de que la primera pantalla no dependa de que baje el
+ * JavaScript, y a cambio el cliente ve la marca desde el primer instante.
+ */
+const Bienvenida = () => (
+  <div className="vz-boot">
+    <div className="vz-logo">🛍️</div>
+    <p className="vz-t">Bienvenido a Umbani</p>
+    <p className="vz-s">Abriendo tu tienda…</p>
+  </div>
+)
+
 export default function App() {
   const slug = readSlug()
   const [estado, setEstado] = useState<Estado>({ fase: 'cargando' })
@@ -219,7 +239,26 @@ export default function App() {
     return true
   }, [slug])
 
-  if (estado.fase === 'cargando') return null // el esqueleto del HTML sigue a la vista
+  // ⚠️ AQUÍ HABÍA UN `return null` con la nota «el esqueleto del HTML sigue a
+  // la vista», y NO ES CIERTO (2026-09-02). `createRoot(...).render()` VACÍA
+  // el contenedor al montar: la bienvenida del `index.html` desaparece en ese
+  // instante y, devolviendo `null`, no la sustituye nada.
+  //
+  // Medido contra producción con red móvil lenta, que es como se abre esto:
+  //
+  //     0,9 – 3,3 s   «Bienvenido a Umbani»
+  //     3,5 – 6,8 s   PANTALLA EN BLANCO      ← 3,3 segundos
+  //     7,1 s         la tienda
+  //
+  // El dueño lo describió exacto: «sale muy rápido y luego se queda en blanco
+  // un buen rato». Tres segundos en blanco desde el navegador de WhatsApp es
+  // tiempo de sobra para cerrar la app.
+  //
+  // Se pinta la MISMA bienvenida, con las mismas clases del `index.html`, así
+  // que el relevo no se nota: la marca se ve durante toda la carga en vez de
+  // parpadear. No se añade ni un milisegundo de espera artificial — dura lo
+  // que de verdad tarde en llegar la portada.
+  if (estado.fase === 'cargando') return <Bienvenida />
 
   if (estado.fase === 'no_disponible') {
     return (
