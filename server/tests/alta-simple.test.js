@@ -99,10 +99,30 @@ describe('lo que el alta deja de preguntar', () => {
     return desde !== -1 && hasta > desde
   }
 
-  it('el canal propio: un local NACE en el marketplace', () => {
-    // Siete campos (proveedor, número, 3 de YCloud, 2 de Meta, Telegram) para
-    // credenciales de una cuenta que ese local no va a tener nunca.
-    expect(soloAlEditar('Canal de WhatsApp')).toBe(true)
+  // ⚠️ ESTA PRUEBA SE ENDURECIÓ EL 2026-09-03, y antes exigía menos: que el
+  // bloque «Canal de WhatsApp» apareciera SOLO al editar. Los siete campos
+  // —proveedor, número, 3 de YCloud, 2 de Meta, Telegram— ya se habían
+  // retirado en agosto y lo que quedaba era un aviso explicando que el local
+  // no tiene número propio.
+  //
+  // El dueño pidió quitarlo: «todo local va al marketplace, no le vemos la
+  // razón de ser». Con cero negocios de canal propio, ese recuadro gastaba
+  // cinco líneas del modal para decir lo que ya se da por supuesto, y hacía
+  // que editar pareciera más complicado que crear.
+  //
+  // Ahora no puede aparecer en NINGUNA de las dos pantallas. La defensa de
+  // verdad sigue siendo el disparador `businesses_numero_de_plataforma`, no
+  // esta pantalla — pero si alguien reintroduce el canal por la UI, esto lo
+  // para y le obliga a leer por qué se fue.
+  it('el canal propio no se pide ni se explica en ningún sitio', () => {
+    expect(sinComentarios(modal)).not.toContain('Canal de WhatsApp')
+    // ⚠️ Se vigila la UI, NO el payload. Las columnas del canal siguen
+    // enviándose desde el estado del formulario y eso es deliberado desde el
+    // 2026-08-23: «ninguna se retira». Lo que no puede volver es un campo
+    // VISIBLE que pida credenciales de una cuenta que el local no tiene.
+    for (const etiqueta of ['API Key', 'Endpoint ID', 'Signing Secret', 'Phone ID']) {
+      expect(sinComentarios(modal), etiqueta).not.toContain(etiqueta)
+    }
   })
 
   it('el modo NO se pregunta en ningún sitio, ni al crear ni al editar', () => {

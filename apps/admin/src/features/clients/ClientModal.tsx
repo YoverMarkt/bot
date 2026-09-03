@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
-import { RadioTower } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Input } from '@botpanel/ui/components/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
@@ -357,39 +356,30 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 producción y ya existe—, así que se configura aquí, al editar,
                 en vez de gastar siete campos del alta en algo que casi nadie
                 rellena. Nada se pierde: todo esto sigue vivo e intacto. */}
-            {/* ⚠️ SE RETIRÓ EL CANAL PROPIO el 2026-08-23, y nace de un fallo
-                real: Monster Pizza tenía el MISMO número que la plataforma,
-                así que `resolveBusinessChannel` la encontraba antes de llegar
-                a la rama del marketplace y escribir al número de Umbani
-                contestaba con su mini app en vez de las categorías. Todo lo
-                construido para el número único era inalcanzable.
+            {/* ⚠️ AQUÍ NO HAY NADA DEL CANAL, y es el final de un camino.
 
-                Aquí vivían siete campos —proveedor, API Key, Endpoint ID,
-                Signing Secret, token y Phone ID de Meta, token de Telegram— y
-                un botón de verificar. Ninguno tiene sentido ya: los locales se
-                atienden por el número del marketplace y no tienen cuenta
-                propia que configurar.
+                Hasta el 2026-08-23 vivían aquí siete campos —proveedor, API
+                Key, Endpoint ID, Signing Secret, token y Phone ID de Meta,
+                token de Telegram— y un botón de verificar. Se retiraron cuando
+                Monster Pizza acabó con el MISMO número que la plataforma:
+                `resolveBusinessChannel` la encontraba antes de llegar a la
+                rama del marketplace, y escribir al número de Umbani contestaba
+                con su mini app en vez de las categorías.
 
-                ⚠️ La defensa de verdad NO es esta pantalla, es el disparador
-                `businesses_numero_de_plataforma` en la base: quitar el campo
-                evita el error de dedo, pero solo la guarda impide que el
-                número vuelva a entrar por una API o un `update` a mano. */}
-            {id && (
-            <div className="rounded-xl border p-4 mb-4">
-              <span className="inline-flex items-center gap-1.5 text-sm font-medium">
-                <RadioTower className="w-4 h-4" /> Canal de WhatsApp
-              </span>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Este local se atiende por el <strong>número del marketplace</strong>.
-                No tiene número propio, ni cuenta de YCloud, ni webhook: sus clientes
-                escriben al número de Umbani y el menú los lleva hasta su tienda.
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                El número del marketplace se configura una sola vez en{' '}
-                <strong>Ajustes del servidor → Número del marketplace</strong>.
-              </p>
-            </div>
-            )}
+                En su lugar quedó un aviso que explicaba que este local no
+                tiene número propio, ni YCloud, ni webhook. Se retiró el
+                2026-09-03 a petición del dueño: «todo local va al marketplace,
+                no le vemos la razón de ser». Y tenía razón — con cero negocios
+                de canal propio, ese recuadro gastaba cinco líneas del modal
+                para decir lo que ya se da por supuesto, y hacía que editar
+                pareciera más complicado que crear.
+
+                ⚠️ La defensa NO era esta pantalla ni ese texto: es el
+                disparador `businesses_numero_de_plataforma` en la base. Quitar
+                los campos evitó el error de dedo; solo la guarda impide que el
+                número de la plataforma vuelva a entrar por una API o por un
+                `update` a mano. Si algún día vuelve el canal propio, vuelve
+                aquí — y con él su aviso. */}
 
             {/* Plan y facturación */}
             <div className="mb-4 rounded-lg border border-border/70 p-3">
