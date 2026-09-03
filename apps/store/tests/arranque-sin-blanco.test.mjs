@@ -23,6 +23,15 @@ import { readFileSync } from 'node:fs'
 // pruebas a propósito (cada dependencia se paga en el presupuesto de tamaño).
 // Se vigila sobre el fuente, que es exactamente donde estaba el fallo — y es
 // el mismo enfoque que `schedule.test.js` usa para la implementación única.
+//
+// ⚠️ Y es `.mjs`, no `.ts`, por un motivo concreto: el build de la tienda es
+// `tsc -b && vite build`, y `tsc` compila también `tests/`. Un `.ts` que
+// importe `node:fs` rompe ese build —la tienda no lleva los tipos de Node, y
+// no tiene por qué: se ejecuta en un teléfono—. En `.mjs` vitest lo corre
+// igual y `tsc` no lo mira. Es lo mismo que ya hacía `presupuesto-tamano.mjs`.
+//
+// ⚠️ Lo cazó el CI, no `npm run check`: ese comando NO ejecuta el build de la
+// tienda, así que un fallo de `tsc -b` aquí pasa desapercibido en local.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
@@ -32,9 +41,9 @@ describe('el arranque no deja la pantalla en blanco', () => {
   it('la fase «cargando» pinta la bienvenida, nunca null', () => {
     const linea = /if \(estado\.fase === 'cargando'\) return ([^\n]*)/.exec(app)
     expect(linea, 'desapareció la rama de carga; revisa este guardián').not.toBe(null)
-    expect(linea![1]).toContain('<Bienvenida')
+    expect(linea[1]).toContain('<Bienvenida')
     // El fallo exacto que se corrigió, escrito para que no vuelva.
-    expect(linea![1]).not.toMatch(/^null/)
+    expect(linea[1]).not.toMatch(/^null/)
   })
 
   it('el componente existe y dice lo mismo que el HTML', () => {
