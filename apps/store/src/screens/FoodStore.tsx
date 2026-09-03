@@ -25,7 +25,7 @@ import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
   orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
-import { Aviso, Foto } from '../components/ui'
+import { Aviso, Bienvenida, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
 import { hora12, money, rangoDeEspera, cuandoAbre } from '../lib/format'
 import { foto } from '../lib/imagen'
@@ -559,7 +559,17 @@ export default function FoodStore({
     )
   }
 
-  if (!catalogo) return null
+  // ⚠️ AQUÍ ESTABA EL SEGUNDO BLANCO (2026-09-03). `App` ya tiene la portada
+  // y monta esta pantalla, pero el CATÁLOGO es otra petición: hasta que llega,
+  // este `return null` dejaba el contenedor VACÍO. Medido contra producción
+  // con red móvil lenta: tres segundos en blanco entre la bienvenida y la
+  // carta, justo lo que el dueño describió.
+  //
+  // Se arregló primero el `return null` de `App` y el fallo SIGUIÓ, porque son
+  // dos esperas seguidas y cada una tenía el suyo. La medición local no lo vio
+  // porque se cortaba antes de llegar a esta fase — la lección es medir hasta
+  // que la tienda aparece, no hasta que desaparece el fallo anterior.
+  if (!catalogo) return <Bienvenida />
 
   // Con el envío ya incluido: el modo de entrega se elige arriba, así que la
   // barra puede decir el número final en vez de uno que crecerá al abrir el
