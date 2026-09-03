@@ -594,3 +594,116 @@ describe('lo que llega y no es texto', () => {
     expect(esAdjuntoSinTexto('[ubicación]')).toBe(true)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS LOCALES CERRADOS SE VEN, PERO SE VEN CERRADOS
+//
+// Pedido del dueño (2026-09-03): «cuando el local esté cerrado aparecerá en
+// las categorías pero para que no se pueda elegir y dirá local cerrado y abre
+// a tal hora, para que aunque el cliente no pueda pedir igual vea la hora de
+// apertura».
+//
+// Ya aparecían —las consultas del marketplace filtran por activo y tienda
+// encendida, nunca por horario— pero sin ninguna señal: el cliente elegía, le
+// llegaba «arma tu pedido aquí», entraba y se encontraba la tienda cerrada.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('los locales cerrados en la lista', () => {
+  const local = (slug, name, abierto, abre) => ({
+    id: slug, slug, name, type: 'pizzeria', prep_min: 20, abierto, abre,
+  })
+  const abre8 = { open: '08:00', inDays: 0, dayName: 'Miércoles' }
+  const cerrado = local('monster', 'Monster Pizza', false, abre8)
+  const abierto = local('uno', 'Pizza Uno', true)
+
+  it('el cerrado lleva luna y el abierto no', () => {
+    const r = verNegocios(CATEGORIAS[0], [cerrado, abierto], 0)
+    expect(r.options).toContain('🌙 Monster Pizza')
+    expect(r.options).toContain('Pizza Uno')
+  })
+
+  // ⚠️ La hora va en el TEXTO y no en el título: WhatsApp recorta los títulos
+  // a 20 caracteres, y un título recortado es imposible de elegir. Es la
+  // cicatriz de «✅ Sí, empezar de nuevo».
+  it('la hora de apertura va en el mensaje, no en el título', () => {
+    const r = verNegocios(CATEGORIAS[0], [cerrado, abierto], 0)
+    expect(r.reply).toContain('abre hoy 8:00 AM')
+    for (const opcion of r.options) {
+      expect(opcion.length, `«${opcion}» pasa de 20 caracteres`).toBeLessThanOrEqual(20)
+    }
+  })
+
+  it('los abiertos van primero aunque lleguen después', () => {
+    const r = verNegocios(CATEGORIAS[0], [cerrado, abierto], 0)
+    expect(r.options[0]).toBe('Pizza Uno')
+    expect(r.options[1]).toBe('🌙 Monster Pizza')
+  })
+
+  // ⚠️ EL PUNTO QUE MÁS PODÍA ROMPERSE: si `verNegocios` ordena y `paso` no,
+  // el cliente toca el primero y recibe otro local.
+  it('tocar un local devuelve EL QUE SE TOCÓ, con el orden nuevo', () => {
+    const r = verNegocios(CATEGORIAS[0], [cerrado, abierto], 0)
+    const primero = paso({
+      mensaje: r.options[0], vista: r.vista,
+      categorias: CATEGORIAS, negocios: [cerrado, abierto],
+    })
+    expect(primero.negocioElegido?.slug).toBe('uno')
+
+    const conLuna = paso({
+      mensaje: '🌙 Monster Pizza', vista: r.vista,
+      categorias: CATEGORIAS, negocios: [cerrado, abierto],
+    })
+    expect(conLuna.negocioElegido?.slug).toBe('monster')
+    // Y llega con su estado, que es lo que el llamador usa para avisar.
+    expect(conLuna.negocioElegido?.abierto).toBe(false)
+  })
+
+  // ⚠️ ESTA es la que caza el desorden de verdad, y la primera versión NO lo
+  // hacía: con pocos locales, `elegir` los resuelve por TEXTO y da igual el
+  // orden. El fallo solo aparece con PAGINACIÓN — si `verNegocios` ordena y
+  // `paso` no, la página que se pinta y la que se busca contienen locales
+  // DISTINTOS, y tocar uno de la lista devuelve «no te entendí».
+  it('con más de una página, pintar y elegir usan la MISMA lista', () => {
+    // Tres cerrados delante y diez abiertos detrás: ordenados, la primera
+    // página son nueve abiertos; sin ordenar, tres cerrados y seis abiertos.
+    const muchos = [
+      ...Array.from({ length: 3 }, (_, i) => local(`c${i}`, `Cerrado ${i}`, false, abre8)),
+      ...Array.from({ length: 10 }, (_, i) => local(`a${i}`, `Abierto ${i}`, true)),
+    ]
+    const r = verNegocios(CATEGORIAS[0], muchos, 0)
+    // El noveno de la página pintada es un abierto que, SIN ordenar, caería en
+    // la segunda página: es el que delata la diferencia.
+    const noveno = r.options[8]
+    expect(noveno).toBe('Abierto 8')
+
+    const elegido = paso({
+      mensaje: noveno, vista: r.vista, categorias: CATEGORIAS, negocios: muchos,
+    })
+    expect(elegido.negocioElegido?.slug, 'tocó un local de la lista y no se resolvió')
+      .toBe('a8')
+  })
+
+  it('dice hoy, mañana o el día que toque', () => {
+    const manana = local('n', 'La Nona', false, { open: '11:00', inDays: 1, dayName: 'Jueves' })
+    const lejos = local('t', 'Tres', false, { open: '09:30', inDays: 4, dayName: 'Domingo' })
+    const r = verNegocios(CATEGORIAS[0], [manana, lejos], 0)
+    expect(r.reply).toContain('abre mañana 11:00 AM')
+    expect(r.reply).toContain('abre el domingo 9:30 AM')
+  })
+
+  // ⚠️ Sin estado NO se marca nada: el horario puede no estar configurado, o
+  // la consulta puede fallar. Llamar «cerrado» a un local abierto le cuesta
+  // ventas de verdad; no marcarlo solo le cuesta al cliente un viaje.
+  it('sin saber el estado, la lista sale como salía antes', () => {
+    const sinDato = local('x', 'Sin Horario', undefined, undefined)
+    const r = verNegocios(CATEGORIAS[0], [sinDato], 0)
+    expect(r.options).toEqual(['Sin Horario', VOLVER])
+    expect(r.reply).not.toContain('🌙')
+  })
+
+  it('la búsqueda los marca igual: es la misma lista por otra puerta', async () => {
+    const { verResultados } = await import('../dist/services/marketplace-menu.js')
+    const r = verResultados('pizza', [cerrado, abierto], 0)
+    expect(r.options[0]).toBe('Pizza Uno')
+    expect(r.reply).toContain('abre hoy 8:00 AM')
+  })
+})

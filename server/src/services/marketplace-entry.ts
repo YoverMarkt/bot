@@ -15,6 +15,8 @@ import {
   type MarketplaceView,
 } from './marketplace-menu'
 import { optionTitle } from './bot-menu-flow'
+import { isOutsideHours, proximaApertura } from './schedule'
+import type { ScheduleRecord } from './schedule'
 import * as checkout from './marketplace-checkout'
 import {
   esComprobante, esComprobanteAmbiguo, esFotoQueNoEsComprobante,
@@ -51,6 +53,12 @@ import type {
  */
 
 export interface MarketplaceEntryDatabase {
+  /**
+   * Los horarios de varios locales de una vez, para marcar cuáles están
+   * cerrados en el menú. Opcional: sin ella la lista sale sin marcar, que es
+   * como salía antes de 2026-09-03.
+   */
+  getSchedulesFor?(businessIds: string[]): Promise<Map<string, ScheduleRecord[]>>
   resolveMarketplaceCustomer(phone: string): Promise<{ id: string; name: string | null }>
   getConversation(customerId: string): Promise<{
     current_state: string
@@ -648,12 +656,14 @@ export async function handleMarketplaceMessage(
   for (let intento = 0; intento < 2; intento += 1) {
     let negocios: MarketplaceBusiness[] = []
     if (vistaActual.vista === 'negocios' && vistaActual.categoria) {
-      negocios = await database.getMarketplaceBusinesses(vistaActual.categoria)
+      negocios = await conEstadoDeHorario(
+        deps, await database.getMarketplaceBusinesses(vistaActual.categoria),
+      )
     } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta) {
       // Se repite la búsqueda en vez de guardar los resultados: mantiene el
       // `flow_state` pequeño y la lista fresca. Falla hacia una lista vacía,
       // que `paso` resuelve devolviendo al cliente a las categorías.
-      negocios = await buscarLocales(deps, vistaActual.consulta)
+      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
     }
     respuesta = paso({
       // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
@@ -701,7 +711,7 @@ export async function handleMarketplaceMessage(
   if (respuesta.noEntendido
     && !esAdjuntoSinTexto(text)
     && !conversation?.selected_business_id) {
-    const encontrados = await buscarLocales(deps, text)
+    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text))
     if (encontrados.length) {
       const resultados = verResultados(text, encontrados, 0)
       deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
@@ -740,6 +750,46 @@ export async function handleMarketplaceMessage(
 
   await guardar(deps, customer.id, conversation?.version, respuesta, { soltarLocal: false })
   await send(respuesta.reply, respuesta.options)
+}
+
+/**
+ * Marca cuáles de estos locales están atendiendo AHORA, y a qué hora abren.
+ *
+ * ⚠️ UNA sola consulta para todos (`getSchedulesFor`), no una por local: el
+ * menú enseña hasta nueve por pantalla y esto está en el camino más transitado
+ * de la app.
+ *
+ * ⚠️ El estado se calcula con `services/schedule.ts`, la MISMA función que usa
+ * la mini app para decidir si acepta pedidos. Si el chat dijera «abierto» y la
+ * tienda «cerrado», el cliente entraría a una carta que no le deja pedir — y
+ * esa contradicción es justo la que se arregló esta semana.
+ *
+ * ⚠️ Falla ABIERTO: si la consulta revienta, los locales se quedan sin marcar
+ * y la lista sale como salía antes. Marcar «cerrado» a un local que está
+ * abierto por un fallo de la base le cuesta ventas de verdad; no marcarlo solo
+ * le cuesta al cliente un viaje a la mini app, que además ya se lo dice.
+ */
+async function conEstadoDeHorario(
+  deps: MarketplaceEntryDeps,
+  negocios: MarketplaceBusiness[],
+): Promise<MarketplaceBusiness[]> {
+  if (!negocios.length || !deps.database.getSchedulesFor) return negocios
+  const horarios = await deps.database
+    .getSchedulesFor(negocios.map(n => n.id))
+    .catch(() => null)
+  if (!horarios) return negocios
+  return negocios.map((negocio) => {
+    const suyo = horarios.get(negocio.id)
+    // Sin horario configurado el negocio NO bloquea la atención —es la regla
+    // de `isOutsideHours`—, así que se deja sin marcar.
+    if (!suyo?.length) return negocio
+    const abierto = !isOutsideHours(suyo)
+    return {
+      ...negocio,
+      abierto,
+      abre: abierto ? null : proximaApertura(suyo),
+    }
+  })
 }
 
 /**
@@ -897,6 +947,17 @@ async function entregarLocal(
   )
 
   if (enElChat) {
+    // ⚠️ Cerrado se avisa ANTES de abrirle el menú (2026-09-03). En estos
+    // locales el pedido se arma dentro del chat, así que sin este aviso el
+    // cliente recorre la carta entera, elige, y se topa con el cierre al
+    // confirmar — con el carrito ya hecho. Es el peor momento para enterarse.
+    //
+    // El menú se abre igual: mirar la carta con el local cerrado es lo que le
+    // hace volver a la hora de apertura. Lo que no se le deja es armar el
+    // pedido a ciegas.
+    if (negocio.abierto === false) {
+      await deps.send(textoDelLocal(negocio).replace(' 👇', ':'), [])
+    }
     // Se entra en el menú del local YA, con este mismo mensaje: hacerle
     // escribir otra vez para ver la carta costaría un mensaje de más.
     await conducirEnElChat(deps, customer, phone, negocio.id, '', null)
@@ -904,6 +965,38 @@ async function entregarLocal(
   }
 
   await mandarElEnlace(deps, customer, phone, negocio)
+}
+
+/**
+ * Lo que encabeza el enlace del local: abierto invita, cerrado avisa.
+ *
+ * ⚠️ El cerrado recibe el enlace IGUAL, y es a propósito. La mini app deja ver
+ * la carta con la tienda cerrada —e impide pedir por su cuenta—, así que
+ * negarle el enlace solo lograría que no supiera qué se vende ahí. Lo que
+ * cambia es que se entera ANTES de entrar, no después.
+ */
+function textoDelLocal(negocio: MarketplaceBusiness): string {
+  if (negocio.abierto !== false) {
+    return `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇`
+  }
+  const cuando = negocio.abre?.open
+    ? ` Abre ${negocio.abre.inDays === 0
+      ? 'hoy'
+      : negocio.abre.inDays === 1
+        ? 'mañana'
+        : `el ${negocio.abre.dayName.toLocaleLowerCase('es')}`} a las ${horaDoce(negocio.abre.open)}.`
+    : ''
+  return `🌙 *${negocio.name}* está cerrado ahora mismo.${cuando}\n\n`
+    + 'Puedes ver la carta mientras tanto 👇'
+}
+
+/** «08:00» → «8:00 AM», como se dice una hora aquí. */
+function horaDoce(hhmm: string): string {
+  const partes = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || '').trim())
+  if (!partes) return String(hhmm || '')
+  const horas = Number(partes[1])
+  if (!Number.isInteger(horas) || horas < 0 || horas > 23) return String(hhmm)
+  return `${horas % 12 === 0 ? 12 : horas % 12}:${partes[2]} ${horas < 12 ? 'AM' : 'PM'}`
 }
 
 /** El local es grande: se pide en la mini app. */
@@ -946,9 +1039,16 @@ async function mandarElEnlace(
   //
   // ⚠️ La etiqueta va SIN EMOJI y corta: WhatsApp la limita a 20 BYTES y un
   // emoji gasta cuatro. El adorno se queda en el cuerpo, que admite 1024.
+  // ⚠️ Cerrado se AVISA aquí, antes de que abra la carta (2026-09-03). Sin
+  // esto el cliente elegía el local, recibía «arma tu pedido aquí», entraba…
+  // y se encontraba la tienda cerrada. Ahora se le dice antes y se le manda el
+  // enlace igual: la carta se puede mirar con el local cerrado, y saber qué
+  // hay es justo lo que le hace volver a la hora de apertura.
+  const cuerpo = textoDelLocal(negocio)
+
   const enviadoComoBoton = deps.sendLink
     ? await deps.sendLink({
-      body: `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇`,
+      body: cuerpo,
       url,
       label: 'Ver la carta',
       footer: 'Para volver al inicio, escribe MENÚ',
@@ -957,7 +1057,7 @@ async function mandarElEnlace(
   if (enviadoComoBoton) return
 
   await send(
-    `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇\n${url}\n\n`
+    `${cuerpo}\n${url}\n\n`
     + 'Cuando termines te aviso por aquí mismo. Para volver al inicio, escribe *MENÚ*.',
     [],
   )

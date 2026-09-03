@@ -78,6 +78,10 @@ describe('simulador del marketplace', () => {
     vi.spyOn(db, 'resolveMarketplaceCustomer').mockResolvedValue(CLIENTE)
     vi.spyOn(db, 'getConversation').mockResolvedValue(null)
     vi.spyOn(db, 'advanceConversation').mockResolvedValue({ conflicto: false })
+    // Desde el 2026-09-03 el menú marca los locales cerrados, y para eso lee
+    // sus horarios. Sin este mock la ruta consulta Supabase de verdad y la
+    // prueba se cuelga cinco segundos.
+    vi.spyOn(db, 'getSchedulesFor').mockResolvedValue(new Map())
     vi.spyOn(db, 'getMarketplaceCategories').mockResolvedValue([
       { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', sort: 10, locales: 1 },
     ])
@@ -222,6 +226,10 @@ describe('simulador del marketplace', () => {
       }
       return { conflicto: false }
     })
+    // Desde el 2026-09-03 el menú marca los locales cerrados, y para eso lee
+    // sus horarios. Sin este mock la ruta consulta Supabase de verdad y la
+    // prueba se cuelga cinco segundos.
+    vi.spyOn(db, 'getSchedulesFor').mockResolvedValue(new Map())
     vi.spyOn(db, 'getMarketplaceCategories').mockResolvedValue([
       { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕', sort: 10, locales: 1 },
     ])
