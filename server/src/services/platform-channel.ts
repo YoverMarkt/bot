@@ -134,13 +134,32 @@ const MARCADOR = { id: null, whatsapp_provider: 'marketplace' }
  * conserva `opt_N`, que hace caer la resolución al título, y no se pierde
  * nada: un título de un dígito no lo recorta nadie.
  */
-const idsDeFila = (options: string[]): { id: string; title: string }[] => {
-  const hayNumeros = options.some(opcion => /^\d{1,2}$/.test(opcion.trim()))
-  return options.map((title, indice) => ({
+const idsDeFila = (options: OpcionDeSalida[]): { id: string; title: string; description?: string }[] => {
+  const titulos = options.map(tituloDe)
+  const hayNumeros = titulos.some(titulo => /^\d{1,2}$/.test(titulo.trim()))
+  return options.map((opcion, indice) => ({
     id: hayNumeros ? `opt_${indice}` : String(indice + 1),
-    title,
+    title: tituloDe(opcion),
+    ...(typeof opcion === 'string' || !opcion.description
+      ? {}
+      : { description: opcion.description }),
   }))
 }
+
+/**
+ * Una opción de salida: el título solo, o título + descripción.
+ *
+ * ⚠️ La descripción se PERDÍA hasta el 2026-09-07: el marketplace aplanaba
+ * todo a títulos con `optionTitle`, así que el precio de cada producto —que
+ * viaja ahí— no llegaba nunca al cliente. Una fila de lista admite 24
+ * caracteres de título y 72 de descripción; renunciar a la segunda es tirar
+ * tres cuartas partes del espacio que WhatsApp da para explicar la opción.
+ */
+export type OpcionDeSalida = string | { title: string; description?: string }
+
+const tituloDe = (opcion: OpcionDeSalida): string => (
+  typeof opcion === 'string' ? opcion : opcion.title
+)
 
 /**
  * Manda un mensaje por el número de la plataforma.
@@ -162,7 +181,7 @@ const idsDeFila = (options: string[]): { id: string; title: string }[] => {
 export const enviarPorLaPlataforma = async (
   to: string,
   reply: string,
-  options: string[] = [],
+  options: OpcionDeSalida[] = [],
 ): Promise<void> => {
   // `require` diferido: `integrations/whatsapp` importa este módulo, así que
   // un import arriba cerraría el ciclo al arrancar.
@@ -178,7 +197,12 @@ export const enviarPorLaPlataforma = async (
       'Ver opciones',
     )
     if (enviada) return
-    const listado = options.map((opcion, i) => `${i + 1}. ${opcion}`).join('\n')
+    // El respaldo en texto también lleva la descripción: si el interactivo
+    // no sale, el cliente sigue necesitando ver el precio.
+    const listado = options.map((opcion, i) => {
+      const detalle = typeof opcion === 'string' ? '' : opcion.description
+      return `${i + 1}. ${tituloDe(opcion)}${detalle ? ` — ${detalle}` : ''}`
+    }).join('\n')
     await whatsapp.sendText(negocio, to, `${reply}\n\n${listado}`)
     return
   }

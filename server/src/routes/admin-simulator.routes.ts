@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
-import { advanceMenuFlowConEstado } from '../services/bot-menu-flow'
+import { advanceMenuFlowConEstado, optionTitle } from '../services/bot-menu-flow'
 import { handleMarketplaceMessage } from '../services/marketplace-entry'
 import type { MarketplaceEntryDeps } from '../services/marketplace-entry'
 
@@ -92,8 +92,15 @@ function dependenciasDelSimulador(
       claimMarketplaceReply: async () => ({ permitido: true, respuestas: 0 }),
     } as unknown as MarketplaceEntryDeps['database'],
     issueLink: link.issueStorefrontLink,
-    send: async (reply: string, options: string[] = []) => {
-      capturadas.push({ reply, options })
+    // ⚠️ Aquí SÍ se aplana a títulos, y a propósito: el simulador pinta las
+    // opciones en el panel del superadmin, cuyo contrato son cadenas
+    // (`contrato-panel-servidor.test.js`). La descripción es cosa de la fila
+    // de WhatsApp; en la pantalla del panel no tiene dónde ir.
+    send: async (
+      reply: string,
+      options: (string | { title: string; description?: string })[] = [],
+    ) => {
+      capturadas.push({ reply, options: options.map(optionTitle) })
     },
     tipoPideEnChat: (businessType: string | null | undefined) => (
       base.tipoPideEnChat(businessType)

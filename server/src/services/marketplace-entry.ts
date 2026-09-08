@@ -15,7 +15,7 @@ import {
   type MarketplaceReply,
   type MarketplaceView,
 } from './marketplace-menu'
-import { optionTitle } from './bot-menu-flow'
+import { precioDeVitrina, reglaDeMargen } from './storefront'
 import { isOutsideHours, proximaApertura } from './schedule'
 import type { ScheduleRecord } from './schedule'
 import * as checkout from './marketplace-checkout'
@@ -175,6 +175,13 @@ export interface MarketplaceEntryDatabase {
   getBusinessBankAccount(businessId: string): Promise<checkout.CuentaBancaria | null>
   /** El motor de personalización, el mismo que usa la mini app. */
   getStorefrontOptionGroups?(businessId: string): Promise<unknown[]>
+  /**
+   * La regla de margen del local, la MISMA que usa la mini app.
+   *
+   * Opcional: sin ella el chat pinta el precio del comercio, que es lo que
+   * hacía hasta el 2026-09-07 — y era un fallo de dinero.
+   */
+  getBusinessPricingRule?(businessId: string): Promise<Record<string, unknown> | null>
   getStorefrontOptions?(businessId: string): Promise<unknown[]>
 }
 
@@ -187,7 +194,12 @@ export interface MarketplaceEntryDeps {
     name?: string | null
     force?: boolean
   }): Promise<string | null>
-  send(reply: string, options: string[]): Promise<void>
+  /**
+   * Manda la respuesta. Una opción puede ser texto o `{title, description}`:
+   * el precio de un producto y el detalle de un reparto viajan en la
+   * descripción, y una fila de lista de WhatsApp la pinta debajo del título.
+   */
+  send(reply: string, options: (string | { title: string; description?: string })[]): Promise<void>
   /**
    * El enlace de la tienda como BOTÓN de WhatsApp.
    *
@@ -266,6 +278,12 @@ export interface CheckoutPendiente {
     options?: { optionId: string; groupName: string; name: string; quantity?: number }[]
   }[]
   addressId?: string
+}
+
+/** Un precio del catálogo como número, o `null` si no lo es. */
+const numeroONulo = (valor: unknown): number | null => {
+  const n = Number(valor)
+  return Number.isFinite(n) ? n : null
 }
 
 /** La vista guardada, o la portada si es el primer mensaje. */
@@ -1252,7 +1270,7 @@ async function conducirEnElChat(
     return
   }
 
-  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor] = await Promise.all([
+  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor, reglaPrecio] = await Promise.all([
     database.getProducts(businessId).catch(() => [] as unknown[]),
     database.getMenuModifiers
       ? database.getMenuModifiers(businessId).catch(() => [] as unknown[])
@@ -1270,8 +1288,32 @@ async function conducirEnElChat(
     database.getStorefrontOptions
       ? database.getStorefrontOptions(businessId).catch(() => [])
       : Promise.resolve([]),
+    database.getBusinessPricingRule
+      ? database.getBusinessPricingRule(businessId).catch(() => null)
+      : Promise.resolve(null),
   ])
   const catalogoDeOpciones = opcionesDelMotor
+
+  // ── El precio que se PINTA es el que se va a COBRAR ──────────────────
+  //
+  // ⚠️ Fallo de dinero encontrado el 2026-09-07 probando un pedido entero: el
+  // chat enseñaba «Total: $16.00» y `create_storefront_order` cobraba $17.60,
+  // porque el menú pintaba el precio del COMERCIO y la base le suma el margen
+  // de la plataforma (`on_top` desde el 2026-08-25). La mini app ya lo pintaba
+  // bien —`precioDeVitrina` existe desde entonces— y el menú del chat nunca se
+  // enteró: quedó fuera cuando se levantó el freno «hasta que el catálogo, el
+  // carrito y el resumen pinten el precio con margen».
+  //
+  // ⚠️ Es la MISMA función que la tienda, no una copia: dos sitios calculando
+  // el precio de vitrina acabarían diciendo cifras distintas por el mismo
+  // plato. Y sigue sin ser la autoridad — el cobro lo sella la base (regla #8);
+  // esto solo hace que lo que el cliente lee coincida con lo que va a pagar.
+  const margen = reglaDeMargen(reglaPrecio)
+  const productosDeVitrina = (productos as Array<Record<string, unknown>>).map(producto => ({
+    ...producto,
+    price: precioDeVitrina(numeroONulo(producto.price), margen),
+    price_sale: precioDeVitrina(numeroONulo(producto.price_sale), margen),
+  }))
 
   const saludo = policies && typeof policies.welcome_message === 'string'
     ? policies.welcome_message
@@ -1282,7 +1324,7 @@ async function conducirEnElChat(
     business: business as unknown as MenuFlowInput['business'],
     contact: phone,
     message: mensaje,
-    products: productos as MenuFlowInput['products'],
+    products: productosDeVitrina as MenuFlowInput['products'],
     welcomeMessage: saludo,
     modifiers: modifiers as MenuFlowInput['modifiers'],
     lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
@@ -1290,16 +1332,18 @@ async function conducirEnElChat(
     options: catalogoDeOpciones as MenuFlowInput['options'],
     // Para los grupos que cuelgan de una CATEGORÍA y no de un producto.
     productCategories: Object.fromEntries(
-      (productos as Array<{ id?: string; category_id?: string | null }>)
+      (productosDeVitrina as Array<{ id?: string; category_id?: string | null }>)
         .filter(producto => producto.id)
         .map(producto => [producto.id as string, producto.category_id ?? null]),
     ),
   }, estadoPrevio)
 
   let respuesta = resultado.reply
-  // `MenuOption` puede traer descripción; el envío del marketplace manda
-  // títulos. `optionTitle` es el mismo conversor que usa el canal propio.
-  let opciones = resultado.options.map(optionTitle)
+  // ⚠️ Con su DESCRIPCIÓN, no solo el título (2026-09-07). El precio de cada
+  // producto y el detalle de un reparto («3 Caldo de hueso de res + 1 Crema de
+  // zapallo») viajan ahí, y hasta hoy se tiraban al aplanar con `optionTitle`:
+  // el cliente veía una lista de nombres sin un solo precio.
+  let opciones: (string | { title: string; description?: string })[] = resultado.options
 
   // ── El cliente confirmó su pedido ──────────────────────────────────
   //

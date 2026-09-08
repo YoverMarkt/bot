@@ -59,12 +59,13 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(agregado.reply).toContain('agregué 2x Pizza Hawaiana')
     expect(titulos(agregado.options)).toContain('✅ Finalizar pedido')
 
+    enviar(pizzeria, 'c2', '➕ Agregar algo', args)
     enviar(pizzeria, 'c2', 'Bebidas', args)
     enviar(pizzeria, 'c2', 'Coca Cola 1.5L', args)
     enviar(pizzeria, 'c2', '1', args)
     const resumen = enviar(pizzeria, 'c2', '✅ Finalizar pedido', args)
-    expect(resumen.reply).toContain('2x Pizza Hawaiana — $17.00')
-    expect(resumen.reply).toContain('1x Coca Cola 1.5L — $2.50')
+    expect(resumen.reply).toContain('2 × Pizza Hawaiana* — $17.00')
+    expect(resumen.reply).toContain('1 × Coca Cola 1.5L* — $2.50')
     expect(resumen.reply).toContain('Total: $19.50')
 
     const confirmado = enviar(pizzeria, 'c2', '✅ Confirmar pedido', args)
@@ -146,7 +147,7 @@ describe('modo menú estilo banco (sin IA)', () => {
 
     const repetido = enviar(pizzeria, 'rep1', '🔄 Repetir pedido', args)
     // Precio de HOY (9.99 x2 = 19.98), jamás el histórico de 8.50
-    expect(repetido.reply).toContain('2x Pizza Hawaiana — $19.98')
+    expect(repetido.reply).toContain('2 × Pizza Hawaiana* — $19.98')
     expect(repetido.reply).toContain('Total: $19.98')
     // Lo agotado se descarta y se avisa: no se vende lo que no hay
     expect(repetido.reply).toContain('Coca Cola 1.5L')
@@ -282,7 +283,8 @@ describe('modo menú estilo banco (sin IA)', () => {
     expect(added.reply).toContain('Pizza Familiar — Hawaiana')
 
     const resumen = enviar(pizzeria2, 'pz1', '✅ Finalizar pedido', args)
-    expect(resumen.reply).toContain('Pizza Familiar — Hawaiana')
+    expect(resumen.reply).toContain('1 × Pizza Familiar* — $10.50')
+    expect(resumen.reply).toContain('Hawaiana')
     expect(resumen.reply).toContain('Total: $10.50')
 
     const confirmado = enviar(pizzeria2, 'pz1', '✅ Confirmar pedido', args)
