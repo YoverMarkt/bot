@@ -192,7 +192,7 @@ export const enPalabras = (minutos?: number | null): string => {
 export const textoDelAviso = (
   // El teléfono hace falta para el aviso de cancelación: ahí lo único útil que
   // se le puede ofrecer al cliente es a quién llamar.
-  negocio: Pick<BusinessRecord, 'name' | 'phone'>,
+  negocio: Pick<BusinessRecord, 'name'>,
   pedido: PedidoParaAvisar,
   status: string,
   falta?: FaltaDePago | null,
@@ -299,13 +299,17 @@ export const textoDelAviso = (
     lineas.push('')
     lineas.push(`${negocio.name} no pudo continuar con este pedido.`)
     // No se inventa un motivo: no hay ningún campo donde el dueño lo escriba,
-    // y un motivo falso es peor que ninguno. Lo que sí se puede dar es a quién
-    // preguntarle, que es exactamente lo que el cliente quiere en ese momento.
-    const telefono = String(negocio.phone || '').trim()
+    // y un motivo falso es peor que ninguno.
+    //
+    // ⚠️ Y NO se da un teléfono al que llamar (2026-09-07). Hasta hoy, con
+    // `businesses.phone` cargado, esto decía «llámalos al …» y sacaba al
+    // cliente de Umbani justo en el peor momento: acaban de cancelarle un
+    // pedido, y el número de la ficha es el de CONTACTO del dueño —el de los
+    // reportes—, no un canal que atienda clientes. Quien llamara ahí no
+    // encontraría su pedido, porque el pedido vive en esta conversación.
+    // Estaba latente en La Abuelita solo porque el campo estaba vacío.
     lineas.push('')
-    lineas.push(telefono
-      ? `Si quieres saber qué pasó o volver a pedir, llámalos al ${telefono}.`
-      : 'Si quieres saber qué pasó o volver a pedir, escríbeles por aquí.')
+    lineas.push('Si quieres saber qué pasó o volver a pedir, escríbenos por aquí.')
     return lineas.join('\n')
   }
 
