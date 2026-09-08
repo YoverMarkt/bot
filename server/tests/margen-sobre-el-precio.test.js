@@ -294,9 +294,12 @@ describe('el teléfono público cae al número del marketplace', () => {
   // ⚠️ El CANAL del local gana siempre. Un negocio con canal propio recibe a
   // sus clientes en su número; mandarlos al del marketplace le quitaría la
   // conversación y rompería el enrutado, que pasa por ahí.
-  it('con canal propio, el del local manda sobre el de la plataforma', () => {
+  // ⚠️ Ni con `whatsapp_number` cargado (2026-09-07). El canal propio se retiró
+  // del panel el 2026-08-23 y el dueño lo cerró del todo: en Umbani el cliente
+  // escribe SIEMPRE al número de la plataforma.
+  it('ni con un número propio en la ficha se cambia el de la plataforma', () => {
     expect(publicBusiness({ ...LOCAL, whatsapp_number: '+593900111222' }, null, PLATAFORMA).phone)
-      .toBe('+593900111222')
+      .toBe(PLATAFORMA)
   })
 
   // ⚠️ Y `businesses.phone` NO es un canal (2026-09-07, corrección del dueño).

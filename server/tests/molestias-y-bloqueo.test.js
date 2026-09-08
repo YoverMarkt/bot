@@ -107,18 +107,27 @@ describe('el techo de respuestas por hora', () => {
     expect(enviados[0]).not.toContain('llama al local')
   })
 
-  // ⚠️ Ofrecer el teléfono NO cuesta un mensaje más: es el mismo, con una
-  // línea. Quien va por el quinto mensaje o no encuentra lo que busca o no
-  // quiere usar la app, y esto es lo único que puede desatascarlo.
-  it('a partir del aviso añade el teléfono al MISMO mensaje', async () => {
+  // ⚠️ Esta prueba decía lo CONTRARIO hasta el 2026-09-07: a partir de la
+  // quinta respuesta se añadía «¿Necesitas ayuda? Llama al local: 099…» al
+  // mismo mensaje. La intención era buena —desatascar a quien no quiere usar
+  // la app sin gastar un mensaje de más— pero el número salía de
+  // `businesses.phone`, que es el CONTACTO del dueño y no un canal que atienda
+  // clientes: quien llamara ahí no encontraría su pedido, porque el pedido, el
+  // comprobante y el seguimiento viven en la conversación de Umbani.
+  //
+  // Decisión del dueño: «todo tiene que pasar por Umbani, todo; chat, menú,
+  // mini app, absolutamente todo; nada por el local del dueño».
+  it('a partir del aviso NO cuela el teléfono del local', async () => {
     const m = montar({
       claimMiniappReply: async () => ({ permitido: true, motivo: 'con_telefono', respuestas: 5 }),
     })
     const enviados = await procesar(m)
+    // Sigue siendo UN solo mensaje, y sigue llevando el enlace: lo que se
+    // retira es el número, no la respuesta.
     expect(enviados).toHaveLength(1)
-    // Un solo mensaje: el enlace y la ayuda viajan juntos.
     expect(enviados[0]).toContain(URL_DEL_ENLACE)
-    expect(enviados[0]).toContain('+593991716574')
+    expect(enviados[0]).not.toContain('+593991716574')
+    expect(enviados[0].toLowerCase()).not.toContain('llama al local')
   })
 
   it('pasado el tope no se manda NADA, pero el mensaje se guarda', async () => {

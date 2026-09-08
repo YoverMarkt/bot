@@ -177,13 +177,13 @@ interface ConversationStorefrontLink {
   storefrontInvite(
     business: { takes_orders?: boolean | null },
     url: string,
-    opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
+    opciones?: { repetido?: boolean },
   ): string
   /** El mismo enlace, listo para ir como botón nativo del canal. */
   storefrontInviteButton(
     business: { takes_orders?: boolean | null },
     url: string,
-    opciones?: { repetido?: boolean; telefonoDeAyuda?: string | null },
+    opciones?: { repetido?: boolean },
   ): { body: string; url: string; label: string; footer: string }
 }
 
@@ -386,11 +386,9 @@ function createBotConversation(dependencies: BotConversationDependencies) {
     sendLink?: ProcessMessageInput['sendLink']
     /** Ya se le mandó hace poco: cambia el texto, nunca el envío. */
     repetido?: boolean
-    /** A partir de la quinta respuesta en una hora, a quién llamar. */
-    telefonoDeAyuda?: string | null
   }): Promise<string> {
     const { business, url, send, sendLink, repetido = false } = input
-    const opciones = { repetido, telefonoDeAyuda: input.telefonoDeAyuda || null }
+    const opciones = { repetido }
     // El texto se redacta siempre, salga o no por él: es lo que se guarda en
     // el historial para que el dueño vea a dónde apuntaba lo que se mandó.
     const texto = storefrontLink
@@ -597,9 +595,6 @@ function createBotConversation(dependencies: BotConversationDependencies) {
         send,
         sendLink: input.sendLink,
         repetido: !toca,
-        // A partir de la quinta del cliente en esta hora. No cuesta un mensaje
-        // más: es el mismo, con una línea que puede desatascarlo.
-        telefonoDeAyuda: reclamo.motivo === 'con_telefono' ? business.phone : null,
       })
       await database.saveMessage(business.id, phone, 'assistant', texto)
     } else {

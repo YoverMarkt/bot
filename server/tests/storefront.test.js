@@ -268,12 +268,13 @@ describe('la tienda del negocio', () => {
         slogan: 'La mejor pizza',
         description: null,
         address: null,
-        phone: '+593991716574',
-        // ⚠️ Este negocio tiene número PROPIO, así que la bandera va en falso.
-        // No es un detalle: decide qué instrucciones lee quien llega sin
-        // enlace. Con el número del marketplace hay un paso más que nombrar
-        // —elegir el local dentro del chat de Umbani—, que es justo el paso
-        // que EMITE el enlace. Ver la prueba de abajo.
+        // ⚠️ Sin número de plataforma configurado, NULL — aunque el negocio
+        // tenga el suyo en la ficha (2026-09-07). En Umbani el cliente escribe
+        // siempre a la plataforma; un local sin ella no tiene a dónde mandar a
+        // nadie, y enseñar el número del dueño sería mandarlo a un sitio donde
+        // su pedido no existe. La app esconde los botones, que es peor que
+        // tenerlos pero mejor que mandar a nadie a la puerta equivocada.
+        phone: null,
         phoneIsPlatform: false,
         capabilities: { orders: true },
         brandColor: null,
@@ -300,14 +301,19 @@ describe('la tienda del negocio', () => {
     // se le emite su sesión. Quien llega sin enlace necesita que se lo digan
     // ASÍ. Decirle «escríbele al negocio» lo manda a buscar un WhatsApp que en
     // el marketplace ningún local tiene.
-    it('avisa si el WhatsApp es el de la plataforma y no el del local', () => {
+    it('el WhatsApp es SIEMPRE el de la plataforma', () => {
       const sinCanal = { id: 'b1', name: 'Monster Pizza', slug: 'monster-pizza' }
       expect(publicBusiness(sinCanal, null, '+593991716574')).toMatchObject({
         phone: '+593991716574', phoneIsPlatform: true,
       })
-      // Con número propio la bandera baja: ahí no hay ningún local que elegir.
+      // ⚠️ Ni siquiera con un número propio cargado en la ficha (2026-09-07).
+      // El canal propio se retiró del panel el 2026-08-23 —«todos los locales
+      // viven en el marketplace»— y el dueño lo cerró del todo: «todo tiene
+      // que pasar por Umbani, todo; chat, menú, mini app, absolutamente todo».
+      // Una columna que sobrevive a la pantalla que la llenaba no puede seguir
+      // decidiendo a dónde se manda al cliente.
       expect(publicBusiness({ ...sinCanal, whatsapp_number: '+593900111222' }, null, '+593991716574'))
-        .toMatchObject({ phone: '+593900111222', phoneIsPlatform: false })
+        .toMatchObject({ phone: '+593991716574', phoneIsPlatform: true })
       // ⚠️ Pero `businesses.phone` NO cuenta como canal (2026-09-07). El
       // enrutado va por `business_channel_identifiers`, nunca por este campo:
       // es un dato de CONTACTO del dueño, el mismo con el que pide reportes.

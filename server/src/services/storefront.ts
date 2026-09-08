@@ -599,7 +599,7 @@ export function publicBusiness(
      * número de la plataforma y parecía correcto; se habría disparado el día
      * que alguien rellenara ese campo en la ficha del local.
      */
-    phone: business.whatsapp_number || platformPhone || null,
+    phone: platformPhone || null,
     /**
      * Si ese WhatsApp es el del MARKETPLACE y no el del local.
      *
@@ -616,7 +616,7 @@ export function publicBusiness(
      * no tiene por qué recibir el número de la plataforma para compararlo, y
      * comparar teléfonos en dos sitios acaba en dos normalizaciones distintas.
      */
-    phoneIsPlatform: Boolean(!business.whatsapp_number && platformPhone),
+    phoneIsPlatform: Boolean(platformPhone),
     // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
     // `type`, que es exactamente lo que el proyecto decidió no hacer.
     capabilities: storefrontCapabilities(business),

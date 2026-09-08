@@ -136,21 +136,25 @@ export interface OpcionesDeInvitacion {
    * veces para intentar entrar. Ver `runMiniappMode`.
    */
   repetido?: boolean
-  /**
-   * A quién llamar, a partir de la quinta respuesta en una hora.
-   *
-   * Quien va por el quinto mensaje o no encuentra lo que busca, o no quiere
-   * usar la app. Ofrecerle el teléfono **no cuesta un mensaje más** —es el
-   * mismo, con una línea— y es lo único que de verdad puede desatascarlo.
-   */
-  telefonoDeAyuda?: string | null
 }
 
-/** «¿Necesitas ayuda? Llama al local: 099…», o nada si no hay teléfono. */
-const lineaDeAyuda = (telefono?: string | null): string => {
-  const limpio = String(telefono || '').trim()
-  return limpio ? `\n\n¿Necesitas ayuda? Llama al local: ${limpio}` : ''
-}
+/**
+ * ⚠️ AQUÍ HABÍA UNA LÍNEA DE AYUDA CON EL TELÉFONO DEL LOCAL, y se retiró el
+ * 2026-09-07 por decisión del dueño: «todo tiene que pasar por Umbani, todo;
+ * chat, menú, mini app, absolutamente todo; nada por el local del dueño».
+ *
+ * Decía «¿Necesitas ayuda? Llama al local: 099…» a partir de la quinta
+ * respuesta en una hora. La intención era buena —desatascar a quien no quiere
+ * usar la app, sin gastar un mensaje de más— pero el número salía de
+ * `businesses.phone`, que es el CONTACTO del dueño (el mismo con el que pide
+ * reportes) y no un canal que atienda clientes. Quien llamara ahí no
+ * encontraría su pedido: el pedido, el comprobante y el seguimiento viven en
+ * la conversación de Umbani.
+ *
+ * Es el cuarto sitio del mismo fallo, tras el checkout, la mini app y los
+ * avisos de estado. Los cuatro estaban latentes porque el campo está vacío en
+ * los locales de hoy; se habrían disparado juntos al rellenar una ficha.
+ */
 
 export function storefrontInviteButton(
   business: LinkBusiness,
@@ -167,7 +171,7 @@ export function storefrontInviteButton(
   // enterarse: reconocerlo es lo que lo hace sonar atento en vez de roto.
   const cuerpo = opciones.repetido ? '🛍️ Aquí tienes tu enlace otra vez 👇' : primeraVez
   return {
-    body: `${cuerpo}${lineaDeAyuda(opciones.telefonoDeAyuda)}`,
+    body: cuerpo,
     url,
     label: 'Ver la carta',
     footer: PIE_DEL_ENLACE,
@@ -187,7 +191,7 @@ export function storefrontInvite(
   // Ya no se anuncia caducidad porque no la hay. Sí se avisa de que es
   // personal: es lo que evita que el cliente lo reenvíe pensando que hace un
   // favor y acabe mandando a su amigo a una pantalla de "pide el tuyo".
-  return `${compra}\n${url}\n_${PIE_DEL_ENLACE}_${lineaDeAyuda(opciones.telefonoDeAyuda)}`
+  return `${compra}\n${url}\n_${PIE_DEL_ENLACE}_`
 }
 
 export function createStorefrontLinkService(dependencies: {
