@@ -401,21 +401,19 @@ describe('los textos del checkout', () => {
   })
 
   it('si el método pide comprobante y el local NO cargó cuenta, se dice', () => {
-    // ⚠️ El pedido YA existe: el cliente no puede quedarse sin saber a dónde
-    // transferir. Se le da el teléfono del local para que coordine.
+    // ⚠️ El pedido YA existe, así que se le dice qué pasa y que se le avisará
+    // POR AQUÍ. Hasta el 2026-09-07 se le daba el teléfono del local «para
+    // coordinar», y eso rompía la regla del marketplace: en Umbani el cliente
+    // habla con UN solo número y por detrás cada mensaje se enruta a su local.
+    // Sacarlo de esta conversación deja el comprobante, la ubicación y el
+    // seguimiento sin sitio por donde llegar.
     const r = ck.pedidoCreado({
       orderNumber: 10581, total: 11, metodo: TRANSFERENCIA, cuenta: null,
-      telefonoDelLocal: '+593990978367',
     })
-    expect(r.reply).toMatch(/no tiene datos bancarios/i)
-    expect(r.reply).toContain('+593990978367')
-  })
-
-  it('y sin teléfono del local, al menos lo avisa', () => {
-    const r = ck.pedidoCreado({
-      orderNumber: null, total: 11, metodo: TRANSFERENCIA, cuenta: null,
-    })
-    expect(r.reply).toMatch(/no tiene datos bancarios/i)
+    expect(r.reply).toMatch(/no cargó sus datos de pago/i)
+    expect(r.reply).toMatch(/te escribimos por aquí/i)
+    // Ni un teléfono suelto al que mandar al cliente.
+    expect(r.reply).not.toMatch(/\d{7,}/)
   })
 
   it('el fallo al crear NUNCA invita a reenviar el pedido', () => {

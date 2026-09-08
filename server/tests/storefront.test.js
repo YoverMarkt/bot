@@ -308,8 +308,14 @@ describe('la tienda del negocio', () => {
       // Con número propio la bandera baja: ahí no hay ningún local que elegir.
       expect(publicBusiness({ ...sinCanal, whatsapp_number: '+593900111222' }, null, '+593991716574'))
         .toMatchObject({ phone: '+593900111222', phoneIsPlatform: false })
+      // ⚠️ Pero `businesses.phone` NO cuenta como canal (2026-09-07). El
+      // enrutado va por `business_channel_identifiers`, nunca por este campo:
+      // es un dato de CONTACTO del dueño, el mismo con el que pide reportes.
+      // Darlo al cliente lo mandaría a un número que no atiende pedidos, y en
+      // Umbani el comprobante, la ubicación y el seguimiento viajan todos por
+      // el número de la plataforma.
       expect(publicBusiness({ ...sinCanal, phone: '+593900333444' }, null, '+593991716574'))
-        .toMatchObject({ phone: '+593900333444', phoneIsPlatform: false })
+        .toMatchObject({ phone: '+593991716574', phoneIsPlatform: true })
       // Sin plataforma configurada no hay número ni bandera que levantar.
       expect(publicBusiness(sinCanal, null, null))
         .toMatchObject({ phone: null, phoneIsPlatform: false })
