@@ -589,8 +589,17 @@ export function publicBusiness(
      * clientes de todos los locales. Que aquí salga el mismo para varios
      * negocios es correcto, y el pedido no se desambigua por el número — sale
      * del PEDIDO. Ver `pedidosEsperandoComprobante`.
+     *
+     * ⚠️ `businesses.phone` NO entra en el respaldo (2026-09-07, corrección
+     * del dueño). Un canal propio es `whatsapp_number`; `phone` es un dato de
+     * CONTACTO del dueño —el mismo que le sirve para pedir reportes— y darlo
+     * al cliente lo mandaría a escribir a un número que no atiende pedidos,
+     * partiendo en dos la conversación por la que viajan el comprobante, la
+     * ubicación y el seguimiento. Estaba LATENTE: con `phone` vacío caía al
+     * número de la plataforma y parecía correcto; se habría disparado el día
+     * que alguien rellenara ese campo en la ficha del local.
      */
-    phone: business.whatsapp_number || business.phone || platformPhone || null,
+    phone: business.whatsapp_number || platformPhone || null,
     /**
      * Si ese WhatsApp es el del MARKETPLACE y no el del local.
      *
@@ -607,9 +616,7 @@ export function publicBusiness(
      * no tiene por qué recibir el número de la plataforma para compararlo, y
      * comparar teléfonos en dos sitios acaba en dos normalizaciones distintas.
      */
-    phoneIsPlatform: Boolean(
-      !business.whatsapp_number && !business.phone && platformPhone,
-    ),
+    phoneIsPlatform: Boolean(!business.whatsapp_number && platformPhone),
     // Con esto la app elige el flujo. Sin esto tendría que adivinar por el
     // `type`, que es exactamente lo que el proyecto decidió no hacer.
     capabilities: storefrontCapabilities(business),

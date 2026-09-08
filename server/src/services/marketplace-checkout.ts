@@ -131,7 +131,6 @@ export function pedidoCreado(input: {
   total: unknown
   metodo: MetodoDePago
   cuenta: CuentaBancaria | null
-  telefonoDelLocal?: string | null
 }): RespuestaDeCheckout {
   const numero = input.orderNumber ? `#${input.orderNumber}` : ''
   const cabecera = `✅ Pedido ${numero} registrado\n*Total: ${money(input.total)}*`
@@ -146,14 +145,26 @@ export function pedidoCreado(input: {
   }
 
   if (!input.cuenta) {
-    // El método exige comprobante pero el local no dejó datos bancarios. Se
-    // dice, con el teléfono del local: el pedido ya existe y el cliente no
-    // puede quedarse sin saber a dónde transferir.
-    const contacto = input.telefonoDelLocal
-      ? `\n\nEscríbeles al ${input.telefonoDelLocal} para coordinar el pago.`
-      : ''
+    // El método exige comprobante pero el local no dejó datos bancarios.
+    //
+    // ⚠️ NO se le da el teléfono del local, y no es un olvido: en Umbani el
+    // cliente habla con UN solo número —el de la plataforma— y por detrás cada
+    // mensaje se enruta a su local. Mandarlo a escribir al negocio parte esa
+    // conversación en dos: el comprobante, la ubicación y el seguimiento
+    // dejarían de pasar por aquí, y el pedido se quedaría sin ellos. Es la
+    // misma regla que impide que un local se quede el número de la plataforma.
+    //
+    // ⚠️ Y `businesses.phone` NO es un canal: es un dato de contacto del
+    // dueño, el mismo que sirve para pedir reportes. Un canal propio es
+    // `whatsapp_number`, y eso es otra cosa.
+    //
+    // El pedido YA existe y está esperando pago, así que lo honesto es decir
+    // que falta algo del lado del local y que se avisa por aquí — que es donde
+    // el cliente va a seguir hablando de todas formas.
     return {
-      reply: `${cabecera}\n\n⚠️ El local no tiene datos bancarios cargados.${contacto}`,
+      reply: `${cabecera}\n\n⚠️ El local todavía no cargó sus datos de pago.\n`
+        + 'Ya avisamos. En cuanto los tenga te escribimos por aquí para que '
+        + 'completes la transferencia 🙏',
       options: [],
     }
   }

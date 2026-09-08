@@ -1518,9 +1518,13 @@ async function avanzarCheckout(input: {
     return
   }
 
-  const [productos, negocio, cuenta] = await Promise.all([
+  // ⚠️ Ya NO se lee el negocio aquí. Se leía solo para sacarle el teléfono y
+  // ofrecérselo al cliente cuando faltaban los datos bancarios, y eso se
+  // retiró el 2026-09-07: en Umbani el cliente habla con un solo número.
+  // Dejar la consulta habría sido un viaje a la base por vuelta de checkout
+  // para un dato que ya no se usa.
+  const [productos, cuenta] = await Promise.all([
     database.getProducts(businessId).catch(() => [] as unknown[]),
-    database.getBusinessById(businessId),
     elegido.requires_proof
       ? database.getBusinessBankAccount(businessId).catch(() => null)
       : Promise.resolve(null),
@@ -1602,7 +1606,6 @@ async function avanzarCheckout(input: {
     total: pedido.total,
     metodo: elegido,
     cuenta,
-    telefonoDelLocal: (negocio as { phone?: string | null } | null)?.phone ?? null,
   })
   logger?.log(
     `✅ [checkout] pedido #${pedido.orderNumber} creado — ${elegido.code}`,
