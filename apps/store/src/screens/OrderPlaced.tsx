@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import {
   RiCheckLine,
   RiCloseLine,
-  RiPhoneLine,
   RiTimeLine,
   RiWhatsappLine,
 } from '@remixicon/react'
@@ -150,11 +149,16 @@ export default function OrderPlaced({
   // pidió y el número de cuenta ya no sirven para nada: lo único que le queda
   // por hacer es preguntar qué pasó.
   //
-  // ⚠️ El botón es una LLAMADA (`tel:`), no un chat. Quien acaba de quedarse
-  // sin su comida no quiere escribir y esperar respuesta, y el dueño acaba de
-  // tomar una decisión que quizá tenga que explicar.
+  // ⚠️ El botón abre el CHAT de Umbani, no una llamada (2026-09-07). Era un
+  // `tel:` al número del local, y desde que todo pasa por Umbani ese número es
+  // el WhatsApp de la plataforma: llamar ahí no lo coge nadie. Y aunque lo
+  // cogieran, el pedido, el comprobante y el seguimiento viven en el chat —
+  // que es donde de verdad se puede responder qué pasó.
+  //
+  // Dice lo MISMO que el aviso que llega por WhatsApp (`order-notify.ts`): el
+  // cliente llega por los dos caminos y no puede leer dos cosas distintas.
   if (cancelado) {
-    const llamar = String(business.phone || '').replace(/[^\d+]/g, '')
+    const chat = String(business.phone || '').replace(/[^\d]/g, '')
     return (
       <div className="animar-entrada mx-auto flex min-h-[100dvh] max-w-md flex-col justify-center px-5 py-10">
         <div className="flex flex-col items-center text-center">
@@ -169,18 +173,18 @@ export default function OrderPlaced({
           </h1>
           <p className="mt-2.5 text-[14.5px] leading-relaxed texto-cuerpo">
             {numero ? `Tu pedido ${numero} no pudo continuar. ` : 'Tu pedido no pudo continuar. '}
-            Si quieres saber qué pasó o volver a pedir, llama al local.
+            Si quieres saber qué pasó o volver a pedir, escríbenos por aquí.
           </p>
         </div>
 
         <div className="mt-8 space-y-1">
-          {llamar && (
+          {chat && (
             <a
-              href={`tel:${llamar}`}
+              href={`https://wa.me/${chat}?text=${encodeURIComponent('MENÚ')}`}
               className="tinta flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
             >
-              <RiPhoneLine size={18} />
-              Llamar al local
+              <RiWhatsappLine size={18} />
+              Escribirnos por WhatsApp
             </a>
           )}
           <button
