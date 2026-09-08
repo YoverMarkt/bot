@@ -81,16 +81,23 @@ describe('la mini app enseña el número de la PLATAFORMA, no el del dueño', ()
     expect(app.phoneIsPlatform).toBe(true)
   })
 
-  it('un local CON canal propio sigue usando el suyo', () => {
-    // No todo local pasa por Umbani: el que tiene su número atiende por él, y
-    // esta regla no se lo quita.
+  // ⚠️ Esta prueba decía lo contrario hace unas horas —«un local con canal
+  // propio sigue usando el suyo»— y el dueño la cerró el mismo día: «todo
+  // tiene que pasar por Umbani, todo; chat, menú, mini app, absolutamente
+  // todo; nada por el local del dueño». Y la evidencia lo respalda: el canal
+  // propio se retiró del panel el 2026-08-23 («todos los locales viven en el
+  // marketplace»), el alta fuerza `whatsapp_provider = 'marketplace'`, y en
+  // producción no hay un solo local con número propio ni un solo canal
+  // registrado. Lo que quedaba era una columna sin pantalla que la llenara,
+  // capaz de decidir a dónde se manda al cliente.
+  it('ni un `whatsapp_number` en la ficha cambia el número', () => {
     const app = publicBusiness(
       { ...base, phone: '0978619700', whatsapp_number: '+593987654321' },
       null,
       '+593991716574',
     )
-    expect(app.phone).toBe('+593987654321')
-    expect(app.phoneIsPlatform).toBe(false)
+    expect(app.phone).toBe('+593991716574')
+    expect(app.phoneIsPlatform).toBe(true)
   })
 })
 
