@@ -114,6 +114,9 @@ type FlowView =
   | { kind: 'spread-count'; productId: string; tag: string | null; groupIndex: number; optionId: string }
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
+  // Quitar una línea del carrito sin tener que vaciarlo entero, que era la
+  // única salida y castigaba un error con perder el pedido completo.
+  | { kind: 'edit-cart' }
   | { kind: 'order-confirm' }
 
 interface FlowState {
@@ -251,7 +254,10 @@ const OPT_OTHER = '✍️ Otra cantidad'
 const OPT_SAME = '✅ Sí, iguales'
 const OPT_DIFFERENT = '🍽️ Diferentes'
 const OPT_MIX = '🔀 Combinar'
-const OPT_MANY = '4 o más'
+const OPT_MANY = '✍️ Otra cantidad'
+// El carrito, como en una app de pedidos: añadir, quitar y seguir.
+const OPT_ADD = '➕ Agregar algo'
+const OPT_REMOVE = '✏️ Quitar algo'
 
 const PAGE_SIZE = 6
 // WhatsApp permite 10 filas por lista: 9 opciones + "Ver más" entran justas.
@@ -380,7 +386,100 @@ const RECORRIDO_MAX = 3
 /** Una lista de WhatsApp admite 10 filas y la última se la lleva «Volver». */
 const SPREAD_ROWS = 9
 
+/**
+ * Todos los repartos posibles de `unidades` entre `opciones`, en una lista.
+ *
+ * Es el atajo bueno: «2 almuerzos diferentes» con dos sopas son exactamente
+ * tres respuestas —`2 de res`, `1 y 1`, `2 de crema`— y caben en un mensaje,
+ * así que preguntarlo en dos pasos es peor por todos lados. Con cuatro
+ * almuerzos y dos sopas son cinco. Con seis segundos son veintiuna y NO caben:
+ * de ahí que esto devuelva `null` y el flujo caiga al reparto por pasos.
+ *
+ * ⚠️ Se corta en cuanto se pasa del tope en vez de generarlo entero: con
+ * muchas opciones y muchas unidades esto crece muy rápido, y solo hace falta
+ * saber si cabe.
+ */
+const repartosPosibles = (
+  unidades: number,
+  opciones: FlowOption[],
+  tope: number,
+): { cantidades: number[] }[] | null => {
+  const salida: { cantidades: number[] }[] = []
+  const recorrer = (indice: number, resto: number, acumulado: number[]): boolean => {
+    if (salida.length > tope) return false
+    if (indice === opciones.length - 1) {
+      salida.push({ cantidades: [...acumulado, resto] })
+      return salida.length <= tope
+    }
+    for (let n = resto; n >= 0; n -= 1) {
+      if (!recorrer(indice + 1, resto - n, [...acumulado, n])) return false
+    }
+    return true
+  }
+  if (!opciones.length) return null
+  return recorrer(0, unidades, []) ? salida : null
+}
+
+/**
+ * Cómo se lee un reparto en una fila: «1 Caldo de res + 1 Crema».
+ *
+ * ⚠️ Las opciones con 0 se OMITEN — «0 Ceviche + 2 Pollo» obliga a leer un
+ * cero para descartarlo. Y el título de una fila de lista se recorta a 24
+ * caracteres, así que si no cabe se devuelve `null` y ese grupo se reparte
+ * por pasos: una fila cortada a la mitad no se puede elegir ni leer.
+ */
+const ROW_TITLE_MAX = 24
+const etiquetaDeReparto = (
+  cantidades: number[],
+  opciones: FlowOption[],
+  unidades: number,
+): { title: string; description: string } | null => {
+  const cortos = nombresCortos(opciones)
+  const vivas = cantidades
+    .map((cuantas, i) => ({ cuantas, corto: cortos[i], largo: nombreDeOpcion(opciones[i]) }))
+    .filter(p => p.cuantas > 0)
+  if (!vivas.length) return null
+  // Todas a la misma opción: «4 × Pollo apanado» se lee mejor que «4 Pollo».
+  const title = vivas.length === 1
+    ? `${unidades} × ${vivas[0].corto}`
+    : vivas.map(p => `${p.cuantas} ${p.corto}`).join(' + ')
+  if ([...title].length > ROW_TITLE_MAX) return null
+  return { title, description: vivas.map(p => `${p.cuantas} ${p.largo}`).join(' + ') }
+}
+
 const nombreDeOpcion = (opcion: FlowOption): string => String(opcion.name || '').trim()
+
+/**
+ * Un nombre CORTO y único por opción, para que quepan varias en una fila.
+ *
+ * El título de una fila de lista se corta a 24 caracteres, y con nombres de
+ * carta reales eso no da ni para uno: «2 × Caldo de hueso de res» son 25. Sin
+ * esto, el atajo de «todas las combinaciones en un mensaje» no se activaba
+ * nunca y el cliente acababa en la pantalla absurda de «¿Cuántos Caldo de
+ * hueso de res?» con [1] como única respuesta posible.
+ *
+ * Se empieza por la primera palabra y se añaden más SOLO mientras haya empate:
+ * «Caldo de hueso de res»→`Caldo`, «Crema de zapallo»→`Crema`, pero «Pollo en
+ * salsa…» y «Pollo apanado» crecen a `Pollo en` y `Pollo apanado` porque
+ * compartían la primera. Nunca se inventa una abreviatura: siempre es un
+ * prefijo del nombre real, y el nombre entero va en la descripción de la fila.
+ */
+const nombresCortos = (opciones: FlowOption[]): string[] => {
+  const palabras = opciones.map(o => nombreDeOpcion(o).split(/\s+/).filter(Boolean))
+  const cortos = palabras.map(p => p[0] || '')
+  for (let intento = 1; intento < 6; intento += 1) {
+    const repetidos = new Set(
+      cortos.filter((corto, i) => cortos.some((otro, j) => i !== j && otro === corto)),
+    )
+    if (!repetidos.size) break
+    for (let i = 0; i < cortos.length; i += 1) {
+      if (repetidos.has(cortos[i]) && palabras[i].length > intento) {
+        cortos[i] = palabras[i].slice(0, intento + 1).join(' ')
+      }
+    }
+  }
+  return cortos.map((corto, i) => corto || nombreDeOpcion(opciones[i]))
+}
 
 /** Las cantidades que se ofrecen como filas, sin pasarse del tope de la lista. */
 const filasDeCantidad = (desde: number, hasta: number): MenuOption[] => {
@@ -423,6 +522,37 @@ const detalleDeOpciones = (opciones?: ChosenOption[], unidades = 1): string => (
     .map(o => (unidades > 1 && o.quantity ? `${o.quantity}× ${o.name}` : o.name))
     .join(', ')
 )
+
+/**
+ * El carrito tal como lo enseña una app de pedidos: cada línea con su precio,
+ * lo elegido agrupado DEBAJO por su grupo, y el total al final.
+ *
+ * ⚠️ Antes esto solo existía en el resumen final, así que durante todo el
+ * pedido el cliente no veía qué llevaba ni cuánto iba costando — tenía que
+ * acordarse. En una app se ve el carrito después de cada cosa que se añade, y
+ * es lo que evita el «¿pedí bien?» que acaba en una llamada al local.
+ *
+ * ⚠️ Agrupar por el NOMBRE del grupo («Sopa: 3× res, 1× crema») y no volcar
+ * las siete elecciones seguidas: con un pedido familiar, una sola línea de
+ * texto corrido es ilegible justo donde hay que comprobar el pedido.
+ */
+const textoDelCarrito = (state: FlowState): string => {
+  const bloques = state.cart.map((item) => {
+    const cabecera = `*${item.quantity} × ${item.name}* — ${money(item.priceCents * item.quantity)}`
+    const porGrupo = new Map<string, ChosenOption[]>()
+    for (const opcion of item.options || []) {
+      const grupo = opcion.groupName || 'Opciones'
+      porGrupo.set(grupo, [...(porGrupo.get(grupo) || []), opcion])
+    }
+    const detalles = [...porGrupo.entries()].map(([grupo, elegidas]) => (
+      `   ${grupo}: ${detalleDeOpciones(elegidas, item.quantity)}`
+    ))
+    if (item.modifier) detalles.unshift(`   ${item.modifier}`)
+    return [cabecera, ...detalles].join('\n')
+  })
+  const total = state.cart.reduce((suma, item) => suma + item.priceCents * item.quantity, 0)
+  return `🛒 *Tu pedido*\n\n${bloques.join('\n\n')}\n\n*Total: ${money(total)}*`
+}
 
 // ── Datos derivados del negocio ───────────────────────────────────────
 const activeProducts = (products: FlowProduct[]): FlowProduct[] =>
@@ -578,6 +708,46 @@ const mainOptions = (input: MenuFlowInput): string[] => {
   return options
 }
 
+/**
+ * La carta del día en UN mensaje: lo que un local de almuerzos tiene escrito
+ * en su cartel, y lo primero que quiere ver quien va a pedir.
+ *
+ * ⚠️ Sale de los datos, no de una plantilla por tipo de negocio: cada producto
+ * con su precio y, debajo, las opciones de sus grupos obligatorios. Una
+ * cevichería con «Ceviche» + tamaños se pinta igual de bien que una
+ * almuercería, y un local con veinte productos NO pinta ninguna (no cabría, y
+ * para eso está la lista paginada de siempre).
+ *
+ * ⚠️ Se pinta a lo sumo `CARTA_MAX_PRODUCTOS` y los grupos de UN solo producto:
+ * enseñar la carta entera de un supermercado sería un muro que nadie lee, y el
+ * mensaje de WhatsApp se corta a 1024 caracteres en un interactivo.
+ */
+const CARTA_MAX_PRODUCTOS = 6
+const CARTA_MAX_OPCIONES = 8
+
+const cartaDelDia = (input: MenuFlowInput): string => {
+  const productos = activeProducts(input.products)
+  if (!productos.length || productos.length > CARTA_MAX_PRODUCTOS) return ''
+  const conGrupos = productos.filter(p => gruposDelProducto(input, p.id).length)
+  if (!conGrupos.length) return ''
+
+  // Los grupos del producto principal: las sopas y los segundos del día.
+  const principal = conGrupos[0]
+  const bloques = gruposDelProducto(input, principal.id).map((grupo) => {
+    const opciones = opcionesDelGrupo(input, grupo.id)
+    if (opciones.length < 2 || opciones.length > CARTA_MAX_OPCIONES) return ''
+    return `*${String(grupo.name || '').trim()}*\n`
+      + opciones.map(o => `· ${nombreDeOpcion(o)}`).join('\n')
+  }).filter(Boolean)
+  if (!bloques.length) return ''
+
+  const precios = productos.map((producto) => {
+    const cents = priceCentsOf(producto)
+    return `· ${String(producto.name).trim()}${cents ? ` — ${money(cents)}` : ''}`
+  })
+  return `${bloques.join('\n\n')}\n\n*Precios*\n${precios.join('\n')}`
+}
+
 const welcomeReply = (input: MenuFlowInput): MenuFlowResult => {
   return {
     reply: `${configuredWelcome(input)}\n${PROMPT_CHOOSE}`,
@@ -629,8 +799,18 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       const orderPrompt = state.pendingModifier
         ? `Ahora elige el tamaño 👇`
         : `Elige el producto que deseas 👇`
+      // ⚠️ La carta del día va AQUÍ y solo en la primera página del pedido: es
+      // el momento en que el cliente decide, y hasta ahora tenía que elegir
+      // «Almuerzo» sin saber qué sopas y qué segundos había hoy. En la
+      // bienvenida sería demasiado pronto (aún no dijo que quiere pedir) y en
+      // «Ver más» sería repetirla.
+      const carta = view.intent === 'order' && view.page === 0 && !state.pendingModifier
+        ? cartaDelDia(input)
+        : ''
       return {
-        reply: view.intent === 'order' ? orderPrompt : `Estos son nuestros productos 👇`,
+        reply: view.intent === 'order'
+          ? `${carta ? `${carta}\n\n` : ''}${orderPrompt}`
+          : `Estos son nuestros productos 👇`,
         options: [...page.map(productOption), ...(hasMore ? [OPT_MORE] : []), OPT_BACK],
       }
     }
@@ -720,6 +900,22 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
           ],
         }
       }
+      // ── El atajo bueno: TODOS los repartos en un solo mensaje ──────────
+      //
+      // Con dos sopas y dos almuerzos son tres respuestas —«2 de res», «1 y
+      // 1», «2 de crema»— y caben enteras. Preguntarlo en dos pasos daba una
+      // pantalla absurda: «¿Cuántos Caldo de res?» con [1] como única opción.
+      // Con seis segundos son veintiuna y no caben: ahí se reparte por pasos.
+      const repartos = repartosPosibles(unidades, opciones, SPREAD_ROWS)
+      const filas = repartos
+        ?.map(r => etiquetaDeReparto(r.cantidades, opciones, unidades))
+        .filter((x): x is { title: string; description: string } => x !== null)
+      if (repartos && filas && filas.length === repartos.length) {
+        return {
+          reply: `${etiqueta} para ${unidades} 👇`,
+          options: [...filas, OPT_BACK],
+        }
+      }
       return {
         reply: `${etiqueta} para ${unidades} 👇`,
         options: [
@@ -774,26 +970,38 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       }
     }
     case 'after-add': {
-      const categories = categoriesOf(input.products)
+      // ⚠️ El carrito ENTERO después de cada añadido. Hasta el 2026-09-07 aquí
+      // solo se preguntaba «¿Deseas algo más?», así que el cliente recorría
+      // todo el pedido sin ver qué llevaba ni cuánto iba costando y solo lo
+      // descubría al final. Cuesta un mensaje más largo, no un mensaje más.
       return {
-        reply: `¿Deseas algo más? 👇`,
-        options: [...(categories.length ? categories : ['🛒 Seguir pidiendo']), OPT_FINISH, OPT_HOME],
+        reply: `${textoDelCarrito(state)}\n\n¿Algo más? 👇`,
+        options: [
+          OPT_ADD,
+          OPT_FINISH,
+          ...(state.cart.length ? [OPT_REMOVE] : []),
+          OPT_HOME,
+        ],
+      }
+    }
+    case 'edit-cart': {
+      return {
+        reply: '¿Qué quieres quitar? 👇',
+        options: [
+          ...state.cart.slice(0, SPREAD_ROWS).map((item, i) => ({
+            title: `${i + 1}. ${item.name}`,
+            description: `${item.quantity} × ${money(item.priceCents)}`,
+          })),
+          OPT_BACK,
+        ],
       }
     }
     case 'order-confirm': {
       // Lo elegido se enseña agrupado bajo su línea: el cliente tiene que
       // poder comprobar que se entendió su pedido ANTES de confirmarlo.
-      const lines = state.cart.map((item) => {
-        const elegido = detalleDeOpciones(item.options, item.quantity)
-        const detalle = [item.modifier, elegido].filter(Boolean).join(' · ')
-        return `• ${item.quantity}x ${item.name}`
-          + (detalle ? ` — ${detalle}` : '')
-          + ` — ${money(item.priceCents * item.quantity)}`
-      })
-      const total = state.cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
       return {
-        reply: `🧾 Resumen de tu pedido:\n${lines.join('\n')}\n*Total: ${money(total)}*\n¿Lo confirmamos?`,
-        options: [OPT_CONFIRM, OPT_EMPTY, OPT_HOME],
+        reply: `${textoDelCarrito(state)}\n\n¿Lo confirmamos?`,
+        options: [OPT_CONFIRM, OPT_ADD, OPT_EMPTY, OPT_HOME],
       }
     }
   }
@@ -1218,6 +1426,28 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           }, input)
       }
 
+      // Un reparto entero de un solo toque («1 Caldo de res + 1 Crema»), que
+      // es la pantalla que se ofrece cuando todas las combinaciones caben.
+      const repartos = repartosPosibles(unidades, opciones, SPREAD_ROWS)
+      const elegido = repartos?.find(r => (
+        etiquetaDeReparto(r.cantidades, opciones, unidades)?.title === choice
+      ))
+      if (elegido) {
+        state.pendingOptions = [
+          ...(state.pendingOptions || []),
+          ...elegido.cantidades
+            .map((cuantas, i) => ({
+              optionId: opciones[i].id,
+              groupName: String(grupo.name || '').trim(),
+              name: nombreDeOpcion(opciones[i]),
+              quantity: cuantas,
+            }))
+            // Las de cantidad 0 no se guardan: el dueño vería «0× Ceviche».
+            .filter(o => o.quantity > 0),
+        ]
+        return siguienteGrupo(state, input, view)
+      }
+
       // «4 × Caldo de hueso de res»: todas iguales de un solo toque.
       const todas = opciones.find(o => `${unidades} × ${nombreDeOpcion(o)}` === choice)
       if (!todas) break
@@ -1333,8 +1563,16 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         if (!state.cart.length) return goTo(state, { kind: 'main' }, input)
         return goTo(state, { kind: 'order-confirm' }, input)
       }
-      if (choice === '🛒 Seguir pidiendo') {
-        return goTo(state, { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
+      if (choice === OPT_ADD) {
+        // Con categorías, al submenú; sin ellas, directo a los productos.
+        // Es el «➕ ¿Qué deseas agregar?» del diseño, y conserva el salto a
+        // una categoría que antes colgaba suelto de esta misma pantalla.
+        return goTo(state, categoriesOf(input.products).length
+          ? { kind: 'categories', intent: 'order', page: 0 }
+          : { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
+      }
+      if (choice === OPT_REMOVE && state.cart.length) {
+        return goTo(state, { kind: 'edit-cart' }, input)
       }
       if (choice) {
         const tag = normalizeText(choice)
@@ -1346,7 +1584,26 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
       }
       break
     }
+    case 'edit-cart': {
+      if (choice === OPT_BACK) return goTo(state, { kind: 'after-add' }, input)
+      const indice = state.cart.findIndex((item, i) => `${i + 1}. ${item.name}` === choice)
+      if (indice < 0) break
+      const [quitado] = state.cart.splice(indice, 1)
+      // Con el carrito vacío no se enseña un carrito vacío: se vuelve al menú,
+      // que es de donde se puede hacer algo.
+      if (!state.cart.length) {
+        const home = goTo(state, { kind: 'main' }, input)
+        return { ...home, reply: `Quité *${quitado.name}* 🗑️\n${home.reply}` }
+      }
+      const resto = goTo(state, { kind: 'after-add' }, input)
+      return { ...resto, reply: `Quité *${quitado.name}* 🗑️\n\n${resto.reply}` }
+    }
     case 'order-confirm': {
+      if (choice === OPT_ADD) {
+        return goTo(state, categoriesOf(input.products).length
+          ? { kind: 'categories', intent: 'order', page: 0 }
+          : { kind: 'products', intent: 'order', tag: null, page: 0 }, input)
+      }
       if (choice === OPT_CONFIRM) {
         const summaryView = renderView({ kind: 'order-confirm' }, state, input)
         const total = state.cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)

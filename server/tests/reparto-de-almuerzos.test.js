@@ -26,6 +26,8 @@ const local = { id: 'almuerzos-test', name: 'La Abuelita', takes_orders: true }
 
 const productos = [
   { id: 'almuerzo', name: 'Almuerzo del día', price: 3.5, stock: 'disponible', active: true },
+  // El plato suelto: mismo catálogo, pero sin contadores ni bebida incluida.
+  { id: 'solo-sopa', name: 'Solo sopa', price: 1.5, stock: 'disponible', active: true },
 ]
 
 // El catálogo real del cartel: 2 sopas, 6 segundos, 4 bebidas. Los tres son
@@ -33,6 +35,7 @@ const productos = [
 const grupos = [
   { id: 'g-sopa', product_id: 'almuerzo', name: 'Sopa', selection_type: 'quantity', required: true, min_selectable: 1, max_selectable: 100, sort: 0 },
   { id: 'g-segundo', product_id: 'almuerzo', name: 'Segundo', selection_type: 'quantity', required: true, min_selectable: 1, max_selectable: 100, sort: 1 },
+  { id: 'g-suelta', product_id: 'solo-sopa', name: 'Sopa', selection_type: 'single', required: true, min_selectable: 1, max_selectable: 1, sort: 0 },
 ]
 
 const opciones = [
@@ -44,6 +47,8 @@ const opciones = [
   { id: 'o-moro', option_group_id: 'g-segundo', name: 'Moro de costilla', price_adjustment: 0, sort: 3 },
   { id: 'o-apanado', option_group_id: 'g-segundo', name: 'Pollo apanado', price_adjustment: 0, sort: 4 },
   { id: 'o-pescado', option_group_id: 'g-segundo', name: 'Pescado apanado', price_adjustment: 0, sort: 5 },
+  { id: 'o-res-suelta', option_group_id: 'g-suelta', name: 'Caldo de hueso de res', price_adjustment: 0, sort: 0 },
+  { id: 'o-zapallo-suelta', option_group_id: 'g-suelta', name: 'Crema de zapallo', price_adjustment: 0, sort: 1 },
 ]
 
 const args = { products: productos, optionGroups: grupos, options: opciones }
@@ -73,7 +78,7 @@ describe('el reparto de un pedido de varios', () => {
     // Hasta seis: con cuatro filas WhatsApp ya manda lista (los botones se
     // acaban en tres) y una lista admite diez, así que ofrecer solo tres
     // costaba dos mensajes de más en el pedido familiar.
-    expect(titulos(cantidad.options)).toEqual(['1', '2', '3', '4', '5', '6', '4 o más', '⬅️ Volver'])
+    expect(titulos(cantidad.options)).toEqual(['1', '2', '3', '4', '5', '6', '✍️ Otra cantidad', '⬅️ Volver'])
 
     const sopa = enviar('uno', '1')
     // Con UNA unidad el contador se pregunta como cualquier otra elección:
@@ -104,9 +109,11 @@ describe('el reparto de un pedido de varios', () => {
     // «Iguales»: una pasada por cada grupo y las dos porciones a la misma
     // opción. Sin este atajo serían cuatro preguntas en vez de dos.
     const sopa = enviar('dos', '✅ Sí, iguales')
-    expect(titulos(sopa.options)).toContain('2 × Caldo de hueso de res')
+    // Nombre CORTO en el título (una fila admite 24 caracteres) y completo
+    // en la descripción, que es lo que hace que el atajo quepa.
+    expect(titulos(sopa.options)).toContain('2 × Caldo')
 
-    enviar('dos', '2 × Caldo de hueso de res')
+    enviar('dos', '2 × Caldo')
     const agregado = enviar('dos', '2 × Pollo apanado')
     expect(agregado.reply).toContain('agregué 2x Almuerzo del día')
 
@@ -122,19 +129,15 @@ describe('el reparto de un pedido de varios', () => {
   it('caso 3 — cuatro repartidos: la última opción se CALCULA, no se pregunta', () => {
     hastaLaCantidad('cuatro')
     const sopas = enviar('cuatro', '4')
-    expect(titulos(sopas.options)).toContain('4 × Caldo de hueso de res')
-    expect(titulos(sopas.options)).toContain('🔀 Combinar')
+    // ⚠️ Con DOS sopas y cuatro almuerzos, los cinco repartos posibles caben
+    // en un mensaje, así que se ofrecen enteros y no hay «Combinar»: el
+    // reparto de las sopas cuesta UN toque en vez de dos.
+    expect(titulos(sopas.options)).toEqual([
+      '4 × Caldo', '3 Caldo + 1 Crema', '2 Caldo + 2 Crema',
+      '1 Caldo + 3 Crema', '4 × Crema', '⬅️ Volver',
+    ])
 
-    // ── Sopas: dos opciones, así que se recorren una a una ──────────────
-    const cuantas = enviar('cuatro', '🔀 Combinar')
-    expect(cuantas.reply).toContain('Caldo de hueso de res')
-    // ⚠️ Con dos opciones el rango es 1..3, no 0..4: elegir 0 o 4 sería
-    // «todas iguales», que ya se ofreció en la pantalla anterior.
-    expect(titulos(cuantas.options)).toEqual(['1', '2', '3'])
-
-    // 3 de res ⇒ la crema se lleva 1 SIN preguntarlo. Ese es el mensaje
-    // ahorrado, y es la regla entera de esta pantalla.
-    const segundos = enviar('cuatro', '3')
+    const segundos = enviar('cuatro', '3 Caldo + 1 Crema')
     expect(segundos.reply).toContain('Segundo para 4')
 
     // ── Segundos: seis opciones, así que se pregunta cuál y cuántas ─────
@@ -177,8 +180,7 @@ describe('el reparto de un pedido de varios', () => {
   it('salta las preguntas que sobran cuando ya no queda nada por repartir', () => {
     hastaLaCantidad('salta')
     enviar('salta', '4')
-    enviar('salta', '🔀 Combinar')
-    enviar('salta', '2')
+    enviar('salta', '2 Caldo + 2 Crema')
 
     // Segundos: si el primero se lleva las 4 porciones, no se pregunta por
     // ninguno de los otros cinco — son cinco mensajes que no se mandan.
@@ -215,7 +217,7 @@ describe('el reparto de un pedido de varios', () => {
     paso('Almuerzo del día')
     paso('2')
     paso('✅ Sí, iguales')
-    paso('2 × Caldo de hueso de res')
+    paso('2 × Caldo')
     // Tras el segundo, la bebida NO se pregunta: va directo al carrito.
     const agregado = paso('2 × Pollo apanado')
     expect(agregado.reply).toContain('agregué 2x Almuerzo del día')
@@ -228,16 +230,16 @@ describe('el reparto de un pedido de varios', () => {
     expect(bebida).toMatchObject({ optionId: 'o-jugo', quantity: 2 })
   })
 
-  it('«4 o más» pide el número en vez de asumir cuatro', () => {
+  it('«Otra cantidad» pide el número y deja de mirar la lista', () => {
     hastaLaCantidad('muchos')
-    const pide = enviar('muchos', '4 o más')
+    const pide = enviar('muchos', '✍️ Otra cantidad')
     expect(pide.reply).toContain('Escríbeme cuántos')
 
     // ⚠️ Y una vez pedido el número deja de mirarse la lista: si no, este «8»
     // volvería a casar por posición y la pregunta se repetiría para siempre.
     const sopas = enviar('muchos', '8')
     expect(sopas.reply).toContain('Sopa para 8')
-    expect(titulos(sopas.options)).toContain('8 × Caldo de hueso de res')
+    expect(titulos(sopas.options)).toContain('8 × Caldo')
   })
 })
 
@@ -286,5 +288,92 @@ describe('lo que NO puede cambiar para el resto del catálogo', () => {
     expect(accion.items[0].options).toEqual([
       { optionId: 'o', groupName: 'Tamaño', name: 'Grande' },
     ])
+  })
+})
+
+describe('la experiencia completa, como una app de pedidos', () => {
+  const paso = (contacto, mensaje) => advanceMenuFlow({
+    business: local, contact: contacto, message: mensaje, ...args,
+  })
+
+  it('la carta del día se enseña ANTES de elegir, en un solo mensaje', () => {
+    resetMenuFlow(local.id, 'carta')
+    paso('carta', 'hola')
+    const carta = paso('carta', '🛒 Hacer un pedido')
+    // Lo que está escrito en el cartel del local: qué hay hoy y a cuánto.
+    // Antes había que elegir «Almuerzo» a ciegas y descubrir las sopas después.
+    expect(carta.reply).toContain('Caldo de hueso de res')
+    expect(carta.reply).toContain('Pescado apanado')
+    expect(carta.reply).toContain('$3.50')
+    // Y no se repite al volver a entrar por «Ver más» ni en la bienvenida.
+    expect(paso('carta', 'hola').reply).not.toContain('Pescado apanado')
+  })
+
+  it('el carrito se ve DESPUÉS de cada añadido, agrupado y con total', () => {
+    resetMenuFlow(local.id, 'carrito')
+    paso('carrito', 'hola')
+    paso('carrito', '🛒 Hacer un pedido')
+    paso('carrito', 'Almuerzo del día')
+    paso('carrito', '2')
+    paso('carrito', '✅ Sí, iguales')
+    paso('carrito', '2 × Caldo')
+    const visto = paso('carrito', '2 × Pollo apanado')
+
+    expect(visto.reply).toContain('🛒 *Tu pedido*')
+    expect(visto.reply).toContain('*2 × Almuerzo del día* — $7.00')
+    // Agrupado por su grupo, no siete elecciones en una línea corrida.
+    expect(visto.reply).toContain('Sopa: 2× Caldo de hueso de res')
+    expect(visto.reply).toContain('Segundo: 2× Pollo apanado')
+    expect(visto.reply).toContain('*Total: $7.00*')
+    expect(titulos(visto.options)).toEqual([
+      '➕ Agregar algo', '✅ Finalizar pedido', '✏️ Quitar algo', '🏠 Menú principal',
+    ])
+  })
+
+  it('se puede quitar UNA línea sin perder el pedido entero', () => {
+    resetMenuFlow(local.id, 'quitar')
+    paso('quitar', 'hola')
+    paso('quitar', '🛒 Hacer un pedido')
+    paso('quitar', 'Almuerzo del día')
+    paso('quitar', '1')
+    paso('quitar', 'Caldo de hueso de res')
+    paso('quitar', 'Pollo apanado')
+    paso('quitar', '➕ Agregar algo')
+    paso('quitar', 'Solo sopa')
+    paso('quitar', 'Crema de zapallo')
+    paso('quitar', '1')
+
+    const lista = paso('quitar', '✏️ Quitar algo')
+    expect(titulos(lista.options)).toEqual(['1. Almuerzo del día', '2. Solo sopa', '⬅️ Volver'])
+
+    // ⚠️ Antes la única salida era «Vaciar carrito»: un error de un toque
+    // costaba rehacer el pedido entero.
+    const tras = paso('quitar', '2. Solo sopa')
+    expect(tras.reply).toContain('Quité *Solo sopa*')
+    expect(tras.reply).toContain('*Total: $3.50*')
+    expect(tras.reply).not.toContain('Solo sopa* — $1.50')
+  })
+
+  it('todos los repartos posibles caben en UN mensaje cuando son pocos', () => {
+    resetMenuFlow(local.id, 'combi')
+    paso('combi', 'hola')
+    paso('combi', '🛒 Hacer un pedido')
+    paso('combi', 'Almuerzo del día')
+    const sopas = paso('combi', '4')
+    // ⚠️ Nombre corto en el título (24 caracteres es el tope de una fila) y
+    // completo en la descripción. Con «2 × Caldo de hueso de res» (25) el
+    // atajo no cabía y el cliente acababa en «¿Cuántos…?» con [1] de única
+    // respuesta posible.
+    expect(titulos(sopas.options)).toEqual([
+      '4 × Caldo', '3 Caldo + 1 Crema', '2 Caldo + 2 Crema',
+      '1 Caldo + 3 Crema', '4 × Crema', '⬅️ Volver',
+    ])
+    const descripcion = sopas.options.find(o => o.title === '3 Caldo + 1 Crema')?.description
+    expect(descripcion).toBe('3 Caldo de hueso de res + 1 Crema de zapallo')
+
+    // Con SEIS segundos son 21 repartos y no caben: ahí se reparte por pasos.
+    paso('combi', '3 Caldo + 1 Crema')
+    const segundos = advanceMenuFlow({ business: local, contact: 'combi', message: 'x', ...args })
+    expect(titulos(segundos.options)).toContain('🔀 Combinar')
   })
 })
