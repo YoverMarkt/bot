@@ -117,6 +117,32 @@ interface CanalDeSalida {
 const MARCADOR = { id: null, whatsapp_provider: 'marketplace' }
 
 /**
+ * El id que viaja con cada fila de la lista.
+ *
+ * ⚠️ El id es el NÚMERO de la fila (1, 2, 3…) y no `opt_N`, que era lo que se
+ * mandaba hasta el 2026-09-07. `ycloudContent` solo aprovecha el id si es un
+ * número de uno o dos dígitos, así que con `opt_0` caía SIEMPRE al título — y
+ * WhatsApp lo recorta a 20 caracteres en un botón y 24 en una fila de lista.
+ * Con nombres reales de carta («Pollo en salsa de champiñones», 29) la opción
+ * se volvía IMPOSIBLE de elegir tocándola. El menú entiende números desde el
+ * primer día; solo había que mandárselos.
+ *
+ * ⚠️ SALVO cuando alguna fila ya ES un número, y esto sí es una trampa: en las
+ * pantallas de «¿cuántos?» los títulos son `0`, `1`, `2`… Ahí el id por
+ * posición choca con el título — tocar la primera fila de `[0][1][2]` mandaría
+ * un «1» que se leería como la cantidad 1 en vez de 0. En esas listas se
+ * conserva `opt_N`, que hace caer la resolución al título, y no se pierde
+ * nada: un título de un dígito no lo recorta nadie.
+ */
+const idsDeFila = (options: string[]): { id: string; title: string }[] => {
+  const hayNumeros = options.some(opcion => /^\d{1,2}$/.test(opcion.trim()))
+  return options.map((title, indice) => ({
+    id: hayNumeros ? `opt_${indice}` : String(indice + 1),
+    title,
+  }))
+}
+
+/**
  * Manda un mensaje por el número de la plataforma.
  *
  * El «negocio» que se pasa es solo el marcador `marketplace`:
@@ -148,7 +174,7 @@ export const enviarPorLaPlataforma = async (
       negocio,
       to,
       reply,
-      options.map((title, indice) => ({ id: `opt_${indice}`, title })),
+      idsDeFila(options),
       'Ver opciones',
     )
     if (enviada) return

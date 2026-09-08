@@ -258,8 +258,12 @@ export interface CheckoutPendiente {
     qty: number
     note?: string
     productId?: string
-    /** Del motor de personalización: id real, lo valida la base. */
-    options?: { optionId: string; groupName: string; name: string }[]
+    /**
+     * Del motor de personalización: id real, lo valida la base. `quantity`
+     * solo viene de un grupo contador — es lo que reparte «3 con caldo de res
+     * y 1 con crema» dentro de una sola línea del carrito.
+     */
+    options?: { optionId: string; groupName: string; name: string; quantity?: number }[]
   }[]
   addressId?: string
 }

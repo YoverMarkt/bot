@@ -54,6 +54,15 @@ export interface ChosenOption {
   optionId: string
   groupName: string
   name: string
+  /**
+   * Cuántas PORCIONES de esta opción. Solo la usan los grupos `quantity`:
+   * «4 almuerzos → 3 caldos de res + 1 crema de zapallo» son dos elecciones
+   * del mismo grupo con cantidad 3 y 1.
+   *
+   * ⚠️ Fuera de un grupo `quantity`, `create_storefront_order` RECHAZA una
+   * cantidad distinta de 1 («no se elige por cantidad»), así que se omite.
+   */
+  quantity?: number
 }
 
 /** Un grupo de opciones tal como lo lee `getStorefrontOptionGroups`. */
@@ -88,6 +97,21 @@ type FlowView =
   // Un grupo de opciones del motor, de uno en uno. `groupIndex` dice por cuál
   // va: así el cliente contesta una pregunta por mensaje, como en el banco.
   | { kind: 'options'; productId: string; tag: string | null; groupIndex: number }
+  // ── Pedido de VARIAS unidades que no tienen por qué ser iguales ────────
+  // Solo aparecen cuando el producto trae grupos `quantity` (contadores).
+  // La cantidad se pregunta ANTES de configurar, para poder repartirla.
+  // `asking` = ya tocó «4 o más» y se espera un número escrito. Sin este
+  // estado, el «4» que escribe el cliente vuelve a casar con la fila 4 de la
+  // lista —que es «4 o más»— y la pregunta se repite para siempre.
+  | { kind: 'units'; productId: string; tag: string | null; asking?: boolean }
+  // Con 2 unidades hay un atajo que ahorra media conversación: si son
+  // iguales, se configura una vez y se multiplica.
+  | { kind: 'same'; productId: string; tag: string | null }
+  // El reparto de un grupo: «los 4 iguales» o «combinar».
+  | { kind: 'spread'; productId: string; tag: string | null; groupIndex: number }
+  // Combinando: cuál opción (solo cuando el grupo tiene muchas) y cuántas.
+  | { kind: 'spread-pick'; productId: string; tag: string | null; groupIndex: number }
+  | { kind: 'spread-count'; productId: string; tag: string | null; groupIndex: number; optionId: string }
   | { kind: 'quantity'; productId: string }
   | { kind: 'after-add' }
   | { kind: 'order-confirm' }
@@ -99,6 +123,17 @@ interface FlowState {
   pendingModifier?: string
   /** Opciones ya elegidas para el producto que se está armando. */
   pendingOptions?: ChosenOption[]
+  /** Cuántas unidades del producto se están armando (pedido de varios). */
+  pendingUnits?: number
+  /** El reparto del grupo que se está preguntando ahora mismo. */
+  spread?: {
+    groupId: string
+    /** Porciones del grupo que faltan por asignar. */
+    restante: number
+    /** Por qué opción va el recorrido, cuando se pregunta una a una. */
+    optionIndex: number
+    elegidas: ChosenOption[]
+  }
   updatedAt: number
 }
 
@@ -212,6 +247,11 @@ const OPT_FINISH = '✅ Finalizar pedido'
 const OPT_CONFIRM = '✅ Confirmar pedido'
 const OPT_EMPTY = '🗑️ Vaciar carrito'
 const OPT_OTHER = '✍️ Otra cantidad'
+// Pedido de varias unidades: el atajo de «iguales» y el reparto.
+const OPT_SAME = '✅ Sí, iguales'
+const OPT_DIFFERENT = '🍽️ Diferentes'
+const OPT_MIX = '🔀 Combinar'
+const OPT_MANY = '4 o más'
 
 const PAGE_SIZE = 6
 // WhatsApp permite 10 filas por lista: 9 opciones + "Ver más" entran justas.
@@ -271,10 +311,16 @@ const capitalize = (value: string): string => value ? value.charAt(0).toUpperCas
 /**
  * Los grupos que aplican a ESTE producto: los suyos y los de su categoría.
  *
- * ⚠️ Solo `single` (elegir uno). `multiple` y `quantity` piden casillas y
- * contadores, que en una lista de WhatsApp se vuelven una conversación larga
- * y confusa; esos productos se piden en la mini app, que es justo para lo que
- * está. Aquí se filtran para no prometer lo que el chat no sabe hacer.
+ * ⚠️ `single` (elegir uno) y `quantity` (contador por opción). `multiple`
+ * sigue fuera: son casillas con tope, y en una lista de WhatsApp —donde cada
+ * toque es un mensaje— marcar varias y luego decir «ya está» es una
+ * conversación larga y confusa. Esos productos se piden en la mini app.
+ *
+ * ⚠️ `quantity` entró el 2026-09-07 porque es lo que hace falta para pedir
+ * VARIOS de lo mismo con distinto relleno: «4 almuerzos, 3 con caldo de res y
+ * 1 con crema» cabe en UNA línea de carrito, sin obligar al cliente a decir
+ * qué sopa va con qué segundo (que la cocina no necesita saber). Se pregunta
+ * repartiendo cantidades, nunca con un contador por opción.
  */
 const gruposDelProducto = (
   input: MenuFlowInput,
@@ -283,7 +329,7 @@ const gruposDelProducto = (
   const categoria = input.productCategories?.[productId] ?? null
   return (input.optionGroups || [])
     .filter(grupo => (
-      grupo.selection_type === 'single'
+      (grupo.selection_type === 'single' || grupo.selection_type === 'quantity')
       && (grupo.product_id === productId
         || (Boolean(grupo.category_id) && grupo.category_id === categoria))
     ))
@@ -296,15 +342,86 @@ const exigeLaApp = (input: MenuFlowInput, productId: string): boolean => {
   return (input.optionGroups || []).some(grupo => (
     grupo.required === true
     && grupo.selection_type !== 'single'
+    && grupo.selection_type !== 'quantity'
     && (grupo.product_id === productId
       || (Boolean(grupo.category_id) && grupo.category_id === categoria))
   ))
 }
 
+/**
+ * ¿Este producto se puede pedir de varios con relleno distinto?
+ *
+ * Lo dice el catálogo, no el tipo de negocio: basta con que tenga un grupo
+ * contador. Así el mismo motor sirve a un almuerzo, a un desayuno o a una
+ * parrillada de cuatro cortes sin una sola línea que los nombre.
+ */
+const tieneContadores = (input: MenuFlowInput, productId: string): boolean =>
+  gruposDelProducto(input, productId).some(g => g.selection_type === 'quantity')
+
 const opcionesDelGrupo = (input: MenuFlowInput, groupId: string): FlowOption[] => (
   (input.options || [])
     .filter(opcion => opcion.option_group_id === groupId && opcion.stock !== 'agotado')
     .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+)
+
+// ── Repartir N unidades entre las opciones de un grupo ────────────────
+//
+// El objetivo de todo este bloque es UNO: gastar los menos mensajes posibles.
+// Cada pregunta que se ahorra es un mensaje que Meta no cobra y un toque menos
+// para el cliente. De ahí las tres reglas que lo gobiernan:
+//
+//   1. La ÚLTIMA opción nunca se pregunta: se calcula con lo que resta.
+//   2. Cuando no queda nada por repartir, el resto de preguntas se salta.
+//   3. Con dos unidades se pregunta «¿iguales?» antes que nada, porque un sí
+//      convierte dos configuraciones en una.
+
+/** Con pocas opciones se pregunta una a una; con muchas, cuál y cuántas. */
+const RECORRIDO_MAX = 3
+/** Una lista de WhatsApp admite 10 filas y la última se la lleva «Volver». */
+const SPREAD_ROWS = 9
+
+const nombreDeOpcion = (opcion: FlowOption): string => String(opcion.name || '').trim()
+
+/** Las cantidades que se ofrecen como filas, sin pasarse del tope de la lista. */
+const filasDeCantidad = (desde: number, hasta: number): MenuOption[] => {
+  const filas: MenuOption[] = []
+  for (let n = desde; n <= hasta && filas.length < SPREAD_ROWS; n += 1) filas.push(String(n))
+  return filas
+}
+
+/** Cuántas unidades se están armando ahora mismo (1 si no hay pedido múltiple). */
+const unidadesDe = (state: FlowState): number => Math.max(1, state.pendingUnits || 1)
+
+/**
+ * Guarda lo repartido y devuelve el índice del grupo siguiente.
+ *
+ * ⚠️ Las opciones con cantidad 0 NO se guardan: mandarlas haría que la RPC
+ * contara una elección que el cliente no hizo, y el dueño vería «0× Ceviche»
+ * en su comanda.
+ */
+const cerrarReparto = (state: FlowState): void => {
+  const elegidas = (state.spread?.elegidas || []).filter(o => (o.quantity || 0) > 0)
+  state.pendingOptions = [...(state.pendingOptions || []), ...elegidas]
+  state.spread = undefined
+}
+
+/** Cuántas porciones lleva ya asignadas una opción del reparto en curso. */
+const yaAsignadas = (state: FlowState): number =>
+  (state.spread?.elegidas || []).reduce((suma, o) => suma + (o.quantity || 0), 0)
+
+/**
+ * Lo elegido, tal como el cliente tiene que poder comprobarlo.
+ *
+ * ⚠️ En cuanto la línea lleva más de una unidad se escriben TODAS las
+ * cantidades, también los unos. Omitir el «1×» ahí daba «2× Caldo de res,
+ * Crema de zapallo», que no dice cuántas cremas hay y obliga a restar de
+ * cabeza — justo en el mensaje donde el cliente comprueba si se le entendió.
+ * Con una sola unidad no hay nada que contar y el número sobra.
+ */
+const detalleDeOpciones = (opciones?: ChosenOption[], unidades = 1): string => (
+  (opciones || [])
+    .map(o => (unidades > 1 && o.quantity ? `${o.quantity}× ${o.name}` : o.name))
+    .join(', ')
 )
 
 // ── Datos derivados del negocio ───────────────────────────────────────
@@ -558,6 +675,97 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
         options: [...filas, ...(grupo.required ? [] : [OPT_BACK])],
       }
     }
+    case 'units': {
+      if (view.asking) {
+        return { reply: 'Escríbeme cuántos (solo el número) ✍️', options: [OPT_BACK] }
+      }
+      const product = input.products.find(item => item.id === view.productId)
+      // ⚠️ Hasta SEIS, no tres. Con cuatro filas o más WhatsApp ya manda una
+      // lista (los botones se acaban en tres), y una lista admite diez: poner
+      // solo tres obligaba a «4 o más» + escribir el número, o sea DOS
+      // mensajes de más en el pedido familiar, que es justo el que va apretado
+      // contra el techo de 25 respuestas por hora.
+      return {
+        reply: `¿Cuántos *${String(product?.name || '').trim()}* deseas? 👇`,
+        options: ['1', '2', '3', '4', '5', '6', OPT_MANY, OPT_BACK],
+      }
+    }
+    case 'same': {
+      // El atajo que más mensajes ahorra de todo el flujo: con dos unidades
+      // iguales se configura UNA vez en vez de dos.
+      const product = input.products.find(item => item.id === view.productId)
+      const unidades = unidadesDe(state)
+      return {
+        reply: `${unidades} × *${String(product?.name || '').trim()}*\n¿Serán iguales? 👇`,
+        options: [OPT_SAME, OPT_DIFFERENT, OPT_BACK],
+      }
+    }
+    case 'spread': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo) return renderView({ kind: 'main' }, state, input)
+      const opciones = opcionesDelGrupo(input, grupo.id)
+      const unidades = unidadesDe(state)
+      const etiqueta = String(grupo.name || 'Elige una opción').trim()
+      // Un grupo de una sola elección (el tamaño, el término) no se reparte:
+      // se pregunta una vez y vale para todas las unidades. Y con UNA unidad
+      // tampoco hay nada que repartir, así que un contador se pregunta igual
+      // que cualquier otra elección — que es el pedido más común de todos.
+      if (grupo.selection_type !== 'quantity' || unidades === 1) {
+        return {
+          reply: `${etiqueta} 👇`,
+          options: [
+            ...opciones.map(o => ({ title: nombreDeOpcion(o) })),
+            ...(grupo.required ? [] : [OPT_BACK]),
+          ],
+        }
+      }
+      return {
+        reply: `${etiqueta} para ${unidades} 👇`,
+        options: [
+          // «4 × Caldo de hueso de res»: todas iguales de un solo toque, que
+          // es lo que pide la mayoría.
+          ...opciones.slice(0, SPREAD_ROWS - 1).map(o => ({
+            title: `${unidades} × ${nombreDeOpcion(o)}`,
+          })),
+          ...(opciones.length > 1 ? [OPT_MIX] : []),
+          OPT_BACK,
+        ],
+      }
+    }
+    case 'spread-pick': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      const restante = state.spread?.restante ?? 0
+      const yaElegidas = new Set((state.spread?.elegidas || []).map(o => o.optionId))
+      const opciones = opcionesDelGrupo(input, grupo?.id || '')
+        .filter(o => !yaElegidas.has(o.id))
+      return {
+        reply: `${String(grupo?.name || 'Elige').trim()} — faltan ${restante} 👇`,
+        options: opciones.slice(0, SPREAD_ROWS).map(o => ({ title: nombreDeOpcion(o) })),
+      }
+    }
+    case 'spread-count': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      const opcion = opcionesDelGrupo(input, grupo?.id || '')
+        .find(o => o.id === view.optionId)
+      const restante = state.spread?.restante ?? 0
+      const opciones = opcionesDelGrupo(input, grupo?.id || '')
+      const sinAsignar = opciones.length - (state.spread?.elegidas.length ?? 0)
+      // ⚠️ Con DOS opciones sin repartir y nada asignado todavía, el rango
+      // empieza en 1 y acaba en restante−1: elegir 0 o el total sería «todas
+      // iguales», que ya se ofreció en la pantalla anterior y volvería a
+      // preguntar lo mismo. Con tres o más, 0 sí es una respuesta legítima
+      // («de ceviche, ninguno»).
+      const soloDos = sinAsignar === 2 && yaAsignadas(state) === 0
+      return {
+        reply: `¿Cuántos *${nombreDeOpcion(opcion || { id: '' })}*? 👇`,
+        options: soloDos
+          ? filasDeCantidad(1, Math.max(1, restante - 1))
+          : filasDeCantidad(0, restante),
+      }
+    }
     case 'quantity': {
       const product = input.products.find(item => item.id === view.productId)
       return {
@@ -576,7 +784,7 @@ const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): Men
       // Lo elegido se enseña agrupado bajo su línea: el cliente tiene que
       // poder comprobar que se entendió su pedido ANTES de confirmarlo.
       const lines = state.cart.map((item) => {
-        const elegido = (item.options || []).map(o => o.name).join(', ')
+        const elegido = detalleDeOpciones(item.options, item.quantity)
         const detalle = [item.modifier, elegido].filter(Boolean).join(' · ')
         return `• ${item.quantity}x ${item.name}`
           + (detalle ? ` — ${detalle}` : '')
@@ -617,6 +825,90 @@ const goTo = (state: FlowState, view: FlowView, input: MenuFlowInput): MenuFlowR
   state.view = view
   return renderView(view, state, input)
 }
+
+/**
+ * Mete en el carrito lo que se acaba de armar y confirma qué se entendió.
+ *
+ * ⚠️ Sale de la vista `quantity` para poder reutilizarse desde el reparto,
+ * donde la cantidad ya se preguntó al principio. Lo que hacía de paso —pegar
+ * el sabor pendiente, limpiar lo pendiente y nombrar lo elegido— se conserva
+ * entero: es lo que le dice al cliente que sus tres respuestas se entendieron.
+ */
+const agregarAlCarrito = (
+  state: FlowState,
+  input: MenuFlowInput,
+  productId: string,
+  quantity: number,
+): MenuFlowResult | null => {
+  const product = input.products.find(item => item.id === productId)
+  const cents = product ? priceCentsOf(product) : null
+  if (!product || cents === null) return null
+  const modifier = state.pendingModifier
+  const elegidas = state.pendingOptions || []
+  state.cart.push({
+    productId: product.id,
+    name: String(product.name).trim(),
+    quantity,
+    priceCents: cents,
+    ...(modifier ? { modifier } : {}),
+    ...(elegidas.length ? { options: elegidas } : {}),
+  })
+  state.pendingModifier = undefined
+  state.pendingOptions = undefined
+  state.pendingUnits = undefined
+  state.spread = undefined
+  const added = { ...goTo(state, { kind: 'after-add' }, input) }
+  const detalle = [modifier, detalleDeOpciones(elegidas, quantity)].filter(Boolean).join(' · ')
+  added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()}`
+    + `${detalle ? ` — ${detalle}` : ''} ✅\n${added.reply}`
+  return added
+}
+
+/**
+ * Entra en el grupo `groupIndex`, saltando los que no hay nada que preguntar.
+ *
+ * ⚠️ Un grupo de UNA sola opción se resuelve solo: la respuesta ya está dada y
+ * enseñarla es un mensaje pagado que no decide nada. Es además la palanca que
+ * tiene el dueño para abaratar su flujo — un almuerzo cuya bebida incluida sea
+ * «Jugo del día» cuesta CERO mensajes en ese paso, mientras que ofrecer cuatro
+ * sabores puede costar cinco.
+ *
+ * Si no quedan grupos, el producto ya está armado y va al carrito.
+ */
+const irAlGrupo = (
+  state: FlowState,
+  input: MenuFlowInput,
+  view: { productId: string; tag: string | null; groupIndex: number },
+): MenuFlowResult => {
+  const grupos = gruposDelProducto(input, view.productId)
+  let indice = view.groupIndex
+  while (indice < grupos.length) {
+    const grupo = grupos[indice]
+    const opciones = opcionesDelGrupo(input, grupo.id)
+    if (opciones.length !== 1) break
+    state.pendingOptions = [...(state.pendingOptions || []), {
+      optionId: opciones[0].id,
+      groupName: String(grupo.name || '').trim(),
+      name: nombreDeOpcion(opciones[0]),
+      ...(grupo.selection_type === 'quantity' ? { quantity: unidadesDe(state) } : {}),
+    }]
+    indice += 1
+  }
+  if (indice < grupos.length) {
+    return goTo(state, {
+      kind: 'spread', productId: view.productId, tag: view.tag, groupIndex: indice,
+    }, input)
+  }
+  const añadido = agregarAlCarrito(state, input, view.productId, unidadesDe(state))
+  return añadido || goTo(state, { kind: 'main' }, input)
+}
+
+/** Termina el grupo actual del reparto y pasa al siguiente. */
+const siguienteGrupo = (
+  state: FlowState,
+  input: MenuFlowInput,
+  view: { productId: string; tag: string | null; groupIndex: number },
+): MenuFlowResult => irAlGrupo(state, input, { ...view, groupIndex: view.groupIndex + 1 })
 
 const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
   const key = stateKey(input.business.id, input.contact)
@@ -757,6 +1049,11 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
               }
             }
             state.pendingOptions = []
+            // Con contadores la cantidad se pregunta ANTES: es lo que permite
+            // repartirla («3 con caldo de res, 1 con crema»).
+            if (tieneContadores(input, product.id)) {
+              return goTo(state, { kind: 'units', productId: product.id, tag: view.tag }, input)
+            }
             if (gruposDelProducto(input, product.id).length) {
               return goTo(state, {
                 kind: 'options', productId: product.id, tag: view.tag, groupIndex: 0,
@@ -797,6 +1094,9 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
           }
         }
         state.pendingOptions = []
+        if (tieneContadores(input, view.productId)) {
+          return goTo(state, { kind: 'units', productId: view.productId, tag: view.tag }, input)
+        }
         return gruposDelProducto(input, view.productId).length
           ? goTo(state, { kind: 'options', productId: view.productId, tag: view.tag, groupIndex: 0 }, input)
           : goTo(state, { kind: 'quantity', productId: view.productId }, input)
@@ -832,6 +1132,185 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         ? goTo(state, { ...view, groupIndex: siguiente }, input)
         : goTo(state, { kind: 'quantity', productId: view.productId }, input)
     }
+    case 'units': {
+      if (choice === OPT_BACK) {
+        return goTo(state, { kind: 'products', intent: 'order', tag: view.tag, page: 0 }, input)
+      }
+      // ⚠️ El CHOICE va primero, y aquí no es un detalle. La lista devuelve el
+      // número de la fila, así que un "4" es la fila 4 —«4 o más»— y no la
+      // cantidad 4. Leerlo al revés le daría 4 almuerzos a quien pidió pedir
+      // más; y una vez pedido el número, hay que dejar de mirar la lista o el
+      // «4» escrito vuelve a caer en «4 o más» y se pregunta en bucle.
+      if (!view.asking && choice === OPT_MANY) {
+        return goTo(state, { ...view, asking: true }, input)
+      }
+      const unidades = !view.asking && choice && /^\d$/.test(choice)
+        ? Number(choice)
+        : parseQuantity(input.message, 99)
+      if (!unidades || unidades <= 0) break
+      state.pendingUnits = unidades
+      state.pendingOptions = []
+      state.spread = undefined
+      // Una sola unidad no tiene nada que repartir: es el flujo de siempre.
+      if (unidades === 2) {
+        return goTo(state, { kind: 'same', productId: view.productId, tag: view.tag }, input)
+      }
+      // Una sola unidad no tiene nada que repartir, pero recorre los mismos
+      // grupos: `irAlGrupo` se encarga de saltar los que no preguntan nada.
+      return irAlGrupo(state, input, { ...view, groupIndex: 0 })
+    }
+    case 'same': {
+      if (choice === OPT_BACK) {
+        return goTo(state, { kind: 'units', productId: view.productId, tag: view.tag }, input)
+      }
+      // «Iguales» configura una vez y multiplica: el reparto se salta entero
+      // porque cada grupo recibe una sola opción con todas las porciones.
+      if (choice === OPT_SAME || choice === OPT_DIFFERENT) {
+        state.pendingOptions = []
+        state.spread = undefined
+        return irAlGrupo(state, input, { ...view, groupIndex: 0 })
+      }
+      break
+    }
+    case 'spread': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo) return goTo(state, { kind: 'main' }, input)
+      const opciones = opcionesDelGrupo(input, grupo.id)
+      const unidades = unidadesDe(state)
+
+      if (choice === OPT_BACK && !grupo.required) {
+        return goTo(state, { kind: 'units', productId: view.productId, tag: view.tag }, input)
+      }
+
+      // Grupo de una sola elección, o una sola unidad: se elige y ya.
+      //
+      // ⚠️ La cantidad se OMITE fuera de un contador, y no es cosmético:
+      // `create_storefront_order` rechaza el pedido entero con «no se elige
+      // por cantidad» si llega un número donde no toca.
+      if (grupo.selection_type !== 'quantity' || unidades === 1) {
+        const elegida = opciones.find(o => nombreDeOpcion(o) === choice)
+        if (!elegida) break
+        state.pendingOptions = [...(state.pendingOptions || []), {
+          optionId: elegida.id,
+          groupName: String(grupo.name || '').trim(),
+          name: nombreDeOpcion(elegida),
+          ...(grupo.selection_type === 'quantity' ? { quantity: 1 } : {}),
+        }]
+        return siguienteGrupo(state, input, view)
+      }
+
+      if (choice === OPT_MIX) {
+        state.spread = {
+          groupId: grupo.id, restante: unidades, optionIndex: 0, elegidas: [],
+        }
+        // Con pocas opciones se recorren una a una (y la última se calcula);
+        // con muchas se pregunta cuál y cuántas, que evita preguntar por
+        // platos que nadie quiere.
+        return opciones.length <= RECORRIDO_MAX
+          ? goTo(state, {
+            kind: 'spread-count', productId: view.productId, tag: view.tag,
+            groupIndex: view.groupIndex, optionId: opciones[0].id,
+          }, input)
+          : goTo(state, {
+            kind: 'spread-pick', productId: view.productId, tag: view.tag,
+            groupIndex: view.groupIndex,
+          }, input)
+      }
+
+      // «4 × Caldo de hueso de res»: todas iguales de un solo toque.
+      const todas = opciones.find(o => `${unidades} × ${nombreDeOpcion(o)}` === choice)
+      if (!todas) break
+      state.pendingOptions = [...(state.pendingOptions || []), {
+        optionId: todas.id,
+        groupName: String(grupo.name || '').trim(),
+        name: nombreDeOpcion(todas),
+        quantity: unidades,
+      }]
+      return siguienteGrupo(state, input, view)
+    }
+    case 'spread-pick': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo || !state.spread) return goTo(state, { kind: 'main' }, input)
+      const yaElegidas = new Set(state.spread.elegidas.map(o => o.optionId))
+      const elegida = opcionesDelGrupo(input, grupo.id)
+        .filter(o => !yaElegidas.has(o.id))
+        .find(o => nombreDeOpcion(o) === choice)
+      if (!elegida) break
+      // ⚠️ Si solo queda UNA porción, elegir el plato ya dice la cantidad:
+      // preguntar «¿cuántos?» para que la única respuesta posible sea 1 es un
+      // mensaje pagado que no aporta nada.
+      if (state.spread.restante === 1) {
+        state.spread.elegidas.push({
+          optionId: elegida.id,
+          groupName: String(grupo.name || '').trim(),
+          name: nombreDeOpcion(elegida),
+          quantity: 1,
+        })
+        state.spread.restante = 0
+        cerrarReparto(state)
+        return siguienteGrupo(state, input, view)
+      }
+      return goTo(state, {
+        kind: 'spread-count', productId: view.productId, tag: view.tag,
+        groupIndex: view.groupIndex, optionId: elegida.id,
+      }, input)
+    }
+    case 'spread-count': {
+      const grupos = gruposDelProducto(input, view.productId)
+      const grupo = grupos[view.groupIndex]
+      if (!grupo || !state.spread) return goTo(state, { kind: 'main' }, input)
+      const opciones = opcionesDelGrupo(input, grupo.id)
+      const elegida = opciones.find(o => o.id === view.optionId)
+      if (!elegida) break
+      const cuantas = choice !== null && /^\d+$/.test(choice)
+        ? Number(choice)
+        : parseQuantity(input.message, state.spread.restante)
+      if (cuantas === null || cuantas < 0 || cuantas > state.spread.restante) break
+
+      state.spread.elegidas.push({
+        optionId: elegida.id,
+        groupName: String(grupo.name || '').trim(),
+        name: nombreDeOpcion(elegida),
+        quantity: cuantas,
+      })
+      state.spread.restante -= cuantas
+      state.spread.optionIndex += 1
+
+      const yaElegidas = new Set(state.spread.elegidas.map(o => o.optionId))
+      const quedanOpciones = opciones.filter(o => !yaElegidas.has(o.id))
+
+      // ── Las dos reglas que ahorran los mensajes ──────────────────────
+      // 1. Si no queda nada por repartir, no se pregunta por el resto.
+      // 2. Si solo queda UNA opción, se lleva todo lo que resta sin
+      //    preguntarlo: la respuesta ya está determinada.
+      if (state.spread.restante === 0) {
+        cerrarReparto(state)
+        return siguienteGrupo(state, input, view)
+      }
+      if (quedanOpciones.length === 1) {
+        state.spread.elegidas.push({
+          optionId: quedanOpciones[0].id,
+          groupName: String(grupo.name || '').trim(),
+          name: nombreDeOpcion(quedanOpciones[0]),
+          quantity: state.spread.restante,
+        })
+        state.spread.restante = 0
+        cerrarReparto(state)
+        return siguienteGrupo(state, input, view)
+      }
+      // Quedan porciones y más de una opción: se sigue.
+      return opciones.length <= RECORRIDO_MAX
+        ? goTo(state, {
+          kind: 'spread-count', productId: view.productId, tag: view.tag,
+          groupIndex: view.groupIndex, optionId: quedanOpciones[0].id,
+        }, input)
+        : goTo(state, {
+          kind: 'spread-pick', productId: view.productId, tag: view.tag,
+          groupIndex: view.groupIndex,
+        }, input)
+    }
     case 'quantity': {
       // El número escrito manda: "4" es una cantidad, no la opción 4 de la lista
       const quantity = parseQuantity(input.message, 99)
@@ -840,30 +1319,12 @@ const advanceMenuFlow = (input: MenuFlowInput): MenuFlowResult => {
         return { reply: `Escríbeme la cantidad (solo el número) ✍️`, options: [OPT_BACK] }
       }
       if (quantity && quantity > 0) {
-        const product = input.products.find(item => item.id === view.productId)
-        const cents = product ? priceCentsOf(product) : null
-        if (product && cents !== null) {
-          // El sabor pendiente se pega a esta línea y se limpia.
-          const modifier = state.pendingModifier
-          const elegidas = state.pendingOptions || []
-          state.cart.push({
-            productId: product.id,
-            name: String(product.name).trim(),
-            quantity,
-            priceCents: cents,
-            ...(modifier ? { modifier } : {}),
-            ...(elegidas.length ? { options: elegidas } : {}),
-          })
-          state.pendingModifier = undefined
-          state.pendingOptions = undefined
-          const added = { ...goTo(state, { kind: 'after-add' }, input) }
-          // Se nombra lo elegido: el cliente acaba de contestar tres
-          // preguntas y merece ver que se entendieron, no un «listo» a secas.
-          const detalle = [modifier, elegidas.map(o => o.name).join(', ')]
-            .filter(Boolean).join(' · ')
-          added.reply = `Listo, agregué ${quantity}x ${String(product.name).trim()}${detalle ? ` — ${detalle}` : ''} ✅\n${added.reply}`
-          return added
-        }
+        // El sabor pendiente se pega a la línea, se limpia lo pendiente y se
+        // nombra lo elegido. Vive en `agregarAlCarrito` porque el reparto
+        // termina exactamente igual: dos sitios serían dos sitios donde
+        // arreglar el mismo fallo.
+        const añadido = agregarAlCarrito(state, input, view.productId, quantity)
+        if (añadido) return añadido
       }
       break
     }
