@@ -157,16 +157,18 @@ describe('el aviso de cancelación', () => {
     expect(cancelado).toContain('fue cancelado')
   })
 
-  it('da el teléfono del local, que es lo único útil en ese momento', () => {
+  // ⚠️ Ya NO se da un teléfono al que llamar (2026-09-07, corrección del
+  // dueño). Este aviso decía «llámalos al {businesses.phone}» y sacaba al
+  // cliente de Umbani en el peor momento posible: acaban de cancelarle el
+  // pedido. Y ese campo es el de CONTACTO del dueño —el mismo con el que pide
+  // reportes—, no un canal que atienda clientes: quien llamara ahí no
+  // encontraría su pedido, porque el pedido vive en esta conversación.
+  it('remite a ESTA conversación y no a un teléfono del local', () => {
     const texto = textoDelAviso({ ...NEGOCIO, phone: '+593991716574' }, PEDIDO, 'cancelado')
-    expect(texto).toContain('+593991716574')
-    expect(texto).toContain('llámalos')
-  })
-
-  it('sin teléfono cargado no deja la frase coja', () => {
-    const texto = textoDelAviso({ ...NEGOCIO, phone: null }, PEDIDO, 'cancelado')
-    expect(texto).not.toContain('llámalos al')
-    expect(texto).toContain('escríbeles por aquí')
+    expect(texto).toContain('escríbenos por aquí')
+    expect(texto).not.toContain('llámalos')
+    // Ni siquiera aunque la ficha del local lo tenga cargado.
+    expect(texto).not.toContain('+593991716574')
   })
 
   // No hay ningún campo donde el dueño escriba el motivo, y uno inventado es

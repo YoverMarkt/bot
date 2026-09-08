@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { pedidoCreado } = require('../dist/services/marketplace-checkout')
 const { publicBusiness } = require('../dist/services/storefront')
+const { textoDelAviso } = require('../dist/services/order-notify')
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EL CLIENTE HABLA CON UN SOLO NÚMERO: EL DE UMBANI
@@ -90,5 +91,26 @@ describe('la mini app enseña el número de la PLATAFORMA, no el del dueño', ()
     )
     expect(app.phone).toBe('+593987654321')
     expect(app.phoneIsPlatform).toBe(false)
+  })
+})
+
+describe('un pedido cancelado tampoco saca al cliente de Umbani', () => {
+  // ⚠️ Hasta el 2026-09-07 este aviso decía «llámalos al {teléfono}» con
+  // `businesses.phone`. Es el peor momento para mandar a alguien fuera: acaban
+  // de cancelarle el pedido, y ese número es el de CONTACTO del dueño —el de
+  // los reportes—, no un canal que atienda clientes. Quien llamara ahí no
+  // encontraría su pedido, porque el pedido vive en esta conversación.
+  it('dice qué pasó y remite a ESTA conversación, sin teléfonos', () => {
+    for (const estado of ['cancelado', 'rechazado']) {
+      const texto = textoDelAviso(
+        { name: 'La Abuelita' },
+        { order_number: 12, contact_phone: '593999111222', total: 17.6 },
+        estado,
+      )
+      expect(texto).toContain('fue cancelado')
+      expect(texto).toContain('escríbenos por aquí')
+      expect(texto).not.toMatch(/llámalos/i)
+      expect(texto).not.toMatch(/\d{7,}/)
+    }
   })
 })
