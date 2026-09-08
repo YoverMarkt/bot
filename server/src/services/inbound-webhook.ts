@@ -931,8 +931,17 @@ const processor = createInboundWebhookProcessor({
             // cada una pertenece a este negocio y a este producto (o a su
             // categoría) antes de cobrarla. Un nombre suelto no se puede
             // validar, y es lo que se está dejando atrás.
+            // ⚠️ `quantity` solo viaja cuando la hay: es lo que reparte «3
+            // con caldo de res y 1 con crema» dentro de una sola línea. Fuera
+            // de un grupo contador la RPC la RECHAZA («no se elige por
+            // cantidad»), así que mandar un 1 por defecto tiraría el pedido.
             ...(item.options?.length
-              ? { options: item.options.map(o => ({ option_id: o.optionId })) }
+              ? {
+                options: item.options.map(o => ({
+                  option_id: o.optionId,
+                  ...(o.quantity ? { quantity: o.quantity } : {}),
+                })),
+              }
               : {}),
           }]
         })
