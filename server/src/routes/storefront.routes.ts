@@ -605,7 +605,10 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
   // el dueño no tiene por qué dar explicaciones desde una pantalla.
   if (await db.isCustomerBlocked(businessId, customerId).catch(() => false)) {
     return res.status(403).json({
-      error: 'No podemos recibir tu pedido. Comunícate con el local.',
+      // ⚠️ Sin «comunícate con el local»: el cliente no tiene su número, y no
+      // debe tenerlo. Se dice el hecho y nada más; la salida —los otros
+      // locales— vive en la pantalla de bloqueado, no en un error de la API.
+      error: 'Este local no está recibiendo tus pedidos ahora mismo.',
     })
   }
 

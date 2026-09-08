@@ -937,6 +937,8 @@ async function entregarLocal(
     logger?.log(`⛔ [marketplace] ${negocio.slug} tiene bloqueado a este contacto`)
     // La PRIMERA vez se le explica; a partir de la segunda vuelve el mensaje
     // neutro. Falla hacia el silencio, que es la conducta anterior a esto.
+    // ⚠️ La explicación ya NO invita a «comunicarse con el local»
+    // (2026-09-07): es una puerta que no existe. Ver DECISIONES.md.
     const toca = database.claimBlockedNotice
       ? await database.claimBlockedNotice(negocio.id, customer.id).catch(() => false)
       : false
@@ -948,9 +950,7 @@ async function entregarLocal(
     await deps.send(
       toca
         ? `⛔ *${negocio.name}* pausó tus pedidos.\n\n`
-          + 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger. '
-          + 'Si crees que es un error, comunícate directamente con el local '
-          + 'para resolverlo.\n\n'
+          + 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger.\n\n'
           + 'Mientras tanto puedes pedir en otros locales 👇'
         : `😕 *${negocio.name}* no está recibiendo pedidos tuyos ahora mismo. `
           + 'Elige otro local aquí abajo 👇',

@@ -54,8 +54,11 @@ export default function Bloqueado({ business, until, permanent, onReintentar }: 
 
       <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
         {permanent
-          ? 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger. '
-            + 'Si crees que es un error, comunícate directamente con el local.'
+          // ⚠️ Sin «comunícate con el local»: es una puerta que no existe. El
+          // cliente nunca tiene el número de un local —todo pasa por Umbani— y
+          // ofrecer una salida que no puede tomar lo deja buscando algo que no
+          // está. La salida real son los demás locales, y está más abajo.
+          ? 'Suele pasar cuando quedan pedidos sin confirmar o sin recoger.'
           : 'Se cerró tu acceso a este local por incumplir las políticas de Umbani. '
             + 'Es temporal: después podrás volver a pedir con normalidad.'}
       </p>

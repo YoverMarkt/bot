@@ -2964,7 +2964,7 @@ begin
      and public.storefront_customer_blocked(new.business_id, new.customer_id) then
     raise exception using
       errcode = '42501',
-      message = 'No podemos recibir tu pedido. Comunicate con el local.';
+      message = 'Este local no esta recibiendo tus pedidos ahora mismo.';
   end if;
   return new;
 end;
