@@ -18,7 +18,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 
 ## AL INICIAR CUALQUIER TAREA (flujo obligatorio)
 
-1. **ORIENTARTE** — Ten presente estas reglas y el **MAPA DE SKILLS** (sección 10). Identifica qué skills aplican al pedido y consúltalas ANTES de actuar.
+1. **ORIENTARTE** — Ten presente estas reglas y el **MAPA DE SKILLS** (sección 9). Identifica qué skills aplican al pedido y consúltalas ANTES de actuar.
 2. **ACOTAR** — Reformula en una frase qué se va a cambiar y qué **NO** se va a tocar. Si el pedido es ambiguo, **pregunta antes de asumir**.
 3. **PROTEGER** — Si el cambio toca base de datos, RLS, auth, etiquetas/tools del bot o multi-tenancy → consulta **arquitecto-saas** (y **base-de-datos** / **seguridad-saas** si corresponde) antes de seguir.
 4. **PLAN** — Propón un plan breve (qué archivos se tocan y cómo) y **espera aprobación del usuario**. No escribas código hasta que el plan sea aprobado.
@@ -102,43 +102,21 @@ entera de verdad, que era el problema cuando todo estaba junto:
 > **Comprobar que EXISTE un despliegue no es comprobar que su código CORRE.**
 
 
----
+## 5. COMANDOS DEL PROYECTO
 
-## 5. CÓMO MANEJAR UN PEDIDO DE CAMBIO
+Los scripts están en `package.json` (raíz y cada workspace); `npm run check`
+es el que corre todo. Lo que el manifiesto NO dice:
 
-1. **Entender el alcance** y declarar en una frase qué SÍ y qué NO se toca.
-2. **Localizar los archivos mínimos** involucrados (datos en `server/src/db/`; lógica del bot en `server/src/services/`; rutas en `server/src/routes/`; composición en `server/src/index.ts`).
-3. **Cambio más pequeño posible** — edición quirúrgica, sin tocar lo no pedido.
-4. **Verificar** (tester-saas): cargar módulos, revisar sintaxis, arrancar, smoke test de la zona afectada.
-5. **Reportar** qué cambió, qué se verificó y qué quedó intacto.
+- Los workspaces son `@botpanel/server`, `@botpanel/client`, `@botpanel/admin`,
+  `@botpanel/store` y `@botpanel/ui`. **Un solo lockfile y un solo `npm install`**
+  para todo el monorepo.
+- El servidor en local levanta un **túnel Cloudflare automático**; en producción
+  la URL pública sale de `BASE_URL`.
+- El CI corre lint, tipos, tests y builds **en cada PR** (seis checks).
+- `npm run test:e2e` necesita Chromium: la primera vez, `npm run test:e2e:install`.
 
-Para cambios amplios o ambiguos → **cambios-seguros**. Para tocar BD/RLS/auth/bot → **arquitecto-saas** primero.
+## 6. CONVENCIONES DE CÓDIGO
 
----
-
-## 6. COMANDOS DEL PROYECTO (reales, de package.json)
-
-```bash
-# Raíz (monorepo con npm workspaces — UN solo lockfile e install para todo)
-npm install               # instala server + apps/client + apps/admin de una vez
-npm start                 # compila server y ejecuta server/dist/index.js
-npm run dev               # nodemon del server (desarrollo, recarga al guardar)
-npm run build             # compila server TypeScript + paneles client y admin
-npm run check             # lint de todo + TypeScript estricto + tests del server
-npm test                  # solo los tests (Vitest)
-npm run test:e2e          # login, navegación, permisos y responsive en Chromium
-
-# También se puede trabajar dentro de cada workspace (cd server && npm run dev, etc.)
-```
-
-> Los workspaces son `@botpanel/server`, `@botpanel/client`, `@botpanel/admin` y `@botpanel/ui`. El CI corre lint, tipos, tests y builds en cada PR. El servidor en local arranca un túnel Cloudflare automático; en producción usa `BASE_URL`.
-
----
-
-## 7. CONVENCIONES DE CÓDIGO
-
-- **TypeScript nativo:** toda implementación del backend vive en `server/src/**/*.ts`; `server/dist/` es el runtime compilado. Fuera de `dist`, solo `eslint.config.js` permanece JavaScript por ser configuración de herramientas.
-- **Funciones flecha** y `async/await`. Nada de callbacks anidados.
 - **Todo el acceso a Supabase pasa por `server/src/db/`** — no consultes `sb.from(...)` desde rutas, servicios o `src/index.ts`; agrega/usa una función en el repositorio correspondiente y expórtala desde `src/db/index.ts`.
 - **Las keys de IA se leen siempre mediante `server/src/services/ai.ts` y `settings.get('...')`** (panel > .env).
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
@@ -151,7 +129,6 @@ npm run test:e2e          # login, navegación, permisos y responsive en Chromiu
 - **Sesiones cliente vigentes:** `activeClientGuard` revalida cada 15 segundos como máximo que usuario y negocio sigan activos, y reemplaza rol/permisos del JWT por los valores actuales de la base. Eliminar un usuario, suspender un negocio o revocar permisos falla cerrado sin esperar siete días.
 - **Túnel local (`server/src/services/tunnel.ts`):** solo se usa en desarrollo; inicia y detiene `cloudflared` mediante dependencias inyectables, expone únicamente estado serializable (`url`, `active`, `provider`, `startedAt`) y nunca filtra el proceso hijo en respuestas administrativas. En producción la URL pública sale de `BASE_URL`.
 - **Grafo interno del servidor:** los módulos bajo `server/src/` se enlazan directamente entre `db`, `services`, `integrations`, `middleware` y `routes`; comandos, pruebas y Railway ejecutan el resultado compilado en `server/dist/`.
-- **Nombres:** `camelCase` en TypeScript/JavaScript; columnas y tablas en `snake_case`.
 
 
 
@@ -194,7 +171,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 ---
 
-## 8. HIGIENE DE GIT
+## 7. HIGIENE DE GIT
 
 ### La regla de oro: **una sola rama viva, y es `main`**
 
@@ -261,7 +238,7 @@ molesta, es que el CI está diciendo algo.
 
 ---
 
-## 9. IDIOMA
+## 8. IDIOMA
 
 - **Responde al usuario en español** (mercado Ecuador/Colombia).
 - **Textos del bot y de los paneles en español neutro.**
@@ -269,7 +246,7 @@ molesta, es que el CI está diciendo algo.
 
 ---
 
-## 10. MAPA DE SKILLS
+## 9. MAPA DE SKILLS
 
 Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) correspondiente(s) en `.claude/skills/`. Varias pueden aplicar a la vez.
 
@@ -297,9 +274,6 @@ Ante cualquier pedido, identifica la situación y consulta la(s) skill(s) corres
 
 ---
 
-## 11. MÓDULOS FUTUROS (no construir hasta que haya demanda real)
+## 10. MÓDULOS FUTUROS (no construir hasta que haya demanda real)
 
-> 📋 **La lista completa de módulos futuros —con lo que habría que definir antes de construir cada uno— está en [PENDIENTE.md](PENDIENTE.md).** No construir nada de ahí sin señal de un cliente real.
-
-> **Estado del producto (nota estratégica):** el sistema está **listo para vender/demo**. La construcción de features está **en pausa a propósito** — el siguiente paso es **operativo**, no de código: demo → cambiar número a **Meta** (hoy YCloud) → **deploy 24/7 en servidor real** (hoy corre local + túnel). Campañas y recordatorios (los dos únicos que envían mensajes salientes) van **después** de eso. No construir más módulos de forma especulativa; esperar señal de un cliente/piloto real.
-> **Escalabilidad (nota de arquitectura, a futuro):** hoy es un **monolito** (un solo servidor Node + Express). Es lo **correcto para la etapa actual** (primeros clientes) — simple, barato, fácil de operar. NO refactorizar de forma especulativa. Cuando haya **demanda real de escala** (muchos negocios/mensajes concurrentes), recién ahí evaluar: **Realtime/WebSockets** (empujar cambios al panel en vez de que pregunte cada X segundos — ataca de raíz el egress del polling), **caché (Redis)** (datos muy leídos en memoria, sin golpear la base), **colas** (procesar mensajes/IA sin bloquear), **workers** separados (envíos, embeddings, reportes pesados, transcodificar media), varias instancias + balanceador, réplicas de lectura, y quizás separar el bot del panel. Antes de todo eso, el paso barato es **Supabase Pro ($25/mes)** para subir los límites. Es un "problema de éxito": se aborda cuando el volumen lo justifique, no antes.
+> 📋 **La lista completa de módulos futuros —con lo que habría que definir antes de construir cada uno— está en [PENDIENTE.md](PENDIENTE.md).** No construir nada de ahí sin señal de un cliente real. Allí viven también las dos notas de estrategia: en qué fase está el producto y cuándo tocaría pensar en escalar.
