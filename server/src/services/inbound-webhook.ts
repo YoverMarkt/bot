@@ -954,7 +954,11 @@ const processor = createInboundWebhookProcessor({
           contactPhone: entrada.phone,
           contactName: entrada.contactName || null,
           addressId: entrada.addressId,
-          fulfillment: 'delivery',
+          // ⚠️ Lo que eligió el cliente, no una constante. Hasta el 2026-09-10
+          // el chat mandaba SIEMPRE `delivery` y el retiro no existía por aquí.
+          // Sin valor se cae a domicilio, que es la conducta anterior: un
+          // carrito a medias de antes de esto no se queda sin entrega.
+          fulfillment: entrada.fulfillment === 'pickup' ? 'pickup' : 'delivery',
           paymentMethod: entrada.paymentMethod,
           items: resueltos,
           deliveryNotes: entrada.notes || null,

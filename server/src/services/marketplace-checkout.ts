@@ -45,6 +45,70 @@ const money = (valor: unknown): string => `$${(Number(valor) || 0).toFixed(2)}`
 
 export const COMPARTIR_UBICACION = '📍 Compartir ubicación'
 
+export const A_DOMICILIO = '🛵 A domicilio'
+export const LO_RECOJO = '🛍️ Lo recojo yo'
+
+/**
+ * ¿Te lo llevamos o lo recoges?
+ *
+ * Va ANTES de la ubicación, y ese orden es el ahorro: quien recoge no tiene
+ * dirección que dar, así que se salta una pregunta entera en vez de gastarla.
+ *
+ * ⚠️ El retiro solo se ofrece si el local tiene PUNTO en el mapa. Sin él,
+ * ofrecerlo sería repetir el agujero que se cerró el 2026-09-10: decirle «pasa
+ * a retirarlo» a alguien que solo sabe el nombre del negocio. Un local sin
+ * punto sigue vendiendo a domicilio exactamente igual que antes, sin ver esta
+ * pregunta — así que esto no le quita nada a nadie.
+ */
+export function pedirTipoDeEntrega(negocio: {
+  latitude?: unknown
+  longitude?: unknown
+}): RespuestaDeCheckout | null {
+  const conPunto = negocio?.latitude != null && negocio?.longitude != null
+  if (!conPunto) return null
+  return {
+    reply: '🛵 ¿Cómo lo quieres?',
+    options: [A_DOMICILIO, LO_RECOJO],
+  }
+}
+
+/** Lo elegido, por su etiqueta o por su número de fila, como el resto del menú. */
+export function elegirEntrega(mensaje: string): 'delivery' | 'pickup' | null {
+  const texto = String(mensaje || '').trim().toLowerCase()
+  if (!texto) return null
+  if (texto === A_DOMICILIO.toLowerCase() || texto === '1') return 'delivery'
+  if (texto === LO_RECOJO.toLowerCase() || texto === '2') return 'pickup'
+  // WhatsApp recorta los títulos: se compara también sin el emoji.
+  const limpio = texto.replace(/[^a-záéíóúñ ]/gi, '').trim()
+  if (/domicilio|llev/i.test(limpio)) return 'delivery'
+  if (/recojo|retir|recoger/i.test(limpio)) return 'pickup'
+  return null
+}
+
+/**
+ * Lo que se le dice a quien va a RETIRAR, con el punto del local.
+ *
+ * ⚠️ La dirección y el enlace van DENTRO de este mensaje: así no cuestan un
+ * saliente más. El mapa nativo llega después, con el aviso de «listo para
+ * retirar» — cuando de verdad tiene que salir de casa.
+ */
+export function confirmarRetiro(negocio: {
+  name?: string | null
+  address?: string | null
+  latitude?: unknown
+  longitude?: unknown
+}): string {
+  const lineas = [`🛍️ Lo retiras en *${String(negocio.name || 'el local').trim()}*.`]
+  const direccion = String(negocio.address || '').trim()
+  if (direccion) lineas.push(`📍 ${direccion}`)
+  if (negocio.latitude != null && negocio.longitude != null) {
+    lineas.push(`Cómo llegar: https://www.google.com/maps/dir/?api=1&destination=${negocio.latitude},${negocio.longitude}`)
+  }
+  lineas.push('')
+  lineas.push('Te aviso por aquí cuando esté listo 👨‍🍳')
+  return lineas.join('\n')
+}
+
 /**
  * Se pide la ubicación ANTES que el pago porque el envío puede cambiar el
  * total: cobrar primero y ajustar después sería pedirle al cliente que pague

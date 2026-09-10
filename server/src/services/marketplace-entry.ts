@@ -248,8 +248,11 @@ export interface MarketplaceEntryDeps {
     customerId: string
     phone: string
     contactName?: string | null
-    addressId: string
+    /** Nulo en un RETIRO: no hay dirección que guardar ni a dónde llevar. */
+    addressId: string | null
     paymentMethod: string
+    /** Sin valor = domicilio, que es la conducta anterior al retiro. */
+    fulfillment?: 'delivery' | 'pickup'
     items: CheckoutPendiente['items']
     products: unknown[]
     notes?: string | null
@@ -278,6 +281,14 @@ export interface CheckoutPendiente {
     options?: { optionId: string; groupName: string; name: string; quantity?: number }[]
   }[]
   addressId?: string
+  /**
+   * Cómo lo quiere: a domicilio o lo recoge.
+   *
+   * ⚠️ Sin valor = `delivery`, que es como se comportaba el chat antes de que
+   * el retiro existiera. Un carrito a medias de la versión anterior sigue
+   * saliendo a domicilio en vez de quedarse sin entrega.
+   */
+  fulfillment?: 'delivery' | 'pickup'
 }
 
 /** Un precio del catálogo como número, o `null` si no lo es. */
@@ -602,7 +613,8 @@ export async function handleMarketplaceMessage(
   // es la respuesta a lo que se le acaba de preguntar, no una opción del
   // catálogo. MENÚ sigue por delante de todo, así que nunca queda atrapado.
   if (conversation?.selected_business_id
-    && (conversation.current_state === 'esperando_ubicacion'
+    && (conversation.current_state === 'esperando_entrega'
+      || conversation.current_state === 'esperando_ubicacion'
       || conversation.current_state === 'esperando_metodo_pago')) {
     await avanzarCheckout({
       deps,
@@ -1369,10 +1381,19 @@ async function conducirEnElChat(
         ...(item.options?.length ? { options: item.options } : {}),
       })),
     }
+    // ⚠️ «¿Te lo llevamos o lo recoges?» va ANTES de la ubicación, y ese orden
+    // es el ahorro: quien recoge no tiene dirección que dar, así que se salta
+    // una pregunta entera en vez de gastarla.
+    //
+    // ⚠️ Y solo se pregunta si el local tiene PUNTO. Sin él, ofrecer retiro
+    // sería repetir el agujero que se cerró el 2026-09-10: decirle «pasa a
+    // retirarlo» a quien solo sabe el nombre del negocio. Un local sin punto
+    // va derecho a la ubicación, exactamente como antes de esto.
+    const entrega = checkout.pedirTipoDeEntrega(business as Record<string, unknown>)
     await database.advanceConversation(
       customer.id,
       {
-        state: 'esperando_ubicacion',
+        state: entrega ? 'esperando_entrega' : 'esperando_ubicacion',
         businessId,
         flowState: {
           menu: (estado ?? null) as unknown as Record<string, unknown>,
@@ -1381,8 +1402,8 @@ async function conducirEnElChat(
       },
       conversacion?.version,
     )
-    const pide = checkout.pedirUbicacion()
-    logger?.log(`🛒 [marketplace] carrito confirmado, pidiendo ubicación`)
+    const pide = entrega ?? checkout.pedirUbicacion()
+    logger?.log(`🛒 [marketplace] carrito confirmado, ${entrega ? 'preguntando entrega' : 'pidiendo ubicación'}`)
     await send(pide.reply, pide.options)
     return
   }
@@ -1440,6 +1461,77 @@ async function avanzarCheckout(input: {
   }
 
   // ── Paso 1: la ubicación ───────────────────────────────────────────
+  // ── ¿Te lo llevamos o lo recoges? ───────────────────────────────────────
+  //
+  // ⚠️ El RETIRO se salta la ubicación entera: quien recoge no tiene dirección
+  // que dar. Es la única parte de esta tanda que AHORRA un mensaje en vez de
+  // gastarlo — y de paso el pedido nace sin envío que cobrar.
+  if (conversacion.current_state === 'esperando_entrega') {
+    const elegida = checkout.elegirEntrega(texto)
+    if (!elegida) {
+      const negocio = await database.getBusinessById(businessId).catch(() => null)
+      const repetir = checkout.pedirTipoDeEntrega((negocio || {}) as Record<string, unknown>)
+      // Sin punto ya no hay nada que preguntar: se sigue por donde siempre.
+      if (!repetir) {
+        await database.advanceConversation(
+          customer.id, { state: 'esperando_ubicacion', businessId }, conversacion.version,
+        )
+        const pide = checkout.pedirUbicacion()
+        await send(pide.reply, pide.options)
+        return
+      }
+      await send(`🙏 No te entendí.\n\n${repetir.reply}`, repetir.options)
+      return
+    }
+
+    // La elección viaja en el carrito que espera, junto a los ítems: es lo que
+    // decide el `fulfillment` del pedido al crearlo.
+    const pendiente = (conversacion.flow_state?.checkout || {}) as CheckoutPendiente
+    const conEntrega = { ...pendiente, fulfillment: elegida }
+
+    if (elegida === 'delivery') {
+      await database.advanceConversation(
+        customer.id,
+        {
+          state: 'esperando_ubicacion',
+          businessId,
+          flowState: {
+            ...(conversacion.flow_state || {}),
+            checkout: conEntrega as unknown as Record<string, unknown>,
+          },
+        },
+        conversacion.version,
+      )
+      const pide = checkout.pedirUbicacion()
+      await send(pide.reply, pide.options)
+      return
+    }
+
+    // ── RETIRO: sin dirección, directo al pago ────────────────────────────
+    const negocio = await database.getBusinessById(businessId).catch(() => null)
+    const metodos = await database.getStorefrontPaymentMethods(businessId)
+      .catch(() => [] as checkout.MetodoDePago[])
+    const pide = checkout.pedirMetodoPago(metodos)
+    await database.advanceConversation(
+      customer.id,
+      {
+        state: 'esperando_metodo_pago',
+        businessId,
+        flowState: {
+          ...(conversacion.flow_state || {}),
+          checkout: conEntrega as unknown as Record<string, unknown>,
+        },
+      },
+      conversacion.version,
+    )
+    // El punto del local va DENTRO de este mensaje, no en uno aparte: así el
+    // cliente ya sabe a dónde ir sin gastar un saliente más.
+    const dondeRetirar = negocio ? checkout.confirmarRetiro(negocio) : ''
+    logger?.log(`🛍️ [marketplace] retiro elegido, saltando la ubicación`)
+    await send(dondeRetirar ? `${dondeRetirar}\n\n${pide.reply}` : pide.reply, pide.options)
+    return
+  }
+
   if (conversacion.current_state === 'esperando_ubicacion') {
     // El punto del mapa es lo bueno: llega exacto y sin que el cliente
     // escriba. Pero quien no lo comparta —o abra WhatsApp en un navegador que
@@ -1506,7 +1598,10 @@ async function avanzarCheckout(input: {
     return
   }
 
-  if (!pendiente.addressId) {
+  // ⚠️ Solo a DOMICILIO. En un retiro no hay dirección que guardar, y exigirla
+  // aquí devolvería al cliente a pedir una ubicación que no hace falta — el
+  // bucle del que no se sale.
+  if (pendiente.fulfillment !== 'pickup' && !pendiente.addressId) {
     // No debería pasar: se guarda antes de llegar aquí. Si pasa, se vuelve al
     // paso anterior en vez de crear un pedido sin destino.
     logger?.log('⚠️  [checkout] método elegido sin dirección guardada')
@@ -1542,8 +1637,9 @@ async function avanzarCheckout(input: {
       customerId: customer.id,
       phone,
       contactName: customer.name,
-      addressId: pendiente.addressId,
+      addressId: pendiente.addressId ?? null,
       paymentMethod: elegido.code,
+      fulfillment: pendiente.fulfillment === 'pickup' ? 'pickup' : 'delivery',
       items: pendiente.items,
       products: productos,
       // El modificador que eligió en el chat (el sabor del jugo) viaja como
