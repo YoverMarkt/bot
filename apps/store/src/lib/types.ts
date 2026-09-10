@@ -30,6 +30,12 @@ export interface Business {
    * paso más que nombrar. Con canal propio no lo hay.
    */
   phoneIsPlatform?: boolean
+  /**
+   * El punto del local en el mapa. Con los dos, quien retira puede llegar en
+   * un toque; sin ellos solo tiene el nombre del negocio.
+   */
+  latitude?: number | null
+  longitude?: number | null
   capabilities: Capabilities
   /** Color del negocio. Nulo = el de la plataforma. */
   brandColor: string | null

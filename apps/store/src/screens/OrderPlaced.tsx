@@ -3,6 +3,7 @@ import {
   RiCheckLine,
   RiCloseLine,
   RiTimeLine,
+  RiMapPin2Line,
   RiWhatsappLine,
 } from '@remixicon/react'
 import PagoPendiente from '../components/PagoPendiente'
@@ -127,6 +128,17 @@ export default function OrderPlaced({
   }, [slug, pedido.id, cancelado])
 
   const numero = pedido.order_number ? `#${pedido.order_number}` : null
+  // ⚠️ Quien RETIRA tiene que salir de casa a buscarlo, así que necesita el
+  // punto — no el nombre del local. Hasta hoy solo se le decía «pasa a
+  // retirarlo por Monster Pizza», que es exactamente lo que no se puede
+  // teclear en un GPS.
+  //
+  // El enlace no lleva API key ni cuesta nada: es una URL normal que abre la
+  // app de mapas del teléfono. Lo que se paga es DIBUJAR un mapa aquí dentro.
+  const puntoDelLocal = entrega === 'pickup'
+    && business.latitude != null && business.longitude != null
+    ? `https://www.google.com/maps/dir/?api=1&destination=${business.latitude},${business.longitude}`
+    : null
   // El MISMO cálculo que la portada: preparación, más el reparto solo si se lo
   // llevan. Quien retira no espera lo que tarda el repartidor.
   const espera = rangoDeEspera(
@@ -319,6 +331,22 @@ export default function OrderPlaced({
           <div className="mt-6 w-full">
             <PagoPendiente slug={slug} />
           </div>
+        )}
+
+        {/* ── Cómo llegar, para quien retira ──
+            Va ANTES del bloque de WhatsApp y a tamaño de botón, no de nota al
+            pie: quien eligió retirar tiene que salir de casa, y el dato que
+            necesita es el punto. Sin esto solo sabía el nombre del local. */}
+        {puntoDelLocal && (
+          <a
+            href={puntoDelLocal}
+            target="_blank"
+            rel="noreferrer"
+            className="tinta mt-6 flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-[15.5px] font-bold tracking-tight shadow-alzada transition active:scale-[0.98] active:opacity-90"
+          >
+            <RiMapPin2Line size={18} />
+            Cómo llegar al local
+          </a>
         )}
 
         {/* ⚠️ EL TEXTO GRANDE, y el tamaño es la decisión. Esto no es una nota

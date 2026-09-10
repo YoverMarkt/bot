@@ -25,6 +25,9 @@ export interface StorefrontBusiness {
   address?: string | null
   phone?: string | null
   whatsapp_number?: string | null
+  /** El punto del local, para llegar a retirar. */
+  latitude?: number | string | null
+  longitude?: number | string | null
   slogan?: string | null
   active?: boolean | null
   suspended?: boolean | null
@@ -600,6 +603,16 @@ export function publicBusiness(
      * que alguien rellenara ese campo en la ficha del local.
      */
     phone: platformPhone || null,
+    /**
+     * El punto del local en el mapa, para llegar a retirarlo.
+     *
+     * ⚠️ Es PÚBLICO a propósito, y no filtra nada: la dirección de un
+     * comercio está en su fachada. Lo que nunca sale de aquí es el teléfono
+     * del dueño — eso sí es un dato personal, y por eso `phone` es siempre el
+     * de la plataforma.
+     */
+    latitude: business.latitude == null ? null : Number(business.latitude),
+    longitude: business.longitude == null ? null : Number(business.longitude),
     /**
      * Si ese WhatsApp es el del MARKETPLACE y no el del local.
      *

@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
+import { leerUbicacion } from '../lib/ubicacion'
 import { createRouter } from '../middleware/async'
 import type { BusinessRecord } from '../db/types'
 
@@ -9,6 +10,11 @@ const editableBusinessFields = [
   'description',
   'hours',
   'address',
+  // El punto en el mapa. `address` es lo que se LEE; esto es lo que se
+  // NAVEGA — y en Ecuador «frente a Portocentro» no lo resuelve ningún
+  // geocoder. Los dos juntos, como en cualquier app de reparto.
+  'latitude',
+  'longitude',
   'phone',
   'social',
   'payment_methods',
@@ -82,6 +88,8 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     description: business.description,
     hours: business.hours,
     address: business.address,
+    latitude: business.latitude ?? null,
+    longitude: business.longitude ?? null,
     phone: business.phone,
     social: business.social,
     payment_methods: business.payment_methods,
@@ -111,6 +119,17 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
   const data: Partial<Record<EditableBusinessField, unknown>> = {}
   for (const field of editableBusinessFields) {
     if (field in req.body) data[field] = req.body[field]
+  }
+
+  // El punto del local: las dos coordenadas o ninguna. Se valida aquí, antes
+  // que el CHECK de la base, para poder explicar qué pasa — y se valida en
+  // UNA sola función compartida con el alta del superadmin, o la que valide
+  // más suelto sería la que manda.
+  if ('latitude' in data || 'longitude' in data) {
+    const punto = leerUbicacion(data as Record<string, unknown>)
+    if (!punto.ok) return res.status(400).json({ error: punto.error })
+    data.latitude = punto.punto.latitude
+    data.longitude = punto.punto.longitude
   }
 
   // Los dos campos que acaban en la mini app se validan aquí y no solo en el

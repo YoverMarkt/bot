@@ -275,6 +275,12 @@ describe('la tienda del negocio', () => {
         // su pedido no existe. La app esconde los botones, que es peor que
         // tenerlos pero mejor que mandar a nadie a la puerta equivocada.
         phone: null,
+        // ⚠️ El punto del local, añadido el 2026-09-10. Es PÚBLICO y no filtra
+        // nada: la dirección de un comercio está en su fachada, y sin él quien
+        // retira solo sabe el nombre del negocio. Lo que sigue sin salir de
+        // aquí es el teléfono del dueño — eso sí es un dato personal.
+        latitude: null,
+        longitude: null,
         phoneIsPlatform: false,
         capabilities: { orders: true },
         brandColor: null,

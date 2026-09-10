@@ -14327,6 +14327,42 @@ alter table public.businesses
 comment on column public.businesses.block_minutes is
   'Cuánto dura un bloqueo temporal en este local, en minutos (1 min a 7 días). Lo ajusta el dueño en Ajustes.';
 
+-- ── EL PUNTO DEL LOCAL EN EL MAPA ──────────────────────────────────────────
+-- migration-2026-09-10-ubicacion-del-local.sql. `address` es TEXTO: sirve para
+-- leerlo, no para llegar — y en Ecuador media ciudad se ubica con «frente a
+-- Portocentro», que ningún geocoder resuelve. El sistema tenía el punto de UNA
+-- sola punta del reparto: el del CLIENTE (lo capturan la mini app y el chat, y
+-- el pedido lo congela en `delivery_latitude`/`delivery_longitude`). El del
+-- LOCAL no existía, así que no se podía decir a dónde ir a retirar ni dar un
+-- punto de recogida a un repartidor.
+--
+-- ⚠️ Mismo tipo y mismo CHECK que `customer_addresses`, no otro: dos formas de
+-- guardar una coordenada en la misma base acaban redondeando distinto.
+-- ⚠️ Las DOS o NINGUNA: media coordenada apunta al ecuador, no a medias.
+alter table public.businesses
+  add column if not exists latitude  numeric(10,7),
+  add column if not exists longitude numeric(10,7);
+
+comment on column public.businesses.latitude is
+  'Latitud del local. Con `longitude`, el punto de RECOGIDA de un pedido: lo usa quien retira y lo usará la app del repartidor.';
+comment on column public.businesses.longitude is
+  'Longitud del local. Va siempre junto a `latitude` (las dos o ninguna).';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.businesses'::regclass
+      and conname = 'businesses_ubicacion_check'
+  ) then
+    alter table public.businesses add constraint businesses_ubicacion_check check (
+      (latitude is null or latitude between -90 and 90)
+      and (longitude is null or longitude between -180 and 180)
+      and ((latitude is null) = (longitude is null))
+    );
+  end if;
+end $$;
+
 -- ── LA ÚNICA RESPUESTA A «¿ESTÁ BLOQUEADO?» ────────────────────────────────
 -- migration-2026-08-29-un-solo-bloqueo.sql. Había DOS reglas —el chat miraba
 -- `blocked_at` a secas, la base miraba la regla completa— y con un bloqueo
