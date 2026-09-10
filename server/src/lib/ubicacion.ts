@@ -107,3 +107,29 @@ export const comoLlegar = (negocio: {
     ? `https://www.google.com/maps/dir/?api=1&destination=${negocio.latitude},${negocio.longitude}`
     : null
 )
+
+/**
+ * La RUTA de un reparto: del local a la puerta del cliente.
+ *
+ * Es lo que necesita quien lleva el pedido, y hasta ahora no existía en
+ * ninguna pantalla: el panel enseñaba el pin del cliente, pero el repartidor
+ * sale DEL LOCAL — el trayecto completo es el dato, no el destino suelto.
+ *
+ * ⚠️ Sin API key ni coste, como el resto: es una URL de Google Maps que abre
+ * la app nativa con el trayecto ya trazado. Lo que se paga es dibujar un mapa
+ * dentro de nuestra app.
+ *
+ * ⚠️ Devuelve `null` si falta cualquiera de los dos extremos. Una ruta con un
+ * solo punto no es media ruta: es un destino sin origen, que es justo lo que
+ * ya se tenía.
+ */
+export const rutaDeReparto = (
+  origen: { latitude?: unknown; longitude?: unknown },
+  destino: { latitude?: unknown; longitude?: unknown },
+): string | null => (
+  tieneUbicacion(origen) && tieneUbicacion(destino)
+    ? 'https://www.google.com/maps/dir/?api=1'
+      + `&origin=${origen.latitude},${origen.longitude}`
+      + `&destination=${destino.latitude},${destino.longitude}`
+    : null
+)

@@ -12,6 +12,9 @@
 // urgente de la pantalla, no el que acaba de entrar.
 import { useMemo, useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { rutaDeReparto } from '@/lib/ubicacion'
+
+import { api } from '../../api/client'
 import { toast } from 'sonner'
 import {
   Banknote, Bike, Clock, Landmark, MapPin, Navigation, Receipt, ShoppingBag,
@@ -392,6 +395,22 @@ export default function Orders() {
   )
 }
 
+/**
+ * El punto del local, para poder trazar la ruta del reparto.
+ *
+ * ⚠️ Comparte la clave `['business']` con Ajustes a propósito: es la misma
+ * consulta y React Query la sirve de caché. Así el dueño guarda su ubicación
+ * en Ajustes y la ruta aparece en Pedidos sin recargar la página.
+ */
+function usePuntoDelLocal() {
+  const { data } = useQuery({
+    queryKey: ['business'],
+    queryFn: () => api<{ latitude: number | null; longitude: number | null }>('/api/client/business'),
+    staleTime: 5 * 60 * 1000,
+  })
+  return data ?? null
+}
+
 function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   pedido: Order
   ocupado: boolean
@@ -399,6 +418,7 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   /** Recarga la lista tras un cambio que no pasa por `onCambiar`. */
   onRefrescar: () => void
 }) {
+  const local = usePuntoDelLocal()
   const paso = siguientePaso(pedido)
   const domicilio = !pedido.fulfillment || pedido.fulfillment === 'delivery'
   const direccion = pedido.delivery_address
@@ -407,6 +427,18 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   const pin = pedido.delivery_latitude != null && pedido.delivery_longitude != null
     ? `https://www.google.com/maps?q=${pedido.delivery_latitude},${pedido.delivery_longitude}`
     : null
+  // ⚠️ La RUTA completa, no solo el destino. Quien lleva el pedido sale DEL
+  // LOCAL: el pin del cliente suelto le dice a dónde va, no por dónde. Con el
+  // trayecto trazado, el dueño lo copia y se lo pasa a su motorizado tal cual.
+  //
+  // Solo aparece con los DOS extremos: sin el punto del local (Ajustes →
+  // «Dónde está tu local») no hay origen que trazar.
+  const ruta = rutaDeReparto(local, {
+    // Llegan como texto o número según el driver: se normaliza aquí, que es
+    // donde se sabe de dónde vienen.
+    latitude: pedido.delivery_latitude == null ? null : Number(pedido.delivery_latitude),
+    longitude: pedido.delivery_longitude == null ? null : Number(pedido.delivery_longitude),
+  })
   const precision = Number(pedido.delivery_accuracy_m)
   const enCurso = ACTIVOS.includes(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
@@ -583,6 +615,24 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
                               (±{Math.round(precision)} m)
                             </span>
                           )}
+                        </a>
+                      )}
+                      {/* ⚠️ La RUTA completa, no solo el destino. Quien lleva
+                          el pedido sale DEL LOCAL: el pin suelto le dice a
+                          dónde va, no por dónde. Esto se copia y se le pasa al
+                          motorizado tal cual, hasta que exista su app.
+
+                          Solo con los DOS extremos: sin el punto del local
+                          (Ajustes → «Dónde está tu local») no hay origen. */}
+                      {ruta && (
+                        <a
+                          href={ruta}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 ml-3 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        >
+                          <Navigation className="h-3 w-3 shrink-0" />
+                          Ruta desde el local
                         </a>
                       )}
                       {/* Lo permanente de esa casa: no cambia entre pedidos. */}
