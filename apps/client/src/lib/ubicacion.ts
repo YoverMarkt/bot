@@ -19,12 +19,21 @@ export interface Punto {
   longitude: number
 }
 
+/**
+ * Por qué no se pudo leer un punto.
+ *
+ * ⚠️ Va en su propio tipo y no inline en la unión: `LecturaDelPunto['motivo']`
+ * no compila, porque la rama `ok: true` no tiene ese campo. Lo cazó el `tsc -b`
+ * del CI, no el `check` local — que corre el lint de las apps, no su build.
+ */
+export type MotivoDelPunto = 'vacio' | 'enlace_corto' | 'sin_coordenadas' | 'fuera_de_rango'
+
 export type LecturaDelPunto =
   | { ok: true; punto: Punto }
-  | { ok: false; motivo: 'vacio' | 'enlace_corto' | 'sin_coordenadas' | 'fuera_de_rango' }
+  | { ok: false; motivo: MotivoDelPunto }
 
 /** Qué se le dice al dueño en cada caso. Cada mensaje tiene que decir QUÉ HACER. */
-export const MENSAJE_DEL_PUNTO: Record<Exclude<LecturaDelPunto['motivo'], undefined>, string> = {
+export const MENSAJE_DEL_PUNTO: Record<MotivoDelPunto, string> = {
   vacio: '',
   enlace_corto:
     'Ese enlace es de los cortos y no lleva el punto dentro. Ábrelo en el navegador '
