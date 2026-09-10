@@ -58,6 +58,8 @@ export interface BusinessRecord {
   max_orders_per_hour?: number | string | null
   payment_window_minutes?: number | string | null
   owner_phone?: string | null
+  /** Si el dueño recibe el pedido por WhatsApp. Nace APAGADO: cuesta mensajes. */
+  notify_owner_whatsapp?: boolean | null
   /** El punto del local en el mapa. Las dos o ninguna (`businesses_ubicacion_check`). */
   latitude?: number | string | null
   longitude?: number | string | null

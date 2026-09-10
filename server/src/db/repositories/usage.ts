@@ -4,7 +4,16 @@ import type { WhatsAppProvider } from '../../types/channels'
 
 const db: SupabaseClient = require('../client') as typeof import('../client')
 
-export type OutboundMessageType = 'text' | 'image' | 'video' | 'interactive'
+/**
+ * ⚠️ Estos valores tienen que existir en el CHECK de `message_usage_events`
+ * (`text`, `image`, `video`, `audio`, `interactive`, `other`). Una etiqueta
+ * nueva aquí sin migración allí tumba la inserción de consumo, y el mensaje se
+ * envía igual: se perdería la cuenta de lo que se paga, en silencio.
+ *
+ * La UBICACIÓN va como `other` a propósito: la base ya lo admite y lo que
+ * importa para el gasto es el TOTAL de salientes, que sigue siendo exacto.
+ */
+export type OutboundMessageType = 'text' | 'image' | 'video' | 'interactive' | 'other'
 
 export interface MonthlyUsageRow {
   business_id: string

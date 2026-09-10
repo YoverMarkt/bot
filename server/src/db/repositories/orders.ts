@@ -322,6 +322,34 @@ const claimOrderNotification = async (
 }
 
 /**
+ * El pedido con lo justo para avisar a su DUEÑO por WhatsApp.
+ *
+ * ⚠️ Filtra por `business_id`, como toda consulta de este repositorio. El id
+ * del pedido llega del flujo que acaba de crearlo, pero una función capaz de
+ * leer un pedido sin decir de qué local es acaba leyendo el de otro el día que
+ * alguien le pase un id ajeno.
+ *
+ * ⚠️ Trae el punto de ENTREGA del cliente (`delivery_*`), que es lo que hace
+ * útil el aviso: el dueño necesita saber a dónde va —y mañana, el repartidor—.
+ * Sin eso el mensaje sería un resumen de lo que ya está en el panel.
+ */
+const getOrderForOwnerNotice = async (businessId: string, orderId: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .select(
+      'id,order_number,fulfillment,payment_method,contact_name,contact_phone,total,'
+      + 'delivery_address,delivery_reference,delivery_latitude,delivery_longitude,'
+      + 'delivery_courier_notes,'
+      + 'order_items(*, order_item_options(option_group_name,option_name,quantity,group_sort))',
+    )
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data as Record<string, unknown> | null
+}
+
+/**
  * Marca que el negocio dio el pago por bueno.
  *
  * Existe para el pago que llegó POR FUERA de la app: la mayoría transfiere
@@ -394,4 +422,5 @@ export = {
   registerRejectedReceipt,
   clearRejectedReceipts,
   pedidosEsperandoComprobante,
+  getOrderForOwnerNotice,
 }

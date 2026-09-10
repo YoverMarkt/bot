@@ -33,6 +33,10 @@ const editableBusinessFields = [
   // Cuánto espera el local su comprobante antes de liberar el pedido. 0 = no
   // expira nunca, que es una decisión legítima de quien coordina por teléfono.
   'payment_window_minutes',
+  // ⚠️ El aviso de pedido nuevo al WhatsApp del dueño. Nace APAGADO y lo
+  // enciende él: son dos mensajes pagados por pedido, y la alarma del panel ya
+  // avisa gratis. Que la factura la decida quien la paga.
+  'notify_owner_whatsapp',
 ] as const
 
 type EditableBusinessField = (typeof editableBusinessFields)[number]
@@ -90,6 +94,7 @@ router.get('/api/client/business', auth.authClient, async (req, res) => {
     address: business.address,
     latitude: business.latitude ?? null,
     longitude: business.longitude ?? null,
+    notify_owner_whatsapp: business.notify_owner_whatsapp === true,
     phone: business.phone,
     social: business.social,
     payment_methods: business.payment_methods,
@@ -125,6 +130,11 @@ router.put('/api/client/business', auth.authClient, auth.requireOwner, async (re
   // que el CHECK de la base, para poder explicar qué pasa — y se valida en
   // UNA sola función compartida con el alta del superadmin, o la que valide
   // más suelto sería la que manda.
+  // Un interruptor es un booleano y nada más: un 'true' de texto lo dejaría
+  // encendido sin que nadie lo decidiera.
+  if ('notify_owner_whatsapp' in data) {
+    data.notify_owner_whatsapp = data.notify_owner_whatsapp === true
+  }
   if ('latitude' in data || 'longitude' in data) {
     const punto = leerUbicacion(data as Record<string, unknown>)
     if (!punto.ok) return res.status(400).json({ error: punto.error })

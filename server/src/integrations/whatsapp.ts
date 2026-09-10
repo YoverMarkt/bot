@@ -31,6 +31,13 @@ interface YCloudClient {
     listButtonText?: string,
     direct?: boolean,
   ): Promise<boolean>
+  sendLocation(
+    apiKey: string,
+    from: string,
+    to: string,
+    ubicacion: { latitude: number; longitude: number; name?: string | null; address?: string | null },
+    direct?: boolean,
+  ): Promise<void>
   sendCtaUrl(
     apiKey: string,
     from: string,
@@ -351,6 +358,49 @@ async function sendInteractive(
   }
 }
 
+/**
+ * Una UBICACIÓN por el canal del negocio.
+ *
+ * ⚠️ Solo YCloud lo soporta hoy, igual que los interactivos; con cualquier
+ * otro proveedor devuelve `false` y quien llama se queda con el texto —que ya
+ * lleva el enlace de Maps— en vez de dejar al cliente sin nada.
+ *
+ * ⚠️ NUNCA lanza. Un mapa que no sale no puede costar el aviso: el texto ya se
+ * mandó antes y dice lo mismo con un enlace. Esta es la guinda, no el plato.
+ *
+ * ⚠️ CUESTA UN MENSAJE. WhatsApp no deja adjuntar una ubicación a un texto, así
+ * que esto es un saliente más — y Meta los cobra desde el 1 de octubre de 2026.
+ */
+async function sendLocation(
+  business: WhatsAppBusiness,
+  to: string,
+  ubicacion: {
+    latitude: number
+    longitude: number
+    name?: string | null
+    address?: string | null
+  },
+  deliveryMode: DeliveryMode = 'queued',
+): Promise<boolean> {
+  const canal = await conCanalDePlataforma(business)
+  if (providerFor(canal) !== 'ycloud') return false
+  try {
+    await ycloud.sendLocation(
+      ycloudKeyFor(canal),
+      ycloudNumberFor(canal),
+      to,
+      ubicacion,
+      deliveryMode === 'direct',
+    )
+    await recordAcceptedMessage(business, 'ycloud', to, 'other')
+    return true
+  } catch (error) {
+    console.error('❌ [ycloud] sendLocation:', errorDetail(error))
+    recordSendFailure(business, 'ycloud', 'sendLocation', error)
+    return false
+  }
+}
+
 // El enlace de la tienda como BOTÓN nativo. Solo YCloud lo soporta hoy; con
 // cualquier otro proveedor devuelve false y quien llama manda el enlace como
 // texto, que es exactamente lo que se hacía antes de esto.
@@ -385,4 +435,7 @@ async function sendLinkButton(
   }
 }
 
-export { sendTyping, sendText, sendImage, sendVideo, sendInteractive, sendLinkButton }
+export {
+  sendTyping, sendText, sendImage, sendVideo,
+  sendInteractive, sendLinkButton, sendLocation,
+}

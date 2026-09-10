@@ -10,6 +10,7 @@ import {
   type WhatsAppChannelAddress,
   type WhatsAppProvider,
 } from '../types/channels'
+import { avisarAlDuenoDelPedido } from './owner-order-notice'
 
 export interface InboundMediaReference {
   id?: string
@@ -969,6 +970,12 @@ const processor = createInboundWebhookProcessor({
         if (error || !data) return null
         const pedido = data as { id?: string; total?: unknown }
         if (!pedido.id) return null
+        // ⚠️ El aviso al DUEÑO, si lo tiene encendido. Nace apagado, así que
+        // casi siempre no gasta nada; y va sin `await` porque el pedido ya
+        // está creado y el cliente espera su confirmación ahora.
+        void avisarAlDuenoDelPedido(entrada.businessId, pedido.id).catch(() => {
+          /* el pedido ya está: un aviso de cortesía no puede tumbarlo */
+        })
         // El correlativo lo pone un disparador, así que la RPC no lo
         // devuelve: se relee. Si falla, el pedido YA existe y se confirma sin
         // número — quedarse sin confirmación por un dato de presentación
