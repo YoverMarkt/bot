@@ -27,6 +27,7 @@
 // El día que se enganchen las plantillas, el cambio es aquí y en ningún otro
 // sitio: el resto del sistema solo llama a `notificarCambioDePedido`.
 import type { BusinessRecord } from '../db/types'
+import { comoLlegar, tieneUbicacion } from '../lib/ubicacion'
 import { detalleEnTexto } from './order-detail'
 import type { OpcionDelPedido } from './order-detail'
 
@@ -192,7 +193,11 @@ export const enPalabras = (minutos?: number | null): string => {
 export const textoDelAviso = (
   // El teléfono hace falta para el aviso de cancelación: ahí lo único útil que
   // se le puede ofrecer al cliente es a quién llamar.
-  negocio: Pick<BusinessRecord, 'name'>,
+  // ⚠️ `phone` sigue FUERA del Pick, y no es un olvido: el aviso no le da al
+  // cliente ningún número del local (2026-09-07). Lo que sí entra es la
+  // UBICACIÓN — dirección y punto—, que es lo contrario: en vez de sacarlo de
+  // Umbani, le dice a dónde ir cuando él mismo va a retirar.
+  negocio: Pick<BusinessRecord, 'name' | 'address' | 'latitude' | 'longitude'>,
   pedido: PedidoParaAvisar,
   status: string,
   falta?: FaltaDePago | null,
@@ -232,6 +237,20 @@ export const textoDelAviso = (
     lineas.push(`🛍️ *Tu pedido${numero} está listo*`)
     lineas.push('')
     lineas.push(`Ya puedes pasar a retirarlo por ${negocio.name}.`)
+    // ⚠️ Hasta el 2026-09-10 el aviso acababa AQUÍ: le decía a quien tiene que
+    // salir de casa el NOMBRE del local y no dónde está. Es el mensaje en el
+    // que más falta hace el dato, y era justo el que no lo daba.
+    //
+    // ⚠️ La dirección y el enlace van DENTRO de este mismo mensaje, no en uno
+    // aparte: así no cuestan un saliente más. El mapa nativo —que sí cuesta—
+    // lo manda `notificarCambioDePedido` después, y solo si hay punto.
+    const direccion = String(negocio.address || '').trim()
+    if (direccion) lineas.push(`📍 ${direccion}`)
+    const llegar = comoLlegar(negocio)
+    if (llegar) {
+      lineas.push('')
+      lineas.push(`Cómo llegar: ${llegar}`)
+    }
     return lineas.join('\n')
   }
 
@@ -332,6 +351,16 @@ export interface NotificarDependencias {
     message: unknown
     context?: Record<string, unknown>
   }): Promise<void>
+  /**
+   * El mapa nativo de WhatsApp. OPCIONAL a propósito: sin esta dependencia el
+   * aviso sale exactamente como salía antes —con la dirección y el enlace
+   * dentro del texto— y no se pierde nada. Es la guinda, no el plato.
+   */
+  enviarUbicacion?(
+    negocio: BusinessRecord,
+    telefono: string,
+    ubicacion: { latitude: number; longitude: number; name?: string | null; address?: string | null },
+  ): Promise<unknown>
 }
 
 /**
@@ -362,6 +391,22 @@ export const crearNotificadorDePedidos = (dependencias: NotificarDependencias) =
 
     try {
       await dependencias.enviar(negocio, telefono, texto)
+      // ⚠️ El MAPA solo en «listo para retirar», y solo si el local tiene
+      // punto. Es un mensaje MÁS —WhatsApp no deja adjuntar una ubicación a un
+      // texto, y Meta los cobra desde el 1 de octubre— así que se gasta en el
+      // único momento en que el cliente va a salir a la calle a buscarlo. En
+      // los otros hitos el enlace del texto sobra y basta.
+      //
+      // ⚠️ Va DESPUÉS del texto y nunca lo bloquea: si el mapa falla, el
+      // cliente ya tiene la dirección y el enlace en el mensaje anterior.
+      if (status === 'listo_para_retiro' && dependencias.enviarUbicacion && tieneUbicacion(negocio)) {
+        await dependencias.enviarUbicacion(negocio, telefono, {
+          latitude: Number(negocio.latitude),
+          longitude: Number(negocio.longitude),
+          name: negocio.name || null,
+          address: negocio.address || null,
+        }).catch(() => false)
+      }
       return true
     } catch (error) {
       await dependencias.registrarError({
@@ -387,5 +432,9 @@ export const notificarCambioDePedido = crearNotificadorDePedidos({
   registrarError(input) {
     const log = require('./error-log') as typeof import('./error-log')
     return log.recordError(input)
+  },
+  enviarUbicacion(negocio, telefono, ubicacion) {
+    const whatsapp = require('../integrations/whatsapp') as typeof import('../integrations/whatsapp')
+    return whatsapp.sendLocation(negocio, telefono, ubicacion)
   },
 })

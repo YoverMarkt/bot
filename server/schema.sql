@@ -14348,6 +14348,19 @@ comment on column public.businesses.latitude is
 comment on column public.businesses.longitude is
   'Longitud del local. Va siempre junto a `latitude` (las dos o ninguna).';
 
+-- ── EL AVISO DE PEDIDO NUEVO AL WHATSAPP DEL DUEÑO ─────────────────────────
+-- migration-2026-09-10-aviso-al-dueno.sql. NACE APAGADO: el dueño ya se entera
+-- por la alarma del panel, que es gratis, y encender esto son DOS mensajes
+-- pagados por pedido (resumen + mapa del cliente) desde el 1 de octubre de
+-- 2026. Un interruptor que nace encendido convierte una mejora en una factura
+-- que nadie decidió. Es POR LOCAL porque un almuercería con dos pedidos al día
+-- lo quiere y una pizzería con cincuenta, seguramente no.
+alter table public.businesses
+  add column if not exists notify_owner_whatsapp boolean not null default false;
+
+comment on column public.businesses.notify_owner_whatsapp is
+  'Si el dueño recibe por WhatsApp el aviso de pedido nuevo (resumen + ubicación del cliente). APAGADO por defecto: son dos mensajes pagados por pedido, y la alarma del panel ya avisa gratis.';
+
 do $$
 begin
   if not exists (

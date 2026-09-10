@@ -113,3 +113,68 @@ describe('el punto viaja a la mini app', () => {
     expect(JSON.stringify(app)).not.toContain('0978619700')
   })
 })
+
+describe('el aviso de «listo para retirar» ya dice DÓNDE', () => {
+  const { textoDelAviso, crearNotificadorDePedidos } = require('../dist/services/order-notify')
+  const local = {
+    name: 'La Abuelita',
+    address: 'Av. del Ejército, frente a Portocentro, Portoviejo',
+    latitude: -1.0546, longitude: -80.4547,
+  }
+  const pedido = { order_number: 12, contact_phone: '593999111222', total: 7.7 }
+
+  // ⚠️ Hasta el 2026-09-10 este aviso decía «pasa a retirarlo por La Abuelita»
+  // y se acababa ahí: le daba el NOMBRE a quien tiene que salir de casa. Es el
+  // mensaje donde más falta hace el dato, y era justo el que no lo daba.
+  it('lleva la dirección y el enlace DENTRO del mismo mensaje', () => {
+    const texto = textoDelAviso(local, pedido, 'listo_para_retiro')
+    expect(texto).toContain('está listo')
+    expect(texto).toContain('Av. del Ejército')
+    expect(texto).toContain('https://www.google.com/maps/dir/?api=1&destination=-1.0546,-80.4547')
+  })
+
+  it('un local sin punto no deja la frase coja', () => {
+    const texto = textoDelAviso({ name: 'Sin Punto' }, pedido, 'listo_para_retiro')
+    expect(texto).toContain('está listo')
+    expect(texto).not.toContain('Cómo llegar')
+    expect(texto).not.toContain('undefined')
+  })
+
+  it('manda el mapa nativo SOLO al retirar, y solo con punto', async () => {
+    const mapas = []
+    const notificar = crearNotificadorDePedidos({
+      enviar: async () => true,
+      registrarError: async () => {},
+      enviarUbicacion: async (_n, tel, u) => { mapas.push({ tel, u }); return true },
+    })
+
+    // ⚠️ El mapa es un mensaje MÁS —WhatsApp no deja adjuntarlo a un texto— así
+    // que se gasta en el ÚNICO momento en que el cliente sale a la calle.
+    await notificar(local, pedido, 'listo_para_retiro')
+    expect(mapas).toHaveLength(1)
+    expect(mapas[0].u).toMatchObject({ latitude: -1.0546, longitude: -80.4547, name: 'La Abuelita' })
+
+    // En los demás hitos NO se gasta: el texto ya dice lo que hace falta.
+    for (const hito of ['preparacion', 'en_camino', 'completado', 'cancelado']) {
+      await notificar(local, pedido, hito)
+    }
+    expect(mapas, 'solo el de retirar gasta un mensaje de mapa').toHaveLength(1)
+
+    // Y un local sin punto tampoco lo gasta.
+    await notificar({ name: 'Sin Punto' }, pedido, 'listo_para_retiro')
+    expect(mapas).toHaveLength(1)
+  })
+
+  it('si el mapa falla, el aviso ya se mandó igual', async () => {
+    // El texto va PRIMERO y lleva la dirección: el mapa es la guinda.
+    let textoEnviado = null
+    const notificar = crearNotificadorDePedidos({
+      enviar: async (_n, _t, m) => { textoEnviado = m; return true },
+      registrarError: async () => {},
+      enviarUbicacion: async () => { throw new Error('YCloud caído') },
+    })
+    const ok = await notificar(local, pedido, 'listo_para_retiro')
+    expect(ok).toBe(true)
+    expect(textoEnviado).toContain('Av. del Ejército')
+  })
+})

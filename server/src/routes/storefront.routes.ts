@@ -21,6 +21,7 @@ import {
   storefrontStatus,
   type StorefrontBusiness,
 } from '../services/storefront'
+import { avisarAlDuenoDelPedido } from '../services/owner-order-notice'
 
 // Rutas de la mini app del negocio.
 //
@@ -714,6 +715,20 @@ router.post('/api/store/:slug/orders', orderLimiter, requireStorefrontSession, a
     void db.setCustomerDisplayName(businessId, customerId, contactName.trim())
       .catch(() => { /* el pedido ya está: recordar el nombre no puede fallarlo */ })
   }
+
+  // ── El aviso al DUEÑO, si lo tiene encendido ────────────────────────────
+  //
+  // ⚠️ Nace APAGADO (`notify_owner_whatsapp`) y por eso esto casi siempre no
+  // gasta nada: son dos mensajes por pedido y Meta los cobra. El dueño se
+  // entera igual por la alarma del panel, que es gratis; esto es para quien
+  // no lo tiene abierto.
+  //
+  // ⚠️ Sin `await`, como el resto de esta zona: el pedido YA está creado y el
+  // cliente tiene que ver su confirmación ahora. Un proveedor externo lento no
+  // puede retrasar la pantalla de «pedido recibido».
+  void avisarAlDuenoDelPedido(businessId, (result.data as { id?: string } | null)?.id).catch(() => {
+    /* el pedido ya está: un aviso de cortesía no puede tumbarlo */
+  })
 
   // ── El aviso que cierra el ciclo mini app → WhatsApp ─────────────────────
   //

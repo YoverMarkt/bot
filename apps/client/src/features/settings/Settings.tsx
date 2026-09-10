@@ -20,6 +20,7 @@ type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
   latitude: number | null; longitude: number | null
+  notify_owner_whatsapp: boolean
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; cover_url: string | null; takes_orders?: boolean
   prep_time_minutes: number | null; delivery_extra_minutes: number | null
   min_order_amount: number | null; max_orders_per_hour: number | null
@@ -337,6 +338,7 @@ export function BusinessForm() {
         // campos de su lista y las dos coordenadas viajan juntas o ninguna.
         latitude: f?.latitude ?? null,
         longitude: f?.longitude ?? null,
+        notify_owner_whatsapp: f?.notify_owner_whatsapp === true,
         min_order_amount: minutosO(f?.min_order_amount, 0),
         max_orders_per_hour: minutosO(f?.max_orders_per_hour, 30),
         payment_window_minutes: minutosO(f?.payment_window_minutes, 120),
@@ -395,6 +397,34 @@ export function BusinessForm() {
               longitude: punto?.longitude ?? null,
             })}
           />
+        </div>
+
+        {/* ── El aviso de pedido nuevo a tu WhatsApp ──
+            ⚠️ Nace APAGADO y el texto dice POR QUÉ. Son dos mensajes por
+            pedido y Meta los cobra: un interruptor que nace encendido
+            convierte una mejora en una factura que nadie decidió. La alarma
+            del panel sigue avisando gratis, encendido o no. */}
+        <div className="border-t pt-4 mt-1">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 size-4 accent-current"
+              checked={f.notify_owner_whatsapp === true}
+              onChange={e => setDraft({ ...f, notify_owner_whatsapp: e.target.checked })}
+            />
+            <span>
+              <span className="text-[13px] font-semibold block">
+                Avisarme cada pedido por WhatsApp
+              </span>
+              <span className="text-[12px] text-muted-foreground block mt-0.5">
+                Te llega el resumen y la ubicación del cliente a
+                {' '}<strong>tu número de dueño</strong>. Útil si no tienes el panel
+                abierto — la alarma de esta pantalla sigue sonando igual.
+                {' '}<strong>Cuesta dos mensajes por pedido</strong>, así que déjalo
+                apagado si ya miras el panel.
+              </span>
+            </span>
+          </label>
         </div>
 
         {/* ── Tu tienda (mini app) ── */}

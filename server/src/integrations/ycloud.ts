@@ -196,6 +196,48 @@ export async function sendImage(
   }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
 }
 
+/**
+ * Una UBICACIÓN como mensaje nativo de WhatsApp.
+ *
+ * Pinta un mapa con vista previa dentro del chat y, al tocarlo, abre la app de
+ * mapas del teléfono con el punto ya cargado. Es lo que hace que quien va a
+ * retirar no tenga que copiar una dirección a mano.
+ *
+ * ⚠️ ES UN MENSAJE APARTE, y eso cuesta. WhatsApp no deja adjuntar una
+ * ubicación a un texto: son dos mensajes, y desde el 1 de octubre de 2026 Meta
+ * cobra cada uno. La alternativa gratis es meter un enlace de Maps DENTRO del
+ * texto que ya se manda — se toca igual, solo que sin la vista previa del
+ * mapa. Quien llame a esto tiene que saber que está gastando uno.
+ *
+ * ⚠️ `name` y `address` son opcionales pero se mandan siempre que se pueda: sin
+ * ellos WhatsApp pinta un pin desnudo, y el cliente no sabe si ese punto es el
+ * local o una coordenada suelta.
+ */
+export async function sendLocation(
+  apiKey: string,
+  fromNumber: string,
+  to: string,
+  ubicacion: {
+    latitude: number
+    longitude: number
+    name?: string | null
+    address?: string | null
+  },
+  direct = false,
+): Promise<void> {
+  await axios.post(messageUrl(direct), {
+    from: fromNumber,
+    to,
+    type: 'location',
+    location: {
+      latitude: ubicacion.latitude,
+      longitude: ubicacion.longitude,
+      ...(ubicacion.name ? { name: String(ubicacion.name).slice(0, 120) } : {}),
+      ...(ubicacion.address ? { address: String(ubicacion.address).slice(0, 300) } : {}),
+    },
+  }, { headers: headers(apiKey), timeout: OUTBOUND_TIMEOUT_MS })
+}
+
 export async function sendVideo(
   apiKey: string,
   fromNumber: string,
