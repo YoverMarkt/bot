@@ -213,6 +213,8 @@ function channelConfigurationError(body: Record<string, unknown>): string | null
 
 const ALLOWED_BUSINESS_FIELDS = [
   'name', 'type', 'description', 'hours', 'address', 'phone', 'social',
+  // El punto del local, el mismo que edita el dueño en su panel.
+  'latitude', 'longitude',
   'payment_methods', 'whatsapp_number', 'whatsapp_provider', 'plan',
   'active', 'bot_active', 'suspended', 'notes', 'slogan',
   'owner_phone', 'ycloud_api_key', 'ycloud_number',

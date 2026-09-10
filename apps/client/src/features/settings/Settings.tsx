@@ -12,12 +12,14 @@ import { Textarea } from '@botpanel/ui/components/textarea'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
+import { leerPunto, verEnElMapa, MENSAJE_DEL_PUNTO } from '@/lib/ubicacion'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 // ── Tipos (endpoints de routes/business.routes.js) ──
 type BusinessData = {
   name: string; slogan: string | null; description: string | null; hours: string | null
   address: string | null; phone: string | null; social: string | null; payment_methods: string | null
+  latitude: number | null; longitude: number | null
   delivery_fee: number | null; brand_color: string | null; logo_url: string | null; cover_url: string | null; takes_orders?: boolean
   prep_time_minutes: number | null; delivery_extra_minutes: number | null
   min_order_amount: number | null; max_orders_per_hour: number | null
@@ -195,6 +197,82 @@ export function Locked() {
 const DEFAULT_BRAND_COLOR = '#D9F950'
 
 // ── Identidad del negocio (Ajustes del viejo: SOLO nombre, slogan y descripción) ──
+/**
+ * El punto del local, capturado de la forma que el dueño ya sabe hacer.
+ *
+ * ⚠️ NO se le piden coordenadas: nadie sabe las suyas. Se le pide que pegue el
+ * enlace de Google Maps de su negocio —tres toques en el móvil— y el punto se
+ * extrae de ahí. También acepta coordenadas por si ya las tiene.
+ *
+ * ⚠️ Cada error dice QUÉ HACER, no solo que falló. Un «no se pudo leer» a
+ * secas es lo que convierte un error en abandono: el dueño no reintenta, deja
+ * el campo vacío y su local se queda sin punto para siempre.
+ */
+function UbicacionDelLocal({ latitude, longitude, onCambio }: {
+  latitude: number | null
+  longitude: number | null
+  onCambio: (punto: { latitude: number; longitude: number } | null) => void
+}) {
+  const [pegado, setPegado] = useState('')
+  const [error, setError] = useState('')
+  const guardado = latitude != null && longitude != null
+
+  const aplicar = (texto: string) => {
+    setPegado(texto)
+    if (!texto.trim()) { setError(''); return }
+    const leido = leerPunto(texto)
+    if (leido.ok) {
+      setError('')
+      onCambio(leido.punto)
+      setPegado('')
+    } else {
+      setError(MENSAJE_DEL_PUNTO[leido.motivo])
+    }
+  }
+
+  return (
+    <div>
+      <Label htmlFor="business-mapa">Ubicación en el mapa</Label>
+      {guardado ? (
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[13px] font-medium">📍 {latitude}, {longitude}</span>
+          <a
+            href={verEnElMapa({ latitude, longitude })}
+            target="_blank" rel="noreferrer"
+            className="text-[13px] underline underline-offset-2"
+          >
+            Ver en el mapa
+          </a>
+          <button
+            type="button"
+            onClick={() => { onCambio(null); setPegado(''); setError('') }}
+            className="text-[13px] text-muted-foreground underline underline-offset-2 ml-auto"
+          >
+            Quitar
+          </button>
+        </div>
+      ) : (
+        <Input
+          id="business-mapa"
+          value={pegado}
+          onChange={e => aplicar(e.target.value)}
+          placeholder="Pega aquí el enlace de Google Maps de tu local"
+        />
+      )}
+      {error
+        ? <p className="text-[12px] text-destructive mt-1">{error}</p>
+        : (
+          <p className="text-[12px] text-muted-foreground mt-1">
+            {guardado
+              ? 'Con esto, quien pase a retirar puede llegar en un toque.'
+              : 'Busca tu negocio en Google Maps → Compartir → Copiar enlace. Sin esto, '
+                + 'quien pase a retirar no sabe a dónde ir.'}
+          </p>
+        )}
+    </div>
+  )
+}
+
 export function BusinessForm() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['business'], queryFn: () => api<BusinessData>('/api/client/business') })
@@ -255,6 +333,10 @@ export function BusinessForm() {
         // ⚠️ Mismo cuidado que arriba, y aquí el cero pesa más: en el mínimo
         // significa «sin mínimo», que es un valor que el dueño elige a
         // propósito. `minutosO` ya distingue el cero de «no vino».
+        // El punto va explícito, no por el `...f`: la ruta solo mira los
+        // campos de su lista y las dos coordenadas viajan juntas o ninguna.
+        latitude: f?.latitude ?? null,
+        longitude: f?.longitude ?? null,
         min_order_amount: minutosO(f?.min_order_amount, 0),
         max_orders_per_hour: minutosO(f?.max_orders_per_hour, 30),
         payment_window_minutes: minutosO(f?.payment_window_minutes, 120),
@@ -279,6 +361,41 @@ export function BusinessForm() {
         <div><Label htmlFor="business-slogan">Slogan / Lema</Label><Input id="business-slogan" value={f.slogan ?? ''} onChange={set('slogan')} placeholder="Ej: La mejor pizza de la ciudad" /></div>
         <div><Label htmlFor="business-description">Descripción corta</Label><Textarea id="business-description" rows={3} value={f.description ?? ''} onChange={set('description')} placeholder="Una o dos líneas sobre tu negocio." /></div>
         <div><Label htmlFor="business-payment-methods">Métodos de pago</Label><Input id="business-payment-methods" value={f.payment_methods ?? ''} onChange={set('payment_methods')} placeholder="Ej: transferencia, efectivo, tarjeta" /></div>
+
+        {/* ── Dónde está el local ──
+            `address` es lo que se LEE; el punto es lo que se NAVEGA. En
+            Ecuador media ciudad se ubica con «frente a Portocentro», que
+            ningún geocoder resuelve — por eso hacen falta los dos.
+
+            Sirve para dos cosas que hoy no se pueden hacer: decirle a quien
+            retira a dónde ir, y darle a un repartidor su punto de recogida. */}
+        <div className="border-t pt-4 mt-1 space-y-3">
+          <p className="text-[13px] font-semibold">Dónde está tu local</p>
+
+          <div>
+            <Label htmlFor="business-address">Dirección</Label>
+            <Input
+              id="business-address"
+              value={f.address ?? ''}
+              onChange={set('address')}
+              maxLength={300}
+              placeholder="Ej: Av. del Ejército frente a Portocentro"
+            />
+            <p className="text-[12px] text-muted-foreground mt-1">
+              Como se la dirías a alguien por teléfono.
+            </p>
+          </div>
+
+          <UbicacionDelLocal
+            latitude={f.latitude ?? null}
+            longitude={f.longitude ?? null}
+            onCambio={(punto) => setDraft({
+              ...f,
+              latitude: punto?.latitude ?? null,
+              longitude: punto?.longitude ?? null,
+            })}
+          />
+        </div>
 
         {/* ── Tu tienda (mini app) ── */}
         <div className="border-t pt-4 mt-1 space-y-3">

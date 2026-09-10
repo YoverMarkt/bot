@@ -58,6 +58,9 @@ export interface BusinessRecord {
   max_orders_per_hour?: number | string | null
   payment_window_minutes?: number | string | null
   owner_phone?: string | null
+  /** El punto del local en el mapa. Las dos o ninguna (`businesses_ubicacion_check`). */
+  latitude?: number | string | null
+  longitude?: number | string | null
   notes?: string | null
   plan?: string | null
   // Nota: la columna de vencimiento del plan existe en la base pero el
