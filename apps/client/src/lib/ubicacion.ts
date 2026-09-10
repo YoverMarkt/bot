@@ -104,3 +104,26 @@ export function leerPunto(texto: string): LecturaDelPunto {
 /** El enlace para VER el punto guardado. Sin API key: es una URL normal. */
 export const verEnElMapa = (punto: Punto): string =>
   `https://www.google.com/maps?q=${punto.latitude},${punto.longitude}`
+
+/**
+ * La RUTA de un reparto: del local a la puerta del cliente.
+ *
+ * Vive aquí y en `server/src/lib/ubicacion.ts` porque los dos lados la
+ * necesitan —el panel para pintarla, el servidor para mandarla— y son cuatro
+ * líneas de armar una URL. Si algún día divergen, el panel enseñaría un
+ * trayecto distinto del que se manda por WhatsApp.
+ *
+ * ⚠️ Sin API key ni coste: abre la app de mapas del teléfono con el trayecto
+ * trazado. Lo que se paga es dibujar el mapa aquí dentro.
+ */
+export const rutaDeReparto = (
+  origen: { latitude?: number | null; longitude?: number | null } | null | undefined,
+  destino: { latitude?: number | null; longitude?: number | null } | null | undefined,
+): string | null => {
+  const completo = (p?: { latitude?: number | null; longitude?: number | null } | null) =>
+    p?.latitude != null && p?.longitude != null
+  if (!completo(origen) || !completo(destino)) return null
+  return 'https://www.google.com/maps/dir/?api=1'
+    + `&origin=${origen!.latitude},${origen!.longitude}`
+    + `&destination=${destino!.latitude},${destino!.longitude}`
+}

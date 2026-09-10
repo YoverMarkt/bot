@@ -178,3 +178,42 @@ describe('el aviso de «listo para retirar» ya dice DÓNDE', () => {
     expect(textoEnviado).toContain('Av. del Ejército')
   })
 })
+
+describe('la ruta del reparto: del local a la puerta', () => {
+  const { rutaDeReparto } = require('../dist/lib/ubicacion')
+  const LOCAL = { latitude: -1.0546, longitude: -80.4547 }
+  const CLIENTE = { latitude: -1.0661434, longitude: -80.467012 }
+
+  // ⚠️ Quien lleva el pedido sale DEL LOCAL. El pin del cliente suelto —lo
+  // único que había hasta hoy— le dice a dónde va, no por dónde: el trayecto
+  // completo es el dato que necesita, y es el que se le pasa al motorizado.
+  it('traza el trayecto con los dos extremos', () => {
+    expect(rutaDeReparto(LOCAL, CLIENTE)).toBe(
+      'https://www.google.com/maps/dir/?api=1'
+      + '&origin=-1.0546,-80.4547'
+      + '&destination=-1.0661434,-80.467012',
+    )
+  })
+
+  it('sin API key ni coste', () => {
+    expect(rutaDeReparto(LOCAL, CLIENTE)).not.toMatch(/key=|apiKey/i)
+  })
+
+  // Una ruta con un solo punto no es media ruta: es un destino sin origen, que
+  // es exactamente lo que ya se tenía.
+  it('sin uno de los dos extremos NO inventa una ruta', () => {
+    expect(rutaDeReparto(LOCAL, {})).toBeNull()
+    expect(rutaDeReparto({}, CLIENTE)).toBeNull()
+    expect(rutaDeReparto({ latitude: -1.05 }, CLIENTE)).toBeNull()
+    expect(rutaDeReparto(LOCAL, { longitude: -80.46 })).toBeNull()
+  })
+
+  it('el punto de RECOGIDA y el de ENTREGA salen de sitios distintos', () => {
+    // El de recogida vive en `businesses`; el de entrega lo CONGELA el pedido
+    // en `delivery_*` al crearse. Es lo que permite que la ruta siga siendo
+    // correcta aunque el cliente cambie de dirección después.
+    const url = rutaDeReparto(LOCAL, CLIENTE)
+    expect(url).toContain('origin=-1.0546')
+    expect(url).toContain('destination=-1.0661434')
+  })
+})
