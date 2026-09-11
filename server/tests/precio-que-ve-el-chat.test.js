@@ -105,4 +105,90 @@ describe('el margen de la plataforma se pinta, no solo se cobra', () => {
     expect(conPrecio).toContain('3.85')
     expect(conPrecio).not.toContain('3.50')
   })
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // `price_sale: null` — la forma REAL de la fila, no la del fixture
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // ⚠️ Fallo encontrado el 2026-09-11 auditando la app como cliente, con el
+  // simulador contra producción. Desde el #330 —la PR que arregló el $16 vs
+  // $17.60— el chat decía «Precio: lo confirma nuestro equipo» en **todos** los
+  // productos y escondía el botón de añadir. Cuatro días sin poder pedir por el
+  // menú, con el CI en verde.
+  //
+  // La causa es una línea: `numeroONulo` usaba `Number(valor)`, y **`Number(null)`
+  // es `0`, no `NaN`**. Un producto sin «precio oferta» salía con `price_sale: 0`,
+  // y `priceCentsOf` hace `price_sale ?? price` — `??` solo cae al segundo con
+  // `null`/`undefined`, así que el 0 le ganaba al precio de verdad.
+  //
+  // ⚠️ **Por qué la prueba de arriba no lo cazó, que es la lección**: su
+  // producto se declara SIN la clave `price_sale`, así que vale `undefined` y
+  // `Number(undefined)` sí es `NaN`. La base no manda la clave ausente: la
+  // manda explícitamente en `null`. La prueba acertaba en la lógica y fallaba
+  // en la FORMA DEL DATO — el fixture no se parecía a la fila real.
+  //
+  // Por eso esta prueba fija las dos cosas a la vez: el precio pintado y el
+  // botón que deja pedirlo.
+  // Las DOS formas de «no hay oferta» que puede tener la fila: `null` —lo que
+  // guarda el panel— y `0`, que puede llegar de un alta por API o de una
+  // importación. Las dos tienen que dejar ganar al precio real.
+  it.each([
+    ['null', null],
+    ['cero', 0],
+  ])('un producto con precio oferta %s enseña su precio y SE PUEDE pedir', async (_nombre, oferta) => {
+    const enviados = []
+    const negocio = {
+      id: 'b1', name: 'La Abuelita', type: 'almuerzos',
+      takes_orders: true, storefront_enabled: true, active: true, slug: 'la-abuelita',
+    }
+    let guardado = null
+    const database = {
+      resolveMarketplaceCustomer: async () => ({ id: 'c1', name: null }),
+      getConversation: async () => ({
+        current_state: 'pidiendo', selected_business_id: 'b1',
+        shopping_locked: true, flow_state: guardado, version: 1,
+      }),
+      advanceConversation: async (_id, patch) => {
+        if (patch.flowState) guardado = patch.flowState
+        return { conflicto: false }
+      },
+      getBusinessById: async () => negocio,
+      // ⚠️ `price_sale: null` EXPLÍCITO. Así llega de Supabase, y es la única
+      // diferencia entre esta prueba y la de arriba.
+      getProducts: async () => ([
+        { id: 'p1', name: 'Cola personal', price: 1, price_sale: oferta, stock: 'disponible', active: true },
+      ]),
+      getPolicies: async () => null,
+      getMarketplaceCategories: async () => ([{ code: 'almuerzos', label: 'Almuerzos', emoji: '🍱' }]),
+      getBusinessPricingRule: async () => (
+        { strategy: 'percentage', percentage: 10, mode: 'on_top', version: 1 }
+      ),
+    }
+    const escribir = texto => handleMarketplaceMessage(
+      { from: '593900000001', text: texto, inboundId: null },
+      {
+        database,
+        send: (reply, options) => { enviados.push({ reply, options }) },
+        sendLink: async () => true,
+        issueLink: async () => null,
+        tipoPideEnChat: async () => true,
+        avanzarMenu: advanceMenuFlowConEstado,
+      },
+    )
+    await escribir('hola')
+    await escribir('🛒 Hacer un pedido')
+    await escribir('Cola personal')
+
+    const todo = enviados.map(e => `${e.reply} || ${JSON.stringify(e.options)}`).join('\n')
+    // 1. El precio se PINTA, con su margen: $1.00 + 10 % = $1.10.
+    expect(todo, todo).toContain('1.10')
+    // 2. Y no se rinde diciendo que no lo sabe.
+    expect(todo).not.toContain('lo confirma nuestro equipo')
+    // 3. Lo que de verdad importaba: se PUEDE pedir. Con el precio resuelto,
+    //    elegir el producto lleva directo a la cantidad; con el fallo se
+    //    quedaba en la ficha, con «Volver» y «Menú» como únicas salidas
+    //    (`bot-menu-flow.ts` desvía a la ficha cuando `priceCentsOf` es null).
+    //    Llegar a esta pregunta es la prueba de que el camino está abierto.
+    expect(todo, todo).toContain('¿Cuántas unidades')
+  })
 })
