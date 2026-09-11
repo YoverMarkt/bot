@@ -17,7 +17,20 @@ La base de datos es Supabase (Postgres) con pgvector. **No hay framework de migr
 ## Regla #1: migraciones como archivos NUEVOS
 - **Nunca edites un .sql ya aplicado.** Crea uno nuevo (ej: `migration-<fecha>-<tema>.sql`) con solo el cambio.
 - Usa siempre formas idempotentes: `create table if not exists`, `alter table ... add column if not exists`, `create index if not exists`.
-- Entrega el SQL al usuario para que lo corra en Supabase → SQL Editor (no se aplica solo).
+- **La migración se APLICA, no se entrega.** El proyecto tiene runner propio y
+  credenciales de producción en `server/.env`; pasarle el SQL al dueño para que
+  lo pegue en el SQL Editor le hace de cuello de botella para nada:
+  - `npm run migrate:status -w @botpanel/server` — qué falta.
+  - `npm run migrate -w @botpanel/server` — aplica cada `.sql` pendiente en **su
+    propia transacción** (`begin` → SQL → registro en `schema_migrations` →
+    `commit`, con `rollback` si falla).
+  - `npm run verify:drift -w @botpanel/server` — lo ÚNICO que comprueba contra
+    la base real. `migrate:status` solo lee el registro, y el registro miente
+    cuando alguien aplicó algo a mano.
+- ⚠️ **Crear la columna en Postgres no basta.** El acceso va por supabase-js →
+  **PostgREST**, que cachea el esquema: si su caché quedó vieja, el guardado
+  falla con `PGRST204` aunque la columna exista. Se comprueba sin mutar nada,
+  con un `select` de la columna nueva contra `/rest/v1/<tabla>`.
 
 ## Checklist — TABLA NUEVA
 ```sql
