@@ -883,6 +883,13 @@ create table if not exists business_schedule (
   day_of_week   int not null,           -- 0=Domingo … 6=Sábado
   open_time     time not null default '09:00',
   close_time    time not null default '18:00',
+  -- «Abierto 24 horas» ese día. Manda sobre open_time/close_time, que se
+  -- conservan para poder volver al horario anterior sin reescribirlo.
+  -- NO sustituye a is_active: un día inactivo está cerrado aunque lleve la
+  -- marca. Nació porque decir «24 horas» exigía escribir «00:00 – 23:59» y
+  -- confiar en un truco que nadie deduce — y cuya lectura natural,
+  -- «00:00 – 00:00», dejaba el local cerrado el día entero en silencio.
+  is_24h        boolean not null default false,
   slot_duration int not null default 60,
   is_active     boolean default true,
   unique (business_id, day_of_week)

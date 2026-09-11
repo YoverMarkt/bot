@@ -21,6 +21,15 @@ type ScheduleDay = {
   day_of_week: number
   open_time: string
   close_time: string
+  /**
+   * Ese día se atiende ENTERO, sin hora de cierre.
+   *
+   * ⚠️ Existe para que no haya que trucarlo. Antes, «24 horas» se escribía
+   * poniendo «00:00 – 23:59» —nadie lo deduce— y lo que sale natural,
+   * «00:00 – 00:00», es un tramo de duración cero: el local quedaba CERRADO
+   * el día entero y el dueño se enteraba por un cliente que no pudo pedir.
+   */
+  is_24h?: boolean
   slot_duration?: number
   is_active: boolean
 }
@@ -40,7 +49,7 @@ export default function Schedule() {
     saved.find(s => s.day_of_week === d) ??
     // `slot_duration` viaja aunque el panel ya no lo pinte: la columna es
     // NOT NULL y un día construido aquí sin ella haría fallar el upsert.
-    { day_of_week: d, open_time: '09:00', close_time: '18:00', slot_duration: 60, is_active: false }
+    { day_of_week: d, open_time: '09:00', close_time: '18:00', slot_duration: 60, is_24h: false, is_active: false }
   )
 
   const update = (dow: number, patch: Partial<ScheduleDay>) =>
@@ -76,16 +85,27 @@ export default function Schedule() {
       </div>
       <Card className="p-5 max-w-xl gap-0">
         {days.map(d => (
-          <div key={d.day_of_week} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
+          <div key={d.day_of_week} className="flex flex-wrap items-center gap-3 py-2 border-b border-border/40 last:border-0">
             <Label htmlFor={`schedule-day-${d.day_of_week}-active`} className="mb-0 flex items-center gap-2 w-32 shrink-0 text-sm font-medium text-foreground cursor-pointer">
               <Checkbox id={`schedule-day-${d.day_of_week}-active`} checked={d.is_active} onCheckedChange={v => update(d.day_of_week, { is_active: v === true })} />
               {DAY_NAMES[d.day_of_week]}
             </Label>
             {d.is_active ? (
               <>
-                <Input id={`schedule-day-${d.day_of_week}-open`} aria-label={`Hora de apertura del ${DAY_NAMES[d.day_of_week]}`} type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
-                <span className="text-muted-foreground/80 text-sm">a</span>
-                <Input id={`schedule-day-${d.day_of_week}-close`} aria-label={`Hora de cierre del ${DAY_NAMES[d.day_of_week]}`} type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
+                {/* Con «24 horas» los relojes desaparecen en vez de quedarse
+                    en gris: una hora de cierre que no cierra nada es una
+                    pregunta a la que el dueño intentaría responder. */}
+                {!d.is_24h && (
+                  <>
+                    <Input id={`schedule-day-${d.day_of_week}-open`} aria-label={`Hora de apertura del ${DAY_NAMES[d.day_of_week]}`} type="time" className={time} value={(d.open_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { open_time: e.target.value })} />
+                    <span className="text-muted-foreground/80 text-sm">a</span>
+                    <Input id={`schedule-day-${d.day_of_week}-close`} aria-label={`Hora de cierre del ${DAY_NAMES[d.day_of_week]}`} type="time" className={time} value={(d.close_time || '').slice(0, 5)} onChange={e => update(d.day_of_week, { close_time: e.target.value })} />
+                  </>
+                )}
+                <Label htmlFor={`schedule-day-${d.day_of_week}-24h`} className="mb-0 flex items-center gap-2 text-sm font-normal text-muted-foreground cursor-pointer">
+                  <Checkbox id={`schedule-day-${d.day_of_week}-24h`} checked={d.is_24h === true} onCheckedChange={v => update(d.day_of_week, { is_24h: v === true })} />
+                  Abierto 24 horas
+                </Label>
               </>
             ) : (
               <span className="text-sm text-muted-foreground/80 inline-flex items-center gap-1"><Ban className="w-3.5 h-3.5" /> Cerrado</span>

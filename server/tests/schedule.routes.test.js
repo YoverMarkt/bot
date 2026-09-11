@@ -120,6 +120,71 @@ describe('rutas del horario de atención', () => {
     expect(upsertSchedule).not.toHaveBeenCalled()
   })
 
+  // ── Abierto 24 horas ────────────────────────────────────────────────────
+  // Antes de esto, «24 horas» se escribía «00:00 – 23:59» y su lectura natural
+  // —«00:00 – 00:00»— se guardaba sin decir nada, dejando el local cerrado el
+  // día entero. La ruta es la última puerta antes de la base: aquí se corta.
+
+  it('rechaza un día activo que abre y cierra a la misma hora', async () => {
+    const upsertSchedule = vi.spyOn(db, 'upsertSchedule')
+
+    for (const horas of [
+      { open_time: '00:00', close_time: '00:00' },   // «de medianoche a medianoche»
+      { open_time: '09:00', close_time: '09:00' },
+      { open_time: '09:00:00', close_time: '09:00' }, // la base devuelve HH:MM:SS
+    ]) {
+      const respuesta = await dispatch('put', '/api/client/schedule', {
+        auth: authorization(),
+        body: { days: [{ day_of_week: 1, ...horas, is_active: true }] },
+      })
+      expect(respuesta.status, JSON.stringify(horas)).toBe(400)
+      // ⚠️ El mensaje tiene que decir DÓNDE está la salida. Un «horario no
+      // válido» a secas deja al dueño probando horas hasta que se rinde.
+      expect(respuesta.body.error).toContain('24 horas')
+    }
+    expect(upsertSchedule).not.toHaveBeenCalled()
+  })
+
+  it('deja guardar esas mismas horas cuando el día es de 24 horas', async () => {
+    const upsertSchedule = vi.spyOn(db, 'upsertSchedule').mockResolvedValue({ error: null })
+
+    // Es el caso REAL: la marca puesta y las horas como estaban. Si la guarda
+    // mirara solo las horas, el dueño no podría guardar lo único correcto.
+    const days = [
+      { day_of_week: 1, open_time: '00:00', close_time: '00:00', is_24h: true, is_active: true },
+      { day_of_week: 2, open_time: '09:00', close_time: '17:00', is_24h: true, is_active: true },
+    ]
+    const respuesta = await dispatch('put', '/api/client/schedule', {
+      auth: authorization(),
+      body: { days },
+    })
+
+    expect(respuesta.status).toBe(200)
+    // La marca llega a la base tal cual: sin esto la casilla del panel no
+    // pintaría nada al volver a entrar.
+    expect(upsertSchedule).toHaveBeenCalledWith('business-a', days)
+  })
+
+  it('no se mete con un día cerrado ni acepta una marca que no sea booleana', async () => {
+    const upsertSchedule = vi.spyOn(db, 'upsertSchedule').mockResolvedValue({ error: null })
+
+    // Un día apagado está cerrado: sus horas dan igual y bloquear el guardado
+    // por ellas sería impedir guardar el resto de la semana.
+    const cerrado = await dispatch('put', '/api/client/schedule', {
+      auth: authorization(),
+      body: { days: [{ day_of_week: 1, open_time: '00:00', close_time: '00:00', is_active: false }] },
+    })
+    expect(cerrado.status).toBe(200)
+
+    upsertSchedule.mockClear()
+    const basura = await dispatch('put', '/api/client/schedule', {
+      auth: authorization(),
+      body: { days: [{ day_of_week: 1, open_time: '09:00', close_time: '17:00', is_24h: 'sí', is_active: true }] },
+    })
+    expect(basura.status).toBe(400)
+    expect(upsertSchedule).not.toHaveBeenCalled()
+  })
+
   it('no confirma un horario que la base rechazó ni filtra su error', async () => {
     vi.spyOn(db, 'upsertSchedule').mockResolvedValue({
       error: { message: 'duplicate key value violates unique constraint "…"' },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cuandoAbre, hora12 } from '../src/lib/format'
+import { cuandoAbre, hora12, rangoDeHoy } from '../src/lib/format'
 
 describe('hora12', () => {
   // ⚠️ Las dos que rompen cualquier versión ingenua, y son justo las que este
@@ -66,5 +66,25 @@ describe('cuandoAbre', () => {
     expect(cuandoAbre(null)).toBe(null)
     expect(cuandoAbre(undefined)).toBe(null)
     expect(cuandoAbre({ open: '', inDays: 0, dayName: 'Lunes' })).toBe(null)
+  })
+})
+
+describe('rangoDeHoy', () => {
+  it('enseña el rango del día en 12 horas', () => {
+    expect(rangoDeHoy({ open: '08:00', close: '22:00' })).toBe('8:00 AM – 10:00 PM')
+  })
+
+  it('con 24 horas lo DICE en vez de pintar un rango', () => {
+    // ⚠️ El caso que motivó la marca. El servidor manda igual el par de horas
+    // —para que una app vieja siga pintando algo— así que si esto mirara las
+    // horas en vez de `allDay`, el cliente leería «12:00 AM – 11:59 PM» y
+    // tendría que deducir que eso significa que nunca cierran.
+    expect(rangoDeHoy({ open: '00:00', close: '23:59', allDay: true })).toBe('24 horas')
+  })
+
+  it('sin horario no inventa nada', () => {
+    expect(rangoDeHoy(null)).toBe(null)
+    expect(rangoDeHoy(undefined)).toBe(null)
+    expect(rangoDeHoy({ open: '', close: '22:00' })).toBe(null)
   })
 })

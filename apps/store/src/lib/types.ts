@@ -177,6 +177,16 @@ export interface Product {
 export interface TodaysHours {
   open: string
   close: string
+  /**
+   * Hoy se atiende ENTERO: la píldora lo dice con palabras.
+   *
+   * ⚠️ Viene resuelto del servidor en vez de deducirse del par de horas. Un
+   * «12:00 AM – 11:59 PM» obliga al cliente a interpretar que eso es todo el
+   * día, y era justo el truco que se retiró del panel. `open`/`close` llegan
+   * igual para que una app ya abierta, que no conoce este campo, siga
+   * pintando algo en vez de un hueco.
+   */
+  allDay?: boolean
 }
 
 export interface ProximaApertura {
