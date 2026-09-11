@@ -292,8 +292,30 @@ export interface CheckoutPendiente {
 }
 
 /** Un precio del catálogo como número, o `null` si no lo es. */
+/**
+ * El número de una columna de dinero, o `null` si no hay valor.
+ *
+ * ⚠️ **`Number(null)` es `0`, no `NaN`** — y por ahí se coló el fallo más caro
+ * que ha tenido el menú del chat (#330, 2026-09-07 → 2026-09-11).
+ *
+ * Casi ningún producto tiene «precio oferta», así que `price_sale` llega nulo
+ * y salía de aquí como **0**. Luego `priceCentsOf` hace `price_sale ?? price`,
+ * y `??` solo cae al segundo con `null`/`undefined`: el 0 GANABA al precio de
+ * verdad. Resultado, en TODOS los productos del catálogo:
+ *
+ *   · «Precio: lo confirma nuestro equipo» en vez de «$1.00»
+ *   · y sin botón de añadir, porque `canOrder` exige `cents !== null`.
+ *
+ * Es decir: **nadie podía pedir nada por el chat durante cuatro días**, y no
+ * saltó ninguna prueba ni ninguna alarma. La mini app siguió vendiendo, que es
+ * justo por lo que no se notó.
+ *
+ * ⚠️ Se usa `parseFloat(String(…))` a propósito, que es **la misma forma que
+ * `money` en `storefront.ts`**: las dos superficies tienen que convertir el
+ * dinero igual o vuelven a decir cifras distintas por el mismo plato.
+ */
 const numeroONulo = (valor: unknown): number | null => {
-  const n = Number(valor)
+  const n = Number.parseFloat(String(valor ?? ''))
   return Number.isFinite(n) ? n : null
 }
 

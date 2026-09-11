@@ -306,8 +306,23 @@ const matchOption = (message: string, options: MenuOption[]): string | null => {
 
 const money = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 
+/**
+ * El precio que se le cobra al cliente, en centavos, o `null` si no hay.
+ *
+ * ⚠️ El «precio oferta» solo gana **si es mayor que cero**, y no con un `??`.
+ * Es la MISMA regla que aplica el panel del dueño (`Catalog.tsx`: guarda
+ * `null` cuando el campo se deja vacío y pinta `price_sale > 0 ? oferta :
+ * precio`), y aquí es además una defensa: con `price_sale ?? price`, un cero
+ * —venga de la base, de un alta por API o de una importación— le ganaba al
+ * precio real y el producto salía SIN precio y sin poder pedirse.
+ *
+ * Eso ya pasó del 2026-09-07 al 09-11 por una conversión que devolvía 0 en vez
+ * de null (ver `numeroONulo` en `marketplace-entry.ts`). Aquel agujero está
+ * tapado en su origen; esto impide que se vuelva a entrar por otra puerta.
+ */
 const priceCentsOf = (product: FlowProduct): number | null => {
-  const raw = product.price_sale ?? product.price
+  const oferta = Number(product.price_sale)
+  const raw = Number.isFinite(oferta) && oferta > 0 ? oferta : product.price
   const value = Number(raw)
   return Number.isFinite(value) && value > 0 ? Math.round(value * 100) : null
 }
