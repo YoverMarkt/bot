@@ -131,6 +131,8 @@ export interface ScheduleRecord extends ScheduleData {
   day_of_week: number
   open_time: string
   close_time: string
+  /** Ese día se atiende entero; manda sobre open_time/close_time. */
+  is_24h?: boolean | null
   slot_duration?: number | null
   is_active?: boolean | null
 }

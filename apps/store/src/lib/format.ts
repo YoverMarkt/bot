@@ -77,3 +77,21 @@ export const cuandoAbre = (
       : `el ${String(proxima.dayName || '').toLowerCase()}`
   return `Abre ${cuando} ${hora12(proxima.open)}`
 }
+
+/**
+ * El horario de hoy para la píldora: «8:00 AM – 10:00 PM», o «24 horas».
+ *
+ * ⚠️ Lo de «24 horas» viene RESUELTO del servidor (`allDay`) y no se deduce
+ * del par de horas. Hasta el 2026-09-10, un local que no cerraba se configuraba
+ * escribiendo «00:00 – 23:59», y pintar eso aquí —«12:00 AM – 11:59 PM»— le
+ * enseñaba al cliente un truco del panel en vez de decirle lo que pasa: que
+ * puede entrar cuando quiera. La marca ya es una casilla, y esto la respeta.
+ */
+export const rangoDeHoy = (
+  horario: { open: string; close: string; allDay?: boolean } | null | undefined,
+): string | null => {
+  if (!horario?.open) return null
+  return horario.allDay
+    ? '24 horas'
+    : `${hora12(horario.open)} – ${hora12(horario.close)}`
+}

@@ -2,6 +2,16 @@ export interface ScheduleRecord {
   day_of_week: number
   open_time: string
   close_time: string
+  /**
+   * Ese día se atiende ENTERO. Manda sobre `open_time`/`close_time`, que se
+   * conservan en la fila para poder volver al horario anterior sin escribirlo
+   * de nuevo.
+   *
+   * ⚠️ No sustituye a `is_active`, que sigue siendo quien dice «este día no se
+   * abre»: un día inactivo está cerrado aunque lleve la marca, porque
+   * `activeDays` lo filtra antes de mirar nada más.
+   */
+  is_24h?: boolean | null
   is_active?: boolean | null
 }
 
@@ -21,7 +31,11 @@ function scheduleToText(schedule: ScheduleRecord[] | null | undefined): string |
     ((left.day_of_week + 6) % 7) - ((right.day_of_week + 6) % 7)
   ))
   return ordered.map(day => (
-    `${DAY_NAMES[day.day_of_week]} de ${day.open_time.slice(0, 5)} a ${day.close_time.slice(0, 5)}`
+    // «24 horas» se dice con palabras. «de 00:00 a 23:59» obliga a deducir que
+    // eso es el día entero, que es justo el truco que se retiró.
+    day.is_24h
+      ? `${DAY_NAMES[day.day_of_week]} las 24 horas`
+      : `${DAY_NAMES[day.day_of_week]} de ${day.open_time.slice(0, 5)} a ${day.close_time.slice(0, 5)}`
   )).join(', ')
 }
 
@@ -35,9 +49,12 @@ function buildScheduleMessage(
   const order = [1, 2, 3, 4, 5, 6, 0]
   const lines = order.map(dayOfWeek => {
     const config = active.find(day => day.day_of_week === dayOfWeek)
-    return config
-      ? `🕐 *${DAY_NAMES[dayOfWeek]}:* ${formatTime(config.open_time)} – ${formatTime(config.close_time)}`
-      : `🚫 *${DAY_NAMES[dayOfWeek]}:* cerrado`
+    if (!config) return `🚫 *${DAY_NAMES[dayOfWeek]}:* cerrado`
+    // Un negocio de 24 h no llega nunca a este mensaje, pero uno que abre toda
+    // la noche el VIERNES sí lo manda un martes — y esa línea tiene que decir
+    // «24 horas», no un rango que el cliente tenga que interpretar.
+    if (config.is_24h) return `🕐 *${DAY_NAMES[dayOfWeek]}:* 24 horas`
+    return `🕐 *${DAY_NAMES[dayOfWeek]}:* ${formatTime(config.open_time)} – ${formatTime(config.close_time)}`
   })
   return `¡Gracias por escribirnos! 🙏 En este momento estamos *fuera de nuestro horario de atención* 🌙\n\n📅 *Nuestros horarios de atención:*\n${lines.join('\n')}\n\nDéjenos su mensaje y con gusto le responderemos apenas abramos 😊✨`
 }
@@ -73,6 +90,31 @@ const cierreEfectivo = (hora: string): number => {
 }
 
 /**
+ * La apertura y el cierre de un tramo, en minutos del día.
+ *
+ * ⚠️ Aquí —y SOLO aquí— el «Abierto 24 horas» del panel se convierte en
+ * horario. Las cuatro cosas que se deciden sobre un horario (si está abierto,
+ * qué turno manda, qué rango se enseña y cuándo vuelve a abrir) pasan por
+ * estas dos funciones, así que la marca llega a las cuatro a la vez. Parchear
+ * cada una por su cuenta es exactamente cómo se acaba con una que dice
+ * «Abierto» y otra que anuncia una apertura — el fallo del 2026-09-02.
+ *
+ * Con la marca puesta el tramo es el día entero, de 00:00 a 24:00.
+ *
+ * ⚠️ Antes de esto, «24 horas» se escribía `00:00 – 23:59` y funcionaba por el
+ * caso especial de `cierreEfectivo`. Era un truco que nadie deducía, y su
+ * lectura natural —`00:00 – 00:00`— es un tramo de duración CERO que dejaba el
+ * local cerrado el día entero en silencio.
+ */
+const aperturaDe = (config: ScheduleRecord): number => (
+  config.is_24h ? 0 : minutosDe(config.open_time)
+)
+
+const cierreDe = (config: ScheduleRecord): number => (
+  config.is_24h ? MINUTOS_DEL_DIA : cierreEfectivo(config.close_time)
+)
+
+/**
  * ¿Está el negocio abierto a esta hora, según la fila de ese día?
  *
  * ⚠️ El horario puede CRUZAR LA MEDIANOCHE. «09:00 a 01:00» significa que la
@@ -85,8 +127,8 @@ const cierreEfectivo = (hora: string): number => {
  * estar cerrada y no dejaba pedir a nadie.
  */
 const dentroDelTramo = (config: ScheduleRecord, minutos: number): boolean => {
-  const abre = minutosDe(config.open_time)
-  const cierra = cierreEfectivo(config.close_time)
+  const abre = aperturaDe(config)
+  const cierra = cierreDe(config)
   // Cierre ANTERIOR a la apertura = el tramo salta al día siguiente.
   //
   // Estrictamente menor, no «menor o igual»: «00:00 a 00:00» es un tramo de
@@ -128,9 +170,9 @@ const turnoVigente = (
 
   // El de hoy, solo si ya llegó su hora de apertura.
   const hoy = active.find(day => day.day_of_week === diaDeHoy)
-  if (hoy && minutos >= minutosDe(hoy.open_time) && dentroDelTramo(hoy, minutos)) {
-    const abre = minutosDe(hoy.open_time)
-    const cierra = cierreEfectivo(hoy.close_time)
+  if (hoy && minutos >= aperturaDe(hoy) && dentroDelTramo(hoy, minutos)) {
+    const abre = aperturaDe(hoy)
+    const cierra = cierreDe(hoy)
     // Si cruza, cierra MAÑANA: lo que falta pasa por la medianoche.
     vivos.push({
       config: hoy,
@@ -140,10 +182,13 @@ const turnoVigente = (
 
   // Y la cola del de ayer, si de verdad cruzaba la medianoche.
   const vispera = active.find(day => day.day_of_week === (diaDeHoy + 6) % 7)
+  // ⚠️ Un día de 24 h NO deja cola: su cierre (24:00) no es anterior a su
+  // apertura (00:00), así que no cruza. Es lo correcto —el lunes entero no se
+  // mete en el martes, que tiene su propia fila— y sale solo de normalizar.
   if (vispera
-    && cierreEfectivo(vispera.close_time) < minutosDe(vispera.open_time)
-    && minutos < cierreEfectivo(vispera.close_time)) {
-    vivos.push({ config: vispera, faltan: cierreEfectivo(vispera.close_time) - minutos })
+    && cierreDe(vispera) < aperturaDe(vispera)
+    && minutos < cierreDe(vispera)) {
+    vivos.push({ config: vispera, faltan: cierreDe(vispera) - minutos })
   }
 
   if (!vivos.length) return null
@@ -201,7 +246,7 @@ function isOutsideHours(
 function todaysHours(
   schedule: ScheduleRecord[] | null | undefined,
   now = new Date(),
-): { open: string; close: string } | null {
+): { open: string; close: string; allDay?: boolean } | null {
   const active = activeDays(schedule)
   if (!active.length) return null
   const { minutos, dia } = minutosLocales(now)
@@ -210,9 +255,17 @@ function todaysHours(
   // Sin turno en curso se enseña el de hoy, que es lo que permite decir a qué
   // hora abre. Si hoy no se abre, no hay nada honesto que enseñar.
   const mostrar = enCurso ?? active.find(day => day.day_of_week === dia)
-  return mostrar
-    ? { open: mostrar.open_time.slice(0, 5), close: mostrar.close_time.slice(0, 5) }
-    : null
+  if (!mostrar) return null
+  // ⚠️ Con 24 horas la portada lo dice con palabras, y por eso se le manda la
+  // marca en vez de dejarle deducirla del par de horas: «12:00 AM – 11:59 PM»
+  // es el truco viejo escrito en la cara del cliente.
+  //
+  // El par se manda IGUAL, y con el 23:59 de siempre, por una sola razón: una
+  // app ya abierta en el teléfono de alguien no conoce `allDay` y seguiría
+  // pintando el rango. Con esto enseña lo mismo que enseñaba ayer en vez de un
+  // hueco; la app nueva ni lo mira.
+  if (mostrar.is_24h) return { open: '00:00', close: '23:59', allDay: true }
+  return { open: mostrar.open_time.slice(0, 5), close: mostrar.close_time.slice(0, 5) }
 }
 
 
@@ -256,9 +309,9 @@ function proximaApertura(
     // 23:00 y el tramo de hoy abría a las 08:00, ese tren se fue: lo que viene
     // es el de mañana. Sin esta comprobación se anunciaría una apertura en
     // pasado, que es peor que no decir nada.
-    if (salto === 0 && minutos >= minutosDe(tramo.open_time)) continue
+    if (salto === 0 && minutos >= aperturaDe(tramo)) continue
     return {
-      open: tramo.open_time.slice(0, 5),
+      open: tramo.is_24h ? '00:00' : tramo.open_time.slice(0, 5),
       inDays: salto,
       dayName: DAY_NAMES[cual],
     }

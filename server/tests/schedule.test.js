@@ -176,6 +176,96 @@ describe('servicio de horarios del bot', () => {
   })
 
   // ═══════════════════════════════════════════════════════════════════════
+  // ABIERTO 24 HORAS
+  //
+  // ⚠️ Antes esto se escribía «00:00 – 23:59» y funcionaba por el caso
+  // especial de `cierreEfectivo`. Era un truco que nadie deducía, y su lectura
+  // natural —«00:00 – 00:00»— es un tramo de duración CERO que dejaba el local
+  // cerrado el día entero en silencio. Ahora es una marca de la fila, y estas
+  // pruebas exigen que llegue a las CUATRO cosas que se deciden sobre un
+  // horario: si está abierto, qué se enseña, qué dice el bot y cuándo abre.
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('un día de 24 horas', () => {
+    const lunes24 = {
+      day_of_week: 1,
+      // ⚠️ Las horas siguen puestas A PROPÓSITO: la marca manda sobre ellas y
+      // la fila las conserva para poder quitar el 24 h y recuperar el horario
+      // anterior. Si el motor las mirara, este día cerraría a las 17:00.
+      open_time: '09:00:00',
+      close_time: '17:00:00',
+      is_24h: true,
+      is_active: true,
+    }
+
+    it('está abierto a cualquier hora, incluidas las que caen fuera de su tramo', () => {
+      // Lunes 2026-07-13 en Ecuador (UTC−5): 05:00Z es la medianoche local.
+      expect(scheduleService.isOutsideHours([lunes24], new Date('2026-07-13T05:00:00Z'))).toBe(false)
+      expect(scheduleService.isOutsideHours([lunes24], new Date('2026-07-13T08:00:00Z'))).toBe(false)
+      expect(scheduleService.isOutsideHours([lunes24], new Date('2026-07-13T13:00:00Z'))).toBe(false)
+      // 04:59Z del martes = 23:59 del lunes. El último minuto del día, que es
+      // el que motivó todo esto: un pedido a esa hora no se puede perder.
+      expect(scheduleService.isOutsideHours([lunes24], new Date('2026-07-14T04:59:00Z'))).toBe(false)
+    })
+
+    it('NO se mete en el día siguiente: el martes cerrado sigue cerrado', () => {
+      // Un día de 24 h no «cruza la medianoche»: el martes tiene su propia
+      // fila. Sin esto, marcar el lunes dejaría al martes heredando una cola
+      // que nadie configuró.
+      expect(scheduleService.isOutsideHours([lunes24], new Date('2026-07-14T05:30:00Z'))).toBe(true)
+    })
+
+    it('la marca NO resucita un día apagado', () => {
+      // `is_active` sigue siendo quien dice «este día no se abre». Si la marca
+      // ganara, apagar un día dejaría de servir para cerrarlo.
+      expect(scheduleService.isOutsideHours(
+        [{ ...lunes24, is_active: false }], new Date('2026-07-13T13:00:00Z'),
+      )).toBe(false)   // sin NINGÚN día activo el horario no bloquea
+      expect(scheduleService.isOutsideHours(
+        [{ ...lunes24, is_active: false }, monday], new Date('2026-07-13T05:00:00Z'),
+      )).toBe(true)    // con el lunes normal vigente, a medianoche está cerrado
+    })
+
+    it('gana al turno de la víspera que sigue vivo, porque cierra más tarde', () => {
+      // ⚠️ Domingo 09:00–05:00 (cruza) y lunes de 24 h. A las 03:00 del lunes
+      // los DOS turnos están vivos, y manda el que cierra más tarde: el de 24 h
+      // llega hasta medianoche, la cola del domingo se acaba a las 05:00.
+      //
+      // El barrido de la semana NO puede cazar esto: enseñar la cola del
+      // domingo también «contiene» las 03:00, así que la invariante pasaría
+      // mientras la portada dice «09:00 – 05:00» en un local que no cierra.
+      const domingoCruza = { day_of_week: 0, open_time: '09:00:00', close_time: '05:00:00', is_active: true }
+      const lunesEntero = { day_of_week: 1, open_time: '09:00:00', close_time: '17:00:00', is_24h: true, is_active: true }
+      const aLasTres = new Date('2026-07-13T08:00:00Z')   // lunes 03:00 en Ecuador
+
+      expect(scheduleService.isOutsideHours([domingoCruza, lunesEntero], aLasTres)).toBe(false)
+      expect(scheduleService.todaysHours([domingoCruza, lunesEntero], aLasTres).allDay).toBe(true)
+    })
+
+    it('la portada lo dice con palabras, no con un rango', () => {
+      const vigente = scheduleService.todaysHours([lunes24], new Date('2026-07-13T18:00:00Z'))
+      expect(vigente.allDay).toBe(true)
+      // ⚠️ El par viaja igual, y con el 23:59 de siempre: una app ya abierta en
+      // el teléfono de alguien no conoce `allDay` y seguiría pintando el rango.
+      expect(vigente).toEqual({ open: '00:00', close: '23:59', allDay: true })
+    })
+
+    it('el texto del bot dice «24 horas» y no «de 00:00 a 23:59»', () => {
+      expect(scheduleService.scheduleToText([lunes24])).toBe('Lunes las 24 horas')
+      const mensaje = scheduleService.buildScheduleMessage({ id: 'business-a' }, [lunes24])
+      expect(mensaje).toContain('🕐 *Lunes:* 24 horas')
+      expect(mensaje).not.toContain('23:59')
+    })
+
+    it('anuncia que mañana se abre a medianoche', () => {
+      // Domingo cerrado, lunes de 24 h. El domingo por la tarde lo que hay que
+      // anunciar es la apertura del lunes, y esa es a las 00:00 — no las 09:00
+      // que siguen escritas en la fila.
+      expect(scheduleService.proximaApertura([lunes24], new Date('2026-07-12T18:00:00Z')))
+        .toEqual({ open: '00:00', inDays: 1, dayName: 'Lunes' })
+    })
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
   // LA INVARIANTE: EL CIERRE QUE SE ENSEÑA ES EL CIERRE DE VERDAD
   //
   // ⚠️ Esta prueba no comprueba un caso: recorre la SEMANA ENTERA minuto a
@@ -206,6 +296,17 @@ describe('servicio de horarios del bot', () => {
       'un solo día, sin vecinos': [
         { day_of_week: 4, open_time: '09:00:00', close_time: '01:00:00', is_active: true },
       ],
+      // ⚠️ Los dos de 24 h entran al barrido, no a una prueba aparte: la
+      // familia de fallos que esto vigila —el estado y el horario diciendo
+      // cosas distintas— no distingue configuraciones.
+      'nunca cierra (24 h los siete días)': [0, 1, 2, 3, 4, 5, 6].map(d => (
+        { day_of_week: d, open_time: '09:00:00', close_time: '17:00:00', is_24h: true, is_active: true }
+      )),
+      'la gasolinera (24 h el viernes, normal el resto)': [
+        { day_of_week: 4, open_time: '08:00:00', close_time: '22:00:00', is_active: true },
+        { day_of_week: 5, open_time: '08:00:00', close_time: '22:00:00', is_24h: true, is_active: true },
+        { day_of_week: 6, open_time: '08:00:00', close_time: '22:00:00', is_active: true },
+      ],
     }
     // Domingo 2026-08-30, 00:00 en Ecuador (UTC−5).
     const DOMINGO = Date.UTC(2026, 7, 30, 5)
@@ -226,6 +327,9 @@ describe('servicio de horarios del bot', () => {
           const v = scheduleService.todaysHours(horario, t)
           expect(v, `${nombre} @ minuto ${m}`).not.toBe(null)
           const ahora = horaLocal(t)
+          // Un día de 24 h no tiene rango que pueda contradecir al estado:
+          // está abierto a cualquier hora, que es justo lo que dice la marca.
+          if (v.allDay) continue
           const abre = minutosDe(v.open)
           const cierra = minutosDe(v.close)
           const dentro = cierra < abre
@@ -248,6 +352,13 @@ describe('servicio de horarios del bot', () => {
           // Justo cerró: lo que se enseñaba un momento antes tiene que ser el
           // turno que acaba de terminar.
           const v = scheduleService.todaysHours(horario, antes)
+          // Un día de 24 h solo puede dejar de estar abierto en la medianoche,
+          // cuando pasa el testigo a un día que no es de 24 h. Si «cerrara» a
+          // media tarde, la marca no estaría llegando al motor.
+          if (v.allDay) {
+            expect(horaLocal(ahora), `${nombre}: un día de 24 h cerró a media tarde`).toBe(0)
+            continue
+          }
           expect(minutosDe(v.close), `${nombre}: cerró en el minuto ${horaLocal(ahora)} enseñando ${v.open}–${v.close}`)
             .toBe(horaLocal(ahora))
         }

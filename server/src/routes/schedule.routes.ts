@@ -48,6 +48,27 @@ router.put('/api/client/schedule', auth.authClient, puedeVerHorarios, async (req
   if (days.length > 7 || days.some(dia => !dia || typeof dia !== 'object')) {
     return res.status(400).json({ error: 'El horario no es válido' })
   }
+  // ⚠️ Un día ACTIVO que abre y cierra a la misma hora es un tramo de duración
+  // CERO: ese día el local queda cerrado entero. Hasta hoy se guardaba sin
+  // decir nada, y `00:00 – 00:00` es justo lo que escribe quien quiere poner
+  // «de medianoche a medianoche» — el dueño creía haber abierto 24 h y sus
+  // clientes veían «Cerrado» todo el día. Se rechaza diciendo dónde está la
+  // opción de verdad, porque un error sin salida es lo que acaba en abandono.
+  const hora = (valor: unknown) => String(valor ?? '').slice(0, 5)
+  const filas = days as Record<string, unknown>[]
+  if (filas.some(dia => dia.is_24h !== undefined && typeof dia.is_24h !== 'boolean')) {
+    return res.status(400).json({ error: 'El horario no es válido' })
+  }
+  const vacio = filas.find(dia => (
+    dia.is_active === true
+    && dia.is_24h !== true
+    && hora(dia.open_time) === hora(dia.close_time)
+  ))
+  if (vacio) {
+    return res.status(400).json({
+      error: 'Un día no puede abrir y cerrar a la misma hora. Si ese día atiendes sin parar, marca «Abierto 24 horas».',
+    })
+  }
   const { error } = await db.upsertSchedule(getClientBusinessId(req), days as never)
   if (error) {
     console.error('❌ actualizar horarios:', error.message || 'Error desconocido')

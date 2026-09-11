@@ -27,7 +27,7 @@ import {
 } from '../lib/cart'
 import { Aviso, Bienvenida, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
-import { hora12, money, rangoDeEspera, cuandoAbre } from '../lib/format'
+import { money, rangoDeEspera, cuandoAbre, rangoDeHoy } from '../lib/format'
 import { foto } from '../lib/imagen'
 import { randomId } from '../lib/session'
 import ProductSheet from '../components/ProductSheet'
@@ -831,9 +831,7 @@ export default function FoodStore({
               <>
                 <span className="opacity-30">·</span>
                 <span className="font-semibold tabular-nums opacity-80">
-                  {abierto
-                    ? `${hora12(horario!.open)} – ${hora12(horario!.close)}`
-                    : cuandoAbre(apertura)}
+                  {abierto ? rangoDeHoy(horario) : cuandoAbre(apertura)}
                 </span>
               </>
             )}

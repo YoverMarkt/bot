@@ -122,7 +122,7 @@ const schedule: {
   todaysHours(
     schedule: ScheduleRecord[] | null | undefined,
     now?: Date,
-  ): { open: string; close: string } | null
+  ): { open: string; close: string; allDay?: boolean } | null
   proximaApertura(
     schedule: ScheduleRecord[] | null | undefined,
     now?: Date,
