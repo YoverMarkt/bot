@@ -10,6 +10,7 @@ import {
   textoDeAdjuntoRecibido,
   verResultados,
   resolverReinicio,
+  esSaludo,
   type MarketplaceBusiness,
   type MarketplaceCategory,
   type MarketplaceReply,
@@ -746,10 +747,15 @@ export async function handleMarketplaceMessage(
       negocios = await conEstadoDeHorario(
         deps, await database.getMarketplaceBusinesses(vistaActual.categoria),
       )
-    } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta) {
+    } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta && !esSaludo(text)) {
       // Se repite la búsqueda en vez de guardar los resultados: mantiene el
       // `flow_state` pequeño y la lista fresca. Falla hacia una lista vacía,
       // que `paso` resuelve devolviendo al cliente a las categorías.
+      //
+      // ⚠️ SALVO si el mensaje es un saludo: `paso` va a devolver la portada
+      // igualmente (un «hola» aquí es «empecemos», no «repíteme la búsqueda»),
+      // así que consultarla sería gastar una lectura para tirarla. Es la misma
+      // regla que ya cumple la portada — «un saludo no dispara la búsqueda».
       negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
     }
     respuesta = paso({
