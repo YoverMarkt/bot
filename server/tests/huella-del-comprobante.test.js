@@ -146,7 +146,47 @@ describe('el registro va DESPUÉS de adjuntar, y sin await', () => {
 
   it('y en la mini app', () => {
     const fuente = leer('../src/routes/storefront.routes.ts')
-    expect(fuente).toMatch(/void ingest\.registrarComprobante/)
+    // Sigue yendo sin bloquear la respuesta, ahora dentro de un bloque que
+    // además analiza la imagen antes de registrarla.
+    expect(fuente).toMatch(/void \(async \(\) => \{/)
+    expect(fuente).toMatch(/ingest\.registrarComprobante/)
+  })
+
+  // ⚠️ EL ANÁLISIS TIENE QUE VIAJAR CON LA HUELLA (2026-09-13).
+  //
+  // Lo destapó una prueba de aceptación: se subió un comprobante por la mini
+  // app y se quedó en `pendiente_analisis` para siempre. `registrarComprobante`
+  // NO llama a la visión —la espera ya hecha, para que quien la llamó antes no
+  // la pague dos veces— y esta ruta no se la pasaba.
+  //
+  // El efecto era que por esta puerta la huella SÍ se calculaba (el duplicado
+  // se cazaba) pero nadie comprobaba el monto ni la cuenta de destino: las dos
+  // únicas señales críticas del dinero. El chat sí lo hacía.
+  //
+  // Se comprueba leyendo el FUENTE y no con un doble, porque lo que falla aquí
+  // no es la lógica —que funciona— sino que nadie la llame: el fallo de
+  // «construido y desconectado» que este proyecto ha pagado nueve veces.
+  it('la mini app ANALIZA la imagen y le pasa lo leído al registro', () => {
+    const fuente = leer('../src/routes/storefront.routes.ts')
+    const analiza = fuente.indexOf('vision.analizarComprobante')
+    const registra = fuente.indexOf('ingest.registrarComprobante')
+    expect(analiza, 'la ruta no llama a la visión').toBeGreaterThan(-1)
+    expect(registra).toBeGreaterThan(-1)
+    // Primero se lee la imagen, después se registra lo leído.
+    expect(analiza).toBeLessThan(registra)
+    // Y lo leído viaja de verdad: sin estos dos campos el registro se queda
+    // en `pendiente_analisis` aunque la visión haya corrido.
+    const llamada = fuente.slice(registra, registra + 600)
+    expect(llamada, 'no le pasa el análisis').toMatch(/\banalisis\b/)
+    expect(llamada, 'no le pasa el pedido contra el que cuadrar').toMatch(/esperado:/)
+  })
+
+  it('y nada de eso puede tumbar la subida: falla ABIERTO', () => {
+    const fuente = leer('../src/routes/storefront.routes.ts')
+    // La visión y la lectura del pedido se tragan su error por separado, y el
+    // bloque entero tiene su propio catch: el comprobante ya está adjunto.
+    expect(fuente).toMatch(/vision\.analizarComprobante\([^)]*\)\s*\n?\s*\.catch/)
+    expect(fuente).toMatch(/getOrderForReceiptCheck\([^)]*\)\s*\n?\s*\.catch/)
   })
 
   it('el gancho del buzón es OPCIONAL: sin él se comporta como antes', () => {
