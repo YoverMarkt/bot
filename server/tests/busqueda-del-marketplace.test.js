@@ -333,6 +333,36 @@ describe('la búsqueda, conectada al flujo', () => {
     expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
   })
 
+  // ⚠️ Y un saludo DENTRO de una búsqueda vuelve a la portada (2026-09-13).
+  //
+  // Lo vio el dueño en su teléfono: escribió «Hola buenas» y recibió
+  // «🔎 Esto encontré para *Quiero comer pizza*» — la búsqueda anterior,
+  // repintada, dos veces seguidas porque lo intentó otra vez.
+  //
+  // La cabecera de una búsqueda AFIRMA QUE PREGUNTASTE ALGO, y repintarla ante
+  // un saludo le atribuye al cliente una frase que no escribió. Desde su lado
+  // se lee como que el bot no lo escuchó — justo el reproche que `esSaludo`
+  // nació para evitar. (En la lista de LOCALES sí se repinta: «🍕 Pizzerías ·
+  // elige un local» solo dice dónde estás, no te atribuye nada.)
+  it('un saludo DENTRO de una búsqueda devuelve la portada, no la búsqueda vieja', async () => {
+    const { deps, database, enviados } = armarEntrada({ hits: [CEVICHERIA] })
+    await escribir(deps, 'hola')
+    await escribir(deps, 'quiero ceviche')
+    enviados.length = 0
+    database.searchMarketplaceBusinesses.mockClear()
+
+    await escribir(deps, 'Hola buenas')
+
+    const texto = enviados.map(e => e.reply).join('\n')
+    // 1. No se le atribuye la pregunta de antes.
+    expect(texto, texto).not.toContain('Esto encontré')
+    expect(texto, texto).not.toContain('ceviche')
+    // 2. Se le recibe, que es lo que pedía el saludo.
+    expect(texto, texto).toContain('Bienvenido')
+    // 3. Y no se gasta una consulta en repetir una búsqueda que nadie pidió.
+    expect(database.searchMarketplaceBusinesses).not.toHaveBeenCalled()
+  })
+
   // ⚠️ Una FOTO tampoco (2026-09-06). «[foto]» es el marcador que pone el
   // webhook cuando llega una imagen que no es comprobante —sin pedido
   // esperando pago la media ni se descarga—, y se estaba mandando a la

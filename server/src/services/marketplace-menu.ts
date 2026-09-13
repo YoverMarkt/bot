@@ -514,10 +514,28 @@ export function paso(input: PasoInput): MarketplaceReply {
       }
     }
 
-    // No eligió ninguno: puede estar buscando OTRA cosa. Se devuelve la señal
-    // para que el llamador busque de nuevo antes de reprocharle nada.
+    // ⚠️ UN SALUDO AQUÍ VUELVE A LA PORTADA, y es lo único que distingue esta
+    // vista de la de locales (2026-09-13).
+    //
+    // Lo vio el dueño en su teléfono: escribió «Hola buenas» y recibió
+    // «🔎 Esto encontré para *Quiero comer pizza*» — la búsqueda de antes,
+    // repintada. Dos veces seguidas, porque lo intentó otra vez.
+    //
+    // La diferencia con la lista de locales no es de estilo: la cabecera de
+    // una categoría («🍕 Pizzerías · elige un local») solo dice DÓNDE estás,
+    // pero la de una búsqueda AFIRMA QUE PREGUNTASTE ALGO. Repintarla ante un
+    // «hola» le atribuye al cliente una frase que no escribió, y desde su
+    // lado se lee como que el bot no lo escuchó — que es justo el reproche
+    // que `esSaludo` nació para evitar.
+    //
+    // Un saludo es «empecemos», así que se le devuelve la portada CON la
+    // bienvenida. No se pierde nada: el carrito vive por local y aquí todavía
+    // no hay ninguno elegido.
     const repetir = verResultados(vista.consulta, negocios, vista.pagina)
-    if (repintar || esSaludo(mensaje)) return repetir
+    if (esSaludo(mensaje)) return verCategorias(categorias, 0, true)
+    // Repintado sin mensaje (una foto, un audio): no hay nada que reprochar y
+    // tampoco una frase nueva que atribuirle, así que se queda donde estaba.
+    if (repintar) return repetir
     return { ...repetir, reply: `${reproche(mensaje)}\n\n${repetir.reply}`, noEntendido: true }
   }
 
