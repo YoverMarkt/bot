@@ -56,6 +56,12 @@ interface StorefrontRouteDatabase {
     requires_proof: boolean
   }>>
   getBusinessBySlug(slug: string): Promise<StorefrontBusiness | null>
+  /** Lo mínimo del pedido para cuadrar su comprobante: cuánto, cuándo y de quién. */
+  getOrderForReceiptCheck(businessId: string, orderId: string): Promise<{
+    total?: unknown
+    created_at?: string | null
+    contact_name?: string | null
+  } | null>
   getBusinessById(businessId: string): Promise<{ slug?: string | null } | null>
   getStorefrontSessionByHash(tokenHash: string): Promise<StorefrontSessionRow | null>
   bindStorefrontSession(sessionId: string, deviceHash: string): Promise<boolean>
@@ -867,19 +873,59 @@ router.post(
         return res.status(500).json({ error: 'No pudimos guardar tu comprobante' })
       }
       const resultado = (data || {}) as { result?: string }
-      // La huella, sin `await`: el comprobante ya está adjunto y un fallo
-      // registrándola no puede deshacerlo ni dejar al cliente sin respuesta.
+      // La huella y el análisis, sin `await`: el comprobante ya está adjunto y
+      // un fallo aquí no puede deshacerlo ni dejar al cliente sin respuesta.
+      //
+      // ⚠️ EL ANÁLISIS VA AQUÍ, y hasta el 2026-09-13 no iba (lo destapó una
+      // prueba de aceptación). `registrarComprobante` no llama a la visión: la
+      // ESPERA ya hecha, porque quien la llamó antes no debe pagarla dos veces.
+      // Sin pasársela, el comprobante se quedaba en `pendiente_analisis` para
+      // siempre: la huella sí se calculaba —el duplicado se cazaba— pero NADIE
+      // comprobaba ni el monto ni la cuenta de destino, que son las dos únicas
+      // señales críticas. Por esta puerta el dinero entraba sin revisar.
+      //
+      // ⚠️ Aquí NO corta, y esa es la diferencia deliberada con el chat. Allí
+      // la visión corre ANTES de subir, así que un comprobante que no cuadra
+      // se rechaza sin gastar almacenamiento ni encender la alarma. Aquí el
+      // archivo ya está adjunto cuando se sabe, y el pedido ya está en
+      // `pago_en_revision` — que es exactamente el estado donde una PERSONA
+      // mira antes de aceptar. Lo que faltaba era que esa persona viera las
+      // señales; ahora las ve puntuadas en su panel.
+      //
+      // ⚠️ Falla ABIERTO en cada paso: sin análisis, sin pedido o ante
+      // cualquier excepción se registra como antes. Nunca deja al cliente sin
+      // su «ok» ni deshace un comprobante ya adjunto.
       if (resultado.result !== 'not_found') {
-        const ingest = require('../services/receipt-ingest') as typeof import('../services/receipt-ingest')
-        void ingest.registrarComprobante({
-          businessId,
-          orderId,
-          imagen: req.file.buffer,
-          fileUrl: subida.url,
-          filePublicId: subida.public_id,
-          perceptualHash: subida.phash ?? null,
-          mimeType: req.file.mimetype,
-        })
+        const imagen = req.file.buffer
+        const mimeType = req.file.mimetype
+        const fileUrl = subida.url
+        const filePublicId = subida.public_id
+        const perceptualHash = subida.phash ?? null
+        void (async () => {
+          const vision = require('../services/receipt-vision') as typeof import('../services/receipt-vision')
+          const ingest = require('../services/receipt-ingest') as typeof import('../services/receipt-ingest')
+          const analisis = await vision.analizarComprobante(imagen, mimeType)
+            .catch(() => undefined)
+          const pedido = await db.getOrderForReceiptCheck(businessId, orderId)
+            .catch(() => null)
+          await ingest.registrarComprobante({
+            businessId,
+            orderId,
+            imagen,
+            fileUrl,
+            filePublicId,
+            perceptualHash,
+            mimeType,
+            analisis,
+            esperado: pedido
+              ? {
+                total: Number(pedido.total ?? 0),
+                createdAt: pedido.created_at ?? null,
+                clienteNombre: pedido.contact_name ?? null,
+              }
+              : undefined,
+          })
+        })().catch(() => { /* el comprobante ya está adjunto; esto es la capa de encima */ })
       }
       if (resultado.result === 'not_found') {
         return res.status(404).json({ error: 'Ese pedido no es tuyo o ya no existe' })

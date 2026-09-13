@@ -393,6 +393,30 @@ const confirmOrderPayment = async (businessId: string, orderId: string) => {
  * Se pide por negocio Y por pedido, nunca solo por pedido: el id viaja en la
  * dirección y sin el negocio se estaría dando el comprobante de otro local.
  */
+/**
+ * Lo mínimo del pedido para CUADRAR su comprobante: cuánto, de cuándo y de quién.
+ *
+ * ⚠️ Son exactamente los tres campos que `cuadreDelComprobante` compara con lo
+ * que la visión leyó de la imagen — el monto para «¿pagó de menos?», la fecha
+ * para «¿es de antes del pedido?» y el nombre para el panel. Ni uno más: esto
+ * corre por un camino público (la tienda), y traer la fila entera sería pasear
+ * datos que ese camino no necesita.
+ */
+const getOrderForReceiptCheck = async (businessId: string, orderId: string) => {
+  const { data, error } = await db
+    .from('orders')
+    .select('total,created_at,contact_name')
+    .eq('business_id', businessId)
+    .eq('id', orderId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data || null) as {
+    total?: unknown
+    created_at?: string | null
+    contact_name?: string | null
+  } | null
+}
+
 const getOrderProof = async (businessId: string, orderId: string) => {
   const { data } = await db
     .from('orders')
@@ -407,6 +431,7 @@ const getOrderProof = async (businessId: string, orderId: string) => {
 }
 
 export = {
+  getOrderForReceiptCheck,
   getOrderProof,
   createOrder,
   getOrders,
