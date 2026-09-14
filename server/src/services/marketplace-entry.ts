@@ -1072,15 +1072,50 @@ function textoDelLocal(negocio: MarketplaceBusiness): string {
   if (negocio.abierto !== false) {
     return `🛍️ *${negocio.name}*\n\nArma tu pedido aquí 👇`
   }
-  const cuando = negocio.abre?.open
-    ? ` Abre ${negocio.abre.inDays === 0
-      ? 'hoy'
-      : negocio.abre.inDays === 1
-        ? 'mañana'
-        : `el ${negocio.abre.dayName.toLocaleLowerCase('es')}`} a las ${horaDoce(negocio.abre.open)}.`
-    : ''
-  return `🌙 *${negocio.name}* está cerrado ahora mismo.${cuando}\n\n`
+  return `🌙 *${negocio.name}* está cerrado ahora mismo.${cuandoAbre(negocio.abre)}\n\n`
     + 'Puedes ver la carta mientras tanto 👇'
+}
+
+/**
+ * « Abre mañana a las 9:00 AM.» — o cadena vacía si no se sabe.
+ *
+ * ⚠️ Estaba escrito dentro de `textoDelLocal` y se saca porque ahora lo dicen
+ * TRES sitios: el encabezado del enlace, el menú del chat cuando el local está
+ * cerrado y el checkout que se niega a crear el pedido. Tres copias de esta
+ * frase acabarían diciendo horas distintas.
+ */
+function cuandoAbre(abre: MarketplaceBusiness['abre']): string {
+  if (!abre?.open) return ''
+  const dia = abre.inDays === 0
+    ? 'hoy'
+    : abre.inDays === 1
+      ? 'mañana'
+      : `el ${abre.dayName.toLocaleLowerCase('es')}`
+  return ` Abre ${dia} a las ${horaDoce(abre.open)}.`
+}
+
+/**
+ * ¿Está abierto ESTE local ahora mismo, y si no, cuándo abre?
+ *
+ * ⚠️ Reutiliza `getSchedulesFor` con un solo id en vez de añadir una función
+ * nueva: la regla del horario ya se calcula en `services/schedule.ts` y con una
+ * sola puerta de datos no hay dos sitios que puedan divergir.
+ *
+ * ⚠️ FALLA ABIERTO, igual que la lista: sin horario configurado, sin la función
+ * o si la consulta revienta, el local se considera abierto. Llamar «cerrado» a
+ * uno que está abierto cuesta ventas de verdad; lo contrario solo cuesta que
+ * un pedido llegue fuera de hora, que es lo que pasaba hasta hoy.
+ */
+async function estadoDelLocal(
+  deps: MarketplaceEntryDeps,
+  businessId: string,
+): Promise<{ abierto: boolean; abre: MarketplaceBusiness['abre'] }> {
+  if (!deps.database.getSchedulesFor) return { abierto: true, abre: null }
+  const horarios = await deps.database.getSchedulesFor([businessId]).catch(() => null)
+  const suyo = horarios?.get(businessId)
+  if (!suyo?.length) return { abierto: true, abre: null }
+  const abierto = !isOutsideHours(suyo)
+  return { abierto, abre: abierto ? null : proximaApertura(suyo) }
 }
 
 /** «08:00» → «8:00 AM», como se dice una hora aquí. */
@@ -1310,7 +1345,7 @@ async function conducirEnElChat(
     return
   }
 
-  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor, reglaPrecio] = await Promise.all([
+  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor, reglaPrecio, estadoHorario] = await Promise.all([
     database.getProducts(businessId).catch(() => [] as unknown[]),
     database.getMenuModifiers
       ? database.getMenuModifiers(businessId).catch(() => [] as unknown[])
@@ -1331,6 +1366,7 @@ async function conducirEnElChat(
     database.getBusinessPricingRule
       ? database.getBusinessPricingRule(businessId).catch(() => null)
       : Promise.resolve(null),
+    estadoDelLocal(deps, businessId),
   ])
   const catalogoDeOpciones = opcionesDelMotor
 
@@ -1348,6 +1384,9 @@ async function conducirEnElChat(
   // el precio de vitrina acabarían diciendo cifras distintas por el mismo
   // plato. Y sigue sin ser la autoridad — el cobro lo sella la base (regla #8);
   // esto solo hace que lo que el cliente lee coincida con lo que va a pagar.
+  // ⚠️ El horario entra en el MISMO `Promise.all` que el catálogo: pedirlo
+  // después sería un viaje más a la base en el camino más transitado del chat.
+  const { abierto, abre } = estadoHorario
   const margen = reglaDeMargen(reglaPrecio)
   const productosDeVitrina = (productos as Array<Record<string, unknown>>).map(producto => ({
     ...producto,
@@ -1368,6 +1407,13 @@ async function conducirEnElChat(
     welcomeMessage: saludo,
     modifiers: modifiers as MenuFlowInput['modifiers'],
     lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
+    // Con el local cerrado el menú no ofrece pedir, y lo dice arriba.
+    puedePedir: abierto,
+    avisoDeCierre: abierto
+      ? null
+      : `🌙 *${String(business.name || 'El local')}* está cerrado ahora mismo.`
+        + `${cuandoAbre(abre)}\n`
+        + 'Por ahora no puedes hacer un pedido aquí, pero sí ver la carta.',
     optionGroups: grupos as MenuFlowInput['optionGroups'],
     options: catalogoDeOpciones as MenuFlowInput['options'],
     // Para los grupos que cuelgan de una CATEGORÍA y no de un producto.
@@ -1646,6 +1692,34 @@ async function avanzarCheckout(input: {
   // retiró el 2026-09-07: en Umbani el cliente habla con un solo número.
   // Dejar la consulta habría sido un viaje a la base por vuelta de checkout
   // para un dato que ya no se usa.
+  // ── El local tiene que estar ABIERTO para cobrar ────────────────────
+  //
+  // ⚠️ Se comprueba AQUÍ, en el último paso, y no al entrar al menú: el cliente
+  // pudo empezar a las 17:55 y llegar al pago a las 18:01. Sin esto, el pedido
+  // nacía igual y su comida no la cocinaba nadie — y encima recibía los datos
+  // bancarios, así que podía llegar a transferir por algo que nadie iba a
+  // preparar. Es la última puerta antes del dinero.
+  //
+  // ⚠️ El carrito NO se tira: cuando el local abra, confirmar vuelve a
+  // funcionar con lo que ya tenía elegido. Vaciárselo por cerrar sería
+  // castigarle por la hora.
+  //
+  // ⚠️ Falla ABIERTO (ver `estadoDelLocal`): sin horario o con la consulta
+  // caída se cobra como antes.
+  const estadoAlCobrar = await estadoDelLocal(deps, businessId)
+  if (!estadoAlCobrar.abierto) {
+    const local = await database.getBusinessById(businessId).catch(() => null)
+    logger?.log('🌙 [checkout] el local cerró antes de confirmar')
+    await send(
+      `🌙 *${String(local?.name || 'El local')}* está cerrado ahora mismo.`
+      + `${cuandoAbre(estadoAlCobrar.abre)}\n\n`
+      + 'Tu pedido se queda guardado: cuando abra, confírmalo por aquí.\n'
+      + 'Si prefieres otro local, escribe *MENÚ*.',
+      [],
+    )
+    return
+  }
+
   const [productos, cuenta] = await Promise.all([
     database.getProducts(businessId).catch(() => [] as unknown[]),
     elegido.requires_proof

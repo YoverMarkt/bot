@@ -194,6 +194,29 @@ export interface MenuFlowInput {
   options?: FlowOption[]
   /** La categoría de cada producto, para los grupos que cuelgan de ella. */
   productCategories?: Record<string, string | null>
+  /**
+   * ¿Se puede pedir AHORA? `false` con el local cerrado por horario.
+   *
+   * ⚠️ Sin esto el chat dejaba armar el pedido entero y cerrarlo con el local
+   * cerrado: el cliente recibía los datos bancarios a las 00:30 y su comida no
+   * la cocinaba nadie. La mini app ya lo impedía (`canOrder: false`), así que
+   * las dos superficies decían cosas distintas sobre el mismo local.
+   *
+   * ⚠️ Por omisión es `true`: los negocios con número propio no pasan por
+   * aquí —`bot-conversation` ya responde el horario antes de llegar al menú— y
+   * su comportamiento no cambia.
+   */
+  puedePedir?: boolean
+  /**
+   * La línea que explica el cierre, ya formateada: «🌙 Cerrado ahora mismo.
+   * Abre mañana a las 9:00 AM.»
+   *
+   * ⚠️ Llega hecha a propósito. Este motor es una máquina de estados PURA y no
+   * sabe de husos, cruces de medianoche ni del cierre a las 23:59 — esa regla
+   * vive entera en `services/schedule.ts`, y traerla aquí sería la segunda
+   * copia que acaba diciendo otra hora.
+   */
+  avisoDeCierre?: string | null
 }
 
 // Una opción puede ser texto simple (las fijas del menú, ya cortas) o un
@@ -713,7 +736,11 @@ const configuredWelcome = (input: MenuFlowInput): string => {
 const mainOptions = (input: MenuFlowInput): string[] => {
   const options: string[] = []
   const hasProducts = activeProducts(input.products).length > 0
-  if (input.business.takes_orders && hasProducts) {
+  // ⚠️ Con el local cerrado NO se ofrece pedir — ni repetir el último. Ofrecer
+  // un botón que lleva a un pedido que nadie va a cocinar es peor que no
+  // ofrecerlo: el cliente descubre el cierre con el carrito ya hecho. Ver la
+  // carta SÍ se ofrece, que es lo que le hace volver a la hora de apertura.
+  if (input.business.takes_orders && hasProducts && input.puedePedir !== false) {
     options.push(OPT_ORDER)
     // Clientes recurrentes: repetir vale más que navegar todo el catálogo
     if (input.lastOrderItems?.length) options.push(OPT_REPEAT)
@@ -763,9 +790,16 @@ const cartaDelDia = (input: MenuFlowInput): string => {
   return `${bloques.join('\n\n')}\n\n*Precios*\n${precios.join('\n')}`
 }
 
+/** El cierre se dice ARRIBA: es lo primero que cambia lo que puede hacer. */
+const encabezado = (input: MenuFlowInput): string => (
+  input.puedePedir === false && input.avisoDeCierre
+    ? `${input.avisoDeCierre}\n\n`
+    : ''
+)
+
 const welcomeReply = (input: MenuFlowInput): MenuFlowResult => {
   return {
-    reply: `${configuredWelcome(input)}\n${PROMPT_CHOOSE}`,
+    reply: `${encabezado(input)}${configuredWelcome(input)}\n${PROMPT_CHOOSE}`,
     options: mainOptions(input),
     isWelcome: true,
   }
@@ -775,7 +809,10 @@ const welcomeReply = (input: MenuFlowInput): MenuFlowResult => {
 const renderView = (view: FlowView, state: FlowState, input: MenuFlowInput): MenuFlowResult => {
   switch (view.kind) {
     case 'main':
-      return { reply: `¿En qué te ayudamos? ${PROMPT_CHOOSE}`, options: mainOptions(input) }
+      return {
+        reply: `${encabezado(input)}¿En qué te ayudamos? ${PROMPT_CHOOSE}`,
+        options: mainOptions(input),
+      }
     case 'categories': {
       // Paginadas: un negocio puede tener más de 10 categorías y la lista de
       // WhatsApp solo admite 10 filas.
