@@ -164,9 +164,22 @@ describe('el canario está CONECTADO', () => {
   // es la lógica, es que nadie la llame.
   it('el arranque lo programa', () => {
     const fuente = leer('src/index.ts')
-    expect(fuente).toMatch(/import \{ vigilarElCaminoDelCliente \}/)
+    // ⚠️ Se comprueba el NOMBRE, no la forma exacta de la línea de import: el
+    // primer intento exigía `import { vigilarElCaminoDelCliente }` y se rompió
+    // en cuanto entró un segundo nombre en la misma línea. Un guardián que
+    // falla por reordenar un import enseña a ignorarlo.
+    expect(fuente).toMatch(/import \{[^}]*vigilarElCaminoDelCliente[^}]*\} from '\.\/services\/canario'/)
     expect(fuente).toMatch(/setTimeout\(\(\) => \{ void vigilarElCaminoDelCliente\(\) \}/)
     expect(fuente).toMatch(/setInterval\(\(\) => \{ void vigilarElCaminoDelCliente\(\) \}/)
+  })
+
+  it('su última vuelta se ve en /api/health', () => {
+    // ⚠️ Un vigilante SILENCIOSO no se distingue de uno MUERTO. El canario
+    // calla cuando todo va bien, así que «sin entradas en el registro»
+    // significaba a la vez «se puede comprar» y «nunca corrió». Se descubrió
+    // al desplegarlo: no había forma de comprobar que se había ejecutado.
+    const fuente = leer('src/index.ts')
+    expect(fuente).toMatch(/canario: ultimaVueltaDelCanario\(\)/)
   })
 
   it('usa el motor de menú REAL, no un doble', () => {
