@@ -41,40 +41,6 @@ export const reindex = () =>
 
 // ── Modificadores de menú (sabores de pizza, salsas, extras) ──
 // Una opción que el cliente elige además del producto, agrupada por categoría.
-export type MenuModifier = {
-  id: string
-  category_tag: string
-  group_label: string
-  name: string
-  description: string | null
-  sort: number
-  active: boolean
-}
-
-export type MenuModifierPayload = {
-  category_tag: string
-  group_label: string
-  name: string
-  description?: string | null
-  sort?: number
-  active?: boolean
-}
-
-export const getMenuModifiers = () =>
-  api<MenuModifier[]>('/api/client/menu-modifiers')
-
-export const createMenuModifier = (p: MenuModifierPayload) =>
-  api<MenuModifier>('/api/client/menu-modifiers', { method: 'POST', body: JSON.stringify(p) })
-
-export const updateMenuModifier = (id: string, p: MenuModifierPayload) =>
-  api<MenuModifier>(`/api/client/menu-modifiers/${id}`, { method: 'PUT', body: JSON.stringify(p) })
-
-export const deleteMenuModifier = (id: string) =>
-  api(`/api/client/menu-modifiers/${id}`, { method: 'DELETE' })
-
-// ── Variantes (tamaños, presentaciones) ──────────────────────
-// A diferencia de un modificador, una variante SÍ cambia el precio: es la
-// pizza mediana frente a la familiar. Cuelga de un producto concreto.
 export type Variant = {
   id: string
   product_id: string
