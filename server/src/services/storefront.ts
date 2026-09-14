@@ -843,24 +843,73 @@ export function quoteCart(input: {
     : 0
   subtotal = Math.round(subtotal * 100) / 100
 
-  // ⚠️ UN SOLO REDONDEO, sobre el subtotal completo y nunca por línea: diez
-  // líneas redondeadas por separado se desvían del porcentaje pactado. Es el
-  // mismo cálculo que sella `orders_stamp_pricing`, así que la cotización y el
-  // cobro no pueden divergir.
+  // ── El margen se redondea DONDE se redondea al mostrarlo ────────────
+  //
+  // ⚠️ Aquí decía «un solo redondeo, sobre el subtotal completo y NUNCA por
+  // línea», y era exactamente lo contrario de lo que sella la base. La base lo
+  // calcula por línea (`order_markup_by_line`) siempre que el modo sea
+  // `on_top` con `percentage`, y su comentario explica por qué: con `on_top`
+  // el cliente ve un precio POR PRODUCTO, así que el total tiene que ser lo
+  // que él sumaría. Este archivo se quedó con la regla anterior.
+  //
+  // El resultado, medido en producción con 3 × $0.75:
+  //
+  //   catálogo enseña  $0.83 × 3 = $2.49
+  //   la cotización     $2.48   ← la única que discrepaba
+  //   el pedido cobra   $2.49
+  //
+  // ⚠️ Se replica la aritmética EXACTA de `order_markup_by_line`: redondear el
+  // margen del precio unitario y multiplicar por la cantidad. No es «más
+  // preciso» ni «menos»: es que solo puede haber UN número, y manda el que
+  // cobra la base.
+  //
+  // ⚠️ Solo con `on_top` + `percentage`, que es la misma condición que pone la
+  // base. Con `absorbed`, `tiered` o un fijo se mantiene el cálculo sobre el
+  // subtotal — ahí el cliente nunca vio un precio unitario con margen.
   //
   // ⚠️ `subtotal` es y sigue siendo lo del COMERCIO. Lo que sube con `on_top`
   // es lo que paga el cliente.
-  const margen = calculatePlatformMarkup(subtotal, input.pricing ?? null)
-  const total = Math.round((margen.customerSubtotal + shipping) * 100) / 100
+  const regla = input.pricing ?? null
+  // ⚠️ EN CENTAVOS ENTEROS, y esto no es un detalle de estilo.
+  //
+  // PostgreSQL calcula en `numeric` —decimal exacto— y JavaScript en coma
+  // flotante. `1.15 * 0.1` da `0.11499999999999999`, que redondea a 11
+  // centavos; la base da 12. Con el cálculo en flotante la cotización y el
+  // cobro discrepaban en los precios «feos» ($0.35, $1.15) y coincidían en los
+  // redondos, que es la peor forma de fallar: parece que funciona.
+  //
+  // Pasando a enteros, `115 × 10 / 100 = 11.5` es exactamente representable y
+  // redondea a 12, igual que la base. Sin milésimas arrastradas.
+  const porLinea = regla?.markupMode === 'on_top' && regla.strategy === 'percentage'
+    && regla.minAmount == null && regla.maxAmount == null
+    ? lines.reduce((centavos, linea) => {
+      const unitario = linea.quantity > 0 ? linea.lineTotal / linea.quantity : 0
+      const unitarioEnCentavos = Math.round(unitario * 100)
+      const pct = Number(regla.percentage) || 0
+      const margenUnitario = Math.round((unitarioEnCentavos * pct) / 100)
+      return centavos + margenUnitario * linea.quantity
+    }, 0) / 100
+    : null
+  // ⚠️ Fuera de `on_top`+`percentage` NO se toca nada: con `absorbed` el
+  // margen se le quita al dueño en vez de sumárselo al cliente, así que
+  // `customerSubtotal` es el subtotal y `merchantSubtotal` lo que queda. Meter
+  // ahí la suma de `on_top` le cobraría al cliente un margen que no paga.
+  const margen = calculatePlatformMarkup(subtotal, regla)
+  const markup = porLinea === null ? margen.markup : Math.round(porLinea * 100) / 100
+  const customerSubtotal = porLinea === null
+    ? margen.customerSubtotal
+    : Math.round((subtotal + markup) * 100) / 100
+  const merchantSubtotal = porLinea === null ? margen.merchantSubtotal : subtotal
+  const total = Math.round((customerSubtotal + shipping) * 100) / 100
 
   return {
     lines,
     subtotal,
     shipping,
     total,
-    merchantSubtotal: margen.merchantSubtotal,
-    platformMarkup: margen.markup,
-    customerSubtotal: margen.customerSubtotal,
+    merchantSubtotal,
+    platformMarkup: markup,
+    customerSubtotal,
     markupPercentage: input.pricing?.strategy === 'percentage'
       ? (Number(input.pricing.percentage) || 0)
       : null,
