@@ -1013,6 +1013,43 @@ async function entregarLocal(
   // hacia lo que siempre funciona.
   const enElChat = await deps.tipoPideEnChat(negocio.type).catch(() => false)
 
+  // ── En el CHAT, un local cerrado no se abre ─────────────────────────
+  //
+  // ⚠️ Decisión del dueño (2026-09-13): «si un local está cerrado, en el menú
+  // chat solo tiene que decir que está cerrado y la hora que abre; no tienes
+  // que mandar a ver la carta porque eso me gasta mensajes».
+  //
+  // Y el cálculo es correcto: los BOTONES son gratis —viajan dentro del mismo
+  // mensaje— pero cada paso de navegar la carta es un SALIENTE que se paga.
+  // Abrirle el menú a alguien que no puede comprar es pagar una visita guiada
+  // por un local cerrado. Hasta hoy eran dos mensajes solo para entrar.
+  //
+  // ⚠️ En la MINI APP no aplica y no se toca: ahí la carta se mira dentro de
+  // una web y no cuesta un solo mensaje, así que al local de enlace se le
+  // sigue mandando el suyo aunque esté cerrado.
+  //
+  // ⚠️ Tampoco se le queda el CANDADO puesto (`shoppingLocked`): encerrarlo en
+  // un local que no puede venderle le pondría fricción para pedir en otro. Se
+  // queda navegando, con los demás locales a un toque.
+  if (enElChat && negocio.abierto === false) {
+    logger?.log(`🌙 [marketplace] ${negocio.slug} cerrado: no se abre el menú`)
+    const otras = verCategorias(await database.getMarketplaceCategories().catch(() => []), 0)
+    await deps.send(
+      `🌙 *${negocio.name}* está cerrado ahora mismo.${cuandoAbre(negocio.abre)}\n\n`
+      + 'Mientras tanto puedes pedir en otros locales 👇',
+      otras.options,
+    )
+    // Con opciones, la vista se guarda o el toque siguiente no se entiende.
+    if (otras.options.length) {
+      await database.advanceConversation(
+        customer.id,
+        { state: 'navegando', flowState: { vista: otras.vista }, clearBusiness: true },
+        version,
+      ).catch(() => ({ conflicto: false }))
+    }
+    return
+  }
+
   await database.advanceConversation(
     customer.id,
     {
