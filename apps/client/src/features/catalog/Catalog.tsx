@@ -4,6 +4,8 @@ import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-reac
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import OptionsManager from './OptionsManager'
+import { useBusinessInfo } from '../../lib/biz'
+import { vocabularioDe } from './vocabulario'
 import type { Product, ProductPayload, Variant, Category } from './api'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
@@ -33,6 +35,9 @@ const STOCK_STYLE: Record<Product['stock'], string> = {
 
 export default function Catalog() {
   const qc = useQueryClient()
+  // El catálogo habla el oficio del local: una almuercería no ve ejemplos de
+  // pizza. Es solo vocabulario — ni una capacidad ni un dato cambian.
+  const voz = vocabularioDe(useBusinessInfo().data?.type)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Product | 'new' | null>(null)
   // "+ Agregar producto" del Inicio llega con ?new=1 y abre el modal directo (como el viejo)
@@ -78,7 +83,7 @@ export default function Catalog() {
       <Tabs defaultValue="productos">
         <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="productos">Productos</TabsTrigger>
-          <TabsTrigger value="tamanos">Tamaños / Presentaciones</TabsTrigger>
+          <TabsTrigger value="tamanos">{voz.tamanos}</TabsTrigger>
           <TabsTrigger value="personalizacion">Personalización</TabsTrigger>
           <TabsTrigger value="categorias">Categorías</TabsTrigger>
         </TabsList>
@@ -185,6 +190,7 @@ const SIN_CATEGORIA = '__ninguna__'
 
 function ProductModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: catApi.getCategories })
+  const voz = vocabularioDe(useBusinessInfo().data?.type)
   const [f, setF] = useState({
     name: product?.name ?? '',
     brand: product?.brand ?? '',
@@ -274,7 +280,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
         <div className="grid grid-cols-1 gap-3 mb-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="product-name">Nombre *</Label>
-            <Input id="product-name" value={f.name} onChange={set('name')} placeholder="Ej: Pizza Familiar Pepperoni" />
+            <Input id="product-name" value={f.name} onChange={set('name')} placeholder={voz.ejemploProducto} />
           </div>
           <div>
             <Label htmlFor="product-brand">Marca</Label>
@@ -319,7 +325,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             </Select>
             <p className="text-[11px] text-muted-foreground/80 mt-1">
               {f.product_type === 'combo'
-                ? 'En la mini app se pinta por pasos numerados: «1 Elige tu pizza», «2 Elige tu bebida». Arma los pasos en la pestaña Personalización.'
+                ? `En la mini app se pinta por pasos numerados: «1 ${voz.ejemploGrupo}», «2 Elige tu bebida». Arma los pasos en la pestaña Personalización.`
                 : 'El tipo no cambia lo que vendes: cambia cómo lo elige el cliente.'}
             </p>
           </div>
@@ -388,6 +394,7 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
 // el precio de "familiar" no significa lo mismo en una pizza que en una
 // gaseosa. El total lo calcula siempre el servidor con estos precios.
 function VariantsPanel({ products }: { products: Product[] }) {
+  const voz = vocabularioDe(useBusinessInfo().data?.type)
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Variant | { product_id: string } | null>(null)
   const { data: variants = [], isLoading, isError, refetch } =
@@ -422,7 +429,7 @@ function VariantsPanel({ products }: { products: Product[] }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Presentaciones que <strong>sí cambian el precio</strong> — pizza mediana $8, familiar $14. Cuelgan de un producto concreto. Si un producto no tiene tamaños, se vende a su precio normal.
+          {voz.tamanos} que <strong>sí cambian el precio</strong> — {voz.ejemploTamano}. Cuelgan de un producto concreto. Si un producto no los tiene, se vende a su precio normal.
         </p>
         {products.length > 0 && (
           <Button onClick={() => setEditing({ product_id: products[0].id })}>
@@ -637,7 +644,7 @@ function CategoriesPanel() {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Agrupan tu catálogo en la tienda — entradas, pizzas, bebidas. El <strong>orden</strong> decide cómo aparecen; el mismo número las ordena por nombre.
+          Agrupan tu catálogo en la tienda. El <strong>orden</strong> decide cómo aparecen; el mismo número las ordena por nombre.
         </p>
         <Button onClick={() => setEditing('new')}>
           <span className="inline-flex items-center gap-1.5"><Plus className="w-4 h-4" /> Agregar categoría</span>

@@ -5,6 +5,8 @@ import {
   Layers, Pencil, Plus, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useBusinessInfo } from '../../lib/biz'
+import { vocabularioDe } from './vocabulario'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
@@ -184,6 +186,8 @@ export default function OptionsManager({
   categorias: Category[]
 }) {
   const qc = useQueryClient()
+  // Los ejemplos son del oficio del local, no de una pizzería.
+  const voz = vocabularioDe(useBusinessInfo().data?.type)
   const [abierto, setAbierto] = useState<Record<string, boolean>>({})
   const [editandoGrupo, setEditandoGrupo] = useState<
     { grupo: OptionGroupPayload; id: string | null } | null
@@ -508,7 +512,7 @@ export default function OptionsManager({
             <h3 className="text-lg font-semibold">Plantillas reutilizables</h3>
             <p className="text-sm text-muted-foreground">
               Una lista que se usa en varios sitios. Defines «Sabores» una vez y sirve para la
-              primera pizza, la segunda y las dos mitades: al añadir un sabor, aparece en todas.
+              cada paso del combo a la vez: al añadir una opción, aparece en todos.
             </p>
           </div>
           <Button variant="outline" onClick={() => setPlantillaNueva({ name: '' })}>
@@ -702,7 +706,7 @@ export default function OptionsManager({
           <DialogHeader>
             <DialogTitle>Nueva plantilla</DialogTitle>
             <DialogDescription>
-              Por ejemplo «Sabores de pizza». Después le agregas sus opciones y la usas
+              Por ejemplo «{voz.ejemploGrupo}». Después le agregas sus opciones y la usas
               en todos los grupos que quieras.
             </DialogDescription>
           </DialogHeader>
@@ -712,7 +716,7 @@ export default function OptionsManager({
               id="plantilla-nombre"
               value={plantillaNueva?.name || ''}
               onChange={e => setPlantillaNueva({ name: e.target.value })}
-              placeholder="Sabores de pizza"
+              placeholder={voz.ejemploGrupo}
             />
           </div>
           <DialogFooter>
@@ -822,7 +826,7 @@ function GrupoDialog({
             </Select>
             <p className="text-xs text-muted-foreground">
               Por categoría lo heredan todos sus productos: así 19 sabores sirven para todas las
-              pizzas sin repetirlos en cada una.
+              productos sin repetirlos en cada uno.
             </p>
           </div>
 
@@ -972,6 +976,7 @@ function OpcionDialog({
   onGuardar: (valor: { opcion: Omit<ProductOption, 'id'>; id: string | null }) => void
   guardando: boolean
 }) {
+  const voz = vocabularioDe(useBusinessInfo().data?.type)
   const [borrador, setBorrador] = useState<Omit<ProductOption, 'id'> | null>(null)
   const [ultimo, setUltimo] = useState<string | null>(null)
 
@@ -1029,8 +1034,8 @@ function OpcionDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Así se arman los combos: «elige tu primera pizza» son opciones que apuntan a
-              pizzas reales de tu catálogo.
+              Así se arman los combos: «{voz.ejemploGrupo}» son opciones que apuntan a
+              productos reales de tu catálogo.
             </p>
           </div>
 
