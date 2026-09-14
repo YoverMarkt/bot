@@ -25,6 +25,32 @@
 
 import type { MarketplaceEntryDeps } from './marketplace-entry'
 
+/**
+ * La última vuelta del canario, para `/api/health`.
+ *
+ * ⚠️ Existe porque un vigilante SILENCIOSO no se distingue de uno MUERTO. El
+ * canario calla cuando todo va bien —así debe ser: el registro de errores es
+ * para errores— pero entonces «no hay entradas» significa a la vez «todo
+ * correcto» y «nunca corrió», y no hay forma de saber cuál.
+ *
+ * Se descubrió al desplegarlo: sin CLI de Railway no había manera de
+ * comprobar que se había ejecutado. Exponerlo en la salud es gratis, no
+ * ensucia el registro y lo hace comprobable de un vistazo — el mismo remedio
+ * que `version` para los despliegues colgados del 2026-08-29.
+ */
+export interface UltimaVuelta {
+  at: string
+  revisados: number
+  locales: number
+  cerrados: number
+  fallos: number
+}
+
+let ultimaVuelta: UltimaVuelta | null = null
+
+/** La última vuelta, o `null` si todavía no ha corrido ninguna. */
+export const ultimaVueltaDelCanario = (): UltimaVuelta | null => ultimaVuelta
+
 /** Un fallo del camino: qué local, qué paso y qué se esperaba. */
 export interface HallazgoDelCanario {
   businessId: string
@@ -318,6 +344,13 @@ export function crearCanario(deps: CanarioDeps) {
         })
       }
 
+      ultimaVuelta = {
+        at: new Date().toISOString(),
+        revisados: locales - cerrados,
+        locales,
+        cerrados,
+        fallos: todos.length,
+      }
       // ⚠️ El resumen distingue lo revisado de lo que no se pudo mirar.
       const sinMirar = cerrados ? ` · ${cerrados} cerrado(s), sin revisar` : ''
       deps.logger?.log(todos.length

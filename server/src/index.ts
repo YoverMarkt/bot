@@ -23,7 +23,7 @@ import {
 } from './services/credential-monitor'
 import { getPlatformChannel } from './services/platform-channel'
 import { expireUnpaidOrders } from './services/order-expiry'
-import { vigilarElCaminoDelCliente } from './services/canario'
+import { vigilarElCaminoDelCliente, ultimaVueltaDelCanario } from './services/canario'
 import { providerStatusClient } from './integrations/provider-status'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
@@ -296,6 +296,13 @@ app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
     // Railway inyecta la variable sola. En local no existe y vale 'local',
     // que es exactamente lo que hay que ver ahí.
     version: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
+    // ── ¿El canario está VIVO? ───────────────────────────────────────────
+    //
+    // ⚠️ El canario calla cuando todo va bien, y eso lo hacía indistinguible
+    // de un canario muerto: «sin entradas en el registro» significaba a la vez
+    // «se puede comprar» y «nunca corrió». Aquí se ve cuándo dio su última
+    // vuelta y qué encontró. `null` = todavía no ha corrido ninguna.
+    canario: ultimaVueltaDelCanario(),
     webhook_inbox: {
       running: webhookInboxWorker.isRunning(),
       ready: webhookInboxWorker.isReady(),
