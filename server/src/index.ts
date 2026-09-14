@@ -23,6 +23,7 @@ import {
 } from './services/credential-monitor'
 import { getPlatformChannel } from './services/platform-channel'
 import { expireUnpaidOrders } from './services/order-expiry'
+import { vigilarElCaminoDelCliente } from './services/canario'
 import { providerStatusClient } from './integrations/provider-status'
 import { activeClientGuard } from './middleware/auth'
 import { securityHeaders } from './middleware/security-headers'
@@ -531,6 +532,24 @@ httpServer = app.listen(port, () => {
   // un despliegue con la base todavía fría empezaría cancelando pedidos.
   setTimeout(expireUnpaidOrders, 30_000)
   setInterval(expireUnpaidOrders, 10 * 60 * 1000)
+
+  // 🐤 ¿Puede un cliente comprar AHORA MISMO?
+  //
+  // Recorre el camino real —saludar, entrar a cada local, pedir el menú— con
+  // el catálogo de producción, y anota en el registro de errores lo que no
+  // cuadre. No escribe una fila ni manda un WhatsApp.
+  //
+  // ⚠️ Existe porque el 2026-09-13 se encontraron tres fallos rojos probando a
+  // mano, y el peor —el chat sin precios ni botón de pedir— llevaba CUATRO
+  // DÍAS con el CI en verde y 2.727 pruebas pasando. Ninguna prueba contesta
+  // «¿alguien puede comprar hoy?»; esto sí.
+  //
+  // ⚠️ Cada 12 h y no cada hora: lo que vigila cambia cuando se despliega, no
+  // solo. Dos vueltas al día bastan para enterarse el mismo día sin recorrer
+  // el catálogo entero sin motivo. La primera espera 60 s, después del primer
+  // barrido de pedidos, para no competir con una base recién arrancada.
+  setTimeout(() => { void vigilarElCaminoDelCliente() }, 60_000)
+  setInterval(() => { void vigilarElCaminoDelCliente() }, 12 * 60 * 60 * 1000)
 
   setupTelegram(app, bot.handleMessage).then(() => {
     if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)
