@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { BUSINESS_TYPE_OPTIONS } from '../clients/business-types'
+import { dinero, ETIQUETA_AMBITO, ETIQUETA_ESTRATEGIA, comoCobra } from './reglas'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   archivePricingRule, createPricingRule, getClients, getMarkupSummary,
@@ -30,38 +31,6 @@ import { Skeleton } from '@botpanel/ui/components/skeleton'
 // tampoco: pregunta al servidor, que usa el espejo en TypeScript de la misma
 // lógica. Si esta pantalla hiciera sus cuentas, mostraría un número y se
 // cobraría otro.
-
-const dinero = (v: number | string) => `$${Number(v || 0).toFixed(2)}`
-
-// ⚠️ `family` sigue AQUÍ aunque ya no se pueda crear desde el desplegable: la
-// lista tiene que saber pintar una regla antigua de ese ámbito. Se retira la
-// puerta de entrada, no la capacidad de leer lo que ya existe.
-const ETIQUETA_AMBITO: Record<PricingRule['scope'], string> = {
-  family: 'Una familia',
-  business: 'Un negocio',
-  business_type: 'Un tipo',
-  global: 'Toda la plataforma',
-}
-
-const ETIQUETA_ESTRATEGIA: Record<PricingRule['strategy'], string> = {
-  percentage: 'Porcentaje',
-  fixed: 'Monto fijo',
-  tiered: 'Por tramos',
-}
-
-/** Cómo cobra una regla, en una línea legible. */
-const comoCobra = (r: PricingRule): string => {
-  const frenos = [
-    r.min_amount != null ? `mínimo ${dinero(r.min_amount)}` : null,
-    r.max_amount != null ? `máximo ${dinero(r.max_amount)}` : null,
-  ].filter(Boolean).join(' · ')
-
-  const base = r.strategy === 'percentage' ? `${r.percentage}%`
-    : r.strategy === 'fixed' ? dinero(r.fixed_amount || 0)
-      : `${r.tiers?.length || 0} tramos`
-
-  return frenos ? `${base} — ${frenos}` : base
-}
 
 const BORRADOR_INICIAL: PricingRuleDraft = {
   scope: 'business',
