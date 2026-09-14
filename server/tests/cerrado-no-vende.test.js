@@ -40,7 +40,7 @@ const NEGOCIO = {
   takes_orders: true, storefront_enabled: true, active: true,
 }
 
-function armar({ horario, conversacion, crearPedidoCompleto }) {
+function armar({ horario, conversacion, crearPedidoCompleto, alGuardar }) {
   const enviados = []
   let guardado = null
   const database = {
@@ -50,6 +50,7 @@ function armar({ horario, conversacion, crearPedidoCompleto }) {
       shopping_locked: true, flow_state: guardado, version: 1,
     },
     advanceConversation: async (_id, patch) => {
+      alGuardar?.(patch)
       if (patch.flowState) guardado = patch.flowState
       return { conflicto: false }
     },
@@ -107,6 +108,47 @@ describe('el menú de un local cerrado', () => {
     expect(todo, todo).toContain('mañana a las 9:00 AM')
     // Y la carta SÍ se ofrece: saber qué se vende ahí es la razón de volver.
     expect(todo, todo).toContain('Ver la carta')
+  })
+
+  it('al ELEGIRLO manda UN solo mensaje y no abre el menú', async () => {
+    // ⚠️ Decisión del dueño (2026-09-13): «solo tiene que decir que está
+    // cerrado y la hora que abre; no tienes que mandar a ver la carta porque
+    // eso me gasta mensajes».
+    //
+    // Los BOTONES son gratis —viajan en el mismo mensaje— pero cada paso de
+    // navegar la carta es un SALIENTE que se paga. Abrirle el menú a quien no
+    // puede comprar es pagar una visita guiada por un local cerrado.
+    //
+    // ⚠️ Y no se le queda el candado puesto: encerrarlo en un local que no
+    // puede venderle le pondría fricción para pedir en otro.
+    vi.useFakeTimers(); vi.setSystemTime(LUNES_13H)
+    const guardados = []
+    const { escribir, enviados } = armar({
+      horario: HORARIO_CERRADO,
+      alGuardar: patch => guardados.push(patch),
+      conversacion: {
+        current_state: 'navegando',
+        selected_business_id: null,
+        shopping_locked: false,
+        flow_state: { vista: { vista: 'negocios', categoria: 'almuerzos', pagina: 0 } },
+        version: 1,
+      },
+    })
+
+    await escribir('La Abuelita')
+
+    const todo = enviados.map(e => `${e.reply} || ${JSON.stringify(e.options)}`).join('\n---\n')
+    // UN mensaje. Ni dos, ni el menú detrás.
+    expect(enviados.length, todo).toBe(1)
+    expect(todo, todo).toContain('cerrado ahora mismo')
+    expect(todo, todo).toContain('mañana a las 9:00 AM')
+    // Nada que invite a recorrer la carta a golpe de mensaje.
+    expect(todo, todo).not.toContain('Ver la carta')
+    expect(todo, todo).not.toContain('Hacer un pedido')
+    // Y los demás locales a un toque, dentro del MISMO mensaje.
+    expect(todo, todo).toContain('Almuerzos')
+    // El candado no se pone en un local que no puede vender.
+    expect(guardados.some(p => p.shoppingLocked === true), JSON.stringify(guardados)).toBe(false)
   })
 
   it('lo dice UNA vez, no dos, al ELEGIR el local', async () => {
