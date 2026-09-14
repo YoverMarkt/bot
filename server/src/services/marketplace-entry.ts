@@ -1040,19 +1040,25 @@ async function entregarLocal(
   )
 
   if (enElChat) {
-    // ⚠️ Cerrado se avisa ANTES de abrirle el menú (2026-09-03). En estos
-    // locales el pedido se arma dentro del chat, así que sin este aviso el
-    // cliente recorre la carta entera, elige, y se topa con el cierre al
-    // confirmar — con el carrito ya hecho. Es el peor momento para enterarse.
+    // ⚠️ EL AVISO DE CIERRE LO DA EL MENÚ, no un mensaje aparte (2026-09-13).
     //
-    // El menú se abre igual: mirar la carta con el local cerrado es lo que le
-    // hace volver a la hora de apertura. Lo que no se le deja es armar el
-    // pedido a ciegas.
-    if (negocio.abierto === false) {
-      await deps.send(textoDelLocal(negocio).replace(' 👇', ':'), [])
-    }
-    // Se entra en el menú del local YA, con este mismo mensaje: hacerle
-    // escribir otra vez para ver la carta costaría un mensaje de más.
+    // Aquí se mandaba uno antes de abrirlo, y su motivo era bueno: sin él, el
+    // cliente recorría la carta, elegía, y se topaba con el cierre al
+    // confirmar — con el carrito ya hecho. Desde que el menú NO ofrece pedir
+    // con el local cerrado y lo dice en su encabezado, ese mensaje repetía
+    // palabra por palabra lo que venía justo detrás:
+    //
+    //   🌙 La Abuelita está cerrado ahora mismo. Abre mañana a las 9:00 AM.
+    //   Puedes ver la carta mientras tanto:
+    //   🌙 La Abuelita está cerrado ahora mismo. Abre mañana a las 9:00 AM.
+    //   Por ahora no puedes hacer un pedido aquí, pero sí ver la carta.
+    //
+    // Dos mensajes seguidos diciendo lo mismo se leen como un fallo, y en
+    // WhatsApp cada saliente se PAGA: esto ahorra uno por cada cliente que
+    // entra a un local cerrado.
+    //
+    // Se entra en el menú del local YA: hacerle escribir otra vez para ver la
+    // carta costaría otro mensaje de más.
     await conducirEnElChat(deps, customer, phone, negocio.id, '', null)
     return
   }

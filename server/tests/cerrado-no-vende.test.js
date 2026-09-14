@@ -60,6 +60,12 @@ function armar({ horario, conversacion, crearPedidoCompleto }) {
     getPolicies: async () => null,
     getMarketplaceCategories: async () => ([{ code: 'almuerzos', label: 'Almuerzos', emoji: '🍱' }]),
     getBusinessPricingRule: async () => null,
+    getMarketplaceBusinesses: async () => ([
+      { id: 'b1', slug: 'la-abuelita', name: 'La Abuelita', type: 'almuerzos' },
+    ]),
+    claimMarketplaceReply: async () => ({ permitido: true, respuestas: 1 }),
+    isPlatformBlocked: async () => false,
+    isContactBlocked: async () => false,
     getStorefrontPaymentMethods: async () => ([
       { code: 'transferencia', label: 'Transferencia bancaria', help_text: null, is_prepaid: true, requires_proof: true },
     ]),
@@ -101,6 +107,36 @@ describe('el menú de un local cerrado', () => {
     expect(todo, todo).toContain('mañana a las 9:00 AM')
     // Y la carta SÍ se ofrece: saber qué se vende ahí es la razón de volver.
     expect(todo, todo).toContain('Ver la carta')
+  })
+
+  it('lo dice UNA vez, no dos, al ELEGIR el local', async () => {
+    // ⚠️ Antes del 2026-09-13 se mandaba un mensaje de cierre ANTES de abrir el
+    // menú, y su motivo era bueno: sin él el cliente armaba el carrito entero y
+    // se topaba con el cierre al confirmar. Desde que el menú NO ofrece pedir y
+    // lo dice en su encabezado, aquel mensaje repetía lo que venía detrás —
+    // palabra por palabra. Dos mensajes seguidos diciendo lo mismo se leen como
+    // un fallo, y en WhatsApp cada saliente se PAGA.
+    //
+    // ⚠️ Esto SOLO se reproduce eligiendo el local desde la lista: es
+    // `entregarLocal` quien mandaba el mensaje de más, no el menú. Una prueba
+    // que entrara con el local ya elegido pasa con el fallo puesto — lo
+    // comprobé, y por eso esta prueba empieza en la lista de locales.
+    vi.useFakeTimers(); vi.setSystemTime(LUNES_13H)
+    const { escribir, enviados } = armar({
+      horario: HORARIO_CERRADO,
+      conversacion: {
+        current_state: 'navegando',
+        selected_business_id: null,
+        shopping_locked: false,
+        flow_state: { vista: { vista: 'negocios', categoria: 'almuerzos', pagina: 0 } },
+        version: 1,
+      },
+    })
+
+    await escribir('La Abuelita')
+
+    const veces = enviados.filter(e => /cerrado ahora mismo/.test(e.reply)).length
+    expect(veces, enviados.map(e => e.reply).join('\n---\n')).toBe(1)
   })
 
   it('con el local ABIERTO todo sigue igual', async () => {
