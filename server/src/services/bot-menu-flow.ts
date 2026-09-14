@@ -312,6 +312,21 @@ const optionTitle = (option: MenuOption): string => (
   typeof option === 'string' ? option : option.title
 )
 
+/**
+ * El título tal como SALE a WhatsApp: recortado a 24 caracteres con «…».
+ *
+ * ⚠️ Es la misma operación que `clip` en `integrations/ycloud.ts`, y está aquí
+ * duplicada a propósito: este módulo es una máquina de estados PURA y no puede
+ * depender de la integración del canal. Lo que impide que las dos copias
+ * diverjan es una prueba que las compara (`titulo-recortado.test.js`).
+ */
+const recortarTitulo = (value: string): string => {
+  const limpio = String(value || '').trim()
+  return limpio.length <= ROW_TITLE_MAX
+    ? limpio
+    : `${limpio.slice(0, ROW_TITLE_MAX - 1)}…`
+}
+
 // El cliente puede tocar la opción (llega el título exacto) o escribir su
 // número de lista, como en el banco ("1", "2", …)
 const matchOption = (message: string, options: MenuOption[]): string | null => {
@@ -324,6 +339,29 @@ const matchOption = (message: string, options: MenuOption[]): string | null => {
     const index = Number(text) - 1
     if (index >= 0 && index < titles.length) return titles[index]
   }
+  // ── El título que vuelve RECORTADO ──────────────────────────────────
+  //
+  // ⚠️ WhatsApp devuelve el TÍTULO de la fila tocada, no su id
+  // (`webhooks.routes.ts`: `text = reply?.title`), y ese título sale de aquí
+  // ya recortado a 24 caracteres por nosotros mismos. Con nombres de carta
+  // reales eso pasa constantemente:
+  //
+  //   se envía  «4 × Pollo en salsa de champiñones»  (33)
+  //   vuelve    «4 × Pollo en salsa de c…»           (24)
+  //
+  // y no casaba con nada: el cliente tocaba, recibía «🙏 No te entendí» y veía
+  // LA MISMA lista. Bucle infinito, y sin forma de salir salvo escribir MENÚ.
+  //
+  // ⚠️ Se arregla en el MATCHER y no en cada generador de listas a propósito:
+  // los títulos largos los produce más de un sitio —el atajo de «todas
+  // iguales», el reparto por pasos— y cada carta nueva traerá nombres más
+  // largos. Un local de ceviches o una heladería los tiene por naturaleza.
+  //
+  // ⚠️ Se compara contra el recorte EXACTO que se envió, no por prefijo: si
+  // dos opciones se recortan a lo mismo, ninguna gana. Elegir una al azar
+  // metería en el pedido un plato que el cliente no pidió, y eso es dinero.
+  const recortados = titles.filter(title => normalizeText(recortarTitulo(title)) === text)
+  if (recortados.length === 1) return recortados[0]
   return null
 }
 
