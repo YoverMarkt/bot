@@ -22,8 +22,8 @@ import {
   setAddressLocation,
 } from '../lib/api'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, lineKey, lineTotal, needsAddress,
-  orderTotal, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, claveDelPlato, esPlatoPorPartes, lineKey,
+  lineTotal, needsAddress, orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Bienvenida, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
@@ -293,7 +293,11 @@ export default function FoodStore({
     const obligatorios = producto.optionGroups.some(
       grupo => grupo.required || grupo.minSelectable > 0,
     )
-    if (obligatorios || producto.hasVariants) return setElegido(producto)
+    // Un plato por partes tampoco entra de un toque: sin sopa ni segundo la base
+    // lo rechaza, así que se abre su ficha para armar la mesa.
+    if (obligatorios || producto.hasVariants || esPlatoPorPartes(producto)) {
+      return setElegido(producto)
+    }
 
     setLineas(actuales => addLine(actuales, {
       key: lineKey(producto, null, [], '', []),
@@ -1251,6 +1255,9 @@ export default function FoodStore({
         onAgregar={linea => setLineas(actuales => addLine(actuales, linea))}
         onAgregarSuelto={agregarAdicional}
         puedePedir={puedePedir}
+        lineaEnCarrito={elegido
+          ? lineas.find(linea => linea.key === claveDelPlato(elegido)) ?? null
+          : null}
       />
 
       <CartSheet
@@ -1259,6 +1266,10 @@ export default function FoodStore({
         onCerrar={() => setCarritoAbierto(false)}
         lines={lineas}
         onCantidad={(key, cantidad) => setLineas(actuales => setQuantity(actuales, key, cantidad))}
+        onEditar={(producto) => {
+          setCarritoAbierto(false)
+          setElegido(producto)
+        }}
         me={me}
         puedePedir={puedePedir}
         enviando={enviando}

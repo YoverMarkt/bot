@@ -334,6 +334,23 @@ que compartía tipografía y tokens pero no la forma. Lo que cambió:
   - `Agregar 1 al carrito · $16.83` cuando se puede,
   - o **qué falta**: `Elige el tamaño`. Nunca un genérico como «completa las
     opciones».
+- **El plato por partes (un almuerzo)** — 2026-09-14. Cuando el producto tiene
+  grupos marcados como PARTE (`isMealPart`), la ficha deja de pedir cantidad y
+  se convierte en la **mesa de la familia**:
+  - Bajo la descripción, una línea con la regla: `Sopa + Segundo = un plato
+    completo a $3.00` y debajo `Sopa por separado $1.50 · Segundo por separado
+    $2.50` (o `solo con el plato` si el dueño no le puso precio suelto).
+  - Cada parte y cada acompañante es un contador `− n +`. Lo que acompaña sin
+    precio dice **Gratis**; las porciones de una parte no llevan precio propio.
+  - Sin `Obligatorio`, sin `Hasta 100` y sin `0 de 100 seleccionados`: en una
+    mesa no hay tope que contar.
+  - La barra inferior **no lleva contador**: enseña la mesa ya contada en platos
+    (`2 × Almuerzo del día $6.00`, `1 × Solo segundo $2.50`) y el botón dice
+    `Agregar · $9.00`, `Elige tu plato` o `Completa el plato`, con el motivo
+    encima.
+  - La mesa es **una sola línea** del carrito. Reabrir la ficha la trae puesta y
+    el botón pasa a `Actualizar`; en el carrito esa línea tiene **Editar** en vez
+    de contador.
 
 ## 4. Carrito y checkout
 

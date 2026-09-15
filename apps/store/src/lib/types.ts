@@ -121,6 +121,13 @@ export interface OptionGroup {
   minSelectable: number
   maxSelectable: number
   options: OptionChoice[]
+  /**
+   * Una PARTE del plato por partes (sopa, segundo): una porción de cada parte
+   * forma un plato completo. Opcional: un catálogo guardado de antes no la trae.
+   */
+  isMealPart?: boolean
+  /** Lo que cuesta una porción suelta de esta parte, con margen. Nulo: no se vende sola. */
+  loosePrice?: number | null
 }
 
 /** Lo que el cliente eligió de un grupo. `quantity` es 1 salvo en los contadores. */
