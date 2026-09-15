@@ -12,7 +12,9 @@ import {
 } from '@remixicon/react'
 import { Aviso, Boton, Contador, Foto, Hoja, Marca, ROTULO } from './ui'
 import { money } from '../lib/format'
-import { cartTotal, detalleDeLinea, lineTotal, needsAddress, orderTotal } from '../lib/cart'
+import {
+  cartTotal, detalleDeLinea, esPlatoPorPartes, lineTotal, needsAddress, orderTotal,
+} from '../lib/cart'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
 import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod, StorePaymentMethod } from '../lib/types'
@@ -70,7 +72,7 @@ const tieneUbicacion = (direccion: Address): boolean =>
   && direccion.longitude !== null && direccion.longitude !== undefined
 
 export default function CartSheet({
-  abierta, onCerrar, lines, onCantidad, me, puedePedir, enviando, error, deliveryFee,
+  abierta, onCerrar, lines, onCantidad, onEditar, me, puedePedir, enviando, error, deliveryFee,
   minOrderAmount, entrega, paymentMethods, onEntrega, onConfirmar, onNuevaDireccion,
   onUbicarDireccion, onBorrarDireccion,
 }: {
@@ -78,6 +80,12 @@ export default function CartSheet({
   onCerrar: () => void
   lines: CartLine[]
   onCantidad: (key: string, cantidad: number) => void
+  /**
+   * Reabre la ficha de un plato por partes con lo que ya lleva la mesa. Esa
+   * línea no se cambia con un contador: «2» sería pedir la mesa entera dos
+   * veces, y la base la rechaza. Se edita entera, sopa por sopa.
+   */
+  onEditar: (product: CartLine['product']) => void
   me: Me | null
   puedePedir: boolean
   enviando: boolean
@@ -356,11 +364,26 @@ export default function CartSheet({
                   </p>
                 )}
                 <div className="mt-2 flex items-center gap-2">
-                  <Contador
-                    valor={linea.quantity}
-                    minimo={0}
-                    onCambiar={cantidad => onCantidad(linea.key, cantidad)}
-                  />
+                  {/* La mesa de un plato por partes se EDITA, no se cuenta: su
+                      contador diría «2» y pediría la mesa entera dos veces, que
+                      la base rechaza. «Editar» reabre la ficha con lo que lleva. */}
+                  {esPlatoPorPartes(linea.product)
+                    ? (
+                        <button
+                          type="button"
+                          onClick={() => onEditar(linea.product)}
+                          className="superficie borde-tema h-11 rounded-full border-2 px-5 text-[14px] font-bold transition active:scale-95"
+                        >
+                          Editar
+                        </button>
+                      )
+                    : (
+                        <Contador
+                          valor={linea.quantity}
+                          minimo={0}
+                          onCambiar={cantidad => onCantidad(linea.key, cantidad)}
+                        />
+                      )}
                   {/* 44×44 reales: era un icono de 17 px sin caja, o sea una
                       diana de 17 para una acción que quita algo del pedido. */}
                   <button

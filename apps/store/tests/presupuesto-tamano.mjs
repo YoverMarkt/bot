@@ -133,7 +133,22 @@ const DIST = path.join(RAIZ, 'dist')
 // 100 bytes es arriesgar el flujo de compra para ganar una cifra. Queda
 // anotado como la palanca de verdad para el día que el presupuesto apriete
 // —vale varios kB, no decenas de bytes— y ese día se hace con su prueba.
-const PRESUPUESTO_KB = 94
+//
+// 94 → 95 el 2026-09-14. Medido: 93,3 kB en `main` → 94,5 kB con el cambio.
+//
+// Entró: la MESA de la familia, el almuerzo por partes que pidió el dueño —«si
+// en la familia son más, en ese mismo almuerzo me permita sumar más sopas y más
+// segundos»—. Son +1,2 kB y ninguna librería: `lineasDelPlato` (la regla que
+// cobra la base, copiada para pintar lo mismo que se va a cobrar), el desglose
+// de la mesa en platos, «Editar» en el carrito y el «Gratis» de lo que acompaña.
+//
+// ⚠️ No se compactó la regla para que cupiera, y es a propósito: es la tercera
+// copia de una cuenta de DINERO, con los mismos casos que la base. Quitarle
+// comprobaciones para ahorrar bytes haría que la pantalla dijera un total y la
+// base cobrara otro, que es exactamente lo que esa copia existe para impedir.
+// La palanca grande sigue siendo la anotada arriba —diferir la ficha y el
+// carrito— y sigue descartada por el mismo motivo.
+const PRESUPUESTO_KB = 95
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)

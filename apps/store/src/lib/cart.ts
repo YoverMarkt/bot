@@ -249,13 +249,31 @@ export const lineTotal = (line: CartLine): number =>
 export const cartTotal = (lines: CartLine[]): number =>
   Math.round(lines.reduce((total, line) => total + lineTotal(line), 0) * 100) / 100
 
+/**
+ * Cuántos platos lleva el carrito.
+ *
+ * ⚠️ La mesa de un plato por partes es UNA línea con cantidad 1, pero puede
+ * llevar diez almuerzos: contar la línea le diría «1» a una familia entera.
+ */
 export const cartCount = (lines: CartLine[]): number =>
-  lines.reduce((total, line) => total + line.quantity, 0)
+  lines.reduce((total, line) => total + (esPlatoPorPartes(line.product)
+    ? platosDeLaMesa(line)
+    : line.quantity), 0)
 
-/** Agrega respetando la identidad de la línea. Devuelve un carrito nuevo. */
+/**
+ * Agrega respetando la identidad de la línea. Devuelve un carrito nuevo.
+ *
+ * ⚠️ La mesa de un plato por partes SUSTITUYE a la anterior, no se suma: la
+ * ficha se abre con lo que ya lleva y el cliente la edita entera. Sumarla
+ * pondría la cantidad en 2, y la base rechaza la mesa con cualquier cantidad
+ * que no sea 1.
+ */
 export function addLine(lines: CartLine[], nueva: CartLine): CartLine[] {
   const existente = lines.find(line => line.key === nueva.key)
   if (!existente) return [...lines, nueva]
+  if (esPlatoPorPartes(nueva.product)) {
+    return lines.map(line => (line.key === nueva.key ? nueva : line))
+  }
   return lines.map(line => line.key === nueva.key
     ? { ...line, quantity: Math.min(99, line.quantity + nueva.quantity) }
     : line)
@@ -384,9 +402,177 @@ export const chosenLines = (
  * Nunca las dos cosas: la línea del carrito es un resumen, no una ficha.
  */
 export const detalleDeLinea = (linea: CartLine): string[] => {
+  // ⚠️ La mesa de un plato por partes se cuenta por sus PLATOS, como la va a
+  // guardar la base: «2 × Almuerzo · Sopa: Caldo x2», «1 × Solo segundo:
+  // Ceviche». Una lista suelta de sopas y segundos no le dice a la familia
+  // cuántos almuerzos está pagando.
+  if (esPlatoPorPartes(linea.product)) {
+    const plato = lineasDelPlato(linea.product, linea.options)
+    if (plato.lines) {
+      return plato.lines.flatMap((parte) => {
+        const cabecera = `${parte.quantity} × ${parte.name}`
+        if (!parte.options.length) return [cabecera]
+        // Los platos completos llevan lo elegido en RENGLONES: en una sola
+        // frase el carrito la cortaba a dos líneas y se perdía qué jugo iba.
+        if (parte.name === linea.product.name) {
+          return [cabecera, ...chosenLines(parte.options, linea.product.optionGroups)]
+        }
+        return [`${cabecera}: ${parte.options
+          .map(opcion => (opcion.quantity > 1 ? `${opcion.name} x${opcion.quantity}` : opcion.name))
+          .join(', ')}`]
+      })
+    }
+  }
+
   const elegido = chosenLines(linea.options, linea.product.optionGroups)
   if (elegido.length) return elegido
   if (linea.extras.length) return [linea.extras.map(extra => extra.name).join(' · ')]
   const descripcion = (linea.product.description || '').trim()
   return descripcion ? [descripcion] : []
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL PLATO POR PARTES — la mesa de una familia
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// La familia marca cuántas sopas y segundos quiere y la ficha le enseña, ANTES
+// de agregar, cuántos almuerzos son y cuánto cuestan. Es la copia en el
+// teléfono de `buildMealLines` (`server/src/services/pricing.ts`), que replica
+// `lineas_del_plato_por_partes` de la base — la única que cobra.
+//
+// Las reglas, las mismas en los tres sitios:
+//   · una porción de cada parte es un plato completo, al precio del dueño;
+//   · lo que sobra de una parte se cobra a su precio suelto, y sin él no se vende;
+//   · un acompañante con precio es su propia línea;
+//   · lo gratis va con el plato y no suma.
+//
+// ⚠️ Aquí manda el orden de la CARTA —la posición en el catálogo—, no el
+// `sort` + id de la base. Solo decide qué porción se lista como suelta, y todas
+// las de una parte cuestan lo mismo: el dinero no cambia. Lo que queda guardado
+// y se ve después en el pedido es lo que arma la base.
+
+/** ¿Este producto se arma por partes? Lo dicen sus grupos, no el tipo de comida. */
+export function esPlatoPorPartes(product: Product): boolean {
+  return product.optionGroups.some(grupo => grupo.isMealPart === true)
+}
+
+/** La mesa de un plato va en UNA sola línea del carrito: su clave es la del producto. */
+export const claveDelPlato = (product: Product): string => `${product.id}|plato`
+
+export interface LineaDelPlato {
+  name: string
+  quantity: number
+  /** Con el margen de la tienda, como todo precio del catálogo. */
+  unitPrice: number
+  options: ChosenOption[]
+}
+
+export function lineasDelPlato(
+  product: Product,
+  options: ChosenOption[],
+):
+  | { lines: LineaDelPlato[]; platos: number; error?: undefined }
+  | { lines?: undefined; platos?: undefined; error: string } {
+  const grupos = product.optionGroups
+  const grupoDe = new Map(grupos.map(grupo => [grupo.id, grupo]))
+  const puestoDelGrupo = (id: string) => grupos.findIndex(grupo => grupo.id === id)
+  const puestoDeLaOpcion = (opcion: ChosenOption) =>
+    grupoDe.get(opcion.groupId)?.options.findIndex(item => item.id === opcion.optionId) ?? 0
+  const elegidas = options.filter(opcion => opcion.quantity > 0)
+  const porcionesDe = (groupId: string) => elegidas
+    .filter(opcion => opcion.groupId === groupId)
+    .reduce((total, opcion) => total + opcion.quantity, 0)
+  const nombre = product.name
+  const minusculas = (texto: string) => texto.toLocaleLowerCase('es')
+  const fueraDeRango = { error: 'La cantidad debe estar entre 1 y 99' }
+
+  const partes = grupos.filter(grupo => grupo.isMealPart === true)
+  if (!partes.some(parte => porcionesDe(parte.id) > 0)) {
+    return { error: `Elige qué quieres en ${nombre}` }
+  }
+
+  // Tantos platos completos como porciones tenga la parte MÁS CORTA.
+  const completos = Math.min(...partes.map(parte => porcionesDe(parte.id)))
+  if (completos > 99) return fueraDeRango
+
+  const delCompleto: ChosenOption[] = []
+  const sueltas: LineaDelPlato[] = []
+  let platos = completos
+
+  for (const parte of partes) {
+    const sobran = porcionesDe(parte.id) - completos
+    if (sobran > 0 && parte.loosePrice == null) {
+      return { error: `En ${nombre} no se vende ${minusculas(parte.name)} por separado: completa el plato` }
+    }
+    if (sobran > 99) return fueraDeRango
+
+    let paraCompletar = completos
+    const deLaParte: ChosenOption[] = []
+    const enOrden = elegidas
+      .filter(opcion => opcion.groupId === parte.id)
+      .sort((a, b) => puestoDeLaOpcion(a) - puestoDeLaOpcion(b))
+    for (const eleccion of enOrden) {
+      const toma = Math.min(eleccion.quantity, paraCompletar)
+      paraCompletar -= toma
+      if (toma > 0) delCompleto.push({ ...eleccion, quantity: toma, price: 0 })
+      if (eleccion.quantity - toma > 0) {
+        deLaParte.push({ ...eleccion, quantity: eleccion.quantity - toma, price: 0 })
+      }
+    }
+
+    if (sobran > 0) {
+      platos += sobran
+      sueltas.push({
+        name: `Solo ${minusculas(parte.name)}`,
+        quantity: sobran,
+        unitPrice: parte.loosePrice ?? 0,
+        options: deLaParte,
+      })
+    }
+  }
+
+  // ── Lo que acompaña: gratis con el plato, o su propia línea ─────────────
+  const gratis: ChosenOption[] = []
+  const conPrecio: LineaDelPlato[] = []
+  const acompanantes = elegidas
+    .filter(opcion => grupoDe.get(opcion.groupId)?.isMealPart !== true)
+    .sort((a, b) => puestoDelGrupo(a.groupId) - puestoDelGrupo(b.groupId)
+      || puestoDeLaOpcion(a) - puestoDeLaOpcion(b))
+  for (const eleccion of acompanantes) {
+    if (eleccion.price < 0) return { error: `${eleccion.name} tiene un precio no válido en ${nombre}` }
+    if (eleccion.price === 0) {
+      gratis.push(eleccion)
+      continue
+    }
+    if (eleccion.quantity > 99) return fueraDeRango
+    conPrecio.push({
+      name: eleccion.name,
+      quantity: eleccion.quantity,
+      unitPrice: eleccion.price,
+      options: [],
+    })
+  }
+
+  const lineas: LineaDelPlato[] = []
+  if (completos > 0) {
+    lineas.push({
+      name: nombre,
+      quantity: completos,
+      unitPrice: product.priceFrom ?? 0,
+      options: [...delCompleto, ...gratis],
+    })
+  } else {
+    // Sin plato completo, lo gratis acompaña a lo primero que se sirve suelto.
+    sueltas[0]?.options.push(...gratis)
+  }
+  return { lines: [...lineas, ...sueltas, ...conPrecio], platos }
+}
+
+/** Lo que cuesta la mesa entera, sumado en centavos enteros como la base. */
+export const totalDelPlato = (lineas: LineaDelPlato[]): number =>
+  lineas.reduce((centavos, linea) => centavos + Math.round(linea.unitPrice * 100) * linea.quantity, 0) / 100
+
+/** Cuántos platos lleva una mesa: completos y sueltos, sin contar adicionales. */
+function platosDeLaMesa(line: CartLine): number {
+  return lineasDelPlato(line.product, line.options).platos ?? line.quantity
 }
