@@ -154,6 +154,11 @@ jobs:
       - name: Lint del panel cliente y UI compartida
         run: npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client
 
+      # ⚠️ Sin este paso las pruebas del panel existían y el CI no las corría:
+      # salía verde precisamente porque no las miraba (2026-09-14).
+      - name: Tests del panel cliente
+        run: npm test -w @botpanel/client
+
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/client
 
@@ -174,6 +179,9 @@ jobs:
 
       - name: Lint del panel admin y UI compartida
         run: npm run lint -w @botpanel/admin
+
+      - name: Tests del panel admin
+        run: npm test -w @botpanel/admin
 
       - name: Type-check + build (tsc + vite)
         run: npm run build -w @botpanel/admin
