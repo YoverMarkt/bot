@@ -54,6 +54,36 @@ test('el formulario de catálogo asocia cada etiqueta con su control', async ({ 
   await expectConnectedLabels(dialog)
 })
 
+test('el formulario del producto enseña lo esencial y pliega el resto', async ({ page }) => {
+  // ⚠️ Pedido del dueño (2026-09-14): «quiero un panel realmente sencillo de
+  // agregar o crear productos, que sea intuitivo». El formulario pedía DOCE
+  // campos de golpe, y para un local de diez platos eso es un muro.
+  //
+  // `brand` y `external_sku` ni siquiera llegan al cliente —los usa el bot para
+  // BUSCAR fotos en catálogos de retail, y están vacíos en los 23 productos de
+  // producción—. No se borran (un supermercado los necesita): se pliegan.
+  await seedClientSession(page)
+  await mockClientApi(page)
+  await page.goto(`${clientUrl}#/catalog`)
+
+  await page.getByRole('button', { name: 'Agregar producto' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo producto' })
+  await expect(dialog).toBeVisible()
+
+  // Lo esencial, sin tener que abrir nada.
+  for (const etiqueta of [/^Nombre/, /^Precio \*/, /^Categoría/, /^Tipo de producto/]) {
+    await expect(dialog.getByLabel(etiqueta)).toBeVisible()
+  }
+
+  // Y lo de siempre, fuera de la vista hasta que se pida.
+  await expect(dialog.getByLabel('Marca')).toBeHidden()
+  await expect(dialog.getByLabel('SKU')).toBeHidden()
+
+  await dialog.getByText('Más opciones').click()
+  await expect(dialog.getByLabel('Marca')).toBeVisible()
+  await expect(dialog.getByLabel('SKU')).toBeVisible()
+})
+
 test('oculta a un empleado las secciones que no tiene permitidas', async ({ page }) => {
   let alertsRequests = 0
   page.on('request', request => {

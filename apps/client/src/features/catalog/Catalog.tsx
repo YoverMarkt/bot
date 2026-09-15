@@ -283,31 +283,8 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             <Input id="product-name" value={f.name} onChange={set('name')} placeholder={voz.ejemploProducto} />
           </div>
           <div>
-            <Label htmlFor="product-brand">Marca</Label>
-            <Input id="product-brand" value={f.brand} onChange={set('brand')} />
-          </div>
-          <div>
-            <Label htmlFor="product-sku">SKU</Label>
-            <Input id="product-sku" value={f.external_sku} onChange={set('external_sku')} />
-          </div>
-          <div>
             <Label htmlFor="product-price">Precio * ($)</Label>
             <Input id="product-price" type="number" step="0.01" min="0" value={f.price} onChange={set('price')} />
-          </div>
-          <div>
-            <Label htmlFor="product-sale-price">Precio oferta ($)</Label>
-            <Input id="product-sale-price" type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
-          </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="product-stock">Stock</Label>
-            <Select value={f.stock} onValueChange={v => setF(prev => ({ ...prev, stock: v as Product['stock'] }))}>
-              <SelectTrigger id="product-stock" className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="disponible">Disponible</SelectItem>
-                <SelectItem value="últimas unidades">Últimas unidades</SelectItem>
-                <SelectItem value="agotado">Agotado</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="product-type">Tipo de producto</Label>
@@ -344,14 +321,6 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
                 : 'Sin categoría el producto aparece suelto, fuera de los grupos.'}
             </p>
           </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="product-description">Descripción</Label>
-            <Textarea id="product-description" rows={3} value={f.description} onChange={set('description')} />
-          </div>
-          <div className="sm:col-span-2">
-            <Label htmlFor="product-tags">Etiquetas (separadas por coma)</Label>
-            <Input id="product-tags" value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
-          </div>
         </div>
 
         {/* Media: imagen + video → Cloudinary */}
@@ -362,13 +331,66 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             <Input id="product-image" type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
+        </div>
+
+        {/* ── Lo que casi nadie necesita, plegado ──────────────────────
+            ⚠️ El formulario pedía doce campos de golpe, y para un local de diez
+            platos eso es un muro. `brand` y `external_sku` ni siquiera llegan
+            al cliente: los usa el bot para BUSCAR fotos en catálogos de retail,
+            y en producción están vacíos en los 23 productos. No se borran —un
+            supermercado los necesita— pero una almuercería no debería tropezar
+            con ellos para crear un almuerzo.
+
+            ⚠️ `details` nativo y no un componente nuevo: el sistema compartido
+            no trae uno plegable, y esto es accesible con teclado sin añadir una
+            dependencia para un acordeón. */}
+        <details className="mb-4 rounded-lg border border-border/60">
+          <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+            Más opciones
+            <span className="ml-1 font-normal text-muted-foreground/70">
+              — oferta, stock, descripción, marca, etiquetas y video
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-3 border-t border-border/60 p-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="product-brand">Marca</Label>
+            <Input id="product-brand" value={f.brand} onChange={set('brand')} />
+          </div>
+          <div>
+            <Label htmlFor="product-sku">SKU</Label>
+            <Input id="product-sku" value={f.external_sku} onChange={set('external_sku')} />
+          </div>
+          <div>
+            <Label htmlFor="product-sale-price">Precio oferta ($)</Label>
+            <Input id="product-sale-price" type="number" step="0.01" min="0" value={f.price_sale} onChange={set('price_sale')} placeholder="opcional" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-stock">Stock</Label>
+            <Select value={f.stock} onValueChange={v => setF(prev => ({ ...prev, stock: v as Product['stock'] }))}>
+              <SelectTrigger id="product-stock" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disponible">Disponible</SelectItem>
+                <SelectItem value="últimas unidades">Últimas unidades</SelectItem>
+                <SelectItem value="agotado">Agotado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-description">Descripción</Label>
+            <Textarea id="product-description" rows={3} value={f.description} onChange={set('description')} />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="product-tags">Etiquetas (separadas por coma)</Label>
+            <Input id="product-tags" value={f.tags} onChange={set('tags')} placeholder="nuevo, oferta, popular" />
+          </div>
           <div className="rounded-lg border border-dashed border-input p-3">
             <Label htmlFor="product-video" className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Film className="w-3.5 h-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
             {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
             <Input id="product-video" type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
             {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}
           </div>
-        </div>
+          </div>
+        </details>
 
         {error && <p role="alert" className="text-sm text-destructive mb-3">✗ {error}</p>}
 
