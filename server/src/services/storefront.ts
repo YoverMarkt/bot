@@ -12,7 +12,12 @@
 
 // El tipo vive con el motor que lo usa, y se reexporta para que quien arma el
 // catálogo no tenga que saber de dónde sale.
-import { calculateProductPrice, type PricingStrategy } from './pricing'
+import {
+  buildMealLines,
+  calculateProductPrice,
+  type MealChoice,
+  type PricingStrategy,
+} from './pricing'
 import { calculatePlatformMarkup, type MarkupRule } from './platform-pricing'
 export type { PricingStrategy }
 
@@ -123,6 +128,10 @@ export interface CatalogOptionGroup {
   pricing_strategy?: string | null
   free_selections?: number | null
   sort?: number
+  /** Una PARTE del plato por partes: una porción de cada parte forma un plato. */
+  is_meal_part?: boolean | null
+  /** Lo que cuesta una porción suelta de esta parte. Nulo: no se vende sola. */
+  loose_price?: string | number | null
 }
 
 export interface CatalogOption {
@@ -416,7 +425,9 @@ export function buildStorefrontCatalog(input: {
               name: opcion.name,
               description: opcion.description || referido?.description || null,
               imageUrl: opcion.image_url || referido?.image_url || null,
-              price: vit(money(opcion.price_adjustment)) ?? 0,
+              // Una porción de una PARTE no tiene precio propio: dentro del
+              // plato vale lo que dice el plato, y suelta, lo que dice su grupo.
+              price: grupo.is_meal_part === true ? 0 : vit(money(opcion.price_adjustment)) ?? 0,
               referencesProductId: opcion.references_product_id || null,
               defaultSelected: opcion.default_selected === true,
             }
@@ -428,6 +439,11 @@ export function buildStorefrontCatalog(input: {
           name: grupo.name,
           description: grupo.description || null,
           selectionType: (grupo.selection_type || 'single') as 'single' | 'multiple' | 'quantity',
+          // El plato por partes: una porción de cada parte forma un plato
+          // completo, y lo que sobra se cobra a `loosePrice`. El precio suelto
+          // viaja con el margen, igual que cualquier precio de esta tienda.
+          isMealPart: grupo.is_meal_part === true,
+          loosePrice: grupo.is_meal_part === true ? vit(money(grupo.loose_price)) : null,
           // Cómo cobra el grupo. La app pinta con esto y la base cobra con lo
           // mismo, así que el cliente ve el número que va a pagar.
           pricingStrategy: (grupo.pricing_strategy || 'sum') as PricingStrategy,
@@ -786,6 +802,75 @@ export function quoteCart(input: {
         quantity: porciones,
         price: precio,
       })
+    }
+
+    // ── El plato POR PARTES: la mesa entera se parte en sus líneas ────────
+    //
+    // Lo mismo que hace `lineas_del_plato_por_partes` dentro de la RPC, con
+    // las mismas fronteras y los mismos textos: cotizar un almuerzo que la base
+    // va a rechazar, o a cobrar distinto, sería enseñar un número que no existe.
+    const gruposDelProducto = input.optionGroups.filter(grupo => grupo.product_id === producto.id
+      || (Boolean(grupo.category_id) && grupo.category_id === producto.category_id))
+    if (gruposDelProducto.some(grupo => grupo.is_meal_part === true && grupo.product_id === producto.id)) {
+      if (cantidad !== 1 || variante) return vacia(`${producto.name} se arma en una sola línea`)
+      // Dos líneas del mismo plato no se juntarían: la sopa en una y el
+      // segundo en otra saldrían sueltos, por menos que el almuerzo.
+      if (lines.some(linea => linea.productId === producto.id)) {
+        return vacia(`${producto.name} va una sola vez en el pedido`)
+      }
+      if (!(base > 0)) return vacia(`${producto.name} quedaría sin precio válido`)
+
+      const elecciones: MealChoice[] = (Array.isArray(bruto.options) ? bruto.options.slice(0, 30) : [])
+        .flatMap((cruda) => {
+          const dato = (cruda || {}) as Record<string, unknown>
+          const opcion = porOpcion.get(String(dato.optionId || dato.option_id || ''))
+          if (!opcion) return []
+          return [{
+            optionId: opcion.id,
+            groupId: opcion.option_group_id,
+            name: opcion.name,
+            sort: opcion.sort ?? 0,
+            quantity: Math.min(100, Math.max(1, Math.trunc(Number(dato.quantity) || 1))),
+            price: money(opcion.price_adjustment) ?? 0,
+          }]
+        })
+      const armado = buildMealLines({
+        productName: producto.name,
+        price: base,
+        // Una parte con todo agotado deja de contar, igual que en la base.
+        groups: gruposDelProducto
+          .filter(grupo => grupo.is_meal_part !== true || input.options.some(opcion => (
+            opcion.option_group_id === grupo.id && disponible(opcion.stock)
+          )))
+          .map(grupo => ({
+            id: grupo.id,
+            name: grupo.name,
+            sort: grupo.sort ?? 0,
+            isMealPart: grupo.is_meal_part === true,
+            loosePrice: grupo.is_meal_part === true ? money(grupo.loose_price) : null,
+          })),
+        choices: elecciones,
+      })
+      if (armado.error !== undefined) return vacia(armado.error)
+
+      for (const linea of armado.lines) {
+        const totalDeLinea = Math.round(linea.unitPrice * linea.quantity * 100) / 100
+        subtotal += totalDeLinea
+        lines.push({
+          productId: producto.id,
+          name: linea.name,
+          quantity: linea.quantity,
+          unitPrice: linea.unitPrice,
+          lineTotal: totalDeLinea,
+          options: linea.options.map(elegida => ({
+            name: elegida.name,
+            groupName: porGrupo.get(elegida.groupId)?.name || '',
+            quantity: elegida.quantity,
+            price: 0,
+          })),
+        })
+      }
+      continue
     }
 
     // Los topes del grupo se exigen aquí también: cotizar algo que la RPC va a

@@ -156,3 +156,181 @@ export function calculateProductPrice(input: {
   )
   return Math.max(0, centavos(input.basePrice + opciones))
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL PLATO POR PARTES — el almuerzo de una familia
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El dueño de una almuercería pone UN precio al almuerzo completo y un precio
+// suelto a cada parte (sopa, segundo). La familia marca cuántas porciones
+// quiere de cada cosa y aquí se arman los platos:
+//
+//   · una porción de CADA parte es un plato completo, al precio del dueño —
+//     aunque las partes sueltas sumen menos: el dueño manda;
+//   · lo que sobra de una parte se cobra a su precio suelto, y si el dueño no
+//     le puso precio suelto, esa parte no se vende sola;
+//   · un adicional con precio va en su propia línea;
+//   · lo gratis va con el plato y no suma, sin tope: el dueño sabe que cinco
+//     almuerzos llevan cinco jugos.
+//
+// ⚠️ ESTE ARCHIVO NO ES LA AUTORIDAD. Lo mismo, línea por línea, lo hace
+// `lineas_del_plato_por_partes` dentro de `create_storefront_order`, que es lo
+// que cobra (regla inviolable #8). Aquí vive para cotizar y pintar, y
+// `tests/plato-por-partes.test.js` y `verificar-esquema.sql` los contrastan con
+// los mismos casos.
+//
+// ⚠️ Salen LÍNEAS y no un total, a propósito: «2 × Almuerzo a $3» y «1 × Solo
+// segundo a $2.50» tienen cada una un precio unitario exacto. Así el margen de
+// la plataforma se sigue calculando por línea como en cualquier otro plato, la
+// comanda dice cuántos almuerzos son y el reporte los cuenta bien.
+
+export interface MealGroup {
+  id: string
+  name: string
+  sort: number
+  /** El grupo es una PARTE del plato: una porción de cada parte forma uno. */
+  isMealPart: boolean
+  /** Lo que cuesta una porción de esta parte que no completa un plato. */
+  loosePrice: number | null
+}
+
+export interface MealChoice {
+  optionId: string
+  groupId: string
+  name: string
+  /** El orden que el dueño le dio a la opción dentro de su grupo. */
+  sort: number
+  quantity: number
+  price: number
+}
+
+export interface MealLine {
+  name: string
+  quantity: number
+  unitPrice: number
+  options: { optionId: string; groupId: string; name: string; quantity: number }[]
+}
+
+/**
+ * El orden del dueño, y el id como desempate.
+ *
+ * ⚠️ El desempate es el id y no el nombre: la base ordena los uuid byte a byte,
+ * que es lo mismo que comparar su texto en minúsculas, mientras que ordenar
+ * nombres dependería de la intercalación de cada lado.
+ */
+const enOrden = (a: { sort: number; id: string }, b: { sort: number; id: string }): number =>
+  a.sort - b.sort || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+export function buildMealLines(input: {
+  productName: string
+  /** El precio del plato completo. */
+  price: number
+  /** Los grupos del producto. Las partes, solo las que tienen algo disponible. */
+  groups: MealGroup[]
+  choices: MealChoice[]
+}): { lines: MealLine[]; error?: undefined } | { lines?: undefined; error: string } {
+  const grupoDe = new Map(input.groups.map(grupo => [grupo.id, grupo]))
+  const elegidas = input.choices.filter(eleccion => eleccion.quantity > 0)
+  const porcionesDe = (groupId: string): number => elegidas
+    .filter(eleccion => eleccion.groupId === groupId)
+    .reduce((total, eleccion) => total + eleccion.quantity, 0)
+
+  const partes = input.groups.filter(grupo => grupo.isMealPart).sort(enOrden)
+  if (!partes.some(parte => porcionesDe(parte.id) > 0)) {
+    return { error: `Elige qué quieres en ${input.productName}` }
+  }
+
+  // Tantos platos completos como porciones tenga la parte MÁS CORTA.
+  const completos = Math.min(...partes.map(parte => porcionesDe(parte.id)))
+  if (completos > 99) return { error: 'La cantidad debe estar entre 1 y 99' }
+
+  const delCompleto: MealLine['options'] = []
+  const sueltas: MealLine[] = []
+
+  for (const parte of partes) {
+    const sobran = porcionesDe(parte.id) - completos
+    if (sobran > 0 && parte.loosePrice === null) {
+      return {
+        error: `En ${input.productName} no se vende ${parte.name.toLocaleLowerCase('es')} `
+          + 'por separado: completa el plato',
+      }
+    }
+    if (sobran > 99) return { error: 'La cantidad debe estar entre 1 y 99' }
+
+    // Las porciones llenan primero los platos completos siguiendo la carta del
+    // dueño; las que sobran son las ÚLTIMAS. No cambia un centavo —todas las
+    // porciones de una parte cuestan lo mismo sueltas—, pero así la comanda
+    // sale igual se marque en el orden que se marque.
+    let paraCompletar = completos
+    const opcionesSueltas: MealLine['options'] = []
+    const deLaParte = elegidas
+      .filter(eleccion => eleccion.groupId === parte.id)
+      .map(eleccion => ({ ...eleccion, id: eleccion.optionId }))
+      .sort(enOrden)
+    for (const eleccion of deLaParte) {
+      const toma = Math.min(eleccion.quantity, paraCompletar)
+      paraCompletar -= toma
+      const opcion = { optionId: eleccion.optionId, groupId: eleccion.groupId, name: eleccion.name }
+      if (toma > 0) delCompleto.push({ ...opcion, quantity: toma })
+      if (eleccion.quantity - toma > 0) {
+        opcionesSueltas.push({ ...opcion, quantity: eleccion.quantity - toma })
+      }
+    }
+
+    if (sobran > 0) {
+      sueltas.push({
+        name: `Solo ${parte.name.toLocaleLowerCase('es')}`,
+        quantity: sobran,
+        unitPrice: centavos(parte.loosePrice ?? 0),
+        options: opcionesSueltas,
+      })
+    }
+  }
+
+  // ── Lo que acompaña: gratis con el plato, o su propia línea ─────────────
+  const gratis: MealLine['options'] = []
+  const conPrecio: MealLine[] = []
+  const acompanantes = elegidas
+    .filter(eleccion => grupoDe.get(eleccion.groupId)?.isMealPart !== true)
+    .sort((a, b) => enOrden(
+      { sort: grupoDe.get(a.groupId)?.sort ?? 0, id: a.groupId },
+      { sort: grupoDe.get(b.groupId)?.sort ?? 0, id: b.groupId },
+    ) || enOrden({ sort: a.sort, id: a.optionId }, { sort: b.sort, id: b.optionId }))
+
+  for (const eleccion of acompanantes) {
+    if (eleccion.price < 0) {
+      return { error: `${eleccion.name} tiene un precio no válido en ${input.productName}` }
+    }
+    if (eleccion.price === 0) {
+      gratis.push({
+        optionId: eleccion.optionId,
+        groupId: eleccion.groupId,
+        name: eleccion.name,
+        quantity: eleccion.quantity,
+      })
+      continue
+    }
+    if (eleccion.quantity > 99) return { error: 'La cantidad debe estar entre 1 y 99' }
+    conPrecio.push({
+      name: eleccion.name,
+      quantity: eleccion.quantity,
+      unitPrice: centavos(eleccion.price),
+      options: [],
+    })
+  }
+
+  const lineas: MealLine[] = []
+  if (completos > 0) {
+    lineas.push({
+      name: input.productName,
+      quantity: completos,
+      unitPrice: centavos(input.price),
+      options: [...delCompleto, ...gratis],
+    })
+  } else {
+    // Sin plato completo, lo gratis acompaña a lo primero que se sirve suelto.
+    // Siempre hay una: hubo porciones y ninguna formó plato.
+    sueltas[0]?.options.push(...gratis)
+  }
+  return { lines: [...lineas, ...sueltas, ...conPrecio] }
+}
