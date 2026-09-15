@@ -1138,6 +1138,231 @@ begin
     delete from product_categories where id = v_categoria_op;
   end;
 
+  -- ── 3d bis. El plato POR PARTES: el almuerzo de una familia ─────────────
+  --
+  -- El dueño pone UN precio al almuerzo completo y un precio suelto a cada
+  -- parte. La familia marca cuántas sopas y segundos quiere, y la BASE arma
+  -- los almuerzos: una porción de cada parte es un almuerzo; lo que sobra se
+  -- cobra suelto; un adicional con precio va aparte; lo gratis no suma.
+  --
+  -- Los MISMOS casos que `tests/plato-por-partes.test.js` pasa por el motor de
+  -- TypeScript: si los dos lados divergen, el cliente lee un número y paga otro.
+  declare
+    v_almuerzo uuid;
+    v_g_sopa uuid;
+    v_g_segundo uuid;
+    v_g_acompanar uuid;
+    v_caldo uuid;
+    v_pollo uuid;
+    v_ceviche uuid;
+    v_jugo uuid;
+    v_carne uuid;
+    v_mesa jsonb;
+    v_completo uuid;
+  begin
+    insert into products (business_id, name, price, stock, active)
+    values (v_business, 'Almuerzo por partes', 3.00, 'disponible', true)
+    returning id into v_almuerzo;
+
+    insert into option_groups (
+      business_id, product_id, name, selection_type, min_selectable,
+      max_selectable, sort, is_meal_part, loose_price
+    ) values (v_business, v_almuerzo, 'Sopa', 'quantity', 0, 100, 0, true, 1.50)
+    returning id into v_g_sopa;
+    insert into option_groups (
+      business_id, product_id, name, selection_type, min_selectable,
+      max_selectable, sort, is_meal_part, loose_price
+    ) values (v_business, v_almuerzo, 'Segundo', 'quantity', 0, 100, 1, true, 2.50)
+    returning id into v_g_segundo;
+    insert into option_groups (
+      business_id, product_id, name, selection_type, min_selectable,
+      max_selectable, sort
+    ) values (v_business, v_almuerzo, 'Para acompañar', 'quantity', 0, 100, 2)
+    returning id into v_g_acompanar;
+
+    insert into options (business_id, option_group_id, name, price_adjustment, sort)
+    values (v_business, v_g_sopa, 'Caldo de res', 0, 0) returning id into v_caldo;
+    insert into options (business_id, option_group_id, name, price_adjustment, sort)
+    values (v_business, v_g_segundo, 'Pollo', 0, 0) returning id into v_pollo;
+    insert into options (business_id, option_group_id, name, price_adjustment, sort)
+    values (v_business, v_g_segundo, 'Ceviche', 0, 1) returning id into v_ceviche;
+    insert into options (business_id, option_group_id, name, price_adjustment, sort)
+    values (v_business, v_g_acompanar, 'Jugo', 0, 0) returning id into v_jugo;
+    insert into options (business_id, option_group_id, name, price_adjustment, sort)
+    values (v_business, v_g_acompanar, 'Porción de carne', 0.50, 1) returning id into v_carne;
+
+    -- Una parte solo puede ser un CONTADOR colgado de un producto: un radio no
+    -- deja pedir tres sopas, y en una categoría no hay un precio de almuerzo.
+    begin
+      insert into option_groups (business_id, product_id, name, selection_type, is_meal_part)
+      values (v_business, v_almuerzo, 'Parte que no cuenta', 'single', true);
+      raise exception 'option_groups aceptó una parte del plato que no es contador';
+    exception when sqlstate '23514' then null;
+    end;
+    -- Y un precio suelto sin ser parte no significaría nada.
+    begin
+      insert into option_groups (
+        business_id, product_id, name, selection_type, max_selectable, loose_price
+      ) values (v_business, v_almuerzo, 'Suelto sin parte', 'quantity', 5, 1.00);
+      raise exception 'option_groups aceptó un precio suelto en un grupo que no es parte';
+    exception when sqlstate '23514' then null;
+    end;
+
+    -- La familia: 2 sopas, 3 segundos, 3 jugos gratis y una porción de carne.
+    v_mesa := public.create_storefront_order(
+      v_business, null, '+593900000007', 'Familia', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_almuerzo, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_ceviche, 'quantity', 1),
+          jsonb_build_object('option_id', v_caldo, 'quantity', 2),
+          jsonb_build_object('option_id', v_pollo, 'quantity', 2),
+          jsonb_build_object('option_id', v_jugo, 'quantity', 3),
+          jsonb_build_object('option_id', v_carne, 'quantity', 1)
+        )
+      ))
+    );
+    -- 2 almuerzos a 3.00 + 1 segundo suelto a 2.50 + la carne a 0.50.
+    if (v_mesa ->> 'total')::numeric <> 9.00 then
+      raise exception 'el plato por partes cobró %, y debía cobrar 9.00', v_mesa ->> 'total';
+    end if;
+    if (select count(*) from order_items where order_id = (v_mesa ->> 'id')::uuid) <> 3 then
+      raise exception 'el plato por partes no se partió en sus tres líneas';
+    end if;
+
+    select id into v_completo
+    from order_items
+    where order_id = (v_mesa ->> 'id')::uuid
+      and product_name = 'Almuerzo por partes'
+      and quantity = 2 and unit_price = 3.00 and line_total = 6.00;
+    if v_completo is null then
+      raise exception 'los almuerzos completos no salieron como 2 × 3.00';
+    end if;
+    if not exists (
+      select 1 from order_items
+      where order_id = (v_mesa ->> 'id')::uuid
+        and product_name = 'Solo segundo' and quantity = 1 and unit_price = 2.50
+    ) then
+      raise exception 'el segundo que sobraba no se cobró a su precio suelto';
+    end if;
+    if not exists (
+      select 1 from order_items
+      where order_id = (v_mesa ->> 'id')::uuid
+        and product_name = 'Porción de carne' and quantity = 1 and unit_price = 0.50
+    ) then
+      raise exception 'el adicional con precio no salió en su propia línea';
+    end if;
+
+    -- La cocina lee el almuerzo contado, y lo gratis va con él sin sumar.
+    if not exists (
+      select 1 from order_item_options
+      where order_item_id = v_completo and option_name = 'Caldo de res'
+        and quantity = 2 and total_price_adjustment = 0
+    ) or not exists (
+      select 1 from order_item_options
+      where order_item_id = v_completo and option_name = 'Pollo' and quantity = 2
+    ) or not exists (
+      select 1 from order_item_options
+      where order_item_id = v_completo and option_name = 'Jugo'
+        and quantity = 3 and total_price_adjustment = 0
+    ) then
+      raise exception 'el almuerzo no guardó sus partes contadas';
+    end if;
+    -- El pollo va primero en la carta del dueño, así que el suelto es el ceviche.
+    if not exists (
+      select 1
+      from order_item_options oio
+      join order_items oi on oi.id = oio.order_item_id
+      where oi.order_id = (v_mesa ->> 'id')::uuid
+        and oi.product_name = 'Solo segundo'
+        and oio.option_name = 'Ceviche' and oio.quantity = 1
+    ) then
+      raise exception 'la línea suelta no dice qué segundo se pidió';
+    end if;
+    delete from orders where id = (v_mesa ->> 'id')::uuid;
+
+    -- El almuerzo vale lo que dice el dueño, aunque las partes sueltas sumen menos.
+    update option_groups set loose_price = 0.50 where id in (v_g_sopa, v_g_segundo);
+    v_mesa := public.create_storefront_order(
+      v_business, null, '+593900000007', 'Familia', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_almuerzo, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_caldo, 'quantity', 1),
+          jsonb_build_object('option_id', v_pollo, 'quantity', 1)
+        )
+      ))
+    );
+    if (v_mesa ->> 'total')::numeric <> 3.00 then
+      raise exception 'el almuerzo completo cobró % en vez del precio del dueño', v_mesa ->> 'total';
+    end if;
+    delete from orders where id = (v_mesa ->> 'id')::uuid;
+
+    -- Sin precio suelto, la sopa que sobra NO se vende.
+    update option_groups set loose_price = null where id = v_g_sopa;
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000007', 'Familia', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_almuerzo, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_caldo, 'quantity', 2),
+            jsonb_build_object('option_id', v_pollo, 'quantity', 1)
+          )
+        ))
+      );
+      raise exception 'se vendió una sopa suelta que no tiene precio suelto';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- Solo lo gratis no es un plato.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000007', 'Familia', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_almuerzo, 'quantity', 1,
+          'options', jsonb_build_array(jsonb_build_object('option_id', v_jugo, 'quantity', 2))
+        ))
+      );
+      raise exception 'se aceptó un plato por partes sin ninguna parte';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- En DOS líneas la sopa y el segundo no se juntarían: el almuerzo saldría
+    -- por lo que suman sueltos. La mesa va en una sola.
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000007', 'Familia', null, 'pickup',
+        jsonb_build_array(
+          jsonb_build_object(
+            'product_id', v_almuerzo, 'quantity', 1,
+            'options', jsonb_build_array(jsonb_build_object('option_id', v_pollo, 'quantity', 1))
+          ),
+          jsonb_build_object(
+            'product_id', v_almuerzo, 'quantity', 1,
+            'options', jsonb_build_array(jsonb_build_object('option_id', v_ceviche, 'quantity', 1))
+          )
+        )
+      );
+      raise exception 'se aceptó el plato por partes repartido en dos líneas';
+    exception when sqlstate '22023' then null;
+    end;
+    begin
+      perform public.create_storefront_order(
+        v_business, null, '+593900000007', 'Familia', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_almuerzo, 'quantity', 2,
+          'options', jsonb_build_array(jsonb_build_object('option_id', v_pollo, 'quantity', 1))
+        ))
+      );
+      raise exception 'se aceptó el plato por partes con cantidad 2';
+    exception when sqlstate '22023' then null;
+    end;
+
+    delete from option_groups where product_id = v_almuerzo;
+    delete from products where id = v_almuerzo;
+  end;
+
   -- ── 3d ter. Un doble toque NO crea dos pedidos ───────────────────────────
   --
   -- Es el fallo más caro de una tienda: dos comandas en la cocina y un cliente

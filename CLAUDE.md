@@ -167,6 +167,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Cuánto tarda el negocio (prep_time)** → [DECISIONES.md](DECISIONES.md#cuánto-tarda-el-negocio)
 - **Pedidos programados (retirados)** → [DECISIONES.md](DECISIONES.md#pedidos-programados-retirados-el-2026-08-07)
 - **Cómo se suma el margen al precio** → [DECISIONES.md](DECISIONES.md#el-margen-se-suma-al-precio-no-se-le-quita-al-dueño)
+- **El plato por partes (almuerzo de una familia)** → [DECISIONES.md](DECISIONES.md#el-plato-por-partes-el-almuerzo-de-una-familia)
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 ---
