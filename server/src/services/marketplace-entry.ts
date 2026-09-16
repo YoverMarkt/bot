@@ -751,32 +751,27 @@ async function buscarLocales(
 }
 
 /**
- * El cliente eligió local. Aquí se decide CÓMO va a pedir.
+ * El cliente eligió local: se le entrega su enlace y ahí pide.
  *
- * ⚠️ LO DECIDE EL TIPO DE LOCAL, no cuántos productos tiene. Corrección del
- * dueño del 2026-08-23, y la razón es que las dos cosas no miden lo mismo:
+ * ⚠️ AQUÍ YA NO SE DECIDE NADA, y conviene saber por qué había una decisión.
+ * Hasta el 2026-09-15 esta función elegía entre dos formas de pedir —el menú
+ * por chat o la mini app—, primero contando PRODUCTOS (la «regla de los 20») y
+ * después por el TIPO del local, corrección del dueño del 2026-08-23:
  *
  *   «una pizzería puede tener 10 productos pero al momento de elegir tiene
  *    muchas opciones, así como una heladería puede tener 10 helados pero
  *    muchos sabores: eso son mini app. Pero un restaurante que ofrece
  *    almuerzos solo, queda pedir por WhatsApp.»
  *
- * Hasta esa fecha se contaban PRODUCTOS (la «regla de los 20»): hasta 20 se
- * pedía en el chat. Con ese criterio Monster Pizza —17 productos— caía en el
- * chat, y pedir una pizza por lista de WhatsApp es tamaño, masa, borde y dos
- * sabores. Lo que pesa es cuánto hay que ELEGIR, no cuánto hay en la carta.
+ * El 2026-09-15 se retiró el pedido por chat del marketplace y el 2026-09-16
+ * del canal propio: TODO local pide por su mini app. Con ello se fueron la
+ * columna que decidía (`marketplace_category_types.pide_en_chat`), su función
+ * en la base (`tipo_pide_en_chat`) y su gemela del panel (`PEDIDO_SIMPLE`).
  *
- * ⚠️ El criterio ya existía —`PEDIDO_SIMPLE` en el panel del admin, con estos
- * mismos ejemplos— pero vivía solo ahí, donde el servidor no podía leerlo, y
- * la regla de los 20 lo sobrescribía. Ahora vive en
- * `marketplace_category_types.pide_en_chat`: una sola fuente para el panel y
- * para el servidor, y reclasificable sin desplegar.
- *
- * ⚠️ Esto NO pisa `chat_mode`. Aquel gobierna el canal PROPIO de un negocio
- * (su número, si lo tiene); esto gobierna la experiencia dentro del
- * marketplace, donde el cliente llegó por el número de la plataforma. Son dos
- * contextos distintos y no se contradicen, así que no hace falta ninguna
- * columna nueva ni sobrescribir la decisión de nadie.
+ * Lo que queda vigente del criterio es la lección, no la rama: la tienda
+ * atiende cualquier catálogo y cualquier cantidad de opciones, mientras que un
+ * menú de chat deja al cliente recorriendo listas interminables. Por eso el
+ * camino que sobrevive es el que nunca es inusable.
  */
 async function entregarLocal(
   deps: MarketplaceEntryDeps,

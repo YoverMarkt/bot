@@ -15,36 +15,30 @@ const leer = ruta => readFileSync(
   'utf8',
 )
 
-describe('el modo de atención ya no se elige a mano en el alta', () => {
+describe('el modo de atención ya no se elige, ni a mano ni por API', () => {
   const ruta = readFileSync(
     fileURLToPath(new URL('../../server/src/routes/admin-clients.routes.ts', import.meta.url)),
     'utf8',
   )
 
-  it('`ai` ya no está entre los modos aceptados', () => {
-    // La base solo acepta ('menu','miniapp') desde el 2026-08-21. Que la ruta
-    // siguiera nombrando 'ai' no era cosmético: ver el test de abajo.
-    const linea = ruta.match(/const CHAT_MODES = \[[^\]]*\]/)?.[0] || ''
-    expect(linea).toContain("'menu'")
-    expect(linea).toContain("'miniapp'")
-    expect(linea).not.toContain("'ai'")
+  // ⚠️ Aquí había TRES pruebas sobre `CHAT_MODES`, la lista de modos que la
+  // ruta aceptaba. Nacieron de un bug real: el defecto era `'ai'`, que el CHECK
+  // de la base rechazaba, así que cualquier alta por API sin el campo reventaba
+  // entera y desde el panel no se veía. Desde el 2026-09-16 no hay lista que
+  // validar —hay un modo— y el bug es imposible por construcción.
+  it('el alta fija el único modo que existe, sin lista que validar', () => {
+    expect(ruta).toContain("chat_mode: 'miniapp'")
+    expect(ruta).not.toContain('CHAT_MODES')
+    expect(ruta).not.toMatch(/:\s*'ai'/)
   })
 
-  it('un alta sin `chat_mode` cae en `menu`, nunca en `ai`', () => {
-    // ⚠️ EL BUG: el fallback era `'ai'`, que el CHECK de la base rechaza, así
-    // que `create_business_onboarding` abortaba y el negocio NO se creaba.
-    // Desde el panel no saltaba porque el modal siempre manda uno válido;
-    // por API, cualquier alta sin el campo reventaba.
-    const bloque = ruta.match(/chat_mode: CHAT_MODES\.includes[\s\S]{0,200}?,\n/)?.[0] || ''
-    expect(bloque).toContain("'menu'")
-    expect(bloque).not.toMatch(/:\s*'ai'/)
-  })
-
-  it('el defecto es `menu` y no `miniapp`, que exige tienda', () => {
-    // `migration-2026-08-19-miniapp-exige-tienda.sql`: el modo mini app no se
-    // enciende sin pedidos Y tienda. De defecto dejaría mudo a un negocio sin
-    // ellos; el menú atiende con cualquier catálogo.
-    expect(ruta).toMatch(/chat_mode: CHAT_MODES\.includes[\s\S]{0,200}?'menu'/)
+  it('y el panel ya no lo puede escribir por su cuenta', () => {
+    // Fuera de `ALLOWED_BUSINESS_FIELDS`: con un solo modo, dejar que el panel
+    // o la API lo manden solo sirve para volver a ponerlo mal.
+    const permitidos = ruta.match(/const ALLOWED_BUSINESS_FIELDS = \[[\s\S]*?\] as const/)?.[0] || ''
+    expect(permitidos.length).toBeGreaterThan(50)
+    expect(permitidos).not.toContain("'chat_mode'")
+    expect(permitidos).toContain("'storefront_enabled'")
   })
 })
 
@@ -140,10 +134,14 @@ describe('lo que el alta deja de preguntar', () => {
     expect(codigo).not.toContain('client-chat-mode')
   })
 
-  it('pero el PAYLOAD sigue mandando chat_mode: la columna no se toca', () => {
-    // Retirar el campo de la pantalla no puede cambiar lo que se guarda, ni
-    // dejar la columna a merced de un defecto del servidor.
-    expect(modal).toContain('chat_mode:')
+  it('y el PAYLOAD tampoco lo manda ya: lo fija el servidor', () => {
+    // ⚠️ Esta prueba exigía lo CONTRARIO hasta el 2026-09-16 —«el payload sigue
+    // mandando chat_mode»— y tenía razón mientras hubo dos modos: dejar la
+    // columna al defecto del servidor habría cambiado lo que se guardaba.
+    //
+    // Con un solo modo se da la vuelta: que el panel lo mande solo sirve para
+    // volver a ponerlo mal. Lo fija el alta y lo hace cumplir el CHECK.
+    expect(sinComentarios(modal)).not.toContain('chat_mode')
   })
 
   it('los tres derivados del plan pasan a una línea de resumen', () => {
@@ -230,53 +228,18 @@ describe('lo que el alta SIGUE pidiendo', () => {
   })
 })
 
-describe('con qué modo NACE cada tipo de negocio', () => {
-  const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')
-  const lista = tipos.match(/const PEDIDO_SIMPLE = \[[\s\S]*?\]/)?.[0] || ''
-
-  it('el criterio es cuánto hay que ELEGIR, no cuántos productos hay', () => {
-    // ⚠️ Corrección del dueño (2026-08-22). El primer intento clasificó por
-    // número de productos y mandó la pizzería al chat: pocos productos, sí,
-    // pero pedirla es tamaño, masa, borde y dos sabores. Eso en una lista de
-    // WhatsApp es penoso; en la mini app es un momento.
-    expect(tipos).toContain('PEDIDO_SIMPLE')
-    expect(tipos).not.toContain('CATALOGO_LARGO')
-  })
-
-  it('una almuercería y una cevichería piden por el CHAT', () => {
-    // Tres o cuatro platos del día: se eligen hablando.
-    for (const simple of ['almuerzos', 'comida típica', 'marisquería', 'desayunos']) {
-      expect(lista, `${simple} debería pedir por el chat`).toContain(`'${simple}'`)
-    }
-  })
-
-  it('una pizzería y una heladería piden por la MINI APP', () => {
-    // Hay bastante que elegir en cada producto: sabores, tamaños, extras.
-    for (const armado of ['pizzería', 'heladería', 'hamburguesería', 'sushi']) {
-      expect(lista, `${armado} NO debería pedir por el chat`).not.toContain(`'${armado}'`)
-    }
-  })
-
-  it('el retail también va a la app', () => {
-    for (const retail of ['supermercado', 'farmacia', 'ferretería', 'tienda']) {
-      expect(lista).not.toContain(`'${retail}'`)
-    }
-  })
-
-  it('un tipo SIN clasificar cae en la mini app, que nunca es inusable', () => {
-    // Falla hacia lo seguro: la tienda atiende cualquier catálogo, mientras
-    // que un menú de chat mal elegido deja al cliente en listas interminables.
-    expect(tipos).toMatch(/return simple \? 'menu' : 'miniapp'/)
-  })
-
-  it('sin pedidos no hay menú de compra: el genérico cae en `menu`', () => {
-    expect(tipos).toMatch(/recommendedSalesForBusinessType\(type\) !== 'vende'\) return 'menu'/)
-  })
-
-  it('sigue siendo solo una RECOMENDACIÓN al crear', () => {
-    expect(tipos).toMatch(/solo PROPONE al crear/i)
-  })
-})
+// ⚠️ Aquí vivía «con qué modo NACE cada tipo de negocio»: siete pruebas sobre
+// `PEDIDO_SIMPLE`, la lista de tipos que «se piden bien dentro del chat». Una
+// almuercería sí, una pizzería no.
+//
+// Fue un criterio del dueño y bueno, pero el 2026-09-16 dejó de ser cierto:
+// TODO local pide por su mini app. La prueba seguía fijando que «una
+// almuercería y una cevichería piden por el CHAT», o sea que vigilaba —y
+// protegía— una afirmación ya falsa. Un guardián que defiende lo que dejó de
+// ser verdad es peor que ninguno.
+//
+// Lo que se conserva es lo que SÍ se le sigue diciendo al superadmin al crear
+// un local, y está justo debajo: una línea, sin jerga y sin elegir nada.
 
 describe('el alta ya no pregunta lo que se deduce del tipo', () => {
   const modal = leer('../../apps/admin/src/features/clients/ClientModal.tsx')
@@ -317,7 +280,7 @@ describe('el alta ya no pregunta lo que se deduce del tipo', () => {
   })
 
   it('y el resumen lo explica en español, sin jerga', () => {
-    // ⚠️ UNA sola frase desde el 2026-09-15: el pedido por chat se retiró, así
+    // ⚠️ UNA sola frase desde el 2026-09-16: el pedido por chat se retiró, así
     // que decirle a una almuercería «pedirá por el chat» sería mentirle al
     // superadmin justo al dar de alta.
     const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')

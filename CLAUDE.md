@@ -88,7 +88,8 @@ entera de verdad, que era el problema cuando todo estaba junto:
 5. **Las etiquetas/tools del bot siempre operan sobre el `business_id` de la conversación.** El bot resuelve el negocio por el canal (slug de Telegram o número de WhatsApp) y SOLO usa datos de ese negocio (catálogo, horarios, políticas, historial).
 6. **Cobro manual.** El bot calcula el total oficial y el negocio coordina el cobro directamente fuera de esta plataforma.
 7. **El bot nunca inventa datos.** Precios, productos y horarios salen solo de los datos del negocio inyectados en el prompt.
-8. **La IA conversa, el CÓDIGO calcula (núcleo de dinero).** Ningún monto que vea el cliente sale del modelo: totales, precios de pedidos y descuentos se calculan SOLO server-side (`server/src/services/money.ts` + tablas `orders`/`order_items`). El prompt es cortesía, no seguridad. Si un ítem del pedido no se resuelve con certeza contra el catálogo, NO se envía total (pasa al dueño). Los descuentos, si algún día existen, serán regla de código/panel — jamás decisión de la IA.
+8. **El CÓDIGO calcula (núcleo de dinero).** Ningún monto que vea el cliente se redacta: totales, precios y márgenes se calculan SOLO server-side. Desde el 2026-09-16 el núcleo vive **en PostgreSQL**: `create_storefront_order` cierra el pedido revalidando negocio, producto, stock y precio en la misma transacción, `order_markup_by_line` aplica el margen y `quoteCart` (`services/storefront.ts`) cotiza **en centavos enteros** replicando esa misma regla. Los descuentos, si algún día existen, serán regla de código/panel.
+   - ⚠️ **`server/src/services/money.ts` se retiró el 2026-09-16**, y es un cambio de puntero, no de principio: calculaba el total del pedido **por chat**, y desde que todo local pide por su mini app ese camino no tiene puerta. Se fue con el modo menú, su único llamador (vía `bot-actions.ts`). Hay **una sola puerta** para crear un pedido y la vigila `las-defensas-son-para-todos.test.js`.
 
 > 🔍 **Las capas de verificación (qué comprueba cada una, qué NO, y de qué incidente nació) están en [VERIFICACION.md](VERIFICACION.md).** Léelo antes de tocar el CI, el esquema o las migraciones.
 
@@ -122,13 +123,14 @@ es el que corre todo. Lo que el manifiesto NO dice:
 - **Comentarios y logs en español.** Emojis en logs siguiendo el estilo existente (`✅ ❌ 🤖 📡 🛒 🤚 🔔`).
 - **Textos de cara al cliente (bot y paneles) en español** neutro (mercado Ecuador/Colombia).
 - **Telegram (`server/src/integrations/telegram.ts`):** el negocio se selecciona/restaura por `slug`; la restauración consulta únicamente el `business_id` más reciente de `tg_<chatId>` mediante la capa `src/db` y luego valida que el negocio siga activo. La integración no crea clientes Supabase propios. Texto, voz y fotos entregan siempre `{ channel:'telegram', ctx, slug }` a `bot-entry.ts`.
-- **Dinero (`server/src/services/money.ts`):** calcula importes oficiales y las RPC revalidan negocio, producto, stock y precio. El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
+- **Dinero (`create_storefront_order` + `order_markup_by_line` en la base, `quoteCart` en `services/storefront.ts`):** la RPC calcula el importe oficial revalidando negocio, producto, stock y precio en una sola transacción; el margen se aplica por línea y todo se computa en **centavos enteros** (JavaScript en coma flotante y PostgreSQL en `numeric` no redondean igual). El flujo es manual: la plataforma registra el pedido y su entrega, pero no procesa ni registra el cobro del cliente.
 - **Capacidades por negocio:** `businesses.takes_orders` es la fuente de verdad de si el bot cierra pedidos; el tipo solo la recomienda al crear y nunca sobrescribe decisiones manuales ni negocios existentes. En modo informativo se responden precios, descripciones, stock, fotos y videos; solo la intención transaccional explícita deriva y jamás crea pagos o pedidos.
 - **Arranque seguro:** `server/src/config/environment.ts` valida antes de abrir el puerto las credenciales críticas, `BASE_URL`, el fallback opcional `YCLOUD_WEBHOOK_SECRET` si existe y el secreto Telegram cuando aplica. El signing secret de YCloud se guarda preferentemente por negocio y valida la cabecera `YCloud-Signature`. Producción falla cerrado en vez de publicar un healthcheck verde con configuración incompleta.
 - **Contraseñas nuevas:** superadmin, dueños y empleados usan un mínimo de 12 caracteres; siempre se almacenan con bcrypt y nunca se devuelven en APIs.
 - **Sesiones cliente vigentes:** `activeClientGuard` revalida cada 15 segundos como máximo que usuario y negocio sigan activos, y reemplaza rol/permisos del JWT por los valores actuales de la base. Eliminar un usuario, suspender un negocio o revocar permisos falla cerrado sin esperar siete días.
 - **Túnel local (`server/src/services/tunnel.ts`):** solo se usa en desarrollo; inicia y detiene `cloudflared` mediante dependencias inyectables, expone únicamente estado serializable (`url`, `active`, `provider`, `startedAt`) y nunca filtra el proceso hijo en respuestas administrativas. En producción la URL pública sale de `BASE_URL`.
 - **Grafo interno del servidor:** los módulos bajo `server/src/` se enlazan directamente entre `db`, `services`, `integrations`, `middleware` y `routes`; comandos, pruebas y Railway ejecutan el resultado compilado en `server/dist/`.
+  - ⚠️ **Al borrar un módulo hay que limpiar `dist/`**: `tsc` NO borra el `.js` de un `.ts` que ya no existe, así que las pruebas —que importan del compilado— pasan en local con código retirado y el CI falla. `rm -rf server/dist && npm run build -w @botpanel/server` antes de dar por buena la batería.
 
 
 
@@ -149,7 +151,7 @@ es el que corre todo. Lo que el manifiesto NO dice:
 Cada una existe porque algo falló. Lo que parece complejidad de más suele ser una cicatriz:
 
 - **Etiquetas del bot** → [DECISIONES.md](DECISIONES.md#etiquetas-del-bot)
-- **Modo menú estilo banco (retirado del marketplace)** → [DECISIONES.md](DECISIONES.md#todo-local-pide-por-su-mini-app-se-retira-el-pedido-por-chat)
+- **Todo local pide por su mini app (el pedido por chat, RETIRADO)** → [DECISIONES.md](DECISIONES.md#todo-local-pide-por-su-mini-app-se-retira-el-pedido-por-chat) y [el canal propio](DECISIONES.md#el-canal-propio-también-pide-por-su-mini-app)
 - **Reportes del dueño** → [DECISIONES.md](DECISIONES.md#reportes-del-dueño)
 - **Salud del canal** → [DECISIONES.md](DECISIONES.md#salud-del-canal)
 - **Evals del bot** → [DECISIONES.md](DECISIONES.md#evals-del-bot)

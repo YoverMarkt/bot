@@ -28,8 +28,6 @@ export type BusinessRow = {
   monthly_outbound_message_limit: number | null
   created_at: string
   notes: string | null
-  // Modo real configurado del negocio: el simulador arranca con este
-  chat_mode?: 'menu' | 'miniapp' | null
 }
 
 /**
@@ -172,7 +170,6 @@ export type BusinessDetail = BusinessRow & {
   meta_phone_id: string | null
   takes_orders: boolean | null
   storefront_enabled: boolean | null
-  chat_mode: 'menu' | 'miniapp' | null
   monthly_rate: number | null
   client_email: string
   credential_status: Record<'ycloud_api_key' | 'ycloud_webhook_secret' | 'meta_token' | 'telegram_bot_token', boolean>

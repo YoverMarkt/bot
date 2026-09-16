@@ -156,7 +156,7 @@ Un panel React precioso corriendo en un Mac con túnel y sin backups NO es
 ## 5. QUÉ NO CAMBIA NUNCA (invariantes)
 
 - Aislamiento multi-tenant por `business_id` (JWT) — reglas §4 de CLAUDE.md.
-- El dinero se calcula SOLO server-side (`server/src/services/money.ts`) — regla #8.
+- El dinero se calcula SOLO server-side — regla #8. Desde el 2026-09-16 el núcleo es la RPC `create_storefront_order` (+ `order_markup_by_line`) y `quoteCart`; `services/money.ts` se retiró con el pedido por chat.
 - Supabase/Postgres como única base; `schema.sql` como referencia del esquema.
 - Migraciones de BD aditivas, jamás destructivas.
 - Español en textos de cara al cliente; commits en español.

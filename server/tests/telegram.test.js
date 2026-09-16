@@ -188,8 +188,10 @@ describe('integración Telegram', () => {
     )
   })
 
-  it("el modo menú evita Whisper y conserva las fotos para comprobantes", async () => {
-    const enMenu = { ...businessA, chat_mode: 'menu' }
+  it("un negocio sin IA evita Whisper y conserva las fotos para comprobantes", async () => {
+    // `chat_mode: 'menu'` hasta el 2026-09-16. Lo que se vigila no cambió:
+    // Whisper es de las llamadas más caras y aquí nadie va a leer el texto.
+    const enMenu = { ...businessA, chat_mode: 'miniapp' }
     const current = setup({
       database: { getBusinessBySlug: vi.fn().mockResolvedValue(enMenu) },
     })

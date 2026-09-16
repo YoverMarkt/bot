@@ -725,30 +725,44 @@ describe('clientes y onboarding del superadmin', () => {
     )
   })
 
+  // ⚠️ ESTA PRUEBA DECÍA LO CONTRARIO HASTA EL 2026-09-16, y la vuelta es la
+  // decisión, no un ajuste: rechazaba el alta de un negocio en modo mini app
+  // sin pedidos o sin tienda.
+  //
+  // Tenía sentido mientras hubiera OTRO modo al que caer — el negocio sin
+  // tienda se quedaba en `menu` y atendía igual. Retirado el menú, esa regla
+  // pasaba a significar «todo local tiene que vender», y eso es falso: un local
+  // se da de alta OCULTO mientras carga su catálogo, que es justo lo que
+  // recomienda el propio panel («enciéndelo con el catálogo ya cargado»).
   it.each([
-    [{ takes_orders: false, storefront_enabled: true }, 'cree pedidos'],
-    [{ takes_orders: true, storefront_enabled: false }, 'tienda esté encendida'],
-  ])('rechaza un alta miniapp sin sus capacidades (%j)', async (capacidades, mensaje) => {
-    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding')
+    [{ takes_orders: false, storefront_enabled: false }, 'oculto del todo'],
+    [{ takes_orders: true, storefront_enabled: false }, 'sin tienda todavía'],
+  ])('crea un local oculto sin pelearse con el modo (%j)', async (capacidades) => {
+    const createOnboarding = vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: { id: 'business-oculto', name: 'Tienda en preparación' },
+      error: null,
+    })
 
     const response = await dispatch('post', '/api/admin/clients', {
       auth: authorization(),
       body: {
-        name: 'Tienda incompleta',
+        name: 'Tienda en preparación',
         whatsapp_number: '+593999000099',
         client_email: 'incompleta@example.com',
         client_password: 'safe-password-12',
         ycloud_api_key: 'secret',
         ycloud_webhook_endpoint_id: 'endpoint-new',
         ycloud_webhook_secret: 'signing-secret-new',
-        chat_mode: 'miniapp',
         ...capacidades,
       },
     })
 
-    expect(response.status).toBe(400)
-    expect(response.body.error).toContain(mensaje)
-    expect(createOnboarding).not.toHaveBeenCalled()
+    expect(response.status).toBe(201)
+    // Y nace en el único modo que existe, sin que nadie lo haya pedido.
+    expect(createOnboarding).toHaveBeenCalledWith(
+      expect.objectContaining({ chat_mode: 'miniapp', ...capacidades }),
+      expect.any(String), expect.any(String), expect.any(Number),
+    )
   })
 
   // Nace apagada: encenderla sin catálogo cargado le daría al cliente final una
@@ -816,7 +830,15 @@ describe('clientes y onboarding del superadmin', () => {
     )
   })
 
-  it('no permite apagar la única atención de un negocio miniapp', async () => {
+  // ⚠️ TAMBIÉN AL REVÉS DESDE EL 2026-09-16. Antes esto exigía un 400: apagar
+  // la tienda de un negocio en modo mini app lo dejaba «sin atención».
+  //
+  // Es exactamente el fallo que el dueño encontró en el panel: ocultar un local
+  // del marketplace apaga pedidos y tienda, así que el guardado moría con «El
+  // modo miniapp requiere que la tienda esté encendida». Se tapaba moviéndole
+  // el `chat_mode` a 'menu' desde el modal —usar un modo de conversación para
+  // esquivar una validación—, y eso murió con el modo menú.
+  it('ocultar un local del marketplace se guarda, no se rechaza', async () => {
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
       id: 'business-a',
       name: 'Pizzería',
@@ -831,16 +853,25 @@ describe('clientes y onboarding del superadmin', () => {
       takes_orders: true,
       storefront_enabled: true,
     })
+    // Con implementación: antes esta prueba esperaba un 400 y el espía nunca
+    // llegaba a usarse. Ahora el guardado SÍ ocurre, y sin simularlo la ruta
+    // sale a Supabase de verdad.
     const updateBusiness = vi.spyOn(db, 'updateBusiness')
+      .mockResolvedValue({ data: { id: 'business-a' }, error: null })
 
     const response = await dispatch('put', '/api/admin/clients/:id', {
       auth: authorization(),
       params: { id: 'business-a' },
-      body: { storefront_enabled: false },
+      // Lo que manda el panel al poner «Aparece en el marketplace: No».
+      body: { storefront_enabled: false, takes_orders: false },
     })
 
-    expect(response.status).toBe(400)
-    expect(response.body.error).toContain('tienda esté encendida')
-    expect(updateBusiness).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(updateBusiness).toHaveBeenCalledWith(
+      'business-a',
+      expect.objectContaining({ storefront_enabled: false, takes_orders: false }),
+    )
+    // Y sin tocar el modo: ya no hace falta moverlo para que esto pase.
+    expect(updateBusiness.mock.calls[0]?.[1]).not.toHaveProperty('chat_mode')
   })
 })

@@ -221,19 +221,11 @@ const ALLOWED_BUSINESS_FIELDS = [
   'ycloud_webhook_endpoint_id', 'ycloud_webhook_secret',
   'meta_token', 'meta_phone_id', 'telegram_bot_token',
   'takes_orders',
-  'chat_mode', 'storefront_enabled',
+  // ⚠️ `chat_mode` salió de aquí el 2026-09-16: con un solo modo, dejar que el
+  // panel o la API lo escriban solo sirve para volver a ponerlo mal. Lo fija
+  // el alta y lo hace cumplir el CHECK de la base.
+  'storefront_enabled',
 ] as const
-
-// Los DOS modos de atención. Cualquier otro valor lo rechaza la base.
-//   menu    → botones armados por código con los datos reales, sin IA
-//   miniapp → responde con el enlace y se pide en la app, sin IA
-//
-// ⚠️ `'ai'` se retiró el 2026-08-21 con la IA conversacional, y esta lista se
-// quedó atrás: el CHECK de la base ya solo acepta ('menu','miniapp'). Mientras
-// tanto, un alta que no mandara `chat_mode` caía al valor por defecto `'ai'`
-// de más abajo y la RPC la rechazaba entera — el negocio no se creaba. Desde
-// el panel no saltó porque el modal siempre manda uno válido; por API, sí.
-const CHAT_MODES = ['menu', 'miniapp'] as const
 
 function assertDatabaseResult(result: DatabaseResult, operation: string): void {
   if (result.error) {
@@ -303,24 +295,19 @@ const seedBusinessCatalog = async (
   }
 }
 
-// El modo se valida aquí además de en la base: así el panel recibe un mensaje
-// claro en vez de un error de restricción de Postgres.
-function invalidChatMode(body: Record<string, unknown>): boolean {
-  if (!('chat_mode' in body)) return false
-  const value = body.chat_mode
-  return !CHAT_MODES.some(mode => mode === value)
-}
-
-function miniappConfigurationError(business: Record<string, unknown>): string | null {
-  if (business.chat_mode !== 'miniapp') return null
-  if (business.takes_orders !== true) {
-    return 'El modo miniapp requiere que el negocio cree pedidos'
-  }
-  if (business.storefront_enabled !== true) {
-    return 'El modo miniapp requiere que la tienda esté encendida'
-  }
-  return null
-}
+// ⚠️ Aquí vivían `invalidChatMode` y `miniappConfigurationError`, y las dos se
+// fueron el 2026-09-16 con el modo menú.
+//
+// La segunda tiene historia y conviene no repetirla: exigía pedidos Y tienda
+// para el modo mini app, lo cual tenía sentido mientras hubiera OTRO modo al
+// que caer. Con un solo modo pasaba a significar «todo local tiene que
+// vender», que es falso — un local oculto mientras carga su catálogo no vende
+// y tiene que poder guardarse. Era, además, la razón por la que el panel
+// escribía `chat_mode: 'menu'` al ocultar un local: esquivaba esta excepción.
+//
+// Lo que protegía sigue en pie por los dos extremos: `runMiniappMode` responde
+// un recordatorio en vez de un enlace a una app vacía, y
+// `marketplace_categories_disponibles` esconde del menú al local que no vende.
 
 function usageLimitsForPlan(plan: PlanDefinition): UsageLimits {
   return {
@@ -517,9 +504,6 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
   }
   const channelError = channelConfigurationError(body)
   if (channelError) return res.status(400).json({ error: channelError })
-  if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
-  }
   const whatsappProvider = configuredWhatsAppProvider(body)
   if (!whatsappProvider) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
@@ -561,12 +545,11 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       // La tienda nace apagada salvo que se pida: encenderla sin catálogo
       // cargado le daría al cliente final una app vacía.
       storefront_enabled: body.storefront_enabled === true,
-      // El defecto es `menu` y no `miniapp` porque el menú atiende con
-      // cualquier catálogo, mientras que la mini app exige pedidos Y tienda
-      // encendidos y dejaría mudo a un negocio sin ellos.
-      chat_mode: CHAT_MODES.includes(body.chat_mode as typeof CHAT_MODES[number])
-        ? body.chat_mode as string
-        : 'menu',
+      // Todo local nace pidiendo por su mini app, y no hay nada que elegir:
+      // es el único modo desde el 2026-09-16. Se manda explícito en vez de
+      // dejarlo al defecto de la columna para que el alta por API cree
+      // exactamente el mismo negocio que el panel.
+      chat_mode: 'miniapp',
       owner_phone: body.owner_phone || null,
       plan: planDefinition.id,
       active: true,
@@ -577,8 +560,6 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
       monthly_outbound_message_limit:
         usageLimits.monthly_outbound_message_limit,
     }
-    const miniappError = miniappConfigurationError(businessPayload)
-    if (miniappError) return res.status(400).json({ error: miniappError })
     const passwordHash = clientPassword ? await bcrypt.hash(clientPassword, 10) : null
     const monthlyRate = planDefinition.monthlyRate
     const result = await db.createBusinessOnboarding(
@@ -610,9 +591,6 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   if (identifierError) return res.status(400).json({ error: identifierError })
   if ('whatsapp_provider' in body && !configuredWhatsAppProvider(body)) {
     return res.status(400).json({ error: 'Proveedor de mensajería no válido' })
-  }
-  if (invalidChatMode(body)) {
-    return res.status(400).json({ error: 'Modo de conversación no válido (menu, ai o miniapp)' })
   }
   if ('plan' in body && !normalizePlanId(body.plan)) {
     return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
@@ -679,8 +657,6 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
     }
     const channelError = channelConfigurationError(effectiveBusiness)
     if (channelError) return res.status(400).json({ error: channelError })
-    const miniappError = miniappConfigurationError(effectiveBusiness)
-    if (miniappError) return res.status(400).json({ error: miniappError })
 
     if (Object.keys(businessData).length) {
       const result = await db.updateBusiness(req.params.id, businessData)

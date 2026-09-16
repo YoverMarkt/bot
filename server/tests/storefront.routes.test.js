@@ -247,13 +247,18 @@ const db = require('../dist/db')
 
 // Ejecuta un manejador saltándose los middlewares: la sesión ya se comprueba
 // en las pruebas de cableado y en storefront-session.test.js.
-async function ejecutar(path, method, { storefront, body = {}, params = {} } = {}) {
+async function ejecutar(path, method, { storefront, storeBusinessId, body = {}, params = {} } = {}) {
   const layer = router.stack.find(item => (
     item.route?.path === path && item.route?.methods?.[method]
   ))
   if (!layer) throw new Error(`Ruta no encontrada: ${method.toUpperCase()} ${path}`)
   const handler = layer.route.stack.at(-1).handle
-  const req = { storefront, body, params, query: {}, headers: {} }
+  // ⚠️ `storeBusinessId` NO es lo mismo que `storefront.businessId`. Las rutas
+  // públicas —catálogo y cotización— se ven sin enlace, así que su middleware
+  // (`readStorefrontSession`) resuelve el negocio por el slug y lo deja ahí.
+  // Pasar solo `storefront` las deja cotizando con `undefined`, y como los
+  // simulacros responden igual a cualquier id, la prueba pasaba en falso.
+  const req = { storefront, storeBusinessId, body, params, query: {}, headers: {} }
   const resultado = { status: 200, body: undefined }
   const res = {
     status(code) { resultado.status = code; return this },
@@ -1004,5 +1009,163 @@ describe('la lista de mis pedidos', () => {
     })
 
     expect(respuesta.status).toBe(500)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE EL CLIENTE VE DE SU DINERO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Añadido el 2026-09-16, al retirar el pedido por chat. Con `services/money.ts`
+// fuera, el cálculo del dinero vive ENTERO en este camino: la RPC
+// `create_storefront_order` sella el total y `quoteCart` lo cotiza antes. No
+// queda una segunda implementación que sirva de contraste, así que estas rutas
+// —la cotización, los datos para transferir y el pedido que el cliente
+// consulta— pasan a ser el único sitio donde se puede cazar una diferencia.
+
+describe('la cotización del carrito', () => {
+  const PRODUCTO = {
+    id: 'p1', name: 'Pizza grande', price: 10, price_sale: null,
+    active: true, stock: 'disponible',
+  }
+
+  beforeEach(() => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ ...NEGOCIO_ABIERTO, delivery_fee: 1.5 })
+    vi.spyOn(db, 'getStorefrontProducts').mockResolvedValue([PRODUCTO])
+    vi.spyOn(db, 'getStorefrontVariants').mockResolvedValue([])
+    vi.spyOn(db, 'getStorefrontOptionGroups').mockResolvedValue([])
+    vi.spyOn(db, 'getStorefrontOptions').mockResolvedValue([])
+    vi.spyOn(db, 'getBusinessPricingRule').mockResolvedValue(null)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  const cotizar = (body) => ejecutar('/api/store/:slug/quote', 'post', {
+    storeBusinessId: 'negocio-a',
+    params: { slug: 'pizzeria' },
+    body,
+  })
+
+  it('un carrito vacío no se cotiza', async () => {
+    const respuesta = await cotizar({ items: [] })
+    expect(respuesta.status).toBe(400)
+    expect(respuesta.body.error).toContain('cotizar')
+  })
+
+  it('el precio sale del CATÁLOGO, no de lo que mande el teléfono', async () => {
+    // El mismo criterio que al crear el pedido: si un precio del teléfono
+    // llegara al total, cualquiera compraría abriendo las herramientas del
+    // navegador. Aquí se manda $0.01 y tiene que ganar el catálogo.
+    const respuesta = await cotizar({
+      items: [{ productId: 'p1', quantity: 2, price: 0.01, unitPrice: 0.01 }],
+      fulfillment: 'pickup',
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(respuesta.body.subtotal).toBe(20)
+    expect(JSON.stringify(respuesta.body)).not.toContain('0.01')
+  })
+
+  it('el envío se suma solo cuando hay reparto', async () => {
+    const recoge = await cotizar({
+      items: [{ productId: 'p1', quantity: 1 }], fulfillment: 'pickup',
+    })
+    const reparto = await cotizar({
+      items: [{ productId: 'p1', quantity: 1 }], fulfillment: 'delivery',
+    })
+
+    expect(recoge.body.total).toBe(10)
+    expect(reparto.body.total).toBe(11.5)
+  })
+
+  it('un producto que no es del negocio no se cotiza', async () => {
+    // El catálogo se consulta SIEMPRE por `businessId`, así que un id de otro
+    // local simplemente no aparece. Es la frontera multi-tenant vista desde el
+    // dinero: cotizar lo ajeno sería el primer paso para comprarlo.
+    const respuesta = await cotizar({
+      items: [{ productId: 'de-otro-local', quantity: 1 }],
+    })
+    expect(respuesta.status).toBe(400)
+    expect(db.getStorefrontProducts).toHaveBeenCalledWith('negocio-a')
+  })
+
+  it('un fallo leyendo la regla de margen no tumba la cotización', async () => {
+    // Quedarse sin cotizar por un problema NUESTRO deja al cliente sin poder
+    // pagar. Sin regla, el precio es el de catálogo: se cobra de menos, nunca
+    // de más.
+    db.getBusinessPricingRule.mockRejectedValue(new Error('base caída'))
+
+    const respuesta = await cotizar({
+      items: [{ productId: 'p1', quantity: 1 }], fulfillment: 'pickup',
+    })
+    expect(respuesta.status).toBe(200)
+    expect(respuesta.body.total).toBe(10)
+  })
+})
+
+describe('lo que el cliente consulta de su pedido', () => {
+  const SESION = {
+    businessId: 'negocio-a', customerId: 'cliente-a', contactPhone: '593900000001',
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('la lista de pedidos se pide por negocio Y por teléfono', async () => {
+    // Las dos claves juntas, siempre: solo con `businessId` un cliente vería
+    // los pedidos de todos los demás del mismo local.
+    const consulta = vi.spyOn(db, 'getStorefrontOrders')
+      .mockResolvedValue({ data: [{ id: 'o1', order_items: [] }], error: null })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(consulta).toHaveBeenCalledWith({
+      businessId: 'negocio-a', contactPhone: '593900000001',
+    })
+  })
+
+  it('un fallo de la base no devuelve una lista vacía, que parecería «no tienes pedidos»', async () => {
+    vi.spyOn(db, 'getStorefrontOrders').mockResolvedValue({ data: null, error: { message: 'x' } })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+    expect(respuesta.status).toBe(500)
+  })
+
+  it('un pedido ajeno responde 404, no el pedido', async () => {
+    // La consulta lleva las tres claves; si no casan, no hay fila. Se comprueba
+    // que el 404 sale de ahí y no de un `if` que alguien pueda quitar.
+    const consulta = vi.spyOn(db, 'getStorefrontOrder').mockResolvedValue({ data: null, error: null })
+
+    const respuesta = await ejecutar('/api/store/:slug/orders/:id', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria', id: 'de-otro' },
+    })
+
+    expect(respuesta.status).toBe(404)
+    expect(consulta).toHaveBeenCalledWith({
+      businessId: 'negocio-a', contactPhone: '593900000001', orderId: 'de-otro',
+    })
+  })
+
+  it('los datos para transferir son SOLO los del propio negocio', async () => {
+    const cuenta = vi.spyOn(db, 'getBusinessBankAccount')
+      .mockResolvedValue({ bank: 'Pichincha', number: '2100xxxx' })
+
+    const respuesta = await ejecutar('/api/store/:slug/payment-info', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+
+    expect(respuesta.status).toBe(200)
+    expect(cuenta).toHaveBeenCalledWith('negocio-a')
+  })
+
+  it('sin datos de pago cargados se dice, no se inventa una cuenta', async () => {
+    vi.spyOn(db, 'getBusinessBankAccount').mockResolvedValue(null)
+
+    const respuesta = await ejecutar('/api/store/:slug/payment-info', 'get', {
+      storefront: SESION, params: { slug: 'pizzeria' },
+    })
+    expect(respuesta.status).toBe(404)
   })
 })

@@ -24,10 +24,25 @@ export default defineConfig({
       ],
       reporter: ['text-summary', 'json-summary'],
       reportsDirectory: 'coverage',
-      // Un poco por debajo de lo medido hoy (71/61/66/74), no por encima: el
-      // umbral está para que la cobertura no RETROCEDA, no para exigir una
+      // Un poco por debajo de lo medido hoy (71/64,5/65,3/73,2), no por encima:
+      // el umbral está para que la cobertura no RETROCEDA, no para exigir una
       // cifra bonita. Un margen de uno o dos puntos evita que un refactor
       // inocente rompa el CI sin haber empeorado nada.
+      //
+      // ⚠️ REBASEADO EL 2026-09-16, y conviene saber en qué dirección. Al
+      // retirar el pedido por chat se fueron 2.323 líneas de servicio que
+      // tenían 1.786 de pruebas dedicadas —`money.ts`, `bot-actions.ts`,
+      // `bot-menu-flow.ts`, `bot-media.ts`—, o sea código MUY cubierto. La
+      // media de funciones bajó de ~66 a ~65,3 sin que ninguna línea
+      // superviviente quedara menos probada: es aritmética del denominador, no
+      // un retroceso. `branches` se APRIETA de 59 a 63, que es lo que de
+      // verdad había subido; el conjunto queda más exigente que antes.
+      //
+      // ⚠️ Y `functions` se deja con margen de verdad porque es la métrica
+      // RUIDOSA de esta batería: entre ejecuciones se mide 928, 930 o 933 de
+      // 1.425 (±0,4 puntos) según qué pruebas toquen los `require` diferidos
+      // de los adaptadores. Un umbral rozándola convierte el CI en una moneda
+      // al aire, y un CI que falla sin motivo se acaba ignorando.
       //
       // ⚠️ Ojo con leerlo como nota del proyecto: los repositorios son
       // envoltorios finos de Supabase y salen bajos a propósito —probarlos
@@ -35,9 +50,9 @@ export default defineConfig({
       // `verify:schema`, que EJECUTA sus funciones contra PostgreSQL real.
       thresholds: {
         statements: 70,
-        branches: 59,
-        functions: 65,
-        lines: 73,
+        branches: 63,
+        functions: 64,
+        lines: 72,
       },
     },
   },

@@ -11,7 +11,6 @@ import {
   BUSINESS_TYPE_OPTIONS,
   CUSTOM_BUSINESS_TYPE,
   businessTypeChoice,
-  recommendedChatModeForBusinessType,
   recommendedStorefrontForBusinessType,
   recommendedSalesForBusinessType,
   chatModeSummary,
@@ -36,7 +35,7 @@ const EMPTY = {
   meta_token: '', meta_phone_id: '',
   telegram_bot_token: '',
   sales: 'informa',
-  chat_mode: 'menu', storefront: 'no',
+  storefront: 'no',
   plan: 'micro', monthly_rate: '25',
   monthly_contact_limit: '50', monthly_outbound_message_limit: '250',
   client_email: '', client_password: '', notes: '',
@@ -70,7 +69,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         telegram_bot_token: '',
         sales: c.takes_orders === false ? 'informa' : 'vende',
         storefront: c.storefront_enabled ? 'yes' : 'no',
-        chat_mode: ['menu', 'miniapp'].includes(String(c.chat_mode)) ? String(c.chat_mode) : 'menu',
         plan: planById(c.plan)?.id ?? c.plan ?? 'micro',
         monthly_rate: c.monthly_rate != null ? String(c.monthly_rate) : '',
         monthly_contact_limit: c.monthly_contact_limit != null
@@ -100,11 +98,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       if (k === 'type' && !id && !salesTouched) {
         next.sales = recommendedSalesForBusinessType(value)
       }
-      // El modo sigue saliendo del TIPO al crear. Ya no hay selector que lo
-      // pueda «tocar», así que la recomendación se aplica siempre al alta.
-      if (k === 'type' && !id) {
-        next.chat_mode = recommendedChatModeForBusinessType(value)
-      }
       if (k === 'type' && !id && !storefrontTouched) {
         next.storefront = recommendedStorefrontForBusinessType(value) ? 'yes' : 'no'
       }
@@ -119,7 +112,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         ...prev,
         type,
         sales: id || salesTouched ? prev.sales : recommendedSalesForBusinessType(type),
-        chat_mode: id ? prev.chat_mode : recommendedChatModeForBusinessType(type),
         storefront: id || storefrontTouched
           ? prev.storefront
           : recommendedStorefrontForBusinessType(type) ? 'yes' : 'no',
@@ -180,7 +172,6 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       // Un negocio que deja de vender no puede quedarse con la tienda
       // encendida: abriría una app vacía.
       storefront_enabled: f.storefront === 'yes' && f.sales !== 'informa',
-      chat_mode: (['menu', 'miniapp'] as const).find(modo => modo === f.chat_mode) ?? 'menu',
       notes: f.notes || null,
     }
     const officialPlan = planById(f.plan)
@@ -246,15 +237,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       ...prev,
       sales: visible ? 'vende' : 'informa',
       storefront: visible ? 'yes' : 'no',
-      // ⚠️ `chat_mode` viaja con la decisión, y no es un capricho: el servidor
-      // rechaza `miniapp` sin pedidos ni tienda (`miniappConfigurationError`),
-      // así que ocultar un local con `chat_mode = 'miniapp'` guardado —el caso
-      // de producción— fallaría con «El modo miniapp requiere que el negocio
-      // cree pedidos». Dentro del marketplace la columna no decide nada: la
-      // experiencia la elige el TIPO del local al entrar en él. Se mueve para
-      // que el guardado no choque con un invariante de un modo que ya no
-      // gobierna a nadie.
-      chat_mode: visible ? prev.chat_mode : 'menu',
+      // ⚠️ Aquí se escribía el modo de conversación, y no era un capricho: el
+      // servidor rechazaba la mini app sin pedidos ni tienda, así que ocultar
+      // un local fallaba al guardar y había que moverle el modo para
+      // esquivarlo. Esa validación se retiró el 2026-09-16 junto con el modo
+      // menú —con un solo modo significaba «todo local tiene que vender»— y
+      // ocultar un local vuelve a ser lo que dice que es: dos columnas.
     }))
   }
 

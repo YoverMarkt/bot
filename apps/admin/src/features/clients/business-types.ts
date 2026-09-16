@@ -93,57 +93,19 @@ export function recommendedStorefrontForBusinessType(type: string): boolean {
   return recommendedSalesForBusinessType(type) === 'vende'
 }
 
-/**
- * Los tipos que se piden BIEN dentro del chat.
- *
- * ⚠️ El criterio NO es cuántos productos tiene el negocio, sino **cuánto hay
- * que elegir para armar un pedido**. Es la corrección del dueño el
- * 2026-08-22, y es la que manda: una pizzería tiene pocos productos pero
- * pedirla es elegir tamaño, masa, borde y dos sabores — hacerlo en una lista
- * de WhatsApp es penoso, y en la mini app es un momento. Una almuercería, en
- * cambio, son tres o cuatro platos del día: se eligen hablando.
- *
- * Por eso una heladería va a la app aunque «venda un solo producto»: lo que
- * pesa son sus veinte sabores.
- *
- * ⚠️ Se listan los del CHAT y todo lo demás cae en la mini app, al revés que
- * antes. Es fallar hacia lo seguro: la tienda atiende cualquier catálogo,
- * mientras que un menú de chat mal elegido deja al cliente recorriendo listas
- * interminables. Un tipo nuevo sin clasificar cae solo del lado que nunca es
- * inusable — el mismo criterio que sigue `entregarLocal` en el servidor.
- */
-const PEDIDO_SIMPLE = [
-  // Platos del día: se elige uno de tres o cuatro.
-  'almuerzos', 'menú ejecutivo', 'desayunos', 'comida típica',
-  // Carta corta de platos que se piden por su nombre.
-  'marisquería', 'pollo asado', 'asadero', 'parrillada', 'comida saludable',
-  // Producto suelto, sin nada que configurar.
-  'postres', 'carnicería', 'cafetería', 'jugos', 'batidos',
-  'emprendimiento de comida',
-]
-
-export type BusinessChatMode = 'menu' | 'miniapp'
-
-/**
- * Con qué modo NACE un negocio. Solo PROPONE al crear: `chat_mode` persistido
- * manda siempre y jamás se sobrescribe a un negocio existente.
- *
- * ⚠️ Es una RECOMENDACIÓN, no la última palabra. Dentro del marketplace, lo
- * que decide de verdad es el catálogo REAL contado al elegir el local (la
- * regla de los 20): un tipo mal clasificado aquí se corrige solo en cuanto el
- * negocio tiene productos.
- */
-export function recommendedChatModeForBusinessType(type: string): BusinessChatMode {
-  // Sin pedidos no hay menú de compra que conducir: el genérico y lo que se
-  // teclee a mano caen aquí.
-  if (recommendedSalesForBusinessType(type) !== 'vende') return 'menu'
-
-  const normalized = normalizeBusinessType(type)
-  const simple = PEDIDO_SIMPLE.some(candidato => (
-    normalized.includes(normalizeBusinessType(candidato))
-  ))
-  return simple ? 'menu' : 'miniapp'
-}
+// ⚠️ Aquí vivían `PEDIDO_SIMPLE`, `BusinessChatMode` y
+// `recommendedChatModeForBusinessType`, y se fueron el 2026-09-16.
+//
+// `PEDIDO_SIMPLE` clasificaba qué tipos «se piden bien dentro del chat»: una
+// almuercería sí, una pizzería no. Fue un criterio útil y del dueño, pero dejó
+// de ser verdad el 2026-09-15, cuando TODO local pasó a pedir por su mini app.
+// Mantenerlo era peor que borrarlo: la prueba que lo vigilaba seguía fijando
+// que «una almuercería pide por el CHAT», que ya es falso, y el alta podía
+// acabar proponiendo un modo que el sistema no cumple — que es exactamente
+// cómo nació el fallo del número.
+//
+// Su hermano gemelo en la base, `marketplace_category_types.pide_en_chat`, se
+// retiró ayer por lo mismo.
 
 /** Cómo se le explica al superadmin, en una línea. */
 export function chatModeSummary(type: string): string {

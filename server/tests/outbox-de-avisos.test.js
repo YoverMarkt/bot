@@ -246,3 +246,91 @@ describe('avisarAlCliente, ejecutado', () => {
     await expect(notice.avisarAlCliente('biz-1', 'ord-1', 'expirado')).resolves.toBeUndefined()
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL WORKER REAL ESTÁ ENCHUFADO, NO SOLO CONSTRUIDO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Añadido el 2026-09-16. Todo lo de arriba prueba `crearWorkerDeAvisos` con
+// dobles: la LÓGICA de reintentar, matar y contar. Ninguna de esas pruebas
+// toca la instancia que corre de verdad (`procesarAvisosPendientes`), que es
+// la que ata cada dependencia a su función de `db`.
+//
+// ⚠️ Esa es exactamente la clase de hueco que este proyecto ya pagó siete
+// veces: lógica correcta, probada y en verde, conectada a nada. Aquí el precio
+// sería que «tu pedido está en camino» dejara de salir sin que fallara nada.
+
+describe('el worker que corre de verdad', () => {
+  const pide = createRequire(import.meta.url)
+  const cargar = () => ({
+    db: pide('../dist/db'),
+    notify: pide('../dist/services/order-notify.js'),
+    worker: pide('../dist/services/outbox-worker.js'),
+  })
+  const PEDIDO = { id: 'ord-1', order_number: 7, status: 'en_camino', total: 10 }
+
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('cada dependencia llama a la función de `db` que le toca', async () => {
+    const { db, notify, worker } = cargar()
+
+    const lease = vi.spyOn(db, 'leaseOutboxEvents').mockResolvedValue([{
+      id: 'ev-1', lease_token: 'tok', business_id: 'biz-1',
+      aggregate_id: 'ord-1', payload: { status: 'en_camino' },
+    }])
+    const pedido = vi.spyOn(db, 'getOrderForNotice').mockResolvedValue(PEDIDO)
+    const negocio = vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Local' })
+    const enviar = vi.spyOn(notify, 'notificarCambioDePedido').mockResolvedValue(true)
+    const completar = vi.spyOn(db, 'completeOutboxEvent').mockResolvedValue(undefined)
+
+    const resultado = await worker.procesarAvisosPendientes('prueba', 5, 30)
+
+    // El lease se pide con lo que recibió, no con valores inventados.
+    expect(lease).toHaveBeenCalledWith('prueba', 5, 30)
+    // Y las dos lecturas van SIEMPRE con el negocio del evento: un aviso que
+    // leyera el pedido de otro local lo contaría en la conversación ajena.
+    expect(pedido).toHaveBeenCalledWith('biz-1', 'ord-1')
+    expect(negocio).toHaveBeenCalledWith('biz-1')
+    expect(enviar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'biz-1' }), PEDIDO, 'en_camino',
+    )
+    expect(completar).toHaveBeenCalledWith('ev-1', 'tok')
+    expect(resultado).toEqual({ enviados: 1, fallidos: 0, muertos: 0 })
+  })
+
+  it('si el envío falla, marca el fallo con el motivo y NO lo da por enviado', async () => {
+    const { db, notify, worker } = cargar()
+
+    vi.spyOn(db, 'leaseOutboxEvents').mockResolvedValue([{
+      id: 'ev-2', lease_token: 'tok2', business_id: 'biz-1',
+      aggregate_id: 'ord-1', payload: { status: 'en_camino' },
+    }])
+    vi.spyOn(db, 'getOrderForNotice').mockResolvedValue(PEDIDO)
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Local' })
+    vi.spyOn(notify, 'notificarCambioDePedido').mockResolvedValue(false)
+    const fallar = vi.spyOn(db, 'failOutboxEvent').mockResolvedValue('reintentar')
+    const completar = vi.spyOn(db, 'completeOutboxEvent')
+
+    const resultado = await worker.procesarAvisosPendientes()
+
+    expect(fallar).toHaveBeenCalledWith('ev-2', 'tok2', expect.stringContaining('en_camino'))
+    expect(completar).not.toHaveBeenCalled()
+    expect(resultado.fallidos).toBe(1)
+  })
+
+  it('un pedido que ya no existe se mata, no se reintenta seis veces', async () => {
+    const { db, worker } = cargar()
+
+    vi.spyOn(db, 'leaseOutboxEvents').mockResolvedValue([{
+      id: 'ev-3', lease_token: 'tok3', business_id: 'biz-1',
+      aggregate_id: 'ord-borrado', payload: { status: 'entregado' },
+    }])
+    vi.spyOn(db, 'getOrderForNotice').mockResolvedValue(null)
+    const fallar = vi.spyOn(db, 'failOutboxEvent').mockResolvedValue('muerto')
+
+    const resultado = await worker.procesarAvisosPendientes()
+
+    expect(fallar).toHaveBeenCalledWith('ev-3', 'tok3', expect.stringContaining('ya no existen'))
+    expect(resultado).toEqual({ enviados: 0, fallidos: 0, muertos: 1 })
+  })
+})

@@ -53,11 +53,12 @@ describe('onboarding compatible durante el retiro de módulos', () => {
 
   it('deja el esquema consolidado con el mismo contrato final', () => {
     const live = liveOnboardingDefinition(schema)
-    // ⚠️ La IA se retiró el 2026-08-21: quedan `menu` y `miniapp`. Lo que esta
-    // prueba vigila sigue siendo lo mismo — que el modo mini app sobreviva a
-    // cada retirada—, solo que ahora acompañado de uno y no de dos.
-    expect(live).toContain("v_chat_mode not in ('menu', 'miniapp')")
+    // ⚠️ La IA se retiró el 2026-08-21 y el menú el 2026-09-16: queda `miniapp`
+    // y nada más. Lo que esta prueba vigila sigue siendo lo mismo —que el modo
+    // mini app sobreviva a cada retirada—, solo que ahora se ha quedado solo.
+    expect(live).toContain("v_chat_mode not in ('miniapp')")
     expect(live).not.toMatch(/'ai'/)
+    expect(live).not.toMatch(/'menu'/)
     expect(live).toContain('storefront_enabled,')
     expect(live).toContain(
       "coalesce((p_business ->> 'storefront_enabled')::boolean, false)",
