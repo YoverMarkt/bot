@@ -1281,6 +1281,72 @@ begin
     end if;
     delete from orders where id = (v_mesa ->> 'id')::uuid;
 
+    -- ── LO GRATIS VA POR PLATO, NO A DISCRECIÓN ──────────────────────────
+    --
+    -- Lo encontró el dueño mirando su propio local (2026-09-16): «el jugo que
+    -- va gratis es por el número de almuerzos que lleva el cliente, pero ahora
+    -- pueden elegir muchos jugos gratis».
+    --
+    -- Y era cierto en las TRES capas: ni la app, ni `pricing.ts`, ni esta
+    -- función contaban cuántos platos había. El único tope era
+    -- `max_selectable`, que en La Abuelita valía 100: un almuerzo de $3.50 se
+    -- podía llevar cien jugos.
+    --
+    -- El tope es `platos` = completos + partes sueltas, que es justo lo que ya
+    -- se calcula aquí arriba para partir las líneas.
+    begin
+      v_mesa := public.create_storefront_order(
+        v_business, null, '+593900000007', 'Aprovechado', null, 'pickup',
+        jsonb_build_array(jsonb_build_object(
+          'product_id', v_almuerzo, 'quantity', 1,
+          'options', jsonb_build_array(
+            jsonb_build_object('option_id', v_caldo, 'quantity', 1),
+            jsonb_build_object('option_id', v_pollo, 'quantity', 1),
+            -- UN plato, CINCO jugos gratis.
+            jsonb_build_object('option_id', v_jugo, 'quantity', 5)
+          )
+        ))
+      );
+      raise exception 'se aceptaron 5 jugos gratis para 1 solo plato';
+    exception when sqlstate '22023' then null;
+    end;
+
+    -- Y lo que SÍ cuadra sigue pasando: 2 completos + 1 suelto = 3 platos, y
+    -- caben 3 jugos. Es el ejemplo literal del dueño.
+    v_mesa := public.create_storefront_order(
+      v_business, null, '+593900000007', 'Familia', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_almuerzo, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_caldo, 'quantity', 2),
+          jsonb_build_object('option_id', v_pollo, 'quantity', 3),
+          jsonb_build_object('option_id', v_jugo, 'quantity', 3)
+        )
+      ))
+    );
+    if (select count(*) from order_items where order_id = (v_mesa ->> 'id')::uuid) <> 2 then
+      raise exception 'los 3 jugos por 3 platos no se aceptaron como antes';
+    end if;
+    delete from orders where id = (v_mesa ->> 'id')::uuid;
+
+    -- ⚠️ Lo que se COBRA no tiene tope, y es deliberado: quien quiera cinco
+    -- porciones de carne las paga. El tope es solo para lo que va GRATIS.
+    v_mesa := public.create_storefront_order(
+      v_business, null, '+593900000007', 'Con extras', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_almuerzo, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_caldo, 'quantity', 1),
+          jsonb_build_object('option_id', v_pollo, 'quantity', 1),
+          jsonb_build_object('option_id', v_carne, 'quantity', 5)
+        )
+      ))
+    );
+    if (v_mesa ->> 'total')::numeric <> 5.50 then
+      raise exception 'el adicional de pago no se cobró entero: %', v_mesa ->> 'total';
+    end if;
+    delete from orders where id = (v_mesa ->> 'id')::uuid;
+
     -- El almuerzo vale lo que dice el dueño, aunque las partes sueltas sumen menos.
     update option_groups set loose_price = 0.50 where id in (v_g_sopa, v_g_segundo);
     v_mesa := public.create_storefront_order(

@@ -9,6 +9,7 @@ import {
   esPlatoPorPartes,
   groupExtras,
   lineasDelPlato,
+  platosDeLaMesaElegida,
   lineKey,
   missingRequirement,
   optionPriceLabel,
@@ -165,6 +166,22 @@ export default function ProductSheet({
   }
 
   /**
+   * El tope REAL de un grupo aquí y ahora.
+   *
+   * ⚠️ Lo que va GRATIS en un plato por partes va uno por plato: 2 almuerzos y
+   * un segundo suelto son tres platos y tres jugos. Sin esto, el contador
+   * dejaba subir hasta `maxSelectable` —100 en un local real— y el cliente se
+   * comía el rechazo al final, después de haber armado toda la mesa.
+   */
+  const topeDelGrupo = (group: OptionGroup): number => {
+    if (!esPlato || !product || group.isMealPart === true) return group.maxSelectable
+    // Solo lo gratis: un adicional con precio se compra sin límite.
+    const gratis = group.options.every(opcion => opcion.price === 0)
+    if (!gratis) return group.maxSelectable
+    return Math.min(group.maxSelectable, platosDeLaMesaElegida(product, opciones))
+  }
+
+  /**
    * `quantity`: un contador por opción. El tope es del GRUPO y se cuenta en
    * porciones: en una parrillada de 4, subir el chorizo a 3 solo deja 1 para
    * repartir entre el resto.
@@ -180,7 +197,7 @@ export default function ProductSheet({
     const usadoPorOtras = resto
       .filter(item => item.groupId === group.id)
       .reduce((suma, item) => suma + item.quantity, 0)
-    const permitido = Math.max(0, group.maxSelectable - usadoPorOtras)
+    const permitido = Math.max(0, topeDelGrupo(group) - usadoPorOtras)
     if (permitido <= 0) return
 
     setOpciones([...resto, { ...opcion, quantity: Math.min(siguiente, permitido) }])
@@ -416,7 +433,13 @@ export default function ProductSheet({
           const usado = chosenCount(group, opciones)
           const minimo = Math.max(group.required ? 1 : 0, group.minSelectable)
           const cumplido = usado >= minimo
-          const lleno = usado >= group.maxSelectable
+          const tope = topeDelGrupo(group)
+          const lleno = usado >= tope
+          // Un grupo GRATIS de un plato por partes va uno por plato, así que su
+          // tope cambia mientras el cliente arma la mesa. Hay que decírselo: un
+          // contador que se planta sin explicar por qué se lee como un fallo.
+          const topadoPorPlatos = esPlato && group.isMealPart !== true
+            && tope < group.maxSelectable
 
           return (
             <section key={group.id}>
@@ -454,12 +477,19 @@ export default function ProductSheet({
                       </span>
                     )
                   : esPlato
-                    // En la mesa no hay tope que contar: se dice cuántas lleva.
-                    ? usado > 0 && (
-                      <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
-                        {usado} en la mesa
-                      </span>
-                    )
+                    // Las PARTES no tienen tope: se dice cuántas lleva. Lo que va
+                    // gratis sí, y entonces se dice «2 de 3» — el 3 son los platos.
+                    ? topadoPorPlatos
+                      ? (
+                        <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
+                          {usado} de {tope}
+                        </span>
+                      )
+                      : usado > 0 && (
+                        <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
+                          {usado} en la mesa
+                        </span>
+                      )
                     : group.maxSelectable > 1 && (
                       <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue">
                         Hasta {group.maxSelectable}

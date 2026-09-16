@@ -33,6 +33,7 @@ un módulo concreto, no en cada sesión.
 - [El chat pinta el precio CON margen](#el-chat-pinta-el-precio-con-margen-o-el-cliente-lee-una-cifra-y-paga-otra)
 - [El canal propio también pide por su mini app](#el-canal-propio-también-pide-por-su-mini-app)
 - [El panel enseñaba cuatro «Sopa» seguidas](#el-panel-enseñaba-cuatro-sopa-seguidas)
+- [Lo que va gratis, va por plato](#lo-que-va-gratis-va-por-plato)
 
 ---
 
@@ -902,3 +903,27 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 - ⚠️ **Falso positivo que costó media hora, anotado para no repetirlo:** el E2E de «armar por partes» falló dos veces y parecía culpa del cambio. No lo era — con `reuseExistingServer`, editar la fuente mientras el servidor de Vite sigue vivo deja el componente montado dos veces y crea cuatro partes en vez de dos. Ocho ejecuciones seguidas de la misma variante pasaron, y los 36 E2E pasan desde un servidor frío, que es como corre el CI.
 
 - **Lo que NO se tocó, y queda anotado:** la plantilla del alta **sigue sembrando** grupos en la categoría para «almuerzos» y «menú ejecutivo», así que el próximo local de ese tipo nacerá con el mismo juego duplicado en cuanto su dueño use «Armarlo por partes». Arreglarlo es cambiar cómo nace cada local nuevo y va en su propio paso.
+
+## Lo que va gratis, va por plato
+
+- **Lo encontró el dueño mirando su propio local (2026-09-16):** «el jugo o bebida que va gratis es por el número de almuerzos que lleva el cliente, pero ahora está que pueden elegir muchos jugos gratis». Era cierto, y era **dinero saliendo**.
+
+- ⚠️ **Fallaba en las TRES capas que arman un plato por partes**, y por el mismo motivo en las tres: `cart.ts` (la app), `pricing.ts` (el servidor) y `lineas_del_plato_por_partes` (la base) reparten lo elegido en **partes del plato** y **acompañantes**. Sopa y Segundo son `is_meal_part`, así que se topan solos —el plato se cuenta por la parte más corta—. La bebida **no es parte**, caía en «acompañantes gratis» y ahí no había ningún límite.
+
+- ⚠️ **El único freno era `max_selectable`, y en La Abuelita valía 100**: un almuerzo de $3.50 se podía llevar cien jugos. A $0.60 el jugo son $60 de pérdida sobre un pedido de $3.50. En la práctica, cualquiera que marcara cinco de más costaba casi el precio del almuerzo.
+
+- **La regla, con las palabras del dueño:** «si son 2 almuerzos completos, 2 jugos nada más; si son 2 almuerzos y un segundo, 3 jugos». O sea `platos = completos + partes sueltas` — **la cuenta que las tres capas ya hacían** para partir las líneas del pedido. No había que inventar nada: había que conectarla. Octava vez del patrón de [camino-real](.claude/skills/camino-real/SKILL.md), y esta vez con el matiz de que lo calculado se usaba para OTRA cosa.
+
+- ⚠️ **Una parte suelta también lleva el suyo**, y lo decidió el dueño: 2 almuerzos + 1 segundo suelto son tres platos y tres jugos. Por eso el tope es `completos + sueltas` y no solo `completos`.
+
+- ⚠️ **Solo se topa lo GRATIS, y es deliberado.** Un adicional con precio no tiene límite ni debe tenerlo: quien quiera cinco porciones de carne las paga y cada una suma. El tope existe para que no se regale de más, no para impedir comprar. Hay una prueba de esto en cada capa.
+
+- ⚠️ **El freno de verdad vive en PostgreSQL.** El pedido real lo crea `create_storefront_order`, que **no** pasa por `pricing.ts` —ese solo cotiza—, así que un tope únicamente en el teléfono se salta con las herramientas del navegador. Se recreó `lineas_del_plato_por_partes` (la función acotada, no la RPC de 644 líneas) y la RPC hereda el freno al llamarla.
+
+- ⚠️ **La ficha lo dice mientras el cliente arma**, no al final: el contador de un grupo gratis pasa de «3 en la mesa» a **«2 de 3»**, donde el 3 son los platos, y se planta ahí. Un contador que se detiene sin explicar por qué se lee como un fallo de la app. El número sale de `platosDeLaMesaElegida`, exportada de `cart.ts` para que la pantalla y el carrito cuenten **igual**: si la ficha se inventara su cuenta, dejaría marcar lo que el carrito rechaza después, que es peor que no topar.
+
+- ⚠️ **Una prueba del servidor exigía lo CONTRARIO**, con estos mismos datos: `[CALDO(1), POLLO(1), JUGO(5)]` se daba por bueno bajo el título «lo gratis no suma aunque se pidan muchos: **lo decide el dueño**». No lo decidía el dueño — no lo decidía nadie. Se dio la vuelta conservando lo que sí protegía: que lo gratis no suma al precio.
+
+- **Comprobado fallando antes del arreglo**, en el verificador que ejecuta las funciones contra PostgreSQL real: «se aceptaron 5 jugos gratis para 1 solo plato».
+
+- ⚠️ **Lo que NO se tocó:** `max_selectable` de los grupos se queda en 100. El tope real es dinámico —depende de cuántos platos lleve el cliente— así que bajarlo a mano daría un número fijo y equivocado en cuanto alguien pida dos almuerzos.
