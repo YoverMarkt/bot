@@ -467,6 +467,32 @@ export interface LineaDelPlato {
   options: ChosenOption[]
 }
 
+/**
+ * Cuántos PLATOS lleva esta mesa: completos más partes sueltas.
+ *
+ * Es el tope de todo lo que va gratis. Vive aparte de `lineasDelPlato` porque
+ * la ficha lo necesita MIENTRAS el cliente arma —para no dejarle marcar un
+ * cuarto jugo sobre tres platos—, y ahí todavía no hay líneas que construir.
+ *
+ * ⚠️ Una sola cuenta para las dos: si la ficha se inventara la suya, la pantalla
+ * dejaría marcar lo que el carrito rechaza después, que es peor que no topar.
+ */
+export function platosDeLaMesaElegida(
+  product: Product,
+  options: ChosenOption[],
+): number {
+  const partes = product.optionGroups.filter(grupo => grupo.isMealPart === true)
+  if (!partes.length) return 0
+  const porcionesDe = (groupId: string) => options
+    .filter(opcion => opcion.groupId === groupId && opcion.quantity > 0)
+    .reduce((total, opcion) => total + opcion.quantity, 0)
+  const completos = Math.min(...partes.map(parte => porcionesDe(parte.id)))
+  return partes.reduce(
+    (total, parte) => total + Math.max(0, porcionesDe(parte.id) - completos),
+    completos,
+  )
+}
+
 export function lineasDelPlato(
   product: Product,
   options: ChosenOption[],
@@ -528,6 +554,31 @@ export function lineasDelPlato(
         unitPrice: parte.loosePrice ?? 0,
         options: deLaParte,
       })
+    }
+  }
+
+  // ── LO GRATIS VA POR PLATO ──────────────────────────────────────────────
+  //
+  // Un plato completo o una parte suelta llevan cada uno lo suyo: 2 almuerzos
+  // y un segundo suelto son TRES platos, y caben tres jugos.
+  //
+  // ⚠️ Hasta el 2026-09-16 esto no lo contaba NADIE —ni aquí, ni `pricing.ts`,
+  // ni la función de la base—, así que el único tope era `maxSelectable` del
+  // grupo. En un local real valía 100: un almuerzo de $3.50 se llevaba cien
+  // jugos gratis. Lo vio el dueño probando su tienda, no una prueba.
+  //
+  // ⚠️ Solo topa lo GRATIS. Quien quiera cinco porciones de carne las paga.
+  const porGrupoGratis = new Map<string, number>()
+  for (const eleccion of elegidas) {
+    const grupo = grupoDe.get(eleccion.groupId)
+    if (!grupo || grupo.isMealPart === true || eleccion.price !== 0) continue
+    const llevadas = (porGrupoGratis.get(eleccion.groupId) || 0) + eleccion.quantity
+    porGrupoGratis.set(eleccion.groupId, llevadas)
+    if (llevadas > platos) {
+      return {
+        error: `En ${nombre}, ${minusculas(grupo.name)} va con cada plato: `
+          + `llevas ${platos} y marcaste ${llevadas}`,
+      }
     }
   }
 

@@ -14975,6 +14975,10 @@ declare
   v_del_completo jsonb := '[]'::jsonb;
   v_sueltas jsonb := '[]'::jsonb;
   v_opciones_sueltas jsonb;
+  v_sueltos_total integer := 0;
+  v_platos integer;
+  v_grupo_pasado text;
+  v_marcadas integer;
   v_gratis jsonb := '[]'::jsonb;
   v_con_precio jsonb := '[]'::jsonb;
   v_lineas jsonb := '[]'::jsonb;
@@ -15077,6 +15081,7 @@ begin
     end loop;
 
     if v_sobran > 0 then
+      v_sueltos_total := v_sueltos_total + v_sobran;
       v_sueltas := v_sueltas || jsonb_build_array(jsonb_build_object(
         'name', 'Solo ' || lower(v_parte.name),
         'quantity', v_sobran,
@@ -15085,6 +15090,40 @@ begin
       ));
     end if;
   end loop;
+
+  -- ── LO GRATIS VA POR PLATO ───────────────────────────────────────────────
+  --
+  -- Un plato completo o una parte suelta llevan cada uno lo suyo: 2 almuerzos
+  -- y un segundo suelto son TRES platos y tres jugos.
+  --
+  -- ⚠️ Añadido el 2026-09-16, y hasta entonces no lo contaba NADIE: ni la app,
+  -- ni `pricing.ts`, ni esta función. El único tope era `max_selectable` del
+  -- grupo, que en un local real valía 100 — un almuerzo de $3.50 se llevaba
+  -- cien jugos gratis. Lo vio el dueño, no una prueba.
+  --
+  -- ⚠️ Solo topa lo GRATIS. Quien quiera cinco porciones de carne las paga, y
+  -- ahí no hay nada que proteger: cada una suma a su precio.
+  v_platos := v_completos + v_sueltos_total;
+
+  select og.name, sum((e ->> 'quantity')::integer)
+    into v_grupo_pasado, v_marcadas
+    from jsonb_array_elements(p_elegidas) e
+    join public.option_groups og on og.id = (e ->> 'option_group_id')::uuid
+   where og.is_meal_part = false
+     and coalesce((e ->> 'unit_price_adjustment')::numeric, 0) = 0
+     and (e ->> 'quantity')::integer > 0
+   group by og.id, og.name, og.sort
+  having sum((e ->> 'quantity')::integer) > v_platos
+   order by og.sort, og.id
+   limit 1;
+
+  if v_grupo_pasado is not null then
+    raise exception using errcode = '22023',
+      message = format(
+        'En %s, %s va con cada plato: llevas %s y marcaste %s',
+        p_product_name, lower(v_grupo_pasado), v_platos, v_marcadas
+      );
+  end if;
 
   -- ── Lo que acompaña: gratis con el plato, o su propia línea ───────────────
   for v_eleccion in

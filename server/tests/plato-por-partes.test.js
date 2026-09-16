@@ -109,10 +109,37 @@ describe('lo que sobra y lo gratis', () => {
     ])
   })
 
-  it('lo gratis no suma aunque se pidan muchos: lo decide el dueño', () => {
-    const r = armar([CALDO(1), POLLO(1), JUGO(5)])
+  it('lo gratis no suma al precio del plato', () => {
+    const r = armar([CALDO(1), POLLO(1), JUGO(1)])
     expect(r.lines).toHaveLength(1)
     expect(r.lines[0].unitPrice).toBe(3)
+  })
+
+  // ⚠️ ESTA PRUEBA EXIGÍA LO CONTRARIO HASTA EL 2026-09-16, y con estos mismos
+  // datos: `[CALDO(1), POLLO(1), JUGO(5)]` se daba por bueno y se llamaba «lo
+  // gratis no suma aunque se pidan muchos: lo decide el dueño».
+  //
+  // No lo decidía el dueño: no lo decidía nadie. Lo vio él probando su local —
+  // «el jugo gratis es por el número de almuerzos que lleva el cliente, pero
+  // ahora pueden elegir muchos jugos». El único tope era `maxSelectable`, que
+  // en su carta valía 100: un almuerzo de $3.50 con cien jugos.
+  it('pero va UNO POR PLATO: cinco jugos sobre un plato se rechazan', () => {
+    const r = armar([CALDO(1), POLLO(1), JUGO(5)])
+    expect(r.lines).toBeUndefined()
+    expect(r.error).toContain('va con cada plato')
+    expect(r.error).toContain('llevas 1')
+  })
+
+  it('«2 almuerzos y un segundo» son TRES platos y caben tres jugos', () => {
+    // El ejemplo literal del dueño: 2 completos + 1 suelto.
+    const r = armar([CALDO(2), POLLO(3), JUGO(3)])
+    expect(r.error).toBeUndefined()
+  })
+
+  it('lo que se COBRA no tiene tope: es lo gratis lo que se protege', () => {
+    const r = armar([CALDO(1), POLLO(1), CARNE(5)])
+    expect(r.error).toBeUndefined()
+    expect(r.lines.find(l => l.name === 'Porción de carne').quantity).toBe(5)
   })
 
   it('sin precio suelto, la parte que sobra NO se vende', () => {

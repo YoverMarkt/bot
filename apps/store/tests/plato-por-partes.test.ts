@@ -174,3 +174,62 @@ describe('la mesa en el carrito', () => {
     ])
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE VA GRATIS, VA POR PLATO
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Lo encontró el dueño mirando su propio local (2026-09-16): «el jugo que va
+// gratis es por el número de almuerzos que lleva el cliente, pero ahora pueden
+// elegir muchos jugos gratis».
+//
+// Era cierto en las TRES capas que arman el plato —esta, `pricing.ts` y la
+// función de la base—: Sopa y Segundo sí se topaban por ser partes, pero la
+// bebida no es parte y caía en «acompañantes gratis» sin ningún límite. El
+// único freno era `maxSelectable` del grupo, que en su local valía 100.
+//
+// La regla, con sus palabras: «2 almuerzos completos, 2 jugos; 2 almuerzos y un
+// segundo, 3 jugos». O sea platos = completos + partes sueltas, que es la
+// cuenta que este archivo ya hacía para partir las líneas.
+
+describe('lo gratis va por plato, no a discreción', () => {
+  it('un plato y cinco jugos gratis se rechaza', () => {
+    const plato = lineasDelPlato(almuerzo(), [
+      elegir(SOPA, 'o-caldo', 1),
+      elegir(SEGUNDO, 'o-pollo', 1),
+      elegir(ACOMPANAR, 'o-jugo', 5),
+    ])
+    expect(plato.error).toContain('va con cada plato')
+    expect(plato.error).toContain('llevas 1')
+  })
+
+  it('dos almuerzos completos llevan dos jugos, y no un tercero', () => {
+    const dos = [elegir(SOPA, 'o-caldo', 2), elegir(SEGUNDO, 'o-pollo', 2)]
+    expect(lineasDelPlato(almuerzo(), [...dos, elegir(ACOMPANAR, 'o-jugo', 2)]).error)
+      .toBeUndefined()
+    expect(lineasDelPlato(almuerzo(), [...dos, elegir(ACOMPANAR, 'o-jugo', 3)]).error)
+      .toContain('va con cada plato')
+  })
+
+  it('«2 almuerzos y un segundo» son TRES platos y caben tres jugos', () => {
+    // El ejemplo literal del dueño. La parte suelta también lleva el suyo.
+    const plato = lineasDelPlato(almuerzo(), [
+      elegir(SOPA, 'o-caldo', 2),
+      elegir(SEGUNDO, 'o-pollo', 3),
+      elegir(ACOMPANAR, 'o-jugo', 3),
+    ])
+    expect(plato.error).toBeUndefined()
+  })
+
+  it('lo que se COBRA no tiene tope: cinco porciones de carne se pagan', () => {
+    // ⚠️ Deliberado. El tope existe para que no se regale de más, no para
+    // impedir que alguien compre. Cada porción suma a su precio.
+    const plato = lineasDelPlato(almuerzo(), [
+      elegir(SOPA, 'o-caldo', 1),
+      elegir(SEGUNDO, 'o-pollo', 1),
+      elegir(ACOMPANAR, 'o-carne', 5),
+    ])
+    expect(plato.error).toBeUndefined()
+    expect(plato.lines?.find(l => l.name === 'Porción de carne')?.quantity).toBe(5)
+  })
+})

@@ -246,6 +246,7 @@ export function buildMealLines(input: {
 
   const delCompleto: MealLine['options'] = []
   const sueltas: MealLine[] = []
+  let sueltosTotal = 0
 
   for (const parte of partes) {
     const sobran = porcionesDe(parte.id) - completos
@@ -278,6 +279,7 @@ export function buildMealLines(input: {
     }
 
     if (sobran > 0) {
+      sueltosTotal += sobran
       sueltas.push({
         name: `Solo ${parte.name.toLocaleLowerCase('es')}`,
         quantity: sobran,
@@ -296,6 +298,32 @@ export function buildMealLines(input: {
       { sort: grupoDe.get(a.groupId)?.sort ?? 0, id: a.groupId },
       { sort: grupoDe.get(b.groupId)?.sort ?? 0, id: b.groupId },
     ) || enOrden({ sort: a.sort, id: a.optionId }, { sort: b.sort, id: b.optionId }))
+
+  // ── LO GRATIS VA POR PLATO ──────────────────────────────────────────────
+  //
+  // Un plato completo o una parte suelta llevan cada uno lo suyo: 2 almuerzos
+  // y un segundo suelto son TRES platos, y caben tres jugos.
+  //
+  // ⚠️ Hasta el 2026-09-16 esto no lo contaba NADIE —ni aquí, ni en la app, ni
+  // en la base—, así que el único tope era `max_selectable` del grupo. En un
+  // local real valía 100: un almuerzo de $3.50 se llevaba cien jugos gratis.
+  // Lo vio el dueño probando su propia tienda, no una prueba.
+  //
+  // ⚠️ Solo topa lo GRATIS. Quien quiera cinco porciones de carne las paga.
+  const platos = completos + sueltosTotal
+  const gratisPorGrupo = new Map<string, number>()
+  for (const eleccion of acompanantes) {
+    if (eleccion.price !== 0) continue
+    const llevadas = (gratisPorGrupo.get(eleccion.groupId) || 0) + eleccion.quantity
+    gratisPorGrupo.set(eleccion.groupId, llevadas)
+    if (llevadas > platos) {
+      const grupo = grupoDe.get(eleccion.groupId)?.name || eleccion.name
+      return {
+        error: `En ${input.productName}, ${grupo.toLocaleLowerCase('es')} va con cada plato: `
+          + `llevas ${platos} y marcaste ${llevadas}`,
+      }
+    }
+  }
 
   for (const eleccion of acompanantes) {
     if (eleccion.price < 0) {
