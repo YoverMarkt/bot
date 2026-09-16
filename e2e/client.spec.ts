@@ -578,3 +578,72 @@ test('el dueño arma un almuerzo por partes desde la ficha del producto', async 
   await expect.poll(() => guardados.at(-1)?.loose_price).toBe(1.5)
   await expect(ficha).toBeVisible()
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PERSONALIZACIÓN: EL DUEÑO TIENE QUE SABER QUÉ VE SU CLIENTE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Caso REAL del 2026-09-16. El dueño de La Abuelita: «en la mini app tengo 2
+// sopas y unos 5 segundos, pero en el panel tengo como 4 sopas… ¿o soy yo el
+// que no entiende?». No era él: tenía DOCE grupos para seis productos y la
+// pantalla los listaba en plano, así que cuatro tarjetas decían «Sopa».
+//
+// ⚠️ Esta pestaña no la tocaba ningún E2E, y el simulacro de la API ni siquiera
+// respondía a sus rutas — el respaldo devolvía `{}` donde el panel espera una
+// lista. O sea que un fallo de render aquí no lo habría visto nadie.
+test('Personalización agrupa por producto y aparta lo que el cliente no ve', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+
+  const grupo = (o: Record<string, unknown>) => ({
+    product_id: null, category_id: null, active: true, description: null,
+    selection_type: 'single', required: true, min_selectable: 1, max_selectable: 1,
+    pricing_strategy: 'included', free_selections: 0, is_meal_part: false,
+    template_id: null, loose_price: null, sort: 0, ...o,
+  })
+  await page.route('**/api/client/products', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([
+      { id: 'almuerzo', name: 'Almuerzo del día', price: 3.5, stock: 'disponible', active: true, category_id: 'cat-alm' },
+      { id: 'agua', name: 'Agua', price: 0.75, stock: 'disponible', active: true, category_id: 'cat-beb' },
+    ]),
+  }))
+  await page.route('**/api/client/option-groups', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([
+      grupo({ id: 'g1', name: 'Sopa', product_id: 'almuerzo' }),
+      grupo({ id: 'g2', name: 'Segundo', product_id: 'almuerzo' }),
+      // Resto apagado de la plantilla del alta.
+      grupo({ id: 'g3', name: 'Sopa', category_id: 'cat-alm', active: false }),
+      // Fantasma: activo, pero sin una sola opción dentro.
+      grupo({ id: 'g4', name: 'Sopa', product_id: 'agua' }),
+    ]),
+  }))
+  await page.route('**/api/client/options', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify([
+      { id: 'o1', option_group_id: 'g1', name: 'Caldo de res', price_adjustment: 0, sort: 0, stock: 'disponible', default_selected: false, description: null, image_url: null, image_public_id: null, references_product_id: null, active: true },
+      { id: 'o2', option_group_id: 'g2', name: 'Pollo', price_adjustment: 0, sort: 0, stock: 'disponible', default_selected: false, description: null, image_url: null, image_public_id: null, references_product_id: null, active: true },
+      { id: 'o3', option_group_id: 'g3', name: 'Sopa del día', price_adjustment: 0, sort: 0, stock: 'disponible', default_selected: false, description: null, image_url: null, image_public_id: null, references_product_id: null, active: true },
+    ]),
+  }))
+
+  await page.goto(`${clientUrl}#/catalog`)
+  await page.getByRole('tab', { name: 'Personalización' }).click()
+
+  // El producto encabeza, y dice lo que su cliente va a elegir EN ORDEN. Es la
+  // línea que faltaba: el orden de los grupos ya decidía los pasos de la ficha,
+  // pero en ningún sitio del panel se leía como pasos.
+  await expect(page.getByText('tu cliente elige: 1 Sopa · 2 Segundo')).toBeVisible()
+
+  // Los dos que el cliente NO ve —el apagado y el vacío— quedan apartados y
+  // contados, no mezclados con los vivos.
+  const cajon = page.getByRole('button', { name: /Tu cliente no ve estos/ })
+  await expect(cajon).toBeVisible()
+  await expect(cajon).toContainText('2')
+
+  // Y el cajón nace PLEGADO: lo muerto no compite por la atención con lo vivo.
+  await expect(page.getByText('sin opciones, tu cliente no lo ve')).toBeHidden()
+  await cajon.click()
+  await expect(page.getByText('sin opciones, tu cliente no lo ve')).toBeVisible()
+})

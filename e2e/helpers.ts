@@ -112,6 +112,13 @@ export async function mockClientApi(page: Page) {
     // lo que no reconozca, y un `{}` donde el panel espera una lista revienta
     // la pantalla al hacer `.map`. Este mock las descubrió así.
     if (path === '/api/client/categories' || path === '/api/client/variants') return json(route, [])
+    // Personalización: sin estos, el respaldo contesta `{}` y la pestaña
+    // revienta al hacer `.map`. Vacías por defecto; cada prueba que las
+    // necesite las sobreescribe con `page.route` antes de navegar.
+    if (path === '/api/client/option-groups' || path === '/api/client/options'
+      || path === '/api/client/option-templates' || path === '/api/client/recommendations') {
+      return json(route, [])
+    }
 
     return json(route, {})
   })
