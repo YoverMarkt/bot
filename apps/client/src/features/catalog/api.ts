@@ -149,6 +149,13 @@ export type OptionGroup = {
   option_template_id: string | null
   sort: number
   active: boolean
+  /**
+   * Parte del plato por partes (sopa, segundo): una porción de cada parte forma
+   * un plato completo al precio del producto.
+   */
+  is_meal_part: boolean
+  /** Lo que cuesta una porción suelta de esta parte. Nulo: solo va dentro del plato. */
+  loose_price: string | number | null
 }
 
 export type OptionGroupPayload = Omit<OptionGroup, 'id'>

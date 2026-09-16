@@ -4,6 +4,7 @@ import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-reac
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import OptionsManager from './OptionsManager'
+import PlatoPorPartes from './PlatoPorPartes'
 import { useBusinessInfo } from '../../lib/biz'
 import { vocabularioDe } from './vocabulario'
 import type { Product, ProductPayload, Variant, Category } from './api'
@@ -332,6 +333,24 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
           </div>
         </div>
+
+        {/* ── El plato por partes (un almuerzo: sopa + segundo) ─────────
+            Solo al EDITAR: sus partes cuelgan del producto, y un producto que
+            aún no existe no tiene id del que colgarlas. */}
+        {product
+          ? (
+              <PlatoPorPartes
+                productId={product.id}
+                productName={f.name.trim() || product.name}
+                precio={Number.parseFloat(f.price) || Number(product.price) || 0}
+              />
+            )
+          : (
+              <p className="mb-4 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                ¿Se arma por partes, como un almuerzo de sopa y segundo? Guárdalo y vuelve a abrirlo
+                para armarlo.
+              </p>
+            )}
 
         {/* ── Lo que casi nadie necesita, plegado ──────────────────────
             ⚠️ El formulario pedía doce campos de golpe, y para un local de diez

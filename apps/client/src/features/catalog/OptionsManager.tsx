@@ -76,6 +76,8 @@ const grupoNuevo = (): OptionGroupPayload => ({
   option_template_id: null,
   sort: 0,
   active: true,
+  is_meal_part: false,
+  loose_price: null,
 })
 
 const adicionalVacio = (): RecommendationPayload => ({

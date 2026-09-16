@@ -196,6 +196,10 @@ export interface OptionGroupRow {
   option_template_id: string | null
   sort: number
   active: boolean
+  /** Parte del plato por partes: una porción de cada parte forma un plato. */
+  is_meal_part: boolean
+  /** Lo que cuesta una porción suelta de esta parte. Nulo: no se vende sola. */
+  loose_price: string | number | null
 }
 
 export interface OptionRow {

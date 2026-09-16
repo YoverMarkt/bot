@@ -506,3 +506,75 @@ test('el tema oscuro arranca con el theme-boot externo (compatible con el CSP)',
   expect(await boot.text()).toContain('bp-theme-client')
   await expect(page.locator('html')).toHaveClass(/dark/)
 })
+
+test('el dueño arma un almuerzo por partes desde la ficha del producto', async ({ page }) => {
+  // ⚠️ Pedido del dueño (2026-09-14): «que para todo local de menú pequeño sea
+  // fácil de armar lo que vendo: un almuerzo vale 3 dólares, y al pedirlo que
+  // me salga qué sopa quiero y qué segundo». El editor vive DENTRO del
+  // formulario del producto, y eso trae el fallo que esta prueba vigila: un
+  // botón sin `type="button"` —o un Enter en un campo— envía el formulario del
+  // producto, guarda y cierra la ficha en mitad del armado.
+  await seedClientSession(page)
+  await mockClientApi(page)
+
+  const grupos: Record<string, unknown>[] = []
+  const opciones: Record<string, unknown>[] = []
+  const guardados: Record<string, unknown>[] = []
+
+  await page.route('**/api/client/option-groups**', async (route) => {
+    const peticion = route.request()
+    const cuerpo = () => JSON.parse(peticion.postData() || '{}') as Record<string, unknown>
+    if (peticion.method() === 'POST') {
+      const grupo = { id: `g${grupos.length + 1}`, ...cuerpo() }
+      grupos.push(grupo)
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(grupo) })
+    }
+    if (peticion.method() === 'PUT') {
+      const id = new URL(peticion.url()).pathname.split('/').pop()
+      const cambios = cuerpo()
+      guardados.push(cambios)
+      const indice = grupos.findIndex(grupo => grupo.id === id)
+      if (indice >= 0) grupos[indice] = { ...grupos[indice], ...cambios }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(grupos) })
+  })
+
+  await page.route('**/api/client/options**', async (route) => {
+    const peticion = route.request()
+    if (peticion.method() === 'POST') {
+      const opcion = { id: `o${opciones.length + 1}`, ...JSON.parse(peticion.postData() || '{}') }
+      opciones.push(opcion)
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(opcion) })
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opciones) })
+  })
+
+  await page.goto(`${clientUrl}#/catalog`)
+  await page.getByRole('button', { name: 'Editar' }).first().click()
+  const ficha = page.getByRole('dialog', { name: 'Editar producto' })
+  await expect(ficha).toBeVisible()
+
+  // Todavía no se arma por partes: se ofrece con el ejemplo del almuerzo.
+  await ficha.getByRole('button', { name: 'Armarlo por partes' }).click()
+
+  // Las dos partes, y la regla dicha como la leerá el cliente.
+  await expect(ficha.getByLabel('Parte')).toHaveCount(2)
+  await expect(ficha.getByText('Sopa + Segundo = un plato completo a $10.00')).toBeVisible()
+
+  // Un plato dentro de una parte, agregado con Enter.
+  await ficha.getByLabel('Agregar a Sopa').fill('Caldo de res')
+  await ficha.getByLabel('Agregar a Sopa').press('Enter')
+  await expect(ficha.getByText('Caldo de res')).toBeVisible()
+
+  // ⚠️ Lo que de verdad se vigila: la ficha SIGUE ABIERTA. Si un botón o el
+  // Enter enviaran el formulario, aquí el producto ya estaría guardado y el
+  // dueño habría perdido el hilo a media mesa.
+  await expect(ficha).toBeVisible()
+
+  // El precio por separado se escribe con coma, como se escribe aquí.
+  await ficha.getByLabel('Por separado ($)').first().fill('1,50')
+  await ficha.getByLabel('Agregar a Sopa').click()
+  await expect.poll(() => guardados.at(-1)?.loose_price).toBe(1.5)
+  await expect(ficha).toBeVisible()
+})
