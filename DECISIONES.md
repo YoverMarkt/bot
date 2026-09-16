@@ -32,6 +32,7 @@ un módulo concreto, no en cada sesión.
 - [Varios de lo mismo con distinto relleno](#varios-de-lo-mismo-con-distinto-relleno-sin-gastar-un-mensaje-de-más)
 - [El chat pinta el precio CON margen](#el-chat-pinta-el-precio-con-margen-o-el-cliente-lee-una-cifra-y-paga-otra)
 - [El canal propio también pide por su mini app](#el-canal-propio-también-pide-por-su-mini-app)
+- [El panel enseñaba cuatro «Sopa» seguidas](#el-panel-enseñaba-cuatro-sopa-seguidas)
 
 ---
 
@@ -875,3 +876,29 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 - ⚠️ **Lo que SIGUE por WhatsApp, intacto:** la bienvenida, las categorías, la búsqueda, elegir local, el enlace, los comprobantes, los avisos de estado («tu pedido está en camino») con su mapa, la ubicación y MENÚ. Lo único que desaparece es armar el carrito por chat, y ya no quedaba ningún local haciéndolo.
 
 - ⚠️ **Lo que se quedó a propósito:** `sendImage`, `sendVideo` y `sendOptions` siguen declaradas en `ProcessMessageInput` aunque hoy no las consuma nadie ahí. Desengancharlas de `bot-entry` es reordenar una firma POSICIONAL con `sendTyping` en medio — exactamente la plomería cuyo desorden costó el check azul—, así que va en su propia limpieza. Y `menu_modifiers` no se toca: la tabla, su CRUD y lo que la mini app lee de ella siguen vivos; vaciarla es otra limpieza con su propia comprobación.
+
+## El panel enseñaba cuatro «Sopa» seguidas
+
+- **Lo reportó el dueño probando su propio local (2026-09-16):** «en la mini app de La Abuelita tengo 2 sopas y unos 5 segundos y los jugos que van gratis, pero en el panel tengo como 4 sopas, algunos grupos, segundos no sé cómo se crean… ¿la experiencia no es la correcta o soy yo el que no entiende?». **No era él**, y eso se midió antes de tocar nada: La Abuelita tenía **12 grupos de opciones para 6 productos**, y solo 5 llegaban a la app.
+
+- ⚠️ **Dos sistemas creaban grupos en paralelo y nadie los presentó.** La plantilla del alta (`business-templates.ts`) cuelga los suyos de la **categoría** —«Sopa», «Segundo», «Guarnición», «Bebida incluida» en Almuerzos, «Acompañante» en Platos a la carta—; «Armarlo por partes» (#359) los cuelga del **producto**. Al armar el almuerzo, los de la plantilla se apagaron pero **no se borraron**: quedaron 5 grupos apagados con 21 opciones dentro. Más 2 grupos **vacíos** colgados de «Agua», de un toque en el producto equivocado.
+
+- ⚠️ **El desajuste entre lo que veía el dueño y lo que veía el cliente era exacto.** La tienda solo pinta grupos activos Y con opciones (`storefront.ts` filtra `options.length > 0`), así que el cliente veía 3 grupos del almuerzo. El panel listaba los 12 en plano, distinguidos por una línea pequeña diciendo de dónde colgaba cada uno. Contando por nombre salían **cuatro «Sopa» y cuatro «Segundo»**, que es literalmente lo que el dueño describió.
+
+- **La limpieza de datos, comprobada antes de borrar.** Se retiraron los 7 grupos de ruido con sus 21 opciones y se activaron «Solo sopa» y «Solo segundo», que el dueño sí quiere vender sueltos. ⚠️ **El historial de pedidos no corre peligro y se verificó, no se supuso**: `order_item_options` guarda `option_group_id`/`option_id` como uuid **sin foránea** y copia además `option_group_name`/`option_name` como texto no nulo — justo para que el pedido sobreviva a cambios del catálogo. De las 6 filas de historial del local, **ninguna** apuntaba a lo retirado. Respaldo restaurable en `server/respaldos/`.
+
+- ⚠️ **VISIBLE = activo Y con opciones dentro**, y lo segundo no es un detalle. Un grupo obligatorio y vacío no bloquea el producto: la tienda lo descarta, así que simplemente no existe para el cliente. Contarlo como vivo en el panel sería repetir la mentira que esto viene a arreglar — por eso los dos fantasmas de «Agua» caen en el mismo cajón que los apagados.
+
+- **Lo que cambia en la pantalla** (`agrupar-grupos.ts` + `OptionsManager.tsx`): los grupos se agrupan **por producto**, con el nombre del producto de cabecera —así dos grupos llamados «Sopa» ya no compiten, viven bajo platos distintos—; cada producto dice en una línea **«tu cliente elige: 1 Sopa · 2 Segundo · 3 Bebida»**, que conecta la configuración con el resultado (el orden ya decidía los pasos de la ficha, pero en ningún sitio se leía como pasos); un grupo colgado de una categoría dice **a cuántos productos afecta**, que es la pregunta que hacía que nadie se atreviera a tocarlos; y lo que el cliente no ve se aparta en un cajón plegado y contado.
+
+- ⚠️ **La lógica vive en un módulo PURO y probado**, no dentro del componente: `agrupar-grupos.ts`, con las nueve pruebas reproduciendo los doce grupos reales. La pantalla solo pinta.
+
+- ⚠️ **Ordenar sigue mandando la lista ENTERA al servidor.** `reorderOptionGroups` ordena todos los grupos del negocio, así que subir «Bebida» dentro de «Almuerzo del día» se traduce a intercambiar su posición GLOBAL con la del hermano de encima (`moverEnSeccion`): los grupos de otros productos no se mueven. Agrupar en pantalla no podía cambiar el contrato del servidor.
+
+- ⚠️ **Esta pestaña no la tocaba ningún E2E, y el simulacro de la API ni siquiera respondía a sus rutas**: el respaldo devolvía `{}` donde el panel espera una lista, que es justo lo que revienta una pantalla al hacer `.map`. Ahora hay prueba de extremo a extremo y simulacros para las cuatro rutas de Personalización.
+
+- ⚠️ **Dos fallos los cazó el lint, no una prueba**: el `useMemo` quedó detrás de un `return` temprano (`react-hooks/rules-of-hooks` — se salta en el primer render y React encuentra un hook de más en el siguiente), y `grupos.data || []` devolvía un array nuevo en cada render, recalculando el reparto siempre.
+
+- ⚠️ **Falso positivo que costó media hora, anotado para no repetirlo:** el E2E de «armar por partes» falló dos veces y parecía culpa del cambio. No lo era — con `reuseExistingServer`, editar la fuente mientras el servidor de Vite sigue vivo deja el componente montado dos veces y crea cuatro partes en vez de dos. Ocho ejecuciones seguidas de la misma variante pasaron, y los 36 E2E pasan desde un servidor frío, que es como corre el CI.
+
+- **Lo que NO se tocó, y queda anotado:** la plantilla del alta **sigue sembrando** grupos en la categoría para «almuerzos» y «menú ejecutivo», así que el próximo local de ese tipo nacerá con el mismo juego duplicado en cuanto su dueño use «Armarlo por partes». Arreglarlo es cambiar cómo nace cada local nuevo y va en su propio paso.

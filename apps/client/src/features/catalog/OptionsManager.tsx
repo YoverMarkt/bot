@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { agruparGrupos, moverEnSeccion } from './agrupar-grupos'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown, ChevronDown as ChevronDownIcon, ChevronRight, ChevronUp,
@@ -322,6 +323,8 @@ export default function OptionsManager({
     onError: alFallar,
   })
 
+  const [verOcultos, setVerOcultos] = useState(false)
+
   const opcionesPorGrupo = useMemo(() => {
     const mapa = new Map<string, ProductOption[]>()
     for (const opcion of opciones.data || []) {
@@ -342,12 +345,176 @@ export default function OptionsManager({
     return 'Sin asignar'
   }
 
+  // ⚠️ Memoizada, no `grupos.data || []` a secas: mientras carga, ese `||`
+  // devuelve un array NUEVO en cada render y el reparto de abajo se
+  // recalcularía siempre. Lo avisó el lint.
+  const lista = useMemo(() => grupos.data || [], [grupos.data])
+
+  // El reparto vive aparte y probado en `agrupar-grupos.ts`.
+  //
+  // ⚠️ Va aquí, ANTES de los `return` de carga y error, y no junto al render
+  // que lo usa: un `useMemo` detrás de un return temprano se salta en el
+  // primer render y React se encuentra un hook de más en el siguiente. Lo cazó
+  // el lint (`react-hooks/rules-of-hooks`), no una prueba.
+  const { secciones, ocultos } = useMemo(
+    () => agruparGrupos(
+      lista,
+      id => (opcionesPorGrupo.get(id) || []).length,
+      productos,
+      categorias,
+    ),
+    [lista, opcionesPorGrupo, productos, categorias],
+  )
+
   if (grupos.isLoading || opciones.isLoading) {
     return <div className="space-y-3">{[0, 1, 2].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>
   }
   if (grupos.error) return <QueryError onRetry={() => void grupos.refetch()} />
 
-  const lista = grupos.data || []
+  /** Una tarjeta de grupo. `hermanos` son los de su misma sección: las
+      flechas ordenan dentro del producto, que es el orden que ve el cliente. */
+  const tarjetaGrupo = (
+    grupo: OptionGroup,
+    indice: number,
+    hermanos: OptionGroup[],
+    // En una sección la cabecera ya dice de quién cuelga, y el orden importa.
+    // En el cajón de los ocultos es al revés: ahí conviven grupos de productos
+    // distintos —hay que nombrarlos— y ordenar lo que nadie ve es ruido.
+    cajon = false,
+  ) => {
+    const suyas = opcionesPorGrupo.get(grupo.id) || []
+    const desplegado = abierto[grupo.id]
+    return (
+          <Card key={grupo.id} className="overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 p-4">
+              <button
+                type="button"
+                onClick={() => setAbierto({ ...abierto, [grupo.id]: !desplegado })}
+                className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+              >
+                {desplegado
+                  ? <ChevronDown className="mt-0.5 size-4 shrink-0" />
+                  : <ChevronRight className="mt-0.5 size-4 shrink-0" />}
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{grupo.name}</span>
+                    {grupo.required && <Badge variant="default">Obligatorio</Badge>}
+                    {!grupo.active && <Badge variant="outline">Inactivo</Badge>}
+                    {grupo.pricing_strategy === 'highest_selected' && (
+                      <Badge variant="secondary">Cobra la más cara</Badge>
+                    )}
+                  </span>
+                  <span className="mt-1 block text-sm text-muted-foreground">
+                    {cajon && `${dondeCuelga(grupo)} · `}
+                    {resumen(grupo)} · {suyas.length} opciones
+                    {!suyas.length && ' — sin opciones, tu cliente no lo ve'}
+                  </span>
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* El orden decide cómo se lee el plato: en la ficha del
+                    cliente, en el carrito, en el pedido y en su WhatsApp. */}
+                {!cajon && (
+                  <Flechas
+                    nombre={grupo.name}
+                    primero={indice === 0}
+                    ultimo={indice === hermanos.length - 1}
+                    ocupado={ordenarGrupos.isPending}
+                    onSubir={() => ordenarGrupos.mutate(moverEnSeccion(lista, hermanos, indice, -1))}
+                    onBajar={() => ordenarGrupos.mutate(moverEnSeccion(lista, hermanos, indice, 1))}
+                  />
+                )}
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => setEditandoGrupo({ grupo: { ...grupo }, id: grupo.id })}
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <ConfirmAction
+                  title="¿Eliminar este grupo?"
+                  description="Se borran también todas sus opciones. Los pedidos ya hechos no cambian."
+                  destructive
+                  onConfirm={() => borrarGrupo.mutate(grupo.id)}
+                  trigger={
+                    <Button variant="ghost" size="sm"><Trash2 className="size-4" /></Button>
+                  }
+                />
+              </div>
+            </div>
+
+            {desplegado && (
+              <div className="border-t bg-muted/30 p-4">
+                <div className="space-y-2">
+                  {suyas.map((opcion, puesto) => (
+                    <div
+                      key={opcion.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="font-medium">{opcion.name}</span>
+                        {opcion.default_selected && (
+                          <Badge variant="outline" className="ml-2">Por defecto</Badge>
+                        )}
+                        {opcion.stock === 'agotado' && (
+                          <Badge variant="outline" className="ml-2">Agotado</Badge>
+                        )}
+                      </span>
+                      <span className="text-sm font-semibold">
+                        {money(opcion.price_adjustment)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        {/* Aquí se ordenan los 19 sabores: el cliente los ve
+                            en este orden en la ficha del producto. */}
+                        <Flechas
+                          nombre={opcion.name}
+                          primero={puesto === 0}
+                          ultimo={puesto === suyas.length - 1}
+                          ocupado={ordenarOpciones.isPending}
+                          onSubir={() => ordenarOpciones.mutate({
+                            groupId: grupo.id, ids: moverEnLista(suyas, puesto, -1),
+                          })}
+                          onBajar={() => ordenarOpciones.mutate({
+                            groupId: grupo.id, ids: moverEnLista(suyas, puesto, 1),
+                          })}
+                        />
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => setEditandoOpcion({
+                            opcion: { ...opcion }, id: opcion.id,
+                          })}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <ConfirmAction
+                          title="¿Eliminar esta opción?"
+                          description="Desaparece de la mini app. Los pedidos ya hechos no cambian."
+                          destructive
+                          onConfirm={() => borrarOpcion.mutate(opcion.id)}
+                          trigger={
+                            <Button variant="ghost" size="sm"><Trash2 className="size-3.5" /></Button>
+                          }
+                        />
+                      </span>
+                    </div>
+                  ))}
+                  {!suyas.length && (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      Este grupo aún no tiene opciones.
+                      {grupo.required && ' Es obligatorio, así que sin opciones el producto no se podrá pedir.'}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="outline" size="sm" className="mt-3"
+                  onClick={() => setEditandoOpcion({ opcion: opcionNueva(grupo.id), id: null })}
+                >
+                  <Plus className="mr-1.5 size-3.5" /> Agregar opción
+                </Button>
+              </div>
+            )}
+          </Card>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -374,137 +541,58 @@ export default function OptionsManager({
         </Card>
       )}
 
-      <div className="space-y-3">
-        {lista.map((grupo, indice) => {
-          const suyas = opcionesPorGrupo.get(grupo.id) || []
-          const desplegado = abierto[grupo.id]
-          return (
-            <Card key={grupo.id} className="overflow-hidden">
-              <div className="flex flex-wrap items-start justify-between gap-3 p-4">
-                <button
-                  type="button"
-                  onClick={() => setAbierto({ ...abierto, [grupo.id]: !desplegado })}
-                  className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
-                >
-                  {desplegado
-                    ? <ChevronDown className="mt-0.5 size-4 shrink-0" />
-                    : <ChevronRight className="mt-0.5 size-4 shrink-0" />}
-                  <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{grupo.name}</span>
-                      {grupo.required && <Badge variant="default">Obligatorio</Badge>}
-                      {!grupo.active && <Badge variant="outline">Inactivo</Badge>}
-                      {grupo.pricing_strategy === 'highest_selected' && (
-                        <Badge variant="secondary">Cobra la más cara</Badge>
-                      )}
-                    </span>
-                    <span className="mt-1 block text-sm text-muted-foreground">
-                      {dondeCuelga(grupo)} · {resumen(grupo)} · {suyas.length} opciones
-                    </span>
-                  </span>
-                </button>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {/* El orden decide cómo se lee el plato: en la ficha del
-                      cliente, en el carrito, en el pedido y en su WhatsApp. */}
-                  <Flechas
-                    nombre={grupo.name}
-                    primero={indice === 0}
-                    ultimo={indice === lista.length - 1}
-                    ocupado={ordenarGrupos.isPending}
-                    onSubir={() => ordenarGrupos.mutate(moverEnLista(lista, indice, -1))}
-                    onBajar={() => ordenarGrupos.mutate(moverEnLista(lista, indice, 1))}
-                  />
-                  <Button
-                    variant="ghost" size="sm"
-                    onClick={() => setEditandoGrupo({ grupo: { ...grupo }, id: grupo.id })}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <ConfirmAction
-                    title="¿Eliminar este grupo?"
-                    description="Se borran también todas sus opciones. Los pedidos ya hechos no cambian."
-                    destructive
-                    onConfirm={() => borrarGrupo.mutate(grupo.id)}
-                    trigger={
-                      <Button variant="ghost" size="sm"><Trash2 className="size-4" /></Button>
-                    }
-                  />
-                </div>
-              </div>
+      {/* ── El catálogo, agrupado por lo que el cliente ve ─────────────
+          Antes esto era una lista plana de grupos. Con un almuerzo armado por
+          partes eso significaba CUATRO tarjetas llamadas «Sopa» seguidas, que
+          solo se distinguían por una línea pequeña diciendo de dónde colgaba
+          cada una — y el dueño no tenía forma de saber cuál veía su cliente.
+          Ahora cada grupo vive bajo su producto, y el producto dice en una
+          línea lo que el cliente va a elegir. */}
+      <div className="space-y-6">
+        {secciones.map(seccion => (
+          <section key={seccion.clave} className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-2">
+              <h4 className="font-semibold">
+                {seccion.esCategoria && (
+                  <span className="mr-1.5 text-muted-foreground">Toda la categoría</span>
+                )}
+                {seccion.titulo}
+              </h4>
+              <p className="text-sm text-muted-foreground">{seccion.pie}</p>
+            </div>
+            <div className="space-y-3">
+              {seccion.grupos.map((grupo, indice) => (
+                tarjetaGrupo(grupo, indice, seccion.grupos)
+              ))}
+            </div>
+          </section>
+        ))}
 
-              {desplegado && (
-                <div className="border-t bg-muted/30 p-4">
-                  <div className="space-y-2">
-                    {suyas.map((opcion, puesto) => (
-                      <div
-                        key={opcion.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="font-medium">{opcion.name}</span>
-                          {opcion.default_selected && (
-                            <Badge variant="outline" className="ml-2">Por defecto</Badge>
-                          )}
-                          {opcion.stock === 'agotado' && (
-                            <Badge variant="outline" className="ml-2">Agotado</Badge>
-                          )}
-                        </span>
-                        <span className="text-sm font-semibold">
-                          {money(opcion.price_adjustment)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          {/* Aquí se ordenan los 19 sabores: el cliente los ve
-                              en este orden en la ficha del producto. */}
-                          <Flechas
-                            nombre={opcion.name}
-                            primero={puesto === 0}
-                            ultimo={puesto === suyas.length - 1}
-                            ocupado={ordenarOpciones.isPending}
-                            onSubir={() => ordenarOpciones.mutate({
-                              groupId: grupo.id, ids: moverEnLista(suyas, puesto, -1),
-                            })}
-                            onBajar={() => ordenarOpciones.mutate({
-                              groupId: grupo.id, ids: moverEnLista(suyas, puesto, 1),
-                            })}
-                          />
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => setEditandoOpcion({
-                              opcion: { ...opcion }, id: opcion.id,
-                            })}
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <ConfirmAction
-                            title="¿Eliminar esta opción?"
-                            description="Desaparece de la mini app. Los pedidos ya hechos no cambian."
-                            destructive
-                            onConfirm={() => borrarOpcion.mutate(opcion.id)}
-                            trigger={
-                              <Button variant="ghost" size="sm"><Trash2 className="size-3.5" /></Button>
-                            }
-                          />
-                        </span>
-                      </div>
-                    ))}
-                    {!suyas.length && (
-                      <p className="py-2 text-sm text-muted-foreground">
-                        Este grupo aún no tiene opciones.
-                        {grupo.required && ' Es obligatorio, así que sin opciones el producto no se podrá pedir.'}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline" size="sm" className="mt-3"
-                    onClick={() => setEditandoOpcion({ opcion: opcionNueva(grupo.id), id: null })}
-                  >
-                    <Plus className="mr-1.5 size-3.5" /> Agregar opción
-                  </Button>
-                </div>
-              )}
-            </Card>
-          )
-        })}
+        {/* ⚠️ Lo apagado y lo vacío NO desaparece: se aparta. Un grupo sin
+            opciones tampoco lo ve el cliente (la tienda los filtra), así que
+            mezclarlo con lo vivo es lo que hacía imposible saber qué estaba
+            en pie. Aquí se ve, se dice por qué no cuenta, y se puede borrar. */}
+        {ocultos.length > 0 && (
+          <section className="space-y-3">
+            <button
+              type="button"
+              onClick={() => setVerOcultos(!verOcultos)}
+              className="flex w-full items-center gap-2 border-b pb-2 text-left"
+            >
+              {verOcultos ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+              <span className="font-semibold">Tu cliente no ve estos</span>
+              <Badge variant="outline">{ocultos.length}</Badge>
+              <span className="text-sm text-muted-foreground">
+                — apagados o sin opciones dentro
+              </span>
+            </button>
+            {verOcultos && (
+              <div className="space-y-3">
+                {ocultos.map((grupo, indice) => tarjetaGrupo(grupo, indice, ocultos, true))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {/* ── Plantillas ───────────────────────────────────────────────── */}
