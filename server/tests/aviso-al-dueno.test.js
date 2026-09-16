@@ -163,18 +163,17 @@ describe('el aviso está CONECTADO, no solo construido', () => {
     expect(fuente).toMatch(/avisarAlDuenoDelPedido\(businessId,/)
   })
 
-  it('el CHAT avisa al crear el pedido', () => {
+  // El chat creaba pedidos hasta el 2026-09-15 y también avisaba. Ahora hay una
+  // sola puerta —la mini app—, así que lo que se vigila es que no aparezca otra.
+  it('el número de la plataforma ya no crea pedidos, así que no avisa', () => {
     const fuente = leer('../src/services/inbound-webhook.ts')
-    expect(fuente).toMatch(/import \{ avisarAlDuenoDelPedido \}/)
-    expect(fuente).toMatch(/avisarAlDuenoDelPedido\(entrada\.businessId,/)
+    expect(fuente).not.toMatch(/avisarAlDuenoDelPedido/)
   })
 
-  it('los dos lo llaman SIN await: el pedido no espera a WhatsApp', () => {
+  it('se llama SIN await: el pedido no espera a WhatsApp', () => {
     // El pedido ya está creado y el cliente espera su confirmación. Un
     // proveedor externo lento no puede retrasar la pantalla de «recibido».
-    for (const ruta of ['../src/routes/storefront.routes.ts', '../src/services/inbound-webhook.ts']) {
-      expect(leer(ruta), ruta).toMatch(/void avisarAlDuenoDelPedido\(/)
-    }
+    expect(leer('../src/routes/storefront.routes.ts')).toMatch(/void avisarAlDuenoDelPedido\(/)
   })
 
   it('el interruptor llega al panel del dueño', () => {

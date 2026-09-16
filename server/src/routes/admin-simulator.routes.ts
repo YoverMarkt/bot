@@ -1,6 +1,5 @@
 import type { RequestHandler } from 'express'
 import { createRouter } from '../middleware/async'
-import { advanceMenuFlowConEstado, optionTitle } from '../services/bot-menu-flow'
 import { handleMarketplaceMessage } from '../services/marketplace-entry'
 import type { MarketplaceEntryDeps } from '../services/marketplace-entry'
 
@@ -47,7 +46,16 @@ import type { MarketplaceEntryDeps } from '../services/marketplace-entry'
  */
 const TELEFONO_SIMULADO = '000000000000'
 
-const NOTA_PEDIDO = '🛒 En el canal real, aquí se crea el pedido con la RPC atómica y le suena la alarma al dueño. El simulador no lo crea: un pedido de prueba entraría en su cocina y acabaría en su reporte de ventas.'
+/**
+ * Una opción, aplanada a su título.
+ *
+ * ⚠️ Vive aquí desde que se retiró el pedido por chat (2026-09-15): el
+ * simulador pinta las opciones en el panel del superadmin, cuyo contrato son
+ * cadenas, y no tiene por qué depender de un motor de menú.
+ */
+const soloElTitulo = (opcion: string | { title: string }): string => (
+  typeof opcion === 'string' ? opcion : opcion.title
+)
 
 const db: {
   getConversation(customerId: string): Promise<unknown>
@@ -70,7 +78,6 @@ const router = createRouter()
  */
 function dependenciasDelSimulador(
   capturadas: { reply: string; options: string[] }[],
-  notas: string[],
 ): MarketplaceEntryDeps {
   const base = require('../db') as typeof import('../db')
   const link = require('../services/storefront-link') as typeof import('../services/storefront-link')
@@ -80,10 +87,6 @@ function dependenciasDelSimulador(
     // Solo se reemplaza lo que escribiría en el negocio del dueño.
     database: {
       ...base,
-      // Se responde con un identificador que no existe: el pedido tampoco se
-      // crea, así que nadie va a buscarlo. Guardarla de verdad dejaría
-      // direcciones de un cliente inventado en la ficha del local.
-      createCustomerAddress: async () => ({ id: 'simulacion-sin-direccion' }),
       // ⚠️ El techo de gasto NO se aplica aquí, y es coherente con lo que el
       // techo existe para hacer: limitar los mensajes que se PAGAN. El
       // simulador no manda un solo WhatsApp. Dejarlo puesto silenciaría 12 h al
@@ -100,20 +103,7 @@ function dependenciasDelSimulador(
       reply: string,
       options: (string | { title: string; description?: string })[] = [],
     ) => {
-      capturadas.push({ reply, options: options.map(optionTitle) })
-    },
-    tipoPideEnChat: (businessType: string | null | undefined) => (
-      base.tipoPideEnChat(businessType)
-    ),
-    avanzarMenu: advanceMenuFlowConEstado,
-    crearPedidoCompleto: async () => {
-      notas.push(NOTA_PEDIDO)
-      // Un número de pedido que se distingue a simple vista de uno real.
-      return { orderNumber: 0, total: 0 }
-    },
-    crearPedido: async () => {
-      notas.push(NOTA_PEDIDO)
-      return true
+      capturadas.push({ reply, options: options.map(soloElTitulo) })
     },
     logger: console,
   }
@@ -138,7 +128,7 @@ router.post('/api/admin/simulate', auth.authAdmin, async (req, res) => {
     const notas: string[] = []
     await handleMarketplaceMessage(
       { from: TELEFONO_SIMULADO, text: message },
-      dependenciasDelSimulador(capturadas, notas),
+      dependenciasDelSimulador(capturadas),
     )
 
     // El menú manda UNA respuesta por mensaje, pero el checkout puede mandar

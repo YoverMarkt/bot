@@ -57,17 +57,19 @@ describe('ninguna defensa mira el TIPO del local', () => {
 })
 
 describe('los dos caminos crean el pedido igual', () => {
-  it('la mini app y el chat usan la MISMA RPC', () => {
-    // Si un camino creara pedidos por otra vía, la mitad de las defensas
-    // dejarían de alcanzarlo sin que ninguna prueba fallara: todas cuelgan de
-    // `source = 'storefront'`, que esta RPC fija como literal.
+  it('solo la TIENDA crea pedidos, y por la misma RPC', () => {
+    // Desde que el pedido por chat se retiró (2026-09-15) hay una sola puerta.
+    // Si apareciera otra, la mitad de las defensas dejarían de alcanzarla sin
+    // que ninguna prueba fallara: todas cuelgan de `source = 'storefront'`,
+    // que esta RPC fija como literal.
     const tienda = readFileSync('src/routes/storefront.routes.ts', 'utf8')
     const chat = readFileSync('src/services/inbound-webhook.ts', 'utf8')
     const repo = readFileSync('src/db/repositories/storefront.ts', 'utf8')
 
     expect(repo).toContain("'create_storefront_order'")
     expect(tienda).toContain('createStorefrontOrder')
-    expect(chat).toContain('createStorefrontOrder')
+    expect(chat, 'el número de la plataforma no crea pedidos')
+      .not.toContain('createStorefrontOrder')
   })
 
   it('la RPC fija el source, no lo recibe como parámetro', () => {
@@ -80,17 +82,17 @@ describe('los dos caminos crean el pedido igual', () => {
 })
 
 describe('el bloqueo se comprueba ANTES de elegir el camino', () => {
-  it('un bloqueado no llega ni al chat ni al enlace', () => {
-    // Si el bloqueo se mirara después de decidir, un local de chat podría
-    // meter al bloqueado en su menú y solo frenarlo al confirmar — que es el
-    // peor momento para enterarse.
+  it('un bloqueado no llega ni al enlace de la tienda', () => {
+    // Si el bloqueo se mirara después de entregar el local, el bloqueado se
+    // llevaría su enlace, armaría el carrito entero y solo lo frenaría el
+    // rechazo al confirmar — el peor momento para enterarse.
     const fuente = readFileSync('src/services/marketplace-entry.ts', 'utf8')
     const entrega = fuente.slice(fuente.indexOf('async function entregarLocal'))
     const bloqueo = entrega.indexOf('isContactBlocked')
-    const decide = entrega.indexOf('tipoPideEnChat')
+    const enlace = entrega.indexOf('mandarElEnlace')
     expect(bloqueo).toBeGreaterThan(-1)
-    expect(decide).toBeGreaterThan(-1)
-    expect(bloqueo, 'el bloqueo se comprueba DESPUÉS de decidir el camino')
-      .toBeLessThan(decide)
+    expect(enlace).toBeGreaterThan(-1)
+    expect(bloqueo, 'el bloqueo se comprueba DESPUÉS de entregar el enlace')
+      .toBeLessThan(enlace)
   })
 })

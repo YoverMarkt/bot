@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { pedidoCreado } = require('../dist/services/marketplace-checkout')
 const { publicBusiness } = require('../dist/services/storefront')
 const { textoDelAviso } = require('../dist/services/order-notify')
 
@@ -35,32 +34,10 @@ const transferencia = {
   help_text: null, is_prepaid: true, requires_proof: true,
 }
 
-describe('el checkout nunca manda al cliente fuera de Umbani', () => {
-  it('sin datos bancarios avisa, y NO da un teléfono al que escribir', () => {
-    const r = pedidoCreado({
-      orderNumber: 7, total: 17.6, metodo: transferencia, cuenta: null,
-    })
-    expect(r.reply).toContain('todavía no cargó sus datos de pago')
-    expect(r.reply).toContain('te escribimos por aquí')
-    // Ni un teléfono, ni una invitación a salirse de esta conversación.
-    expect(r.reply).not.toMatch(/\d{7,}/)
-    expect(r.reply.toLowerCase()).not.toContain('escríbeles')
-  })
-
-  it('con datos bancarios pide el comprobante POR AQUÍ', () => {
-    const r = pedidoCreado({
-      orderNumber: 8, total: 3.85, metodo: transferencia,
-      cuenta: {
-        bank_name: 'Pichincha', account_type: 'ahorros',
-        account_number: '2200123456', holder_name: 'La Abuelita',
-      },
-    })
-    expect(r.reply).toContain('2200123456')
-    expect(r.reply).toContain('Valor exacto: *$3.85*')
-    expect(r.reply).toContain('envíame la foto del comprobante por aquí')
-  })
-})
-
+// ⚠️ El checkout DENTRO del chat se retiró el 2026-09-15 con el pedido por
+// chat, y con él sus dos pruebas de aquí: ya no hay una pantalla del chat que
+// pueda mandar al cliente a otro número. Lo que queda —la mini app y el aviso
+// del pedido cancelado— sigue vigilado abajo.
 describe('la mini app enseña el número de la PLATAFORMA, no el del dueño', () => {
   const base = {
     id: 'b1', slug: 'la-abuelita', name: 'La Abuelita', active: true,

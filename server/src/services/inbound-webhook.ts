@@ -10,7 +10,6 @@ import {
   type WhatsAppChannelAddress,
   type WhatsAppProvider,
 } from '../types/channels'
-import { avisarAlDuenoDelPedido } from './owner-order-notice'
 
 export interface InboundMediaReference {
   id?: string
@@ -147,8 +146,6 @@ export interface InboundWebhookDependencies {
   atenderMarketplace?: (input: {
     from: string
     text: string
-    /** Presente solo si el cliente compartió su ubicación. */
-    location?: InboundLocation
     /**
      * Id del mensaje entrante. Hace idempotente el reclamo del techo de gasto:
      * la entrada es *at-least-once* y sin él cinco reintentos del worker
@@ -606,9 +603,6 @@ export function createInboundWebhookProcessor(
         from: payload.from,
         text: texto,
         inboundId: payload.inboundId ?? null,
-        ...(payload.content.kind === 'location'
-          ? { location: payload.content.location }
-          : {}),
       })
       return
     }
@@ -867,13 +861,11 @@ const processor = createInboundWebhookProcessor({
    * Carga diferida como el resto, para no cerrar un ciclo de importaciones al
    * arrancar (`marketplace-entry` → `storefront-link` → `db` → …).
    */
-  atenderMarketplace: async ({ from, text, location, inboundId }) => {
+  atenderMarketplace: async ({ from, text, inboundId }) => {
     const db = require('../db') as typeof import('../db')
     const entry = require('./marketplace-entry') as typeof import('./marketplace-entry')
     const link = require('./storefront-link') as typeof import('./storefront-link')
     const platform = require('./platform-channel') as typeof import('./platform-channel')
-    const menu = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
-    const acciones = require('./bot-actions') as typeof import('./bot-actions')
     // ⚠️ EL VISTO AZUL Y EL «ESCRIBIENDO…», antes de contestar (2026-08-29).
     //
     // `sendTyping` hace las DOS cosas y solo lo llamaba `bot-entry`, el camino
@@ -886,124 +878,15 @@ const processor = createInboundWebhookProcessor({
     // Nunca lanza y nunca bloquea la atención: si falla, se contesta igual.
     await platform.marcarLeidoPorLaPlataforma(inboundId)
 
-    await entry.handleMarketplaceMessage({ from, text, location, inboundId }, {
+    // ⚠️ La ubicación ya no viaja: el checkout del chat se retiró (2026-09-15) y
+    // la mini app captura el punto con el navegador. El marketplace la nombra
+    // como adjunto («[ubicación]») y ahí acaba su viaje.
+    await entry.handleMarketplaceMessage({ from, text, inboundId }, {
       database: db,
       issueLink: link.issueStorefrontLink,
       send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
       // El enlace, como botón «Ver la carta». Cae al texto si no sale.
       sendLink: mensaje => platform.enviarEnlacePorLaPlataforma(from, mensaje),
-      // ⚠️ Cómo se pide lo decide el TIPO de local, no cuántos productos
-      // tiene (corrección del dueño, 2026-08-23). Antes vivía aquí un umbral
-      // en `server_settings` —la «regla de los 20»— y mandaba una pizzería de
-      // 17 productos al chat, donde pedirla es tamaño, masa, borde y dos
-      // sabores. El criterio vive ahora en la base, junto al reparto de tipos
-      // en categorías.
-      tipoPideEnChat: async (businessType: string | null | undefined) => {
-        const base = require('../db') as typeof import('../db')
-        return base.tipoPideEnChat(businessType)
-      },
-      avanzarMenu: menu.advanceMenuFlowConEstado,
-      /**
-       * El pedido COMPLETO, por la RPC atómica de siempre.
-       *
-       * ⚠️ Se resuelven los nombres del menú contra el catálogo del MISMO
-       * local antes de crear nada: `create_storefront_order` quiere
-       * `product_id`, y mandarle un nombre suelto sería confiar en un texto
-       * para decidir qué se cobra. Lo que no se resuelva se descarta, y si no
-       * queda nada el pedido no se crea.
-       */
-      crearPedidoCompleto: async (entrada) => {
-        const catalogo = entrada.products as Array<{ id?: string; name?: string }>
-        const normalizar = (valor: string) => String(valor || '')
-          .toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '').trim()
-        const resueltos = entrada.items.flatMap((item) => {
-          // El id que trae el carrito manda; el nombre es el respaldo para
-          // las líneas que vengan de un flujo antiguo sin id.
-          const encontrado = item.productId
-            ? { id: item.productId }
-            : catalogo.find(
-                producto => normalizar(String(producto.name)) === normalizar(item.name),
-              )
-          if (!encontrado?.id) return []
-          return [{
-            product_id: encontrado.id,
-            quantity: item.qty,
-            // Las opciones del motor van con su id REAL: la RPC comprueba que
-            // cada una pertenece a este negocio y a este producto (o a su
-            // categoría) antes de cobrarla. Un nombre suelto no se puede
-            // validar, y es lo que se está dejando atrás.
-            // ⚠️ `quantity` solo viaja cuando la hay: es lo que reparte «3
-            // con caldo de res y 1 con crema» dentro de una sola línea. Fuera
-            // de un grupo contador la RPC la RECHAZA («no se elige por
-            // cantidad»), así que mandar un 1 por defecto tiraría el pedido.
-            ...(item.options?.length
-              ? {
-                options: item.options.map(o => ({
-                  option_id: o.optionId,
-                  ...(o.quantity ? { quantity: o.quantity } : {}),
-                })),
-              }
-              : {}),
-          }]
-        })
-        if (!resueltos.length) return null
-
-        const { data, error } = await db.createStorefrontOrder({
-          businessId: entrada.businessId,
-          customerId: entrada.customerId,
-          contactPhone: entrada.phone,
-          contactName: entrada.contactName || null,
-          addressId: entrada.addressId,
-          // ⚠️ Lo que eligió el cliente, no una constante. Hasta el 2026-09-10
-          // el chat mandaba SIEMPRE `delivery` y el retiro no existía por aquí.
-          // Sin valor se cae a domicilio, que es la conducta anterior: un
-          // carrito a medias de antes de esto no se queda sin entrega.
-          fulfillment: entrada.fulfillment === 'pickup' ? 'pickup' : 'delivery',
-          paymentMethod: entrada.paymentMethod,
-          items: resueltos,
-          deliveryNotes: entrada.notes || null,
-        })
-        // ⚠️ `42501` es un rechazo DELIBERADO de la base —bloqueado, o con
-        // demasiados pedidos sin confirmar—, no un fallo. Se relanza para que
-        // el checkout pueda decirle al cliente qué pasa: tragárselo aquí le
-        // devolvía «fallo técnico, no reintentes», que ni es verdad ni le dice
-        // qué hacer. Cualquier otro error sigue devolviendo null.
-        if (error?.code === '42501') {
-          throw new Error(error.message || 'No podemos recibir tu pedido.')
-        }
-        if (error || !data) return null
-        const pedido = data as { id?: string; total?: unknown }
-        if (!pedido.id) return null
-        // ⚠️ El aviso al DUEÑO, si lo tiene encendido. Nace apagado, así que
-        // casi siempre no gasta nada; y va sin `await` porque el pedido ya
-        // está creado y el cliente espera su confirmación ahora.
-        void avisarAlDuenoDelPedido(entrada.businessId, pedido.id).catch(() => {
-          /* el pedido ya está: un aviso de cortesía no puede tumbarlo */
-        })
-        // El correlativo lo pone un disparador, así que la RPC no lo
-        // devuelve: se relee. Si falla, el pedido YA existe y se confirma sin
-        // número — quedarse sin confirmación por un dato de presentación
-        // sería mucho peor que confirmar sin él.
-        const seguimiento = await db.getStorefrontOrder({
-          businessId: entrada.businessId,
-          contactPhone: entrada.phone,
-          orderId: pedido.id,
-        }).catch(() => ({ data: null }))
-        const numero = (seguimiento?.data as { order_number?: number } | null)?.order_number
-        return { orderNumber: numero ?? null, total: pedido.total ?? 0 }
-      },
-      // El MISMO camino del dinero que usa el canal propio: `money.ts` y las
-      // RPC atómicas. El marketplace no abre una vía de cobro paralela.
-      crearPedido: entrada => acciones.processOrderPayload({
-        business: entrada.business as unknown as Parameters<typeof acciones.processOrderPayload>[0]['business'],
-        phone: entrada.phone,
-        session: null,
-        payload: entrada.payload,
-        items: entrada.items,
-        products: entrada.products as Parameters<typeof acciones.processOrderPayload>[0]['products'],
-        preFiltered: false,
-        send: entrada.send,
-      }),
       logger: console,
     })
   },

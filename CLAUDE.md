@@ -149,7 +149,7 @@ es el que corre todo. Lo que el manifiesto NO dice:
 Cada una existe porque algo falló. Lo que parece complejidad de más suele ser una cicatriz:
 
 - **Etiquetas del bot** → [DECISIONES.md](DECISIONES.md#etiquetas-del-bot)
-- **Modo menú estilo banco** → [DECISIONES.md](DECISIONES.md#modo-menú-estilo-banco)
+- **Modo menú estilo banco (retirado del marketplace)** → [DECISIONES.md](DECISIONES.md#todo-local-pide-por-su-mini-app-se-retira-el-pedido-por-chat)
 - **Reportes del dueño** → [DECISIONES.md](DECISIONES.md#reportes-del-dueño)
 - **Salud del canal** → [DECISIONES.md](DECISIONES.md#salud-del-canal)
 - **Evals del bot** → [DECISIONES.md](DECISIONES.md#evals-del-bot)

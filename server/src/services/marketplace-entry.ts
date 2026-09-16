@@ -16,10 +16,8 @@ import {
   type MarketplaceReply,
   type MarketplaceView,
 } from './marketplace-menu'
-import { precioDeVitrina, reglaDeMargen } from './storefront'
 import { isOutsideHours, proximaApertura } from './schedule'
 import type { ScheduleRecord } from './schedule'
-import * as checkout from './marketplace-checkout'
 import {
   esComprobante, esComprobanteAmbiguo, esFotoQueNoEsComprobante,
   preguntaDeQueLocal, rechazoDelMarcador, RESPUESTA_COMPROBANTE,
@@ -30,12 +28,6 @@ import {
   RESPUESTA_COMPROBANTE_CUADRA,
   respuestaComprobanteNoCuadra,
 } from './payment-proof-inbox'
-import type { InboundLocation } from './inbound-webhook'
-import type {
-  FlowState,
-  MenuFlowInput,
-  MenuFlowResult,
-} from './bot-menu-flow'
 
 /**
  * LA ENTRADA DEL MARKETPLACE
@@ -98,13 +90,6 @@ export interface MarketplaceEntryDatabase {
     /** El tipo decide si se pide en el chat o por la mini app. */
     type?: string | null
   } | null>
-  getProducts(businessId: string): Promise<unknown[]>
-  getMenuModifiers?(businessId: string): Promise<unknown[]>
-  getLastOrderForContact?(
-    businessId: string,
-    phone: string,
-  ): Promise<{ order_items?: unknown[] } | null>
-  getPolicies(businessId: string): Promise<{ welcome_message?: unknown } | null>
   /**
    * ¿Se le contesta a este cliente, o ya se pasó del techo de la hora?
    *
@@ -159,31 +144,6 @@ export interface MarketplaceEntryDatabase {
    * entero deja de atenderlo. El del local solo cierra ese local.
    */
   isPlatformBlocked?(customerId: string): Promise<boolean>
-
-  // ── Lo que hace falta para cerrar el pedido dentro del chat ────────
-  /** Guarda la dirección del cliente para ESTE negocio. */
-  createCustomerAddress(input: {
-    businessId: string
-    customerId: string
-    address: string
-    reference?: string | null
-    latitude?: number | null
-    longitude?: number | null
-  }): Promise<{ id: string } | null>
-  /** Los métodos que acepta este local, nunca una lista fija. */
-  getStorefrontPaymentMethods(businessId: string): Promise<checkout.MetodoDePago[]>
-  /** La cuenta a la que transferir. Null si el local no cargó ninguna. */
-  getBusinessBankAccount(businessId: string): Promise<checkout.CuentaBancaria | null>
-  /** El motor de personalización, el mismo que usa la mini app. */
-  getStorefrontOptionGroups?(businessId: string): Promise<unknown[]>
-  /**
-   * La regla de margen del local, la MISMA que usa la mini app.
-   *
-   * Opcional: sin ella el chat pinta el precio del comercio, que es lo que
-   * hacía hasta el 2026-09-07 — y era un fallo de dinero.
-   */
-  getBusinessPricingRule?(businessId: string): Promise<Record<string, unknown> | null>
-  getStorefrontOptions?(businessId: string): Promise<unknown[]>
 }
 
 export interface MarketplaceEntryDeps {
@@ -213,112 +173,19 @@ export interface MarketplaceEntryDeps {
     label: string
     footer?: string | null
   }): Promise<boolean>
-  /**
-   * ¿Este TIPO de local se pide dentro del chat, o se le manda el enlace?
-   *
-   * ⚠️ Lo decide cuánto hay que ELEGIR para armar el pedido, no cuántos
-   * productos hay: una pizzería tiene pocos productos pero pedirla es tamaño,
-   * masa, borde y dos sabores; una heladería «vende un solo producto» pero lo
-   * que pesa son sus veinte sabores. Los dos van a la mini app. Una
-   * almuercería son tres platos del día y se piden hablando.
-   *
-   * Se inyecta en vez de leerse aquí para poder probar los dos lados sin
-   * tocar la base.
-   */
-  tipoPideEnChat(businessType: string | null | undefined): Promise<boolean>
-  /** Un paso de la máquina de estados del menú, con el estado fuera. */
-  avanzarMenu(
-    input: MenuFlowInput,
-    estadoPrevio: FlowState | null,
-  ): { resultado: MenuFlowResult; estado: FlowState | null }
-  /** Crea el pedido con `money.ts` y las RPC atómicas de siempre. */
-  crearPedido(input: {
-    business: Record<string, unknown>
-    phone: string
-    items: { name: string; qty: number; note?: string | null }[]
-    payload: string
-    products: unknown[]
-    send: (mensaje: string) => Promise<unknown>
-  }): Promise<boolean>
-  /**
-   * Crea el pedido COMPLETO con `create_storefront_order`: la RPC atómica de
-   * siempre, con dirección, método de pago y el total oficial.
-   */
-  crearPedidoCompleto(input: {
-    businessId: string
-    customerId: string
-    phone: string
-    contactName?: string | null
-    /** Nulo en un RETIRO: no hay dirección que guardar ni a dónde llevar. */
-    addressId: string | null
-    paymentMethod: string
-    /** Sin valor = domicilio, que es la conducta anterior al retiro. */
-    fulfillment?: 'delivery' | 'pickup'
-    items: CheckoutPendiente['items']
-    products: unknown[]
-    notes?: string | null
-  }): Promise<{ orderNumber: number | null; total: unknown } | null>
   logger?: { log(...args: unknown[]): void }
 }
 
 /**
- * El carrito que espera dirección y método de pago.
+ * Los estados que escribía el PEDIDO POR CHAT, retirado el 2026-09-15.
  *
- * Vive en `flow_state.checkout` hasta que hay todo para crear el pedido de
- * una vez. Guarda lo que el cliente ELIGIÓ, no importes: el total lo calcula
- * `create_storefront_order` al final, con los precios de ese momento.
+ * Ya nadie los escribe: todo local pide por su mini app. Se leen para que quien
+ * se quedó a media compra con el código viejo no caiga en un motor que ya no
+ * existe — se le trata como a quien tiene su enlace abierto (`en_local`).
  */
-export interface CheckoutPendiente {
-  items: {
-    name: string
-    qty: number
-    note?: string
-    productId?: string
-    /**
-     * Del motor de personalización: id real, lo valida la base. `quantity`
-     * solo viene de un grupo contador — es lo que reparte «3 con caldo de res
-     * y 1 con crema» dentro de una sola línea del carrito.
-     */
-    options?: { optionId: string; groupName: string; name: string; quantity?: number }[]
-  }[]
-  addressId?: string
-  /**
-   * Cómo lo quiere: a domicilio o lo recoge.
-   *
-   * ⚠️ Sin valor = `delivery`, que es como se comportaba el chat antes de que
-   * el retiro existiera. Un carrito a medias de la versión anterior sigue
-   * saliendo a domicilio en vez de quedarse sin entrega.
-   */
-  fulfillment?: 'delivery' | 'pickup'
-}
-
-/** Un precio del catálogo como número, o `null` si no lo es. */
-/**
- * El número de una columna de dinero, o `null` si no hay valor.
- *
- * ⚠️ **`Number(null)` es `0`, no `NaN`** — y por ahí se coló el fallo más caro
- * que ha tenido el menú del chat (#330, 2026-09-07 → 2026-09-11).
- *
- * Casi ningún producto tiene «precio oferta», así que `price_sale` llega nulo
- * y salía de aquí como **0**. Luego `priceCentsOf` hace `price_sale ?? price`,
- * y `??` solo cae al segundo con `null`/`undefined`: el 0 GANABA al precio de
- * verdad. Resultado, en TODOS los productos del catálogo:
- *
- *   · «Precio: lo confirma nuestro equipo» en vez de «$1.00»
- *   · y sin botón de añadir, porque `canOrder` exige `cents !== null`.
- *
- * Es decir: **nadie podía pedir nada por el chat durante cuatro días**, y no
- * saltó ninguna prueba ni ninguna alarma. La mini app siguió vendiendo, que es
- * justo por lo que no se notó.
- *
- * ⚠️ Se usa `parseFloat(String(…))` a propósito, que es **la misma forma que
- * `money` en `storefront.ts`**: las dos superficies tienen que convertir el
- * dinero igual o vuelven a decir cifras distintas por el mismo plato.
- */
-const numeroONulo = (valor: unknown): number | null => {
-  const n = Number.parseFloat(String(valor ?? ''))
-  return Number.isFinite(n) ? n : null
-}
+const ESTADOS_DEL_CHAT_RETIRADO = new Set([
+  "pidiendo", "esperando_entrega", "esperando_ubicacion", "esperando_metodo_pago",
+])
 
 /** La vista guardada, o la portada si es el primer mensaje. */
 const vistaDe = (flowState: Record<string, unknown> | null): MarketplaceView => {
@@ -346,14 +213,13 @@ export async function handleMarketplaceMessage(
   input: {
     from: string
     text: string
-    location?: InboundLocation
     /** Id del mensaje entrante: hace idempotente el reclamo del techo. */
     inboundId?: string | null
   },
   deps: MarketplaceEntryDeps,
 ): Promise<void> {
   const { database, send } = deps
-  const { from, text, location } = input
+  const { from, text } = input
 
   const customer = await database.resolveMarketplaceCustomer(from)
 
@@ -630,40 +496,17 @@ export async function handleMarketplaceMessage(
     return
   }
 
-  // ── 3. El CHECKOUT: ubicación y método de pago ─────────────────────
+  // ── 3. Lo que quedó a medio pedir POR CHAT, antes de esto ────────────
   //
-  // Van antes que el menú porque el cliente ya terminó de elegir: su mensaje
-  // es la respuesta a lo que se le acaba de preguntar, no una opción del
-  // catálogo. MENÚ sigue por delante de todo, así que nunca queda atrapado.
-  if (conversation?.selected_business_id
-    && (conversation.current_state === 'esperando_entrega'
-      || conversation.current_state === 'esperando_ubicacion'
-      || conversation.current_state === 'esperando_metodo_pago')) {
-    await avanzarCheckout({
-      deps,
-      customer,
-      phone: from,
-      texto: text,
-      location,
-      businessId: conversation.selected_business_id,
-      conversacion: conversation,
-    })
-    return
-  }
+  // El pedido por chat se retiró el 2026-09-15: todo local pide por su mini
+  // app. Las conversaciones que estaban a media compra se migraron a
+  // `en_local`, pero entre la migración y el despliegue el código viejo pudo
+  // volver a escribir uno de esos estados. Se leen como `en_local`: se le
+  // recuerda dónde está y «Seguir mi pedido» le devuelve su enlace. MENÚ, que
+  // se comprueba mucho antes, sigue siendo la salida.
+  const aMediasEnElChatViejo = ESTADOS_DEL_CHAT_RETIRADO.has(conversation?.current_state || '')
 
-  // ── 4. ¿Está pidiendo DENTRO del chat en un local pequeño? ─────────
-  //
-  // Va antes del bloqueo de «un pedido a la vez» porque aquí el cliente no
-  // está intentando empezar otra cosa: está en medio de su pedido, y este
-  // mensaje es su siguiente elección del menú.
-  if (conversation?.current_state === 'pidiendo' && conversation.selected_business_id) {
-    await conducirEnElChat(
-      deps, customer, from, conversation.selected_business_id, text, conversation,
-    )
-    return
-  }
-
-  // ── 5. Un pedido a la vez ──────────────────────────────────────────
+  // ── 4. Un pedido a la vez ──────────────────────────────────────────
   if (estado.bloqueado && negocioActual) {
     // ⚠️ Dos textos, porque son dos situaciones. Quien está a medio armar su
     // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
@@ -683,7 +526,7 @@ export async function handleMarketplaceMessage(
         // de recibir la carta, que es sencillamente falso.
         : recordarPedidoEnProceso(
           { name: negocioActual.name },
-          conversation?.current_state === 'en_local',
+          conversation?.current_state === 'en_local' || aMediasEnElChatViejo,
         )
     // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
     // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
@@ -1007,53 +850,10 @@ async function entregarLocal(
     return
   }
 
-  // Ante cualquier fallo se manda el ENLACE: la tienda atiende cualquier
-  // catálogo y cualquier cantidad de opciones, mientras que un menú de chat
-  // mal elegido deja al cliente recorriendo listas interminables. Se falla
-  // hacia lo que siempre funciona.
-  const enElChat = await deps.tipoPideEnChat(negocio.type).catch(() => false)
-
-  // ── En el CHAT, un local cerrado no se abre ─────────────────────────
-  //
-  // ⚠️ Decisión del dueño (2026-09-13): «si un local está cerrado, en el menú
-  // chat solo tiene que decir que está cerrado y la hora que abre; no tienes
-  // que mandar a ver la carta porque eso me gasta mensajes».
-  //
-  // Y el cálculo es correcto: los BOTONES son gratis —viajan dentro del mismo
-  // mensaje— pero cada paso de navegar la carta es un SALIENTE que se paga.
-  // Abrirle el menú a alguien que no puede comprar es pagar una visita guiada
-  // por un local cerrado. Hasta hoy eran dos mensajes solo para entrar.
-  //
-  // ⚠️ En la MINI APP no aplica y no se toca: ahí la carta se mira dentro de
-  // una web y no cuesta un solo mensaje, así que al local de enlace se le
-  // sigue mandando el suyo aunque esté cerrado.
-  //
-  // ⚠️ Tampoco se le queda el CANDADO puesto (`shoppingLocked`): encerrarlo en
-  // un local que no puede venderle le pondría fricción para pedir en otro. Se
-  // queda navegando, con los demás locales a un toque.
-  if (enElChat && negocio.abierto === false) {
-    logger?.log(`🌙 [marketplace] ${negocio.slug} cerrado: no se abre el menú`)
-    const otras = verCategorias(await database.getMarketplaceCategories().catch(() => []), 0)
-    await deps.send(
-      `🌙 *${negocio.name}* está cerrado ahora mismo.${cuandoAbre(negocio.abre)}\n\n`
-      + 'Mientras tanto puedes pedir en otros locales 👇',
-      otras.options,
-    )
-    // Con opciones, la vista se guarda o el toque siguiente no se entiende.
-    if (otras.options.length) {
-      await database.advanceConversation(
-        customer.id,
-        { state: 'navegando', flowState: { vista: otras.vista }, clearBusiness: true },
-        version,
-      ).catch(() => ({ conflicto: false }))
-    }
-    return
-  }
-
   await database.advanceConversation(
     customer.id,
     {
-      state: enElChat ? 'pidiendo' : 'en_local',
+      state: 'en_local',
       businessId: negocio.id,
       // ⚠️ A partir de aquí el cliente ESTÁ pidiendo en este local: con el
       // enlace ya tiene su tienda abierta con su token, y en el chat va a
@@ -1065,40 +865,11 @@ async function entregarLocal(
       // 2026-08-22 esta columna existía y NADIE la ponía en `true`: el
       // bloqueo estaba escrito, probado… y nunca se activaba.
       shoppingLocked: true,
-      // El menú del local empieza limpio: `advanceMenuFlowConEstado` con
-      // estado nulo devuelve la bienvenida y el menú principal.
+      // La vista se guarda para que «⬅️ Volver» devuelva a su categoría.
       flowState: { vista: { vista: 'negocios', categoria: negocio.type, pagina: 0 } },
     },
     version,
   )
-
-  logger?.log(
-    `🏬 [marketplace] ${negocio.slug} (${negocio.type || 'sin tipo'}) → ${enElChat ? 'chat' : 'enlace'}`,
-  )
-
-  if (enElChat) {
-    // ⚠️ EL AVISO DE CIERRE LO DA EL MENÚ, no un mensaje aparte (2026-09-13).
-    //
-    // Aquí se mandaba uno antes de abrirlo, y su motivo era bueno: sin él, el
-    // cliente recorría la carta, elegía, y se topaba con el cierre al
-    // confirmar — con el carrito ya hecho. Desde que el menú NO ofrece pedir
-    // con el local cerrado y lo dice en su encabezado, ese mensaje repetía
-    // palabra por palabra lo que venía justo detrás:
-    //
-    //   🌙 La Abuelita está cerrado ahora mismo. Abre mañana a las 9:00 AM.
-    //   Puedes ver la carta mientras tanto:
-    //   🌙 La Abuelita está cerrado ahora mismo. Abre mañana a las 9:00 AM.
-    //   Por ahora no puedes hacer un pedido aquí, pero sí ver la carta.
-    //
-    // Dos mensajes seguidos diciendo lo mismo se leen como un fallo, y en
-    // WhatsApp cada saliente se PAGA: esto ahorra uno por cada cliente que
-    // entra a un local cerrado.
-    //
-    // Se entra en el menú del local YA: hacerle escribir otra vez para ver la
-    // carta costaría otro mensaje de más.
-    await conducirEnElChat(deps, customer, phone, negocio.id, '', null)
-    return
-  }
 
   await mandarElEnlace(deps, customer, phone, negocio)
 }
@@ -1135,30 +906,6 @@ function cuandoAbre(abre: MarketplaceBusiness['abre']): string {
       ? 'mañana'
       : `el ${abre.dayName.toLocaleLowerCase('es')}`
   return ` Abre ${dia} a las ${horaDoce(abre.open)}.`
-}
-
-/**
- * ¿Está abierto ESTE local ahora mismo, y si no, cuándo abre?
- *
- * ⚠️ Reutiliza `getSchedulesFor` con un solo id en vez de añadir una función
- * nueva: la regla del horario ya se calcula en `services/schedule.ts` y con una
- * sola puerta de datos no hay dos sitios que puedan divergir.
- *
- * ⚠️ FALLA ABIERTO, igual que la lista: sin horario configurado, sin la función
- * o si la consulta revienta, el local se considera abierto. Llamar «cerrado» a
- * uno que está abierto cuesta ventas de verdad; lo contrario solo cuesta que
- * un pedido llegue fuera de hora, que es lo que pasaba hasta hoy.
- */
-async function estadoDelLocal(
-  deps: MarketplaceEntryDeps,
-  businessId: string,
-): Promise<{ abierto: boolean; abre: MarketplaceBusiness['abre'] }> {
-  if (!deps.database.getSchedulesFor) return { abierto: true, abre: null }
-  const horarios = await deps.database.getSchedulesFor([businessId]).catch(() => null)
-  const suyo = horarios?.get(businessId)
-  if (!suyo?.length) return { abierto: true, abre: null }
-  const abierto = !isOutsideHours(suyo)
-  return { abierto, abre: abierto ? null : proximaApertura(suyo) }
 }
 
 /** «08:00» → «8:00 AM», como se dice una hora aquí. */
@@ -1303,10 +1050,6 @@ async function abandonarPedido(
 /**
  * «Seguir mi pedido»: se le recuerda dónde está y se le devuelve su enlace.
  *
- * ⚠️ Solo con los locales de MINI APP. En los que se piden dentro del chat no
- * hay enlace que dar —el pedido se arma aquí mismo—, y el siguiente mensaje ya
- * lo devuelve a su menú.
- *
  * ⚠️ Falla hacia el texto de siempre. Quedarse sin enlace no puede dejar sin
  * respuesta a alguien que acaba de decir que sigue con su pedido.
  */
@@ -1320,10 +1063,7 @@ async function devolverElEnlace(
   const { database, send, logger } = deps
   const business = await database.getBusinessById(businessId).catch(() => null)
 
-  const enElChat = business
-    ? await deps.tipoPideEnChat(business.type).catch(() => false)
-    : false
-  if (!business || enElChat) {
+  if (!business) {
     await send(respuesta.reply, respuesta.options)
     return
   }
@@ -1353,515 +1093,6 @@ async function devolverElEnlace(
   if (enviadoComoBoton) return
 
   await send(`${respuesta.reply}\n\nSigue aquí 👇\n${url}`, respuesta.options)
-}
-
-/**
- * El local es pequeño: se pide DENTRO del chat, eligiendo de una lista.
- *
- * Reutiliza `bot-menu-flow`, la misma máquina de estados que ya conduce a los
- * negocios con número propio en modo menú. No hay un segundo motor: un
- * segundo motor sería un segundo sitio donde arreglar cada bug.
- *
- * ⚠️ El estado vive en `marketplace_conversations.flow_state`, NO en el `Map`
- * en memoria de `bot-menu-flow`. Ese `Map` se pierde en cada despliegue de
- * Railway y con dos instancias lleva dos cuentas del mismo carrito: un
- * cliente a media compra perdería lo que llevaba sin que nada lo avisara.
- */
-async function conducirEnElChat(
-  deps: MarketplaceEntryDeps,
-  customer: { id: string; name: string | null },
-  phone: string,
-  businessId: string,
-  mensaje: string,
-  conversacion: { flow_state: Record<string, unknown> | null; version: number } | null,
-): Promise<void> {
-  const { database, send, logger } = deps
-
-  const business = await database.getBusinessById(businessId)
-  if (!business) {
-    // El local desapareció a media compra. Se dice y se ofrece la salida en
-    // vez de dejar al cliente hablando con un catálogo que ya no existe.
-    await send(
-      '😕 Ese local ya no está disponible. Escribe *MENÚ* para elegir otro.',
-      [],
-    )
-    return
-  }
-
-  const [productos, modifiers, lastOrder, policies, grupos, opcionesDelMotor, reglaPrecio, estadoHorario] = await Promise.all([
-    database.getProducts(businessId).catch(() => [] as unknown[]),
-    database.getMenuModifiers
-      ? database.getMenuModifiers(businessId).catch(() => [] as unknown[])
-      : Promise.resolve([] as unknown[]),
-    database.getLastOrderForContact
-      ? database.getLastOrderForContact(businessId, phone).catch(() => null)
-      : Promise.resolve(null),
-    database.getPolicies(businessId).catch(() => null),
-    // El MISMO motor que usa la mini app. Sin esto, el chat seguiría con
-    // `menu_modifiers`: un texto suelto colgado de la categoría entera, que
-    // preguntaba el sabor antes de saber si el cliente quería jugo o cola.
-    database.getStorefrontOptionGroups
-      ? database.getStorefrontOptionGroups(businessId).catch(() => [])
-      : Promise.resolve([]),
-    database.getStorefrontOptions
-      ? database.getStorefrontOptions(businessId).catch(() => [])
-      : Promise.resolve([]),
-    database.getBusinessPricingRule
-      ? database.getBusinessPricingRule(businessId).catch(() => null)
-      : Promise.resolve(null),
-    estadoDelLocal(deps, businessId),
-  ])
-  const catalogoDeOpciones = opcionesDelMotor
-
-  // ── El precio que se PINTA es el que se va a COBRAR ──────────────────
-  //
-  // ⚠️ Fallo de dinero encontrado el 2026-09-07 probando un pedido entero: el
-  // chat enseñaba «Total: $16.00» y `create_storefront_order` cobraba $17.60,
-  // porque el menú pintaba el precio del COMERCIO y la base le suma el margen
-  // de la plataforma (`on_top` desde el 2026-08-25). La mini app ya lo pintaba
-  // bien —`precioDeVitrina` existe desde entonces— y el menú del chat nunca se
-  // enteró: quedó fuera cuando se levantó el freno «hasta que el catálogo, el
-  // carrito y el resumen pinten el precio con margen».
-  //
-  // ⚠️ Es la MISMA función que la tienda, no una copia: dos sitios calculando
-  // el precio de vitrina acabarían diciendo cifras distintas por el mismo
-  // plato. Y sigue sin ser la autoridad — el cobro lo sella la base (regla #8);
-  // esto solo hace que lo que el cliente lee coincida con lo que va a pagar.
-  // ⚠️ El horario entra en el MISMO `Promise.all` que el catálogo: pedirlo
-  // después sería un viaje más a la base en el camino más transitado del chat.
-  const { abierto, abre } = estadoHorario
-  const margen = reglaDeMargen(reglaPrecio)
-  const productosDeVitrina = (productos as Array<Record<string, unknown>>).map(producto => ({
-    ...producto,
-    price: precioDeVitrina(numeroONulo(producto.price), margen),
-    price_sale: precioDeVitrina(numeroONulo(producto.price_sale), margen),
-  }))
-
-  const saludo = policies && typeof policies.welcome_message === 'string'
-    ? policies.welcome_message
-    : null
-  const estadoPrevio = (conversacion?.flow_state?.menu as FlowState | undefined) ?? null
-
-  const { resultado, estado } = deps.avanzarMenu({
-    business: business as unknown as MenuFlowInput['business'],
-    contact: phone,
-    message: mensaje,
-    products: productosDeVitrina as MenuFlowInput['products'],
-    welcomeMessage: saludo,
-    modifiers: modifiers as MenuFlowInput['modifiers'],
-    lastOrderItems: (lastOrder?.order_items || []) as MenuFlowInput['lastOrderItems'],
-    // Con el local cerrado el menú no ofrece pedir, y lo dice arriba.
-    puedePedir: abierto,
-    avisoDeCierre: abierto
-      ? null
-      : `🌙 *${String(business.name || 'El local')}* está cerrado ahora mismo.`
-        + `${cuandoAbre(abre)}\n`
-        + 'Por ahora no puedes hacer un pedido aquí, pero sí ver la carta.',
-    optionGroups: grupos as MenuFlowInput['optionGroups'],
-    options: catalogoDeOpciones as MenuFlowInput['options'],
-    // Para los grupos que cuelgan de una CATEGORÍA y no de un producto.
-    productCategories: Object.fromEntries(
-      (productosDeVitrina as Array<{ id?: string; category_id?: string | null }>)
-        .filter(producto => producto.id)
-        .map(producto => [producto.id as string, producto.category_id ?? null]),
-    ),
-  }, estadoPrevio)
-
-  let respuesta = resultado.reply
-  // ⚠️ Con su DESCRIPCIÓN, no solo el título (2026-09-07). El precio de cada
-  // producto y el detalle de un reparto («3 Caldo de hueso de res + 1 Crema de
-  // zapallo») viajan ahí, y hasta hoy se tiraban al aplanar con `optionTitle`:
-  // el cliente veía una lista de nombres sin un solo precio.
-  let opciones: (string | { title: string; description?: string })[] = resultado.options
-
-  // ── El cliente confirmó su pedido ──────────────────────────────────
-  //
-  // El total oficial lo calcula SIEMPRE `money.ts` con las RPC atómicas: el
-  // menú solo aporta QUÉ pidió, nunca un monto. Es la regla #8 y aquí no
-  // cambia por venir del marketplace.
-  // ── El cliente confirmó el carrito: empieza el CHECKOUT ────────────
-  //
-  // ⚠️ El pedido NO se crea todavía. Antes hacen falta la dirección y el
-  // método de pago, y crearlo ahora dejaría un pedido sin destino ni forma de
-  // cobro en el panel del dueño cada vez que alguien abandone a media
-  // conversación — pedidos que él ve como reales y no puede preparar.
-  //
-  // El carrito espera en `flow_state.checkout` y el pedido nace COMPLETO y de
-  // una sola vez, con `create_storefront_order`, al final.
-  if (resultado.action?.type === 'order') {
-    const pendiente: CheckoutPendiente = {
-      items: resultado.action.items.map(item => ({
-        name: item.name,
-        qty: item.qty,
-        ...(item.note ? { note: item.note } : {}),
-        ...(item.productId ? { productId: item.productId } : {}),
-        ...(item.options?.length ? { options: item.options } : {}),
-      })),
-    }
-    // ⚠️ «¿Te lo llevamos o lo recoges?» va ANTES de la ubicación, y ese orden
-    // es el ahorro: quien recoge no tiene dirección que dar, así que se salta
-    // una pregunta entera en vez de gastarla.
-    //
-    // ⚠️ Y solo se pregunta si el local tiene PUNTO. Sin él, ofrecer retiro
-    // sería repetir el agujero que se cerró el 2026-09-10: decirle «pasa a
-    // retirarlo» a quien solo sabe el nombre del negocio. Un local sin punto
-    // va derecho a la ubicación, exactamente como antes de esto.
-    const entrega = checkout.pedirTipoDeEntrega(business as Record<string, unknown>)
-    await database.advanceConversation(
-      customer.id,
-      {
-        state: entrega ? 'esperando_entrega' : 'esperando_ubicacion',
-        businessId,
-        flowState: {
-          menu: (estado ?? null) as unknown as Record<string, unknown>,
-          checkout: pendiente as unknown as Record<string, unknown>,
-        },
-      },
-      conversacion?.version,
-    )
-    const pide = entrega ?? checkout.pedirUbicacion()
-    logger?.log(`🛒 [marketplace] carrito confirmado, ${entrega ? 'preguntando entrega' : 'pidiendo ubicación'}`)
-    await send(pide.reply, pide.options)
-    return
-  }
-
-  await database.advanceConversation(
-    customer.id,
-    {
-      state: 'pidiendo',
-      businessId,
-      flowState: { menu: (estado ?? null) as unknown as Record<string, unknown> },
-    },
-    conversacion?.version,
-  )
-
-  if (respuesta || opciones.length) await send(respuesta, opciones)
-}
-
-/**
- * Los dos pasos que van entre el carrito y el pedido: dónde lo llevo y cómo
- * pagas.
- *
- * ⚠️ El pedido nace al FINAL, de una vez, con `create_storefront_order`. No se
- * crea antes y se completa después: eso obligaría a una segunda función que
- * actualice la del dinero —hoy hay una sola— y dejaría pedidos sin dirección
- * en el panel del dueño cada vez que alguien abandone a media conversación.
- */
-async function avanzarCheckout(input: {
-  deps: MarketplaceEntryDeps
-  customer: { id: string; name: string | null }
-  phone: string
-  texto: string
-  location?: InboundLocation
-  businessId: string
-  conversacion: {
-    current_state: string
-    flow_state: Record<string, unknown> | null
-    version: number
-  }
-}): Promise<void> {
-  const { deps, customer, phone, texto, location, businessId, conversacion } = input
-  const { database, send, logger } = deps
-
-  const pendiente = conversacion.flow_state?.checkout as CheckoutPendiente | undefined
-  if (!pendiente?.items?.length) {
-    // El carrito se perdió (conversación vencida, estado inconsistente). Se
-    // dice y se ofrece la salida en vez de dejarlo respondiendo al vacío.
-    logger?.log('⚠️  [checkout] sin carrito pendiente: se reinicia')
-    await database.advanceConversation(
-      customer.id, { state: 'navegando', clearFlow: true }, conversacion.version,
-    )
-    await send(
-      '😕 Se me perdió tu pedido. Escribe *MENÚ* para empezar de nuevo.', [],
-    )
-    return
-  }
-
-  // ── Paso 1: la ubicación ───────────────────────────────────────────
-  // ── ¿Te lo llevamos o lo recoges? ───────────────────────────────────────
-  //
-  // ⚠️ El RETIRO se salta la ubicación entera: quien recoge no tiene dirección
-  // que dar. Es la única parte de esta tanda que AHORRA un mensaje en vez de
-  // gastarlo — y de paso el pedido nace sin envío que cobrar.
-  if (conversacion.current_state === 'esperando_entrega') {
-    const elegida = checkout.elegirEntrega(texto)
-    if (!elegida) {
-      const negocio = await database.getBusinessById(businessId).catch(() => null)
-      const repetir = checkout.pedirTipoDeEntrega((negocio || {}) as Record<string, unknown>)
-      // Sin punto ya no hay nada que preguntar: se sigue por donde siempre.
-      if (!repetir) {
-        await database.advanceConversation(
-          customer.id, { state: 'esperando_ubicacion', businessId }, conversacion.version,
-        )
-        const pide = checkout.pedirUbicacion()
-        await send(pide.reply, pide.options)
-        return
-      }
-      await send(`🙏 No te entendí.\n\n${repetir.reply}`, repetir.options)
-      return
-    }
-
-    // La elección viaja en el carrito que espera, junto a los ítems: es lo que
-    // decide el `fulfillment` del pedido al crearlo.
-    const pendiente = (conversacion.flow_state?.checkout || {}) as CheckoutPendiente
-    const conEntrega = { ...pendiente, fulfillment: elegida }
-
-    if (elegida === 'delivery') {
-      await database.advanceConversation(
-        customer.id,
-        {
-          state: 'esperando_ubicacion',
-          businessId,
-          flowState: {
-            ...(conversacion.flow_state || {}),
-            checkout: conEntrega as unknown as Record<string, unknown>,
-          },
-        },
-        conversacion.version,
-      )
-      const pide = checkout.pedirUbicacion()
-      await send(pide.reply, pide.options)
-      return
-    }
-
-    // ── RETIRO: sin dirección, directo al pago ────────────────────────────
-    const negocio = await database.getBusinessById(businessId).catch(() => null)
-    const metodos = await database.getStorefrontPaymentMethods(businessId)
-      .catch(() => [] as checkout.MetodoDePago[])
-    const pide = checkout.pedirMetodoPago(metodos)
-    await database.advanceConversation(
-      customer.id,
-      {
-        state: 'esperando_metodo_pago',
-        businessId,
-        flowState: {
-          ...(conversacion.flow_state || {}),
-          checkout: conEntrega as unknown as Record<string, unknown>,
-        },
-      },
-      conversacion.version,
-    )
-    // El punto del local va DENTRO de este mensaje, no en uno aparte: así el
-    // cliente ya sabe a dónde ir sin gastar un saliente más.
-    const dondeRetirar = negocio ? checkout.confirmarRetiro(negocio) : ''
-    logger?.log(`🛍️ [marketplace] retiro elegido, saltando la ubicación`)
-    await send(dondeRetirar ? `${dondeRetirar}\n\n${pide.reply}` : pide.reply, pide.options)
-    return
-  }
-
-  if (conversacion.current_state === 'esperando_ubicacion') {
-    // El punto del mapa es lo bueno: llega exacto y sin que el cliente
-    // escriba. Pero quien no lo comparta —o abra WhatsApp en un navegador que
-    // no lo permita— tiene que poder pedir igual escribiendo su dirección.
-    const direccion = location
-      ? checkout.direccionDesdeUbicacion(location)
-      : texto.trim()
-
-    if (!location && direccion.length < 8) {
-      await send(
-        '🙏 No entendí la dirección. Comparte tu ubicación con el clip 📎 '
-        + 'o escríbela con más detalle (calle, número y referencia).',
-        [],
-      )
-      return
-    }
-
-    const guardada = await database.createCustomerAddress({
-      businessId,
-      customerId: customer.id,
-      address: direccion,
-      // Las coordenadas viajan juntas o no viajan: media apunta al ecuador.
-      latitude: location?.latitude ?? null,
-      longitude: location?.longitude ?? null,
-    }).catch(() => null)
-
-    if (!guardada?.id) {
-      logger?.log('⚠️  [checkout] no se pudo guardar la dirección')
-      await send(
-        '😕 No pude guardar tu dirección. Inténtalo otra vez o escribe *MENÚ*.', [],
-      )
-      return
-    }
-
-    const metodos = await database.getStorefrontPaymentMethods(businessId)
-      .catch(() => [] as checkout.MetodoDePago[])
-    const pide = checkout.pedirMetodoPago(metodos)
-
-    await database.advanceConversation(
-      customer.id,
-      {
-        state: 'esperando_metodo_pago',
-        businessId,
-        flowState: {
-          ...(conversacion.flow_state || {}),
-          checkout: { ...pendiente, addressId: guardada.id } as unknown as Record<string, unknown>,
-        },
-      },
-      conversacion.version,
-    )
-    logger?.log(`📍 [checkout] dirección guardada, ${metodos.length} métodos de pago`)
-    await send(pide.reply, pide.options)
-    return
-  }
-
-  // ── Paso 2: el método de pago, y el pedido ─────────────────────────
-  const metodos = await database.getStorefrontPaymentMethods(businessId)
-    .catch(() => [] as checkout.MetodoDePago[])
-  const elegido = checkout.elegirMetodo(texto, metodos)
-
-  if (!elegido) {
-    const repetir = checkout.pedirMetodoPago(metodos)
-    await send(`🙏 No te entendí.\n\n${repetir.reply}`, repetir.options)
-    return
-  }
-
-  // ⚠️ Solo a DOMICILIO. En un retiro no hay dirección que guardar, y exigirla
-  // aquí devolvería al cliente a pedir una ubicación que no hace falta — el
-  // bucle del que no se sale.
-  if (pendiente.fulfillment !== 'pickup' && !pendiente.addressId) {
-    // No debería pasar: se guarda antes de llegar aquí. Si pasa, se vuelve al
-    // paso anterior en vez de crear un pedido sin destino.
-    logger?.log('⚠️  [checkout] método elegido sin dirección guardada')
-    await database.advanceConversation(
-      customer.id, { state: 'esperando_ubicacion', businessId }, conversacion.version,
-    )
-    const pide = checkout.pedirUbicacion()
-    await send(pide.reply, pide.options)
-    return
-  }
-
-  // ⚠️ Ya NO se lee el negocio aquí. Se leía solo para sacarle el teléfono y
-  // ofrecérselo al cliente cuando faltaban los datos bancarios, y eso se
-  // retiró el 2026-09-07: en Umbani el cliente habla con un solo número.
-  // Dejar la consulta habría sido un viaje a la base por vuelta de checkout
-  // para un dato que ya no se usa.
-  // ── El local tiene que estar ABIERTO para cobrar ────────────────────
-  //
-  // ⚠️ Se comprueba AQUÍ, en el último paso, y no al entrar al menú: el cliente
-  // pudo empezar a las 17:55 y llegar al pago a las 18:01. Sin esto, el pedido
-  // nacía igual y su comida no la cocinaba nadie — y encima recibía los datos
-  // bancarios, así que podía llegar a transferir por algo que nadie iba a
-  // preparar. Es la última puerta antes del dinero.
-  //
-  // ⚠️ El carrito NO se tira: cuando el local abra, confirmar vuelve a
-  // funcionar con lo que ya tenía elegido. Vaciárselo por cerrar sería
-  // castigarle por la hora.
-  //
-  // ⚠️ Falla ABIERTO (ver `estadoDelLocal`): sin horario o con la consulta
-  // caída se cobra como antes.
-  const estadoAlCobrar = await estadoDelLocal(deps, businessId)
-  if (!estadoAlCobrar.abierto) {
-    const local = await database.getBusinessById(businessId).catch(() => null)
-    logger?.log('🌙 [checkout] el local cerró antes de confirmar')
-    await send(
-      `🌙 *${String(local?.name || 'El local')}* está cerrado ahora mismo.`
-      + `${cuandoAbre(estadoAlCobrar.abre)}\n\n`
-      + 'Tu pedido se queda guardado: cuando abra, confírmalo por aquí.\n'
-      + 'Si prefieres otro local, escribe *MENÚ*.',
-      [],
-    )
-    return
-  }
-
-  const [productos, cuenta] = await Promise.all([
-    database.getProducts(businessId).catch(() => [] as unknown[]),
-    elegido.requires_proof
-      ? database.getBusinessBankAccount(businessId).catch(() => null)
-      : Promise.resolve(null),
-  ])
-
-  // ⚠️ El motivo se conserva cuando la BASE rechazó el pedido por una regla que
-  // el cliente PUEDE resolver —ya tiene tres sin confirmar—. Antes se tragaba
-  // el error entero y recibía «fallo técnico, no reintentes»: ni era verdad, ni
-  // le decía qué hacer, y le dejaba pensando que el fallo era nuestro.
-  let pedido: { orderNumber: number | null; total: unknown } | null = null
-  let rechazo: string | null = null
-  try {
-    pedido = await deps.crearPedidoCompleto({
-      businessId,
-      customerId: customer.id,
-      phone,
-      contactName: customer.name,
-      addressId: pendiente.addressId ?? null,
-      paymentMethod: elegido.code,
-      fulfillment: pendiente.fulfillment === 'pickup' ? 'pickup' : 'delivery',
-      items: pendiente.items,
-      products: productos,
-      // El modificador que eligió en el chat (el sabor del jugo) viaja como
-      // nota del pedido: la comanda del dueño lo tiene que ver aunque no sea
-      // una opción del motor de personalización.
-      notes: notasDeLosItems(pendiente.items),
-    })
-  } catch (error) {
-    rechazo = error instanceof Error ? error.message : null
-  }
-
-  if (!pedido) {
-    logger?.log(`❌ [checkout] el pedido no se pudo crear${rechazo ? ` (${rechazo})` : ''}`)
-    const fallo = checkout.pedidoNoCreado(rechazo)
-    await send(fallo.reply, fallo.options)
-    return
-  }
-
-  // ── El carrito se suelta; el CANDADO, solo si ya no debe nada ───────────
-  //
-  // ⚠️ Hasta el 2026-08-30 esto soltaba el bloqueo SIEMPRE, con un
-  // `clearBusiness: true` que además apaga `shopping_locked` en la base. O sea
-  // que crear el pedido dejaba vía libre para empezar otro en otro local sin
-  // haber mandado el comprobante — y sin escribir MENÚ siquiera. Combinado con
-  // un tope que contaba por local, el salto entre locales salía gratis:
-  // «pido aquí, no pago, pido allá».
-  //
-  // Ahora se distingue por el estado en que NACIÓ el pedido:
-  //
-  //   · `esperando_pago` (transferencia) — el cliente debe el comprobante. Se
-  //     suelta el carrito y la vista, pero el LOCAL y el candado se quedan.
-  //     Los suelta `orders_release_shopping_lock` cuando el pedido salga de
-  //     ese estado, y MENÚ sigue siendo la salida de siempre.
-  //   · Cualquier otro (efectivo, pago al retirar) — no debe nada: se suelta
-  //     todo como antes.
-  //
-  // ⚠️ El candado se suelta en la BASE, no aquí, y es deliberado: el pedido se
-  // resuelve por caminos que no pasan por este archivo —el botón del dueño, el
-  // barrido que caduca los impagados, y mañana los motorizados—. Un disparador
-  // los cubre todos; una línea de TypeScript solo cubre este.
-  // ⚠️ Se pregunta por el MÉTODO, no por `requires_proof`, porque es lo que
-  // mira la base: `create_storefront_order` hace
-  // `case when p_payment_method = 'transferencia' then 'esperando_pago' else
-  // 'pendiente' end`. Usar el otro campo daría dos reglas para lo mismo, y el
-  // día que se separen el candado quedaría puesto sobre pedidos que no deben
-  // nada — o suelto sobre los que sí.
-  const debeComprobante = elegido.code === 'transferencia'
-  await database.advanceConversation(
-    customer.id,
-    debeComprobante
-      // Sin `clearBusiness`: apagaría el candado de paso, que es justo lo que
-      // aquí no se quiere. El local elegido se queda con él.
-      ? { state: 'esperando_comprobante', clearFlow: true }
-      : { state: 'navegando', clearFlow: true, clearBusiness: true, shoppingLocked: false },
-    conversacion.version,
-  )
-
-  const confirmacion = checkout.pedidoCreado({
-    orderNumber: pedido.orderNumber,
-    total: pedido.total,
-    metodo: elegido,
-    cuenta,
-  })
-  logger?.log(
-    `✅ [checkout] pedido #${pedido.orderNumber} creado — ${elegido.code}`,
-  )
-  await send(confirmacion.reply, confirmacion.options)
-}
-
-/** Las elecciones del menú que no son opciones del catálogo, para la comanda. */
-function notasDeLosItems(
-  items: CheckoutPendiente['items'],
-): string | null {
-  const notas = items
-    .filter(item => item.note)
-    .map(item => `${item.name}: ${item.note}`)
-  return notas.length ? notas.join(' · ').slice(0, 300) : null
 }
 
 /** Guarda dónde quedó la conversación. */

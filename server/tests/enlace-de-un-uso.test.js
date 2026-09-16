@@ -191,13 +191,14 @@ describe('«Seguir mi pedido» devuelve el enlace', () => {
     expect(enviados[0].reply).toContain('https://umbani.app/s/tok3n')
   })
 
-  it('en un local que se pide POR CHAT no se inventa un enlace', async () => {
-    const { deps, enviados } = armarEntrada({ enChat: true })
+  // ⚠️ Antes había aquí lo contrario: en un local que se pedía POR CHAT no se
+  // daba enlace, porque el pedido se armaba en la conversación. Desde el
+  // 2026-09-15 todo local pide por su mini app, así que TODOS reciben el suyo.
+  it('también en un local de almuerzos, que antes pedía por chat', async () => {
+    const { deps } = armarEntrada({ enChat: true })
     await handle({ from: '593999111222', text: NO_CONTINUAR }, deps)
 
-    expect(deps.issueLink).not.toHaveBeenCalled()
-    expect(enviados[0].reply).toContain('Monster Pizza')
-    expect(enviados[0].reply).not.toContain('http')
+    expect(deps.issueLink).toHaveBeenCalled()
   })
 
   it('sin enlace disponible responde igual: quedarse mudo sería peor', async () => {
