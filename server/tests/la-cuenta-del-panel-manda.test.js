@@ -54,14 +54,13 @@ describe('una sola puerta a la cuenta del dueño', () => {
     expect(compara).toContain('getBusinessBankAccount')
   })
 
-  it('los tres sitios que le dicen al cliente dónde pagar usan la misma', () => {
-    // La mini app, el aviso por WhatsApp y el checkout dentro del chat. Los
-    // tres tienen que nombrar la MISMA cuenta, o el cliente recibe una
-    // instrucción distinta según por dónde entró.
+  it('los dos sitios que le dicen al cliente dónde pagar usan la misma', () => {
+    // La mini app y el aviso por WhatsApp. Los dos tienen que nombrar la MISMA
+    // cuenta, o el cliente recibe una instrucción distinta según por dónde
+    // entró. Eran TRES hasta que el checkout del chat se retiró (2026-09-15).
     for (const ruta of [
-      'src/routes/storefront.routes.ts',   // mini app
-      'src/routes/orders.routes.ts',       // el aviso al cliente
-      'src/services/marketplace-entry.ts', // checkout en el chat
+      'src/routes/storefront.routes.ts', // mini app
+      'src/routes/orders.routes.ts',     // el aviso al cliente
     ]) {
       expect(readFileSync(ruta, 'utf8'), ruta).toContain('getBusinessBankAccount')
     }

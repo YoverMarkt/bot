@@ -150,9 +150,10 @@ export function chatModeSummary(type: string): string {
   if (recommendedSalesForBusinessType(type) !== 'vende') {
     return 'Responderá consultas por el chat; no crea pedidos.'
   }
-  return recommendedChatModeForBusinessType(type) === 'menu'
-    ? 'Pedirá por el chat, eligiendo de una lista. Su carta es corta.'
-    : 'Pedirá por su mini app: hay bastante que elegir en cada producto.'
+  // ⚠️ Una sola frase desde el 2026-09-15: el pedido por chat se retiró y TODO
+  // local pide por su mini app. Antes esto decía «pedirá por el chat» a una
+  // almuercería, y habría sido mentirle al superadmin en el alta.
+  return 'Pedirá por su mini app: el chat le lleva el enlace.'
 }
 
 export function businessTypeChoice(type: string): string {

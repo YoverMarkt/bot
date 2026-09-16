@@ -1,6 +1,4 @@
 import { describe, expect, it, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import {
   advanceMenuFlowConEstado,
   optionTitle,
@@ -175,14 +173,6 @@ describe('lo elegido viaja con su id real', () => {
     ])
   })
 
-  it('y la RPC las recibe como `option_id`, que es lo que valida', () => {
-    // La base comprueba que cada opción pertenece a este negocio Y a este
-    // producto (o a su categoría). Un nombre suelto no se puede validar.
-    const fuente = readFileSync(
-      fileURLToPath(new URL('../src/services/inbound-webhook.ts', import.meta.url)), 'utf8',
-    )
-    expect(fuente).toMatch(/option_id: o\.optionId/)
-  })
 })
 
 describe('lo que el chat NO sabe preguntar va a la app', () => {

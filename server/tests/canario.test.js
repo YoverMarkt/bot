@@ -21,7 +21,7 @@ const leer = ruta => readFileSync(`${serverDir}/${ruta}`, 'utf8')
 
 const NEGOCIO = { id: 'b1', name: 'La Abuelita', type: 'almuerzos', active: true, storefront_enabled: true }
 
-function armar({ respuestas, escrituras = [] }) {
+function armar({ respuestas, escrituras = [], productos = [{ id: 'p1', name: 'Almuerzo del día', price: 3.5, active: true }] }) {
   const database = {
     // ⚠️ El canario recorre el marketplace COMO EL CLIENTE: las categorías que
     // ve y, dentro de cada una, los locales que la base dice que tiene. No
@@ -29,7 +29,10 @@ function armar({ respuestas, escrituras = [] }) {
     // ninguna categoría es invisible para quien compra, y eso es un fallo.
     getMarketplaceCategories: async () => ([{ code: 'almuerzos', label: 'Almuerzos' }]),
     getMarketplaceBusinesses: async () => ([NEGOCIO]),
-    tipoPideEnChat: async () => true,
+    // Desde el 2026-09-15 todo local pide por su mini app, así que lo que se
+    // vigila es el CATÁLOGO que lee la tienda.
+    getStorefrontProducts: async () => productos,
+    getBusinessPricingRule: async () => null,
     // Cualquier escritura que se cuele queda anotada y hace fallar la prueba.
     resolveMarketplaceCustomer: async () => { escrituras.push('crear cliente'); return { id: 'x' } },
     advanceConversation: async () => { escrituras.push('escribir conversación'); return {} },
@@ -38,7 +41,6 @@ function armar({ respuestas, escrituras = [] }) {
   const errores = []
   const canario = crearCanario({
     database,
-    avanzarMenu: () => ({ resultado: { reply: '', options: [] }, estado: null }),
     handleMarketplaceMessage: async (entrada, deps) => {
       // Un doble del camino: devuelve lo que se le diga para cada mensaje, y
       // de paso EJERCITA las dependencias que el canario sustituye.
@@ -58,7 +60,6 @@ const CAMINO_BUENO = {
   hola: { reply: '👋 ¡Hola! Bienvenido a *Umbani*.' },
   Almuerzos: { reply: '🍽️ Almuerzos\n\nElige un local 👇\nLa Abuelita' },
   'La Abuelita': { reply: '¡Hola! 👋 Gracias por escribir' },
-  '🛒 Hacer un pedido': { reply: 'Elige el producto 👇\n· Almuerzo del día — $3.85' },
 }
 
 describe('el canario del camino del cliente', () => {
@@ -68,13 +69,11 @@ describe('el canario del camino del cliente', () => {
     expect(errores, JSON.stringify(errores)).toEqual([])
   })
 
-  it('caza el fallo del #343: el menú de pedido sin precios', async () => {
-    // El síntoma real: la lista salía con los nombres y sin una sola cifra.
+  it('caza el fallo del #343: la carta sin una sola cifra', async () => {
+    // El síntoma real, ahora en la mini app: productos sin precio utilizable.
     const { canario, errores } = armar({
-      respuestas: {
-        ...CAMINO_BUENO,
-        '🛒 Hacer un pedido': { reply: 'Elige el producto 👇\n· Almuerzo del día' },
-      },
+      respuestas: CAMINO_BUENO,
+      productos: [{ id: 'p1', name: 'Almuerzo del día', price: null, active: true }],
     })
     await canario.vigilar()
     expect(errores).toHaveLength(1)
@@ -82,27 +81,19 @@ describe('el canario del camino del cliente', () => {
     expect(errores[0].businessId).toBe('b1')
   })
 
-  it('caza el «Precio: lo confirma nuestro equipo»', async () => {
+  it('caza el precio en cero, que en la tienda no se puede pedir', async () => {
     const { canario, errores } = armar({
-      respuestas: {
-        ...CAMINO_BUENO,
-        '🛒 Hacer un pedido': { reply: '*Agua*\nPrecio: lo confirma nuestro equipo' },
-      },
+      respuestas: CAMINO_BUENO,
+      productos: [{ id: 'p1', name: 'Agua', price: 0, active: true }],
     })
     await canario.vigilar()
     expect(errores.map(e => e.code)).toContain('canario_precio')
   })
 
-  it('caza el silencio: si el menú no responde, lo dice', async () => {
-    const { canario, errores } = armar({
-      respuestas: {
-        hola: CAMINO_BUENO.hola,
-        Almuerzos: CAMINO_BUENO.Almuerzos,
-        'La Abuelita': CAMINO_BUENO['La Abuelita'],
-      },
-    })
+  it('caza la tienda VACÍA: un local que no puede vender nada', async () => {
+    const { canario, errores } = armar({ respuestas: CAMINO_BUENO, productos: [] })
     await canario.vigilar()
-    expect(errores.map(e => e.code)).toContain('canario_pedir')
+    expect(errores.map(e => e.code)).toContain('canario_catalogo')
   })
 
   it('un local CERRADO no es un fallo', async () => {
@@ -182,10 +173,10 @@ describe('el canario está CONECTADO', () => {
     expect(fuente).toMatch(/canario: ultimaVueltaDelCanario\(\)/)
   })
 
-  it('usa el motor de menú REAL, no un doble', () => {
+  it('usa el camino REAL del cliente, no un doble', () => {
     // Un canario que vigila a un doble no vigila nada.
     const fuente = leer('src/services/canario.ts')
-    expect(fuente).toMatch(/advanceMenuFlowConEstado/)
     expect(fuente).toMatch(/handleMarketplaceMessage/)
+    expect(fuente).toMatch(/getStorefrontProducts/)
   })
 })

@@ -317,9 +317,12 @@ describe('el alta ya no pregunta lo que se deduce del tipo', () => {
   })
 
   it('y el resumen lo explica en español, sin jerga', () => {
+    // ⚠️ UNA sola frase desde el 2026-09-15: el pedido por chat se retiró, así
+    // que decirle a una almuercería «pedirá por el chat» sería mentirle al
+    // superadmin justo al dar de alta.
     const tipos = leer('../../apps/admin/src/features/clients/business-types.ts')
-    expect(tipos).toMatch(/Pedirá por el chat/)
     expect(tipos).toMatch(/Pedirá por su mini app/)
+    expect(tipos).not.toMatch(/Pedirá por el chat/)
   })
 })
 

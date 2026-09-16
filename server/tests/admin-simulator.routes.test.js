@@ -146,8 +146,10 @@ describe('simulador del marketplace', () => {
     const fuente = fs.readFileSync(
       new URL('../src/routes/admin-simulator.routes.ts', import.meta.url), 'utf8',
     )
+    // Desde el 2026-09-15 no hay ni con qué: el pedido se arma en la mini app,
+    // así que el simulador ya no tiene dobles de pedido ni de dirección.
     expect(fuente).not.toMatch(/createStorefrontOrder|processOrderPayload/)
-    expect(fuente).toMatch(/createCustomerAddress: async \(\) =>/)
+    expect(fuente).not.toMatch(/crearPedido/)
   })
 
   // ⚠️ El techo de gasto NO se aplica aquí, y es coherente con lo que existe
@@ -245,7 +247,6 @@ describe('simulador del marketplace', () => {
     vi.spyOn(db, 'isContactBlocked').mockResolvedValue(false)
     vi.spyOn(db, 'isPlatformBlocked').mockResolvedValue(false)
     // Una pizzería se pide en la app: lo decide el TIPO, no el catálogo.
-    const pideEnChat = vi.spyOn(db, 'tipoPideEnChat').mockResolvedValue(false)
     const emitir = vi.spyOn(link, 'issueStorefrontLink')
       .mockResolvedValue('https://umbani.test/s/token-de-prueba')
     // La línea que no se cruza: el simulador no puede tocar el dinero.
@@ -261,7 +262,6 @@ describe('simulador del marketplace', () => {
 
     expect(final.status).toBe(200)
     expect(final.body.replies.at(-1).reply).toContain('https://umbani.test/s/token-de-prueba')
-    expect(pideEnChat).toHaveBeenCalledWith('pizzería')
     expect(emitir).toHaveBeenCalled()
     expect(crearPedido).not.toHaveBeenCalled()
   })

@@ -118,17 +118,20 @@ describe('una ubicación no pasa por la descarga de media', () => {
 
   it('y se entrega como texto ANTES de intentar bajar nada', () => {
     const s = fuente()
-    const ubicacion = s.indexOf("payload.content.kind === 'location'\n")
+    const ubicacion = s.indexOf("payload.content.kind === 'location'")
     const audio = s.indexOf("const isAudio = payload.content.kind === 'audio'")
     expect(ubicacion).toBeGreaterThan(-1)
     expect(audio).toBeGreaterThan(-1)
   })
 
-  it('el marketplace la recibe entera, no solo como «[ubicación]»', () => {
-    // El texto es para el historial; las coordenadas son lo que deja crear la
-    // dirección del pedido sin que el cliente teclee nada.
+  it('al marketplace le llega el MARCADOR, no el punto', () => {
+    // ⚠️ Hasta el 2026-09-15 viajaban también las coordenadas: las usaba el
+    // checkout DENTRO del chat para crear la dirección del pedido sin que el
+    // cliente tecleara. Retirado el pedido por chat, ese punto no tiene quién
+    // lo use —la mini app captura el suyo con el navegador—, así que el
+    // marketplace solo nombra lo que llegó y ahí acaba su viaje.
     const s = fuente()
-    expect(s).toMatch(/location: payload\.content\.location/)
     expect(s).toContain('[ubicación]')
+    expect(s).not.toMatch(/location: payload\.content\.location/)
   })
 })

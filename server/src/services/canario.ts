@@ -61,8 +61,6 @@ export interface HallazgoDelCanario {
 
 export interface CanarioDeps {
   database: Record<string, unknown>
-  /** El motor del menú REAL: un doble aquí no vigilaría nada. */
-  avanzarMenu: MarketplaceEntryDeps['avanzarMenu']
   handleMarketplaceMessage(
     entrada: { from: string; text: string; inboundId?: string | null },
     deps: MarketplaceEntryDeps,
@@ -85,9 +83,6 @@ export interface CanarioDeps {
  * vistazo que no es una persona.
  */
 const TELEFONO_CANARIO = '000000000001'
-
-/** Lo que el cliente lee cuando el precio no se pudo resolver. */
-const SIN_PRECIO = 'lo confirma nuestro equipo'
 
 const textoDe = (enviados: { reply: string; options: unknown[] }[]): string => (
   enviados.map(e => `${e.reply} || ${JSON.stringify(e.options)}`).join('\n')
@@ -137,10 +132,6 @@ function dependenciasDelCanario(
     // El enlace no se emite: crearía una sesión de tienda por cada vuelta.
     issueLink: async () => null,
     sendLink: async () => true,
-    tipoPideEnChat: (tipo: string | null | undefined) => (
-      (deps.database as { tipoPideEnChat(t: unknown): Promise<boolean> }).tipoPideEnChat(tipo)
-    ),
-    avanzarMenu: deps.avanzarMenu,
     // Si el canario llegara a intentar crear un pedido, que falle ruidosamente
     // en vez de dejar uno de prueba en la cocina de alguien.
     crearPedidoCompleto: async () => {
@@ -256,38 +247,11 @@ export function crearCanario(deps: CanarioDeps) {
       // ver es peor que uno que calla: da una seguridad que no tiene.
       if (/cerrado ahora mismo/i.test(alEntrar)) return { fallos, revisado: false }
 
-      // 4. ¿Pide en el chat o por la mini app? Lo decide la MISMA función que
-      //    en producción: deducirlo del texto no vale, porque el canario no
-      //    emite enlaces —crearía una sesión de tienda por vuelta— así que el
-      //    enlace no aparece en la respuesta aunque el local sea de mini app.
-      const enElChat = await (deps.database as {
-        tipoPideEnChat(t: unknown): Promise<boolean>
-      }).tipoPideEnChat(negocio.type).catch(() => true)
-
-      if (!enElChat) {
-        // Su carta no vive en el chat: se vigila el CATÁLOGO que lee la tienda,
-        // que es donde estaría el mismo fallo de precios.
-        await revisarCatalogo(negocio, anotar)
-        return { fallos, revisado }
-      }
-
-      // 5. Pedir. Es el paso que estuvo roto cuatro días.
-      enviados.length = 0
-      await escribir('🛒 Hacer un pedido')
-      const alPedir = textoDe(enviados)
-
-      if (!alPedir.trim()) {
-        anotar('pedir', 'el menú no respondió a «Hacer un pedido»')
-        return { fallos, revisado }
-      }
-      if (alPedir.includes(SIN_PRECIO)) {
-        anotar('precio', `un producto salió sin precio: «${SIN_PRECIO}»`)
-      }
-      // Un menú de pedido sin una sola cifra es exactamente el síntoma del
-      // fallo del #343: la lista salía con los nombres y sin los precios.
-      if (!/\$\s?\d/.test(alPedir)) {
-        anotar('precio', 'el menú de pedido no enseñó ni un precio')
-      }
+      // 4. La carta que ve el cliente vive en la MINI APP desde que se retiró
+      //    el pedido por chat (2026-09-15), así que se vigila el CATÁLOGO que
+      //    lee la tienda: ahí es donde estaría el mismo fallo de precios del
+      //    #343 —una carta entera sin una sola cifra—.
+      await revisarCatalogo(negocio, anotar)
     } catch (error) {
       anotar('excepción', (error as Error).message || 'error desconocido')
     }
@@ -381,12 +345,10 @@ export function crearCanario(deps: CanarioDeps) {
  */
 export async function vigilarElCaminoDelCliente(): Promise<HallazgoDelCanario[]> {
   const database = require('../db') as Record<string, unknown>
-  const { advanceMenuFlowConEstado } = require('./bot-menu-flow') as typeof import('./bot-menu-flow')
   const { handleMarketplaceMessage } = require('./marketplace-entry') as typeof import('./marketplace-entry')
   const { recordError } = require('./error-log') as typeof import('./error-log')
   return crearCanario({
     database,
-    avanzarMenu: advanceMenuFlowConEstado as CanarioDeps['avanzarMenu'],
     handleMarketplaceMessage: handleMarketplaceMessage as CanarioDeps['handleMarketplaceMessage'],
     registrarError: recordError as CanarioDeps['registrarError'],
     logger: console,
