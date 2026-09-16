@@ -277,6 +277,76 @@ describe('lo que el dueño puede guardar', () => {
   })
 })
 
+// ── El plato por partes, desde el panel ─────────────────────────────────────
+//
+// El dueño de una almuercería marca «Sopa» y «Segundo» como PARTES de su
+// almuerzo y les pone un precio por separado. La base ya lo exige con un CHECK
+// (`option_groups_parte_del_plato_check`); aquí se dice con palabras que el
+// dueño entiende, antes de que PostgreSQL lo rechace con el nombre de una
+// restricción.
+describe('el plato por partes', () => {
+  const crearGrupo = (body) => ejecutar('/api/client/option-groups', 'post', { body })
+  const PARTE = {
+    product_id: '11111111-1111-4111-8111-111111111111',
+    name: 'Sopa',
+    selection_type: 'quantity',
+    max_selectable: 100,
+    is_meal_part: true,
+  }
+
+  it('acepta una PARTE con su precio por separado', async () => {
+    const crear = vi.spyOn(db, 'createOptionGroup')
+      .mockResolvedValue({ data: { id: 'g1' }, error: null })
+    const r = await crearGrupo({ ...PARTE, loose_price: '1.50' })
+    expect(r.status).toBe(201)
+    expect(crear.mock.calls[0][1]).toMatchObject({ is_meal_part: true, loose_price: 1.5 })
+  })
+
+  it('una parte sin precio por separado se guarda así: no se vende sola', async () => {
+    const crear = vi.spyOn(db, 'createOptionGroup')
+      .mockResolvedValue({ data: { id: 'g1' }, error: null })
+    const r = await crearGrupo({ ...PARTE, loose_price: '' })
+    expect(r.status).toBe(201)
+    expect(crear.mock.calls[0][1].loose_price).toBeNull()
+  })
+
+  // Un radio no deja pedir tres sopas para una familia.
+  it('una parte se elige POR CANTIDAD', async () => {
+    const r = await crearGrupo({ ...PARTE, selection_type: 'single', max_selectable: 1 })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/por cantidad/)
+  })
+
+  // En una categoría no hay un precio de almuerzo al que referirse.
+  it('una parte cuelga de un producto, no de una categoría', async () => {
+    const r = await crearGrupo({
+      ...PARTE, product_id: null, category_id: '44444444-4444-4444-8444-444444444444',
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/de un producto/)
+  })
+
+  it('el precio por separado tiene que ser mayor que cero', async () => {
+    const r = await crearGrupo({ ...PARTE, loose_price: 0 })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/precio por separado/)
+  })
+
+  it('un grupo que no es parte no lleva precio por separado', async () => {
+    const r = await crearGrupo({ ...GRUPO_VALIDO, loose_price: 2 })
+    expect(r.status).toBe(400)
+    expect(r.body.error).toMatch(/solo aplica a una parte/)
+  })
+
+  it('un grupo de siempre nace sin ser parte, y nada cambia para él', async () => {
+    const crear = vi.spyOn(db, 'createOptionGroup')
+      .mockResolvedValue({ data: { id: 'g1' }, error: null })
+    const r = await crearGrupo(GRUPO_VALIDO)
+    expect(r.status).toBe(201)
+    expect(crear.mock.calls[0][1]).toMatchObject({ is_meal_part: false, loose_price: null })
+  })
+})
+
 describe('plantillas', () => {
   // Una plantilla se referencia desde varios grupos: borrarla a ciegas deja al
   // dueño sin saber qué acaba de cambiar en cuántos productos.

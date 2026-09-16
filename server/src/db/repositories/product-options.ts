@@ -25,6 +25,8 @@ const CAMPOS_GRUPO = [
   'id', 'product_id', 'category_id', 'name', 'description', 'selection_type',
   'required', 'min_selectable', 'max_selectable', 'max_total_quantity',
   'pricing_strategy', 'free_selections', 'option_template_id', 'sort', 'active',
+  // El plato por partes: si el grupo es una parte y cuánto cuesta suelta.
+  'is_meal_part', 'loose_price',
 ].join(',')
 
 const CAMPOS_OPCION = [

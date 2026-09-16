@@ -197,6 +197,31 @@ function sanitizeGroup(body: unknown): DataRecord {
     throw new InvalidInput('Esa estrategia necesita decir cuántas van sin recargo')
   }
 
+  // ── El plato por partes ───────────────────────────────────────────────
+  //
+  // Una PARTE (sopa, segundo) se cuenta por porciones y cuelga de UN producto:
+  // un radio no deja pedir tres sopas para una familia, y en una categoría no
+  // hay un precio de almuerzo al que referirse. Replica
+  // `option_groups_parte_del_plato_check`, con palabras que el dueño entiende.
+  const isMealPart = flag(source.is_meal_part)
+  const precioSuelto = source.loose_price === null || source.loose_price === undefined
+    || source.loose_price === ''
+    ? null
+    : Number(source.loose_price)
+  if (isMealPart && selectionType !== 'quantity') {
+    throw new InvalidInput('Una parte del plato se elige por cantidad')
+  }
+  if (isMealPart && !productId) {
+    throw new InvalidInput('Una parte del plato cuelga de un producto, no de una categoría')
+  }
+  if (precioSuelto !== null && !isMealPart) {
+    throw new InvalidInput('El precio por separado solo aplica a una parte del plato')
+  }
+  if (precioSuelto !== null
+    && (!Number.isFinite(precioSuelto) || precioSuelto <= 0 || precioSuelto > 100000)) {
+    throw new InvalidInput('El precio por separado tiene que ser mayor que 0')
+  }
+
   return {
     product_id: productId,
     category_id: categoryId,
@@ -206,6 +231,9 @@ function sanitizeGroup(body: unknown): DataRecord {
     required,
     min_selectable: minSelectable,
     max_selectable: maxSelectable,
+    is_meal_part: isMealPart,
+    // Sin precio por separado, esa parte no se vende sola: solo forma platos.
+    loose_price: precioSuelto === null ? null : Math.round(precioSuelto * 100) / 100,
     max_total_quantity: source.max_total_quantity === null
       || source.max_total_quantity === undefined || source.max_total_quantity === ''
       ? null
