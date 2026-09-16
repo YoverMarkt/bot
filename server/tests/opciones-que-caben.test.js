@@ -31,8 +31,9 @@ const TOPE = 20
  * solo miraba las constantes, y se le escapó `bot-menu.ts`, que empujaba sus
  * opciones directamente — con «📋 Ver productos y precios» de 25 caracteres.
  * Un guardián que no mira donde de verdad están las cosas no protege nada.
- * (`bot-menu.ts` se retiró el 2026-08-23 al quedarse sin un solo llamador; la
- * lección de mirar los `push` sueltos vale igual para los dos que quedan.)
+ * (`bot-menu.ts` se retiró el 2026-08-23 al quedarse sin un solo llamador, y
+ * `bot-menu-flow.ts` el 2026-09-16 con el pedido por chat; la lección de mirar
+ * los `push` sueltos vale igual para el que queda.)
  */
 const etiquetasDe = (fuente) => [
   ...[...fuente.matchAll(
@@ -43,7 +44,6 @@ const etiquetasDe = (fuente) => [
 
 describe('ninguna opción se pasa del tope de WhatsApp', () => {
   const fuentes = {
-    'bot-menu-flow.ts': leer('../src/services/bot-menu-flow.ts'),
     'marketplace-menu.ts': leer('../src/services/marketplace-menu.ts'),
   }
 

@@ -14,23 +14,10 @@ function tenantPayload(data: DataRecord): DataRecord {
   return safe
 }
 
-// Solo los ACTIVOS y opcionalmente de una categoría: lo que consume el bot.
-const getMenuModifiers = async (
-  businessId: string,
-  categoryTag?: string | null,
-) => {
-  let query = db
-    .from('menu_modifiers')
-    .select('id, category_tag, group_label, name, description, sort, active')
-    .eq('business_id', businessId)
-    .eq('active', true)
-    .order('sort')
-    .order('name')
-  if (categoryTag) query = query.eq('category_tag', categoryTag)
-  const { data, error } = await query
-  if (error) throw new Error(error.message)
-  return (data || []) as DataRecord[]
-}
+// ⚠️ Aquí vivía `getMenuModifiers` —«solo los activos, lo que consume el
+// bot»—, y se fue con el modo menú el 2026-09-16: era su único llamador. La
+// TABLA no se toca, ni su CRUD, ni lo que la mini app lee de ella en
+// `services/storefront.ts`; vaciarla es una limpieza aparte.
 
 // TODOS (incluye inactivos): para gestionarlos desde el panel del dueño.
 const getAllMenuModifiers = async (businessId: string) => {
@@ -83,7 +70,6 @@ const deleteMenuModifier = async (businessId: string, id: string) => db
   .maybeSingle()
 
 export = {
-  getMenuModifiers,
   getAllMenuModifiers,
   getMenuModifierById,
   createMenuModifier,

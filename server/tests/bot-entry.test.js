@@ -295,8 +295,11 @@ describe('entrada de canales del bot', () => {
     )
   })
 
-  it("el modo menú nunca manda la imagen a visión", async () => {
-    const enMenu = { ...businessA, chat_mode: 'menu' }
+  it("un negocio sin IA nunca manda la imagen a visión", async () => {
+    // Antes este caso usaba `chat_mode: 'menu'`. El modo se retiró el
+    // 2026-09-16; la garantía —no pagar visión por una foto que nadie va a
+    // mirar— es la misma y ahora se comprueba sobre el único modo que existe.
+    const enMenu = { ...businessA, chat_mode: 'miniapp' }
     const current = setup({
       database: { getBusinessByChannel: vi.fn().mockResolvedValue(enMenu) },
     })
@@ -313,8 +316,8 @@ describe('entrada de canales del bot', () => {
     )
   })
 
-  it("el modo menú adjunta igual un comprobante recibido por Telegram", async () => {
-    const enMenu = { ...businessA, chat_mode: 'menu' }
+  it("un negocio sin IA adjunta igual un comprobante recibido por Telegram", async () => {
+    const enMenu = { ...businessA, chat_mode: 'miniapp' }
     const attachPaymentProof = vi.fn().mockResolvedValue({
       adjuntado: true,
       orderNumber: 43,

@@ -81,17 +81,21 @@ describe('análisis de etiquetas del bot', () => {
     })
   })
 
-  it('mantiene acciones multi-tenant en el orquestador TypeScript', () => {
+  it('sigue enganchado al orquestador, y este al negocio resuelto', () => {
+    // ⚠️ Esta prueba miraba además `bot-actions.ts` —que ejecutaba el pedido
+    // por chat y escribía `business_id: business.id` en cada acción—, y se
+    // retiró el 2026-09-16 con el modo menú, su único llamador. Lo que sigue
+    // valiendo es la cadena que queda: el orquestador engancha las etiquetas y
+    // la entrada engancha al orquestador.
     const service = fs.readFileSync(new URL('../src/services/bot-tags.ts', import.meta.url), 'utf8')
-    const actions = fs.readFileSync(new URL('../src/services/bot-actions.ts', import.meta.url), 'utf8')
     const conversation = fs.readFileSync(new URL('../src/services/bot-conversation.ts', import.meta.url), 'utf8')
     const entry = fs.readFileSync(new URL('../src/services/bot-entry.ts', import.meta.url), 'utf8')
     expect(service).not.toContain('@ts-nocheck')
     expect(conversation).toContain("require('./bot-tags')")
-    expect(conversation).toContain("require('./bot-actions')")
     expect(entry).toContain("require('./bot-conversation')")
-    expect(actions).toContain('business_id: business.id')
-    expect(actions).toContain('database.recordAiGap(')
-    expect(actions).not.toContain('@ts-nocheck')
+    expect(conversation).not.toContain("require('./bot-actions')")
+    // Todo lo que hace el orquestador cuelga del negocio que resolvió el canal:
+    // nunca de un id que venga en el mensaje.
+    expect(conversation).toContain('business.id')
   })
 })

@@ -36,10 +36,11 @@ export const ALLOWED_KEYS = [
   'platform_webhook_secret',
   'platform_webhook_endpoint_id',
   // ⚠️ Aquí vivía `marketplace_menu_max_productos`, el umbral de la «regla de
-  // los 20». Se retiró el 2026-08-23: cómo se pide lo decide ahora el TIPO del
-  // local (`marketplace_category_types.pide_en_chat`), no cuántos productos
-  // tiene. Contar productos mandaba una pizzería de 17 al chat, donde pedirla
-  // es tamaño, masa, borde y dos sabores.
+  // los 20», que decidía si un local se pedía por el chat o por la mini app.
+  // Se retiró el 2026-08-23 en favor del TIPO del local, y ese criterio también
+  // se fue: desde el 2026-09-16 TODO local pide por su mini app y no hay nada
+  // que decidir. Contar productos mandaba una pizzería de 17 al chat, donde
+  // pedirla es tamaño, masa, borde y dos sabores.
   // ── El análisis de comprobantes ───────────────────────────────────────
   //
   // ⚠️ `receipt_analysis_enabled` NACE APAGADO, y es deliberado. El análisis

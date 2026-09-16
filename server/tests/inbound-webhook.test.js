@@ -258,12 +258,12 @@ describe('procesador durable de webhooks', () => {
     )
   })
 
-  it("el modo menú no descarga, transcribe ni envía media a visión", async () => {
+  it("un negocio sin IA no descarga, transcribe ni envía media a visión", async () => {
     const current = setup({
       database: {
         getBusinessByChannel: vi.fn().mockResolvedValue({
           id: 'business-a',
-          chat_mode: 'menu',
+          chat_mode: 'miniapp',
           meta_token: 'meta-token-a',
           ycloud_api_key: 'ycloud-key-a',
         }),

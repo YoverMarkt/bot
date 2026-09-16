@@ -82,6 +82,10 @@ describe('onboarding durante el retiro por fases', () => {
     esperarTiendaPreservada(sinCanal)
   })
 
+  const sinMenu = ultimaFuncionOnboarding(
+    leer('migration-2026-09-16-el-canal-propio-tambien-es-mini-app.sql'),
+  )
+
   it('la retirada de la IA deja dos modos y no toca nada más', () => {
     expect(sinIA).toContain("v_chat_mode not in ('menu', 'miniapp')")
     expect(sinIA).not.toMatch(/'ai'/)
@@ -93,22 +97,36 @@ describe('onboarding durante el retiro por fases', () => {
     esperarTiendaPreservada(sinIA)
   })
 
+  it('la retirada del menú deja UN modo y suelta la exigencia de tienda', () => {
+    // ⚠️ La exigencia de pedidos+tienda para el modo mini app se RETIRA aquí, y
+    // es deliberado. Existía porque había otro modo al que caer: un negocio sin
+    // tienda se quedaba en `menu` y atendía igual. Con un solo modo pasaba a
+    // decir «todo local tiene que vender», y eso rompía ocultar un local.
+    expect(sinMenu).toContain("v_chat_mode not in ('miniapp')")
+    expect(sinMenu).not.toMatch(/'menu'/)
+    expect(sinMenu).toContain("'chat_mode'), ''), 'miniapp')")
+    expect(sinMenu).not.toContain('El modo miniapp requiere pedidos y tienda habilitados')
+    // Lo de las fases anteriores sigue en pie: nada se cae de rebote.
+    expect(sinMenu).toContain('Un negocio con canal propio necesita su número')
+    esperarTiendaPreservada(sinMenu)
+  })
+
   it('el contrato final de schema.sql coincide con la última migración', () => {
     const contratoFinal = ultimaFuncionOnboarding(leer('schema.sql'))
 
-    expect(contratoFinal).toBe(sinIA)
-    expect(contratoFinal).toContain("v_chat_mode not in ('menu', 'miniapp')")
+    expect(contratoFinal).toBe(sinMenu)
+    expect(contratoFinal).toContain("v_chat_mode not in ('miniapp')")
     expect(contratoFinal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
     expect(contratoFinal).toMatch(/\bprep_time_minutes,\s*delivery_extra_minutes/)
     esperarTiendaPreservada(contratoFinal)
   })
 
-  it('quedan DOS modos, y el defecto ya no es la IA', () => {
+  it('queda UN modo, y la base lo hace cumplir', () => {
     // ⚠️ El 2026-08-19 el dueño CONSERVÓ el modo IA junto al menú. El
-    // 2026-08-21 decidió lo contrario: todo lo que ve el cliente lo escribe el
-    // código. Si alguien vuelve a meter 'ai' aquí, esto lo caza.
+    // 2026-08-21 retiró la IA; el 2026-09-16, el menú. Si alguien vuelve a
+    // meter 'ai' o 'menu' aquí, esto lo caza.
     const schema = leer('schema.sql')
-    expect(schema).toContain("check (chat_mode in ('menu','miniapp'))")
-    expect(schema).toContain("chat_mode           text not null default 'menu'")
+    expect(schema).toContain("check (chat_mode in ('miniapp'))")
+    expect(schema).toContain("chat_mode           text not null default 'miniapp'")
   })
 })
