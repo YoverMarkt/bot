@@ -5,12 +5,16 @@ import { money } from '../lib/format'
 import { foto } from '../lib/imagen'
 import {
   chosenCount,
+  claveDelPlato,
+  esPlatoPorPartes,
   groupExtras,
+  lineasDelPlato,
   lineKey,
   missingRequirement,
   optionPriceLabel,
   pillLayout,
   singleChoice,
+  totalDelPlato,
   unitPrice,
 } from '../lib/cart'
 import type {
@@ -65,12 +69,18 @@ const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.fla
 )
 
 export default function ProductSheet({
-  product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir,
+  product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir, lineaEnCarrito = null,
 }: {
   product: Product | null
   abierto: boolean
   onCerrar: () => void
   onAgregar: (linea: CartLine) => void
+  /**
+   * La mesa que ya lleva el carrito para ESTE plato por partes. La ficha se
+   * abre con ella, para cambiar una sopa sin rehacer la mesa entera: una
+   * familia de diez no debería volver a marcar todo por una equivocación.
+   */
+  lineaEnCarrito?: CartLine | null
   /**
    * Un adicional entra al carrito como LÍNEA PROPIA, no dentro de este plato.
    * Por eso va por otro camino que `onAgregar`: si acabara dentro, el dueño
@@ -92,8 +102,11 @@ export default function ProductSheet({
     setUltimoId(idActual)
     setVariante(product?.variants[0] || null)
     setExtras([])
-    setOpciones(opcionesPorDefecto(product?.optionGroups || []))
-    setNota('')
+    // Un plato por partes que ya está en el carrito se abre con SU mesa: se
+    // edita, no se empieza de cero.
+    const mesa = product && esPlatoPorPartes(product) ? lineaEnCarrito : null
+    setOpciones(mesa ? mesa.options : opcionesPorDefecto(product?.optionGroups || []))
+    setNota(mesa?.note || '')
     setCantidad(1)
   }
 
@@ -102,8 +115,14 @@ export default function ProductSheet({
   // Un combo se arma eligiendo otros productos, así que sus grupos se pintan
   // como pasos. No se mira el tipo de comida: se mira si el producto se compone.
   const esCombo = product?.productType === 'combo' && gruposOpciones.length > 1
-  const precio = product ? unitPrice(product, variante, extras, opciones) : 0
-  const falta = missingRequirement(gruposOpciones, opciones)
+  // El plato por partes (un almuerzo): la mesa entera, contada en platos. Aquí
+  // no hay «Obligatorio» ni cantidad de líneas: lo que decide si se puede
+  // agregar es que la mesa forme platos que la base acepte.
+  const esPlato = product ? esPlatoPorPartes(product) : false
+  const plato = product && esPlato ? lineasDelPlato(product, opciones) : null
+  let precio = product ? unitPrice(product, variante, extras, opciones) : 0
+  if (plato) precio = totalDelPlato(plato.lines ?? [])
+  const falta = esPlato ? null : missingRequirement(gruposOpciones, opciones)
 
   // Los adicionales, por la sección que les puso el dueño y en su orden.
   const agrupadas = useMemo(() => {
@@ -179,6 +198,23 @@ export default function ProductSheet({
   }
 
   const agregar = () => {
+    // El plato por partes va en UNA línea con cantidad 1 —la mesa entera—, que
+    // es como la base lo acepta. Si ya estaba en el carrito, lo sustituye.
+    if (plato) {
+      if (!plato.lines) return
+      onAgregar({
+        key: claveDelPlato(product),
+        product,
+        variant: null,
+        extras: [],
+        options: opciones.filter(opcion => opcion.quantity > 0),
+        quantity: 1,
+        note: nota.trim(),
+        unitPrice: precio,
+      })
+      onCerrar()
+      return
+    }
     // Cinturón además del botón deshabilitado: si un obligatorio quedara sin
     // cumplir, el servidor rechazaría el pedido entero al confirmarlo, y el
     // cliente lo descubriría al final en vez de aquí.
@@ -200,6 +236,12 @@ export default function ProductSheet({
 
   const textoDelBoton = () => {
     if (!product.available) return 'Agotado'
+    if (plato) {
+      // El motivo largo va encima del botón; aquí basta con decir qué hacer.
+      if (!opciones.some(opcion => opcion.quantity > 0)) return 'Elige tu plato'
+      if (plato.error) return 'Completa el plato'
+      return `${lineaEnCarrito ? 'Actualizar' : 'Agregar'} · ${money(precio)}`
+    }
     if (faltaVariante) return 'Elige una opción'
     if (falta) return falta.message
     return `Agregar · ${money(precio * cantidad)}`
@@ -207,6 +249,15 @@ export default function ProductSheet({
 
   /** El precio de una opción: «Incluida», «+$1.50» o nada. */
   const precioDeOpcion = (group: OptionGroup, valor: number) => {
+    // En un plato por partes, lo que acompaña sin precio es GRATIS y lo dice
+    // —pedido del dueño: «todo producto que sea gratis, que ya diga gratis»—.
+    // Las porciones de una parte no llevan nada: su precio es el del plato.
+    if (esPlato) {
+      if (group.isMealPart) return null
+      if (valor === 0) {
+        return <span className="shrink-0 text-[12.5px] font-semibold texto-tenue">Gratis</span>
+      }
+    }
     // «Incluida» en vez de «$0.00» cuando el grupo viene con el plato: un cero
     // ahí se lee como un error de precio, no como algo ya pagado.
     const etiqueta = optionPriceLabel(group, valor)
@@ -295,6 +346,27 @@ export default function ProductSheet({
         {product.description && (
           <p className="mt-2.5 text-[14px] leading-relaxed texto-cuerpo">{product.description}</p>
         )}
+        {/* El plato por partes se explica ANTES de elegir: qué forma un plato
+            completo y cuánto cuesta cada parte suelta. Sin esto la familia
+            marca tres sopas y dos segundos sin saber qué va a pagar. */}
+        {esPlato && (
+          <div className="mt-3 rounded-2xl bg-marca-suave px-3.5 py-2.5 text-[13px] leading-snug texto-cuerpo">
+            <p>
+              <span className="font-bold">
+                {gruposOpciones.filter(grupo => grupo.isMealPart).map(grupo => grupo.name).join(' + ')}
+              </span>
+              {' '}= un plato completo a {money(product.priceFrom)}
+            </p>
+            <p className="mt-0.5 tabular-nums">
+              {gruposOpciones
+                .filter(grupo => grupo.isMealPart)
+                .map(grupo => (grupo.loosePrice == null
+                  ? `${grupo.name}: solo con el plato`
+                  : `${grupo.name} por separado ${money(grupo.loosePrice)}`))
+                .join(' · ')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ⚠️ El cuerpo va sobre el OFF-WHITE, no sobre el blanco de la hoja.
@@ -303,7 +375,8 @@ export default function ProductSheet({
           el mismo fondo de la carta, así que la ficha se siente parte de la
           misma app y no de un diálogo aparte. */}
       <div className="fondo-app space-y-6 px-4 pt-6 pb-3">
-        {product.variants.length > 0 && (
+        {/* Un plato por partes no tiene presentaciones: la base las rechaza. */}
+        {!esPlato && product.variants.length > 0 && (
           <section>
             <h3 className={ROTULO}>Elige una opción</h3>
             <div className={LISTA}>
@@ -380,11 +453,18 @@ export default function ProductSheet({
                         {cumplido ? '✓ Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}
                       </span>
                     )
-                  : group.maxSelectable > 1 && (
-                    <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue">
-                      Hasta {group.maxSelectable}
-                    </span>
-                  )}
+                  : esPlato
+                    // En la mesa no hay tope que contar: se dice cuántas lleva.
+                    ? usado > 0 && (
+                      <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
+                        {usado} en la mesa
+                      </span>
+                    )
+                    : group.maxSelectable > 1 && (
+                      <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue">
+                        Hasta {group.maxSelectable}
+                      </span>
+                    )}
               </h3>
               {group.description && (
                 <p className="mb-2 px-1 text-[12.5px] texto-cuerpo">{group.description}</p>
@@ -392,8 +472,9 @@ export default function ProductSheet({
 
               {/* Contador de avance: «3 de 7 seleccionados».
                   Solo donde se puede elegir más de una, que es donde el cliente
-                  pierde la cuenta. Con un tope de 1 sobra: el radio ya lo dice. */}
-              {group.maxSelectable > 1 && (
+                  pierde la cuenta. Con un tope de 1 sobra: el radio ya lo dice.
+                  En la mesa de un plato por partes no hay tope: sobra siempre. */}
+              {!esPlato && group.maxSelectable > 1 && (
                 <p className="mb-2 px-1 text-[12px] texto-tenue tabular-nums">
                   {usado} de {group.maxSelectable} seleccionados
                 </p>
@@ -497,8 +578,15 @@ export default function ProductSheet({
                                 )}
                               </span>
                               {precioDeOpcion(group, opcion.price)}
+                              {/* ⚠️ `minimo={0}`: el contador del sistema
+                                  arranca en 1, así que al llegar a 1 el «−» se
+                                  apagaba y una opción ya elegida NO se podía
+                                  quitar. En la mesa de una familia, una sopa
+                                  tocada por error se quedaba en el pedido. Lo
+                                  cazó el recorrido con Playwright (2026-09-14). */}
                               <Contador
                                 valor={elegida?.quantity || 0}
+                                minimo={0}
                                 onCambiar={valor => cambiarCantidadOpcion(group, seleccion, valor)}
                               />
                             </>
@@ -546,7 +634,9 @@ export default function ProductSheet({
           )
         })}
 
-        {grupos.map(({ group, items }) => {
+        {/* Los extras del modelo viejo no entran en un plato por partes: la base
+            los rechaza, y todo lo que acompaña va por los grupos de la mesa. */}
+        {!esPlato && grupos.map(({ group, items }) => {
           const maximo = items[0]?.maxSelectable || null
           const elegidos = extras.filter(item => (item.group || 'Extras') === group).length
           return (
@@ -675,10 +765,35 @@ export default function ProductSheet({
       </div>
 
       <div className="superficie sticky bottom-0 border-t borde-tema px-4 pt-3 pb-seguro">
+        {/* La MESA contada en platos, antes de agregar: «2 × Almuerzo del día
+            $6.00 · 1 × Solo segundo $2.50». Es lo que la familia necesita saber
+            —cuántos platos está pagando y a cuánto—, y son las mismas líneas que
+            va a guardar la base. Si todavía no forma platos, se dice por qué. */}
+        {plato && (plato.lines
+          ? (
+              <ul className="mb-2.5 space-y-1 text-[13px] texto-cuerpo">
+                {plato.lines.map((linea, indice) => (
+                  <li key={`${linea.name}-${indice}`} className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate">
+                      <span className="font-bold tabular-nums">{linea.quantity} ×</span>
+                      {' '}
+                      {linea.name}
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums">
+                      {money((Math.round(linea.unitPrice * 100) * linea.quantity) / 100)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )
+          : opciones.some(opcion => opcion.quantity > 0) && (
+            <p className="mb-2.5 text-[13px] leading-snug font-semibold texto-cuerpo">{plato.error}</p>
+          ))}
         {/* Precio actual: cómo va quedando según lo que elige.
             Solo en productos que se arman —donde el número CAMBIA mientras
-            eliges—; en uno simple repetiría lo que ya dice el botón. */}
-        {gruposOpciones.length > 0 && (
+            eliges—; en uno simple repetiría lo que ya dice el botón. En la mesa
+            lo dice el botón, con el desglose justo encima. */}
+        {!plato && gruposOpciones.length > 0 && (
           <div className="mb-2.5 flex items-baseline justify-between">
             <span className="text-[13px] font-semibold texto-cuerpo">Precio actual</span>
             <span className="text-[19px] font-extrabold tracking-tight tabular-nums">
@@ -687,11 +802,16 @@ export default function ProductSheet({
           </div>
         )}
         <div className="flex items-center gap-3">
-          <Contador valor={cantidad} onCambiar={setCantidad} />
+          {/* La mesa NO se multiplica: «2» sería pedirla entera dos veces, y la
+              base la rechaza. Las cantidades ya están en cada sopa y segundo. */}
+          {!plato && <Contador valor={cantidad} onCambiar={setCantidad} />}
           <div className="flex-1">
             <Boton
               onClick={agregar}
-              disabled={!puedePedir || faltaVariante || !product.available || Boolean(falta)}
+              disabled={
+                !puedePedir || faltaVariante || !product.available || Boolean(falta)
+                || Boolean(plato && !plato.lines)
+              }
             >
               {textoDelBoton()}
             </Boton>
