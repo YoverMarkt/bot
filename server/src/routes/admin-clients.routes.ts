@@ -7,6 +7,10 @@ interface TemplateSummary {
   aplicada: boolean
   motivo?: string
   categorias: number
+  /** Listas reutilizables: los sabores de una pizzería. */
+  listas: number
+  /** Productos de ejemplo. Nacen agotados siempre. */
+  productos: number
   grupos: number
   opciones: number
 }
@@ -253,8 +257,9 @@ function safeFailure(res: Response, context: string, error: unknown) {
 }
 
 /**
- * Deja el catálogo de arranque del tipo de negocio: sus categorías y los grupos
- * de opciones típicos de cada una.
+ * Deja el catálogo de arranque del tipo de negocio: sus categorías, los grupos
+ * típicos, sus listas y un producto de ejemplo AGOTADO armado como se arma de
+ * verdad en ese tipo (2026-09-16).
  *
  * Va DESPUÉS del alta y no puede tumbarla. Cuando se llega aquí el negocio, su
  * dueño, sus políticas y su cuota mensual ya existen y son transaccionales; una
@@ -280,6 +285,7 @@ const seedBusinessCatalog = async (
     if (summary?.aplicada) {
       console.log(
         `🛒 Catálogo inicial de ${name} (${type}) — ${summary.categorias} categorías, `
+        + `${summary.productos} producto(s) de ejemplo agotados, ${summary.listas} lista(s), `
         + `${summary.grupos} grupos de opciones`,
       )
     }

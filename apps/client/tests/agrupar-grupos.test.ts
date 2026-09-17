@@ -30,11 +30,11 @@ const grupo = (p: Partial<OptionGroup> & { id: string; name: string }): OptionGr
 } as OptionGroup)
 
 const PRODUCTOS = [
-  { id: 'almuerzo', name: 'Almuerzo del día', category_id: 'cat-alm' },
-  { id: 'solo-sopa', name: 'Solo sopa', category_id: 'cat-carta' },
-  { id: 'solo-segundo', name: 'Solo segundo', category_id: 'cat-carta' },
-  { id: 'agua', name: 'Agua', category_id: 'cat-beb' },
-] as Pick<Product, 'id' | 'name' | 'category_id'>[]
+  { id: 'almuerzo', name: 'Almuerzo del día', category_id: 'cat-alm', stock: 'disponible' },
+  { id: 'solo-sopa', name: 'Solo sopa', category_id: 'cat-carta', stock: 'disponible' },
+  { id: 'solo-segundo', name: 'Solo segundo', category_id: 'cat-carta', stock: 'disponible' },
+  { id: 'agua', name: 'Agua', category_id: 'cat-beb', stock: 'disponible' },
+] as Pick<Product, 'id' | 'name' | 'category_id' | 'stock'>[]
 
 const CATEGORIAS = [
   { id: 'cat-alm', name: 'Almuerzos' },
@@ -125,6 +125,37 @@ describe('el lío real de La Abuelita', () => {
     const { secciones } = repartir([grupo({ id: 'g-h', name: 'Suelto' })])
     expect(secciones[0]?.titulo).toBe('Sin asignar')
     expect(secciones[0]?.pie).toContain('no cuelga')
+  })
+})
+
+describe('el producto de ejemplo con el que nace un local', () => {
+  // Desde el 2026-09-16 cada local nace con UN producto de ejemplo AGOTADO —su
+  // precio es inventado—. Sus grupos están activos y llenos, así que por la
+  // regla de arriba contarían como visibles, y el pie diría «tu cliente elige»
+  // de algo que el cliente no puede pedir. Sería la misma mentira de antes.
+  //
+  // ⚠️ Agotado y NO inactivo: en este sistema un producto inactivo es un
+  // producto BORRADO, y el panel ni siquiera lo lista.
+  const ejemplo: Pick<Product, 'id' | 'name' | 'category_id' | 'stock'>[] = [
+    { id: 'pizza', name: 'Pizza', category_id: 'cat-piz', stock: 'agotado' },
+  ]
+  const grupos = [
+    grupo({ id: 'g-tam', name: 'Tamaño', product_id: 'pizza' }),
+    grupo({ id: 'g-sab', name: 'Sabor', product_id: 'pizza' }),
+  ]
+  const conOpciones = () => 3
+
+  it('no dice «tu cliente elige» de un producto que nadie puede pedir', () => {
+    const { secciones } = agruparGrupos(grupos, conOpciones, ejemplo, [])
+    expect(secciones[0]?.pie).not.toMatch(/^tu cliente elige/)
+    expect(secciones[0]?.pie)
+      .toBe('agotado · cuando lo pongas disponible, tu cliente elegirá: 1 Tamaño · 2 Sabor')
+  })
+
+  it('en cuanto se pone disponible, vuelve a decir lo que el cliente elige', () => {
+    const encendido = [{ ...ejemplo[0]!, stock: 'disponible' as const }]
+    const { secciones } = agruparGrupos(grupos, conOpciones, encendido, [])
+    expect(secciones[0]?.pie).toBe('tu cliente elige: 1 Tamaño · 2 Sabor')
   })
 })
 

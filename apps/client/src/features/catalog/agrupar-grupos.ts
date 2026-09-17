@@ -34,7 +34,7 @@ export interface RepartoDeGrupos {
 export function agruparGrupos(
   lista: OptionGroup[],
   cuantasOpciones: (grupoId: string) => number,
-  productos: Pick<Product, 'id' | 'name' | 'category_id'>[],
+  productos: Pick<Product, 'id' | 'name' | 'category_id' | 'stock'>[],
   categorias: Pick<Category, 'id' | 'name'>[],
 ): RepartoDeGrupos {
   const visibles: OptionGroup[] = []
@@ -80,11 +80,19 @@ export function agruparGrupos(
   // línea que conecta lo que el dueño configura con lo que acaba viendo, y la
   // que faltaba: el orden de los grupos ya decidía los pasos de la ficha, pero
   // en ningún sitio se leía como pasos.
+  //
+  // ⚠️ De un producto AGOTADO el cliente no elige nada, por activos y llenos
+  // que estén sus grupos. Es el caso del producto de ejemplo con el que nace
+  // cada local (2026-09-16): decir «tu cliente elige» ahí sería mentir.
   for (const seccion of mapa.values()) {
     if (seccion.esCategoria || seccion.pie) continue
-    seccion.pie = `tu cliente elige: ${seccion.grupos
+    const pasos = seccion.grupos
       .map((grupo, i) => `${i + 1} ${grupo.name}`)
-      .join(' · ')}`
+      .join(' · ')
+    const agotado = productos.find(p => p.id === seccion.clave)?.stock === 'agotado'
+    seccion.pie = agotado
+      ? `agotado · cuando lo pongas disponible, tu cliente elegirá: ${pasos}`
+      : `tu cliente elige: ${pasos}`
   }
 
   return { secciones: [...mapa.values()], ocultos }

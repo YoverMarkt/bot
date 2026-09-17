@@ -246,3 +246,163 @@ describe('un negocio nuevo nace ordenado', () => {
     expect(bebidas.orden).toBe(4)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CADA LOCAL NACE ARMADO (2026-09-16)
+//
+// Hasta hoy un local nacía con categorías y grupos colgados de la CATEGORÍA,
+// pero sin un solo producto. El dueño abría su panel y veía «Sopa, Segundo,
+// Guarnición… lo heredan 0 productos»: piezas sueltas sin nada que enseñara
+// cómo se juntan. Y en los almuerzos era peor que confuso — era IMPOSIBLE:
+// `option_groups_parte_del_plato_check` exige que una parte del plato cuelgue
+// de un PRODUCTO, así que la plantilla no podía producir el plato por partes
+// que usa La Abuelita. Todo dueño de almuerzos acababa con los dos juegos de
+// grupos, que es exactamente el lío de «tengo como 4 sopas».
+//
+// Ahora cada local de comida nace con UN producto de ejemplo, AGOTADO —su
+// dueño lo ve y lo edita; nadie lo puede pedir—, armado como se arma de verdad
+// en su tipo. Que nazca agotado lo impone la base y lo comprueban
+// `verificar-esquema.sql` y `plantillas-reales.mjs`. Las listas que se repiten (los sabores de
+// una pizzería) nacen como PLANTILLA y los grupos se enlazan a ella.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const productosDe = plantilla => plantilla.categorias.flatMap(c => c.productos || [])
+const productoDe = (tipo, nombre) => productosDe(templateForBusinessType(tipo))
+  .find(p => p.nombre === nombre)
+
+describe('cada local nace armado', () => {
+  it('todo local de comida nace con al menos un producto de ejemplo', () => {
+    const sinEjemplo = businessTypesWithTemplate()
+      .filter(tipo => productosDe(templateForBusinessType(tipo)).length === 0)
+    expect(sinEjemplo, `Nacen sin nada que enseñe cómo se arma: ${sinEjemplo.join(', ')}`)
+      .toEqual([])
+  })
+
+  it('el almuerzo nace armado por partes en un PRODUCTO, nunca en la categoría', () => {
+    for (const tipo of ['almuerzos', 'menu ejecutivo']) {
+      const plantilla = templateForBusinessType(tipo)
+      // Ni un grupo colgado de la categoría: son los que se duplicaban.
+      const deCategoria = plantilla.categorias.flatMap(c => c.grupos || [])
+      expect(deCategoria.map(g => g.nombre), tipo).toEqual([])
+
+      const [plato] = productosDe(plantilla)
+      expect(plato, tipo).toBeDefined()
+      expect(plato.grupos.map(g => g.nombre), tipo).toEqual(['Sopa', 'Segundo', 'Bebida'])
+
+      const [sopa, segundo, bebida] = plato.grupos
+      for (const parte of [sopa, segundo]) {
+        expect(parte.parte, `${tipo} → ${parte.nombre}`).toBe(true)
+        expect(parte.tipo).toBe('quantity')
+        // Se vende suelta: «Solo segundo» sin inventar otro producto.
+        expect(parte.precioSuelto).toBeGreaterThan(0)
+      }
+      // La bebida NO es parte: va gratis y la base la topa a una por plato.
+      expect(bebida.parte).toBeFalsy()
+      expect(bebida.cobro).toBe('included')
+      expect(bebida.tipo).toBe('quantity')
+    }
+  })
+
+  it('la pizzería nace con su lista de sabores, y el combo deja elegir cada pizza', () => {
+    const plantilla = templateForBusinessType('pizzeria')
+    expect((plantilla.listas || []).map(l => l.nombre)).toContain('Sabores')
+
+    const pizza = productoDe('pizzeria', 'Pizza')
+    expect(pizza.grupos.find(g => g.nombre === 'Sabor')?.lista).toBe('Sabores')
+
+    const combo = productosDe(plantilla).find(p => p.tipo === 'combo')
+    expect(combo).toBeDefined()
+    // La decisión del dueño: cada pizza del combo elige su sabor, de la MISMA
+    // lista. Un sabor nuevo aparece en la pizza y en el combo a la vez.
+    const pasosDeSabor = combo.grupos.filter(g => g.lista === 'Sabores')
+    expect(pasosDeSabor.map(g => g.nombre))
+      .toEqual(['Sabor de la 1.ª pizza', 'Sabor de la 2.ª pizza'])
+    // Y sin el paso falso «1. Elige tu pizza», que es el que Monster Pizza
+    // tenía y no elegía nada.
+    expect(combo.grupos.some(g => /^\d/.test(g.nombre))).toBe(false)
+  })
+
+  it('la heladería elige sus bolas de una lista de sabores', () => {
+    const plantilla = templateForBusinessType('heladeria')
+    expect((plantilla.listas || []).map(l => l.nombre)).toContain('Sabores')
+    const helado = productosDe(plantilla)[0]
+    const sabores = helado.grupos.find(g => g.lista === 'Sabores')
+    expect(sabores?.tipo).toBe('quantity')
+    // Tantas bolas como dice el nombre, ni una más ni una menos.
+    expect(sabores.min).toBe(sabores.max)
+  })
+
+  it('ningún producto de ejemplo ni lista rompe lo que la base exige', () => {
+    const problemas = []
+    for (const tipo of businessTypesWithTemplate()) {
+      const plantilla = templateForBusinessType(tipo)
+      const listas = new Map((plantilla.listas || []).map(l => [l.nombre, l]))
+
+      for (const lista of plantilla.listas || []) {
+        if (!(lista.opciones || []).length) problemas.push(`${tipo} → lista «${lista.nombre}» vacía`)
+      }
+
+      for (const categoria of plantilla.categorias) {
+        for (const grupo of categoria.grupos || []) {
+          // Una parte del plato solo puede colgar de un producto: la base lo
+          // rechaza en una categoría y el local nacería sin catálogo.
+          if (grupo.parte) problemas.push(`${tipo} → «${grupo.nombre}» es parte y cuelga de la categoría`)
+        }
+        for (const producto of categoria.productos || []) {
+          if (!producto.nombre?.trim() || producto.nombre.length > 120) {
+            problemas.push(`${tipo} → producto con nombre inválido`)
+          }
+          if (!(producto.precio > 0)) problemas.push(`${tipo} → «${producto.nombre}» sin precio`)
+          for (const grupo of producto.grupos || []) {
+            if (grupo.lista && !listas.has(grupo.lista)) {
+              problemas.push(`${tipo} → «${grupo.nombre}» usa la lista «${grupo.lista}», que no existe`)
+            }
+            // Enlazado a una lista, sus opciones las pone la base. Si además
+            // trajera las suyas se mezclarían dos orígenes en un grupo.
+            if (grupo.lista && (grupo.opciones || []).length) {
+              problemas.push(`${tipo} → «${grupo.nombre}» usa lista y trae opciones propias`)
+            }
+            if (grupo.obligatorio && !grupo.lista && !(grupo.opciones || []).length) {
+              problemas.push(`${tipo} → «${grupo.nombre}» es obligatorio y no tiene opciones`)
+            }
+            if (grupo.parte && grupo.tipo !== 'quantity') {
+              problemas.push(`${tipo} → «${grupo.nombre}» es parte y no se cuenta por porciones`)
+            }
+            if (grupo.precioSuelto != null && !grupo.parte) {
+              problemas.push(`${tipo} → «${grupo.nombre}» tiene precio suelto sin ser parte`)
+            }
+            if (grupo.tipo === 'single' && (grupo.max ?? 1) !== 1) {
+              problemas.push(`${tipo} → «${grupo.nombre}» es single con máximo ${grupo.max}`)
+            }
+            if (grupo.obligatorio && (grupo.min ?? 0) < 1) {
+              problemas.push(`${tipo} → «${grupo.nombre}» obligatorio sin mínimo`)
+            }
+            if ((grupo.min ?? 0) > (grupo.max ?? 1)) {
+              problemas.push(`${tipo} → «${grupo.nombre}» tiene mínimo > máximo`)
+            }
+          }
+        }
+      }
+    }
+    expect(problemas, problemas.join('\n')).toEqual([])
+  })
+
+  it('los productos, sus grupos y las listas nacen ordenados', () => {
+    for (const tipo of businessTypesWithTemplate()) {
+      const plantilla = templateForBusinessType(tipo)
+      for (const categoria of plantilla.categorias) {
+        ;(categoria.productos || []).forEach((producto, puesto) => {
+          expect(producto.orden, `${tipo} → ${producto.nombre}`).toBe(puesto)
+          ;(producto.grupos || []).forEach((grupo, lugar) => {
+            expect(grupo.orden, `${tipo} → ${producto.nombre} → ${grupo.nombre}`).toBe(lugar)
+          })
+        })
+      }
+      for (const lista of plantilla.listas || []) {
+        lista.opciones.forEach((opcion, lugar) => {
+          expect(opcion.orden, `${tipo} → ${lista.nombre} → ${opcion.nombre}`).toBe(lugar)
+        })
+      }
+    }
+  })
+})

@@ -144,11 +144,12 @@ export interface TagData {
 
 /**
  * Plantilla de arranque de un tipo de negocio: las categorías con las que nace
- * su catálogo y los grupos de opciones típicos de cada una.
+ * su catálogo, las listas que se repiten y UN producto de ejemplo armado como
+ * se arma de verdad en ese tipo.
  *
- * Los grupos cuelgan de la CATEGORÍA, no de un producto, porque al crear el
- * negocio todavía no existe ninguno. Los importes van en `recargo` y admiten
- * negativos («sin sopa −0.50»).
+ * Un grupo puede colgar de la CATEGORÍA (lo heredan todos sus productos) o de
+ * un producto de ejemplo. Los importes van en `recargo` y admiten negativos
+ * («sin huevos −0.50» en los desayunos).
  */
 export interface TemplateOption {
   nombre: string
@@ -158,21 +159,52 @@ export interface TemplateOption {
 
 export interface TemplateGroup {
   nombre: string
+  descripcion?: string
   tipo?: 'single' | 'multiple' | 'quantity'
   obligatorio?: boolean
   min?: number
   max?: number
   orden?: number
+  /** `pricing_strategy`. Sin él, `sum`: cada opción suma su recargo. */
+  cobro?: 'sum' | 'included' | 'highest_selected'
+  /** Parte del plato por partes. Solo en un producto y contada por porciones. */
+  parte?: boolean
+  /** Lo que cuesta una porción de la parte que no completa un plato. */
+  precioSuelto?: number
+  /** Nombre de una lista de `BusinessTemplate.listas`: la base pone las opciones. */
+  lista?: string
   opciones?: TemplateOption[]
+}
+
+/**
+ * Un producto de EJEMPLO. Nace AGOTADO siempre —lo impone la base, no esto—
+ * porque su precio es inventado. No oculto: aquí inactivo es borrado.
+ */
+export interface TemplateProduct {
+  nombre: string
+  precio: number
+  descripcion?: string
+  tipo?: 'simple' | 'configurable' | 'combo' | 'daily_menu'
+  orden?: number
+  grupos?: TemplateGroup[]
+}
+
+/** Una lista reutilizable (`option_templates`): los sabores de una pizzería. */
+export interface TemplateList {
+  nombre: string
+  descripcion?: string
+  opciones: TemplateOption[]
 }
 
 export interface TemplateCategory {
   nombre: string
   orden?: number
   grupos?: TemplateGroup[]
+  productos?: TemplateProduct[]
 }
 
 export interface BusinessTemplate {
+  listas?: TemplateList[]
   categorias: TemplateCategory[]
 }
 

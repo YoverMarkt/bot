@@ -146,3 +146,31 @@ mismo patrón de `product_variants`— y el guardián se añadió al CI.
 **La lección, que vale más que el arreglo:** un guardián que depende de que
 alguien se acuerde de correrlo no es un guardián. Si una verificación existe,
 tiene que estar en el camino automático.
+
+---
+## Las plantillas REALES del alta, contra PostgreSQL (2026-09-16)
+
+`server/tests/sql/plantillas-reales.mjs`, en el job `esquema` del CI y en
+`npm run verify:schema`. Da de alta un negocio por **cada** tipo con plantilla,
+le aplica la plantilla **de verdad** —la de `business-templates.ts`, no una
+copia escrita a mano— y exige que la base la acepte, que el local nazca con su
+producto de ejemplo, que ese ejemplo nazca **agotado** (nadie lo puede pedir)
+pero **activo** (aquí inactivo es borrado, y su dueño no lo vería) y que ningún
+grupo vivo quede vacío. Todo dentro de una transacción que se deshace.
+
+**Por qué hace falta aunque `plantillas-negocio.test.js` ya replique las reglas
+de la base:** este fallo es **silencioso por diseño**. El alta se traga el
+error de la plantilla a propósito —el negocio ya existe y no puede devolver un
+500—, así que una plantilla que la base rechace deja al local naciendo con el
+catálogo **vacío** y el motivo escondido en el registro de errores. Una copia
+de las reglas en JavaScript envejece; la base no.
+
+⚠️ **Lee el TypeScript sin compilar** (Node quita los tipos desde la 22.18):
+el job del esquema no instala dependencias y así sigue. Funciona porque
+`business-templates.ts` solo importa **tipos**. Si algún día importa un valor,
+el paso falla en voz alta, no en silencio.
+
+**Verificado que detecta**, no solo que pasa: una lista mal escrita
+(`"Sabore"`) para con «La plantilla enlaza «Sabores» a la lista «Sabore», que
+no trae», y una parte del plato sin marcar como parte para con la restricción
+`option_groups_parte_del_plato_check`.

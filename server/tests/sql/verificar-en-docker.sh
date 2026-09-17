@@ -35,6 +35,9 @@ psql_ -q < "$SERVER/schema.sql"
 echo "🧪 Ejecutando las funciones críticas…"
 psql_ < "$AQUI/verificar-esquema.sql"
 
+echo "🍽️  Aplicando las plantillas REALES del alta…"
+node --no-warnings "$AQUI/plantillas-reales.mjs" | psql_
+
 echo "🔒 Comprobando el aislamiento entre negocios…"
 psql_ < "$AQUI/verificar-aislamiento.sql"
 

@@ -2735,6 +2735,193 @@ end;
 $plantillas$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- CADA LOCAL NACE ARMADO: producto de ejemplo, parte del plato y listas
+-- ═══════════════════════════════════════════════════════════════════════════
+-- La plantilla vieja solo sabía colgar grupos de la CATEGORÍA, y una parte del
+-- plato no puede vivir ahí (`option_groups_parte_del_plato_check`). Un local de
+-- almuerzos nacía, así, sin forma de tener el plato por partes que usa La
+-- Abuelita, y acababa con dos juegos de grupos.
+do $armado$
+declare
+  v_armado uuid; v_roto uuid; v_con_lista uuid;
+  v_resultado jsonb;
+  v_plantilla jsonb := jsonb_build_object(
+    'listas', jsonb_build_array(jsonb_build_object(
+      'nombre', 'Sabores',
+      'opciones', jsonb_build_array(
+        jsonb_build_object('nombre', 'Hawaiana', 'orden', 0),
+        jsonb_build_object('nombre', 'Mexicana', 'recargo', 1, 'orden', 1)
+      )
+    )),
+    'categorias', jsonb_build_array(
+      jsonb_build_object(
+        'nombre', 'Almuerzos', 'orden', 0,
+        'productos', jsonb_build_array(jsonb_build_object(
+          'nombre', 'Almuerzo del día', 'precio', 3.5, 'tipo', 'daily_menu',
+          'descripcion', 'Ejemplo', 'orden', 0,
+          'grupos', jsonb_build_array(
+            jsonb_build_object(
+              'nombre', 'Sopa', 'tipo', 'quantity', 'obligatorio', true,
+              'min', 1, 'max', 100, 'cobro', 'included', 'parte', true,
+              'precioSuelto', 1.5, 'orden', 0,
+              'opciones', jsonb_build_array(jsonb_build_object('nombre', 'Caldo'))
+            ),
+            jsonb_build_object(
+              'nombre', 'Bebida', 'tipo', 'quantity', 'obligatorio', true,
+              'min', 1, 'max', 100, 'cobro', 'included', 'orden', 1,
+              'opciones', jsonb_build_array(jsonb_build_object('nombre', 'Jugo'))
+            )
+          )
+        ))
+      ),
+      jsonb_build_object(
+        'nombre', 'Combos', 'orden', 1,
+        'productos', jsonb_build_array(jsonb_build_object(
+          'nombre', 'Combo pareja', 'precio', 12, 'tipo', 'combo', 'orden', 0,
+          'grupos', jsonb_build_array(
+            jsonb_build_object(
+              'nombre', 'Sabor de la 1.ª pizza', 'tipo', 'single',
+              'obligatorio', true, 'min', 1, 'max', 1, 'lista', 'Sabores', 'orden', 0,
+              'descripcion', 'Elige de la lista'
+            ),
+            jsonb_build_object(
+              'nombre', 'Sabor de la 2.ª pizza', 'tipo', 'single',
+              'obligatorio', true, 'min', 1, 'max', 1, 'lista', 'Sabores', 'orden', 1
+            )
+          )
+        ))
+      )
+    )
+  );
+begin
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-armado', 'Armado', 'pizzería', 'ycloud',
+    '+593900888011', '+593900888011', true)
+  returning id into v_armado;
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-armado-roto', 'Roto', 'pizzería', 'ycloud',
+    '+593900888012', '+593900888012', true)
+  returning id into v_roto;
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-armado-lista', 'Con lista', 'pizzería', 'ycloud',
+    '+593900888013', '+593900888013', true)
+  returning id into v_con_lista;
+
+  v_resultado := public.apply_business_template(v_armado, v_plantilla);
+  -- 2 categorías, 1 lista, 2 productos, 4 grupos; opciones = Caldo + Jugo +
+  -- dos copias de la lista en cada paso del combo.
+  if (v_resultado->>'aplicada')::boolean is not true
+     or (v_resultado->>'categorias')::integer <> 2
+     or (v_resultado->>'listas')::integer <> 1
+     or (v_resultado->>'productos')::integer <> 2
+     or (v_resultado->>'grupos')::integer <> 4
+     or (v_resultado->>'opciones')::integer <> 6 then
+    raise exception 'la plantilla armada no cargó lo que trae: %', v_resultado;
+  end if;
+
+  -- ⚠️ Un producto de ejemplo NACE AGOTADO, lo diga o no la plantilla: su
+  -- precio es inventado, y un local recién abierto no puede venderlo.
+  if exists (
+    select 1 from products where business_id = v_armado and stock <> 'agotado'
+  ) then
+    raise exception 'un producto de ejemplo nació a la venta';
+  end if;
+  -- Y ACTIVO: aquí inactivo es BORRADO, y el panel no se lo enseñaría al dueño.
+  if exists (select 1 from products where business_id = v_armado and not active) then
+    raise exception 'un producto de ejemplo nació borrado: su dueño no lo vería';
+  end if;
+  if not exists (
+    select 1 from products
+    where business_id = v_armado and name = 'Almuerzo del día'
+      and price = 3.5 and product_type = 'daily_menu' and description = 'Ejemplo'
+  ) then
+    raise exception 'el producto de ejemplo perdió su precio, tipo o descripción';
+  end if;
+
+  -- La parte del plato cuelga del PRODUCTO, con su precio suelto y gratis.
+  if not exists (
+    select 1 from option_groups g
+    join products p on p.id = g.product_id
+    where g.business_id = v_armado and p.name = 'Almuerzo del día'
+      and g.name = 'Sopa' and g.category_id is null and g.is_meal_part
+      and g.loose_price = 1.5 and g.pricing_strategy = 'included'
+      and g.selection_type = 'quantity' and g.required and g.max_selectable = 100
+  ) then
+    raise exception 'la parte del plato no quedó colgada del producto';
+  end if;
+  if exists (
+    select 1 from option_groups
+    where business_id = v_armado and name = 'Bebida' and is_meal_part
+  ) then
+    raise exception 'la bebida gratis quedó como parte del plato';
+  end if;
+
+  -- Cada paso del combo enlazado a la MISMA lista, con sus copias y su recargo.
+  if (
+    select count(*) from options o
+    join option_groups g on g.id = o.option_group_id
+    join option_templates t on t.id = g.option_template_id
+    where g.business_id = v_armado and t.name = 'Sabores'
+      and o.option_template_item_id is not null
+  ) <> 4 then
+    raise exception 'los pasos del combo no heredaron la lista de sabores';
+  end if;
+  if not exists (
+    select 1 from options o
+    join option_groups g on g.id = o.option_group_id
+    where g.business_id = v_armado and g.name = 'Sabor de la 2.ª pizza'
+      and o.name = 'Mexicana' and o.price_adjustment = 1
+  ) then
+    raise exception 'la copia de la lista perdió el recargo';
+  end if;
+  if not exists (
+    select 1 from option_groups
+    where business_id = v_armado and name = 'Sabor de la 1.ª pizza'
+      and description = 'Elige de la lista' and sort = 0
+  ) then
+    raise exception 'el grupo perdió su descripción o su orden';
+  end if;
+
+  -- Una lista que la plantilla no trae es un error de la plantilla: se rechaza
+  -- ENTERA en vez de dejar un combo con un paso vacío.
+  begin
+    perform public.apply_business_template(v_roto, jsonb_build_object(
+      'categorias', jsonb_build_array(jsonb_build_object(
+        'nombre', 'Combos',
+        'productos', jsonb_build_array(jsonb_build_object(
+          'nombre', 'Combo', 'precio', 10,
+          'grupos', jsonb_build_array(jsonb_build_object(
+            'nombre', 'Sabor', 'tipo', 'single', 'obligatorio', true,
+            'min', 1, 'max', 1, 'lista', 'No existe'
+          ))
+        ))
+      ))
+    ));
+    raise exception 'la plantilla aceptó enlazar una lista que no trae';
+  exception when invalid_parameter_value then null;
+  end;
+  if exists (select 1 from product_categories where business_id = v_roto)
+     or exists (select 1 from products where business_id = v_roto) then
+    raise exception 'la plantilla rota dejó filas a medias';
+  end if;
+
+  -- El portón también mira las listas: quien ya armó una tomó decisiones.
+  insert into option_templates (business_id, name) values (v_con_lista, 'Mía');
+  v_resultado := public.apply_business_template(v_con_lista, v_plantilla);
+  if (v_resultado->>'aplicada')::boolean is not false
+     or exists (select 1 from product_categories where business_id = v_con_lista) then
+    raise exception 'la plantilla pisó un negocio que ya tenía listas: %', v_resultado;
+  end if;
+
+  delete from businesses where id in (v_armado, v_roto, v_con_lista);
+  raise notice 'LOCAL ARMADO: ejemplo agotado y visible, parte del plato, listas y portón comprobados';
+end;
+$armado$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- `create or replace function` con un parámetro nuevo NO reemplaza: crea una
