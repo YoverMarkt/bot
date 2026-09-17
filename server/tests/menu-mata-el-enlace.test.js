@@ -68,9 +68,11 @@ describe('MENÚ revoca el enlace anterior', () => {
     expect(m.database.revokeAllStorefrontSessions).toHaveBeenCalledWith('cli-1')
   })
 
-  it('y también el botón «Empezar de nuevo», que entra por el otro camino', async () => {
+  it('y también «Empezar de nuevo» ESCRITO, que entra por el otro camino', async () => {
     // ⚠️ Su texto normaliza a un COMANDO_MENU, así que llega por la rama de la
     // pregunta de reinicio. Conectar solo una dejaría la mitad sin revocar.
+    // ⚠️ Esto cubre a quien lo ESCRIBE. El BOTÓN llega como número: ver la
+    // prueba de «1» más abajo, que es la que faltaba.
     const m = armar({ estado: 'en_local' })
     m.database.getConversation.mockResolvedValue({
       current_state: 'en_local', selected_business_id: 'biz-1', shopping_locked: true,
@@ -78,6 +80,33 @@ describe('MENÚ revoca el enlace anterior', () => {
     })
     await escribir(m.deps, '✅ Empezar de nuevo')
     expect(m.database.revokeAllStorefrontSessions).toHaveBeenCalledWith('cli-1')
+  })
+
+  it('el botón como llega DE VERDAD: con YCloud es su NÚMERO, «1», no su título', async () => {
+    // ⚠️ Caso real (2026-09-17). La prueba de arriba mandaba el título, y
+    // producción nunca lo manda: `ycloudContent` entrega el id del botón, que
+    // es el número de la opción. «1» no es un comando de MENÚ, así que entraba
+    // por la rama de la pregunta de reinicio, que cancelaba el pedido pero NO
+    // revocaba el enlace. El dueño tocó «✅ Empezar de nuevo» y el enlace de
+    // arriba seguía abriendo la carta.
+    const m = armar({ estado: 'confirmando_reinicio' })
+    m.database.getConversation.mockResolvedValue({
+      current_state: 'confirmando_reinicio', selected_business_id: 'biz-1', shopping_locked: true,
+      flow_state: { vista: { vista: 'confirmando_reinicio', pagina: 0 } }, version: 3,
+    })
+    await escribir(m.deps, '1')
+    expect(m.database.cancelUnpaidOrderOnPurpose).toHaveBeenCalled()
+    expect(m.database.revokeAllStorefrontSessions).toHaveBeenCalledWith('cli-1')
+  })
+
+  it('«2» —Seguir mi pedido— NO los revoca todos: devuelve el enlace', async () => {
+    const m = armar({ estado: 'confirmando_reinicio' })
+    m.database.getConversation.mockResolvedValue({
+      current_state: 'confirmando_reinicio', selected_business_id: 'biz-1', shopping_locked: true,
+      flow_state: { vista: { vista: 'confirmando_reinicio', pagina: 0 } }, version: 3,
+    })
+    await escribir(m.deps, '2')
+    expect(m.database.revokeAllStorefrontSessions).not.toHaveBeenCalled()
   })
 
   // ⚠️ LA EXCEPCIÓN. Sin ella, quien ya transfirió se queda sin la pantalla
