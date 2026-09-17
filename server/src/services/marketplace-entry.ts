@@ -448,6 +448,12 @@ export async function handleMarketplaceMessage(
 
     if (reinicia) {
       await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
+      // ⚠️ Y SE REVOCA, igual que en las dos ramas de MENÚ (2026-09-17). Este
+      // es el camino REAL del botón «✅ Empezar de nuevo»: con YCloud llega su
+      // NÚMERO («1»), no su título, y «1» no es un comando de MENÚ. Se creía
+      // que el botón entraba por arriba —la prueba mandaba el título—, así que
+      // en producción el enlace seguía abriendo la carta después de reiniciar.
+      await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
     }
 
     await guardar(deps, customer.id, conversation?.version, respuesta, {
