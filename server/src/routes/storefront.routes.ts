@@ -274,6 +274,14 @@ router.get('/api/store/:slug', readStorefrontBlock, async (req, res) => {
         permanent: req.storefrontBlock.permanent,
       }
       : null,
+    /**
+     * ⚠️ El enlace con el que se abrió ya no vale (revocado o caducado).
+     *
+     * La app lo mira ANTES de montar la tienda, igual que `blocked`, y pinta
+     * «Tu enlace expiró» en vez de la carta. Si se enterara al pedir la carta,
+     * la tienda ya estaría montada y el aviso saldría encima de un menú vacío.
+     */
+    expired: req.storefrontExpired === true,
     business: {
       // ⚠️ `catch(() => null)`: sin el número del marketplace la tienda abre
       // igual, solo que sin los botones de WhatsApp. Que un fallo leyendo

@@ -115,6 +115,13 @@ export const getStore = (slug: string) => request<{
   status: StoreStatus
   canOrder: boolean
   blocked: Bloqueo | null
+  /**
+   * El enlace con el que se abrió ya no vale (revocado o caducado).
+   *
+   * Opcional porque un servidor anterior no lo manda, y ahí la app se comporta
+   * como siempre: mira la carta y el 401 llega al pagar.
+   */
+  expired?: boolean
 }>(`/${slug}`)
 
 export const getCatalog = (slug: string) => request<Catalog>(`/${slug}/catalog`)

@@ -140,6 +140,20 @@ export default function App() {
         })
       }
 
+      // ⚠️ EL ENLACE MUERTO TAMPOCO MONTA LA TIENDA (2026-09-16).
+      //
+      // Por el mismo motivo que el bloqueo de arriba, y con el mismo síntoma:
+      // hasta hoy la carta se veía con un enlace revocado, el cliente armaba
+      // su carrito y escribía su dirección, y el aviso le saltaba al pagar.
+      // El dueño: «si suben en el chat e ingresan, que les diga que el link
+      // expiró y que no les deje ver el menú».
+      //
+      // ⚠️ Solo cuando el enlace VINO y ya no vale. Quien llega SIN enlace no
+      // trae `expired` y sigue viendo la carta: la tienda es pública.
+      if (datos.expired) {
+        return setEstado({ fase: 'bloqueada', business: datos.business, motivo: 'revocada' })
+      }
+
       if (!enMovil) return setEstado({ fase: 'escritorio', business: datos.business })
       // La carta se ve sin enlace: un enlace de comida se reenvía, se pega en
       // una historia y se busca, y quien llegue tiene que poder mirar antes de

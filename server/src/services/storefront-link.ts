@@ -61,6 +61,11 @@ interface LinkDatabase {
     customerId: string,
     keepSessionId: string,
   ): Promise<number>
+  /** La estricta: también cae el enlace viejo del mismo local. */
+  revokeStorefrontSessionsExcept?(
+    customerId: string,
+    keepSessionId: string,
+  ): Promise<number>
 }
 
 /** No se manda el mismo enlace en cada mensaje: molesta y llena la tabla. */
@@ -230,6 +235,12 @@ export function createStorefrontLinkService(dependencies: {
     name?: string | null
     /** true para saltarse el cooldown (el cliente lo pidió expresamente). */
     force?: boolean
+    /**
+     * true para que SOLO quede vivo este enlace, incluso dentro del mismo
+     * local. Lo usa «Seguir mi pedido»: el dueño pidió que tras continuar
+     * «todo lo de atrás no funcione».
+     */
+    soloEste?: boolean
   }): Promise<string | null> {
     const { business, phone } = input
     if (!storefrontAvailable(business) || !phone) return null
@@ -256,10 +267,17 @@ export function createStorefrontLinkService(dependencies: {
       // ningún enlace vivo. Si algo falla aquí NO se pierde el enlace —el
       // `catch` de fuera devolvería null y el cliente se quedaría sin tienda
       // por una limpieza—, así que se traga aparte.
-      if (sesion?.id && database.revokeOtherStorefrontSessions) {
-        await database
-          .revokeOtherStorefrontSessions(customer.id, sesion.id)
-          .catch(() => 0)
+      if (sesion?.id) {
+        // ⚠️ La estricta solo si se pidió Y existe. Sin ella se cae a la de
+        // siempre en vez de a nada: un enlace viejo del mismo local vivo es
+        // un fallo menor; los de OTROS locales vivos reabren el agujero que
+        // se cerró el 2026-09-03.
+        const revocar = input.soloEste && database.revokeStorefrontSessionsExcept
+          ? database.revokeStorefrontSessionsExcept
+          : database.revokeOtherStorefrontSessions
+        if (revocar) {
+          await revocar(customer.id, sesion.id).catch(() => 0)
+        }
       }
       const url = buildStorefrontUrl({
         baseUrl: readBaseUrl(),

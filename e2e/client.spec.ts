@@ -559,7 +559,15 @@ test('el dueño arma un almuerzo por partes desde la ficha del producto', async 
   await ficha.getByRole('button', { name: 'Armarlo por partes' }).click()
 
   // Las dos partes, y la regla dicha como la leerá el cliente.
-  await expect(ficha.getByLabel('Parte')).toHaveCount(2)
+  //
+  // ⚠️ `exact: true`, y era un fallo de la PRUEBA que costó varias vueltas de CI
+  // (2026-09-16). `getByLabel` busca por SUBCADENA, así que «Parte» casaba
+  // también con los botones «Quitar la parte Sopa» y «Quitar la parte Segundo»:
+  // 4 coincidencias para 2 partes. Y parpadeaba porque esos botones se pintan
+  // un instante después que los campos — si la aserción llegaba en esa
+  // ventana veía 2 y pasaba; en un CI lento ya veía 4. Se demostró contando
+  // los POST: siempre fueron 2. La app nunca creó partes de más.
+  await expect(ficha.getByLabel('Parte', { exact: true })).toHaveCount(2)
   await expect(ficha.getByText('Sopa + Segundo = un plato completo a $10.00')).toBeVisible()
 
   // Un plato dentro de una parte, agregado con Enter.

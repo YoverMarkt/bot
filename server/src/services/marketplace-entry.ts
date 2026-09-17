@@ -154,6 +154,8 @@ export interface MarketplaceEntryDeps {
     phone: string
     name?: string | null
     force?: boolean
+    /** Que SOLO quede vivo este enlace, incluso dentro del mismo local. */
+    soloEste?: boolean
   }): Promise<string | null>
   /**
    * Manda la respuesta. Una opción puede ser texto o `{title, description}`:
@@ -1069,6 +1071,12 @@ async function devolverElEnlace(
     name: customer.name,
     // Lo acaba de pedir con todas las letras: el cooldown no aplica.
     force: true,
+    // ⚠️ Y SOLO este enlace queda vivo (2026-09-16). El dueño: «si el cliente
+    // lo dejó y selecciona continuar con un pedido, que todo lo de atrás no
+    // funcione». Sin esto, el enlace viejo de este mismo local seguía abriendo
+    // la tienda. Quien debe dinero no llega aquí —lo filtra el `if` de quien
+    // llama— y, por si acaso, la base tampoco le revoca ese local.
+    soloEste: true,
   })
   if (!url) {
     logger?.log(`⚠️  [marketplace] «seguir mi pedido» sin enlace para ${business.slug}`)

@@ -34,6 +34,7 @@ un módulo concreto, no en cada sesión.
 - [El canal propio también pide por su mini app](#el-canal-propio-también-pide-por-su-mini-app)
 - [El panel enseñaba cuatro «Sopa» seguidas](#el-panel-enseñaba-cuatro-sopa-seguidas)
 - [Lo que va gratis, va por plato](#lo-que-va-gratis-va-por-plato)
+- [Un enlace viejo dice que expiró, y no enseña la carta](#un-enlace-viejo-dice-que-expiró-y-no-enseña-la-carta)
 
 ---
 
@@ -370,7 +371,7 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 ## «Seguir mi pedido» DEVUELVE el enlace
 
-- **«Seguir mi pedido» devuelve el enlace** (`marketplace-entry.ts`, 2026-09-03). Es la condición que el dueño puso al enlace estricto —«o escribes MENÚ y listo»— y **sin ella el enlace de un uso sería una trampa**. Hasta ahora esa rama contestaba «Perfecto, sigues en *X*. Termina tu pedido cuando quieras 👍» y nada más: una calle sin salida justo para quien escribió MENÚ **porque no encontraba su enlace** —lo borró, se le perdió entre mensajes, cambió de teléfono—. Sus dos opciones eran tirar el pedido o seguir sin poder entrar. Ahora recibe su enlace en el mismo mensaje. ⚠️ **No le mata la sesión que ya tenga abierta**: la revocación respeta el local vigente a propósito (excepción 1), o recargar con un token nuevo le vaciaría el carrito. ⚠️ **Solo en los locales de mini app**: en los que se piden dentro del chat no hay enlace que dar, y el siguiente mensaje ya devuelve a su menú. ⚠️ **Falla hacia el texto de siempre**: quedarse mudo con alguien que acaba de decir que sigue con su pedido sería peor que no darle el enlace. ⚠️ `resolverReinicio` devuelve ahora `continua` además de `reinicia`, y **no son lo contrario**: son TRES respuestas —reiniciar, seguir, y no haber entendido—, y solo la segunda merece enlace. Deducirlo de `options.length === 0` funcionaba, pero ataba una decisión de flujo a cuántos botones lleva un mensaje.
+- **«Seguir mi pedido» devuelve el enlace** (`marketplace-entry.ts`, 2026-09-03). Es la condición que el dueño puso al enlace estricto —«o escribes MENÚ y listo»— y **sin ella el enlace de un uso sería una trampa**. Hasta ahora esa rama contestaba «Perfecto, sigues en *X*. Termina tu pedido cuando quieras 👍» y nada más: una calle sin salida justo para quien escribió MENÚ **porque no encontraba su enlace** —lo borró, se le perdió entre mensajes, cambió de teléfono—. Sus dos opciones eran tirar el pedido o seguir sin poder entrar. Ahora recibe su enlace en el mismo mensaje. ⚠️ ~~**No le mata la sesión que ya tenga abierta**: la revocación respeta el local vigente a propósito (excepción 1), o recargar con un token nuevo le vaciaría el carrito.~~ **Revertido el 2026-09-16**: ahora deja vivo SOLO el enlace nuevo, incluido el del mismo local — ver «[Un enlace viejo dice que expiró](#un-enlace-viejo-dice-que-expiró-y-no-enseña-la-carta)». ⚠️ **Solo en los locales de mini app**: en los que se piden dentro del chat no hay enlace que dar, y el siguiente mensaje ya devuelve a su menú. ⚠️ **Falla hacia el texto de siempre**: quedarse mudo con alguien que acaba de decir que sigue con su pedido sería peor que no darle el enlace. ⚠️ `resolverReinicio` devuelve ahora `continua` además de `reinicia`, y **no son lo contrario**: son TRES respuestas —reiniciar, seguir, y no haber entendido—, y solo la segunda merece enlace. Deducirlo de `options.length === 0` funcionaba, pero ataba una decisión de flujo a cuántos botones lleva un mensaje.
 
 ## UNA SOLA definición de «bloqueado», y la mini app la respeta
 
@@ -927,3 +928,29 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 - **Comprobado fallando antes del arreglo**, en el verificador que ejecuta las funciones contra PostgreSQL real: «se aceptaron 5 jugos gratis para 1 solo plato».
 
 - ⚠️ **Lo que NO se tocó:** `max_selectable` de los grupos se queda en 100. El tope real es dinámico —depende de cuántos platos lleve el cliente— así que bajarlo a mano daría un número fijo y equivocado en cuanto alguien pida dos almuerzos.
+
+## Un enlace viejo dice que expiró, y no enseña la carta
+
+- **Decisión del dueño (2026-09-16):** «cuando se coloque MENÚ, o si se estaba haciendo el pedido pero el cliente lo dejó y selecciona continuar con un pedido, que pase igual: todo lo de atrás no funcione. Y si suben en el chat e ingresan al link, que les diga que el link expiró y que no les deje ver el menú».
+
+- **MENÚ ya lo cumplía** desde el 2026-09-03. Los otros dos pedidos, **no**, y los dos por decisiones escritas a propósito que el dueño revierte aquí.
+
+- ⚠️ **Un enlace muerto ENSEÑABA LA CARTA ENTERA.** Lo decía el propio `readStorefrontSession`: «un token inválido, revocado o de otro negocio no rompe la visita: se ve el catálogo como cualquier visitante». El cliente subía por el chat, tocaba un enlace viejo, **veía el menú, armaba su carrito, escribía su dirección**… y el «este enlace ya no está activo» le saltaba al pagar. Dejarle trabajar para darle el portazo al final. Había una prueba que lo exigía: «un enlace revocado deja mirar, pero no ser nadie».
+
+- ⚠️ **Rechazarlo solo en la carta NO bastaba, y por cómo arranca la app.** Al abrirse no pide la carta: pide la **portada**, y con ella decide si monta la tienda; la carta llega después, con la tienda ya montada. Un 401 ahí pintaría el aviso **encima de un menú vacío**. El bloqueo ya había resuelto exactamente esto el 2026-08-29 —«el bloqueo gana a todo, y va antes de montar nada»—, así que el enlace muerto va **por el mismo camino**: la portada trae `expired` y la app lo mira antes de montar nada. La carta rechaza además con 401, que es el candado de verdad; la portada es solo para que el aviso salga a tiempo.
+
+- ⚠️ **Muerto = revocado o caducado, y NADA más.** Los dos los confirma la propia fila de la sesión, así que no hay falso positivo posible. Se dejan fuera a propósito: `necesita_telefono` —es la primera apertura de TODO enlace nuevo; tratarlo como muerto dejaría a cada cliente fuera el primer día—, `no_existe` —cubre también «llegó sin enlace», que es la tienda pública— y `otro_negocio`/`otro_dispositivo`, que no son enlaces muertos sino ajenos. **Medido en producción antes de decidir el alcance:** de 93 enlaces, 80 revocados, 13 vivos y **0 caducados**. La limpieza diaria solo borra sesiones con fecha de caducidad, y desde el 2026-08-02 los enlaces no la tienen, así que un revocado **conserva su fila** y vuelve siempre como `revocada`.
+
+- ⚠️ **La tienda SIGUE siendo pública para quien llega sin enlace**, y eso no se toca: un enlace de comida se reenvía y se busca, y quien llegue tiene que poder mirar antes de dar su número. Lo vigila la prueba «sin enlace se ve la carta».
+
+- ⚠️ **«Seguir mi pedido» deja vivo SOLO el enlace nuevo.** Emitía con `revoke_other_storefront_sessions`, que perdona **todas** las sesiones del mismo local para no vaciar un carrito que vive en memoria. Pero esa protección casi no protege nada en WhatsApp: el navegador interno **se cierra al volver al chat**, y el carrito se va con él. Cuando alguien está escribiendo «seguir mi pedido», su carrito ya no existe. Se usa `revoke_storefront_sessions_except`, idéntica salvo por esa línea.
+
+- ⚠️ **Es una función NUEVA con otro nombre**, no un parámetro más en la vieja: `create or replace function` con un parámetro nuevo **no reemplaza**, crea una segunda función y los `grant` de la firma vieja dejan de valer (ver VERIFICACION.md). Y la vieja **se queda**: al ELEGIR un local desde el menú, conservar el carrito del local vigente sí puede tener sentido, y el dueño no pidió cambiar eso.
+
+- ⚠️ **Si la estricta no existe, se cae a la de siempre, nunca a nada.** Un enlace viejo del mismo local vivo es un fallo menor; los de OTROS locales vivos reabrirían el agujero que se cerró el 2026-09-03.
+
+- ⚠️ **Lo que NO cede, en ninguno de los dos caminos:** el local donde queda un pedido en `esperando_pago`. Ahí viven los datos bancarios y la captura del pago, y **el camino del dinero no se corta nunca**. Lo decide la base en la misma consulta que revoca.
+
+- ⚠️ **«Expiró», no «ya no está activo»**, y el detalle dice por qué: «ya abriste uno más nuevo, o volviste al inicio del chat». Que por dentro sea una revocación al cliente le da igual; lo que necesita es saber que su enlace no sirve y cómo conseguir otro — y el botón a WhatsApp con el local ya escrito sigue ahí.
+
+- **Falla ABIERTO, como el bloqueo:** si la base revienta al abrir la portada, la portada abre sin marcar nada. Echar a un cliente legítimo por un fallo nuestro es peor, y la carta y el pedido siguen exigiendo un enlace que valga.
