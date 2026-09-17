@@ -655,3 +655,65 @@ test('Personalización agrupa por producto y aparta lo que el cliente no ve', as
   await cajon.click()
   await expect(page.getByText('sin opciones, tu cliente no lo ve')).toBeVisible()
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LAS PLANTILLAS SE PUEDEN LLENAR, Y SUS COPIAS NO SE TOCAN SUELTAS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 2026-09-16. La sección «Plantillas reutilizables» prometía «defines Sabores
+// una vez y sirve para cada paso del combo», y no dejaba meter ni un sabor: las
+// funciones estaban en la API y ninguna pantalla las llamaba. Ahora la
+// plantilla se despliega con sus opciones, y la base las copia a cada grupo.
+test('una plantilla enseña sus opciones y sus copias salen marcadas en el grupo', async ({ page }) => {
+  await seedClientSession(page)
+  await mockClientApi(page)
+
+  const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  const opcion = (o: Record<string, unknown>) => ({
+    description: null, image_url: null, image_public_id: null, references_product_id: null,
+    default_selected: false, stock: 'disponible', sort: 0, active: true,
+    option_template_item_id: null, ...o,
+  })
+
+  await page.route('**/api/client/products', r => r.fulfill(json([
+    { id: 'combo', name: 'Combo Panas', price: 11.99, stock: 'disponible', active: true, category_id: 'cat' },
+  ])))
+  await page.route('**/api/client/option-groups', r => r.fulfill(json([{
+    id: 'g1', name: 'Sabor de la 1.ª pizza', product_id: 'combo', category_id: null, active: true,
+    description: null, selection_type: 'single', required: true, min_selectable: 1, max_selectable: 1,
+    pricing_strategy: 'sum', free_selections: 0, is_meal_part: false,
+    template_id: null, option_template_id: 'tpl', loose_price: null, sort: 0,
+  }])))
+  // Dos COPIAS que mantiene la base, y una opción que el dueño escribió a mano.
+  await page.route('**/api/client/options', r => r.fulfill(json([
+    opcion({ id: 'c1', option_group_id: 'g1', name: 'Hawaiana', option_template_item_id: 'i1' }),
+    opcion({ id: 'c2', option_group_id: 'g1', name: 'Monster', price_adjustment: 2.5, option_template_item_id: 'i2', sort: 1 }),
+    opcion({ id: 'm1', option_group_id: 'g1', name: 'Mitad y mitad', price_adjustment: 1, sort: 2 }),
+  ])))
+  await page.route('**/api/client/option-templates', r => r.fulfill(json([
+    { id: 'tpl', name: 'Sabores', description: null, active: true, used_by_groups: 1 },
+  ])))
+  await page.route('**/api/client/option-template-items', r => r.fulfill(json([
+    { id: 'i1', option_template_id: 'tpl', name: 'Hawaiana', description: null, image_url: null, image_public_id: null, price_adjustment: 0, references_product_id: null, default_selected: false, stock: 'disponible', sort: 0, active: true },
+    { id: 'i2', option_template_id: 'tpl', name: 'Monster', description: null, image_url: null, image_public_id: null, price_adjustment: 2.5, references_product_id: null, default_selected: false, stock: 'disponible', sort: 1, active: true },
+  ])))
+
+  await page.goto(`${clientUrl}#/catalog`)
+  await page.getByRole('tab', { name: 'Personalización' }).click()
+
+  // ── La plantilla se despliega y enseña sus opciones ────────────────────
+  await page.getByRole('button', { name: /Sabores.*2 opciones/ }).click()
+  await expect(page.getByRole('button', { name: 'Editar Hawaiana' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Quitar Monster' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Agregar opción' }).last()).toBeVisible()
+
+  // ── En el grupo, las copias salen marcadas y SIN botones sueltos ───────
+  // ⚠️ Anclado al INICIO: las flechas se llaman «Subir Sabor de la 1.ª pizza»
+  // y «Bajar …», así que sin `^` el nombre casa con tres botones. Es la misma
+  // trampa de subcadena que hizo parpadear el E2E de «armar por partes».
+  await page.getByRole('button', { name: /^Sabor de la 1\.ª pizza/ }).click()
+  await expect(page.getByText('De la plantilla')).toHaveCount(2)
+  await expect(page.getByText('se cambia en la plantilla')).toHaveCount(2)
+  // …y la opción MANUAL conserva los suyos: el freno es solo para las copias.
+  await expect(page.getByText('Mitad y mitad')).toBeVisible()
+})

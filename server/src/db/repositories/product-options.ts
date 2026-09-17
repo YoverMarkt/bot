@@ -33,6 +33,10 @@ const CAMPOS_OPCION = [
   'id', 'option_group_id', 'name', 'description', 'image_url', 'image_public_id',
   'price_adjustment', 'references_product_id', 'default_selected', 'stock',
   'sort', 'active',
+  // Si no es nulo, la opción es una COPIA que mantiene la base desde una
+  // plantilla. El panel la necesita para no dejarla editar suelta: la
+  // siguiente sincronización pisaría el cambio.
+  'option_template_item_id',
 ].join(',')
 
 const CAMPOS_PLANTILLA = ['id', 'name', 'description', 'active'].join(',')

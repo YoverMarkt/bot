@@ -196,7 +196,16 @@ export default function OptionsManager({
     { grupo: OptionGroupPayload; id: string | null } | null
   >(null)
   const [editandoOpcion, setEditandoOpcion] = useState<
-    { opcion: Omit<ProductOption, 'id'>; id: string | null } | null
+    {
+      opcion: Omit<ProductOption, 'id'>
+      id: string | null
+      /**
+       * Si viene, lo que se edita es un sabor de ESTA plantilla y no una opción
+       * de un grupo. Se reutiliza el mismo diálogo porque los campos son los
+       * mismos; lo único que cambia es adónde se guarda.
+       */
+      plantilla?: string
+    } | null
   >(null)
   const [plantillaNueva, setPlantillaNueva] = useState<{ name: string } | null>(null)
   const [adicionalNuevo, setAdicionalNuevo] = useState<RecommendationPayload | null>(null)
@@ -204,12 +213,20 @@ export default function OptionsManager({
   const grupos = useQuery({ queryKey: ['option-groups'], queryFn: catApi.getOptionGroups })
   const opciones = useQuery({ queryKey: ['options'], queryFn: catApi.getOptions })
   const plantillas = useQuery({ queryKey: ['option-templates'], queryFn: catApi.getOptionTemplates })
+  // ⚠️ Estas funciones existían en la API desde el principio y NINGUNA pantalla
+  // las usaba (2026-09-16): se podía crear una plantilla «Sabores», pero no había
+  // forma de meterle un solo sabor. La sección prometía «al añadir una opción,
+  // aparece en todos» y no dejaba añadir ninguna.
+  const itemsDePlantilla = useQuery({
+    queryKey: ['option-template-items'], queryFn: catApi.getOptionTemplateItems,
+  })
   const adicionales = useQuery({ queryKey: ['recommendations'], queryFn: catApi.getRecommendations })
 
   const refrescar = () => {
     void qc.invalidateQueries({ queryKey: ['option-groups'] })
     void qc.invalidateQueries({ queryKey: ['options'] })
     void qc.invalidateQueries({ queryKey: ['option-templates'] })
+    void qc.invalidateQueries({ queryKey: ['option-template-items'] })
     void qc.invalidateQueries({ queryKey: ['recommendations'] })
   }
 
@@ -236,9 +253,21 @@ export default function OptionsManager({
   })
 
   const guardarOpcion = useMutation({
-    mutationFn: ({ opcion, id }: { opcion: Omit<ProductOption, 'id'>; id: string | null }) => (
-      id ? catApi.updateOption(id, opcion) : catApi.createOption(opcion)
-    ),
+    mutationFn: ({ opcion, id, plantilla }: {
+      opcion: Omit<ProductOption, 'id'>; id: string | null; plantilla?: string
+    }) => {
+      if (plantilla) {
+        // El diálogo trae `option_group_id` porque edita una opción; un sabor
+        // de plantilla no cuelga de ningún grupo, así que se quita. La base
+        // se encarga de copiarlo a todos los grupos que la usan.
+        const { option_group_id: _grupo, option_template_item_id: _copia, ...campos } = opcion
+        const item = { ...campos, option_template_id: plantilla }
+        return id
+          ? catApi.updateOptionTemplateItem(id, item)
+          : catApi.createOptionTemplateItem(item)
+      }
+      return id ? catApi.updateOption(id, opcion) : catApi.createOption(opcion)
+    },
     onSuccess: () => {
       toast.success('Opción guardada')
       setEditandoOpcion(null)
@@ -296,6 +325,12 @@ export default function OptionsManager({
   const borrarOpcion = useMutation({
     mutationFn: catApi.deleteOption,
     onSuccess: () => { toast.success('Opción eliminada'); refrescar() },
+    onError: alFallar,
+  })
+
+  const borrarItemDePlantilla = useMutation({
+    mutationFn: catApi.deleteOptionTemplateItem,
+    onSuccess: () => { toast.success('Sabor quitado de la plantilla y de sus grupos'); refrescar() },
     onError: alFallar,
   })
 
@@ -458,10 +493,20 @@ export default function OptionsManager({
                         {opcion.stock === 'agotado' && (
                           <Badge variant="outline" className="ml-2">Agotado</Badge>
                         )}
+                        {opcion.option_template_item_id && (
+                          <Badge variant="secondary" className="ml-2">De la plantilla</Badge>
+                        )}
                       </span>
                       <span className="text-sm font-semibold">
                         {money(opcion.price_adjustment)}
                       </span>
+                      {/* ⚠️ Una COPIA de plantilla no se edita suelta: la base la
+                          mantiene al día y pisaría el cambio. Se dice dónde se
+                          cambia en vez de dejar tocarla — el servidor también
+                          lo rechaza, esto evita que el dueño lo intente. */}
+                      {opcion.option_template_item_id ? (
+                        <span className="text-xs text-muted-foreground">se cambia en la plantilla</span>
+                      ) : (
                       <span className="flex items-center gap-1">
                         {/* Aquí se ordenan los 19 sabores: el cliente los ve
                             en este orden en la ficha del producto. */}
@@ -495,6 +540,7 @@ export default function OptionsManager({
                           }
                         />
                       </span>
+                      )}
                     </div>
                   ))}
                   {!suyas.length && (
@@ -611,29 +657,110 @@ export default function OptionsManager({
         </div>
 
         <div className="mt-4 space-y-2">
-          {(plantillas.data || []).map(plantilla => (
-            <Card key={plantilla.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
-              <span>
-                <span className="font-medium">{plantilla.name}</span>
-                <span className="ml-2 text-sm text-muted-foreground">
-                  {plantilla.used_by_groups
-                    ? `usada en ${plantilla.used_by_groups} grupo${plantilla.used_by_groups > 1 ? 's' : ''}`
-                    : 'sin usar todavía'}
-                </span>
-              </span>
-              <ConfirmAction
-                title="¿Eliminar esta plantilla?"
-                description={plantilla.used_by_groups
-                  ? `La usan ${plantilla.used_by_groups} grupos. Se quedarán sin ella, pero seguirán funcionando con sus propias opciones.`
-                  : 'No la usa ningún grupo.'}
-                destructive
-                onConfirm={() => borrarPlantilla.mutate(plantilla.id)}
-                trigger={
-                  <Button variant="ghost" size="sm"><Trash2 className="size-4" /></Button>
-                }
-              />
-            </Card>
-          ))}
+          {(plantillas.data || []).map(plantilla => {
+            const suyos = (itemsDePlantilla.data || [])
+              .filter(item => item.option_template_id === plantilla.id)
+              .sort((a, b) => a.sort - b.sort)
+            const clave = `tpl:${plantilla.id}`
+            const desplegada = abierto[clave]
+            return (
+              <Card key={plantilla.id} className="overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3">
+                  <button
+                    type="button"
+                    onClick={() => setAbierto({ ...abierto, [clave]: !desplegada })}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    {desplegada
+                      ? <ChevronDown className="size-4 shrink-0" />
+                      : <ChevronRight className="size-4 shrink-0" />}
+                    <span className="font-medium">{plantilla.name}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {suyos.length} opcion{suyos.length === 1 ? '' : 'es'} ·{' '}
+                      {plantilla.used_by_groups
+                        ? `usada en ${plantilla.used_by_groups} grupo${plantilla.used_by_groups > 1 ? 's' : ''}`
+                        : 'sin usar todavía'}
+                    </span>
+                  </button>
+                  <ConfirmAction
+                    title="¿Eliminar esta plantilla?"
+                    description={plantilla.used_by_groups
+                      ? `La usan ${plantilla.used_by_groups} grupos. Perderán las opciones que venían de ella; las que agregaste a mano en cada grupo se quedan.`
+                      : 'No la usa ningún grupo.'}
+                    destructive
+                    onConfirm={() => borrarPlantilla.mutate(plantilla.id)}
+                    trigger={
+                      <Button variant="ghost" size="sm"><Trash2 className="size-4" /></Button>
+                    }
+                  />
+                </div>
+
+                {/* ⚠️ ESTO NO EXISTÍA (2026-09-16). Se podía crear «Sabores»,
+                    pero no meterle un solo sabor: las funciones estaban en la
+                    API y ninguna pantalla las llamaba. Lo que se agrega aquí lo
+                    copia la base a todos los grupos que usan la plantilla. */}
+                {desplegada && (
+                  <div className="border-t bg-muted/30 p-3">
+                    <div className="space-y-2">
+                      {suyos.map(item => (
+                        <div
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium">{item.name}</span>
+                            {item.stock === 'agotado' && (
+                              <Badge variant="outline" className="ml-2">Agotado</Badge>
+                            )}
+                          </span>
+                          <span className="text-sm font-semibold">{money(item.price_adjustment)}</span>
+                          <span className="flex items-center gap-1">
+                            <Button
+                              variant="ghost" size="sm"
+                              aria-label={`Editar ${item.name}`}
+                              onClick={() => setEditandoOpcion({
+                                opcion: { ...item, option_group_id: plantilla.id },
+                                id: item.id,
+                                plantilla: plantilla.id,
+                              })}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <ConfirmAction
+                              title={`¿Quitar ${item.name}?`}
+                              description="Desaparece de la plantilla y de todos los grupos que la usan. Los pedidos ya hechos no cambian."
+                              destructive
+                              onConfirm={() => borrarItemDePlantilla.mutate(item.id)}
+                              trigger={
+                                <Button variant="ghost" size="sm" aria-label={`Quitar ${item.name}`}>
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              }
+                            />
+                          </span>
+                        </div>
+                      ))}
+                      {!suyos.length && (
+                        <p className="py-2 text-sm text-muted-foreground">
+                          Esta plantilla está vacía. Agrégale opciones y aparecerán en cada grupo que la use.
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline" size="sm" className="mt-3"
+                      onClick={() => setEditandoOpcion({
+                        opcion: { ...opcionNueva(plantilla.id), sort: suyos.length },
+                        id: null,
+                        plantilla: plantilla.id,
+                      })}
+                    >
+                      <Plus className="mr-1.5 size-3.5" /> Agregar opción
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )
+          })}
           {!(plantillas.data || []).length && (
             <p className="text-sm text-muted-foreground">Todavía no hay plantillas.</p>
           )}
@@ -787,7 +914,7 @@ export default function OptionsManager({
         estado={editandoOpcion}
         productos={productos}
         onCerrar={() => setEditandoOpcion(null)}
-        onGuardar={valor => guardarOpcion.mutate(valor)}
+        onGuardar={valor => guardarOpcion.mutate({ ...valor, plantilla: editandoOpcion?.plantilla })}
         guardando={guardarOpcion.isPending}
       />
 
