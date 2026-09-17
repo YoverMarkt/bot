@@ -4425,6 +4425,111 @@ $$;
 select '✅ un enlace vivo a la vez: cae el de otro local, sobrevive el del local vigente y el que debe dinero' as resultado;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- «SEGUIR MI PEDIDO» MATA TODO LO DE ATRÁS (2026-09-16)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El dueño: «si se estaba haciendo el pedido pero el cliente lo dejó y
+-- selecciona continuar con un pedido, que pase igual: todo lo de atrás no
+-- funcione». `revoke_other_storefront_sessions` perdona TODAS las sesiones del
+-- mismo local —para no vaciar un carrito que vive en memoria—, así que tras
+-- «seguir» el enlace viejo de ese local seguía abriendo la tienda.
+--
+-- Esa protección casi no protege nada en WhatsApp: el navegador interno se
+-- cierra al volver al chat, y el carrito se pierde con él. Cuando alguien
+-- escribe «seguir mi pedido», su carrito YA no existe.
+--
+-- ⚠️ Lo que NO cede: el local que DEBE dinero. Ahí vive la captura del pago,
+-- y el camino del dinero no se corta nunca.
+do $$
+declare
+  v_pizza     uuid;
+  v_ceviche   uuid;
+  v_helado    uuid;
+  v_cliente   uuid;
+  v_s_vieja   uuid;
+  v_s_nueva   uuid;
+  v_s_cevi    uuid;
+  v_s_helado  uuid;
+  v_revocadas integer;
+  v_estado    timestamptz;
+begin
+  insert into businesses (
+    slug, name, type, whatsapp_provider, whatsapp_number, ycloud_number,
+    takes_orders, chat_mode
+  ) values
+    ('pizza-seguir-v', 'Pizza', 'pizzeria', 'ycloud', '+593900667001', '+593900667001', true, 'miniapp'),
+    ('cevi-seguir-v', 'Cevichería', 'restaurante', 'ycloud', '+593900667002', '+593900667002', true, 'miniapp'),
+    ('helado-seguir-v', 'Heladería', 'heladeria', 'ycloud', '+593900667003', '+593900667003', true, 'miniapp');
+
+  select id into v_pizza   from businesses where slug = 'pizza-seguir-v';
+  select id into v_ceviche from businesses where slug = 'cevi-seguir-v';
+  select id into v_helado  from businesses where slug = 'helado-seguir-v';
+
+  insert into public.customers (phone) values ('593900667100') returning id into v_cliente;
+
+  -- El enlace VIEJO de la pizzería, del pedido que dejó a medias.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_pizza, v_cliente, repeat('e0', 32), '593900667100', null) returning id into v_s_vieja;
+  -- Un local donde DEBE dinero: intocable.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_ceviche, v_cliente, repeat('e1', 32), '593900667100', null) returning id into v_s_cevi;
+  insert into public.orders (
+    business_id, customer_id, contact_phone, source, status, subtotal, total
+  ) values (v_ceviche, v_cliente, '593900667100', 'storefront', 'esperando_pago', 9, 9);
+  -- Otro local sin nada pendiente.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_helado, v_cliente, repeat('e2', 32), '593900667100', null) returning id into v_s_helado;
+
+  -- «Seguir mi pedido»: enlace NUEVO de la misma pizzería.
+  insert into public.storefront_sessions (business_id, customer_id, token_hash, contact_phone, expires_at)
+  values (v_pizza, v_cliente, repeat('e3', 32), '593900667100', null) returning id into v_s_nueva;
+
+  v_revocadas := public.revoke_storefront_sessions_except(v_cliente, v_s_nueva);
+  if v_revocadas <> 2 then
+    raise exception 'debía revocar el enlace viejo de la pizzería y el de la heladería, y revocó %', v_revocadas;
+  end if;
+
+  -- ⚠️ La diferencia con `revoke_other_storefront_sessions`, y el punto entero.
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_vieja;
+  if v_estado is null then
+    raise exception 'el enlace VIEJO del mismo local siguió vivo tras «seguir mi pedido»';
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_nueva;
+  if v_estado is not null then
+    raise exception 'se revocó el enlace NUEVO: el cliente se quedó sin ninguno';
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_cevi;
+  if v_estado is not null then
+    raise exception 'se revocó el enlace de un local donde DEBE dinero';
+  end if;
+
+  select revoked_at into v_estado from public.storefront_sessions where id = v_s_helado;
+  if v_estado is null then
+    raise exception 'el enlace de otro local sin nada pendiente siguió vivo';
+  end if;
+
+  -- Sin sesión que conservar no se toca nada: falla hacia dejar enlaces vivos.
+  v_revocadas := public.revoke_storefront_sessions_except(
+    v_cliente, '00000000-0000-0000-0000-000000000000'
+  );
+  if v_revocadas <> 0 then
+    raise exception 'con una sesión inexistente revocó % enlaces', v_revocadas;
+  end if;
+  v_revocadas := public.revoke_storefront_sessions_except(v_cliente, null);
+  if v_revocadas <> 0 then
+    raise exception 'con una sesión nula revocó % enlaces', v_revocadas;
+  end if;
+
+  delete from businesses where id in (v_pizza, v_ceviche, v_helado);
+  delete from public.customers where id = v_cliente;
+end;
+$$;
+
+select '✅ «seguir mi pedido» deja vivo SOLO el enlace nuevo, salvo donde se debe dinero' as resultado;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- UNA SOLA DEFINICIÓN DE «BLOQUEADO» (2026-08-29)
 -- ═══════════════════════════════════════════════════════════════════════════
 --

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const db = require('../dist/db')
 const {
+  readStorefrontBlock,
   readStorefrontSession,
   requireStorefrontSession,
 } = require('../dist/middleware/storefront')
@@ -259,14 +260,40 @@ describe('quién puede ver el catálogo', () => {
     expect(r.req.storefront).toBeUndefined()
   })
 
-  it('un enlace revocado deja mirar, pero no ser nadie', async () => {
+  // ⚠️ ESTA PRUEBA EXIGÍA LO CONTRARIO HASTA EL 2026-09-16: «un enlace
+  // revocado deja mirar, pero no ser nadie». Y así funcionaba: el cliente subía
+  // por el chat, tocaba un enlace viejo, veía la carta entera, armaba su
+  // carrito y escribía su dirección… y solo al pagar le salía «este enlace ya
+  // no está activo». Dejarle trabajar para darle el portazo al final.
+  //
+  // El dueño lo pidió con estas palabras: «que si entran al link, si suben en
+  // el chat y ingresan, les diga que el link expiró y que no les deje ver el
+  // menú ya».
+  //
+  // ⚠️ La tienda SIGUE siendo pública para quien llega SIN enlace — eso no se
+  // toca, y lo vigila «sin enlace se ve la carta» de más arriba. Lo que cambia
+  // es solo el enlace MUERTO: quien trae uno y ese uno ya no vale.
+  it('un enlace revocado NO deja ver la carta: dice que expiró', async () => {
     vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
     vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue({
       ...sesionConfirmada(), revoked_at: '2026-08-02',
     })
     const r = await mirar({ token: 'tok' })
-    expect(r.siguio).toBe(true)
+    expect(r.siguio).toBe(false)
+    expect(r.status).toBe(401)
+    expect(r.body.reason).toBe('revocada')
     expect(r.req.storefront).toBeUndefined()
+  })
+
+  it('un enlace caducado tampoco deja ver la carta', async () => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
+    vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue({
+      ...sesionConfirmada(), expires_at: '2020-01-01T00:00:00.000Z',
+    })
+    const r = await mirar({ token: 'tok' })
+    expect(r.siguio).toBe(false)
+    expect(r.status).toBe(401)
+    expect(r.body.reason).toBe('caducada')
   })
 
   it('un token inventado deja mirar, pero no ser nadie', async () => {
@@ -286,5 +313,82 @@ describe('quién puede ver el catálogo', () => {
     expect(recibido).toBeInstanceOf(Error)
     expect(req.storefront).toBeUndefined()
     expect(req.storeBusinessId).toBeUndefined()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LA PORTADA AVISA ANTES DE MONTAR NADA
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Rechazar el enlace muerto solo en la carta no basta, y por un detalle de
+// cómo arranca la app: al abrirse NO pide la carta, pide la PORTADA, y con
+// ella decide si monta la tienda. La carta llega después, con la tienda ya
+// montada — así que un 401 ahí pintaría el aviso ENCIMA de una tienda vacía.
+//
+// El bloqueo ya resolvió exactamente esto el 2026-08-29 («el bloqueo gana a
+// todo, y va antes de montar nada»): la portada trae `blocked` y la app lo
+// mira primero. El enlace muerto va por el MISMO camino.
+
+async function portada({ token = '', slug = 'pizzeria', device = 'movil-de-juan' } = {}) {
+  const req = {
+    headers: {
+      ...(token ? { 'x-storefront-token': token } : {}),
+      'x-storefront-device': device,
+      'user-agent': 'iPhone', 'accept-language': 'es-EC',
+    },
+    params: { slug }, query: {},
+  }
+  let siguio = false
+  await readStorefrontBlock(req, {}, () => { siguio = true })
+  return { req, siguio }
+}
+
+describe('la portada sabe si el enlace ya no vale', () => {
+  it('con un enlace revocado la marca como vencida', async () => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
+    vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue({
+      ...sesionConfirmada(), revoked_at: '2026-09-16',
+    })
+    const r = await portada({ token: 'tok' })
+    // La portada NUNCA se cierra —lleva el nombre y el logo para pintar el
+    // aviso—; lo que hace es contarle a la app que no monte la tienda.
+    expect(r.siguio).toBe(true)
+    expect(r.req.storefrontExpired).toBe(true)
+  })
+
+  it('sin enlace NO la marca: la tienda sigue siendo pública', async () => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
+    const r = await portada({ token: '' })
+    expect(r.siguio).toBe(true)
+    expect(r.req.storefrontExpired).toBeFalsy()
+  })
+
+  it('con enlace válido NO la marca', async () => {
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
+    vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue(sesionConfirmada())
+    vi.spyOn(db, 'touchStorefrontSession').mockResolvedValue(undefined)
+    vi.spyOn(db, 'customerBlockState').mockResolvedValue({ blocked: false, permanent: false, until: null })
+    const r = await portada({ token: 'tok' })
+    expect(r.req.storefrontExpired).toBeFalsy()
+  })
+
+  it('con enlace aún sin confirmar NO la marca: es la primera apertura de todos', async () => {
+    // ⚠️ La que no se puede romper. Todo enlace recién mandado llega así, sin
+    // número confirmado. Tratarlo como vencido dejaría a TODOS los clientes
+    // nuevos fuera de su tienda el primer día.
+    vi.spyOn(db, 'getBusinessBySlug').mockResolvedValue({ id: 'biz-1' })
+    vi.spyOn(db, 'getStorefrontSessionByHash').mockResolvedValue(SESION)
+    const r = await portada({ token: 'tok' })
+    expect(r.req.storefrontExpired).toBeFalsy()
+  })
+
+  it('si la base revienta, la portada abre igual y no marca nada', async () => {
+    // Falla ABIERTO, como el bloqueo: echar a un cliente legítimo por un fallo
+    // nuestro es peor que dejarle ver la portada. La carta y el pedido siguen
+    // exigiendo un enlace que valga.
+    vi.spyOn(db, 'getBusinessBySlug').mockRejectedValue(new Error('base caída'))
+    const r = await portada({ token: 'tok' })
+    expect(r.siguio).toBe(true)
+    expect(r.req.storefrontExpired).toBeFalsy()
   })
 })

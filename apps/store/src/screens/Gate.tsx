@@ -41,9 +41,14 @@ const MENSAJES: Record<string, { titulo: string; detalle: (donde: string) => str
     detalle: donde => 'Era de los antiguos, que duraban unas horas. '
       + `${donde} y recibes uno nuevo — ese ya no vence.`,
   },
+  // «Expiró» y no «ya no está activo» (2026-09-16): es la palabra del dueño y
+  // la que entiende cualquiera. Que por dentro sea una revocación —MENÚ,
+  // «seguir mi pedido», un enlace más nuevo— al cliente le da igual: su enlace
+  // ya no sirve y necesita otro.
   revocada: {
-    titulo: 'Este enlace ya no está activo',
-    detalle: donde => `${donde} y te llega uno nuevo.`,
+    titulo: 'Tu enlace expiró',
+    detalle: donde => 'Ya abriste uno más nuevo, o volviste al inicio del chat. '
+      + `${donde} y te llega uno nuevo.`,
   },
   otro_negocio: {
     titulo: 'Este enlace es de otro local',

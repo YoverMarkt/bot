@@ -3232,6 +3232,68 @@ comment on function public.revoke_other_storefront_sessions(uuid, uuid) is
 
 revoke all on function public.revoke_other_storefront_sessions(uuid, uuid)
   from public, anon, authenticated;
+
+-- ── «SEGUIR MI PEDIDO» MATA TODO LO DE ATRÁS ──────────────────────────────
+-- migration-2026-09-16-seguir-mi-pedido-mata-lo-de-atras.sql. Como la de
+-- arriba, pero el enlace viejo del MISMO local también cae: tras «seguir mi
+-- pedido» solo vale el enlace nuevo. El local que debe dinero no cede.
+create or replace function public.revoke_storefront_sessions_except(
+  p_customer_id     uuid,
+  p_keep_session_id uuid
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_revocadas integer;
+begin
+  if p_customer_id is null or p_keep_session_id is null then
+    return 0;
+  end if;
+
+  -- Falla hacia NO revocar: si la sesión que hay que conservar no existe, no
+  -- se toca nada. Revocar de más deja a un cliente legítimo sin ningún enlace;
+  -- un enlace viejo vivo un rato más es recuperable.
+  if not exists (
+    select 1 from public.storefront_sessions
+     where id = p_keep_session_id
+       and customer_id = p_customer_id
+  ) then
+    return 0;
+  end if;
+
+  with revocadas as (
+    update public.storefront_sessions as sesion
+       set revoked_at = now()
+     where sesion.customer_id = p_customer_id
+       and sesion.revoked_at is null
+       and sesion.id <> p_keep_session_id
+       -- ⚠️ Aquí la vieja añadía `and sesion.business_id <> v_local_vigente`.
+       -- Quitarlo es la diferencia entera: el enlace viejo del MISMO local cae.
+       and not exists (
+         select 1
+           from public.orders as pedido
+          where pedido.customer_id  = p_customer_id
+            and pedido.business_id  = sesion.business_id
+            and pedido.source       = 'storefront'
+            and pedido.status       = 'esperando_pago'
+       )
+    returning 1
+  )
+  select count(*)::integer into v_revocadas from revocadas;
+
+  return coalesce(v_revocadas, 0);
+end;
+$$;
+
+comment on function public.revoke_storefront_sessions_except(uuid, uuid) is
+  'Deja vivo SOLO el enlace indicado, incluso dentro del mismo local. Conserva '
+  'el de cualquier local donde quede un pedido en esperando_pago.';
+
+revoke all on function public.revoke_storefront_sessions_except(uuid, uuid)
+  from public, anon, authenticated;
 grant execute on function public.revoke_other_storefront_sessions(uuid, uuid)
   to service_role;
 

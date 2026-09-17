@@ -106,6 +106,59 @@ describe('emitir un enlace revoca los demás', () => {
 // El enlace estricto solo deja de ser una trampa si hay una forma de recuperar
 // la entrada. La del dueño es escribir MENÚ.
 
+// ═══════════════════════════════════════════════════════════════════════════
+// «SEGUIR MI PEDIDO» DEJA VIVO SOLO EL ENLACE NUEVO (2026-09-16)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El dueño: «si se estaba haciendo el pedido pero el cliente lo dejó y
+// selecciona continuar con un pedido, que pase igual: todo lo de atrás no
+// funcione». La revocación de siempre perdona las sesiones del MISMO local, así
+// que tras «seguir» el enlace viejo de ese local seguía abriendo la tienda.
+
+describe('la revocación estricta, solo cuando se pide', () => {
+  it('con `soloEste` revoca con la estricta, y no con la de siempre', async () => {
+    const database = armarBase({
+      revokeStorefrontSessionsExcept: vi.fn().mockResolvedValue(3),
+    })
+    await servicio(database).issueLink({
+      business: negocio, phone: '593999111222', soloEste: true,
+    })
+    expect(database.revokeStorefrontSessionsExcept).toHaveBeenCalledWith('cli-1', 'sesion-nueva')
+    expect(database.revokeOtherStorefrontSessions).not.toHaveBeenCalled()
+  })
+
+  it('sin `soloEste` sigue la de siempre: elegir un local no cambia', async () => {
+    // ⚠️ El pedido del dueño es sobre «seguir mi pedido», no sobre elegir local.
+    // Ahí la de siempre conserva el carrito del local vigente, y no se toca.
+    const database = armarBase({
+      revokeStorefrontSessionsExcept: vi.fn().mockResolvedValue(3),
+    })
+    await servicio(database).issueLink({ business: negocio, phone: '593999111222' })
+    expect(database.revokeOtherStorefrontSessions).toHaveBeenCalledWith('cli-1', 'sesion-nueva')
+    expect(database.revokeStorefrontSessionsExcept).not.toHaveBeenCalled()
+  })
+
+  it('con `soloEste` pero sin la estricta, cae a la de siempre y no a nada', async () => {
+    // Un enlace viejo del mismo local vivo es un fallo menor; los de OTROS
+    // locales vivos reabrirían el agujero que se cerró el 2026-09-03.
+    const database = armarBase()
+    await servicio(database).issueLink({
+      business: negocio, phone: '593999111222', soloEste: true,
+    })
+    expect(database.revokeOtherStorefrontSessions).toHaveBeenCalledWith('cli-1', 'sesion-nueva')
+  })
+
+  it('un fallo en la estricta NO deja al cliente sin su enlace nuevo', async () => {
+    const database = armarBase({
+      revokeStorefrontSessionsExcept: vi.fn().mockRejectedValue(new Error('sin conexión')),
+    })
+    const url = await servicio(database).issueLink({
+      business: negocio, phone: '593999111222', soloEste: true,
+    })
+    expect(url).toContain('https://umbani.app/s/')
+  })
+})
+
 describe('resolverReinicio distingue las TRES respuestas', () => {
   const estado = { negocio: { name: 'Monster Pizza', slug: 'monster-pizza' }, bloqueado: true }
 
@@ -186,6 +239,9 @@ describe('«Seguir mi pedido» devuelve el enlace', () => {
     expect(deps.issueLink).toHaveBeenCalledTimes(1)
     // Con `force`: lo acaba de pedir con todas las letras, el cooldown estorba.
     expect(deps.issueLink.mock.calls[0][0].force).toBe(true)
+    // Y con `soloEste` (2026-09-16): tras continuar, «todo lo de atrás no
+    // funcione» — el enlace viejo de este mismo local tiene que caer.
+    expect(deps.issueLink.mock.calls[0][0].soloEste).toBe(true)
     expect(enviados).toHaveLength(1)
     expect(enviados[0].reply).toContain('Monster Pizza')
     expect(enviados[0].reply).toContain('https://umbani.app/s/tok3n')

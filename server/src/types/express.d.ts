@@ -45,6 +45,16 @@ declare global {
        * todo lo que escribe lo rechazan con 403 antes de llegar a la ruta.
        */
       storefrontBlock?: { blocked: boolean; permanent: boolean; until: string | null }
+      /**
+       * Quien abre la PORTADA trae un enlace que ya no vale (revocado o
+       * caducado).
+       *
+       * Va por el mismo camino que `storefrontBlock` y por la misma razón: la
+       * app decide con la portada si monta la tienda, así que es ahí donde
+       * tiene que enterarse. Si se enterara al pedir la carta, la tienda ya
+       * estaría montada y el aviso saldría encima de un menú vacío.
+       */
+      storefrontExpired?: boolean
     }
   }
 }

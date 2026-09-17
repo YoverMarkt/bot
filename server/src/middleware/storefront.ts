@@ -222,6 +222,25 @@ export const requireStorefrontSession: RequestHandler = async (
  * catálogo como cualquier visitante, sin sesión. Lo que no ocurre jamás es que
  * ese token acabe identificando a un cliente.
  */
+/**
+ * El enlace llegó, y ya no vale.
+ *
+ * ⚠️ SOLO revocado o caducado, y es deliberado. Los dos los confirma la PROPIA
+ * fila de la sesión, así que no hay falso positivo posible. Se dejan fuera a
+ * propósito:
+ *   · `necesita_telefono` — es la primera apertura de TODO enlace nuevo. Tratarlo
+ *     como muerto dejaría a cada cliente fuera de su tienda el primer día.
+ *   · `no_existe` — cubre también «llegó sin enlace», que es la tienda pública.
+ *   · `otro_negocio` / `otro_dispositivo` — no son enlaces muertos: son de otro
+ *     sitio o de otra persona, y ya tienen su propio aviso al pedir.
+ *
+ * Medido en producción el 2026-09-16: de 93 enlaces, 80 revocados y 0
+ * caducados, así que esto cubre todo enlace viejo que un cliente pueda tocar.
+ */
+const esEnlaceMuerto = (reason: SessionRejection | undefined): boolean => (
+  reason === 'revocada' || reason === 'caducada'
+)
+
 export const readStorefrontSession: RequestHandler = async (
   req: Request,
   res: Response,
@@ -237,6 +256,13 @@ export const readStorefrontSession: RequestHandler = async (
     // SIN enlace sigue viendo la carta como siempre — a ese no se le puede
     // identificar, así que tampoco bloquear.
     if (reason === 'bloqueado') return reject(res, reason, bloqueo)
+    // ⚠️ Y tampoco para quien trae un enlace MUERTO (2026-09-16). Hasta aquí
+    // se le dejaba pasar como visitante: veía la carta entera, armaba el
+    // carrito, escribía la dirección… y el portazo llegaba al pagar. El dueño:
+    // «que les diga que el link expiró y que no les deje ver el menú». Quien
+    // llega SIN enlace no cae aquí —`no_existe` no es un enlace muerto— y sigue
+    // viendo la carta como siempre.
+    if (esEnlaceMuerto(reason)) return reject(res, reason as SessionRejection)
     req.storeBusinessId = businessId
     if (session) req.storefront = session
     return next()
@@ -264,8 +290,11 @@ export const readStorefrontBlock: RequestHandler = async (
   next: NextFunction,
 ) => {
   try {
-    const { bloqueo } = await resolveStorefront(req)
+    const { bloqueo, reason } = await resolveStorefront(req)
     if (bloqueo?.blocked) req.storefrontBlock = bloqueo
+    // La portada no se cierra —lleva el nombre y el logo para pintar el
+    // aviso—: le cuenta a la app que no monte la tienda.
+    if (esEnlaceMuerto(reason)) req.storefrontExpired = true
   } catch { /* la portada abre igual */ }
   return next()
 }

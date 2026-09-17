@@ -385,6 +385,29 @@ const revokeOtherStorefrontSessions = async (
 }
 
 /**
+ * Deja vivo SOLO el enlace indicado, incluido dentro del mismo local.
+ *
+ * Es la versión estricta de `revokeOtherStorefrontSessions`, y la usa
+ * «Seguir mi pedido» (2026-09-16). La otra perdona todas las sesiones del local
+ * vigente para no vaciar un carrito abierto; aquí eso sobra, porque quien
+ * escribe en el chat ya cerró la tienda —el navegador de WhatsApp se cierra al
+ * volver— y su carrito se fue con ella.
+ *
+ * ⚠️ El local que DEBE dinero no cede: lo decide la RPC en la misma consulta.
+ */
+const revokeStorefrontSessionsExcept = async (
+  customerId: string,
+  keepSessionId: string,
+): Promise<number> => {
+  const { data, error } = await db.rpc('revoke_storefront_sessions_except', {
+    p_customer_id: customerId,
+    p_keep_session_id: keepSessionId,
+  })
+  fail(error, 'No se pudieron revocar los enlaces anteriores')
+  return Number(data ?? 0)
+}
+
+/**
  * Revoca TODOS los enlaces vivos de un cliente. Lo usa MENÚ.
  *
  * ⚠️ Nace de una prueba del dueño (2026-09-03): escribió MENÚ, recibió las
@@ -1028,6 +1051,7 @@ export = {
   touchStorefrontSession,
   cleanupStorefrontSessions,
   revokeOtherStorefrontSessions,
+  revokeStorefrontSessionsExcept,
   revokeAllStorefrontSessions,
   cancelUnpaidOrderOnPurpose,
   createStorefrontOrder,
