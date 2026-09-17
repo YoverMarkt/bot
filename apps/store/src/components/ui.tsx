@@ -229,7 +229,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.max(minimo, valor - 1))}
         disabled={valor <= minimo}
         aria-label="Quitar uno"
-        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
+        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30"
       >
         −
       </button>
@@ -238,7 +238,7 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
         onClick={() => onCambiar(Math.min(maximo, valor + 1))}
         disabled={valor >= maximo}
         aria-label="Agregar uno"
-        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30/10"
+        className="flex size-11 items-center justify-center rounded-full text-xl font-bold transition active:bg-black/5 disabled:opacity-30"
       >
         +
       </button>

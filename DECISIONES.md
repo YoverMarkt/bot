@@ -931,6 +931,10 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 - ⚠️ **Lo que NO se tocó:** `max_selectable` de los grupos se queda en 100. El tope real es dinámico —depende de cuántos platos lleve el cliente— así que bajarlo a mano daría un número fijo y equivocado en cuanto alguien pida dos almuerzos.
 
+
+- ⚠️ **La ficha topaba el GRUPO y la base topa cada OPCIÓN (arreglado 2026-09-17).** La Abuelita añadió «Sandía +$0.55» a sus bebidas gratis, y la ficha solo ponía tope cuando todas las opciones del grupo eran gratis: el contador de Naranjilla subió a 10 sobre un almuerzo y el aviso salía abajo, con la mesa ya armada. Ahora pantalla, carrito y base cuentan igual (`topeDeLaOpcion` y `gratisDelGrupo` en `cart.ts`): los gratis se reparten uno por plato entre sabores y el «+» se apaga al llegar; lo que tiene precio se sigue pudiendo sumar, porque se paga. Bajar siempre se puede, para corregir si se quita un plato.
+
+- **Lo que acompaña se abre DESPUÉS de elegir una parte** (pedido del dueño): sin sopa ni segundo, el grupo dice «Se activa cuando elijas sopa o segundo» y sus botones están apagados. Con plato, dice «Va 1 gratis con tu plato · llevas 1 de 1». De paso, el «+» apagado no se veía apagado: `disabled:opacity-30/10` no es una clase válida y la hoja de estilos compilada no tenía regla para ella.
 ## Un enlace viejo dice que expiró, y no enseña la carta
 
 - **Decisión del dueño (2026-09-16):** «cuando se coloque MENÚ, o si se estaba haciendo el pedido pero el cliente lo dejó y selecciona continuar con un pedido, que pase igual: todo lo de atrás no funcione. Y si suben en el chat e ingresan al link, que les diga que el link expiró y que no les deje ver el menú».

@@ -148,7 +148,13 @@ const DIST = path.join(RAIZ, 'dist')
 // base cobrara otro, que es exactamente lo que esa copia existe para impedir.
 // La palanca grande sigue siendo la anotada arriba —diferir la ficha y el
 // carrito— y sigue descartada por el mismo motivo.
-const PRESUPUESTO_KB = 95
+//
+// Entró (2026-09-17): el tope de lo gratis OPCIÓN POR OPCIÓN en la ficha
+// (`topeDeLaOpcion`, `gratisDelGrupo`) y el cierre de lo que acompaña hasta
+// que haya un plato. Son unas décimas y ninguna librería. Faltaban porque la
+// ficha dejaba marcar diez jugos gratis sobre un almuerzo mientras el carrito
+// los rechazaba: pantalla y cobro tienen que contar igual, y eso no se recorta.
+const PRESUPUESTO_KB = 96
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
