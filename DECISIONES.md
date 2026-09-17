@@ -36,6 +36,7 @@ un módulo concreto, no en cada sesión.
 - [Lo que va gratis, va por plato](#lo-que-va-gratis-va-por-plato)
 - [Un enlace viejo dice que expiró, y no enseña la carta](#un-enlace-viejo-dice-que-expiró-y-no-enseña-la-carta)
 - [Las plantillas de opciones funcionan](#las-plantillas-de-opciones-funcionan)
+- [Cada local nace armado](#cada-local-nace-armado)
 
 ---
 
@@ -543,7 +544,7 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 ## Catálogo de arranque (`server/src/services/business-templates.ts`):
 
-- **Catálogo de arranque (`server/src/services/business-templates.ts`):** al crear un negocio, su tipo decide con qué categorías y grupos de opciones nace —una hamburguesería trae Hamburguesas, Combos, Acompañantes y Bebidas, con Término, Extras y Retira ingredientes ya cargados. Sigue la misma regla que las capacidades: **solo recomienda al crear**. La RPC `apply_business_template` no toca un negocio que ya tenga una categoría o un producto y devuelve `aplicada: false`, así que jamás pisa decisiones manuales ni negocios existentes. Falla en silencio hacia el registro de errores: la plantilla va después del alta y no puede tumbarla. Los nombres de tipo deben existir en el desplegable del panel (`apps/admin/src/features/clients/business-types.ts`) o la plantilla queda muerta — lo vigila `tests/plantillas-negocio.test.js`.
+- **Catálogo de arranque (`server/src/services/business-templates.ts`):** al crear un negocio, su tipo decide con qué categorías y grupos de opciones nace —una hamburguesería trae Hamburguesas, Combos, Acompañantes y Bebidas, con Término, Extras y Retira ingredientes ya cargados—. Desde el 2026-09-16 nace además con **un producto de ejemplo agotado** y, si su tipo las usa, con sus **listas** (ver [Cada local nace armado](#cada-local-nace-armado)). Sigue la misma regla que las capacidades: **solo recomienda al crear**. La RPC `apply_business_template` no toca un negocio que ya tenga una categoría o un producto y devuelve `aplicada: false`, así que jamás pisa decisiones manuales ni negocios existentes. Falla en silencio hacia el registro de errores: la plantilla va después del alta y no puede tumbarla. Los nombres de tipo deben existir en el desplegable del panel (`apps/admin/src/features/clients/business-types.ts`) o la plantilla queda muerta — lo vigila `tests/plantillas-negocio.test.js`.
 
 ## El desplegable solo ofrece comida y retail
 
@@ -904,7 +905,7 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 - ⚠️ **Falso positivo que costó media hora, anotado para no repetirlo:** el E2E de «armar por partes» falló dos veces y parecía culpa del cambio. No lo era — con `reuseExistingServer`, editar la fuente mientras el servidor de Vite sigue vivo deja el componente montado dos veces y crea cuatro partes en vez de dos. Ocho ejecuciones seguidas de la misma variante pasaron, y los 36 E2E pasan desde un servidor frío, que es como corre el CI.
 
-- **Lo que NO se tocó, y queda anotado:** la plantilla del alta **sigue sembrando** grupos en la categoría para «almuerzos» y «menú ejecutivo», así que el próximo local de ese tipo nacerá con el mismo juego duplicado en cuanto su dueño use «Armarlo por partes». Arreglarlo es cambiar cómo nace cada local nuevo y va en su propio paso.
+- **Lo que NO se tocó, y queda anotado:** la plantilla del alta **sigue sembrando** grupos en la categoría para «almuerzos» y «menú ejecutivo», así que el próximo local de ese tipo nacerá con el mismo juego duplicado en cuanto su dueño use «Armarlo por partes». Arreglarlo es cambiar cómo nace cada local nuevo y va en su propio paso. → **Resuelto el mismo día**: ver [Cada local nace armado](#cada-local-nace-armado).
 
 ## Lo que va gratis, va por plato
 
@@ -975,3 +976,37 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 - ⚠️ **El editor de la plantilla reutiliza el diálogo de opciones**, porque los campos son los mismos: lo único que cambia es adónde se guarda. Borrar una plantilla ahora avisa de la verdad —«perderán las opciones que venían de ella; las que agregaste a mano se quedan»—, cuando antes decía «seguirán funcionando con sus propias opciones», que con una plantilla vacía era decir nada.
 
 - ⚠️ **El E2E cazó la misma trampa que el de «armar por partes»**: un localizador por nombre casaba también con las flechas «Subir/Bajar …» del grupo. Se anclan al inicio (`^`).
+
+## Cada local nace armado
+
+- **Pedido del dueño (2026-09-16):** «que cada local se cree con las opciones que le pertenecen; una pizzería o una heladería, que nazcan con eso… que aparezcan ya con algo para guiarse, y los de almuerzo sin muchos platos, con un par de cosas». Y, en la misma tanda: «dejar bien cómo se forma cada menú según el local, porque en la pizzería tenemos inconvenientes, así como los tenía La Abuelita».
+
+- ⚠️ **La plantilla vieja no enseñaba nada y, en los almuerzos, no podía.** Un local nacía con categorías y grupos colgados de la CATEGORÍA, sin un solo producto: el dueño veía «Sopa, Segundo, Guarnición… lo heredan 0 productos», piezas sueltas sin nada que dijera cómo se juntan. Y una parte del plato **solo puede colgar de un producto** (`option_groups_parte_del_plato_check`), así que la plantilla era incapaz de dejar el plato por partes que usa La Abuelita. Todo almuercero acababa con los dos juegos de grupos: exactamente el «tengo como 4 sopas» de [El panel enseñaba cuatro «Sopa» seguidas](#el-panel-enseñaba-cuatro-sopa-seguidas).
+
+- **Lo que hacen las apps grandes, y lo que se copió:** ni en blanco ni con una carta inventada a la venta. Nacen con la **estructura** de su oficio y un ejemplo que se edita, no que se vende. Cada local de comida nace con **UN producto de ejemplo, armado como se arma de verdad en su tipo**: el almuerzo por partes (Sopa · Segundo · Bebida gratis por plato, cada parte con su precio suelto), la pizza con Tamaño · Masa · Sabor · Extras más un combo de dos pizzas, el helado de dos bolas. Los demás tipos llevan un ejemplo que hereda los grupos de su categoría —una «Hamburguesa clásica» bajo Término, Extras y Retira ingredientes—, así ningún local lee «lo heredan 0 productos».
+
+- ⚠️ **El ejemplo NACE AGOTADO siempre, y lo decide la BASE, no la plantilla.** `apply_business_template` inserta los productos con `stock = 'agotado'` y no existe un campo para pedir lo contrario. Su precio es inventado: un local recién abierto que encienda su tienda no puede vender una «Pizza» a un precio que nadie puso. Agotado, la tienda lo pinta atenuado y sin botón, y `quoteCart` y `create_storefront_order` lo rechazan. La descripción le dice al dueño qué hacer con él. En el panel, sus grupos dicen «agotado · cuando lo pongas disponible, tu cliente elegirá: …» en vez de «tu cliente elige», que sería mentir (`agrupar-grupos.ts`).
+
+- ⚠️ **Agotado y NO oculto, y casi se despliega al revés.** El primer diseño lo creaba con `active = false`. En este sistema **un producto inactivo es un producto BORRADO**: el panel borra poniendo `active = false` y `getProducts` lista solo los activos. El ejemplo habría nacido invisible para su propio dueño —ni encontrarlo, ni editarlo, ni encenderlo—, con todas las pruebas en verde porque ninguna miraba el panel. Lo cazó la compilación del panel (`Product` no tiene `active` porque nunca lo necesitó). La base comprueba ahora las dos mitades: agotado Y activo.
+
+- **Dónde va cada grupo** —la regla que impide volver a duplicarlos, escrita en la cabecera de `business-templates.ts`—: de la **categoría**, lo que comparten TODOS sus productos (el término de cualquier hamburguesa); del **producto**, lo que solo tiene sentido en él (las partes de un almuerzo, los pasos de un combo); como **lista**, lo que se repite en varios productos (los sabores de una pizzería). Nunca dos de esas cosas para lo mismo. Por eso almuerzos, menú ejecutivo, pizzería y heladería **ya no tienen ni un grupo en la categoría**.
+
+- **Las listas nacen como plantilla de opciones** (`option_templates`) y los grupos se enlazan por NOMBRE; la base llena sus opciones sola con [la sincronización de #365](#las-plantillas-de-opciones-funcionan). Un sabor nuevo se escribe una vez y aparece en la pizza y en las dos pizzas del combo. ⚠️ **Una lista que la plantilla no trae es un error de la PLANTILLA** y se rechaza entera (`22023`), en vez de dejar un combo con un paso vacío que la tienda descartaría en silencio.
+
+- ⚠️ **El portón mira ahora también las listas.** Quien ya armó una tomó decisiones, igual que quien tiene una categoría o un producto. Los negocios existentes no se tocan: La Abuelita y Monster Pizza siguen exactamente como están.
+
+- ⚠️ **Hallazgo de paso, corregido:** en «pollo asado» las tres presas iban **sin recargo** —un pollo entero costaba lo mismo que un cuarto—. Sin productos nadie lo había mirado; con el ejemplo delante se ve a la primera. El precio base es el cuarto (+3 medio, +9 entero).
+
+- **La guardia nueva está en el CI** ([VERIFICACION.md](VERIFICACION.md#las-plantillas-reales-del-alta-contra-postgresql-2026-09-16)): cada plantilla real se aplica en PostgreSQL en cada PR. Hacía falta porque el alta se traga el error de la plantilla a propósito, y una plantilla rechazada dejaba al local naciendo vacío sin que nada fallara.
+
+### Monster Pizza, armado a mano el mismo día
+
+Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16-monster-pizza-antes-de-combos.sql` y verificado contra la tienda real:
+
+- **Los 19 sabores viven en UNA lista, «Sabores»**. El grupo «Sabor» de la categoría Pizzas se enlazó a ella y sus 19 opciones manuales se borraron (las copias los sustituyen con los mismos nombres y recargos).
+- **Monster Combo, Combo Panas y Monster Festival pasaron a `combo`**, y cada pizza del combo elige su sabor de la lista: «Sabor de la pizza» en el primero, «Sabor de la 1.ª pizza» y «Sabor de la 2.ª pizza» en los otros dos. Es la decisión del dueño: «cada pizza elige su sabor».
+- **Se retiró el paso falso «1. Elige tu pizza»**, que no elegía nada, y se quitaron los números de los nombres («Elige tu bebida (Incluida)», «Acompañante (Incluido)»): la mini app ya numera los pasos, y el número escrito a mano se desordenaba en cuanto se movía un grupo.
+- ⚠️ **En un combo, un sabor premium COBRA su recargo** (+$2, +$2,50, +$1,50 antes del margen). Es coherente con cómo el dueño ya cobraba las mejoras de sus combos; si prefiere que el combo no cobre sabores, se cambia la forma de cobro de esos grupos, no la lista.
+- **Burger Pack y Family Pack se quedaron simples**: no llevan pizza ni nada que elegir.
+- **Verificado con un pedido REAL que se deshizo:** «Combo Panas con dos hawaianas» entró por `create_storefront_order` con total 11,99 — el caso que obligó a copiar en vez de referenciar.
+
