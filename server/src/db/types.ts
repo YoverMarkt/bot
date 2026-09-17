@@ -215,6 +215,11 @@ export interface OptionRow {
   stock: string
   sort: number
   active: boolean
+  /**
+   * Si no es nulo, la opción es una COPIA de un ítem de plantilla que mantiene
+   * la base (`sincronizar_plantilla_en_grupo`, 2026-09-16). No se edita suelta.
+   */
+  option_template_item_id: string | null
 }
 
 export interface OptionTemplateRow {

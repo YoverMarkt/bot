@@ -439,11 +439,25 @@ router.post('/api/client/options', ...guards, async (req, res) => {
   }
 })
 
+/**
+ * Una opción que es COPIA de una plantilla no se toca suelta (2026-09-16).
+ *
+ * ⚠️ No es un capricho del panel: la base mantiene esas copias al día desde la
+ * plantilla, así que un cambio hecho aquí lo pisaría la siguiente
+ * sincronización SIN AVISAR — el dueño subiría un precio y lo vería volver solo.
+ * Es mejor decirle dónde se cambia. El panel ya esconde los botones; esto es lo
+ * que impide que entre por la API.
+ */
+const RESPUESTA_COPIA_DE_PLANTILLA = {
+  error: 'Esta opción viene de una plantilla. Cámbiala en la plantilla y se actualiza en todos los grupos que la usan.',
+}
+
 router.put('/api/client/options/:id', ...guards, async (req, res) => {
   const businessId = getClientBusinessId(req)
   try {
     const existente = await db.getOptionById(businessId, String(req.params.id))
     if (!existente) return res.status(404).json({ error: 'Esa opción no existe' })
+    if (existente.option_template_item_id) return res.status(409).json(RESPUESTA_COPIA_DE_PLANTILLA)
     const data = sanitizeOption(req.body)
     const grupo = await db.getOptionGroupById(businessId, String(data.option_group_id))
     if (!grupo) return res.status(404).json({ error: 'Ese grupo no existe' })
@@ -462,6 +476,7 @@ router.delete('/api/client/options/:id', ...guards, async (req, res) => {
   try {
     const existente = await db.getOptionById(businessId, String(req.params.id))
     if (!existente) return res.status(404).json({ error: 'Esa opción no existe' })
+    if (existente.option_template_item_id) return res.status(409).json(RESPUESTA_COPIA_DE_PLANTILLA)
     assertWrite(
       await db.deleteOption(businessId, String(req.params.id)),
       'eliminar la opción',

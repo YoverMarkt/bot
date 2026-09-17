@@ -5566,6 +5566,192 @@ begin
 end $$;
 
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LAS PLANTILLAS DE OPCIONES FUNCIONAN (2026-09-16)
+-- migration-2026-09-16-las-plantillas-funcionan.sql
+--
+-- Un grupo enganchado a una plantilla recibe COPIAS de sus ítems, y la base
+-- las mantiene al día. La tienda, la cotización y la RPC del pedido siguen
+-- leyendo `options` sin saber nada de plantillas — y por eso «2 pizzas
+-- hawaianas» funciona: cada paso tiene sus propios ids.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ── 1. El destino de la foránea compuesta ──────────────────────────────────
+--
+-- ⚠️ ANTES que la foránea: PostgreSQL exige un único que case con la pareja.
+create unique index if not exists uq_option_template_items_id_business
+  on public.option_template_items (id, business_id);
+
+
+-- ── 2. Cada copia sabe de qué ítem viene ───────────────────────────────────
+alter table public.options
+  add column if not exists option_template_item_id uuid;
+
+comment on column public.options.option_template_item_id is
+  'Si no es nulo, esta opción es una COPIA de un ítem de plantilla y la '
+  'mantiene la base: no se edita a mano, se edita la plantilla.';
+
+-- ⚠️ COMPUESTA sobre (id, business_id). Una de una sola columna comprueba «ese
+-- ítem existe», no «ese ítem es de este negocio» — y el guardián de fronteras
+-- (`verificar-fronteras.sql`) para el CI si la encuentra.
+--
+-- `on delete cascade`: borrar un sabor de la plantilla borra sus copias. Con la
+-- columna nula (opción manual) la foránea no aplica y la opción no se toca.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.options'::regclass
+      and conname = 'fk_options_item_de_plantilla_del_negocio'
+  ) then
+    alter table public.options
+      add constraint fk_options_item_de_plantilla_del_negocio
+      foreign key (option_template_item_id, business_id)
+      references public.option_template_items (id, business_id)
+      on delete cascade;
+  end if;
+end $$;
+
+-- Una sola copia de cada ítem por grupo: sin esto, dos sincronizaciones
+-- seguidas podrían duplicar un sabor.
+create unique index if not exists uq_options_copia_por_grupo
+  on public.options (option_group_id, option_template_item_id)
+  where option_template_item_id is not null;
+
+
+-- ── 3. Sincronizar un grupo con su plantilla ───────────────────────────────
+--
+-- Una sola función para los tres momentos —enganchar, editar la plantilla,
+-- desenganchar—, y es idempotente: correrla dos veces deja lo mismo que una.
+create or replace function public.sincronizar_plantilla_en_grupo(p_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_plantilla uuid;
+  v_negocio   uuid;
+begin
+  select option_template_id, business_id
+    into v_plantilla, v_negocio
+    from public.option_groups
+   where id = p_group_id;
+
+  if not found then
+    return;
+  end if;
+
+  -- Sin plantilla: fuera las copias. Las opciones MANUALES se quedan.
+  if v_plantilla is null then
+    delete from public.options
+     where option_group_id = p_group_id
+       and option_template_item_id is not null;
+    return;
+  end if;
+
+  -- Copias de ítems que ya no son de ESTA plantilla (se cambió de plantilla).
+  delete from public.options as o
+   where o.option_group_id = p_group_id
+     and o.option_template_item_id is not null
+     and not exists (
+       select 1 from public.option_template_items i
+        where i.id = o.option_template_item_id
+          and i.option_template_id = v_plantilla
+     );
+
+  -- Las que ya existen se ponen al día. Todo lo que ve el cliente viaja.
+  update public.options as o
+     set name                  = i.name,
+         description           = i.description,
+         image_url             = i.image_url,
+         image_public_id       = i.image_public_id,
+         price_adjustment      = i.price_adjustment,
+         references_product_id = i.references_product_id,
+         default_selected      = i.default_selected,
+         stock                 = i.stock,
+         sort                  = i.sort,
+         active                = i.active,
+         updated_at            = now()
+    from public.option_template_items as i
+   where o.option_group_id = p_group_id
+     and o.option_template_item_id = i.id
+     and i.option_template_id = v_plantilla;
+
+  -- Y las que faltan se crean.
+  insert into public.options (
+    business_id, option_group_id, option_template_item_id, name, description,
+    image_url, image_public_id, price_adjustment, references_product_id,
+    default_selected, stock, sort, active
+  )
+  select v_negocio, p_group_id, i.id, i.name, i.description,
+         i.image_url, i.image_public_id, i.price_adjustment, i.references_product_id,
+         i.default_selected, i.stock, i.sort, i.active
+    from public.option_template_items as i
+   where i.option_template_id = v_plantilla
+     and i.business_id = v_negocio
+     and not exists (
+       select 1 from public.options o
+        where o.option_group_id = p_group_id
+          and o.option_template_item_id = i.id
+     );
+end;
+$$;
+
+revoke all on function public.sincronizar_plantilla_en_grupo(uuid)
+  from public, anon, authenticated;
+
+
+-- ── 4. Enganchar o desenganchar un grupo ───────────────────────────────────
+create or replace function public.option_groups_sincronizar_plantilla()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform public.sincronizar_plantilla_en_grupo(new.id);
+  return null;
+end;
+$$;
+
+revoke all on function public.option_groups_sincronizar_plantilla()
+  from public, anon, authenticated;
+
+-- ⚠️ `after insert` además de `update`: un grupo que NACE ya enganchado (la
+-- plantilla del alta de una pizzería, por ejemplo) tiene que salir con sus
+-- sabores, no vacío.
+drop trigger if exists option_groups_sincronizar_plantilla on public.option_groups;
+create trigger option_groups_sincronizar_plantilla
+  after insert or update of option_template_id on public.option_groups
+  for each row execute function public.option_groups_sincronizar_plantilla();
+
+
+-- ── 5. Editar la plantilla llega a todos los grupos que la usan ────────────
+create or replace function public.option_template_items_propagar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  perform public.sincronizar_plantilla_en_grupo(g.id)
+     from public.option_groups g
+    where g.option_template_id = coalesce(new.option_template_id, old.option_template_id)
+       -- Un ítem que cambia de plantilla tiene que desaparecer de la vieja.
+       or (tg_op = 'UPDATE' and g.option_template_id = old.option_template_id);
+  return null;
+end;
+$$;
+
+revoke all on function public.option_template_items_propagar()
+  from public, anon, authenticated;
+
+drop trigger if exists option_template_items_propagar on public.option_template_items;
+create trigger option_template_items_propagar
+  after insert or update or delete on public.option_template_items
+  for each row execute function public.option_template_items_propagar();
+
+
 -- ── 4. RLS ──────────────────────────────────────────────────────────────────
 -- El frontend nunca habla con Supabase: la anon key queda bloqueada y el
 -- aislamiento real lo refuerza el filtrado por business_id en server/src/db.

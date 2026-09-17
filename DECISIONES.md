@@ -35,6 +35,7 @@ un módulo concreto, no en cada sesión.
 - [El panel enseñaba cuatro «Sopa» seguidas](#el-panel-enseñaba-cuatro-sopa-seguidas)
 - [Lo que va gratis, va por plato](#lo-que-va-gratis-va-por-plato)
 - [Un enlace viejo dice que expiró, y no enseña la carta](#un-enlace-viejo-dice-que-expiró-y-no-enseña-la-carta)
+- [Las plantillas de opciones funcionan](#las-plantillas-de-opciones-funcionan)
 
 ---
 
@@ -954,3 +955,23 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 - ⚠️ **«Expiró», no «ya no está activo»**, y el detalle dice por qué: «ya abriste uno más nuevo, o volviste al inicio del chat». Que por dentro sea una revocación al cliente le da igual; lo que necesita es saber que su enlace no sirve y cómo conseguir otro — y el botón a WhatsApp con el local ya escrito sigue ahí.
 
 - **Falla ABIERTO, como el bloqueo:** si la base revienta al abrir la portada, la portada abre sin marcar nada. Echar a un cliente legítimo por un fallo nuestro es peor, y la carta y el pedido siguen exigiendo un enlace que valga.
+
+## Las plantillas de opciones funcionan
+
+- **Se descubrió al ir a armar los sabores de los combos de Monster Pizza (2026-09-16).** El dueño eligió que cada pizza de un combo elija su sabor de los 19, y pidió que los sabores vivieran en UN sitio: «conectar las plantillas y usarlas». La sección «Plantillas reutilizables» del panel prometía exactamente eso —«defines Sabores una vez y sirve para cada paso del combo a la vez: al añadir una opción, aparece en todos»— y **no cumplía ninguna de las dos mitades**.
+
+- ⚠️ **Estaba desconectada por los DOS extremos, y cada uno bastaba para romperla.** Hacia el cliente: ni `services/storefront.ts` ni `create_storefront_order` leían `option_template_items`, así que un grupo enganchado a una plantilla se quedaba sin opciones propias, la tienda lo descartaba por vacío y **el cliente no veía nada**, sin un solo aviso. Hacia el dueño: `getOptionTemplateItems` y `createOptionTemplateItem` estaban en la API del panel y **ninguna pantalla las llamaba** — se podía crear una plantilla «Sabores», pero no meterle un solo sabor. Décima vez del patrón de [camino-real](.claude/skills/camino-real/SKILL.md), y esta con el agravante de estar rota por las dos puntas. En producción nadie la había usado (0 plantillas, 0 grupos): no había nada roto, había una trampa.
+
+- ⚠️ **SE ARREGLA COPIANDO, no enseñando a la RPC a leer plantillas, y la razón es concreta.** La RPC identifica cada elección por el id de la opción y **rechaza un id repetido** («viene repetida»). Un mismo sabor de la plantilla vive en varios pasos a la vez, así que «2 pizzas hawaianas» —el caso más normal de un combo familiar— mandaría el mismo id dos veces y **el pedido se rechazaría**. Leer plantillas en la RPC obligaba a cambiar el payload, la validación, la deduplicación y el guardado: el camino del dinero en cuatro sitios. Copiando, cada grupo tiene sus propias opciones con sus propios ids, y **la tienda, la cotización y la RPC no cambian una línea**. Hay una prueba en PostgreSQL real que crea el pedido de dos hawaianas y comprueba el total.
+
+- **La base mantiene las copias** (`sincronizar_plantilla_en_grupo`), y lo hace en los tres momentos: al **enganchar** un grupo —también al NACER enganchado, para que la plantilla del alta salga con sus sabores y no vacía—, al **editar la plantilla** —un sabor nuevo, un precio, un agotado o un borrado llega a todos los grupos que la usan— y al **desenganchar**. Es idempotente, y una sola función sirve a los tres disparadores.
+
+- ⚠️ **Enganchar NO borra las opciones manuales del grupo.** Borrar datos del dueño en silencio por tocar un desplegable sería peor que enseñarle las dos cosas juntas. Desenganchar quita **solo** las copias.
+
+- ⚠️ **Una copia no se edita suelta**, y el freno está en el servidor además de en la pantalla: la siguiente sincronización pisaría el cambio **sin avisar** — el dueño subiría un precio y lo vería volver solo. El panel marca las copias con «De la plantilla» y dice «se cambia en la plantilla» en vez de enseñar los botones; `PUT` y `DELETE` de una copia responden **409** con ese mismo mensaje. La columna `option_template_item_id` **no está** en la lista blanca de campos que acepta la ruta, así que nadie la fija desde fuera.
+
+- ⚠️ **La foránea nueva es COMPUESTA** `(option_template_item_id, business_id)`, y el guardián de fronteras (`verificar-fronteras.sql`) habría parado el CI si no. Con `on delete cascade`, borrar un sabor de la plantilla borra sus copias; con la columna nula —opción manual— la foránea no aplica. Un índice único `(option_group_id, option_template_item_id)` impide que dos sincronizaciones seguidas dupliquen un sabor.
+
+- ⚠️ **El editor de la plantilla reutiliza el diálogo de opciones**, porque los campos son los mismos: lo único que cambia es adónde se guarda. Borrar una plantilla ahora avisa de la verdad —«perderán las opciones que venían de ella; las que agregaste a mano se quedan»—, cuando antes decía «seguirán funcionando con sus propias opciones», que con una plantilla vacía era decir nada.
+
+- ⚠️ **El E2E cazó la misma trampa que el de «armar por partes»**: un localizador por nombre casaba también con las flechas «Subir/Bajar …» del grupo. Se anclan al inicio (`^`).

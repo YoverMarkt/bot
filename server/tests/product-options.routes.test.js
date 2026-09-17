@@ -368,6 +368,60 @@ describe('plantillas', () => {
       { id: 'p2', name: 'Salsas', used_by_groups: 0 },
     ])
   })
+
+  // ── Una COPIA de plantilla no se toca suelta (2026-09-16) ────────────────
+  //
+  // La base mantiene esas copias al día desde la plantilla
+  // (`sincronizar_plantilla_en_grupo`). Un cambio hecho a una copia lo pisaría
+  // la siguiente sincronización SIN AVISAR: el dueño subiría un precio y lo
+  // vería volver solo. El panel ya esconde los botones; esto es lo que impide
+  // que entre por la API.
+  const COPIA = {
+    id: '77777777-7777-4777-8777-777777777777',
+    option_group_id: '11111111-1111-4111-8111-111111111111',
+    name: 'Hawaiana',
+    option_template_item_id: '88888888-8888-4888-8888-888888888888',
+  }
+
+  it('editar una copia se rechaza y dice dónde se cambia', async () => {
+    vi.spyOn(db, 'getOptionById').mockResolvedValue(COPIA)
+    const actualizar = vi.spyOn(db, 'updateOption')
+
+    const r = await ejecutar('/api/client/options/:id', 'put', {
+      params: { id: COPIA.id },
+      body: { option_group_id: COPIA.option_group_id, name: 'Hawaiana especial', price_adjustment: 1 },
+    })
+
+    expect(r.status).toBe(409)
+    expect(r.body.error).toContain('plantilla')
+    expect(actualizar).not.toHaveBeenCalled()
+  })
+
+  it('borrar una copia se rechaza', async () => {
+    vi.spyOn(db, 'getOptionById').mockResolvedValue(COPIA)
+    const borrar = vi.spyOn(db, 'deleteOption')
+
+    const r = await ejecutar('/api/client/options/:id', 'delete', { params: { id: COPIA.id } })
+
+    expect(r.status).toBe(409)
+    expect(borrar).not.toHaveBeenCalled()
+  })
+
+  it('una opción MANUAL se sigue editando como siempre', async () => {
+    // El freno es solo para las copias. Sin esto, el dueño no podría tocar ni
+    // una de las opciones que escribió él.
+    vi.spyOn(db, 'getOptionById').mockResolvedValue({ ...COPIA, option_template_item_id: null })
+    vi.spyOn(db, 'getOptionGroupById').mockResolvedValue({ id: COPIA.option_group_id })
+    const actualizar = vi.spyOn(db, 'updateOption').mockResolvedValue({ data: {}, error: null })
+
+    const r = await ejecutar('/api/client/options/:id', 'put', {
+      params: { id: COPIA.id },
+      body: { option_group_id: COPIA.option_group_id, name: 'Borde de queso', price_adjustment: 2 },
+    })
+
+    expect(r.status).toBe(200)
+    expect(actualizar).toHaveBeenCalled()
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════

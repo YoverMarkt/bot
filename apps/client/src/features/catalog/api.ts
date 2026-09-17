@@ -174,6 +174,12 @@ export type ProductOption = {
   stock: 'disponible' | 'agotado'
   sort: number
   active: boolean
+  /**
+   * Si no es nulo, esta opción es una COPIA de un sabor de plantilla y la
+   * mantiene la base (2026-09-16). No se edita suelta: se edita la plantilla,
+   * y el cambio llega a todos los grupos que la usan.
+   */
+  option_template_item_id?: string | null
 }
 
 export type ProductOptionPayload = Omit<ProductOption, 'id'>

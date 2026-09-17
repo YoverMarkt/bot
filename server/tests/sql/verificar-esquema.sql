@@ -1429,6 +1429,141 @@ begin
     delete from products where id = v_almuerzo;
   end;
 
+  -- ── 3d bis. LAS PLANTILLAS DE OPCIONES FUNCIONAN (2026-09-16) ───────────
+  --
+  -- El panel dejaba crear una plantilla y enganchar un grupo a ella, pero ni la
+  -- tienda ni esta RPC la leían: el grupo se quedaba sin opciones propias, la
+  -- tienda lo descartaba por vacío y el cliente NO VEÍA NADA. Construida y
+  -- desconectada, décima vez del patrón.
+  --
+  -- ⚠️ Se arregla COPIANDO, no enseñando a la RPC a leer plantillas. Leerlas
+  -- aquí rompía algo concreto: la RPC identifica cada elección por el id de la
+  -- opción y rechaza un id repetido, así que «2 pizzas hawaianas» —el mismo
+  -- sabor de la plantilla en dos pasos— se habría rechazado. Con una copia por
+  -- grupo, cada paso tiene sus propios ids y la RPC no cambia una línea.
+  declare
+    v_pizza   uuid;
+    v_plant   uuid;
+    v_i_haw   uuid;
+    v_i_mon   uuid;
+    v_i_rom   uuid;
+    v_g1      uuid;
+    v_g2      uuid;
+    v_manual  uuid;
+    v_c1_haw  uuid;
+    v_c2_haw  uuid;
+    v_cuantas integer;
+    v_precio  numeric;
+    v_mesa    jsonb;
+  begin
+    insert into products (business_id, name, price, stock, active)
+    values (v_business, 'Combo de dos pizzas', 12.00, 'disponible', true)
+    returning id into v_pizza;
+
+    insert into option_templates (business_id, name)
+    values (v_business, 'Sabores de prueba') returning id into v_plant;
+    insert into option_template_items (business_id, option_template_id, name, price_adjustment, sort)
+    values (v_business, v_plant, 'Hawaiana', 0, 0) returning id into v_i_haw;
+    insert into option_template_items (business_id, option_template_id, name, price_adjustment, sort)
+    values (v_business, v_plant, 'Monster', 2.50, 1) returning id into v_i_mon;
+    insert into option_template_items (business_id, option_template_id, name, price_adjustment, sort)
+    values (v_business, v_plant, 'Romana', 0, 2) returning id into v_i_rom;
+
+    insert into option_groups (business_id, product_id, name, selection_type, required, min_selectable, sort)
+    values (v_business, v_pizza, 'Sabor de la 1.ª pizza', 'single', true, 1, 0) returning id into v_g1;
+    insert into option_groups (business_id, product_id, name, selection_type, required, min_selectable, sort)
+    values (v_business, v_pizza, 'Sabor de la 2.ª pizza', 'single', true, 1, 1) returning id into v_g2;
+
+    -- Una opción MANUAL en el grupo 1, antes de enganchar: no se puede perder.
+    insert into options (business_id, option_group_id, name, price_adjustment)
+    values (v_business, v_g1, 'Mitad y mitad', 1.00) returning id into v_manual;
+
+    -- ── Enganchar copia los ítems ───────────────────────────────────────
+    update option_groups set option_template_id = v_plant where id in (v_g1, v_g2);
+
+    select count(*) into v_cuantas from options
+     where option_group_id = v_g2 and option_template_item_id is not null;
+    if v_cuantas <> 3 then
+      raise exception 'enganchar la plantilla no copió sus 3 sabores al grupo: %', v_cuantas;
+    end if;
+    if not exists (select 1 from options where id = v_manual) then
+      raise exception 'enganchar la plantilla BORRÓ una opción manual del dueño';
+    end if;
+
+    -- Cada grupo tiene SUS copias: ids distintos para el mismo sabor.
+    select id into v_c1_haw from options where option_group_id = v_g1 and option_template_item_id = v_i_haw;
+    select id into v_c2_haw from options where option_group_id = v_g2 and option_template_item_id = v_i_haw;
+    if v_c1_haw is null or v_c2_haw is null or v_c1_haw = v_c2_haw then
+      raise exception 'los dos pasos no tienen copias propias de Hawaiana';
+    end if;
+
+    -- ── EL CASO QUE ROMPÍA LA OTRA SOLUCIÓN: dos hawaianas ──────────────
+    v_mesa := public.create_storefront_order(
+      v_business, null, '+593900000008', 'Dos hawaianas', null, 'pickup',
+      jsonb_build_array(jsonb_build_object(
+        'product_id', v_pizza, 'quantity', 1,
+        'options', jsonb_build_array(
+          jsonb_build_object('option_id', v_c1_haw, 'quantity', 1),
+          jsonb_build_object('option_id', v_c2_haw, 'quantity', 1)
+        )
+      ))
+    );
+    if (v_mesa ->> 'total')::numeric <> 12.00 then
+      raise exception 'dos hawaianas cobró %, y debía cobrar 12.00', v_mesa ->> 'total';
+    end if;
+    delete from orders where id = (v_mesa ->> 'id')::uuid;
+
+    -- ── Un sabor nuevo en la plantilla aparece en TODOS los pasos ───────
+    insert into option_template_items (business_id, option_template_id, name, price_adjustment, sort)
+    values (v_business, v_plant, 'Pepperoni', 0, 3);
+    select count(*) into v_cuantas from options
+     where option_group_id in (v_g1, v_g2) and name = 'Pepperoni';
+    if v_cuantas <> 2 then
+      raise exception 'un sabor nuevo de la plantilla no llegó a los dos pasos: %', v_cuantas;
+    end if;
+
+    -- ── Cambiar un precio en la plantilla lo cambia en todos ────────────
+    update option_template_items set price_adjustment = 3.00 where id = v_i_mon;
+    select max(price_adjustment) into v_precio from options
+     where option_group_id in (v_g1, v_g2) and option_template_item_id = v_i_mon;
+    if v_precio <> 3.00 or exists (
+      select 1 from options where option_template_item_id = v_i_mon and price_adjustment <> 3.00
+    ) then
+      raise exception 'el precio nuevo de Monster no llegó a todas sus copias';
+    end if;
+
+    -- ── Agotar en la plantilla agota en todos ───────────────────────────
+    update option_template_items set stock = 'agotado' where id = v_i_rom;
+    if exists (
+      select 1 from options where option_template_item_id = v_i_rom and stock <> 'agotado'
+    ) then
+      raise exception 'agotar Romana en la plantilla no la agotó en los pasos';
+    end if;
+
+    -- ── Borrar un sabor de la plantilla lo quita de todos ───────────────
+    delete from option_template_items where id = v_i_rom;
+    if exists (select 1 from options where name = 'Romana' and option_group_id in (v_g1, v_g2)) then
+      raise exception 'borrar Romana de la plantilla la dejó viva en un paso';
+    end if;
+
+    -- ── Desenganchar quita SOLO las copias ──────────────────────────────
+    update option_groups set option_template_id = null where id = v_g1;
+    if exists (select 1 from options where option_group_id = v_g1 and option_template_item_id is not null) then
+      raise exception 'desenganchar dejó copias de la plantilla en el grupo';
+    end if;
+    if not exists (select 1 from options where id = v_manual) then
+      raise exception 'desenganchar BORRÓ la opción manual del dueño';
+    end if;
+    -- …y el otro grupo, que sigue enganchado, conserva las suyas.
+    if not exists (select 1 from options where option_group_id = v_g2 and option_template_item_id = v_i_haw) then
+      raise exception 'desenganchar un grupo dejó sin sabores al OTRO';
+    end if;
+
+    delete from option_groups where product_id = v_pizza;
+    delete from option_templates where id = v_plant;
+    delete from products where id = v_pizza;
+  end;
+
   -- ── 3d ter. Un doble toque NO crea dos pedidos ───────────────────────────
   --
   -- Es el fallo más caro de una tienda: dos comandas en la cocina y un cliente
