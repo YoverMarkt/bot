@@ -493,6 +493,73 @@ export function platosDeLaMesaElegida(
   )
 }
 
+/**
+ * Lo gratis de un grupo que ACOMPAÑA a un plato por partes: cuántos platos hay
+ * y cuántas opciones gratis van marcadas. Nulo si el grupo no se topa por
+ * platos (no es plato por partes, es una parte, o no trae nada gratis).
+ *
+ * ⚠️ Cuenta OPCIÓN POR OPCIÓN, igual que `lineasDelPlato` y la base: un grupo
+ * puede mezclar jugos gratis con «Sandía +$0.55», y solo los gratis se topan.
+ */
+export function gratisDelGrupo(
+  product: Product,
+  group: OptionGroup,
+  options: ChosenOption[],
+): { platos: number; usadas: number } | null {
+  if (!esPlatoPorPartes(product) || group.isMealPart === true) return null
+  const gratis = new Set(group.options.filter(opcion => opcion.price === 0).map(opcion => opcion.id))
+  if (!gratis.size) return null
+  return {
+    platos: platosDeLaMesaElegida(product, options),
+    usadas: options
+      .filter(opcion => opcion.groupId === group.id && gratis.has(opcion.optionId))
+      .reduce((total, opcion) => total + opcion.quantity, 0),
+  }
+}
+
+/**
+ * Hasta cuántas porciones puede llevar ESTA opción ahora mismo. Es lo que
+ * apaga el «+» de la ficha.
+ *
+ * ⚠️ Existe porque la ficha topaba el GRUPO solo si todas sus opciones eran
+ * gratis. En La Abuelita (2026-09-17) bastó añadir «Sandía +$0.55» a las
+ * bebidas para que el contador de un jugo gratis subiera a 10 sobre un solo
+ * almuerzo, mientras el carrito —que topa opción por opción— lo rechazaba.
+ *
+ * En un plato por partes, lo que acompaña está CERRADO hasta que haya un plato
+ * (pedido del dueño: primero la sopa o el segundo, luego el jugo). Lo gratis se
+ * topa en uno por plato, repartido entre sabores; lo que tiene precio, solo por
+ * el máximo del grupo, porque se paga.
+ */
+export function topeDeLaOpcion(
+  product: Product,
+  group: OptionGroup,
+  optionId: string,
+  options: ChosenOption[],
+): number {
+  const delGrupo = options.filter(opcion => opcion.groupId === group.id)
+  const otras = delGrupo
+    .filter(opcion => opcion.optionId !== optionId)
+    .reduce((total, opcion) => total + opcion.quantity, 0)
+  const porElGrupo = Math.max(0, group.maxSelectable - otras)
+
+  const esPlato = esPlatoPorPartes(product)
+  if (!esPlato || group.isMealPart === true) return porElGrupo
+
+  const platos = platosDeLaMesaElegida(product, options)
+  if (platos <= 0) return 0
+
+  const propia = group.options.find(opcion => opcion.id === optionId)
+  if (!propia || propia.price !== 0) return porElGrupo
+
+  const gratis = gratisDelGrupo(product, group, options)
+  const propias = delGrupo
+    .filter(opcion => opcion.optionId === optionId)
+    .reduce((total, opcion) => total + opcion.quantity, 0)
+  const gratisDeOtras = (gratis?.usadas ?? 0) - propias
+  return Math.min(porElGrupo, Math.max(0, platos - gratisDeOtras))
+}
+
 export function lineasDelPlato(
   product: Product,
   options: ChosenOption[],

@@ -5,7 +5,9 @@ import {
   claveDelPlato,
   detalleDeLinea,
   esPlatoPorPartes,
+  gratisDelGrupo,
   lineasDelPlato,
+  topeDeLaOpcion,
   totalDelPlato,
 } from '../src/lib/cart'
 import type { CartLine, ChosenOption, OptionChoice, OptionGroup, Product } from '../src/lib/types'
@@ -233,3 +235,66 @@ describe('lo gratis va por plato, no a discreción', () => {
     expect(plato.lines?.find(l => l.name === 'Porción de carne')?.quantity).toBe(5)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LA FICHA NO DEJA MARCAR LO QUE EL CARRITO VA A RECHAZAR (2026-09-17)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Caso real de La Abuelita: un almuerzo y el contador de «Naranjilla» subió
+// hasta 10. Abajo decía «llevas 1 y marcaste 11», pero la pantalla lo dejaba.
+// La ficha solo topaba un grupo si TODAS sus opciones eran gratis, y el dueño
+// había añadido «Sandía +$0.55» a las bebidas. El carrito y la base topan
+// opción por opción (solo las gratis), así que pantalla y cobro no coincidían.
+//
+// Y lo que pidió el dueño además: lo gratis no se ofrece hasta que haya un
+// plato. Primero la sopa o el segundo, luego el jugo.
+
+describe('hasta cuánto deja subir la ficha cada opción', () => {
+  const unAlmuerzo = [elegir(SOPA, 'o-caldo', 1), elegir(SEGUNDO, 'o-pollo', 1)]
+
+  it('un almuerzo, un jugo gratis: el contador se planta en 1 aunque el grupo tenga algo con precio', () => {
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-jugo', unAlmuerzo)).toBe(1)
+    const conJugo = [...unAlmuerzo, elegir(ACOMPANAR, 'o-jugo', 1)]
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-jugo', conJugo)).toBe(1)
+  })
+
+  it('los gratis se reparten entre sabores: 3 platos, 2 de mora dejan 1 de naranjilla', () => {
+    const conMora = grupo({
+      ...ACOMPANAR,
+      options: [...ACOMPANAR.options, opcion('o-naranjilla', 'Naranjilla')],
+    })
+    const tres = [
+      elegir(SOPA, 'o-caldo', 2), elegir(SEGUNDO, 'o-pollo', 3),
+      elegir(conMora, 'o-jugo', 2),
+    ]
+    expect(topeDeLaOpcion(almuerzo({ optionGroups: [SOPA, SEGUNDO, conMora] }), conMora, 'o-naranjilla', tres))
+      .toBe(1)
+  })
+
+  it('lo que tiene precio no se topa por platos: se paga', () => {
+    const conJugo = [...unAlmuerzo, elegir(ACOMPANAR, 'o-jugo', 1)]
+    // 100 del grupo menos el jugo que ya va.
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-carne', conJugo)).toBe(99)
+  })
+
+  it('sin un plato elegido, lo que acompaña está cerrado — con precio o sin él', () => {
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-jugo', [])).toBe(0)
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-carne', [])).toBe(0)
+    // Una parte suelta ya es un plato: abre el jugo.
+    expect(topeDeLaOpcion(almuerzo(), ACOMPANAR, 'o-jugo', [elegir(SEGUNDO, 'o-pollo', 1)])).toBe(1)
+  })
+
+  it('las partes no se topan por platos: la familia lleva las que quiera', () => {
+    expect(topeDeLaOpcion(almuerzo(), SOPA, 'o-caldo', [elegir(SOPA, 'o-crema', 4)])).toBe(96)
+  })
+
+  it('la cabecera cuenta SOLO los gratis contra los platos', () => {
+    const mesaDeDos = [
+      elegir(SOPA, 'o-caldo', 2), elegir(SEGUNDO, 'o-pollo', 2),
+      elegir(ACOMPANAR, 'o-jugo', 1), elegir(ACOMPANAR, 'o-carne', 3),
+    ]
+    expect(gratisDelGrupo(almuerzo(), ACOMPANAR, mesaDeDos)).toEqual({ platos: 2, usadas: 1 })
+    expect(gratisDelGrupo(almuerzo(), SOPA, mesaDeDos)).toBeNull()
+  })
+})
+

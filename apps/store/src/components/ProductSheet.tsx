@@ -7,6 +7,7 @@ import {
   chosenCount,
   claveDelPlato,
   esPlatoPorPartes,
+  gratisDelGrupo,
   groupExtras,
   lineasDelPlato,
   platosDeLaMesaElegida,
@@ -15,6 +16,7 @@ import {
   optionPriceLabel,
   pillLayout,
   singleChoice,
+  topeDeLaOpcion,
   totalDelPlato,
   unitPrice,
 } from '../lib/cart'
@@ -166,20 +168,23 @@ export default function ProductSheet({
   }
 
   /**
-   * El tope REAL de un grupo aquí y ahora.
+   * El tope REAL de una opción aquí y ahora (`topeDeLaOpcion`, en `cart.ts`).
    *
-   * ⚠️ Lo que va GRATIS en un plato por partes va uno por plato: 2 almuerzos y
-   * un segundo suelto son tres platos y tres jugos. Sin esto, el contador
-   * dejaba subir hasta `maxSelectable` —100 en un local real— y el cliente se
-   * comía el rechazo al final, después de haber armado toda la mesa.
+   * ⚠️ Lo que va GRATIS en un plato por partes va uno por plato, y se cuenta
+   * OPCIÓN POR OPCIÓN. Hasta el 2026-09-17 esto topaba el GRUPO solo si todas
+   * sus opciones eran gratis: en La Abuelita bastó una «Sandía +$0.55» entre
+   * las bebidas para que un jugo gratis subiera a 10 sobre un almuerzo, y el
+   * rechazo llegaba abajo, con la mesa ya armada.
    */
-  const topeDelGrupo = (group: OptionGroup): number => {
-    if (!esPlato || !product || group.isMealPart === true) return group.maxSelectable
-    // Solo lo gratis: un adicional con precio se compra sin límite.
-    const gratis = group.options.every(opcion => opcion.price === 0)
-    if (!gratis) return group.maxSelectable
-    return Math.min(group.maxSelectable, platosDeLaMesaElegida(product, opciones))
-  }
+  const topeDe = (group: OptionGroup, optionId: string): number => (
+    product ? topeDeLaOpcion(product, group, optionId, opciones) : group.maxSelectable
+  )
+  const platosElegidos = esPlato && product ? platosDeLaMesaElegida(product, opciones) : 0
+  // Pedido del dueño: lo que acompaña se abre DESPUÉS de elegir una parte.
+  const nombresDeLasPartes = gruposOpciones
+    .filter(grupo => grupo.isMealPart)
+    .map(grupo => grupo.name.toLocaleLowerCase('es'))
+    .join(' o ')
 
   /**
    * `quantity`: un contador por opción. El tope es del GRUPO y se cuenta en
@@ -194,10 +199,13 @@ export default function ProductSheet({
     const resto = opciones.filter(item => item.optionId !== opcion.optionId)
     if (siguiente <= 0) return setOpciones(resto)
 
-    const usadoPorOtras = resto
-      .filter(item => item.groupId === group.id)
-      .reduce((suma, item) => suma + item.quantity, 0)
-    const permitido = Math.max(0, topeDelGrupo(group) - usadoPorOtras)
+    // ⚠️ BAJAR se puede siempre. Si la familia quita un segundo después de
+    // marcar los jugos, se queda por encima del tope y tiene que poder
+    // corregirlo; con el tope aplicado también al «−», no podría.
+    const actual = opciones.find(item => item.optionId === opcion.optionId)?.quantity || 0
+    if (siguiente <= actual) return setOpciones([...resto, { ...opcion, quantity: siguiente }])
+
+    const permitido = topeDe(group, opcion.optionId)
     if (permitido <= 0) return
 
     setOpciones([...resto, { ...opcion, quantity: Math.min(siguiente, permitido) }])
@@ -366,8 +374,10 @@ export default function ProductSheet({
         {/* El plato por partes se explica ANTES de elegir: qué forma un plato
             completo y cuánto cuesta cada parte suelta. Sin esto la familia
             marca tres sopas y dos segundos sin saber qué va a pagar. */}
+        {/* `mb-5`: pegada al cuerpo gris se leía como la cabecera de «Sopa»,
+            no como la explicación del plato entero (el dueño, 2026-09-17). */}
         {esPlato && (
-          <div className="mt-3 rounded-2xl bg-marca-suave px-3.5 py-2.5 text-[13px] leading-snug texto-cuerpo">
+          <div className="mt-3 mb-5 rounded-2xl bg-marca-suave px-3.5 py-2.5 text-[13px] leading-snug texto-cuerpo">
             <p>
               <span className="font-bold">
                 {gruposOpciones.filter(grupo => grupo.isMealPart).map(grupo => grupo.name).join(' + ')}
@@ -433,13 +443,12 @@ export default function ProductSheet({
           const usado = chosenCount(group, opciones)
           const minimo = Math.max(group.required ? 1 : 0, group.minSelectable)
           const cumplido = usado >= minimo
-          const tope = topeDelGrupo(group)
-          const lleno = usado >= tope
-          // Un grupo GRATIS de un plato por partes va uno por plato, así que su
-          // tope cambia mientras el cliente arma la mesa. Hay que decírselo: un
-          // contador que se planta sin explicar por qué se lee como un fallo.
-          const topadoPorPlatos = esPlato && group.isMealPart !== true
-            && tope < group.maxSelectable
+          // Lo que acompaña a un plato por partes: cerrado sin plato, y lo
+          // gratis va uno por plato. Hay que DECIRLO: un contador que se planta
+          // sin explicar por qué se lee como un fallo.
+          const acompanaAlPlato = esPlato && group.isMealPart !== true
+          const cerrado = acompanaAlPlato && platosElegidos === 0
+          const gratis = acompanaAlPlato && product ? gratisDelGrupo(product, group, opciones) : null
 
           return (
             <section key={group.id}>
@@ -477,15 +486,9 @@ export default function ProductSheet({
                       </span>
                     )
                   : esPlato
-                    // Las PARTES no tienen tope: se dice cuántas lleva. Lo que va
-                    // gratis sí, y entonces se dice «2 de 3» — el 3 son los platos.
-                    ? topadoPorPlatos
-                      ? (
-                        <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
-                          {usado} de {tope}
-                        </span>
-                      )
-                      : usado > 0 && (
+                    // Las PARTES no tienen tope: se dice cuántas lleva. Lo gratis
+                    // se cuenta en la línea de debajo, contra los platos.
+                    ? !acompanaAlPlato && usado > 0 && (
                         <span className="shrink-0 text-[11px] font-semibold tracking-normal normal-case texto-tenue tabular-nums">
                           {usado} en la mesa
                         </span>
@@ -498,6 +501,18 @@ export default function ProductSheet({
               </h3>
               {group.description && (
                 <p className="mb-2 px-1 text-[12.5px] texto-cuerpo">{group.description}</p>
+              )}
+              {cerrado && (
+                <p className="mb-2 px-1 text-[12.5px] font-semibold texto-cuerpo">
+                  Se activa cuando elijas {nombresDeLasPartes}.
+                </p>
+              )}
+              {!cerrado && gratis && (
+                <p className="mb-2 px-1 text-[12.5px] texto-cuerpo tabular-nums">
+                  {gratis.platos === 1 ? 'Va 1 gratis con tu plato' : `Van ${gratis.platos} gratis, uno por plato`}
+                  {' · '}
+                  <span className="font-semibold">llevas {gratis.usadas} de {gratis.platos}</span>
+                </p>
               )}
 
               {/* Contador de avance: «3 de 7 seleccionados».
@@ -523,6 +538,7 @@ export default function ProductSheet({
                           <button
                             key={opcion.id}
                             type="button"
+                            disabled={cerrado}
                             onClick={() => elegirUnica(group, {
                               groupId: group.id,
                               groupName: group.name,
@@ -538,7 +554,7 @@ export default function ProductSheet({
                             // incumpliendo. `acento` trae su texto calculado por
                             // luminancia, así que cualquier color del negocio
                             // mantiene el contraste.
-                            className={`rounded-full px-4 py-2.5 text-[14px] font-bold transition active:scale-95 ${
+                            className={`rounded-full px-4 py-2.5 text-[14px] font-bold transition active:scale-95 disabled:opacity-40 ${
                               activa
                                 ? 'acento shadow-acento'
                                 : 'superficie borde-tema border-2 texto-cuerpo shadow-tarjeta'
@@ -569,7 +585,8 @@ export default function ProductSheet({
                     quantity: 1,
                   }
                   const activa = Boolean(elegida)
-                  const bloqueada = !activa && lleno && !singleChoice(group)
+                  const tope = topeDe(group, opcion.id)
+                  const bloqueada = !activa && (cerrado || (!singleChoice(group) && tope <= 0))
 
                   return (
                     /* ⚠️ El relleno vertical va DENTRO del botón, no en esta
@@ -617,6 +634,7 @@ export default function ProductSheet({
                               <Contador
                                 valor={elegida?.quantity || 0}
                                 minimo={0}
+                                maximo={tope}
                                 onCambiar={valor => cambiarCantidadOpcion(group, seleccion, valor)}
                               />
                             </>
