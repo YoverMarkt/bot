@@ -85,8 +85,15 @@ const request = async <T>(
     // esta persona demuestre que el número es suyo. Borrarlo dejaba al cliente
     // legítimo sin enlace justo cuando iba a confirmarlo — entraba el número
     // correcto y aun así acababa en «Necesitas tu propio enlace».
+    //
+    // ⚠️ Y salvo un enlace MUERTO (revocado o caducado, 2026-09-17). Ese token
+    // es la prueba de que esta persona ya tuvo su enlace: borrarlo hacía que
+    // la siguiente recarga llegara SIN enlace, el servidor la tratara como
+    // visitante y la app dijera «Necesitas tu propio enlace» en vez de «Tu
+    // enlace expiró». El enlace nuevo que llegue por el chat lo reemplaza.
     const soloFaltaElNumero = payload.reason === 'necesita_telefono'
-    if (response.status === 401 && !soloFaltaElNumero) clearToken()
+    const enlaceMuerto = payload.reason === 'revocada' || payload.reason === 'caducada'
+    if (response.status === 401 && !soloFaltaElNumero && !enlaceMuerto) clearToken()
     throw new ApiError(
       response.status,
       String(payload.error || 'No pudimos completar la operación'),

@@ -955,6 +955,8 @@ un fallo que se pagó. Lo único que cambia es cuándo se leen.
 
 - ⚠️ **«Expiró», no «ya no está activo»**, y el detalle dice por qué: «ya abriste uno más nuevo, o volviste al inicio del chat». Que por dentro sea una revocación al cliente le da igual; lo que necesita es saber que su enlace no sirve y cómo conseguir otro — y el botón a WhatsApp con el local ya escrito sigue ahí.
 
+- ⚠️ **La app ya no OLVIDA un enlace muerto (2026-09-17).** El dueño, probando La Abuelita en su teléfono sin compartir nada, vio «Necesitas tu propio enlace» en vez de «Tu enlace expiró». Con la tienda abierta escribió MENÚ, la siguiente petición recibió 401 `revocada` y `api.ts` **borró el token guardado**, como con cualquier 401. La recarga llegó sin enlace, el servidor la trató como visitante y la portada ya no podía decir `expired`. Ahora el token de un enlace revocado o caducado se conserva; el enlace nuevo que llega por el chat lo reemplaza (`?s=` gana). Lo prueba `apps/store/tests/enlace-muerto.test.ts`.
+
 - **Falla ABIERTO, como el bloqueo:** si la base revienta al abrir la portada, la portada abre sin marcar nada. Echar a un cliente legítimo por un fallo nuestro es peor, y la carta y el pedido siguen exigiendo un enlace que valga.
 
 ## Las plantillas de opciones funcionan
