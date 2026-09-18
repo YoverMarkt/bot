@@ -133,6 +133,15 @@ export async function mockAdminApi(page: Page) {
     if (path === '/api/admin/stats') {
       return json(route, { totalClients: 1, activeClients: 1, suspendedClients: 0, messagesToday: 3 })
     }
+    // Los cajones del menú del chat: el modal los pide al abrirse.
+    if (path === '/api/admin/marketplace-categories') {
+      return json(route, { categories: [
+        { code: 'almuerzos', label: 'Almuerzos', emoji: '🍽️' },
+        { code: 'restaurantes', label: 'Comida típica y restaurantes', emoji: '🍲' },
+        { code: 'desayunos', label: 'Desayunos y café', emoji: '🍳' },
+        { code: 'pizzerias', label: 'Pizzerías', emoji: '🍕' },
+      ] })
+    }
     if (path === '/api/admin/clients') {
       return json(route, [{
         id: 'biz-e2e', slug: 'negocio-e2e', name: 'Negocio E2E', type: 'tienda',

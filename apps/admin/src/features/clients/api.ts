@@ -162,6 +162,8 @@ export const reactivateClient = (id: string) =>
 
 // ── Detalle + crear/editar negocio (el corazón del onboarding) ──
 export type BusinessDetail = BusinessRow & {
+  /** Cajones del menú donde aparece: los elegidos, o los de su tipo. */
+  marketplace_categories?: string[]
   owner_phone: string | null
   // 'marketplace' = sin canal propio; lo atiende el número de la plataforma.
   whatsapp_provider: 'ycloud' | 'meta' | 'telegram' | 'marketplace' | null
@@ -185,6 +187,17 @@ export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'>
 }
 
 export const getClient = (id: string) => api<BusinessDetail>(`/api/admin/clients/${id}`)
+
+/** Un cajón del menú del chat: donde el cliente busca antojos. */
+export type CajonDelMenu = { code: string; label: string; emoji: string | null }
+
+/**
+ * Los cajones del menú, TODOS, también los vacíos: el superadmin necesita ver
+ * el cajón sin locales para poder meter ahí el primero.
+ */
+export const getMarketplaceCategories = () =>
+  api<{ categories: CajonDelMenu[] }>('/api/admin/marketplace-categories')
+    .then(r => r.categories)
 
 export const createClient = (p: BusinessPayload) =>
   api<BusinessRow>('/api/admin/clients', { method: 'POST', body: JSON.stringify(p) })

@@ -37,6 +37,7 @@ un módulo concreto, no en cada sesión.
 - [Un enlace viejo dice que expiró, y no enseña la carta](#un-enlace-viejo-dice-que-expiró-y-no-enseña-la-carta)
 - [Las plantillas de opciones funcionan](#las-plantillas-de-opciones-funcionan)
 - [Cada local nace armado](#cada-local-nace-armado)
+- [Un local vive en varios cajones del menú](#un-local-vive-en-varios-cajones-del-menú)
 
 ---
 
@@ -1017,4 +1018,24 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 - ⚠️ **En un combo, un sabor premium COBRA su recargo** (+$2, +$2,50, +$1,50 antes del margen). Es coherente con cómo el dueño ya cobraba las mejoras de sus combos; si prefiere que el combo no cobre sabores, se cambia la forma de cobro de esos grupos, no la lista.
 - **Burger Pack y Family Pack se quedaron simples**: no llevan pizza ni nada que elegir.
 - **Verificado con un pedido REAL que se deshizo:** «Combo Panas con dos hawaianas» entró por `create_storefront_order` con total 11,99 — el caso que obligó a copiar en vez de referenciar.
+
+## Un local vive en varios cajones del menú
+
+- **Pedido del dueño (2026-09-17), con el caso exacto:** «son las 7 de la noche, el cliente ve solo *Almuerzos* y piensa que no hay nada para él». Un local de comida típica que sirve almuerzo al mediodía y carta de noche vivía en un único cajón, el que le daba su TIPO.
+
+- ⚠️ **El cajón no es una clasificación de empresas, es un ANTOJO.** Nadie busca «un restaurante de comida típica»: busca pizza, pollo, almuerzo o cena. Es como lo tratan las apps grandes —cocinas y etiquetas, varias por local— y es la razón de fondo por la que un tipo no basta: un local real cubre varios antojos.
+
+- **Qué cambia:** `business_marketplace_categories` guarda los cajones ELEGIDOS de cada local (uno principal y hasta dos más). El TIPO sigue mandando para quien no eligió ninguno, así que ningún local existente se movió ni hubo que tocar nada a mano. La vista `marketplace_cajones_de_negocio` resuelve esa regla en UN solo sitio y las tres funciones del menú —las categorías disponibles, los locales de una categoría y la búsqueda— la leen de ahí. ⚠️ Una copia del `union` en cada función habría acabado divergiendo: el local aparecería en la lista y no en el contador, o al revés.
+
+- **Cajón nuevo: «🍲 Comida típica y restaurantes»** (orden 35, entre Almuerzos y Asados). *Almuerzos* se queda para el menú del día, que en Ecuador es un producto y no una hora. Los tipos «comida típica» y «restaurante» pasan a colgar del cajón nuevo, y con ellos llegan los alias de búsqueda que faltaban: `cena`, `cenar`, `merienda`, `tipica`, `criolla`, `restaurante`.
+
+- ⚠️ **Tres cajones como mucho, y lo vigila la BASE** (disparador, no solo la ruta): un local en ocho cajones convierte el menú en ruido y el cliente deja de fiarse de los botones. Un solo principal, por índice único parcial.
+
+- **`set_business_marketplace_categories` borra e inserta en la misma transacción.** En dos viajes, un fallo a medias dejaría al local sin cajones y volviendo a salir por su tipo sin que nadie lo pidiera. Una lista vacía es una decisión válida: devuelve el local a lo que diga su tipo.
+
+- **En el panel del superadmin** son chips: se tocan los cajones que cubre, el primero queda de principal y el cuarto no entra. Sin elegir ninguno, el texto lo dice — «aparece en el cajón que le da su tipo de negocio»—, que es lo que ven todos los locales que nadie ha editado.
+
+- ⚠️ **Lo cazó la guardia de etiquetas del E2E:** el título del grupo se escribió primero como `<label>` sin control al que apuntar. Son botones, así que va como `<span>` con `role="group"` y `aria-labelledby`.
+
+- **Lo que NO cambia:** el tipo de negocio sigue decidiendo la carta de arranque, el tiempo de preparación y el vocabulario del panel. Ver [Cada local nace armado](#cada-local-nace-armado).
 

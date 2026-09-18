@@ -2922,6 +2922,143 @@ end;
 $armado$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- UN LOCAL VIVE EN VARIOS CAJONES DEL MENÚ
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Hasta el 2026-09-17 el cajón salía del TIPO, y el tipo es uno: un local de
+-- comida típica que sirve almuerzo al mediodía y carta de noche solo aparecía
+-- bajo «Almuerzos». A las 7 de la noche el cliente leía ese botón y se iba
+-- creyendo que no había nada para él.
+do $cajones$
+declare
+  v_tipica uuid; v_solo_tipo uuid;
+  v_almuerzos uuid; v_restaurantes uuid;
+  v_codigos text[];
+begin
+  select id into v_almuerzos from marketplace_categories where code = 'almuerzos';
+  select id into v_restaurantes from marketplace_categories where code = 'restaurantes';
+  if v_restaurantes is null then
+    raise exception 'falta el cajón «restaurantes»: el de noche no tiene dónde entrar';
+  end if;
+
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders, storefront_enabled)
+  values ('verif-cajones-tipica', 'Doña Rosa', 'comida típica', 'ycloud',
+    '+593900999001', '+593900999001', true, true)
+  returning id into v_tipica;
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders, storefront_enabled)
+  values ('verif-cajones-solo-tipo', 'Sin elegir', 'pizzería', 'ycloud',
+    '+593900999002', '+593900999002', true, true)
+  returning id into v_solo_tipo;
+
+  -- ── 1. Sin filas propias manda el TIPO, como siempre ──────────────────────
+  -- Es lo que mantiene vivos a los locales de antes: nadie tuvo que elegir.
+  select array_agg(code order by code) into v_codigos
+  from marketplace_negocios_de_categoria('pizzerias') n
+  join marketplace_categories c on c.code = 'pizzerias'
+  where n.id = v_solo_tipo;
+  if v_codigos is null then
+    raise exception 'un local sin cajones elegidos desapareció del menú';
+  end if;
+
+  -- ── 2. Con filas propias, el local vive en TODOS sus cajones ──────────────
+  insert into business_marketplace_categories (business_id, category_id, principal)
+  values (v_tipica, v_restaurantes, true), (v_tipica, v_almuerzos, false);
+
+  if not exists (select 1 from marketplace_negocios_de_categoria('restaurantes') where id = v_tipica) then
+    raise exception 'el local no salió en su cajón principal';
+  end if;
+  if not exists (select 1 from marketplace_negocios_de_categoria('almuerzos') where id = v_tipica) then
+    raise exception 'el local no salió en su cajón secundario';
+  end if;
+
+  -- ⚠️ Y los cajones elegidos GANAN al tipo: si además apareciera por su tipo
+  -- saldría en un cajón que su dueño no eligió.
+  select array_agg(code order by code) into v_codigos
+  from marketplace_categories_disponibles() where locales > 0;
+  if not (v_codigos @> array['almuerzos', 'restaurantes']) then
+    raise exception 'el menú no ofrece los dos cajones: %', v_codigos;
+  end if;
+
+  -- ── 3. Cada cajón cuenta al local UNA vez ─────────────────────────────────
+  if (select locales from marketplace_categories_disponibles() where code = 'restaurantes') <> 1 then
+    raise exception 'el local se contó más de una vez en su cajón';
+  end if;
+
+  -- ── 4. Tres cajones como mucho ────────────────────────────────────────────
+  -- Un local en ocho cajones es ruido: el cliente deja de fiarse del menú.
+  begin
+    insert into business_marketplace_categories (business_id, category_id)
+    select v_tipica, id from marketplace_categories
+    where code in ('desayunos', 'asados') order by code;
+    raise exception 'la base aceptó más de tres cajones para un local';
+  exception when check_violation or raise_exception then null;
+  end;
+
+  -- ── 5. Un solo principal ──────────────────────────────────────────────────
+  begin
+    insert into business_marketplace_categories (business_id, category_id, principal)
+    values (v_tipica, (select id from marketplace_categories where code = 'desayunos'), true);
+    raise exception 'la base aceptó dos cajones principales';
+  exception when unique_violation then null;
+  end;
+
+  -- ── 6. El panel los guarda de una vez, y valida ───────────────────────────
+  if public.set_business_marketplace_categories(
+       v_tipica, array['almuerzos', 'desayunos'], 'desayunos') <> 2 then
+    raise exception 'la RPC no guardó los dos cajones';
+  end if;
+  if not exists (
+    select 1 from business_marketplace_categories bc
+    join marketplace_categories c on c.id = bc.category_id
+    where bc.business_id = v_tipica and c.code = 'desayunos' and bc.principal
+  ) then
+    raise exception 'la RPC no dejó el principal donde se pidió';
+  end if;
+  -- Reemplaza, no suma: el cajón anterior se fue.
+  if exists (
+    select 1 from business_marketplace_categories bc
+    join marketplace_categories c on c.id = bc.category_id
+    where bc.business_id = v_tipica and c.code = 'restaurantes'
+  ) then
+    raise exception 'la RPC dejó un cajón viejo dentro';
+  end if;
+
+  begin
+    perform public.set_business_marketplace_categories(
+      v_tipica, array['almuerzos', 'desayunos', 'asados', 'pizzerias']);
+    raise exception 'la RPC aceptó cuatro cajones';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.set_business_marketplace_categories(v_tipica, array['inventado']);
+    raise exception 'la RPC aceptó un cajón que no existe';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.set_business_marketplace_categories(
+      v_tipica, array['almuerzos'], 'pizzerias');
+    raise exception 'la RPC aceptó un principal fuera de la lista';
+  exception when invalid_parameter_value then null;
+  end;
+
+  -- Vaciar es una decisión válida: vuelve a mandar el tipo.
+  perform public.set_business_marketplace_categories(v_tipica, array[]::text[]);
+  if not exists (select 1 from marketplace_negocios_de_categoria('restaurantes') where id = v_tipica) then
+    raise exception 'al vaciar sus cajones, el local no volvió al de su tipo';
+  end if;
+
+  -- ── 7. Borrar el local se lleva sus cajones ───────────────────────────────
+  delete from businesses where id in (v_tipica, v_solo_tipo);
+  if exists (select 1 from business_marketplace_categories where business_id = v_tipica) then
+    raise exception 'los cajones sobrevivieron al local';
+  end if;
+
+  raise notice 'CAJONES DEL MENÚ: tipo por defecto, varios cajones, tope de 3 y un solo principal';
+end;
+$cajones$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- `create or replace function` con un parámetro nuevo NO reemplaza: crea una

@@ -75,8 +75,11 @@ describe('clientes y onboarding del superadmin', () => {
   // lista y cambiar el estado de un número). El número exacto es lo que obliga
   // a mirar aquí cuando alguien añade una ruta: una nueva sin autenticación
   // pasaría inadvertida, y estas hablan de todos los negocios a la vez.
-  it('protege sus 19 endpoints exclusivamente con autenticación admin', async () => {
-    expect(clientsRouter.stack).toHaveLength(19)
+  it('protege sus 20 endpoints exclusivamente con autenticación admin', async () => {
+    // 20 desde el 2026-09-17: entró la lista de cajones del menú del chat.
+    // El número se sube A MANO y a propósito — una ruta nueva que se colara
+    // sin `authAdmin` tiene que romper esta prueba, no pasar de largo.
+    expect(clientsRouter.stack).toHaveLength(20)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -239,6 +242,8 @@ describe('clientes y onboarding del superadmin', () => {
   })
 
   it('devuelve el detalle sin credenciales y con su estado de configuración', async () => {
+    // Los cajones del menú son una consulta más del detalle (2026-09-17).
+    vi.spyOn(db, 'getBusinessMarketplaceCategories').mockResolvedValue([])
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
       id: 'business-a', name: 'Mas Pura', ycloud_api_key: 'ycloud-secret',
       ycloud_webhook_secret: 'ycloud-signing-secret',
@@ -873,5 +878,87 @@ describe('clientes y onboarding del superadmin', () => {
     )
     // Y sin tocar el modo: ya no hace falta moverlo para que esto pase.
     expect(updateBusiness.mock.calls[0]?.[1]).not.toHaveProperty('chat_mode')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS CAJONES DEL MENÚ (2026-09-17)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El cajón del chat salía del TIPO, y el tipo es uno: un local de comida
+// típica que sirve almuerzo al mediodía y carta de noche vivía solo bajo
+// «Almuerzos», y a las 7 de la tarde el cliente se iba creyendo que no había
+// nada para él. Ahora el superadmin elige hasta tres cajones.
+describe('en qué cajones del menú aparece un local', () => {
+  // Con canal configurado: la edición valida el estado que quedará guardado, y
+  // un negocio a medias se rechazaría antes de llegar a los cajones.
+  const NEGOCIO_CON_CANAL = {
+    id: 'biz-1', name: 'Doña Rosa', plan: 'micro', whatsapp_provider: 'ycloud',
+    whatsapp_number: '+593900111222', ycloud_number: '+593900111222',
+    ycloud_api_key: 'clave', ycloud_webhook_endpoint_id: 'endpoint',
+    ycloud_webhook_secret: 'secreto',
+  }
+
+  it('ofrece la lista de cajones para elegir', async () => {
+    vi.spyOn(db, 'getAllMarketplaceCategories').mockResolvedValue([
+      { code: 'almuerzos', label: 'Almuerzos', emoji: '🍽️' },
+      { code: 'restaurantes', label: 'Comida típica y restaurantes', emoji: '🍲' },
+    ])
+    const res = await dispatch('get', '/api/admin/marketplace-categories', {
+      auth: authorization(),
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.categories.map(c => c.code)).toEqual(['almuerzos', 'restaurantes'])
+  })
+
+  it('el detalle del local dice dónde aparece hoy', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue({ id: 'biz-1', name: 'Doña Rosa' })
+    vi.spyOn(db, 'getClientUserByBusiness').mockResolvedValue({ email: 'a@b.c' })
+    vi.spyOn(db, 'getBusinessMarketplaceCategories').mockResolvedValue([
+      { code: 'restaurantes', principal: true },
+      { code: 'almuerzos', principal: false },
+    ])
+    const res = await dispatch('get', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'biz-1' },
+    })
+    expect(res.status).toBe(200)
+    expect(res.body.marketplace_categories).toEqual(['restaurantes', 'almuerzos'])
+  })
+
+  it('al editar, guarda los cajones elegidos con el primero como principal', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(NEGOCIO_CON_CANAL)
+    vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
+    const guardar = vi.spyOn(db, 'setBusinessMarketplaceCategories').mockResolvedValue(2)
+    const res = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(),
+      params: { id: 'biz-1' },
+      body: { marketplace_categories: ['restaurantes', 'almuerzos'] },
+    })
+    expect(res.status).toBe(200)
+    expect(guardar).toHaveBeenCalledWith('biz-1', ['restaurantes', 'almuerzos'])
+  })
+
+  it('un cajón que no existe se explica, no revienta', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(NEGOCIO_CON_CANAL)
+    vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
+    vi.spyOn(db, 'setBusinessMarketplaceCategories')
+      .mockRejectedValue(new Error('Ese cajón del menú no existe'))
+    const res = await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(),
+      params: { id: 'biz-1' },
+      body: { marketplace_categories: ['inventado'] },
+    })
+    expect(res.status).toBe(400)
+    expect(String(res.body.error)).toContain('cajón')
+  })
+
+  it('sin la lista en el cuerpo no se toca nada: el tipo sigue mandando', async () => {
+    vi.spyOn(db, 'getBusinessById').mockResolvedValue(NEGOCIO_CON_CANAL)
+    vi.spyOn(db, 'updateBusiness').mockResolvedValue({ error: null })
+    const guardar = vi.spyOn(db, 'setBusinessMarketplaceCategories').mockResolvedValue(0)
+    await dispatch('put', '/api/admin/clients/:id', {
+      auth: authorization(), params: { id: 'biz-1' }, body: { name: 'Otro nombre' },
+    })
+    expect(guardar).not.toHaveBeenCalled()
   })
 })

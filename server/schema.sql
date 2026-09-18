@@ -12138,6 +12138,9 @@ insert into public.marketplace_categories (code, label, emoji, sort) values
   ('pizzerias',      'Pizzerías',            '🍕', 10),
   ('hamburguesas',   'Hamburguesas',         '🍔', 20),
   ('almuerzos',      'Almuerzos',            '🍽️', 30),
+  -- El menú del día es un PRODUCTO, no una hora; la carta de un restaurante o
+  -- de una picantería es otro antojo y tiene su propio cajón (2026-09-17).
+  ('restaurantes',   'Comida típica y restaurantes', '🍲', 35),
   ('asados',         'Asados y parrilla',    '🔥', 40),
   ('mariscos',       'Mariscos y ceviches',  '🐟', 50),
   ('internacional',  'Comida internacional', '🌎', 60),
@@ -12158,7 +12161,7 @@ from (values
   ('pizzería','pizzerias'),
   ('hamburguesería','hamburguesas'), ('comida rápida','hamburguesas'),
   ('almuerzos','almuerzos'), ('menú ejecutivo','almuerzos'),
-  ('comida típica','almuerzos'), ('restaurante','almuerzos'),
+  ('comida típica','restaurantes'), ('restaurante','restaurantes'),
   ('asadero','asados'), ('parrillada','asados'), ('pollo asado','asados'),
   ('marisquería','mariscos'),
   ('sushi','internacional'), ('comida mexicana','internacional'),
@@ -12175,6 +12178,164 @@ from (values
 ) as t(business_type, code)
 join public.marketplace_categories c on c.code = t.code
 on conflict (business_type) do nothing;
+
+
+-- ── Los cajones elegidos de cada local ──────────────────────────────────
+create table if not exists public.business_marketplace_categories (
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  category_id uuid not null references public.marketplace_categories(id) on delete cascade,
+  -- El cajón donde el local «vive». Hoy solo ordena la lectura del panel; se
+  -- guarda desde el principio porque saber cuál es el principal es lo que
+  -- permitirá más adelante ordenar por relevancia sin volver a preguntar.
+  principal   boolean not null default false,
+  created_at  timestamptz not null default now(),
+  primary key (business_id, category_id)
+);
+
+comment on table public.business_marketplace_categories is
+  'En qué cajones del menú del chat aparece un local. Sin filas manda su tipo.';
+
+-- Un solo principal por local.
+create unique index if not exists uq_business_marketplace_categories_principal
+  on public.business_marketplace_categories (business_id) where principal;
+
+create index if not exists idx_business_marketplace_categories_categoria
+  on public.business_marketplace_categories (category_id);
+
+alter table public.business_marketplace_categories enable row level security;
+revoke all on table public.business_marketplace_categories from public, anon, authenticated;
+grant select, insert, update, delete
+  on table public.business_marketplace_categories to service_role;
+
+
+-- ── Tres cajones como mucho ─────────────────────────────────────────────
+--
+-- ⚠️ Lo vigila la BASE y no solo la ruta: un local en ocho cajones convierte el
+-- menú en ruido y el cliente deja de fiarse de los botones. El tope es de
+-- producto, no técnico, pero si vive solo en el panel se salta desde cualquier
+-- otro camino que escriba esta tabla.
+create or replace function public.business_marketplace_categories_tope()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if (
+    select count(*) from public.business_marketplace_categories
+    where business_id = new.business_id
+  ) > 3 then
+    raise exception 'Un local aparece en 3 cajones del menú como mucho'
+      using errcode = '23514';
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists business_marketplace_categories_tope
+  on public.business_marketplace_categories;
+create trigger business_marketplace_categories_tope
+  after insert on public.business_marketplace_categories
+  for each row execute function public.business_marketplace_categories_tope();
+
+
+-- ── Dónde vive cada local, en UN solo sitio ─────────────────────────────
+--
+-- Resuelve la regla completa: manda lo elegido, y quien no eligió nada sigue
+-- saliendo por su tipo. Es una vista y no tres copias del mismo `union` porque
+-- las tres funciones del menú tienen que contestar SIEMPRE lo mismo; tres
+-- copias acaban divergiendo y el local aparece en la lista pero no en el
+-- contador, o al revés.
+--
+-- `security_invoker`: la llama `service_role`, que ya lee las dos tablas.
+create or replace view public.marketplace_cajones_de_negocio
+with (security_invoker = true) as
+  select bc.business_id, bc.category_id, bc.principal
+    from public.business_marketplace_categories bc
+  union all
+  select b.id, t.category_id, true
+    from public.businesses b
+    join public.marketplace_category_types t on t.business_type = b.type
+   where not exists (
+     select 1 from public.business_marketplace_categories x where x.business_id = b.id
+   );
+
+comment on view public.marketplace_cajones_de_negocio is
+  'Cajones de cada local: los elegidos, o los de su tipo si no eligió ninguno.';
+
+revoke all on public.marketplace_cajones_de_negocio from public, anon, authenticated;
+grant select on public.marketplace_cajones_de_negocio to service_role;
+
+-- ── Guardar los cajones de un local, de una vez ────────────────────────────
+--
+-- Borrar e insertar en la MISMA transacción: si se hiciera en dos viajes y
+-- fallara el segundo, el local se quedaría sin cajones y volvería a salir por
+-- su tipo sin que nadie lo pidiera.
+--
+-- Una lista vacía es una decisión válida: «que mande su tipo otra vez».
+create or replace function public.set_business_marketplace_categories(
+  p_business_id uuid,
+  p_codes       text[],
+  p_principal   text default null
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_codes     text[];
+  v_principal text;
+  v_puestos   integer;
+begin
+  if p_business_id is null then
+    raise exception 'Falta el negocio' using errcode = '22023';
+  end if;
+  if not exists (select 1 from businesses where id = p_business_id) then
+    raise exception 'El negocio no existe' using errcode = '42501';
+  end if;
+
+  v_codes := coalesce(
+    array(select distinct btrim(x) from unnest(coalesce(p_codes, '{}'::text[])) x
+          where btrim(x) <> ''),
+    '{}'::text[]
+  );
+
+  if coalesce(array_length(v_codes, 1), 0) > 3 then
+    raise exception 'Un local aparece en 3 cajones del menú como mucho'
+      using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1 from unnest(v_codes) c
+    where not exists (
+      select 1 from marketplace_categories mc where mc.code = c and mc.active
+    )
+  ) then
+    raise exception 'Ese cajón del menú no existe' using errcode = '22023';
+  end if;
+
+  -- Sin principal explícito manda el primero de la lista: el panel los manda
+  -- en el orden en que el superadmin los eligió.
+  v_principal := coalesce(nullif(btrim(coalesce(p_principal, '')), ''), v_codes[1]);
+  if v_principal is not null and not (v_principal = any(v_codes)) then
+    raise exception 'El cajón principal tiene que ser uno de los elegidos'
+      using errcode = '22023';
+  end if;
+
+  delete from business_marketplace_categories where business_id = p_business_id;
+  insert into business_marketplace_categories (business_id, category_id, principal)
+  select p_business_id, mc.id, mc.code = v_principal
+    from marketplace_categories mc
+   where mc.code = any(v_codes);
+  get diagnostics v_puestos = row_count;
+  return v_puestos;
+end;
+$$;
+
+revoke all on function public.set_business_marketplace_categories(uuid, text[], text)
+  from public, anon, authenticated;
+grant execute on function public.set_business_marketplace_categories(uuid, text[], text)
+  to service_role;
 
 
 -- ── Solo las categorías que tienen algo detrás ─────────────────────────────
@@ -12197,17 +12358,17 @@ language sql
 stable
 set search_path = public, pg_temp
 as $$
-  select c.code, c.label, c.emoji, c.sort, count(b.id) as locales
+  select c.code, c.label, c.emoji, c.sort, count(distinct b.id) as locales
   from public.marketplace_categories c
-  join public.marketplace_category_types t on t.category_id = c.id
-  join public.businesses b on b.type = t.business_type
+  join public.marketplace_cajones_de_negocio v on v.category_id = c.id
+  join public.businesses b on b.id = v.business_id
   where c.active
     and b.active
     and b.suspended is not true
     and b.takes_orders
     and b.storefront_enabled
   group by c.code, c.label, c.emoji, c.sort
-  having count(b.id) > 0
+  having count(distinct b.id) > 0
   order by c.sort, c.label;
 $$;
 
@@ -12230,11 +12391,11 @@ language sql
 stable
 set search_path = public, pg_temp
 as $$
-  select b.id, b.slug, b.name, b.type,
+  select distinct b.id, b.slug, b.name, b.type,
          b.prep_time_minutes + coalesce(b.delivery_extra_minutes, 0)
   from public.businesses b
-  join public.marketplace_category_types t on t.business_type = b.type
-  join public.marketplace_categories c on c.id = t.category_id
+  join public.marketplace_cajones_de_negocio v on v.business_id = b.id
+  join public.marketplace_categories c on c.id = v.category_id
   where c.code = p_code
     and c.active
     and b.active
@@ -12304,6 +12465,9 @@ insert into public.marketplace_search_aliases (term, category_code) values
   ('pizza','pizzerias'),
   ('hamburguesa','hamburguesas'), ('burger','hamburguesas'), ('papas','hamburguesas'),
   ('almuerzo','almuerzos'), ('menu del dia','almuerzos'), ('seco','almuerzos'),
+  ('restaurante','restaurantes'), ('restaurantes','restaurantes'),
+  ('cena','restaurantes'), ('cenar','restaurantes'), ('merienda','restaurantes'),
+  ('tipica','restaurantes'), ('criolla','restaurantes'),
   ('pollo','asados'), ('parrillada','asados'), ('asado','asados'), ('carne','asados'),
   ('chifa','internacional'), ('sushi','internacional'), ('tacos','internacional'),
   ('desayuno','desayunos'), ('cafe','desayunos'),
@@ -12419,7 +12583,7 @@ as $$
   ),
   -- Capa 1: el alias manda, y por eso puntúa más alto que todo lo demás.
   por_alias as (
-    select d.id, d.slug, d.name, d.type, 'categoria'::text as motivo, 3.0::real as orden
+    select distinct d.id, d.slug, d.name, d.type, 'categoria'::text as motivo, 3.0::real as orden
     from consulta c
     -- ⚠️ Palabra por palabra, además de la frase entera. La lista de
     -- muletillas nunca va a estar completa —el cliente escribe lo que quiere—,
@@ -12429,10 +12593,12 @@ as $$
     join public.marketplace_search_aliases a
       on a.term = c.texto
       or a.term = any(string_to_array(c.texto, ' '))
-    join public.marketplace_category_types t on t.category_id = (
-      select mc.id from public.marketplace_categories mc where mc.code = a.category_code
-    )
-    join disponibles d on d.type = t.business_type
+    -- ⚠️ Por CAJÓN, no por tipo (2026-09-17): un local que eligió sus cajones
+    -- tiene que salir por ellos, y solo por ellos. Buscar «cena» debe traer al
+    -- que se puso en «Comida típica y restaurantes», no al que comparte tipo.
+    join public.marketplace_categories mc on mc.code = a.category_code
+    join public.marketplace_cajones_de_negocio v on v.category_id = mc.id
+    join disponibles d on d.id = v.business_id
   ),
   -- Capa 2: la carta del local menciona lo que pidió.
   por_texto as (
