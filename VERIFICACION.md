@@ -174,3 +174,54 @@ el paso falla en voz alta, no en silencio.
 (`"Sabore"`) para con «La plantilla enlaza «Sabores» a la lista «Sabore», que
 no trae», y una parte del plato sin marcar como parte para con la restricción
 `option_groups_parte_del_plato_check`.
+
+## Las dos capas que vigilan lo que YA está en producción (2026-09-18)
+
+Todo lo de arriba corre **antes** de desplegar, y por eso comparte un punto
+ciego: ninguna de esas capas dice nada a las tres de la mañana de un martes.
+Estas dos corren en GitHub Actions, **fuera del servidor**, que es la única
+manera de cubrir el fallo que ningún detector interno puede avisar — que el
+proceso haya muerto.
+
+### El vigía · `.github/workflows/vigia.yml` + `.github/scripts/vigia.mjs`
+
+Cada 15 minutos le pregunta a producción por `/api/health` (público) y por
+`/api/health/detalle` (con token). Da la producción por rota si no contesta, si
+contesta algo que no es nuestro health —el proxy de Railway con el servicio
+caído—, si `ok` es `false`, si la cola de webhooks no está lista, si el canario
+encontró fallos, si hay entregas del webhook rechazadas, si el canal lleva 24 h
+mudo, o si el registro de errores tiene algo abierto.
+
+**No manda correos: termina en rojo**, y de eso se encarga GitHub. Cero cuentas
+y cero credenciales de envío que mantener.
+
+⚠️ **Lo que de verdad hubo que pensar es cuándo callarse.** Corriendo cada 15
+minutos, fallar siempre que algo va mal son 96 correos al día, y una alarma que
+suena 96 veces se apaga el primer día. Así que solo falla cuando la noticia es
+nueva: al romperse, y como recordatorio cada 4 h mientras siga rota. Su memoria
+es la conclusión de su propia ejecución anterior, consultada por la API — no
+guarda estado en ningún sitio. La recuperación queda en verde y escrita en el
+resumen, pero **no genera correo**: es una limitación asumida.
+
+⚠️ El umbral de silencio son **24 h** y tiene que valer lo mismo que
+`DEFAULT_SILENCE_HOURS` en `channel-health.ts`. `vigia.test.js` lo comprueba,
+porque desincronizarlos haría que los dos digan cosas distintas del mismo canal.
+
+### El respaldo · repositorio privado `YoverMarkt/bot-respaldos`
+
+Cada día a las 03:00 de Ecuador vuelca la base, **la restaura en un PostgreSQL
+limpio para comprobar que sirve**, la cifra con AES-256 y la publica como
+Release con 30 días de retención. Si la restauración no trae el esquema
+completo, no se publica nada y el run queda en rojo.
+
+⚠️ **Vive en otro repositorio a propósito**, y por dos motivos: este es público
+—los artifacts de Actions de un repo público los descarga cualquiera— y así
+ninguna credencial de producción tiene que existir aquí. El código sigue siendo
+el de aquí: el workflow hace checkout de este repositorio y ejecuta
+`server/tests/respaldo.mjs`.
+
+⚠️ **Usa la cadena del POOLER, no la directa.** `db.<ref>.supabase.co` resuelve
+solo a IPv6 y los runners de GitHub no tienen IPv6. Con la directa falla con
+«Network is unreachable», que parece un problema de credenciales y no lo es.
+La que funciona es `aws-1-sa-east-1.pooler.supabase.com:5432` con usuario
+`postgres.<ref>` — `aws-0` contesta «tenant not found» en todas las regiones.

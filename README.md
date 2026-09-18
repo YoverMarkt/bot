@@ -243,6 +243,11 @@ YCLOUD_WEBHOOK_SECRET=""
 BASE_URL=""
 NODE_ENV=""
 PORT=3000
+
+# Token del vigía externo. Si está vacío, /api/health/detalle NO EXISTE (404):
+# el vigía seguirá viendo si el bot vive, pero no el saldo ni las credenciales.
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+HEALTH_DETAIL_TOKEN=""
 ```
 
 > 💡 Las API keys de IA y las credenciales de WhatsApp se administran desde los paneles. Los cobros al cliente se coordinan manualmente fuera de la plataforma.

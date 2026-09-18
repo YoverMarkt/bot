@@ -9,7 +9,7 @@ entera de verdad, que era el problema cuando todo estaba junto:
 | Documento | Cuándo leerlo |
 |---|---|
 | **[DECISIONES.md](DECISIONES.md)** | **Antes de tocar CUALQUIER pieza con historia** — la tienda, los comprobantes, el marketplace, los frenos de abuso, el motor de opciones, la salud del canal… Desde el 2026-08-25 vive aquí también el razonamiento de las 62 piezas que antes estaba en la sección 7 de este archivo. Casi cada apartado existe porque algo falló: lo que parece complejidad de más suele ser una cicatriz. |
-| **[VERIFICACION.md](VERIFICACION.md)** | Antes de tocar el CI, el esquema o las migraciones. Qué comprueba cada capa, qué **no**, y de qué incidente nació. |
+| **[VERIFICACION.md](VERIFICACION.md)** | Antes de tocar el CI, el esquema, las migraciones o las dos capas que vigilan producción (el vigía externo y el respaldo diario). Qué comprueba cada capa, qué **no**, y de qué incidente nació. |
 | **[PENDIENTE.md](PENDIENTE.md)** | Cuando surja "¿y si añadimos…?". Lista de módulos futuros y de decisiones de **no** construir todavía. |
 | **[ARQUITECTURA.md](ARQUITECTURA.md)** | Antes de crear archivos o features nuevas. |
 | **[DISENO-MINIAPP.md](DISENO-MINIAPP.md)** | Antes de tocar la apariencia de la tienda. Es el respaldo escrito del diagrama aprobado: estructura de las once pantallas, los tres selectores y qué NO se copia. La imagen manda si la tienes; esto existe para que la referencia no se pierda entre sesiones. |
@@ -172,6 +172,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **El plato por partes (almuerzo de una familia)** → [DECISIONES.md](DECISIONES.md#el-plato-por-partes-el-almuerzo-de-una-familia)
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
+- **El vigía externo y el respaldo diario (lo que vigila producción YA desplegada)** → [VERIFICACION.md](VERIFICACION.md#las-dos-capas-que-vigilan-lo-que-ya-está-en-producción-2026-09-18)
 ---
 
 ## 7. HIGIENE DE GIT
