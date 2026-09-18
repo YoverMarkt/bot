@@ -187,6 +187,20 @@ export default function Catalog() {
 // ── Modal crear/editar producto (con subida de foto y video a Cloudinary) ──
 // Radix no admite un <SelectItem value="">, así que "sin categoría" necesita
 // un valor propio que nunca choque con un uuid real.
+/**
+ * Los días como los lee la base (0 = domingo) y como los escribe la gente
+ * (la semana empieza en lunes).
+ */
+const DIAS_DE_LA_SEMANA = [
+  { valor: 1, letra: 'L', nombre: 'lunes' },
+  { valor: 2, letra: 'M', nombre: 'martes' },
+  { valor: 3, letra: 'X', nombre: 'miércoles' },
+  { valor: 4, letra: 'J', nombre: 'jueves' },
+  { valor: 5, letra: 'V', nombre: 'viernes' },
+  { valor: 6, letra: 'S', nombre: 'sábado' },
+  { valor: 0, letra: 'D', nombre: 'domingo' },
+]
+
 const SIN_CATEGORIA = '__ninguna__'
 
 function ProductModal({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
@@ -200,6 +214,10 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     stock: product?.stock ?? 'disponible',
     category_id: product?.category_id ?? '',
     product_type: product?.product_type ?? 'simple',
+    // La franja en que se pide. Vacía = siempre.
+    available_days: (product?.available_days ?? []) as number[],
+    available_from: (product?.available_from ?? '').slice(0, 5),
+    available_until: (product?.available_until ?? '').slice(0, 5),
     description: product?.description ?? '',
     tags: (product?.tags ?? []).join(', '),
     external_sku: product?.external_sku ?? '',
@@ -250,6 +268,12 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
       // Vacío = sin categoría: en la tienda aparece suelto, no agrupado.
       category_id: f.category_id || null,
       product_type: f.product_type as Product['product_type'],
+      // ⚠️ Los días vacíos van como NULL, no como lista vacía: la base exige
+      // entre 1 y 7 días y rechazaría el producto entero.
+      available_days: f.available_days.length ? [...f.available_days].sort((a, b) => a - b) : null,
+      // Y las dos horas van juntas o no van: media franja no significa nada.
+      available_from: f.available_from && f.available_until ? f.available_from : null,
+      available_until: f.available_from && f.available_until ? f.available_until : null,
       description: f.description.trim() || null,
       tags: f.tags.split(',').map(t => t.trim()).filter(Boolean),
       external_sku: f.external_sku.trim() || null,
@@ -307,6 +331,64 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
                 : 'El tipo no cambia lo que vendes: cambia cómo lo elige el cliente.'}
             </p>
           </div>
+          {/* ── Cuándo se pide ────────────────────────────────────────────
+              El «menú con reloj» de las apps grandes: el local es UNO y su
+              carta cambia con la hora. Un restaurante con desayuno, almuerzo y
+              cena no son tres locales — son tres franjas. Vacío = siempre,
+              que es como vive la mayoría de los productos. */}
+          <div className="sm:col-span-2 rounded-lg border border-border/70 p-3">
+            <span id="product-franja-titulo" className="text-sm font-medium">Cuándo se pide</span>
+            <div role="group" aria-labelledby="product-franja-titulo" className="mt-2 flex flex-wrap gap-1.5">
+              {DIAS_DE_LA_SEMANA.map(dia => {
+                const elegido = f.available_days.includes(dia.valor)
+                return (
+                  <button
+                    key={dia.valor}
+                    type="button"
+                    aria-pressed={elegido}
+                    aria-label={dia.nombre}
+                    onClick={() => setF(prev => ({
+                      ...prev,
+                      available_days: elegido
+                        ? prev.available_days.filter(v => v !== dia.valor)
+                        : [...prev.available_days, dia.valor],
+                    }))}
+                    className={`size-8 rounded-full border text-[11px] font-semibold transition ${
+                      elegido
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border/70 text-muted-foreground hover:border-primary/50'
+                    }`}
+                  >
+                    {dia.letra}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              <div>
+                <Label htmlFor="product-desde" className="text-[11px]">Desde</Label>
+                <Input id="product-desde" type="time" className="w-32" value={f.available_from}
+                  onChange={e => setF(prev => ({ ...prev, available_from: e.target.value }))} />
+              </div>
+              <div>
+                <Label htmlFor="product-hasta" className="text-[11px]">Hasta</Label>
+                <Input id="product-hasta" type="time" className="w-32" value={f.available_until}
+                  onChange={e => setF(prev => ({ ...prev, available_until: e.target.value }))} />
+              </div>
+              {(f.available_days.length > 0 || f.available_from || f.available_until) && (
+                <Button type="button" variant="ghost" size="sm"
+                  onClick={() => setF(prev => ({ ...prev, available_days: [], available_from: '', available_until: '' }))}>
+                  Quitar la franja
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground/80 mt-2">
+              {f.available_days.length === 0 && !f.available_from
+                ? 'Sin franja: se puede pedir siempre que el local esté abierto.'
+                : 'Fuera de esta franja el cliente lo ve en la carta, pero no lo puede pedir. Una franja que cruza la medianoche (18:00 a 02:00) cuenta como la noche del día que empieza.'}
+            </p>
+          </div>
+
           <div className="sm:col-span-2">
             <Label htmlFor="product-category">Categoría en la tienda</Label>
             <Select value={f.category_id || SIN_CATEGORIA} onValueChange={v => setF(prev => ({ ...prev, category_id: v === SIN_CATEGORIA ? '' : v }))}>

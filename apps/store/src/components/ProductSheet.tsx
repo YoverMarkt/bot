@@ -260,7 +260,9 @@ export default function ProductSheet({
   const faltaVariante = product.hasVariants && !variante
 
   const textoDelBoton = () => {
-    if (!product.available) return 'Agotado'
+    // ⚠️ «Agotado» a un desayuno a la 1 de la tarde es mentira, y además no
+    // ayuda: lo que necesita saber el cliente es cuándo vuelve.
+    if (!product.available) return product.availableHint || 'Agotado'
     if (plato) {
       // El motivo largo va encima del botón; aquí basta con decir qué hacer.
       if (!opciones.some(opcion => opcion.quantity > 0)) return 'Elige tu plato'

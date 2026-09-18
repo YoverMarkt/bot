@@ -170,6 +170,11 @@ export interface Product {
   categoryId: string | null
   tags: string[]
   available: boolean
+  /**
+   * Por qué no se puede pedir, cuando el motivo es la HORA: «Se pide de 07:00
+   * a 11:00». Lo calcula el servidor con la misma regla que cobra la base.
+   */
+  availableHint?: string | null
   productType: ProductType
   /** Con variantes es un "desde"; sin ellas, el precio final. */
   priceFrom: number | null

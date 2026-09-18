@@ -617,8 +617,8 @@ export default function FoodStore({
       <div className="fondo-app relative overflow-hidden rounded-(--radius-tarjeta)">
         <Foto url={producto.imageUrl} alto="h-36" uso="tarjeta" nombre={producto.name} />
         {!producto.available && (
-          <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-bold text-white">
-            Agotado
+          <span className="absolute top-2 left-2 max-w-[90%] truncate rounded-full bg-black/70 px-2 py-0.5 text-[10.5px] font-bold text-white">
+            {producto.availableHint || 'Agotado'}
           </span>
         )}
 

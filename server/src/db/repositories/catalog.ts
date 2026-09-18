@@ -17,6 +17,8 @@ const CAMPOS_PRODUCTO = [
   'id', 'name', 'description', 'brand', 'price', 'price_sale',
   'stock', 'image_url', 'video_url', 'tags', 'category_id', 'duration_minutes',
   'product_type',
+  // Menús con reloj: la franja en que se pide (2026-09-17).
+  'available_days', 'available_from', 'available_until',
 ].join(',')
 
 const getStorefrontCategories = async (businessId: string) => {

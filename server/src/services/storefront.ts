@@ -12,6 +12,7 @@
 
 // El tipo vive con el motor que lo usa, y se reexporta para que quien arma el
 // catálogo no tenga que saber de dónde sale.
+import { enHorarioDeProducto, textoDeFranja } from './schedule'
 import {
   buildMealLines,
   calculateProductPrice,
@@ -73,6 +74,10 @@ export interface CatalogCategory {
 export interface CatalogProduct {
   id: string
   name: string
+  /** La franja en que se pide: días 0-6, y de qué hora a qué hora. */
+  available_days?: number[] | null
+  available_from?: string | null
+  available_until?: string | null
   description?: string | null
   price?: string | number | null
   price_sale?: string | number | null
@@ -306,8 +311,10 @@ export function buildStorefrontCatalog(input: {
    * exigía antes de permitir ese modo.
    */
   pricing?: MarkupRule | null
-}) {
+}, opciones: { now?: Date } = {}) {
   const regla = input.pricing ?? null
+  // Menús con reloj: el mismo local pinta una carta distinta según la hora.
+  const ahora = opciones.now ?? new Date()
   /** Atajo: el precio de vitrina de esta tienda. */
   const vit = (precio: number | null): number | null => precioDeVitrina(precio, regla)
   const variantesPorProducto = new Map<string, CatalogVariant[]>()
@@ -499,7 +506,12 @@ export function buildStorefrontCatalog(input: {
       videoUrl: producto.video_url || null,
       categoryId: producto.category_id || null,
       tags: producto.tags || [],
-      available: disponible(producto.stock),
+      // ⚠️ La franja cuenta igual que el stock: un desayuno a la 1 de la tarde
+      // no se puede pedir, y el freno de verdad está en la base
+      // (`producto_en_horario` dentro de `create_storefront_order`).
+      available: disponible(producto.stock) && enHorarioDeProducto(producto, ahora),
+      /** «Se pide de 07:00 a 11:00». Nulo si el producto no tiene franja. */
+      availableHint: textoDeFranja(producto),
       // La app no pregunta «¿es pizza?»: pregunta si este producto se arma
       // eligiendo otros. Un combo se pinta por pasos; el resto, de corrido.
       productType: (producto.product_type || 'simple') as ProductType,
@@ -746,6 +758,8 @@ export function quoteCart(input: {
   fulfillment: string
   /** La regla de margen vigente, la misma que sella el pedido. */
   pricing?: MarkupRule | null
+  /** El momento que se cotiza. Se inyecta en las pruebas de las franjas. */
+  now?: Date
 }): CartQuote {
   const porProducto = new Map(input.products.map(producto => [producto.id, producto]))
   const porVariante = new Map(input.variants.map(variante => [variante.id, variante]))
@@ -759,6 +773,10 @@ export function quoteCart(input: {
     const producto = porProducto.get(String(bruto.productId || ''))
     if (!producto) return vacia('Uno de los productos ya no está disponible')
     if (!disponible(producto.stock)) return vacia(`${producto.name} está agotado`)
+    // Fuera de su franja no se cotiza, igual que lo rechazará la base.
+    if (!enHorarioDeProducto(producto, input.now ?? new Date())) {
+      return vacia(`${producto.name} no se puede pedir a esta hora`)
+    }
 
     const cantidad = Math.trunc(Number(bruto.quantity) || 0)
     if (cantidad < 1 || cantidad > 99) return vacia('La cantidad no es válida')

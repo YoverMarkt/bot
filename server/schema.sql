@@ -15408,6 +15408,64 @@ $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EL PLATO POR PARTES — el almuerzo de una familia
+-- ── Menús con reloj: la franja de un producto ─────────────────────────────
+create or replace function public.producto_en_horario(
+  p_days  smallint[],
+  p_from  time,
+  p_until time,
+  p_ahora timestamptz default now()
+)
+returns boolean
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  with local as (
+    select timezone('America/Guayaquil', p_ahora) as ahora
+  ),
+  momento as (
+    select
+      ahora::time as hora,
+      extract(dow from ahora)::smallint as dia,
+      -- ⚠️ La franja que CRUZA MEDIANOCHE pertenece al día que EMPEZÓ: a la
+      -- 01:00 del martes, la carta «de lunes por la noche» sigue siendo del
+      -- lunes. Sin esto, un local que cierra a las 02:00 perdía sus dos
+      -- últimas horas de venta cada noche — y el fallo solo se vería de
+      -- madrugada, que es cuando nadie mira.
+      (extract(dow from ahora)::smallint + 6) % 7 as dia_anterior,
+      p_from is not null and p_until is not null and p_from > p_until as cruza
+    from local
+  )
+  select
+    -- El día: sin lista, todos.
+    (
+      p_days is null
+      or array_length(p_days, 1) is null
+      or (case
+            when momento.cruza and momento.hora <= p_until then momento.dia_anterior
+            else momento.dia
+          end) = any(p_days)
+    )
+    -- Y la hora: sin franja, todo el día.
+    and (
+      p_from is null or p_until is null
+      or (case
+            when momento.cruza then momento.hora >= p_from or momento.hora <= p_until
+            else momento.hora between p_from and p_until
+          end)
+    )
+  from momento;
+$$;
+
+comment on function public.producto_en_horario(smallint[], time, time, timestamptz) is
+  'Si un producto con esta franja se puede pedir en ese momento, en hora de Ecuador.';
+
+revoke all on function public.producto_en_horario(smallint[], time, time, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.producto_en_horario(smallint[], time, time, timestamptz)
+  to service_role;
+
+
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 -- Pedido del dueño del SaaS (2026-09-14): «un almuerzo vale 3 dólares, y al
@@ -15929,7 +15987,8 @@ begin
       raise exception using errcode = '22023', message = 'La cantidad debe estar entre 1 y 99';
     end if;
 
-    select id, name, price, price_sale, stock, category_id
+    select id, name, price, price_sale, stock, category_id,
+           available_days, available_from, available_until
     into v_product
     from public.products
     where id = v_product_id
@@ -15941,6 +16000,14 @@ begin
     end if;
     if v_product.stock = 'agotado' then
       raise exception using errcode = '22023', message = format('%s esta agotado', v_product.name);
+    end if;
+    -- Menús con reloj (2026-09-17): fuera de su franja no se vende, lo pinte
+    -- como lo pinte el teléfono.
+    if not public.producto_en_horario(
+         v_product.available_days, v_product.available_from, v_product.available_until
+       ) then
+      raise exception using errcode = '22023',
+        message = format('%s no se puede pedir a esta hora', v_product.name);
     end if;
 
     -- El precio sale de la variante si la hay; si no, del producto.
