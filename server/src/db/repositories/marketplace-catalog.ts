@@ -156,27 +156,25 @@ const getAllMarketplaceCategories = async (): Promise<CajonDelMenu[]> => {
   return (data || []) as CajonDelMenu[]
 }
 
-/** En qué cajones aparece un local hoy: los elegidos, o los de su tipo. */
+/**
+ * En qué cajones aparece un local hoy: los elegidos, o los de su tipo.
+ *
+ * ⚠️ Por RPC y no leyendo la vista con un anidado de PostgREST: PostgREST
+ * deduce los anidados de las FOREIGN KEYS y una vista no tiene ninguna, así
+ * que esa consulta fallaba SIEMPRE — y la ruta, que se tragaba el error,
+ * enseñaba «sin elegir» a locales que sí tenían sus cajones puestos. Se vio
+ * probando el alta real contra producción (2026-09-17).
+ */
 const getBusinessMarketplaceCategories = async (
   businessId: string,
-): Promise<{ code: string; principal: boolean }[]> => {
-  const { data, error } = await db
-    .from('marketplace_cajones_de_negocio')
-    .select('principal,marketplace_categories!inner(code,sort)')
-    .eq('business_id', businessId)
+): Promise<{ code: string; label: string; emoji: string | null; principal: boolean }[]> => {
+  const { data, error } = await db.rpc('marketplace_cajones_del_negocio', {
+    p_business_id: businessId,
+  })
   if (error) throw new Error(error.message)
-  const filas = (data || []) as unknown as {
-    principal: boolean
-    marketplace_categories: { code: string; sort: number }
+  return (data || []) as {
+    code: string; label: string; emoji: string | null; principal: boolean
   }[]
-  // El principal primero, y el resto por el orden del menú: es como se leen en
-  // el panel y como se vuelven a mandar al guardar.
-  return filas
-    .sort((a, b) => (
-      Number(b.principal) - Number(a.principal)
-      || a.marketplace_categories.sort - b.marketplace_categories.sort
-    ))
-    .map(fila => ({ code: fila.marketplace_categories.code, principal: fila.principal }))
 }
 
 /**

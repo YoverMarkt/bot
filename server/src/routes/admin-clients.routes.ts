@@ -508,7 +508,20 @@ router.get('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   const user = await db.getClientUserByBusiness(req.params.id)
   // Los cajones EFECTIVOS: los elegidos, o los que le da su tipo. Así el panel
   // enseña dónde aparece de verdad, no un campo vacío que engaña.
-  const cajones = await db.getBusinessMarketplaceCategories(req.params.id).catch(() => [])
+  // ⚠️ Si esto falla se DICE. Antes se tragaba el error y el panel enseñaba
+  // «sin elegir» a un local que sí tenía sus cajones: el fallo era invisible
+  // salvo mirando la base a mano, que es justo como se encontró.
+  const cajones = await db.getBusinessMarketplaceCategories(req.params.id)
+    .catch((error: unknown) => {
+      console.error('❌ leer los cajones del menú:', errorMessage(error))
+      void recordError({
+        businessId: req.params.id,
+        category: 'servidor',
+        code: 'cajones-del-menu',
+        message: errorMessage(error),
+      })
+      return []
+    })
   res.json({
     ...sanitizeBusinessForAdmin(business),
     client_email: user?.email || '',
