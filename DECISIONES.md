@@ -39,6 +39,7 @@ un módulo concreto, no en cada sesión.
 - [Cada local nace armado](#cada-local-nace-armado)
 - [Un local vive en varios cajones del menú](#un-local-vive-en-varios-cajones-del-menú)
 - [Menús con reloj](#menús-con-reloj)
+- [Cómo usa la gente el menú de Umbani](#cómo-usa-la-gente-el-menú-de-umbani)
 
 ---
 
@@ -1061,4 +1062,18 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 - **En el panel del dueño** son siete botones (L M X J V S D) y dos horas. Vacío dice «se puede pedir siempre que el local esté abierto»; con franja, explica qué pasa fuera de ella y que 18:00–02:00 cuenta como la noche del día que empieza. Los días vacíos se mandan como `null` a propósito: la base exige entre 1 y 7 y una lista vacía rechazaría el producto entero.
 
 - **En la tienda**, un producto fuera de hora se ve pero no se puede pedir, y en vez de «Agotado» —que sería mentira— dice **«Se pide de 07:00 a 11:00»**. La frase se arma con la semana empezando en lunes: con el orden de la base, un fin de semana se leía «domingo y sábado».
+
+## Cómo usa la gente el menú de Umbani
+
+- **Pedido del dueño (2026-09-18):** «qué cajones se tocan, cuáles se abandonan y qué escribe la gente en la búsqueda… lo necesitamos lo más pronto posible». La urgencia no es la pantalla: **el día que no se registra no se recupera nunca.** Los reportes se construyen después; los datos, no.
+
+- ⚠️ **No había rastro de nada de eso.** `marketplace_conversations` guarda DÓNDE está cada cliente ahora —una fila que se pisa a sí misma—, así que no se podía saber cuántos entraron a un cajón y se fueron, ni qué escribió el que no encontró nada. `marketplace_events` apunta los cuatro pasos del menú: vio los cajones, entró en uno, buscó algo (con cuántos salieron) y eligió un local.
+
+- ⚠️ **No se guarda nada nuevo del cliente.** El teléfono ya vive en `customers` y aquí solo se apunta su id; el texto guardado es el de la BÚSQUEDA ya normalizado. El cero de `resultados` es el dato más valioso: cada búsqueda sin resultado es una palabra que el menú no entiende, y de ahí salen los alias y los nombres de cajón.
+
+- ⚠️ **Es un registro de PRODUCTO, no de dinero.** `apuntarPaso` nunca espera ni lanza: si la base falla, el cliente recibe su respuesta igual. Perder una fila de un reporte no puede costar una venta — misma regla que `matarEnlaceAnterior`.
+
+- **Se apunta en UN solo sitio** —la vista que acaba de pintarse, después del bucle de `paso`—, no en cada pantalla: así una vista nueva se apunta sola. La búsqueda y el local elegido se apuntan donde ocurren, porque ahí están sus datos.
+
+- ⚠️ **Dos guardianes del proyecto corrigieron el diseño, y los dos tenían razón:** el de funciones huérfanas paró las tres consultas del reporte —embudo, cajones abandonados y búsquedas— porque **ninguna pantalla las llamaba todavía**, así que viajan con la pantalla que las enseña en vez de nacer muertas; y el de migraciones exigió `on delete cascade` en la foránea a `businesses`, que además es lo correcto: los toques a un local que ya no existe son ruido, no dato. El cliente sí se conserva con `set null`, porque el embudo de la semana no puede cambiar porque alguien se dé de baja.
 
