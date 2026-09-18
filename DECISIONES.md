@@ -38,6 +38,7 @@ un módulo concreto, no en cada sesión.
 - [Las plantillas de opciones funcionan](#las-plantillas-de-opciones-funcionan)
 - [Cada local nace armado](#cada-local-nace-armado)
 - [Un local vive en varios cajones del menú](#un-local-vive-en-varios-cajones-del-menú)
+- [Menús con reloj](#menús-con-reloj)
 
 ---
 
@@ -1038,4 +1039,24 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 - ⚠️ **Lo cazó la guardia de etiquetas del E2E:** el título del grupo se escribió primero como `<label>` sin control al que apuntar. Son botones, así que va como `<span>` con `role="group"` y `aria-labelledby`.
 
 - **Lo que NO cambia:** el tipo de negocio sigue decidiendo la carta de arranque, el tiempo de preparación y el vocabulario del panel. Ver [Cada local nace armado](#cada-local-nace-armado).
+
+## Menús con reloj
+
+- **Pedido del dueño (2026-09-17):** «hay restaurantes que ofrecen almuerzos y otros que ofrecen desde el desayuno, almuerzo y meriendas; ¿cómo lo hacen las apps grandes?». Lo hacen así: **el local no cambia con la hora, cambia su carta.** Un solo restaurante con «desayuno 07:00–11:00», «almuerzo 11:30–15:00» y «carta de noche 18:00–02:00»; quien entra a las 8 de la mañana ve desayunos. Nadie crea tres locales ni tres categorías de horario.
+
+- ⚠️ **La mitad estaba CONSTRUIDA Y DESCONECTADA.** `products.available_days`, `available_from` y `available_until` existían desde hacía meses, con su CHECK validando días y rangos, y **no las leía nadie**: ni la tienda, ni la cotización, ni `create_storefront_order`, ni el panel del dueño. Duodécima vez del patrón de [camino-real](.claude/skills/camino-real/SKILL.md). Se encontró buscando cómo resolver el caso del dueño, no porque algo fallara.
+
+- **El freno vive en la BASE** (`producto_en_horario` dentro de `create_storefront_order`): es camino del dinero, y un carrito armado en el navegador con un producto fuera de franja se rechaza igual que un agotado o un precio inventado. La tienda además lo pinta apagado y la cotización lo rechaza antes — las tres capas con los mismos casos, como el resto del motor.
+
+- ⚠️ **La franja que cruza medianoche pertenece al día que EMPEZÓ.** A la 01:00 del martes sigue mandando la carta del lunes por la noche. Sin esa regla, un local que cierra a las 02:00 pierde sus dos últimas horas de venta cada noche — y el fallo solo se vería de madrugada, que es cuando nadie mira. Es la misma regla que ya usa el horario del local, y la hora es la de Ecuador en las dos capas.
+
+- ⚠️ **La firma de `create_storefront_order` NO cambia.** Un parámetro `p_ahora` para poder congelar la hora en las pruebas habría creado una segunda versión viva de la función —la trampa que vigila `verificar-esquema.sql`—. La regla pura se prueba con fechas fijas; el rechazo del pedido, con franjas calculadas desde la hora real.
+
+- **La migración parchea el cuerpo vivo de la RPC** en vez de reescribirla entera: es la puerta única del dinero y no se reescribe para añadir una comprobación. Es repetible —si el freno ya está, no toca nada— y se probó aplicándola sobre el `schema.sql` ANTERIOR en Docker, que es lo que hay en producción.
+
+- **Sin franja se pide siempre**, que es como han vivido todos los productos hasta hoy: ninguno cambió de comportamiento.
+
+- **En el panel del dueño** son siete botones (L M X J V S D) y dos horas. Vacío dice «se puede pedir siempre que el local esté abierto»; con franja, explica qué pasa fuera de ella y que 18:00–02:00 cuenta como la noche del día que empieza. Los días vacíos se mandan como `null` a propósito: la base exige entre 1 y 7 y una lista vacía rechazaría el producto entero.
+
+- **En la tienda**, un producto fuera de hora se ve pero no se puede pedir, y en vez de «Agotado» —que sería mentira— dice **«Se pide de 07:00 a 11:00»**. La frase se arma con la semana empezando en lunes: con el orden de la base, un fin de semana se leía «domingo y sábado».
 

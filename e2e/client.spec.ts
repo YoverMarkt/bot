@@ -717,3 +717,39 @@ test('una plantilla enseña sus opciones y sus copias salen marcadas en el grupo
   // …y la opción MANUAL conserva los suyos: el freno es solo para las copias.
   await expect(page.getByText('Mitad y mitad')).toBeVisible()
 })
+
+test('el dueño le pone horario a un producto: el menú con reloj', async ({ page }) => {
+  // ⚠️ Pedido del dueño (2026-09-17): «hay restaurantes que ofrecen almuerzos y
+  // otros que ofrecen desde el desayuno, almuerzo y meriendas». No son tres
+  // locales: es uno con tres franjas, como en las apps grandes. Las columnas
+  // existían desde hacía meses y NO las leía nadie — tampoco este formulario.
+  await seedClientSession(page)
+  await mockClientApi(page)
+
+  let guardado: Record<string, unknown> | null = null
+  await page.route('**/api/client/products/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    guardado = JSON.parse(route.request().postData() || '{}') as Record<string, unknown>
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })
+  })
+
+  await page.goto(`${clientUrl}#/catalog`)
+  await page.getByRole('button', { name: 'Editar' }).first().click()
+  const ficha = page.getByRole('dialog', { name: 'Editar producto' })
+  await expect(ficha).toBeVisible()
+
+  // Sin franja, el producto se pide siempre: es como viven todos hoy.
+  await expect(ficha.getByText('se puede pedir siempre que el local esté abierto')).toBeVisible()
+
+  await ficha.getByRole('button', { name: 'lunes' }).click()
+  await ficha.getByRole('button', { name: 'martes' }).click()
+  await ficha.getByLabel('Desde').fill('07:00')
+  await ficha.getByLabel('Hasta').fill('11:00')
+  await expect(ficha.getByText('Fuera de esta franja el cliente lo ve en la carta')).toBeVisible()
+
+  await ficha.getByRole('button', { name: 'Guardar producto' }).click()
+
+  await expect.poll(() => guardado?.available_days).toEqual([1, 2])
+  await expect.poll(() => guardado?.available_from).toBe('07:00')
+  await expect.poll(() => guardado?.available_until).toBe('11:00')
+})

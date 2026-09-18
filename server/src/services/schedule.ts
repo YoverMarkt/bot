@@ -319,6 +319,111 @@ function proximaApertura(
   return null
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+// MENÚS CON RELOJ: LA FRANJA DE UN PRODUCTO
+// ══════════════════════════════════════════════════════════════════════════
+//
+// El local no cambia con la hora: cambia su CARTA. Un restaurante que sirve
+// desayuno, almuerzo y cena es UN local con tres franjas — es como lo
+// resuelven las apps grandes— y por eso la franja vive en el PRODUCTO.
+//
+// ⚠️ Esto pinta y cotiza. Quien COBRA es `producto_en_horario` dentro de
+// `create_storefront_order`: los mismos casos, escritos dos veces a propósito,
+// porque la pantalla tiene que decir lo que el servidor va a aceptar.
+
+/** La franja de un producto, tal como llega de la base. */
+export interface FranjaDeProducto {
+  available_days?: number[] | null
+  available_from?: string | null
+  available_until?: string | null
+}
+
+/** «07:00» o «07:00:00» a minutos del día. Nulo si no hay hora. */
+const minutosDeHora = (valor?: string | null): number | null => {
+  const partes = String(valor || '').split(':')
+  if (partes.length < 2) return null
+  const horas = Number(partes[0])
+  const minutos = Number(partes[1])
+  if (!Number.isFinite(horas) || !Number.isFinite(minutos)) return null
+  return horas * 60 + minutos
+}
+
+/**
+ * ¿Este producto se puede pedir en este momento?
+ *
+ * Sin franja, siempre — que es como han vivido todos los productos hasta el
+ * 2026-09-17 y no puede costarles nada.
+ */
+export function enHorarioDeProducto(
+  franja: FranjaDeProducto,
+  now = new Date(),
+): boolean {
+  const desde = minutosDeHora(franja.available_from)
+  const hasta = minutosDeHora(franja.available_until)
+  const dias = Array.isArray(franja.available_days) && franja.available_days.length
+    ? franja.available_days
+    : null
+  if (desde === null && hasta === null && !dias) return true
+
+  const { minutos, dia } = minutosLocales(now)
+  // ⚠️ La franja que CRUZA MEDIANOCHE pertenece al día que EMPEZÓ: a la 01:00
+  // del martes sigue mandando la carta del lunes por la noche. Sin esto, un
+  // local que cierra a las 02:00 pierde sus dos últimas horas cada noche.
+  const cruza = desde !== null && hasta !== null && desde > hasta
+  const enLaHora = desde === null || hasta === null
+    ? true
+    : cruza
+      ? minutos >= desde || minutos <= hasta
+      : minutos >= desde && minutos <= hasta
+  if (!enLaHora) return false
+
+  if (!dias) return true
+  const diaQueManda = cruza && hasta !== null && minutos <= hasta ? (dia + 6) % 7 : dia
+  return dias.includes(diaQueManda)
+}
+
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+
+/** «07:00:00» → «07:00». La base guarda segundos que nadie necesita leer. */
+const horaCorta = (valor?: string | null): string => String(valor || '').slice(0, 5)
+
+/**
+ * Cuándo se pide, en una línea para el cliente. Nulo si no tiene franja.
+ *
+ * ⚠️ Se dice SIEMPRE, también dentro de la franja: «se pide de 07:00 a 11:00»
+ * le sirve igual a quien lo está pidiendo a las 10:55.
+ */
+export function textoDeFranja(franja: FranjaDeProducto): string | null {
+  const desde = horaCorta(franja.available_from)
+  const hasta = horaCorta(franja.available_until)
+  // ⚠️ La semana empieza en LUNES al leerla: con el orden de la base —domingo
+  // primero— un fin de semana se leía «domingo y sábado».
+  const desdeElLunes = (dia: number) => (dia + 6) % 7
+  const dias = Array.isArray(franja.available_days) && franja.available_days.length
+    ? [...franja.available_days].sort((a, b) => desdeElLunes(a) - desdeElLunes(b))
+    : null
+  if (!desde && !hasta && !dias) return null
+
+  const horas = desde && hasta ? `de ${desde} a ${hasta}` : ''
+  if (!dias) return horas ? `Se pide ${horas}` : null
+
+  // Un tramo corrido se lee «de lunes a viernes»; lo salteado, enumerado. Con
+  // DOS días el tramo no ahorra nada y suena peor: «sábado y domingo».
+  const seguidos = dias.length > 2
+    && dias.every((dia, i) => i === 0 || desdeElLunes(dia) === desdeElLunes(dias[i - 1]!) + 1)
+  const cuando = dias.length === 7
+    ? ''
+    : dias.length === 1
+      ? DIAS[dias[0]!]
+      : seguidos
+        ? `de ${DIAS[dias[0]!]} a ${DIAS[dias[dias.length - 1]!]}`
+        : `${dias.slice(0, -1).map(dia => DIAS[dia]).join(', ')} y ${DIAS[dias[dias.length - 1]!]}`
+
+  if (!cuando) return horas ? `Se pide ${horas}` : null
+  return horas ? `Se pide ${cuando}, ${horas}` : `Se pide ${cuando}`
+}
+
 export {
   scheduleToText, buildScheduleMessage, isOutsideHours, todaysHours, proximaApertura,
 }

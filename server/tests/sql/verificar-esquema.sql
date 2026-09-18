@@ -3073,6 +3073,110 @@ end;
 $cajones$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- MENÚS CON RELOJ: UN PRODUCTO SE PIDE EN SU FRANJA
+-- ═══════════════════════════════════════════════════════════════════════════
+-- El local no cambia con la hora: cambia su carta. Un restaurante que sirve
+-- desayuno, almuerzo y cena es UN local con tres franjas, que es como lo
+-- resuelven las apps grandes. Las tres columnas existían desde hacía meses
+-- (`available_days`, `available_from`, `available_until`) y NO LAS LEÍA NADIE.
+do $reloj$
+declare
+  v_business uuid;
+  v_ahora    uuid;
+  v_luego    uuid;
+  -- Un lunes a las 08:00, ese lunes a la 01:00 de la tarde y la 01:00 de la
+  -- madrugada del martes, todo en hora de Ecuador.
+  v_lunes_8  timestamptz := '2026-09-14 13:00:00+00';
+  v_lunes_13 timestamptz := '2026-09-14 18:00:00+00';
+  v_martes_1 timestamptz := '2026-09-15 06:00:00+00';
+  -- Y la hora local de AHORA, para las franjas del pedido: `now()` no se puede
+  -- congelar dentro de una transacción, así que las franjas se calculan desde
+  -- ella. ⚠️ La RPC del pedido NO recibe la hora por parámetro a propósito:
+  -- añadirle uno crearía una segunda versión viva de la función.
+  v_local    time := (timezone('America/Guayaquil', now()))::time;
+begin
+  -- ── La regla, caso por caso, con fechas fijas ─────────────────────────────
+  -- Sin franja no hay límite: es como vivieron todos los productos hasta hoy.
+  if not public.producto_en_horario(null, null, null, v_lunes_8) then
+    raise exception 'un producto sin franja dejó de poder pedirse';
+  end if;
+  if not public.producto_en_horario(null, '07:00', '11:00', v_lunes_8) then
+    raise exception 'el desayuno no se podía pedir a las 08:00';
+  end if;
+  if public.producto_en_horario(null, '07:00', '11:00', v_lunes_13) then
+    raise exception 'el desayuno se pudo pedir a la 1 de la tarde';
+  end if;
+  -- El día también cuenta (0 = domingo, como en la app).
+  if public.producto_en_horario(array[2,3]::smallint[], '07:00', '11:00', v_lunes_8) then
+    raise exception 'un producto de martes y miércoles se pudo pedir un lunes';
+  end if;
+  if not public.producto_en_horario(array[1,2]::smallint[], '07:00', '11:00', v_lunes_8) then
+    raise exception 'un producto de lunes no se pudo pedir el lunes';
+  end if;
+
+  -- ⚠️ La franja que CRUZA MEDIANOCHE es la que se hace mal sola: una carta de
+  -- noche de 18:00 a 02:00 sigue viva a la 01:00, y ese momento pertenece al
+  -- día que EMPEZÓ, no al que amaneció. Es la misma regla que el horario del
+  -- local, y por eso se contesta igual.
+  if not public.producto_en_horario(null, '18:00', '02:00', v_martes_1) then
+    raise exception 'la carta de noche murió al pasar la medianoche';
+  end if;
+  if not public.producto_en_horario(array[1]::smallint[], '18:00', '02:00', v_martes_1) then
+    raise exception 'la carta del LUNES por la noche no llegó a la 1 del martes';
+  end if;
+  if public.producto_en_horario(array[2]::smallint[], '18:00', '02:00', v_martes_1) then
+    raise exception 'la carta del martes se pudo pedir a la 1 del martes, antes de abrir';
+  end if;
+
+  -- ── Y el PEDIDO lo rechaza, que es lo único que de verdad manda ───────────
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders, storefront_enabled)
+  values ('verif-reloj', 'Doña Rosa', 'comida típica', 'ycloud',
+    '+593900666001', '+593900666001', true, true)
+  returning id into v_business;
+  -- Uno en su franja ahora mismo, y otro que abre dentro de dos horas.
+  insert into products (business_id, name, price, available_from, available_until)
+  values (v_business, 'Lo de ahora', 3.50, v_local - interval '1 hour', v_local + interval '1 hour')
+  returning id into v_ahora;
+  insert into products (business_id, name, price, available_from, available_until)
+  values (v_business, 'Lo de luego', 12.00, v_local + interval '2 hours', v_local + interval '3 hours')
+  returning id into v_luego;
+
+  begin
+    perform public.create_storefront_order(
+      v_business, null, '+593900666002', 'Cliente', null, 'delivery',
+      jsonb_build_array(jsonb_build_object('product_id', v_luego, 'quantity', 1))
+    );
+    raise exception 'se pudo pedir un producto fuera de su franja';
+  exception when invalid_parameter_value then null;
+  end;
+
+  if (public.create_storefront_order(
+        v_business, null, '+593900666002', 'Cliente', null, 'delivery',
+        jsonb_build_array(jsonb_build_object('product_id', v_ahora, 'quantity', 1))
+      ) ->> 'total')::numeric <> 3.50 then
+    raise exception 'un producto EN su franja no se pudo pedir';
+  end if;
+
+  -- Y el día: hoy no, mañana sí.
+  update products set available_from = null, available_until = null,
+         available_days = array[(extract(dow from timezone('America/Guayaquil', now()))::int + 1) % 7]::smallint[]
+   where id = v_ahora;
+  begin
+    perform public.create_storefront_order(
+      v_business, null, '+593900666002', 'Cliente', null, 'delivery',
+      jsonb_build_array(jsonb_build_object('product_id', v_ahora, 'quantity', 1))
+    );
+    raise exception 'se pudo pedir un producto de otro día de la semana';
+  exception when invalid_parameter_value then null;
+  end;
+
+  delete from businesses where id = v_business;
+  raise notice 'MENÚS CON RELOJ: franjas, día, medianoche y el rechazo del pedido';
+end;
+$reloj$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- `create or replace function` con un parámetro nuevo NO reemplaza: crea una

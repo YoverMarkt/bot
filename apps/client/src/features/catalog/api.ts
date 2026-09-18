@@ -21,6 +21,14 @@ export type Product = {
   duration_minutes: number | null
   /** Cómo se elige, no de qué comida es: un combo se arma con otros productos. */
   product_type: 'simple' | 'configurable' | 'combo' | 'daily_menu' | 'weighted'
+  /**
+   * La franja en que se pide: días de la semana (0 = domingo) y de qué hora a
+   * qué hora. Nulo = siempre, que es como vive la mayoría. Es el «menú con
+   * reloj»: un mismo local con desayuno, almuerzo y carta de noche.
+   */
+  available_days: number[] | null
+  available_from: string | null
+  available_until: string | null
 }
 
 export type ProductPayload = Partial<Omit<Product, 'id'>> & { name: string; price: number }
