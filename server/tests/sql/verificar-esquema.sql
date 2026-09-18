@@ -3171,8 +3171,33 @@ begin
   exception when invalid_parameter_value then null;
   end;
 
+  -- ── Abierto, pero SIN CARTA a esta hora ──────────────────────────────────
+  -- Lo que el menú del chat necesita saber para no mandar a nadie a una tienda
+  -- donde no puede pedir nada.
+  update businesses set type = 'pizzería' where id = v_business;
+  update products set available_from = v_local + interval '2 hours',
+         available_until = v_local + interval '3 hours', available_days = null
+   where business_id = v_business;
+  if (select con_carta from marketplace_negocios_de_categoria('pizzerias') where id = v_business) then
+    raise exception 'un local con toda su carta fuera de hora se ofreció como si se pudiera pedir';
+  end if;
+  if (select carta_desde from marketplace_negocios_de_categoria('pizzerias') where id = v_business)
+     is null then
+    raise exception 'no se dijo desde qué hora vuelve su carta';
+  end if;
+  -- Con una sola cosa pedible ya hay carta.
+  update products set available_from = null, available_until = null where id = v_ahora;
+  if not (select con_carta from marketplace_negocios_de_categoria('pizzerias') where id = v_business) then
+    raise exception 'un local con algo pedible se marcó como sin carta';
+  end if;
+  -- Y un local SIN catálogo no tiene un problema de hora: no se marca.
+  delete from products where business_id = v_business;
+  if not (select con_carta from marketplace_negocios_de_categoria('pizzerias') where id = v_business) then
+    raise exception 'un local sin catálogo se marcó como «sin carta a esta hora»';
+  end if;
+
   delete from businesses where id = v_business;
-  raise notice 'MENÚS CON RELOJ: franjas, día, medianoche y el rechazo del pedido';
+  raise notice 'MENÚS CON RELOJ: franjas, día, medianoche, rechazo del pedido y «sin carta a esta hora»';
 end;
 $reloj$;
 
