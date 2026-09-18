@@ -778,3 +778,55 @@ describe('lo que se responde con un local ya elegido', () => {
     expect(textoDeAdjuntoRecibido('quiero una pizza')).toBe(null)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ABIERTO, PERO SIN CARTA A ESTA HORA (2026-09-17)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Lo abrieron los menús con reloj: una cafetería de desayunos puede tener el
+// local abierto hasta las 22:00 y toda su carta en la franja 07:00–11:00. A
+// las 9 de la noche el cliente entraba, veía la carta entera apagada y no
+// podía pedir nada — peor que un local cerrado, porque ni siquiera se lo
+// avisó. Se trata igual que un cerrado: luna, al final, y el motivo en el
+// cuerpo del mensaje, que es donde no hay límite de caracteres.
+describe('un local sin carta a esta hora', () => {
+  const local = (slug, name, extra = {}) => ({
+    id: slug, slug, name, type: 'cafetería', prep_min: 15, ...extra,
+  })
+  const sinCarta = local('mana', 'Café Maná', { abierto: true, con_carta: false, carta_desde: '07:00' })
+  const conCarta = local('uno', 'Pizza Uno', { abierto: true, con_carta: true })
+
+  it('lleva luna, como el cerrado: no se puede pedir ahí ahora', () => {
+    const r = verNegocios(CATEGORIAS[0], [sinCarta, conCarta], 0)
+    expect(r.options).toContain('🌙 Café Maná')
+    expect(r.options).toContain('Pizza Uno')
+  })
+
+  it('el motivo va en el mensaje y dice desde qué hora se pide', () => {
+    const r = verNegocios(CATEGORIAS[0], [sinCarta, conCarta], 0)
+    expect(r.reply).toContain('Café Maná · su carta empieza 7:00 AM')
+    for (const opcion of r.options) {
+      expect(opcion.length, `«${opcion}» pasa de 20 caracteres`).toBeLessThanOrEqual(20)
+    }
+  })
+
+  it('va al final, detrás de los que sí tienen carta', () => {
+    const r = verNegocios(CATEGORIAS[0], [sinCarta, conCarta], 0)
+    expect(r.options[0]).toBe('Pizza Uno')
+    expect(r.options[1]).toBe('🌙 Café Maná')
+  })
+
+  it('sin la hora, se dice lo único cierto: ahora no se puede pedir', () => {
+    const r = verNegocios(CATEGORIAS[0], [local('x', 'Sin Hora', { abierto: true, con_carta: false })], 0)
+    expect(r.reply).toContain('Sin Hora · sin carta a esta hora')
+  })
+
+  // ⚠️ `undefined` NO es «sin carta»: la búsqueda del chat devuelve locales sin
+  // ese dato, y marcarlos cerrados por no saberlo cuesta ventas. Es la misma
+  // regla de los tres estados de `abierto`.
+  it('no saberlo no es marcarlo: un local sin el dato se pinta normal', () => {
+    const r = verNegocios(CATEGORIAS[0], [local('y', 'Sin Dato', { abierto: true })], 0)
+    expect(r.options).toContain('Sin Dato')
+    expect(r.reply).not.toContain('🌙')
+  })
+})

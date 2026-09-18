@@ -12180,6 +12180,64 @@ join public.marketplace_categories c on c.code = t.code
 on conflict (business_type) do nothing;
 
 
+-- ── Menús con reloj: la franja de un producto ─────────────────────────────
+create or replace function public.producto_en_horario(
+  p_days  smallint[],
+  p_from  time,
+  p_until time,
+  p_ahora timestamptz default now()
+)
+returns boolean
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  with local as (
+    select timezone('America/Guayaquil', p_ahora) as ahora
+  ),
+  momento as (
+    select
+      ahora::time as hora,
+      extract(dow from ahora)::smallint as dia,
+      -- ⚠️ La franja que CRUZA MEDIANOCHE pertenece al día que EMPEZÓ: a la
+      -- 01:00 del martes, la carta «de lunes por la noche» sigue siendo del
+      -- lunes. Sin esto, un local que cierra a las 02:00 perdía sus dos
+      -- últimas horas de venta cada noche — y el fallo solo se vería de
+      -- madrugada, que es cuando nadie mira.
+      (extract(dow from ahora)::smallint + 6) % 7 as dia_anterior,
+      p_from is not null and p_until is not null and p_from > p_until as cruza
+    from local
+  )
+  select
+    -- El día: sin lista, todos.
+    (
+      p_days is null
+      or array_length(p_days, 1) is null
+      or (case
+            when momento.cruza and momento.hora <= p_until then momento.dia_anterior
+            else momento.dia
+          end) = any(p_days)
+    )
+    -- Y la hora: sin franja, todo el día.
+    and (
+      p_from is null or p_until is null
+      or (case
+            when momento.cruza then momento.hora >= p_from or momento.hora <= p_until
+            else momento.hora between p_from and p_until
+          end)
+    )
+  from momento;
+$$;
+
+comment on function public.producto_en_horario(smallint[], time, time, timestamptz) is
+  'Si un producto con esta franja se puede pedir en ese momento, en hora de Ecuador.';
+
+revoke all on function public.producto_en_horario(smallint[], time, time, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.producto_en_horario(smallint[], time, time, timestamptz)
+  to service_role;
+
+
 -- ── Los cajones elegidos de cada local ──────────────────────────────────
 create table if not exists public.business_marketplace_categories (
   business_id uuid not null references public.businesses(id) on delete cascade,
@@ -12408,18 +12466,39 @@ grant execute on function public.marketplace_cajones_del_negocio(uuid)
 -- ── Los locales de una categoría ───────────────────────────────────────────
 create or replace function public.marketplace_negocios_de_categoria(p_code text)
 returns table (
-  id       uuid,
-  slug     text,
-  name     text,
-  type     text,
-  prep_min integer
+  id          uuid,
+  slug        text,
+  name        text,
+  type        text,
+  prep_min    integer,
+  -- ¿Se le puede pedir algo AHORA? Falso solo si tiene carta y ninguna parte
+  -- de ella está en su franja en este momento.
+  con_carta   boolean,
+  -- Desde qué hora vuelve a haber algo. Nulo si no se puede saber.
+  carta_desde time
 )
 language sql
 stable
 set search_path = public, pg_temp
 as $$
   select distinct b.id, b.slug, b.name, b.type,
-         b.prep_time_minutes + coalesce(b.delivery_extra_minutes, 0)
+         b.prep_time_minutes + coalesce(b.delivery_extra_minutes, 0),
+         (
+           not exists (
+             select 1 from public.products p
+             where p.business_id = b.id and p.active
+           )
+           or exists (
+             select 1 from public.products p
+             where p.business_id = b.id and p.active
+               and public.producto_en_horario(
+                 p.available_days, p.available_from, p.available_until)
+           )
+         ),
+         (
+           select min(p.available_from) from public.products p
+           where p.business_id = b.id and p.active and p.available_from is not null
+         )
   from public.businesses b
   join public.marketplace_cajones_de_negocio v on v.business_id = b.id
   join public.marketplace_categories c on c.id = v.category_id
@@ -15408,62 +15487,6 @@ $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EL PLATO POR PARTES — el almuerzo de una familia
--- ── Menús con reloj: la franja de un producto ─────────────────────────────
-create or replace function public.producto_en_horario(
-  p_days  smallint[],
-  p_from  time,
-  p_until time,
-  p_ahora timestamptz default now()
-)
-returns boolean
-language sql
-immutable
-set search_path = public, pg_temp
-as $$
-  with local as (
-    select timezone('America/Guayaquil', p_ahora) as ahora
-  ),
-  momento as (
-    select
-      ahora::time as hora,
-      extract(dow from ahora)::smallint as dia,
-      -- ⚠️ La franja que CRUZA MEDIANOCHE pertenece al día que EMPEZÓ: a la
-      -- 01:00 del martes, la carta «de lunes por la noche» sigue siendo del
-      -- lunes. Sin esto, un local que cierra a las 02:00 perdía sus dos
-      -- últimas horas de venta cada noche — y el fallo solo se vería de
-      -- madrugada, que es cuando nadie mira.
-      (extract(dow from ahora)::smallint + 6) % 7 as dia_anterior,
-      p_from is not null and p_until is not null and p_from > p_until as cruza
-    from local
-  )
-  select
-    -- El día: sin lista, todos.
-    (
-      p_days is null
-      or array_length(p_days, 1) is null
-      or (case
-            when momento.cruza and momento.hora <= p_until then momento.dia_anterior
-            else momento.dia
-          end) = any(p_days)
-    )
-    -- Y la hora: sin franja, todo el día.
-    and (
-      p_from is null or p_until is null
-      or (case
-            when momento.cruza then momento.hora >= p_from or momento.hora <= p_until
-            else momento.hora between p_from and p_until
-          end)
-    )
-  from momento;
-$$;
-
-comment on function public.producto_en_horario(smallint[], time, time, timestamptz) is
-  'Si un producto con esta franja se puede pedir en ese momento, en hora de Ecuador.';
-
-revoke all on function public.producto_en_horario(smallint[], time, time, timestamptz)
-  from public, anon, authenticated;
-grant execute on function public.producto_en_horario(smallint[], time, time, timestamptz)
-  to service_role;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

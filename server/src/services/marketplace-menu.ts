@@ -33,6 +33,18 @@ export interface MarketplaceBusiness {
   type: string
   prep_min: number | null
   /**
+   * ¿Tiene algo pedible AHORA? Lo abrieron los menús con reloj (2026-09-17):
+   * una cafetería puede estar abierta hasta las 22:00 con toda su carta en la
+   * franja 07:00–11:00, y a las 9 de la noche no se le puede pedir nada.
+   *
+   * ⚠️ `undefined` es «no lo sé» y se pinta como siempre, igual que `abierto`:
+   * la búsqueda del chat no trae este dato, y marcar cerrado por no saberlo
+   * cuesta ventas.
+   */
+  con_carta?: boolean
+  /** Desde qué hora vuelve a haber carta, para el que no tiene ninguna ahora. */
+  carta_desde?: string | null
+  /**
    * ¿Está atendiendo AHORA? `undefined` cuando no se pudo averiguar.
    *
    * ⚠️ Los tres estados importan. `false` es «cerrado, díselo»; `undefined` es
@@ -262,8 +274,17 @@ const etiquetaCategoria = (categoria: MarketplaceCategory): string => (
  */
 const LUNA = '🌙'
 
+/**
+ * No se puede pedir aquí ahora: o el local está cerrado, o su carta de esta
+ * hora está vacía. Para el cliente son la misma noticia, así que se pintan
+ * igual — y las dos llevan su motivo en el cuerpo del mensaje.
+ */
+const noSePuedePedir = (negocio: MarketplaceBusiness): boolean => (
+  negocio.abierto === false || negocio.con_carta === false
+)
+
 const etiquetaNegocio = (negocio: MarketplaceBusiness): string => (
-  negocio.abierto === false ? `${LUNA} ${negocio.name}` : negocio.name
+  noSePuedePedir(negocio) ? `${LUNA} ${negocio.name}` : negocio.name
 )
 
 /**
@@ -275,7 +296,7 @@ const etiquetaNegocio = (negocio: MarketplaceBusiness): string => (
  */
 const abiertosPrimero = (locales: MarketplaceBusiness[]): MarketplaceBusiness[] => (
   locales.slice().sort((a, b) => (
-    Number(a.abierto === false) - Number(b.abierto === false)
+    Number(noSePuedePedir(a)) - Number(noSePuedePedir(b))
   ))
 )
 
@@ -302,14 +323,23 @@ const hora12 = (hhmm: string): string => {
 }
 
 const avisoDeCerrados = (mostrados: MarketplaceBusiness[]): string => {
-  const cerrados = mostrados.filter(n => n.abierto === false)
+  const cerrados = mostrados.filter(noSePuedePedir)
   if (!cerrados.length) return ''
   const lineas = cerrados.map((n) => {
-    if (!n.abre?.open) return `${LUNA} ${n.name} · cerrado`
-    const cuando = n.abre.inDays === 0
-      ? 'hoy'
-      : n.abre.inDays === 1 ? 'mañana' : `el ${n.abre.dayName.toLocaleLowerCase('es')}`
-    return `${LUNA} ${n.name} · abre ${cuando} ${hora12(n.abre.open)}`
+    // ⚠️ El local CERRADO manda sobre la carta: decirle «su carta empieza a
+    // las 7» a quien tiene el local cerrado hasta mañana es prometer algo que
+    // no va a poder hacer.
+    if (n.abierto === false) {
+      if (!n.abre?.open) return `${LUNA} ${n.name} · cerrado`
+      const cuando = n.abre.inDays === 0
+        ? 'hoy'
+        : n.abre.inDays === 1 ? 'mañana' : `el ${n.abre.dayName.toLocaleLowerCase('es')}`
+      return `${LUNA} ${n.name} · abre ${cuando} ${hora12(n.abre.open)}`
+    }
+    // Abierto, pero su carta de esta hora está vacía.
+    return n.carta_desde
+      ? `${LUNA} ${n.name} · su carta empieza ${hora12(n.carta_desde)}`
+      : `${LUNA} ${n.name} · sin carta a esta hora`
   })
   return `\n\n${lineas.join('\n')}`
 }
