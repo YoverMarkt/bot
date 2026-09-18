@@ -131,10 +131,78 @@ const searchMarketplaceProducts = async (
   return (data || []) as MarketplaceProductHit[]
 }
 
+/** Un cajón del menú tal como lo elige el superadmin: sin contar sus locales. */
+export interface CajonDelMenu {
+  code: string
+  label: string
+  emoji: string | null
+  sort: number
+}
+
+/**
+ * Los cajones del menú, TODOS los activos, tengan locales o no.
+ *
+ * ⚠️ Distinto de `getMarketplaceCategories`, que solo devuelve los que tienen
+ * algo detrás: eso es lo que ve el cliente. Esto es para el superadmin, que
+ * necesita ver el cajón vacío para poder meter ahí su primer local.
+ */
+const getAllMarketplaceCategories = async (): Promise<CajonDelMenu[]> => {
+  const { data, error } = await db
+    .from('marketplace_categories')
+    .select('code,label,emoji,sort')
+    .eq('active', true)
+    .order('sort')
+  if (error) throw new Error(error.message)
+  return (data || []) as CajonDelMenu[]
+}
+
+/** En qué cajones aparece un local hoy: los elegidos, o los de su tipo. */
+const getBusinessMarketplaceCategories = async (
+  businessId: string,
+): Promise<{ code: string; principal: boolean }[]> => {
+  const { data, error } = await db
+    .from('marketplace_cajones_de_negocio')
+    .select('principal,marketplace_categories!inner(code,sort)')
+    .eq('business_id', businessId)
+  if (error) throw new Error(error.message)
+  const filas = (data || []) as unknown as {
+    principal: boolean
+    marketplace_categories: { code: string; sort: number }
+  }[]
+  // El principal primero, y el resto por el orden del menú: es como se leen en
+  // el panel y como se vuelven a mandar al guardar.
+  return filas
+    .sort((a, b) => (
+      Number(b.principal) - Number(a.principal)
+      || a.marketplace_categories.sort - b.marketplace_categories.sort
+    ))
+    .map(fila => ({ code: fila.marketplace_categories.code, principal: fila.principal }))
+}
+
+/**
+ * Deja los cajones de un local exactamente en esta lista. El PRIMERO es el
+ * principal. Una lista vacía devuelve el local a lo que diga su tipo.
+ */
+const setBusinessMarketplaceCategories = async (
+  businessId: string,
+  codes: string[],
+): Promise<number> => {
+  const { data, error } = await db.rpc('set_business_marketplace_categories', {
+    p_business_id: businessId,
+    p_codes: codes,
+    p_principal: codes[0] ?? null,
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
 export {
   getMarketplaceCategories,
   getMarketplaceBusinesses,
   searchMarketplaceBusinesses,
   searchMarketplaceProducts,
   marketplaceKnownTerm,
+  getAllMarketplaceCategories,
+  getBusinessMarketplaceCategories,
+  setBusinessMarketplaceCategories,
 }

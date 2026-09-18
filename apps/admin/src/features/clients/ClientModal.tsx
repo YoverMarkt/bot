@@ -80,6 +80,7 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
         client_email: c.client_email ?? '', client_password: '',
         notes: c.notes ?? '',
       })
+      setCajones(c.marketplace_categories ?? [])
       setLoading(false)
     }).catch(e => { setError(e instanceof Error ? e.message : 'Error'); setLoading(false) })
   }, [id])
@@ -89,6 +90,30 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   // por el bot» y «Mini app de la tienda»— se fundieron en «Aparece en el
   // marketplace», que escribe los dos campos a la vez con `setEnMarketplace`.
   // El tipo de negocio y el plan tienen sus propios manejadores.
+
+  // ── Los cajones del menú del chat ────────────────────────────────────────
+  //
+  // ⚠️ El cliente no busca «un restaurante de comida típica»: busca pizza,
+  // almuerzo o cena. Por eso un local vive en los CAJONES que cubre —hasta
+  // tres— y no en el que le tocó por su tipo. El primero es el principal.
+  //
+  // Vacío = no se manda nada y sigue mandando el tipo, que es como viven los
+  // locales que nadie ha editado.
+  const [cajones, setCajones] = useState<string[]>([])
+  const [cajonesDelMenu, setCajonesDelMenu] = useState<adm.CajonDelMenu[]>([])
+  useEffect(() => {
+    adm.getMarketplaceCategories().then(setCajonesDelMenu).catch(() => setCajonesDelMenu([]))
+  }, [])
+
+  const alternarCajon = (code: string) => {
+    setCajones(prev => (
+      prev.includes(code)
+        ? prev.filter(item => item !== code)
+        // Tres como mucho, igual que la base: más cajones es ruido, y el
+        // cliente deja de fiarse de los botones del menú.
+        : prev.length >= 3 ? prev : [...prev, code]
+    ))
+  }
 
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const value = e.target.value
@@ -174,6 +199,9 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
       storefront_enabled: f.storefront === 'yes' && f.sales !== 'informa',
       notes: f.notes || null,
     }
+    // Solo si hay algo elegido: una lista vacía en el alta significaría
+    // «ninguno», y lo que queremos es «los de su tipo».
+    if (cajones.length) payload.marketplace_categories = cajones
     const officialPlan = planById(f.plan)
     if (officialPlan) {
       payload.plan = officialPlan.id
@@ -333,6 +361,55 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Lo decide el tipo de negocio. Se puede cambiar después, al editarlo.
+                </p>
+              </div>
+            )}
+
+            {/* ── Dónde lo busca el cliente ────────────────────────────
+                El cajón es un ANTOJO, no una clasificación de empresas: nadie
+                busca «un restaurante de comida típica», busca almuerzo o cena.
+                Un local real cubre varios, y hasta el 2026-09-17 solo podía
+                vivir en el que le tocaba por su tipo — a las 7 de la tarde el
+                cliente veía «Almuerzos» y se iba creyendo que no había nada
+                para él. */}
+            {cajonesDelMenu.length > 0 && (
+              <div className="mb-4 rounded-lg border border-border/70 p-3">
+                {/* ⚠️ No es un `Label`: no hay un control al que apuntar, son
+                    botones. Un `label` suelto rompe —con razón— la guardia de
+                    etiquetas del E2E. El grupo lleva su nombre accesible. */}
+                <span id="client-cajones-titulo" className="text-sm font-medium">
+                  Dónde lo busca el cliente
+                </span>
+                <div
+                  role="group"
+                  aria-labelledby="client-cajones-titulo"
+                  className="mt-2 flex flex-wrap gap-2"
+                >
+                  {cajonesDelMenu.map(cajon => {
+                    const elegido = cajones.includes(cajon.code)
+                    const principal = cajones[0] === cajon.code
+                    return (
+                      <button
+                        key={cajon.code}
+                        type="button"
+                        aria-pressed={elegido}
+                        onClick={() => alternarCajon(cajon.code)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                          elegido
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border/70 text-muted-foreground hover:border-primary/50'
+                        }`}
+                      >
+                        {cajon.emoji ? `${cajon.emoji} ` : ''}{cajon.label}
+                        {principal && ' · principal'}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="client-cajones-help">
+                  {cajones.length === 0
+                    ? 'Sin elegir: aparece en el cajón que le da su tipo de negocio.'
+                    : `Aparece en ${cajones.length} de 3. El primero es el principal; un local que sirve almuerzo y cena puede estar en los dos.`}
                 </p>
               </div>
             )}

@@ -349,3 +349,48 @@ test('Facturación muestra la cuota automática y conserva el cobro manual del p
   await page.getByRole('button', { name: /Marcar pagado: Negocio E2E/ }).click()
   await expect(page.getByText('Cobro marcado como pagado')).toBeVisible()
 })
+
+test('el superadmin elige en qué cajones del menú aparece el local', async ({ page }) => {
+  // ⚠️ El cajón es un ANTOJO, no una clasificación: un local de comida típica
+  // que sirve almuerzo y cena tiene que estar en los dos sitios. Antes vivía
+  // solo en el que le daba su tipo, y a las 7 de la tarde el cliente veía
+  // «Almuerzos» y se iba creyendo que no había nada para él (2026-09-17).
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+
+  let enviado: Record<string, unknown> | null = null
+  await page.route('**/api/admin/clients', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    enviado = route.request().postDataJSON()
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'nuevo' }) })
+  })
+
+  await page.goto(`${adminUrl}#/clients`)
+  await page.getByRole('button', { name: 'Nuevo cliente' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
+
+  const ayuda = dialog.getByTestId('client-cajones-help')
+  await expect(ayuda).toContainText('su tipo de negocio')
+
+  const cajon = (nombre: string) => dialog.getByRole('button', { name: new RegExp(`^${nombre}`) })
+  await cajon('🍲 Comida típica y restaurantes').click()
+  await cajon('🍽️ Almuerzos').click()
+  // El primero elegido es el principal, y se dice en el propio botón.
+  await expect(cajon('🍲 Comida típica y restaurantes')).toContainText('principal')
+  await expect(ayuda).toContainText('2 de 3')
+
+  // Tres como mucho: el cuarto no entra.
+  await cajon('🍳 Desayunos y café').click()
+  await cajon('🍕 Pizzerías').click()
+  await expect(ayuda).toContainText('3 de 3')
+  await expect(cajon('🍕 Pizzerías')).toHaveAttribute('aria-pressed', 'false')
+
+  await dialog.getByLabel('Nombre *').fill('Doña Rosa')
+  await dialog.getByLabel('WhatsApp del dueño (reportes) *').fill('+593900111222')
+  await dialog.getByLabel('Correo del dueño (panel)').fill('rosa@prueba.local')
+  await dialog.getByLabel('Contraseña del panel').fill('ClaveDePruebaLarga123')
+  await dialog.getByRole('button', { name: 'Crear negocio' }).click()
+
+  await expect.poll(() => enviado?.marketplace_categories)
+    .toEqual(['restaurantes', 'almuerzos', 'desayunos'])
+})

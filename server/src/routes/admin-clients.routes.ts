@@ -75,6 +75,14 @@ const db: {
     limit?: number
   }): Promise<PlatformErrorRow[]>
   getBusinessById(businessId: string): Promise<CreatedBusiness | null>
+  /** Los cajones del menú del chat, para el selector del superadmin. */
+  getAllMarketplaceCategories(): Promise<
+    { code: string; label: string; emoji: string | null }[]
+  >
+  getBusinessMarketplaceCategories(
+    businessId: string,
+  ): Promise<{ code: string; principal: boolean }[]>
+  setBusinessMarketplaceCategories(businessId: string, codes: string[]): Promise<number>
   getBusinessBySlug(slug: string): Promise<{ id?: string } | null>
   getClientUserByBusiness(businessId: string): Promise<{ email?: string } | null>
   createBusinessOnboarding(
@@ -301,6 +309,36 @@ const seedBusinessCatalog = async (
   }
 }
 
+/**
+ * Guarda en qué cajones del menú del chat aparece el local.
+ *
+ * ⚠️ Solo si el cuerpo TRAE la lista. Sin ella no se toca nada, y el local
+ * sigue saliendo por su tipo — que es como vivieron todos hasta el
+ * 2026-09-17 y como siguen viviendo los que nadie ha editado.
+ *
+ * El PRIMERO de la lista es el principal. Una lista vacía es una decisión
+ * válida: devuelve el local a lo que diga su tipo.
+ *
+ * Devuelve el motivo si la lista no vale, para contestar 400 con algo que se
+ * entienda en vez del error crudo de PostgreSQL.
+ */
+const guardarCajonesDelMenu = async (
+  businessId: string,
+  body: Record<string, unknown>,
+): Promise<string | null> => {
+  if (!('marketplace_categories' in body)) return null
+  const lista = body.marketplace_categories
+  if (!Array.isArray(lista) || lista.some(item => typeof item !== 'string')) {
+    return 'Los cajones del menú se mandan como una lista de códigos'
+  }
+  try {
+    await db.setBusinessMarketplaceCategories(businessId, lista as string[])
+    return null
+  } catch (error) {
+    return errorMessage(error)
+  }
+}
+
 // ⚠️ Aquí vivían `invalidChatMode` y `miniappConfigurationError`, y las dos se
 // fueron el 2026-09-16 con el modo menú.
 //
@@ -456,13 +494,25 @@ router.get('/api/admin/clients', auth.authAdmin, async (_req, res) => {
   res.json(await db.getAllBusinesses())
 })
 
+/**
+ * Los cajones del menú del chat. Van TODOS los activos, también los vacíos:
+ * el superadmin necesita ver el cajón sin locales para meter ahí el primero.
+ */
+router.get('/api/admin/marketplace-categories', auth.authAdmin, async (_req, res) => {
+  res.json({ categories: await db.getAllMarketplaceCategories() })
+})
+
 router.get('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
   const business = await db.getBusinessById(req.params.id)
   if (!business) return res.status(404).json({ error: 'No encontrado' })
   const user = await db.getClientUserByBusiness(req.params.id)
+  // Los cajones EFECTIVOS: los elegidos, o los que le da su tipo. Así el panel
+  // enseña dónde aparece de verdad, no un campo vacío que engaña.
+  const cajones = await db.getBusinessMarketplaceCategories(req.params.id).catch(() => [])
   res.json({
     ...sanitizeBusinessForAdmin(business),
     client_email: user?.email || '',
+    marketplace_categories: cajones.map(cajon => cajon.code),
   })
 })
 
@@ -580,7 +630,18 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
     console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
     await seedBusinessCatalog(business.id, businessPayload.type as string, name)
-    res.status(201).json(sanitizeBusinessForAdmin(business))
+    // ⚠️ Después del alta y sin poder tumbarla, igual que la plantilla: el
+    // negocio ya existe y es transaccional. Si los cajones vienen mal, se dice
+    // en la respuesta y el local se queda con los de su tipo, que es un sitio
+    // razonable — no un negocio a medio crear.
+    const cajonesMal = await guardarCajonesDelMenu(business.id, body)
+    if (cajonesMal) {
+      console.error('❌ cajones del menú al crear:', cajonesMal)
+    }
+    res.status(201).json({
+      ...sanitizeBusinessForAdmin(business),
+      ...(cajonesMal ? { aviso: cajonesMal } : {}),
+    })
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)
     if (duplicated) {
@@ -691,6 +752,10 @@ router.put('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {
         'actualizar usuario cliente',
       )
     }
+
+    const cajonesMal = await guardarCajonesDelMenu(req.params.id, body)
+    if (cajonesMal) return res.status(400).json({ error: cajonesMal })
+
     res.json({ ok: true })
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)
