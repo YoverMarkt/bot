@@ -128,7 +128,7 @@ export interface MarketplaceEntryDatabase {
    * «pollo» y «asdfghjkl» recibían el mismo reproche — y «pollo» se entiende
    * perfectamente: lo que falta es un asadero dado de alta.
    */
-  marketplaceKnownTerm?(query: string): Promise<string | null>
+  marketplaceKnownTerm?(query: string): Promise<{ code: string; label: string } | null>
   /**
    * Cancela el pedido sin pagar de esta persona en este local.
    *
@@ -616,7 +616,7 @@ export async function handleMarketplaceMessage(
       // igualmente (un «hola» aquí es «empecemos», no «repíteme la búsqueda»),
       // así que consultarla sería gastar una lectura para tirarla. Es la misma
       // regla que ya cumple la portada — «un saludo no dispara la búsqueda».
-      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta, customer.id))
+      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
     }
     respuesta = paso({
       // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
@@ -678,8 +678,15 @@ export async function handleMarketplaceMessage(
   if (respuesta.noEntendido
     && !esAdjuntoSinTexto(text)
     && !conversation?.selected_business_id) {
-    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text, customer.id))
+    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text))
     if (encontrados.length) {
+      // ⚠️ La búsqueda se apunta UNA vez y donde se sabe TODO de ella: cuántos
+      // locales salieron y —si no salió ninguno— si al menos se entendió lo
+      // que pedía. Apuntarla dentro de `buscarLocales` contaba doble al pasar
+      // de página y nunca llegaba a saber lo segundo.
+      apuntarPaso(deps, {
+        customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: encontrados.length,
+      })
       const resultados = verResultados(text, encontrados, 0)
       deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
       await guardar(deps, customer.id, conversation?.version, resultados, { soltarLocal: false })
@@ -701,14 +708,20 @@ export async function handleMarketplaceMessage(
     const conocido = database.marketplaceKnownTerm
       ? await database.marketplaceKnownTerm(text).catch(() => null)
       : null
+    // Sin locales: se apunta igual, y con la categoría que se entendió si la
+    // hay. «La gente pide internacional y no tienes ninguno» es demanda.
+    apuntarPaso(deps, {
+      customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: 0,
+      categoryCode: conocido?.code ?? null,
+    })
     if (conocido) {
       const portada = verCategorias(categorias, 0)
       const aviso = {
         ...portada,
-        reply: `😔 Todavía no tenemos *${conocido}* por aquí.\n\n`
+        reply: `😔 Todavía no tenemos *${conocido.label}* por aquí.\n\n`
           + `Esto es lo que sí puedes pedir hoy 👇`,
       }
-      deps.logger?.log(`🔎 [marketplace] «${text}» → ${conocido}, sin locales`)
+      deps.logger?.log(`🔎 [marketplace] «${text}» → ${conocido.label}, sin locales`)
       await guardar(deps, customer.id, conversation?.version, aviso, { soltarLocal: false })
       await send(aviso.reply, aviso.options)
       return
@@ -770,19 +783,12 @@ async function conEstadoDeHorario(
 async function buscarLocales(
   deps: MarketplaceEntryDeps,
   consulta: string,
-  cliente?: string | null,
 ): Promise<MarketplaceBusiness[]> {
   const texto = String(consulta || '').trim()
   if (!texto || !deps.database.searchMarketplaceBusinesses) return []
   const hits = await deps.database
     .searchMarketplaceBusinesses(texto, 9)
     .catch(() => [])
-  // ⚠️ Se apunta SIEMPRE, y el cero es el dato que más vale: cada búsqueda sin
-  // resultado es una palabra que el menú no entiende, y de ahí salen los alias
-  // y los nombres de cajón que el dueño quiere afinar con datos.
-  apuntarPaso(deps, {
-    customerId: cliente ?? null, tipo: 'busqueda', consulta: texto, resultados: hits.length,
-  })
   return hits.map(hit => ({
     id: hit.id, slug: hit.slug, name: hit.name, type: hit.type, prep_min: null,
   }))

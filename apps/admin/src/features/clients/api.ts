@@ -188,6 +188,19 @@ export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'>
 
 export const getClient = (id: string) => api<BusinessDetail>(`/api/admin/clients/${id}`)
 
+/** Cómo usa la gente el menú de Umbani: embudo, cajones y búsquedas. */
+export type MarketplaceUsage = {
+  dias: number
+  embudo: { paso: string; orden: number; clientes: number }[]
+  cajones: {
+    code: string; label: string; entradas: number; eligieron: number; abandonaron: number
+  }[]
+  busquedas: { consulta: string; veces: number; sin_nada: number; entendido: string | null }[]
+}
+
+export const getMarketplaceUsage = (dias = 7) =>
+  api<MarketplaceUsage>(`/api/admin/marketplace-usage?dias=${dias}`)
+
 /** Un cajón del menú del chat: donde el cliente busca antojos. */
 export type CajonDelMenu = { code: string; label: string; emoji: string | null }
 

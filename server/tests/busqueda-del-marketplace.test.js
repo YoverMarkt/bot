@@ -41,7 +41,7 @@ describe('el diccionario que distingue «no entiendo» de «no tengo»', () => {
   it('«quiero pollo asado» se reconoce y devuelve su categoría', async () => {
     conFilas([{ category_code: 'asados' }], { label: 'Asados y parrilladas' })
     await expect(db.marketplaceKnownTerm('quiero pollo asado'))
-      .resolves.toBe('Asados y parrilladas')
+      .resolves.toEqual({ code: 'asados', label: 'Asados y parrilladas' })
   })
 
   // Palabra por palabra, no la frase entera: el alias es «pollo», no «quiero
@@ -235,7 +235,12 @@ const armarEntrada = ({ hits = [], buscar, conocido = null } = {}) => {
     isPlatformBlocked: vi.fn().mockResolvedValue(false),
     claimBlockedNotice: vi.fn().mockResolvedValue(false),
     searchMarketplaceBusinesses: buscar || vi.fn().mockResolvedValue(hits),
-    marketplaceKnownTerm: vi.fn().mockResolvedValue(conocido),
+    // ⚠️ Desde el 2026-09-18 devuelve {code, label}: el chat enseña la
+    // etiqueta y el registro del menú guarda el código, que es lo que
+    // convierte «no lo tengo» en demanda medible.
+    marketplaceKnownTerm: vi.fn().mockResolvedValue(
+      conocido ? { code: 'asados', label: conocido } : null,
+    ),
   }
   return {
     database,

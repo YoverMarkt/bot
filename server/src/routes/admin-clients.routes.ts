@@ -83,6 +83,14 @@ const db: {
     businessId: string,
   ): Promise<{ code: string; principal: boolean }[]>
   setBusinessMarketplaceCategories(businessId: string, codes: string[]): Promise<number>
+  /** Cómo usa la gente el menú de Umbani: embudo, cajones y búsquedas. */
+  getMarketplaceUsage(dias?: number): Promise<{
+    embudo: { paso: string; orden: number; clientes: number }[]
+    cajones: {
+      code: string; label: string; entradas: number; eligieron: number; abandonaron: number
+    }[]
+    busquedas: { consulta: string; veces: number; sin_nada: number; entendido: string | null }[]
+  }>
   getBusinessBySlug(slug: string): Promise<{ id?: string } | null>
   getClientUserByBusiness(businessId: string): Promise<{ email?: string } | null>
   createBusinessOnboarding(
@@ -500,6 +508,19 @@ router.get('/api/admin/clients', auth.authAdmin, async (_req, res) => {
  */
 router.get('/api/admin/marketplace-categories', auth.authAdmin, async (_req, res) => {
   res.json({ categories: await db.getAllMarketplaceCategories() })
+})
+
+/**
+ * Cómo usa la gente el menú de Umbani.
+ *
+ * Las tres preguntas del dueño —dónde se cae, qué cajón se abandona y qué
+ * escribe— salen de `marketplace_events`, que se empezó a llenar el
+ * 2026-09-18. Antes de esa fecha no hay nada: el registro no se puede
+ * inventar hacia atrás, y la pantalla lo dice en vez de enseñar ceros.
+ */
+router.get('/api/admin/marketplace-usage', auth.authAdmin, async (req, res) => {
+  const dias = Math.min(Math.max(Number(req.query.dias) || 7, 1), 90)
+  res.json({ dias, ...(await db.getMarketplaceUsage(dias)) })
 })
 
 router.get('/api/admin/clients/:id', auth.authAdmin, async (req, res) => {

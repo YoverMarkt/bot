@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
 const Dashboard = lazy(() => import('./features/dashboard/Dashboard'))
+const Umbani = lazy(() => import('./features/umbani/Umbani'))
 const Clients = lazy(() => import('./features/clients/Clients'))
 const Billing = lazy(() => import('./features/billing/Billing'))
 const Simulator = lazy(() => import('./features/simulator/Simulator'))
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/billing" element={<Billing />} />
               <Route path="/finance" element={<Finance />} />
               <Route path="/usage" element={<Usage />} />
+              <Route path="/umbani" element={<Umbani />} />
               <Route path="/simulator" element={<Simulator />} />
               <Route path="/settings" element={<ServerSettings />} />
               <Route path="/connections" element={<Connections />} />

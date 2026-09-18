@@ -1075,5 +1075,11 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 
 - **Se apunta en UN solo sitio** —la vista que acaba de pintarse, después del bucle de `paso`—, no en cada pantalla: así una vista nueva se apunta sola. La búsqueda y el local elegido se apuntan donde ocurren, porque ahí están sus datos.
 
+- **La pantalla «Uso de Umbani» (2026-09-18) contesta las tres preguntas, en el orden en que se responden:** el EMBUDO dice dónde se cae la gente (escribieron → vieron el menú → entraron a un cajón → eligieron local → abrieron su tienda → pidieron); los CAJONES dicen cuál se toca y cuál se abandona —más de la mitad que se van lleva un aviso de «revisar nombre», que es justo el pedido original—; y las BÚSQUEDAS separan dos cosas que no son iguales: «te entiendo y no lo tengo» (demanda de un local que falta dar de alta) y «no sé de qué me hablas» (falta un alias o un cajón mejor nombrado). Esa distinción salió de una prueba real del dueño: escribió «Sushi de cangrejo 🦀» y el menú supo que era comida internacional, pero ese «lo entendí» no se guardaba — ahora `marketplaceKnownTerm` devuelve también el CÓDIGO y se apunta.
+
+- ⚠️ **La búsqueda se apunta UNA vez y donde se sabe todo de ella.** Estaba dentro de `buscarLocales`, que se llama también al pasar de página —contaba doble— y nunca llegaba a saber si al menos se había entendido el término.
+
+- ⚠️ **La pantalla dice que el registro empezó el 2026-09-18** en vez de enseñar ceros: un cero se lee como «nadie entró», y lo cierto es «no había dónde apuntarlo».
+
 - ⚠️ **Dos guardianes del proyecto corrigieron el diseño, y los dos tenían razón:** el de funciones huérfanas paró las tres consultas del reporte —embudo, cajones abandonados y búsquedas— porque **ninguna pantalla las llamaba todavía**, así que viajan con la pantalla que las enseña en vez de nacer muertas; y el de migraciones exigió `on delete cascade` en la foránea a `businesses`, que además es lo correcto: los toques a un local que ya no existe son ruido, no dato. El cliente sí se conserva con `set null`, porque el embudo de la semana no puede cambiar porque alguien se dé de baja.
 

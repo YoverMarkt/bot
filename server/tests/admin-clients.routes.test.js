@@ -41,13 +41,13 @@ function authorization(role = 'admin') {
   return `Bearer ${jwt.sign({ role, businessId: 'business-a' }, JWT_SECRET)}`
 }
 
-async function dispatch(method, path, { auth, body = {}, params = {} } = {}) {
+async function dispatch(method, path, { auth, body = {}, params = {}, query = {} } = {}) {
   const layer = clientsRouter.stack.find(item => (
     item.route?.path === path && item.route?.methods?.[method]
   ))
   if (!layer) throw new Error(`Ruta no encontrada: ${method.toUpperCase()} ${path}`)
   const handlers = layer.route.stack.map(item => item.handle)
-  const req = { headers: auth ? { authorization: auth } : {}, body, params }
+  const req = { headers: auth ? { authorization: auth } : {}, body, params, query }
   const result = { status: 200, body: undefined }
   const res = {
     status(code) { result.status = code; return this },
@@ -75,11 +75,12 @@ describe('clientes y onboarding del superadmin', () => {
   // lista y cambiar el estado de un número). El número exacto es lo que obliga
   // a mirar aquí cuando alguien añade una ruta: una nueva sin autenticación
   // pasaría inadvertida, y estas hablan de todos los negocios a la vez.
-  it('protege sus 20 endpoints exclusivamente con autenticación admin', async () => {
-    // 20 desde el 2026-09-17: entró la lista de cajones del menú del chat.
+  it('protege sus 21 endpoints exclusivamente con autenticación admin', async () => {
+    // 21 desde el 2026-09-18: entraron la lista de cajones del menú del chat y
+    // el uso de Umbani.
     // El número se sube A MANO y a propósito — una ruta nueva que se colara
     // sin `authAdmin` tiene que romper esta prueba, no pasar de largo.
-    expect(clientsRouter.stack).toHaveLength(20)
+    expect(clientsRouter.stack).toHaveLength(21)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -889,6 +890,34 @@ describe('clientes y onboarding del superadmin', () => {
 // típica que sirve almuerzo al mediodía y carta de noche vivía solo bajo
 // «Almuerzos», y a las 7 de la tarde el cliente se iba creyendo que no había
 // nada para él. Ahora el superadmin elige hasta tres cajones.
+describe('cómo usa la gente el menú de Umbani', () => {
+  it('devuelve el embudo, los cajones y las búsquedas', async () => {
+    const usos = vi.spyOn(db, 'getMarketplaceUsage').mockResolvedValue({
+      embudo: [{ paso: 'escribieron', orden: 1, clientes: 9 }],
+      cajones: [{ code: 'almuerzos', label: 'Almuerzos', entradas: 5, eligieron: 2, abandonaron: 3 }],
+      busquedas: [{ consulta: 'sushi de cangrejo', veces: 1, sin_nada: 1, entendido: 'Comida internacional' }],
+    })
+    const res = await dispatch('get', '/api/admin/marketplace-usage', {
+      auth: authorization(), query: { dias: '30' },
+    })
+    expect(res.status).toBe(200)
+    expect(usos).toHaveBeenCalledWith(30)
+    expect(res.body.dias).toBe(30)
+    expect(res.body.cajones[0].abandonaron).toBe(3)
+  })
+
+  it('sin días pedidos mira la última semana, y nunca más de 90', async () => {
+    const usos = vi.spyOn(db, 'getMarketplaceUsage')
+      .mockResolvedValue({ embudo: [], cajones: [], busquedas: [] })
+    await dispatch('get', '/api/admin/marketplace-usage', { auth: authorization() })
+    expect(usos).toHaveBeenCalledWith(7)
+    await dispatch('get', '/api/admin/marketplace-usage', {
+      auth: authorization(), query: { dias: '9999' },
+    })
+    expect(usos).toHaveBeenLastCalledWith(90)
+  })
+})
+
 describe('en qué cajones del menú aparece un local', () => {
   // Con canal configurado: la edición valida el estado que quedará guardado, y
   // un negocio a medias se rechazaría antes de llegar a los cajones.
