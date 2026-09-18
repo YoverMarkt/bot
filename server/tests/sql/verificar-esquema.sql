@@ -3202,6 +3202,63 @@ end;
 $reloj$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- CÓMO USA LA GENTE EL MENÚ DE UMBANI
+-- ═══════════════════════════════════════════════════════════════════════════
+-- El embudo, los cajones que se abandonan y las búsquedas que no encuentran
+-- nada. Lo pidió el dueño para afinar los nombres de los cajones con datos.
+do $umbani$
+declare
+  v_business uuid;
+  v_ana uuid;
+  v_luis uuid;
+  v_pizzerias text := 'pizzerias';
+begin
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders, storefront_enabled)
+  values ('verif-umbani', 'Pizza Uno', 'pizzería', 'ycloud',
+    '+593900444001', '+593900444001', true, true)
+  returning id into v_business;
+  insert into customers (phone, name) values ('593900444101', 'Ana') returning id into v_ana;
+  insert into customers (phone, name) values ('593900444102', 'Luis') returning id into v_luis;
+
+  -- Ana recorre el menú entero y elige; Luis entra al cajón y se va.
+  insert into marketplace_events (customer_id, tipo, category_code, business_id, consulta, resultados)
+  values
+    (v_ana, 'menu', null, null, null, null),
+    (v_ana, 'cajon', v_pizzerias, null, null, null),
+    (v_ana, 'local', v_pizzerias, v_business, null, null),
+    (v_luis, 'menu', null, null, null, null),
+    (v_luis, 'cajon', v_pizzerias, null, null, null),
+    (v_luis, 'busqueda', null, null, 'seco de chivo', 0),
+    (v_luis, 'busqueda', null, null, 'pizza', 3);
+
+  -- ⚠️ Las consultas del reporte llegan con su pantalla, en su propio paso.
+  -- Aquí se comprueba lo que de verdad no se puede perder: que el rastro se
+  -- guarde, que sobreviva al cliente y que no entre basura.
+  if (select count(*) from marketplace_events where tipo = 'cajon') <> 2 then
+    raise exception 'no quedaron los dos toques al cajón';
+  end if;
+  begin
+    insert into marketplace_events (customer_id, tipo) values (v_ana, 'inventado');
+    raise exception 'se aceptó un tipo de evento que no existe';
+  exception when check_violation then null;
+  end;
+
+  -- ── Borrar un cliente NO borra su rastro del embudo ───────────────────────
+  -- El embudo de esta semana no puede cambiar porque alguien se dé de baja.
+  delete from customers where id = v_luis;
+  if (select count(*) from marketplace_events where tipo = 'cajon') <> 2 then
+    raise exception 'al borrar un cliente se perdieron sus eventos';
+  end if;
+
+  delete from businesses where id = v_business;
+  delete from customers where id = v_ana;
+  delete from marketplace_events;
+  raise notice 'MENÚ DE UMBANI: el rastro se guarda, sobrevive al cliente y no admite basura';
+end;
+$umbani$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NINGUNA FUNCIÓN PROPIA PUEDE TENER DOS VERSIONES VIVAS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- `create or replace function` con un parámetro nuevo NO reemplaza: crea una

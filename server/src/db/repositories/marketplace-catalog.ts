@@ -194,6 +194,35 @@ const setBusinessMarketplaceCategories = async (
   return Number(data ?? 0)
 }
 
+/**
+ * Deja constancia de un paso del menú: vio los cajones, entró en uno, buscó
+ * algo o eligió un local.
+ *
+ * ⚠️ Es un registro de PRODUCTO, no de dinero. Nunca lanza hacia arriba: si la
+ * base falla, el cliente tiene que recibir su respuesta igual. Lo que se
+ * pierde es una fila de un reporte, no una venta.
+ */
+const logMarketplaceEvent = async (evento: {
+  customerId: string | null
+  tipo: 'menu' | 'cajon' | 'busqueda' | 'local'
+  categoryCode?: string | null
+  businessId?: string | null
+  consulta?: string | null
+  resultados?: number | null
+}): Promise<void> => {
+  const { error } = await db.from('marketplace_events').insert({
+    customer_id: evento.customerId,
+    tipo: evento.tipo,
+    category_code: evento.categoryCode ?? null,
+    business_id: evento.businessId ?? null,
+    // El texto ya viene normalizado del menú; aquí solo se recorta a lo que
+    // admite la columna.
+    consulta: evento.consulta ? String(evento.consulta).slice(0, 80) : null,
+    resultados: evento.resultados ?? null,
+  })
+  if (error) console.error('❌ registrar el paso del menú:', error.message)
+}
+
 export {
   getMarketplaceCategories,
   getMarketplaceBusinesses,
@@ -201,6 +230,7 @@ export {
   searchMarketplaceProducts,
   marketplaceKnownTerm,
   getAllMarketplaceCategories,
+  logMarketplaceEvent,
   getBusinessMarketplaceCategories,
   setBusinessMarketplaceCategories,
 }

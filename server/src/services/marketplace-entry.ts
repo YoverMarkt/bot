@@ -59,6 +59,15 @@ export interface MarketplaceEntryDatabase {
    * antes del 2026-09-03.
    */
   revokeAllStorefrontSessions?(customerId: string): Promise<number>
+  /** Deja constancia de un paso del menú. Opcional: es un registro, no dinero. */
+  logMarketplaceEvent?(evento: {
+    customerId: string | null
+    tipo: 'menu' | 'cajon' | 'busqueda' | 'local'
+    categoryCode?: string | null
+    businessId?: string | null
+    consulta?: string | null
+    resultados?: number | null
+  }): Promise<void>
   resolveMarketplaceCustomer(phone: string): Promise<{ id: string; name: string | null }>
   getConversation(customerId: string): Promise<{
     current_state: string
@@ -607,7 +616,7 @@ export async function handleMarketplaceMessage(
       // igualmente (un «hola» aquí es «empecemos», no «repíteme la búsqueda»),
       // así que consultarla sería gastar una lectura para tirarla. Es la misma
       // regla que ya cumple la portada — «un saludo no dispara la búsqueda».
-      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
+      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta, customer.id))
     }
     respuesta = paso({
       // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
@@ -622,6 +631,20 @@ export async function handleMarketplaceMessage(
     })
     if (respuesta.reply || respuesta.negocioElegido) break
     vistaActual = respuesta.vista
+  }
+
+  // ── Queda constancia de dónde acabó, para los reportes ─────────────
+  //
+  // Se apunta la VISTA que se le acaba de pintar, que es exactamente lo que se
+  // quiere medir: cuánta gente ve el menú y cuánta entra en un cajón. Va aquí
+  // —después del bucle— y no en cada pantalla: un solo sitio, y el día que
+  // haya una vista nueva se apunta sola.
+  if (respuesta.vista.vista === 'categorias') {
+    apuntarPaso(deps, { customerId: customer.id, tipo: 'menu' })
+  } else if (respuesta.vista.vista === 'negocios') {
+    apuntarPaso(deps, {
+      customerId: customer.id, tipo: 'cajon', categoryCode: respuesta.vista.categoria,
+    })
   }
 
   // ── El cliente llegó a un local: se le manda su enlace ─────────────
@@ -655,7 +678,7 @@ export async function handleMarketplaceMessage(
   if (respuesta.noEntendido
     && !esAdjuntoSinTexto(text)
     && !conversation?.selected_business_id) {
-    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text))
+    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text, customer.id))
     if (encontrados.length) {
       const resultados = verResultados(text, encontrados, 0)
       deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
@@ -747,12 +770,19 @@ async function conEstadoDeHorario(
 async function buscarLocales(
   deps: MarketplaceEntryDeps,
   consulta: string,
+  cliente?: string | null,
 ): Promise<MarketplaceBusiness[]> {
   const texto = String(consulta || '').trim()
   if (!texto || !deps.database.searchMarketplaceBusinesses) return []
   const hits = await deps.database
     .searchMarketplaceBusinesses(texto, 9)
     .catch(() => [])
+  // ⚠️ Se apunta SIEMPRE, y el cero es el dato que más vale: cada búsqueda sin
+  // resultado es una palabra que el menú no entiende, y de ahí salen los alias
+  // y los nombres de cajón que el dueño quiere afinar con datos.
+  apuntarPaso(deps, {
+    customerId: cliente ?? null, tipo: 'busqueda', consulta: texto, resultados: hits.length,
+  })
   return hits.map(hit => ({
     id: hit.id, slug: hit.slug, name: hit.name, type: hit.type, prep_min: null,
   }))
@@ -789,6 +819,9 @@ async function entregarLocal(
   version: number | undefined,
 ): Promise<void> {
   const { database, logger } = deps
+  apuntarPaso(deps, {
+    customerId: customer.id, tipo: 'local', businessId: negocio.id,
+  })
 
   // ── ¿Este local bloqueó a este cliente? ────────────────────────────
   //
@@ -1020,6 +1053,29 @@ async function mandarElEnlace(
  * siempre. Es una limpieza, no una defensa — la defensa de verdad es el 403
  * de `readStorefrontSession` y el candado de la conversación.
  */
+/**
+ * Apunta un paso del menú para los reportes: qué cajones se tocan, cuáles se
+ * abandonan y qué escribe la gente (pedido del dueño, 2026-09-18).
+ *
+ * ⚠️ NUNCA espera ni lanza. Es un registro de producto: si la base falla, el
+ * cliente recibe su respuesta igual. Perder una fila de un reporte no puede
+ * costar una venta — es la misma regla que `matarEnlaceAnterior`.
+ */
+function apuntarPaso(
+  deps: MarketplaceEntryDeps,
+  evento: {
+    customerId: string | null
+    tipo: 'menu' | 'cajon' | 'busqueda' | 'local'
+    categoryCode?: string | null
+    businessId?: string | null
+    consulta?: string | null
+    resultados?: number | null
+  },
+): void {
+  if (!deps.database.logMarketplaceEvent) return
+  void deps.database.logMarketplaceEvent(evento).catch(() => {})
+}
+
 async function matarEnlaceAnterior(
   deps: MarketplaceEntryDeps,
   customerId: string,

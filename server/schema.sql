@@ -12776,6 +12776,57 @@ grant execute on function public.marketplace_buscar_negocios(text, integer)
   to service_role;
 
 
+-- ── Cómo usa la gente el menú de Umbani ────────────────────────────────────
+-- El rastro del menú: qué cajones se tocan, cuáles se abandonan y qué escribe
+-- la gente. Sin esto no hay forma de afinar los nombres con datos, y el día
+-- que no se registra no se recupera (migration-2026-09-18-asi-usan-umbani).
+
+create table if not exists public.marketplace_events (
+  id            uuid primary key default gen_random_uuid(),
+  -- Quién. Si el cliente se borra, el evento se queda sin dueño en vez de
+  -- irse: el embudo de esta semana no puede cambiar porque alguien se dé de
+  -- baja mañana.
+  customer_id   uuid references public.customers(id) on delete set null,
+  -- Qué pasó, en los cuatro pasos que tiene el menú:
+  --   menu     → vio los cajones
+  --   cajon    → entró en uno (y cuál)
+  --   busqueda → escribió algo (y cuántos locales salieron)
+  --   local    → eligió un local y recibió su enlace
+  tipo          text not null,
+  category_code text,
+  -- ⚠️ `cascade` y no `set null`: es la regla del proyecto para toda foránea a
+  -- `businesses` —borrar un local se lleva SUS datos—, y aquí además es lo
+  -- correcto: los toques a un local que ya no existe no son un dato, son
+  -- ruido. El cliente sí se conserva (`set null`), porque el embudo de esta
+  -- semana no puede cambiar porque alguien se dé de baja mañana.
+  business_id   uuid references public.businesses(id) on delete cascade,
+  consulta      text,
+  resultados    integer,
+  created_at    timestamptz not null default now(),
+  constraint marketplace_events_datos_check check (
+    tipo in ('menu', 'cajon', 'busqueda', 'local')
+    and char_length(coalesce(consulta, '')) <= 80
+    and (resultados is null or resultados between 0 and 1000)
+  )
+);
+
+comment on table public.marketplace_events is
+  'Qué hace la gente en el menú de Umbani: cajones tocados, búsquedas y locales elegidos.';
+
+-- Todas las consultas de los reportes van por fecha, y las dos más caras
+-- —cajones y búsquedas— filtran además por tipo.
+create index if not exists idx_marketplace_events_fecha
+  on public.marketplace_events (created_at desc);
+create index if not exists idx_marketplace_events_tipo
+  on public.marketplace_events (tipo, created_at desc);
+
+alter table public.marketplace_events enable row level security;
+revoke all on table public.marketplace_events from public, anon, authenticated;
+grant select, insert, delete on table public.marketplace_events to service_role;
+
+
+
+
 -- ── 4. Buscar DENTRO del local elegido ─────────────────────────────────────
 --
 -- «También quiero Coca Cola» cuando ya está en El Puerto. ⚠️ El filtro por
