@@ -394,3 +394,29 @@ test('el superadmin elige en qué cajones del menú aparece el local', async ({ 
   await expect.poll(() => enviado?.marketplace_categories)
     .toEqual(['restaurantes', 'almuerzos', 'desayunos'])
 })
+
+test('el superadmin ve cómo usa la gente el menú de Umbani', async ({ page }) => {
+  // ⚠️ Las tres preguntas del dueño (2026-09-18): dónde se cae la gente, qué
+  // cajón se abandona y qué escribe. La pantalla existe para CONTESTARLAS, así
+  // que la prueba mira las tres respuestas, no que cargue.
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+  await page.goto(`${adminUrl}#/umbani`)
+
+  // 1. El embudo, con su caída: de 10 que escribieron, 1 pidió.
+  await expect(page.getByTestId('paso-1')).toContainText('10')
+  await expect(page.getByTestId('paso-6')).toContainText('1')
+  await expect(page.getByTestId('paso-6')).toContainText('10%')
+
+  // 2. El cajón que se toca y se abandona lleva su aviso: 4 de 5 se fueron.
+  const almuerzos = page.getByRole('row', { name: /Almuerzos/ })
+  await expect(almuerzos).toContainText('revisar nombre')
+  await expect(page.getByRole('row', { name: /Pizzerías/ })).not.toContainText('revisar nombre')
+
+  // 3. Lo que escriben, separando las dos cosas que no son iguales.
+  await expect(page.getByRole('row', { name: /sushi de cangrejo/ }))
+    .toContainText('falta darlo de alta')
+  await expect(page.getByRole('row', { name: /seco de chivo/ }))
+    .toContainText('le falta un alias')
+  await expect(page.getByRole('row', { name: /^pizza/ })).toContainText('Encontró locales')
+})

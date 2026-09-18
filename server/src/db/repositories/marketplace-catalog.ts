@@ -51,7 +51,7 @@ const getMarketplaceBusinesses = async (
  */
 const marketplaceKnownTerm = async (
   query: string,
-): Promise<string | null> => {
+): Promise<{ code: string; label: string } | null> => {
   const palabras = String(query || '')
     .toLocaleLowerCase('es')
     .normalize('NFD')
@@ -77,7 +77,11 @@ const marketplaceKnownTerm = async (
     .select('label')
     .eq('code', code)
     .maybeSingle()
-  return (categoria as { label?: string } | null)?.label || null
+  const label = (categoria as { label?: string } | null)?.label
+  // ⚠️ Se devuelve también el CÓDIGO desde el 2026-09-18: el chat enseña la
+  // etiqueta, pero el registro guarda el código —«la gente pide internacional
+  // y no tienes ningún local»— y eso es demanda, no un texto bonito.
+  return label ? { code, label } : null
 }
 
 export interface MarketplaceHit {
@@ -223,6 +227,37 @@ const logMarketplaceEvent = async (evento: {
   if (error) console.error('❌ registrar el paso del menú:', error.message)
 }
 
+/**
+ * Las tres preguntas del dueño sobre el menú de Umbani, de una vez: dónde se
+ * cae la gente, qué cajón se abandona y qué escribe.
+ *
+ * ⚠️ Las tres cuentan CLIENTES, no toques: quien recorre cinco cajones es una
+ * persona buscando, no cinco.
+ */
+const getMarketplaceUsage = async (dias = 7): Promise<{
+  embudo: { paso: string; orden: number; clientes: number }[]
+  cajones: { code: string; label: string; entradas: number; eligieron: number; abandonaron: number }[]
+  busquedas: { consulta: string; veces: number; sin_nada: number; entendido: string | null }[]
+}> => {
+  const [embudo, cajones, busquedas] = await Promise.all([
+    db.rpc('marketplace_embudo', { p_dias: dias }),
+    db.rpc('marketplace_cajones_tocados', { p_dias: dias }),
+    db.rpc('marketplace_busquedas', { p_dias: dias }),
+  ])
+  for (const respuesta of [embudo, cajones, busquedas]) {
+    if (respuesta.error) throw new Error(respuesta.error.message)
+  }
+  return {
+    embudo: (embudo.data || []) as { paso: string; orden: number; clientes: number }[],
+    cajones: (cajones.data || []) as {
+      code: string; label: string; entradas: number; eligieron: number; abandonaron: number
+    }[],
+    busquedas: (busquedas.data || []) as {
+      consulta: string; veces: number; sin_nada: number; entendido: string | null
+    }[],
+  }
+}
+
 export {
   getMarketplaceCategories,
   getMarketplaceBusinesses,
@@ -231,6 +266,7 @@ export {
   marketplaceKnownTerm,
   getAllMarketplaceCategories,
   logMarketplaceEvent,
+  getMarketplaceUsage,
   getBusinessMarketplaceCategories,
   setBusinessMarketplaceCategories,
 }

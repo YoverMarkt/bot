@@ -133,6 +133,29 @@ export async function mockAdminApi(page: Page) {
     if (path === '/api/admin/stats') {
       return json(route, { totalClients: 1, activeClients: 1, suspendedClients: 0, messagesToday: 3 })
     }
+    // Cómo usa la gente el menú de Umbani.
+    if (path === '/api/admin/marketplace-usage') {
+      return json(route, {
+        dias: 7,
+        embudo: [
+          { paso: 'escribieron', orden: 1, clientes: 10 },
+          { paso: 'vieron el menú', orden: 2, clientes: 10 },
+          { paso: 'entraron a un cajón', orden: 3, clientes: 6 },
+          { paso: 'eligieron un local', orden: 4, clientes: 3 },
+          { paso: 'abrieron su tienda', orden: 5, clientes: 2 },
+          { paso: 'pidieron', orden: 6, clientes: 1 },
+        ],
+        cajones: [
+          { code: 'almuerzos', label: 'Almuerzos', entradas: 5, eligieron: 1, abandonaron: 4 },
+          { code: 'pizzerias', label: 'Pizzerías', entradas: 3, eligieron: 2, abandonaron: 1 },
+        ],
+        busquedas: [
+          { consulta: 'sushi de cangrejo', veces: 2, sin_nada: 2, entendido: 'Comida internacional' },
+          { consulta: 'seco de chivo', veces: 1, sin_nada: 1, entendido: null },
+          { consulta: 'pizza', veces: 4, sin_nada: 0, entendido: null },
+        ],
+      })
+    }
     // Los cajones del menú del chat: el modal los pide al abrirse.
     if (path === '/api/admin/marketplace-categories') {
       return json(route, { categories: [

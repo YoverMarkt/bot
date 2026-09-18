@@ -3230,14 +3230,46 @@ begin
     (v_luis, 'menu', null, null, null, null),
     (v_luis, 'cajon', v_pizzerias, null, null, null),
     (v_luis, 'busqueda', null, null, 'seco de chivo', 0),
+    (v_luis, 'busqueda', 'internacional', null, 'sushi de cangrejo', 0),
     (v_luis, 'busqueda', null, null, 'pizza', 3);
 
-  -- ⚠️ Las consultas del reporte llegan con su pantalla, en su propio paso.
-  -- Aquí se comprueba lo que de verdad no se puede perder: que el rastro se
-  -- guarde, que sobreviva al cliente y que no entre basura.
+  -- ── Lo que no se puede perder: el rastro ─────────────────────────────────
   if (select count(*) from marketplace_events where tipo = 'cajon') <> 2 then
     raise exception 'no quedaron los dos toques al cajón';
   end if;
+
+  -- ── El embudo cuenta CLIENTES, no toques ─────────────────────────────────
+  if (select clientes from marketplace_embudo(7) where paso = 'entraron a un cajón') <> 2 then
+    raise exception 'el embudo no contó los dos clientes que entraron a un cajón';
+  end if;
+  if (select clientes from marketplace_embudo(7) where paso = 'eligieron un local') <> 1 then
+    raise exception 'el embudo no contó al que eligió local';
+  end if;
+
+  -- ── El cajón abandonado, que es el dato que se pidió ──────────────────────
+  declare v_cajon record;
+  begin
+    select * into v_cajon from marketplace_cajones_tocados(7) where code = v_pizzerias;
+    if v_cajon.entradas <> 2 or v_cajon.eligieron <> 1 or v_cajon.abandonaron <> 1 then
+      raise exception 'los cajones tocados no cuadran: % entradas, % eligieron, % abandonaron',
+        v_cajon.entradas, v_cajon.eligieron, v_cajon.abandonaron;
+    end if;
+  end;
+
+  -- ── Las búsquedas: primero las que no encontraron nada ───────────────────
+  declare v_busqueda record;
+  begin
+    select * into v_busqueda from marketplace_busquedas(7) limit 1;
+    if v_busqueda.consulta <> 'seco de chivo' or v_busqueda.sin_nada <> 1 then
+      raise exception 'la búsqueda sin resultado no salió primero: %', v_busqueda;
+    end if;
+    -- ⚠️ «te entiendo y NO lo tengo» es demanda, y se distingue de «no sé de
+    -- qué me hablas»: solo la primera trae categoría.
+    select * into v_busqueda from marketplace_busquedas(7) where consulta = 'sushi de cangrejo';
+    if v_busqueda.entendido is null then
+      raise exception 'una búsqueda entendida sin oferta no dijo qué se entendió';
+    end if;
+  end;
   begin
     insert into marketplace_events (customer_id, tipo) values (v_ana, 'inventado');
     raise exception 'se aceptó un tipo de evento que no existe';
@@ -3254,7 +3286,7 @@ begin
   delete from businesses where id = v_business;
   delete from customers where id = v_ana;
   delete from marketplace_events;
-  raise notice 'MENÚ DE UMBANI: el rastro se guarda, sobrevive al cliente y no admite basura';
+  raise notice 'MENÚ DE UMBANI: rastro, embudo por clientes, cajones abandonados y búsquedas sin oferta';
 end;
 $umbani$;
 
