@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { getReports, getAlerts, getPlatformFees, money, type Alert } from './api'
-import { BarChart3, UserRound, ClipboardList, Trophy, Search, ShoppingCart, Snail, Package, Handshake, Frown, Brain, HelpCircle, Users, DollarSign, Bot as BotIcon, Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info, Receipt } from 'lucide-react'
+import { Compass, BarChart3, UserRound, ClipboardList, Trophy, ShoppingCart, Snail, Package, Handshake, Frown, Brain, Users, DollarSign, Bot as Repeat2, Sparkles, PackageX, PackageMinus, TrendingDown, TrendingUp, UserMinus, Moon, CreditCard, CircleAlert, TriangleAlert, CircleCheck, Info, Receipt } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
@@ -45,7 +45,7 @@ const CATS = [
   ['ventas', 'Ventas', DollarSign],
   ['productos', 'Productos', Package],
   ['clientes', 'Clientes', Users],
-  ['bot', 'Bot', BotIcon],
+  ['umbani', 'Cómo llegan', Compass],
 ] as const
 type Cat = typeof CATS[number][0]
 
@@ -225,20 +225,11 @@ export default function Reports() {
                 <MetricBarChart rows={data.top.rows.map(r => ({ label: r.name, value: r.qty, text: `${r.qty} uds · ${money(r.rev)}` }))} metricLabel="Unidades" />}
             </Card>
             </>)}
-            {/* Más consultados */}
-            {show('productos') && (<>
-            <Card title="Más consultados" icon={Search}>
-              {data.mostConsulted.rows.length === 0 ? <Empty msg="Sin consultas registradas." /> :
-                <MetricBarChart rows={data.mostConsulted.rows.map(r => ({ label: r.name, value: r.count, text: `${r.count} consultas` }))} metricLabel="Consultas" />}
-            </Card>
-            </>)}
-            {/* Abandonados */}
-            {show('productos') && (<>
-            <Card title="Consultados sin ventas en el período" icon={ShoppingCart}>
-              {data.abandoned.rows.length === 0 ? <Empty msg="Nada abandonado." /> :
-                <MetricBarChart rows={data.abandoned.rows.map(r => ({ label: r.name, value: r.consultas, text: `${r.consultas} consultas` }))} metricLabel="Consultas sin venta" />}
-            </Card>
-            </>)}
+            {/* ⚠️ Aquí vivían «Más consultados» y «Consultados sin ventas»:
+                las llenaba `product_consultations`, del bot por chat retirado,
+                con 2 filas desde el 3 de agosto. Dos tarjetas vacías para
+                siempre. Lo que hoy necesita el dueño está en «Cómo llegan tus
+                clientes». */}
             {/* Bajo movimiento */}
             {show('productos') && (<>
             <Card title="Bajo movimiento (candidatos a promo)" icon={Snail}>
@@ -293,16 +284,34 @@ export default function Reports() {
                 </>}
             </Card>
             </>)}
-            {/* Reporte de IA: FAQ (BarChart oficial horizontal) + sin responder */}
-            {show('bot') && (<>
-            <Card title="Preguntas más frecuentes" icon={Brain} full={cat === 'bot'}>
-              {data.faq.rows.filter(r => r.count > 0).length === 0 ? <Empty msg="Sin datos suficientes aún." /> :
-                <FaqChart rows={data.faq.rows.filter(r => r.count > 0).map(r => ({ topic: r.topic, count: r.count }))} />}
+            {/* ── Cómo llegan tus clientes ──────────────────────────────
+                ⚠️ Esta pestaña se llamaba «Bot» y enseñaba lo que preguntaba
+                la gente por chat. Ese bot se retiró en #360/#361 y sus tres
+                tablas llevan meses muertas —`conversation_history` parada el
+                2026-08-23, `ai_gaps` en cero—: eran tarjetas vacías para
+                siempre. Hoy el cliente escribe al número de UMBANI, elige el
+                local y recibe su enlace; eso es lo que se mide aquí. */}
+            {show('umbani') && (<>
+            <Card title="Cómo llegan tus clientes" icon={Compass} full>
+              {(data.umbani?.embudo ?? []).length === 0
+                ? <Empty msg="Todavía nadie recibió tu enlace en este período." />
+                : <MetricBarChart
+                    rows={(data.umbani?.embudo ?? []).map(p => ({
+                      label: p.paso, value: p.clientes, text: `${p.clientes} persona(s)`,
+                    }))}
+                    metricLabel="personas"
+                  />}
             </Card>
 
-            <Card title="Preguntas que la IA no pudo responder" icon={HelpCircle}>
-              {data.unanswered.rows.length === 0 ? <Empty msg="El bot pudo con todo." /> :
-                <MetricBarChart rows={data.unanswered.rows.map(r => ({ label: `“${r.question ?? '—'}”`, value: r.count, text: `×${r.count}` }))} metricLabel="Veces" />}
+            <Card title="Dónde te encontraron" icon={Compass}>
+              {(data.umbani?.llegadas ?? []).length === 0
+                ? <Empty msg="Sin datos del menú de Umbani todavía." />
+                : <MetricBarChart
+                    rows={(data.umbani?.llegadas ?? []).map(l => ({
+                      label: l.label, value: l.veces, text: `${l.veces} vez(ces)`,
+                    }))}
+                    metricLabel="clientes"
+                  />}
             </Card>
             </>)}
           </div>
@@ -423,24 +432,6 @@ function ComparisonChart({ label, cur, prev }: { label: string; cur: number; pre
           <LabelList dataKey="total" position="top" offset={8} className="fill-muted-foreground" fontSize={11}
             formatter={(v: unknown) => money(Number(v))} />
           {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
-        </Bar>
-      </BarChart>
-    </ChartContainer>
-  )
-}
-
-// ── FAQ — BarChart horizontal oficial (temas por cantidad de consultas) ──
-function FaqChart({ rows }: { rows: { topic: string; count: number }[] }) {
-  return (
-    <ChartContainer config={{ count: { label: 'Consultas', color: 'var(--chart-1)' } }}
-      className="aspect-auto w-full" style={{ height: Math.max(rows.length * 36 + 16, 88) }}>
-      <BarChart accessibilityLayer data={rows} layout="vertical" margin={{ left: 4, right: 28 }}>
-        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-        <XAxis type="number" hide />
-        <YAxis dataKey="topic" type="category" tickLine={false} axisLine={false} width={110} tick={{ fontSize: 11 }} />
-        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-        <Bar dataKey="count" fill="var(--color-count)" radius={4} maxBarSize={18}>
-          <LabelList dataKey="count" position="right" className="fill-muted-foreground" fontSize={11} />
         </Bar>
       </BarChart>
     </ChartContainer>

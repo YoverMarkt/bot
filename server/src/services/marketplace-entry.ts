@@ -649,7 +649,14 @@ export async function handleMarketplaceMessage(
 
   // ── El cliente llegó a un local: se le manda su enlace ─────────────
   if (respuesta.negocioElegido) {
-    await entregarLocal(deps, customer, from, respuesta.negocioElegido, conversation?.version)
+    // ⚠️ POR DÓNDE llegó: el cajón desde el que lo eligió, o nada si llegó
+    // escribiendo lo que quería. Es lo que le dice al dueño si le buscan
+    // «almuerzo» o «cena», y se sabe SOLO aquí — dentro de `entregarLocal` ya
+    // se perdió la vista de la que venía.
+    await entregarLocal(
+      deps, customer, from, respuesta.negocioElegido, conversation?.version,
+      vistaActual.vista === 'negocios' ? vistaActual.categoria : null,
+    )
     return
   }
 
@@ -823,10 +830,12 @@ async function entregarLocal(
   phone: string,
   negocio: MarketplaceBusiness,
   version: number | undefined,
+  desdeElCajon: string | null = null,
 ): Promise<void> {
   const { database, logger } = deps
   apuntarPaso(deps, {
     customerId: customer.id, tipo: 'local', businessId: negocio.id,
+    categoryCode: desdeElCajon,
   })
 
   // ── ¿Este local bloqueó a este cliente? ────────────────────────────

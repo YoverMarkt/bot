@@ -77,14 +77,22 @@ export async function mockClientApi(page: Page) {
         bySeller: { label: 'este mes', rows: [{ name: 'Dueño E2E', total: 120 }] },
         pending: { count: 0, rows: [] },
         top: { label: 'este mes', rows: [{ name: 'Producto E2E', qty: 5, rev: 120 }] },
-        mostConsulted: { label: 'este mes', rows: [{ name: 'Producto E2E', count: 8 }] },
-        abandoned: { label: 'este mes', rows: [] },
         lowMovement: { label: 'este mes', rows: [] },
         lowStock: { rows: [] },
         recurring: { label: 'este mes', rows: [{ name: 'Cliente E2E', orders: 2, total: 80 }] },
         lostCustomers: { label: 'este mes', count: 0, noRespondio: 0, returning: 0, nuevos: 0, rows: [] },
-        faq: { label: 'este mes', analyzed: 4, rows: [{ topic: 'Precios', emoji: '💲', count: 4 }] },
-        unanswered: { label: 'este mes', count: 0, unique: 0, rows: [] },
+        // ⚠️ Aquí vivían `mostConsulted`, `abandoned`, `faq` y `unanswered`:
+        // se fueron el 2026-09-18 con sus tablas muertas. Lo que llega ahora
+        // es cómo llega el cliente desde el número de Umbani.
+        umbani: {
+          embudo: [
+            { paso: 'recibieron su enlace', orden: 1, clientes: 9 },
+            { paso: 'abrieron su tienda', orden: 2, clientes: 5 },
+            { paso: 'hicieron un pedido', orden: 3, clientes: 2 },
+            { paso: 'recibieron su pedido', orden: 4, clientes: 2 },
+          ],
+          llegadas: [{ code: 'almuerzos', label: 'Almuerzos', veces: 7 }],
+        },
       })
     }
     if (path === '/api/client/onboarding') return json(route, { done: 5, total: 5, pct: 100, steps: [] })

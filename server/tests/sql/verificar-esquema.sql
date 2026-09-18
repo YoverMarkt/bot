@@ -3283,10 +3283,45 @@ begin
     raise exception 'al borrar un cliente se perdieron sus eventos';
   end if;
 
+  -- ── El embudo DEL LOCAL, que es el reporte de su dueño ───────────────────
+  -- Ana recibió su enlace, lo abrió y pidió; el reporte tiene que contarlo.
+  declare v_sesion uuid; v_paso record;
+  begin
+    insert into storefront_sessions (business_id, customer_id, contact_phone, token_hash, last_seen_at)
+    values (v_business, v_ana, '593900444101', repeat('a1', 32), now())
+    returning id into v_sesion;
+    insert into orders (business_id, customer_id, contact_phone, total, status)
+    values (v_business, v_ana, '593900444101', 10.00, 'completado');
+
+    select * into v_paso from local_embudo(v_business, 30) where orden = 1;
+    if v_paso.clientes <> 1 then
+      raise exception 'el embudo del local no contó su enlace';
+    end if;
+    select * into v_paso from local_embudo(v_business, 30) where orden = 2;
+    if v_paso.clientes <> 1 then
+      raise exception 'el embudo del local no vio que abrió la tienda';
+    end if;
+    select * into v_paso from local_embudo(v_business, 30) where orden = 4;
+    if v_paso.clientes <> 1 then
+      raise exception 'el embudo del local no contó el pedido entregado';
+    end if;
+
+    -- ⚠️ Y solo lo SUYO: el embudo de un local no puede ver a los clientes de
+    -- otro. Es la regla #1 del proyecto, aquí también.
+    if (select clientes from local_embudo(gen_random_uuid(), 30) where orden = 1) <> 0 then
+      raise exception 'FUGA: el embudo de un local contó clientes de otro';
+    end if;
+
+    -- Por dónde llegó: el cajón desde el que lo eligieron.
+    if (select veces from local_llegadas(v_business, 30) where code = 'pizzerias') <> 1 then
+      raise exception 'no se supo por qué cajón llegó el cliente';
+    end if;
+  end;
+
   delete from businesses where id = v_business;
   delete from customers where id = v_ana;
   delete from marketplace_events;
-  raise notice 'MENÚ DE UMBANI: rastro, embudo por clientes, cajones abandonados y búsquedas sin oferta';
+  raise notice 'MENÚ DE UMBANI: rastro, embudos (plataforma y local), cajones abandonados y búsquedas sin oferta';
 end;
 $umbani$;
 

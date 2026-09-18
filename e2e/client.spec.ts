@@ -193,10 +193,22 @@ test('reportes renderiza gráficos shadcn sin desbordar en móvil', async ({ pag
   await page.goto(`${clientUrl}#/reports`)
 
   await expect(page.getByRole('heading', { name: 'Reportes del negocio' })).toBeVisible()
+
   // 7 datasets del mock traen datos (trend, comparación, vendedor, top,
-  // consultados, recurrentes, FAQ); los vacíos muestran su estado sin chart.
+  // recurrentes y los DOS de «cómo llegan», que reemplazaron a consultados y
+  // FAQ); los vacíos muestran su estado sin chart.
   await expect(page.locator('[data-slot="chart"]')).toHaveCount(7)
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+  // ⚠️ La pestaña «Cómo llegan» reemplazó a «Bot» el 2026-09-18: el bot por
+  // chat se retiró y sus tarjetas llevaban meses vacías. Lo que el dueño
+  // necesita hoy es de dónde le llega el cliente que escribe a Umbani. Los
+  // pasos viven dentro del gráfico —texto SVG que en móvil se recorta—, así
+  // que aquí se comprueba que la pestaña existe y pinta sus dos bloques.
+  await expect(page.getByRole('tab', { name: 'Bot' })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Cómo llegan' }).click()
+  await expect(page.getByText('Cómo llegan tus clientes')).toBeVisible()
+  await expect(page.getByText('Dónde te encontraron')).toBeVisible()
 })
 
 test('un pedido recorre confirmación, preparación y reparto sin generar cobros automáticos', async ({ page }) => {
