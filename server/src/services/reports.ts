@@ -6,9 +6,14 @@
 // Todo filtrado por business_id (aislamiento multi-tenant).
 // ============================================================
 type ReportPeriod = 'hoy' | 'semana' | 'mes'
+// ⚠️ Aquí vivían 'most_consulted', 'abandoned' y 'ai', y se fueron el
+// 2026-09-18 con sus tres tablas muertas: `product_consultations` (2 filas, la
+// última del 2026-08-03), `ai_gaps` (0) y `conversation_history` (parada el
+// 2026-08-23). Las escribía el bot por chat, retirado en #360/#361 — desde
+// entonces el dueño abría cuatro tarjetas vacías para siempre.
 type ReportName = 'summary' | 'top' | 'low_movement' | 'comparison' | 'recurring'
-  | 'low_stock' | 'pending' | 'seller' | 'most_consulted' | 'abandoned'
-  | 'lost' | 'customers' | 'ai'
+  | 'low_stock' | 'pending' | 'seller'
+  | 'lost' | 'customers' | 'umbani'
 
 interface ReportIntent {
   report: ReportName
@@ -45,6 +50,16 @@ interface UserMessageRow { content?: string | null }
 interface AiGapRow { question?: string | null }
 
 interface ReportsDatabase {
+  /** El camino del cliente de ESTE local: del enlace al pedido entregado. */
+  getLocalFunnel(
+    businessId: string,
+    dias?: number,
+  ): Promise<{ paso: string; orden: number; clientes: number }[]>
+  /** Por qué cajón del menú de Umbani llegaron a este local. */
+  getLocalArrivals(
+    businessId: string,
+    dias?: number,
+  ): Promise<{ code: string; label: string; veces: number }[]>
   getSalesWithItems(businessId: string, from?: string, to?: string): Promise<SaleRow[]>
   getSaleCustomers(businessId: string): Promise<SaleRow[]>
   getWritersInRange(businessId: string, from?: string, to?: string): Promise<number>
@@ -102,14 +117,19 @@ function previousRange(period?: ReportPeriod | null) {
 }
 
 // ── Detección de intención del dueño (para WhatsApp) ──────
-const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'most_consulted', 'abandoned', 'lost', 'ai']
+const REPORTS_TIME_BOUND = ['summary', 'top', 'low_movement', 'comparison', 'recurring', 'seller', 'lost', 'umbani']
 function detectReportIntent(text: unknown): ReportIntent | null {
   const t = String(text || '').toLowerCase()
   const has = (...ws: string[]) => ws.some(w => t.includes(w))
   let report: ReportName | null = null
-  if      (has('reporte de ia', 'reporte ia', 'reporte de inteligencia', 'preguntas frecuentes', 'preguntas mas frecuentes', 'preguntas sin responder', 'preguntas que no', 'no supo responder', 'no pudo responder', 'no sabe el bot', 'huecos del bot', 'fallas del bot', 'le preguntan al bot')) report = 'ai'
-  else if (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'abandoned'
-  else if (has('más consultad', 'mas consultad', 'más preguntad', 'mas preguntad', 'consultado', 'preguntan por', 'más interesados', 'mas interesados')) report = 'most_consulted'
+  // ⚠️ «Qué preguntan», «abandonados» y el reporte de IA los contestaba el bot
+  // por chat, retirado en #360/#361, y sus tres tablas llevan meses muertas.
+  // En vez de dejar mudo al dueño —que escribe lo que siempre escribió—, esas
+  // mismas palabras llevan ahora a lo que SÍ se puede saber: cómo llegan sus
+  // clientes desde Umbani, y qué se vende.
+  if      (has('reporte de ia', 'reporte ia', 'reporte de inteligencia', 'preguntas frecuentes', 'preguntas mas frecuentes', 'preguntas sin responder', 'qué preguntan', 'que preguntan', 'cómo llegan', 'como llegan', 'de dónde vienen', 'de donde vienen', 'umbani')) report = 'umbani'
+  else if (has('abandonad', 'consultado sin', 'interés sin', 'interes sin', 'preguntan pero no compran', 'no se cerr')) report = 'umbani'
+  else if (has('más consultad', 'mas consultad', 'más preguntad', 'mas preguntad', 'consultado', 'preguntan por', 'más interesados', 'mas interesados')) report = 'top'
   else if (has('cliente perdido', 'clientes perdidos', 'clientes que no compr', 'no me compraron', 'no compraron', 'nunca compr', 'se perdieron', 'oportunidades perdidas', 'clientes que preguntaron')) report = 'lost'
   else if (has('vendedor', 'vendedores', 'por empleado', 'cada empleado', 'quién vendió', 'quien vendio')) report = 'seller'
   else if (has('comparar', 'comparación', 'comparacion', 'crecimiento', 'creció', 'crecio', ' vs ', 'versus')) report = 'comparison'
@@ -257,35 +277,6 @@ async function computeLowStock(bizId: string) {
 async function computePending(bizId: string) {
   const list = await db.getPendingOrders(bizId)
   return { count: list.length, rows: list.slice(0, 15).map(s => ({ name: s.contact_name || s.contact_phone, last_message: s.last_message || '' })) }
-}
-
-async function computeMostConsulted(bizId: string, period?: ReportPeriod | null, limit = 5) {
-  const { start, label } = rangeFor(period)
-  const rows = await db.getConsultationsInRange(bizId, start)
-  const map: Record<string, { name: string; count: number }> = {}
-  for (const r of rows) {
-    if (!r.product_id) continue
-    if (!map[r.product_id]) map[r.product_id] = { name: r.products?.name || 'Producto', count: 0 }
-    map[r.product_id].count++
-  }
-  return { label, rows: Object.values(map).sort((a, b) => b.count - a.count).slice(0, limit) }
-}
-
-async function computeAbandoned(bizId: string, period?: ReportPeriod | null, limit = 10, preloadedSales?: SaleRow[]) {
-  const { start, label } = rangeFor(period)
-  const [consult, sales] = await Promise.all([
-    db.getConsultationsInRange(bizId, start),
-    preloadedSales ?? db.getSalesWithItems(bizId, start)
-  ])
-  const soldIds = new Set()
-  for (const v of sales) for (const i of (v.sale_items || [])) if (i.product_id) soldIds.add(i.product_id)
-  const map: Record<string, { name: string; consultas: number }> = {}
-  for (const r of consult) {
-    if (!r.product_id || soldIds.has(r.product_id)) continue
-    if (!map[r.product_id]) map[r.product_id] = { name: r.products?.name || 'Producto', consultas: 0 }
-    map[r.product_id].consultas++
-  }
-  return { label, rows: Object.values(map).sort((a, b) => b.consultas - a.consultas).slice(0, limit) }
 }
 
 // Clientes perdidos: escribieron en el período pero NO compraron en él.
@@ -437,49 +428,6 @@ async function computeCustomerSummary(bizId: string) {
   }
 }
 
-// ── Reporte de IA (Fase 1, sin IA) ────────────────────────
-// Normaliza a minúsculas y sin acentos (para clasificar por reglas)
-const noAccents = (s: unknown) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-// Temas frecuentes por palabras clave. El orden define el emoji; un mensaje puede caer en varios.
-const FAQ_TOPICS = [
-  { topic: 'Horarios',       emoji: '🕐', kw: ['horario', 'a que hora', 'que hora', 'abren', 'cierran', 'atienden', 'abierto', 'estan abiertos'] },
-  { topic: 'Precios',        emoji: '💲', kw: ['precio', 'cuesta', 'cuanto vale', 'cuanto es', 'cuanto sale', 'costo', 'valor', 'cuanto cuesta'] },
-  { topic: 'Envíos',         emoji: '🚚', kw: ['envio', 'envian', 'delivery', 'domicilio', 'a domicilio', 'despacho', 'me lo llevan', 'llega a', 'hacen envios'] },
-  { topic: 'Formas de pago', emoji: '💳', kw: ['pago', 'pagar', 'tarjeta', 'transferencia', 'efectivo', 'deposito', 'contra entrega', 'datafono', 'medios de pago'] },
-  { topic: 'Garantía/Cambios', emoji: '🛡️', kw: ['garantia', 'devolucion', 'devolver', 'cambio', 'reembolso', 'defectuoso', 'no funciona'] },
-  { topic: 'Ubicación',      emoji: '📍', kw: ['ubicacion', 'direccion', 'donde estan', 'donde queda', 'donde es', 'como llego', 'local', 'sucursal', 'tienda fisica'] },
-  { topic: 'Disponibilidad', emoji: '📦', kw: ['disponible', 'disponibilidad', 'en stock', 'hay stock', 'tienen en', 'les queda', 'quedan', 'existencia', 'agotado'] },
-  { topic: 'Promociones',    emoji: '🎁', kw: ['promocion', 'descuento', 'oferta', 'rebaja', 'promo', '2x1', 'combo'] }
-]
-async function computeFaq(bizId: string, period?: ReportPeriod | null, limit = 8) {
-  const { start, label } = rangeFor(period)
-  const msgs = await db.getUserMessagesInRange(bizId, start)
-  const counts: Record<string, number> = {}
-  for (const m of msgs) {
-    const t = noAccents(m.content)
-    if (!t) continue
-    for (const f of FAQ_TOPICS) if (f.kw.some(k => t.includes(k))) counts[f.topic] = (counts[f.topic] || 0) + 1
-  }
-  const rows = FAQ_TOPICS
-    .map(f => ({ topic: f.topic, emoji: f.emoji, count: counts[f.topic] || 0 }))
-    .filter(r => r.count > 0).sort((a, b) => b.count - a.count).slice(0, limit)
-  return { label, analyzed: msgs.length, rows }
-}
-async function computeUnanswered(bizId: string, period?: ReportPeriod | null, limit = 12) {
-  const { start, label } = rangeFor(period)
-  const gaps = await db.getAiGaps(bizId, start)
-  const map: Record<string, { question: string; count: number }> = {}
-  for (const g of gaps) {
-    const q = String(g.question || '').trim()
-    if (!q) continue
-    const k = noAccents(q).replace(/\s+/g, ' ')
-    if (!map[k]) map[k] = { question: q, count: 0 }
-    map[k].count++
-  }
-  const rows = Object.values(map).sort((a, b) => b.count - a.count).slice(0, limit)
-  return { label, count: gaps.length, unique: Object.keys(map).length, rows }
-}
-
 // Tendencia de ventas por día (línea). Rellena días sin ventas con 0 → línea continua.
 // Ventana: mes = 30 días, hoy/semana = 7 días (una línea de 1 punto no sirve).
 async function computeSalesTrend(bizId: string, period?: ReportPeriod | null) {
@@ -537,13 +485,11 @@ async function getDashboard(bizId: string, period: ReportPeriod) {
 // Vigila condiciones con los cálculos que ya existen y devuelve avisos
 // ordenados por severidad. Solo lectura, sin push (eso es Fase 2).
 async function computeAlerts(bizId: string) {
-  const [lowStock, pending, comp, cust, abandoned, unanswered, today] = await Promise.all([
+  const [lowStock, pending, comp, cust, today] = await Promise.all([
     db.getLowStockProducts(bizId),
     db.getPendingOrders(bizId),
     computeComparison(bizId, 'semana'),
     computeCustomerSummary(bizId),
-    computeAbandoned(bizId, 'mes'),
-    computeUnanswered(bizId, 'semana'),
     computeSummary(bizId, 'hoy'),
   ])
   type AlertLevel = 'critical' | 'warning' | 'info' | 'good'
@@ -556,8 +502,6 @@ async function computeAlerts(bizId: string) {
   if (comp.pct !== null && comp.pct <= -20) alerts.push({ level: 'warning', icon: '📉', text: `Ventas ${comp.pct.toFixed(0)}% vs semana pasada` })
   if (comp.pct !== null && comp.pct >= 20)  alerts.push({ level: 'good',    icon: '📈', text: `Ventas +${comp.pct.toFixed(0)}% vs semana pasada` })
   if (cust.riesgo.count)     alerts.push({ level: 'info', icon: '😴', text: `${cust.riesgo.count} cliente(s) en riesgo (reactivar)` })
-  if (abandoned.rows.length) alerts.push({ level: 'info', icon: '🛒', text: `${abandoned.rows.length} producto(s) consultado(s) sin vender` })
-  if (unanswered.count)      alerts.push({ level: 'info', icon: '🧠', text: `${unanswered.count} pregunta(s) que el bot no supo responder` })
   if (new Date().getHours() >= 14 && today.orders === 0)
     alerts.push({ level: 'info', icon: '🌙', text: 'Aún sin ventas registradas hoy' })
   const rank: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, good: 3 }
@@ -570,13 +514,39 @@ async function getAllReports(bizId: string, period: ReportPeriod) {
   // Egress: las ventas del período se descargan UNA vez y se comparten entre
   // los cálculos (antes eran 8 lecturas idénticas de Supabase por carga).
   const sales = await db.getSalesWithItems(bizId, rangeFor(period).start)
-  const [summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered] = await Promise.all([
-    computeSummary(bizId, period, sales), computeSalesTrend(bizId, period), computeTop(bizId, period, 5, sales), computeLowMovement(bizId, period, 0, sales),
+  const [summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, lostCustomers, umbaniEmbudo, umbaniLlegadas] = await Promise.all([
+    computeSummary(bizId, period, sales), computeSalesTrend(bizId, period), computeTop(bizId, period, 5, sales), computeLowMovement(bizId, period, 5, sales),
     computeComparison(bizId, period, sales), computeRecurring(bizId, period, 5, sales), computeLowStock(bizId), computePending(bizId),
-    computeBySeller(bizId, period, sales), computeMostConsulted(bizId, period), computeAbandoned(bizId, period, 10, sales),
-    computeLostCustomers(bizId, period, 50, sales), computeFaq(bizId, period), computeUnanswered(bizId, period)
+    computeBySeller(bizId, period, sales),
+    computeLostCustomers(bizId, period, 50, sales),
+    // ⚠️ Lo nuevo, y lo único que habla del modelo de HOY: por dónde llega su
+    // cliente desde el número de Umbani y hasta dónde llega. Reemplaza a las
+    // cuatro tarjetas que se alimentaban de tablas muertas.
+    db.getLocalFunnel(bizId, diasDe(period)).catch(() => []),
+    db.getLocalArrivals(bizId, diasDe(period)).catch(() => []),
   ])
-  return { period, summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, mostConsulted, abandoned, lostCustomers, faq, unanswered }
+  return { period, summary, trend, top, lowMovement, comparison, recurring, lowStock, pending, bySeller, lostCustomers, umbani: { embudo: umbaniEmbudo, llegadas: umbaniLlegadas } }
+}
+
+/** Los días que mira cada período, para las consultas que cuentan por días. */
+const diasDe = (period?: ReportPeriod | null): number => (
+  period === 'hoy' ? 1 : period === 'semana' ? 7 : 30
+)
+
+/**
+ * Cómo llegan los clientes de este local desde el número de Umbani.
+ *
+ * ⚠️ Es el reporte que sustituye a los cuatro que se alimentaban de tablas
+ * muertas. Lo cuenta la base por `business_id`: un local no ve los clientes de
+ * otro, y hay una prueba de aislamiento que lo comprueba.
+ */
+async function computeUmbani(bizId: string, period?: ReportPeriod | null) {
+  const dias = diasDe(period)
+  const [embudo, llegadas] = await Promise.all([
+    db.getLocalFunnel(bizId, dias).catch(() => []),
+    db.getLocalArrivals(bizId, dias).catch(() => []),
+  ])
+  return { label: rangeFor(period).label, dias, embudo, llegadas }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -585,8 +555,6 @@ async function getAllReports(bizId: string, period: ReportPeriod) {
 
 type SummaryReport = Awaited<ReturnType<typeof computeSummary>>
 type SellerReport = Awaited<ReturnType<typeof computeBySeller>>
-type ConsultedReport = Awaited<ReturnType<typeof computeMostConsulted>>
-type AbandonedReport = Awaited<ReturnType<typeof computeAbandoned>>
 type TopReport = Awaited<ReturnType<typeof computeTop>>
 type LowMovementReport = Awaited<ReturnType<typeof computeLowMovement>>
 type ComparisonReport = Awaited<ReturnType<typeof computeComparison>>
@@ -595,8 +563,6 @@ type LowStockReport = Awaited<ReturnType<typeof computeLowStock>>
 type PendingReport = Awaited<ReturnType<typeof computePending>>
 type LostCustomersReport = Awaited<ReturnType<typeof computeLostCustomers>>
 type CustomerSummaryReport = Awaited<ReturnType<typeof computeCustomerSummary>>
-type FaqReport = Awaited<ReturnType<typeof computeFaq>>
-type UnansweredReport = Awaited<ReturnType<typeof computeUnanswered>>
 
 const fmtSummary = (d: SummaryReport) => {
   // Pie: el reporte general trae lo global; desde aquí se pide cada detalle.
@@ -616,15 +582,6 @@ const fmtBySeller = (d: SellerReport) => !d.rows.length
   : `🧑‍💼 Ventas por vendedor (${d.label})\n\n` +
     d.rows.map((r, i) => `${i + 1}. ${r.name} — ${r.orders} venta(s) · ${money(r.total)}`).join('\n')
 
-const fmtMostConsulted = (d: ConsultedReport) => !d.rows.length
-  ? `🔎 Productos más consultados (${d.label})\n\nSin consultas registradas en el período.`
-  : `🔎 Productos más consultados (${d.label})\n\n` +
-    d.rows.map((r, i) => `${['🥇','🥈','🥉'][i] || (i + 1) + '.'} ${r.name} — ${r.count} consulta(s)`).join('\n')
-
-const fmtAbandoned = (d: AbandonedReport) => !d.rows.length
-  ? `🛒 Productos abandonados (${d.label})\n\n¡Bien! Todo lo consultado tuvo ventas (o no hubo consultas).`
-  : `🛒 Productos abandonados (${d.label})\n(consultados pero sin ventas — oportunidad de recuperar)\n\n` +
-    d.rows.map(r => `• ${r.name} — ${r.consultas} consulta(s), 0 ventas`).join('\n')
 
 const fmtTop = (d: TopReport) => !d.rows.length
   ? `🏆 Productos más vendidos (${d.label})\n\nSin ventas en el período.`
@@ -658,6 +615,28 @@ const fmtPending = (d: PendingReport) => !d.count
   : `📋 Pedidos / cotizaciones sin cerrar (${d.count})\n(conversaciones que no terminaron en venta — para recuperar)\n\n` +
     d.rows.map(s => `• ${s.name}${s.last_message ? ' — "' + String(s.last_message).slice(0, 40) + '"' : ''}`).join('\n')
 
+/**
+ * ⚠️ Si nadie recibió su enlace, se dice ASÍ y no con un cero: un cero se lee
+ * como «nadie me quiso», y lo cierto suele ser que el local está apagado o
+ * recién creado.
+ */
+const fmtUmbani = (d: Awaited<ReturnType<typeof computeUmbani>>) => {
+  const enlaces = d.embudo.find(p => p.orden === 1)?.clientes || 0
+  if (!enlaces) {
+    return `🧭 Cómo llegan tus clientes (${d.label})\n\n`
+      + 'Todavía nadie recibió tu enlace en este período. '
+      + 'Revisa que tu local esté visible en Umbani.'
+  }
+  const pasos = d.embudo
+    .map(p => `• ${p.paso}: ${p.clientes}`)
+    .join('\n')
+  const puerta = d.llegadas.length
+    ? `\n\n📍 Te encontraron en:\n`
+      + d.llegadas.map(l => `• ${l.label} — ${l.veces}`).join('\n')
+    : ''
+  return `🧭 Cómo llegan tus clientes (${d.label})\n\n${pasos}${puerta}`
+}
+
 const fmtDate = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short' }) }
 const fmtLostCustomers = (d: LostCustomersReport) => !d.count
   ? `😟 Clientes perdidos (${d.label})\n\n¡Bien! No hay clientes que escribieran sin comprar en el período. 🎉`
@@ -680,24 +659,6 @@ const fmtCustomerSummary = (d: CustomerSummaryReport) => !d.total
         (d.riesgo.count > d.riesgo.rows.length ? `\n…y ${d.riesgo.count - d.riesgo.rows.length} más. Reactívalos con una promo. 👉 Lista completa en el panel.` : '')
       : '')
 
-const fmtAiReport = (faq: FaqReport, un: UnansweredReport) => {
-  let out = `🧠 Reporte de IA (${faq.label})\n`
-  // Bloque 1: preguntas frecuentes
-  out += `\n📊 Preguntas más frecuentes:\n`
-  out += faq.rows.length
-    ? faq.rows.map(r => `${r.emoji} ${r.topic} — ${r.count}`).join('\n')
-    : 'Sin preguntas suficientes para clasificar en el período.'
-  // Bloque 2: preguntas que el bot no pudo responder
-  out += `\n\n❓ Preguntas que la IA no pudo responder:\n`
-  if (!un.count) {
-    out += '¡Bien! El bot respondió todo en el período. 🎉'
-  } else {
-    out += un.rows.map(r => `• ${r.question}${r.count > 1 ? ` (x${r.count})` : ''}`).join('\n')
-    if (un.unique > un.rows.length) out += `\n…y ${un.unique - un.rows.length} más. 👉 Míralas en el panel.`
-    out += `\n\n💡 Agrega esta info al bot para que deje de fallar ahí.`
-  }
-  return out
-}
 
 async function runReport(biz: OwnerBusiness, intent: ReportIntent) {
   const bizId = biz.id
@@ -711,11 +672,9 @@ async function runReport(biz: OwnerBusiness, intent: ReportIntent) {
     case 'low_stock':    return fmtLowStock(await computeLowStock(bizId))
     case 'pending':      return fmtPending(await computePending(bizId))
     case 'seller':       return fmtBySeller(await computeBySeller(bizId, p))
-    case 'most_consulted': return fmtMostConsulted(await computeMostConsulted(bizId, p))
-    case 'abandoned':    return fmtAbandoned(await computeAbandoned(bizId, p))
     case 'lost':         return fmtLostCustomers(await computeLostCustomers(bizId, p))
     case 'customers':    return fmtCustomerSummary(await computeCustomerSummary(bizId))
-    case 'ai':           return fmtAiReport(await computeFaq(bizId, p), await computeUnanswered(bizId, p))
+    case 'umbani':       return fmtUmbani(await computeUmbani(bizId, p))
     default:             return null
   }
 }

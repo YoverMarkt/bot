@@ -40,6 +40,7 @@ un módulo concreto, no en cada sesión.
 - [Un local vive en varios cajones del menú](#un-local-vive-en-varios-cajones-del-menú)
 - [Menús con reloj](#menús-con-reloj)
 - [Cómo usa la gente el menú de Umbani](#cómo-usa-la-gente-el-menú-de-umbani)
+- [Los reportes del dueño hablan del modelo de hoy](#los-reportes-del-dueño-hablan-del-modelo-de-hoy)
 
 ---
 
@@ -1082,4 +1083,18 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 - ⚠️ **La pantalla dice que el registro empezó el 2026-09-18** en vez de enseñar ceros: un cero se lee como «nadie entró», y lo cierto es «no había dónde apuntarlo».
 
 - ⚠️ **Dos guardianes del proyecto corrigieron el diseño, y los dos tenían razón:** el de funciones huérfanas paró las tres consultas del reporte —embudo, cajones abandonados y búsquedas— porque **ninguna pantalla las llamaba todavía**, así que viajan con la pantalla que las enseña en vez de nacer muertas; y el de migraciones exigió `on delete cascade` en la foránea a `businesses`, que además es lo correcto: los toques a un local que ya no existe son ruido, no dato. El cliente sí se conserva con `set null`, porque el embudo de la semana no puede cambiar porque alguien se dé de baja.
+
+## Los reportes del dueño hablan del modelo de hoy
+
+- **Pedido del dueño (2026-09-18):** «el módulo de reportes para los dueños tendría que enfocarse a este nuevo modelo que es Umbani, porque donde van a escribir ahora es el número de Umbani».
+
+- ⚠️ **Cuatro de sus tarjetas se alimentaban de tablas MUERTAS, y se puede medir:** `product_consultations` tenía **2 filas**, la última del **2026-08-03**; `ai_gaps`, **0**; `conversation_history` se paró el **2026-08-23**. Las tres las escribía el bot por chat, retirado en #360/#361. El dueño abría «Más consultados», «Consultados sin ventas», «Preguntas más frecuentes» y «Preguntas que la IA no pudo responder» y veía cuatro huecos para siempre. Mientras tanto, lo que SÍ pasaba no salía en ninguna parte: **62 enlaces emitidos en 30 días y 30 abiertos**.
+
+- **Lo que las sustituye: «Cómo llegan tus clientes».** El camino de su cliente —recibieron su enlace → abrieron su tienda → hicieron un pedido → lo recibieron— y por qué cajón del menú de Umbani lo encontraron. Lo cuenta la base (`local_embudo`, `local_llegadas`) filtrando por `business_id`, con su prueba de aislamiento: **el embudo de un local no puede ver a los clientes de otro**.
+
+- ⚠️ **Las palabras del dueño siguen valiendo.** Él seguirá escribiendo «más consultados» o «reporte de IA» por WhatsApp, así que esas frases ya no se quedan mudas: «más consultados» lleva a lo más VENDIDO, y «reporte de IA» a cómo llegan sus clientes. Retirar un reporte no puede convertirse en un bot que no contesta.
+
+- ⚠️ **Si nadie recibió su enlace se dice con palabras, no con un cero.** Un cero se lee como «nadie me quiso»; lo cierto suele ser que el local está apagado o recién creado.
+
+- ⚠️ **El panel es defensivo con el bloque nuevo** (`data.umbani?.embudo ?? []`): un servidor viejo o un despliegue a medias no puede dejar la pantalla del dueño en blanco. Lo cazó el E2E, que reventó con `Cannot read properties of undefined` en cuanto faltó el dato — la misma lección de «arranque sin blanco».
 

@@ -9,14 +9,19 @@ export type ReportsData = {
   lowMovement: { label: string; threshold?: number; rows: { name: string; qty: number }[] }
   comparison: { label: string; curTotal: number; curOrders: number; prevTotal: number; prevOrders: number; pct: number | null }
   recurring: { label: string; rows: { name: string; orders: number; total: number }[] }
+  /**
+   * Cómo llega su cliente desde el número de Umbani: del enlace al pedido, y
+   * por qué cajón del menú lo encontró. Reemplaza a las cuatro tarjetas que se
+   * alimentaban de tablas muertas (2026-09-18).
+   */
+  umbani: {
+    embudo: { paso: string; orden: number; clientes: number }[]
+    llegadas: { code: string; label: string; veces: number }[]
+  }
   lowStock: { rows: { name: string; stock: string }[] }
   pending: { count: number; rows: { name: string; last_message: string }[] }
   bySeller: { label: string; rows: { name: string; total: number }[] }
-  mostConsulted: { label: string; rows: { name: string; count: number }[] }
-  abandoned: { label: string; rows: { name: string; consultas: number }[] }
   lostCustomers: { label: string; count: number; noRespondio: number; returning: number; nuevos: number; rows: { name: string; returning?: boolean; reason?: string }[] }
-  faq: { label: string; analyzed: number; rows: { topic: string; emoji: string; count: number }[] }
-  unanswered: { label: string; count: number; unique: number; rows: { question?: string; count: number }[] }
 }
 
 export type Alert = { level: 'critical' | 'warning' | 'good' | 'info'; icon: string; text: string }

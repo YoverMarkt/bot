@@ -110,7 +110,41 @@ const getPendingOrders = async (businessId: string) => {
     ))
 }
 
+
+/**
+ * El camino del cliente de ESTE local: del enlace al pedido entregado.
+ *
+ * ⚠️ Lo cuenta la base, por `business_id`: el embudo de un local no puede ver
+ * a los clientes de otro, y hay una prueba de aislamiento que lo comprueba.
+ */
+const getLocalFunnel = async (
+  businessId: string,
+  dias = 30,
+): Promise<{ paso: string; orden: number; clientes: number }[]> => {
+  const { data, error } = await db.rpc('local_embudo', {
+    p_business_id: businessId,
+    p_dias: dias,
+  })
+  if (error) throw new Error(error.message)
+  return (data || []) as { paso: string; orden: number; clientes: number }[]
+}
+
+/** Por qué cajón del menú de Umbani llegaron a este local. */
+const getLocalArrivals = async (
+  businessId: string,
+  dias = 30,
+): Promise<{ code: string; label: string; veces: number }[]> => {
+  const { data, error } = await db.rpc('local_llegadas', {
+    p_business_id: businessId,
+    p_dias: dias,
+  })
+  if (error) throw new Error(error.message)
+  return (data || []) as { code: string; label: string; veces: number }[]
+}
+
 export = {
+  getLocalFunnel,
+  getLocalArrivals,
   recordConsultations,
   getConsultationsInRange,
   getWritersInRange,

@@ -254,18 +254,23 @@ describe('servicio de reportes del dueño', () => {
       expect(resultado.reply).toContain('Ensalada que nadie pide')
     })
 
-    it('responde "más consultados": lo que preguntan y no siempre compran', async () => {
-      vi.spyOn(db, 'getConsultationsInRange').mockResolvedValue([
-        { product_id: 'p1', products: { name: 'Pizza Familiar' } },
-        { product_id: 'p1', products: { name: 'Pizza Familiar' } },
-        { product_id: 'p2', products: { name: 'Cola' } },
+    // ⚠️ «Más consultados» lo contestaba `product_consultations`, que lleva
+    // muerta desde que se retiró el bot por chat (2 filas, la última del
+    // 2026-08-03). El dueño sigue escribiendo esas palabras, así que se le
+    // lleva a lo que SÍ existe —lo más vendido— en vez de dejarlo mudo.
+    it('«más consultados» ahora contesta lo más VENDIDO, que es lo que hay', async () => {
+      vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([
+        {
+          contact_phone: '+593991112233', total: 30, sold_at: '2026-08-10T12:00:00.000Z',
+          sale_items: [{ product_id: 'p1', product_name: 'Pizza Familiar', quantity: 5, line_total: 30 }],
+        },
       ])
 
       const resultado = await pedir('productos más consultados del mes')
 
       expect(resultado.handled).toBe(true)
-      expect(resultado.reply.indexOf('Pizza Familiar'))
-        .toBeLessThan(resultado.reply.indexOf('Cola'))
+      expect(resultado.reply).toContain('Pizza Familiar')
+      expect(resultado.reply).not.toContain('consulta')
     })
 
     it('responde "mis clientes" con el resumen de la cartera', async () => {
@@ -280,19 +285,32 @@ describe('servicio de reportes del dueño', () => {
       expect(resultado.reply).toMatch(/cliente/i)
     })
 
-    it('el reporte de IA junta lo más preguntado y lo que no supo responder', async () => {
-      vi.spyOn(db, 'getUserMessagesInRange').mockResolvedValue([
-        { content: '¿hacen delivery a Cumbayá?' },
-        { content: '¿hacen delivery a Cumbayá?' },
+    // Lo mismo con el «reporte de IA»: lo alimentaban `conversation_history`
+    // (parada el 2026-08-23) y `ai_gaps` (0 filas). Esas palabras llevan ahora
+    // al único camino que existe hoy — el número de Umbani.
+    it('«reporte de IA» contesta cómo llegan sus clientes desde Umbani', async () => {
+      vi.spyOn(db, 'getLocalFunnel').mockResolvedValue([
+        { paso: 'recibieron su enlace', orden: 1, clientes: 4 },
+        { paso: 'abrieron su tienda', orden: 2, clientes: 3 },
       ])
-      vi.spyOn(db, 'getAiGaps').mockResolvedValue([
-        { question: '¿tienen opción sin gluten?', reason: 'uncertain' },
+      vi.spyOn(db, 'getLocalArrivals').mockResolvedValue([
+        { code: 'almuerzos', label: 'Almuerzos', veces: 4 },
       ])
 
       const resultado = await pedir('reporte de IA del mes')
 
       expect(resultado.handled).toBe(true)
-      expect(resultado.reply).toContain('gluten')
+      expect(resultado.reply).toContain('Cómo llegan tus clientes')
+      expect(resultado.reply).toContain('Almuerzos')
+    })
+
+    it('y si nadie recibió su enlace lo dice, en vez de enseñar un cero', async () => {
+      vi.spyOn(db, 'getLocalFunnel').mockResolvedValue([])
+      vi.spyOn(db, 'getLocalArrivals').mockResolvedValue([])
+
+      const resultado = await pedir('cómo llegan mis clientes este mes')
+
+      expect(resultado.reply).toContain('Todavía nadie recibió tu enlace')
     })
 
     it('pide el período cuando el reporte lo necesita y no viene', async () => {
@@ -314,4 +332,59 @@ describe('servicio de reportes del dueño', () => {
     expect(service).toContain('export { handleOwnerMessage')
     expect(service).not.toContain('@ts-nocheck')
   })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS REPORTES DEL DUEÑO HABLAN DEL MODELO UMBANI (2026-09-18)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Pedido del dueño: «el módulo de reportes para los dueños tendría que
+// enfocarse a este nuevo modelo que es Umbani, porque donde van a escribir
+// ahora es el número de Umbani».
+//
+// ⚠️ Tenía razón, y se puede medir: cuatro de sus tarjetas se alimentaban de
+// tablas MUERTAS desde que se retiró el bot por chat —`product_consultations`
+// (2 filas, la última del 2026-08-03), `ai_gaps` (0) y `conversation_history`
+// (parada el 2026-08-23)—. El dueño veía cuatro tarjetas vacías para siempre
+// mientras lo que SÍ pasa —62 enlaces en 30 días, 30 abiertos— no salía en
+// ninguna parte.
+describe('los reportes del dueño después de Umbani', () => {
+  const simular = () => {
+    vi.spyOn(db, 'getSalesWithItems').mockResolvedValue([])
+    vi.spyOn(db, 'getSaleCustomers').mockResolvedValue([])
+    vi.spyOn(db, 'getWritersInRange').mockResolvedValue(0)
+    vi.spyOn(db, 'getClientUsers').mockResolvedValue([])
+    vi.spyOn(db, 'getProducts').mockResolvedValue([])
+    vi.spyOn(db, 'getSessions').mockResolvedValue([])
+    vi.spyOn(db, 'getHistoryInRange').mockResolvedValue([])
+    vi.spyOn(db, 'getLowStockProducts').mockResolvedValue([])
+    vi.spyOn(db, 'getPendingOrders').mockResolvedValue([])
+    vi.spyOn(db, 'getLocalFunnel').mockResolvedValue([
+      { paso: 'recibieron su enlace', orden: 1, clientes: 9 },
+      { paso: 'abrieron su tienda', orden: 2, clientes: 5 },
+      { paso: 'hicieron un pedido', orden: 3, clientes: 2 },
+      { paso: 'recibieron su pedido', orden: 4, clientes: 2 },
+    ])
+    vi.spyOn(db, 'getLocalArrivals').mockResolvedValue([
+      { code: 'almuerzos', label: 'Almuerzos', veces: 7 },
+    ])
+  }
+
+  it('trae el camino de su cliente: del enlace al pedido entregado', async () => {
+    simular()
+    const reporte = await reports.getAllReports('business-a', 'mes')
+    expect(reporte.umbani.embudo[0]).toMatchObject({ paso: 'recibieron su enlace', clientes: 9 })
+    expect(reporte.umbani.llegadas[0]).toMatchObject({ label: 'Almuerzos', veces: 7 })
+  })
+
+  it('ya no arma las tarjetas que se alimentaban de tablas muertas', async () => {
+    simular()
+    const reporte = await reports.getAllReports('business-a', 'mes')
+    for (const muerto of ['mostConsulted', 'abandoned', 'faq', 'unanswered']) {
+      expect(reporte[muerto], `«${muerto}» sigue armándose con datos que ya nadie escribe`)
+        .toBeUndefined()
+    }
+  })
+
+
 })
