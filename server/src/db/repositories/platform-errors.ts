@@ -64,6 +64,35 @@ const getPlatformErrors = async (options: {
 // Los errores se leen enteros, con su negocio o con «plataforma», en la
 // pantalla de Errores (`getPlatformErrors`).
 
+// Resumen para el VIGÍA EXTERNO: qué sigue fallando, sin un solo dato de nadie.
+//
+// ⚠️ Deliberadamente NO agrupa ni filtra por negocio — es la lección de la
+// lápida de aquí arriba. El resumen por negocio descartaba las filas con
+// `business_id` NULL, que hoy son cinco de cada seis, y enseñaba ceros mientras
+// el canal del marketplace acumulaba fallos reales.
+//
+// Se piden CUATRO columnas y ninguna más: `message` y `context` no salen de
+// aquí. Van saneados desde `services/error-log.ts`, pero lo que no se lee no se
+// puede filtrar mal, y al otro lado de esto hay un endpoint que contesta a
+// internet con un token.
+const getPlatformErrorSummary = async (options: { sinceHours?: number } = {}) => {
+  const hours = Math.min(Math.max(options.sinceHours || 24, 1), 168)
+  const since = new Date(Date.now() - hours * 3_600_000).toISOString()
+  const { data, error } = await db
+    .from('platform_errors')
+    .select('category,code,occurrences,last_seen_at')
+    .gte('last_seen_at', since)
+    .order('last_seen_at', { ascending: false })
+    .limit(500)
+  if (error) throw new Error(error.message)
+  return {
+    sinceHours: hours,
+    rows: (data || []) as Array<
+      Pick<PlatformErrorRow, 'category' | 'code' | 'occurrences' | 'last_seen_at'>
+    >,
+  }
+}
+
 const cleanupPlatformErrors = async (days = 30) => db.rpc(
   'cleanup_platform_errors',
   { p_days: days },
@@ -72,5 +101,6 @@ const cleanupPlatformErrors = async (days = 30) => db.rpc(
 export = {
   recordPlatformError,
   getPlatformErrors,
+  getPlatformErrorSummary,
   cleanupPlatformErrors,
 }

@@ -41,6 +41,7 @@ Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** 
 |---|---|
 | `BASE_URL` | tu dominio final, sin `/` al final (ej. `https://tubot.com`). **Desactiva el túnel local.** |
 | `PORT` | **NO la pongas** — Railway la inyecta sola |
+| `HEALTH_DETAIL_TOKEN` | Token del vigía externo, 32+ caracteres aleatorios. Tiene que valer **lo mismo** que el secret `HEALTH_DETAIL_TOKEN` del repositorio en GitHub. Sin él, `/api/health/detalle` responde 404 y el vigía pierde de vista el saldo y las credenciales |
 
 **Si usas YCloud:** guarda el Endpoint ID y el signing secret oficial en cada negocio. `YCLOUD_WEBHOOK_ENDPOINT_ID` + `YCLOUD_WEBHOOK_SECRET` quedan disponibles juntos solo como fallback global opcional para una cuenta compartida. **Si usas Meta:** configura también `META_VERIFY_TOKEN` (handshake) y `META_APP_SECRET` (firma HMAC); el backend usa Graph API `v25.0` y admite `META_GRAPH_API_VERSION` para una actualización futura controlada. **Si usas Telegram:** configura `TELEGRAM_BOT_TOKEN` y `TELEGRAM_WEBHOOK_SECRET` (aleatorio, 32+ caracteres). Las keys de IA normalmente se cargan desde el panel admin.
 

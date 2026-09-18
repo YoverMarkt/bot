@@ -1,0 +1,46 @@
+name: Vigía de producción
+
+# ⚠️ Este workflow avisa FALLANDO: cuando termina en rojo, GitHub manda el
+# correo y el aviso a la app móvil. No hay ningún envío que mantener.
+#
+# Toda la lógica —incluido cuándo callarse para no mandar 96 correos al día—
+# vive en `.github/scripts/vigia.mjs`, que está probado en
+# `server/tests/vigia.test.js`. Aquí solo se decide cada cuánto mirar.
+
+on:
+  schedule:
+    # Cada 15 minutos. GitHub retrasa los cron en horas punta y no los garantiza
+    # al minuto; para enterarse de una caída, unos minutos de más dan igual.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# Solo mira. Necesita `actions: read` para consultar su propia ejecución
+# anterior, que es toda la memoria que tiene.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vigia
+  cancel-in-progress: false
+
+jobs:
+  mirar:
+    name: ¿Sigue viva la producción?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preguntar a producción
+        env:
+          # La URL real de Railway. `vars.PRODUCTION_URL` la sustituye sin tocar
+          # este archivo el día que haya dominio propio.
+          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://web-production-3433c.up.railway.app' }}
+          # Opcional: sin él, el vigía sigue viendo si el bot vive y si entran
+          # mensajes, pero no el saldo ni las credenciales.
+          HEALTH_DETAIL_TOKEN: ${{ secrets.HEALTH_DETAIL_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/vigia.mjs

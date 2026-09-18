@@ -46,6 +46,7 @@ import menuModifiersRouter = require('./routes/menu-modifiers.routes')
 import productOptionsRouter = require('./routes/product-options.routes')
 import catalogStructureRouter = require('./routes/catalog-structure.routes')
 import storefrontRouter = require('./routes/storefront.routes')
+import healthRouter = require('./routes/health.routes')
 import { cachearEstaticos, enviarHtmlDeSpa } from './lib/cache-estaticos'
 
 interface StartupDatabase {
@@ -251,6 +252,23 @@ app.use(catalogStructureRouter)
 app.use(storefrontRouter)
 app.use(ordersRouter)
 app.use(webhooksRouter)
+// ⚠️ EL FRENO VA ANTES QUE EL ROUTER, y no es cuestión de estilo: Express
+// recorre el stack en el orden en que se registra, así que si `healthRouter`
+// se monta primero, contesta él y este limitador NO LLEGA A EJECUTARSE NUNCA.
+// Quedaría escrito, revisado y muerto — y las pruebas del router, que lo
+// despachan directo, seguirían en verde.
+//
+// El vigía consulta 4 veces por hora: 30 cada 5 minutos le sobran de largo, y
+// a la fuerza bruta contra el token no le alcanzan para nada.
+const healthDetailLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'no encontrado' },
+})
+app.use('/api/health/detalle', healthDetailLimiter)
+app.use(healthRouter)
 
 const telegramLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -261,6 +279,9 @@ const telegramLimiter = rateLimit({
 })
 app.use('/webhook/telegram', telegramLimiter)
 
+// ⚠️ Esta ruta es PÚBLICA: solo dice lo que se le puede contar a cualquiera.
+// Su hermano con token —`/api/health/detalle`, en `routes/health.routes.ts`—
+// es el que cuenta el saldo y las credenciales al vigía externo.
 app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
   const lastDatabaseSuccess = webhookInboxWorker
     .lastSuccessfulDatabaseOperationAt()
