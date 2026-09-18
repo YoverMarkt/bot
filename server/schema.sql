@@ -12378,6 +12378,33 @@ grant execute on function public.marketplace_categories_disponibles()
   to service_role;
 
 
+create or replace function public.marketplace_cajones_del_negocio(p_business_id uuid)
+returns table (
+  code      text,
+  label     text,
+  emoji     text,
+  principal boolean
+)
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select c.code, c.label, c.emoji, v.principal
+  from public.marketplace_cajones_de_negocio v
+  join public.marketplace_categories c on c.id = v.category_id
+  where v.business_id = p_business_id
+    and c.active
+  -- El principal primero y el resto por el orden del menú: es como se leen en
+  -- el panel y como se vuelven a mandar al guardar.
+  order by v.principal desc, c.sort;
+$$;
+
+revoke all on function public.marketplace_cajones_del_negocio(uuid)
+  from public, anon, authenticated;
+grant execute on function public.marketplace_cajones_del_negocio(uuid)
+  to service_role;
+
+
 -- ── Los locales de una categoría ───────────────────────────────────────────
 create or replace function public.marketplace_negocios_de_categoria(p_code text)
 returns table (

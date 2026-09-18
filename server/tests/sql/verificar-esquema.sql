@@ -3048,7 +3048,21 @@ begin
     raise exception 'al vaciar sus cajones, el local no volvió al de su tipo';
   end if;
 
-  -- ── 7. Borrar el local se lleva sus cajones ───────────────────────────────
+  -- ── 7. Lo que lee el PANEL: la base resuelve la regla entera ──────────────
+  perform public.set_business_marketplace_categories(
+    v_tipica, array['restaurantes', 'almuerzos'], 'restaurantes');
+  if (select array_agg(code order by principal desc, code)
+        from public.marketplace_cajones_del_negocio(v_tipica))
+     <> array['restaurantes', 'almuerzos'] then
+    raise exception 'el panel no leería los cajones elegidos, ni en ese orden';
+  end if;
+  -- Y para quien no eligió, los de su tipo: es lo que el panel tiene que
+  -- enseñar en vez de «sin elegir» a un local que sí aparece en el menú.
+  if (select count(*) from public.marketplace_cajones_del_negocio(v_solo_tipo)) <> 1 then
+    raise exception 'el panel no leería el cajón que da el tipo';
+  end if;
+
+  -- ── 8. Borrar el local se lleva sus cajones ───────────────────────────────
   delete from businesses where id in (v_tipica, v_solo_tipo);
   if exists (select 1 from business_marketplace_categories where business_id = v_tipica) then
     raise exception 'los cajones sobrevivieron al local';
