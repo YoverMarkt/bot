@@ -58,5 +58,8 @@
     "enumMembers": "off",
     "duplicates": "off",
     "unlisted": "warn"
-  }
+  },
+  "ignoreBinaries": [
+    "supabase"
+  ]
 }

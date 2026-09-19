@@ -225,3 +225,67 @@ solo a IPv6 y los runners de GitHub no tienen IPv6. Con la directa falla con
 «Network is unreachable», que parece un problema de credenciales y no lo es.
 La que funciona es `aws-1-sa-east-1.pooler.supabase.com:5432` con usuario
 `postgres.<ref>` — `aws-0` contesta «tenant not found» en todas las regiones.
+
+## El staging local, y el freno que lo hizo necesario (2026-09-19)
+
+Todo lo anterior prueba piezas. Lo que faltaba era un sitio donde correr **la
+aplicación entera** sin que la estuvieran usando clientes — porque hasta esta
+fecha no lo había: `server/.env` apunta a la base de producción, así que
+desarrollar y producción eran literalmente el mismo sitio.
+
+### Lo que arrancar en local disparaba contra los datos de los clientes
+
+No es una lista teórica; es lo que `src/index.ts` programa al levantarse:
+
+| Cuándo | Qué | Contra qué |
+|---|---|---|
+| al instante | el worker de la cola de webhooks | mensajes de clientes reales, contestados desde un portátil |
+| 3 s | la facturación del mes | filas de cobro reales |
+| 5, 7 y 9 s | tres limpiezas | **borran** filas |
+| 12 s | las comisiones | |
+| 20 s | la revisión de credenciales | llama a los proveedores de verdad |
+| **30 s** | **`expireUnpaidOrders`** | **CANCELA pedidos de clientes** |
+| 60 s | el canario | recorre el catálogo real |
+| — | Telegram en polling | **borra el webhook** que tenga producción |
+
+`src/config/tareas-de-fondo.ts` corta eso: si el proceso **no** es producción y
+la base **sí** es remota, las tareas no arrancan y el servidor lo grita al
+levantarse. Las rutas, los paneles y el simulador siguen funcionando, que es
+para lo que se abre en local. El escape explícito es
+`PERMITIR_TAREAS_CONTRA_PRODUCCION=si`.
+
+⚠️ **En producción el freno nunca puede actuar**, y esa es la única condición
+que no se puede romper al tocarlo: un freno que apague las tareas en producción
+deja la facturación sin generar y los pedidos sin expirar. `tareas-de-fondo.test.js`
+lo comprueba desde las dos direcciones, y un guardián verifica que el `if` sigue
+envolviendo las tareas en `index.ts` — de nada sirve un freno bien probado que
+el arranque no consulte.
+
+### El staging
+
+`supabase/config.toml` + `server/tests/staging.mjs`. Levanta **el stack de
+Supabase**, no un PostgreSQL pelado: el servidor habla con la base por HTTP
+(supabase-js → PostgREST), así que un Postgres a secas no sirve para correr la
+aplicación — solo para el esquema, que es lo que ya hace el job del CI.
+
+La semilla llama a `apply_business_template`, la misma función que el alta real.
+Sembrarlo por otro camino probaría un mundo que no existe.
+
+⚠️ **Qué NO cubre:** WhatsApp de verdad. Solo hay un número y apuntarlo aquí
+dejaría a los clientes sin atender. Se sigue probando en producción después de
+desplegar, con `verify:smoke` y el simulador. Lo que sí queda cubierto antes es
+todo lo demás, que es donde está el riesgo caro: dinero, pedidos, catálogo,
+sesiones y migraciones.
+
+### La franja
+
+`src/lib/franja-entorno.ts`. La página dice de qué entorno es: «STAGING · datos
+de mentira» en índigo, o «⚠️ LOCAL · BASE REAL» en rojo. En producción no se
+pinta nada y el HTML se sirve por `sendFile`, intacto y con su ETag.
+
+⚠️ Al conectarla apareció un fallo de la familia de siempre: salía en la tienda
+y **no** en los dos paneles. `express.static` sirve él mismo el `index.html` de
+la carpeta (`/app`), sin pasar por `enviarHtmlDeSpa`, y el comodín `/app/*` no
+casa con `/app`. La tienda se salvaba solo porque `/t/<slug>` nunca casa con un
+archivo. Hay un guardián que exige que la ruta explícita de cada panel se
+declare **antes** que su `express.static`.

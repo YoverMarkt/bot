@@ -13,6 +13,7 @@ import express, {
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { assertEnvironment } from './config/environment'
+import { decidirTareasDeFondo, explicarDecision } from './config/tareas-de-fondo'
 import { asyncHandler } from './middleware/async'
 import { getRecentWebhookFailures } from './services/channel-health'
 import { recordError } from './services/error-log'
@@ -216,8 +217,18 @@ app.use(express.json({
 
 const clientDist = path.join(projectRoot, 'apps/client/dist')
 const adminDist = path.join(projectRoot, 'apps/admin/dist')
+// ⚠️ LA RAÍZ VA ANTES DEL `static`, y no es un adorno: `express.static` sirve
+// el `index.html` él mismo cuando la ruta es la carpeta (`/app`), sin pasar por
+// `enviarHtmlDeSpa`. El comodín de abajo solo atiende lo que NO casa con un
+// archivo, así que `/app/pedidos` pasaba por la función y `/app` no.
+//
+// Se vio al comprobar la franja de entorno: aparecía en la tienda —donde la
+// ruta `/t/<slug>` nunca casa con un archivo— y no en los dos paneles. La misma
+// familia de fallo que ya cuenta la cabecera de `lib/cache-estaticos.ts`.
+app.get('/app', (_req, res) => enviarHtmlDeSpa(res, path.join(clientDist, 'index.html')))
 app.use('/app', express.static(clientDist, { setHeaders: cachearEstaticos }))
 app.get('/app/*', (_req, res) => enviarHtmlDeSpa(res, path.join(clientDist, 'index.html')))
+app.get('/app-admin', (_req, res) => enviarHtmlDeSpa(res, path.join(adminDist, 'index.html')))
 app.use('/app-admin', express.static(adminDist, { setHeaders: cachearEstaticos }))
 app.get('/app-admin/*', (_req, res) => enviarHtmlDeSpa(res, path.join(adminDist, 'index.html')))
 // Mini app del negocio: /t/<slug>. La ruta es corta a propósito, porque el
@@ -324,6 +335,11 @@ app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
     // «se puede comprar» y «nunca corrió». Aquí se ve cuándo dio su última
     // vuelta y qué encontró. `null` = todavía no ha corrido ninguna.
     canario: ultimaVueltaDelCanario(),
+    // ⚠️ Cuando el freno de `config/tareas-de-fondo.ts` actúa, el worker no
+    // arranca y este `ok` baja a `false` — correctamente, porque el proceso no
+    // puede atender mensajes. Sin esta línea, un 503 en local parece una
+    // avería en vez de lo que es: una decisión.
+    tareas_de_fondo: decidirTareasDeFondo(process.env),
     webhook_inbox: {
       running: webhookInboxWorker.isRunning(),
       ready: webhookInboxWorker.isReady(),
@@ -533,57 +549,73 @@ httpServer = app.listen(port, () => {
   console.log(`👤 Cliente: http://localhost:${port}/app`)
   console.log(`📡 Webhook: http://localhost:${port}/webhook\n`)
 
-  webhookInboxWorker.start()
-  setTimeout(generateCurrentMonthBilling, 3000)
-  setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
-  // Después de generar la cuota: la comisión se escribe sobre esa misma fila.
-  setTimeout(settleCommissions, 12000)
-  setInterval(settleCommissions, 24 * 60 * 60 * 1000)
-  setTimeout(cleanupWebhookInbox, 5000)
-  setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
-  setTimeout(cleanupErrorLog, 7000)
-  setInterval(cleanupErrorLog, 24 * 60 * 60 * 1000)
-  setTimeout(cleanupStorefrontSessions, 9000)
-  setInterval(cleanupStorefrontSessions, 24 * 60 * 60 * 1000)
-  // Cada 6 h: suficiente para enterarse el mismo día sin castigar a los
-  // proveedores con consultas constantes.
-  setTimeout(checkCredentials, 20_000)
-  setInterval(checkCredentials, 6 * 60 * 60 * 1000)
-  // ⌛ Los pedidos que se quedaron esperando un comprobante que no llegó.
+  // ⚠️ EL FRENO. Todo lo que hay aquí dentro ESCRIBE en la base a la que
+  // apunte este proceso, y `server/.env` apunta a la de producción: sin esto,
+  // encender el servidor en un portátil para mirar una pantalla procesa
+  // mensajes de clientes reales y a los 30 s empieza a cancelar sus pedidos.
   //
-  // Cada 10 min: la ventana del negocio se mide en horas, así que afinar más
-  // no adelanta nada y solo añade consultas. Con el tope de 20 por tanda son
-  // 120 pedidos/hora como techo duro — el freno que sustituye a la vieja
-  // prohibición de «no hay tarea que expire pedidos por su cuenta».
-  //
-  // ⚠️ El primer barrido espera 30 s: si arrancara a la vez que el servidor,
-  // un despliegue con la base todavía fría empezaría cancelando pedidos.
-  setTimeout(expireUnpaidOrders, 30_000)
-  setInterval(expireUnpaidOrders, 10 * 60 * 1000)
+  // En producción esta condición siempre es `true` y no cambia nada.
+  // Ver `config/tareas-de-fondo.ts`.
+  const tareas = decidirTareasDeFondo(process.env)
+  for (const linea of explicarDecision(tareas)) console.log(linea)
 
-  // 🐤 ¿Puede un cliente comprar AHORA MISMO?
-  //
-  // Recorre el camino real —saludar, entrar a cada local, pedir el menú— con
-  // el catálogo de producción, y anota en el registro de errores lo que no
-  // cuadre. No escribe una fila ni manda un WhatsApp.
-  //
-  // ⚠️ Existe porque el 2026-09-13 se encontraron tres fallos rojos probando a
-  // mano, y el peor —el chat sin precios ni botón de pedir— llevaba CUATRO
-  // DÍAS con el CI en verde y 2.727 pruebas pasando. Ninguna prueba contesta
-  // «¿alguien puede comprar hoy?»; esto sí.
-  //
-  // ⚠️ Cada 12 h y no cada hora: lo que vigila cambia cuando se despliega, no
-  // solo. Dos vueltas al día bastan para enterarse el mismo día sin recorrer
-  // el catálogo entero sin motivo. La primera espera 60 s, después del primer
-  // barrido de pedidos, para no competir con una base recién arrancada.
-  setTimeout(() => { void vigilarElCaminoDelCliente() }, 60_000)
-  setInterval(() => { void vigilarElCaminoDelCliente() }, 12 * 60 * 60 * 1000)
+  if (tareas.permitido) {
+    webhookInboxWorker.start()
+    setTimeout(generateCurrentMonthBilling, 3000)
+    setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
+    // Después de generar la cuota: la comisión se escribe sobre esa misma fila.
+    setTimeout(settleCommissions, 12000)
+    setInterval(settleCommissions, 24 * 60 * 60 * 1000)
+    setTimeout(cleanupWebhookInbox, 5000)
+    setInterval(cleanupWebhookInbox, 24 * 60 * 60 * 1000)
+    setTimeout(cleanupErrorLog, 7000)
+    setInterval(cleanupErrorLog, 24 * 60 * 60 * 1000)
+    setTimeout(cleanupStorefrontSessions, 9000)
+    setInterval(cleanupStorefrontSessions, 24 * 60 * 60 * 1000)
+    // Cada 6 h: suficiente para enterarse el mismo día sin castigar a los
+    // proveedores con consultas constantes.
+    setTimeout(checkCredentials, 20_000)
+    setInterval(checkCredentials, 6 * 60 * 60 * 1000)
+    // ⌛ Los pedidos que se quedaron esperando un comprobante que no llegó.
+    //
+    // Cada 10 min: la ventana del negocio se mide en horas, así que afinar más
+    // no adelanta nada y solo añade consultas. Con el tope de 20 por tanda son
+    // 120 pedidos/hora como techo duro — el freno que sustituye a la vieja
+    // prohibición de «no hay tarea que expire pedidos por su cuenta».
+    //
+    // ⚠️ El primer barrido espera 30 s: si arrancara a la vez que el servidor,
+    // un despliegue con la base todavía fría empezaría cancelando pedidos.
+    setTimeout(expireUnpaidOrders, 30_000)
+    setInterval(expireUnpaidOrders, 10 * 60 * 1000)
 
-  setupTelegram(app, bot.handleMessage).then(() => {
-    if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)
-  }).catch(error => console.error('❌ Telegram setup:', errorMessage(error)))
+    // 🐤 ¿Puede un cliente comprar AHORA MISMO?
+    //
+    // Recorre el camino real —saludar, entrar a cada local, pedir el menú— con
+    // el catálogo de producción, y anota en el registro de errores lo que no
+    // cuadre. No escribe una fila ni manda un WhatsApp.
+    //
+    // ⚠️ Existe porque el 2026-09-13 se encontraron tres fallos rojos probando a
+    // mano, y el peor —el chat sin precios ni botón de pedir— llevaba CUATRO
+    // DÍAS con el CI en verde y 2.727 pruebas pasando. Ninguna prueba contesta
+    // «¿alguien puede comprar hoy?»; esto sí.
+    //
+    // ⚠️ Cada 12 h y no cada hora: lo que vigila cambia cuando se despliega, no
+    // solo. Dos vueltas al día bastan para enterarse el mismo día sin recorrer
+    // el catálogo entero sin motivo. La primera espera 60 s, después del primer
+    // barrido de pedidos, para no competir con una base recién arrancada.
+    setTimeout(() => { void vigilarElCaminoDelCliente() }, 60_000)
+    setInterval(() => { void vigilarElCaminoDelCliente() }, 12 * 60 * 60 * 1000)
 
-  if (!process.env.BASE_URL) {
+    setupTelegram(app, bot.handleMessage).then(() => {
+      if (process.env.BASE_URL) console.log(`🌐 Producción: ${process.env.BASE_URL}`)
+    }).catch(error => console.error('❌ Telegram setup:', errorMessage(error)))
+  }
+
+  // ⚠️ El staging local NO levanta túnel: nadie tiene que poder entrar desde
+  // internet a una copia de la app con datos inventados, y además retrasa el
+  // arranque para nada. Solo el desarrollo contra producción lo necesita, que
+  // es cuando hace falta una URL pública para los webhooks.
+  if (!process.env.BASE_URL && process.env.UMBANI_ENTORNO !== 'staging') {
     setTimeout(() => {
       tunnel.startTunnel(port)
         .then(state => console.log(`🌐 Túnel automático: ${state.url}`))

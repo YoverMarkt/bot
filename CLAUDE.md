@@ -115,6 +115,11 @@ es el que corre todo. Lo que el manifiesto NO dice:
   la URL pública sale de `BASE_URL`.
 - El CI corre lint, tipos, tests y builds **en cada PR** (seis checks).
 - `npm run test:e2e` necesita Chromium: la primera vez, `npm run test:e2e:install`.
+- **Staging local:** `npm run staging:up` levanta el stack de Supabase en Docker
+  y siembra; `npm run dev:staging -w @botpanel/server` arranca el servidor
+  contra él. ⚠️ **`server/.env` apunta a PRODUCCIÓN**, así que arrancar en local
+  sin más procesaría mensajes reales y a los 30 s cancelaría pedidos de
+  clientes: `config/tareas-de-fondo.ts` lo impide y lo avisa al arrancar.
 
 ## 6. CONVENCIONES DE CÓDIGO
 
@@ -173,6 +178,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 - **El vigía externo y el respaldo diario (lo que vigila producción YA desplegada)** → [VERIFICACION.md](VERIFICACION.md#las-dos-capas-que-vigilan-lo-que-ya-está-en-producción-2026-09-18)
+- **El staging local y el freno de tareas de fondo** → [VERIFICACION.md](VERIFICACION.md#el-staging-local-y-el-freno-que-lo-hizo-necesario-2026-09-19)
 ---
 
 ## 7. HIGIENE DE GIT

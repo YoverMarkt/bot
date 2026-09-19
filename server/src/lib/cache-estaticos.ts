@@ -16,7 +16,9 @@
 // móviles y desde el navegador incrustado de WhatsApp.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { readFileSync } from 'node:fs'
 import type { Response } from 'express'
+import { avisoDeEntorno, inyectarFranja } from './franja-entorno'
 
 /** La cabecera del HTML de una SPA: no se guarda, nunca. */
 export const SIN_CACHE = 'no-cache, no-store, must-revalidate'
@@ -82,5 +84,25 @@ export const cachearEstaticos = (response: Response, filePath: string): void => 
  */
 export const enviarHtmlDeSpa = (response: Response, htmlPath: string): void => {
   response.setHeader('Cache-Control', SIN_CACHE)
-  response.sendFile(htmlPath)
+
+  // ⚠️ EN PRODUCCIÓN ESTO SE VA POR EL CAMINO DE SIEMPRE: `sendFile`, con su
+  // ETag y sin leer el archivo a mano. `avisoDeEntorno` devuelve `null` allí y
+  // esa es la condición que no se puede romper.
+  //
+  // Fuera de producción, la página lleva pegada una etiqueta que dice si esto
+  // es staging o —lo que de verdad importa— tu máquina apuntando a los datos
+  // de los clientes. Ver `lib/franja-entorno.ts`.
+  const aviso = avisoDeEntorno(process.env)
+  if (!aviso) {
+    response.sendFile(htmlPath)
+    return
+  }
+
+  try {
+    const html = readFileSync(htmlPath, 'utf8')
+    response.type('html').send(inyectarFranja(html, aviso))
+  } catch {
+    // Si el HTML no se puede leer, la app pesa más que su etiqueta.
+    response.sendFile(htmlPath)
+  }
 }
