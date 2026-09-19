@@ -179,6 +179,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
 - **El vigía externo y el respaldo diario (lo que vigila producción YA desplegada)** → [VERIFICACION.md](VERIFICACION.md#las-dos-capas-que-vigilan-lo-que-ya-está-en-producción-2026-09-18)
 - **El staging local y el freno de tareas de fondo** → [VERIFICACION.md](VERIFICACION.md#el-staging-local-y-el-freno-que-lo-hizo-necesario-2026-09-19)
+- **Los tipos generados de la base (y por qué generarlos no basta)** → [VERIFICACION.md](VERIFICACION.md#los-tipos-de-la-base-generados-desde-la-base-2026-09-19)
 ---
 
 ## 7. HIGIENE DE GIT

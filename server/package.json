@@ -26,7 +26,9 @@
     "backup:verify": "node --env-file=.env tests/respaldo.mjs verify",
     "staging:preparar": "node tests/staging.mjs preparar",
     "dev:staging": "npm run build && node tests/staging.mjs servidor",
-    "verify:smoke:staging": "node tests/staging.mjs humo"
+    "verify:smoke:staging": "node tests/staging.mjs humo",
+    "tipos:generar": "node --env-file=.env tests/tipos-generados.mjs",
+    "tipos:verificar": "node --env-file=.env tests/tipos-generados.mjs --verificar"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

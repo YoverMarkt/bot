@@ -297,3 +297,48 @@ la carpeta (`/app`), sin pasar por `enviarHtmlDeSpa`, y el comodín `/app/*` no
 casa con `/app`. La tienda se salvaba solo porque `/t/<slug>` nunca casa con un
 archivo. Hay un guardián que exige que la ruta explícita de cada panel se
 declare **antes** que su `express.static`.
+
+## Los tipos de la base, generados desde la base (2026-09-19)
+
+Cierra la familia del incidente del 2026-08-02: había **115 `as`** en la capa de
+datos que el compilador no comprobaba, porque afirmar un tipo no es
+verificarlo. Destapó cuatro bugs reales.
+
+`src/db/tipos-generados.ts` lo escribe la CLI de Supabase leyendo el esquema
+real — 57 tablas y 74 funciones. Se regenera con
+`npm run tipos:generar -w @botpanel/server` y se comprueba contra la base con
+`tipos:verificar`.
+
+⚠️ **Generarlos NO sirve de nada por sí solo**, y esto se descubrió aquí mismo:
+los tipos se generaron, el proyecto compiló a la primera con **cero errores**…
+porque 22 repositorios declaraban `const db: SupabaseClient`, que es
+`SupabaseClient<any>` y convierte la base entera en un `any` con buenos
+modales. El patrón «construido y desconectado» otra vez, esta vez en los tipos.
+
+Al enchufarlos de verdad (`SupabaseClient<Database>`) salieron **71 errores en
+16 repositorios**. Seis quedaron tipados; los otros dieciséis fallan por el
+mismo desajuste —el código pasa `null` explícito donde los tipos generados de
+una RPC con DEFAULT esperan `undefined`— y **no se han "arreglado" a la fuerza**:
+meter conversiones sería volver exactamente a los `as` que causaron el
+incidente. Se tipan cuando se toquen, uno a uno.
+
+`tipos-de-la-base.test.js` vigila las tres cosas que importan: que toda tabla de
+`schema.sql` tenga sus tipos, que el cliente lleve `<Database>`, y que la lista
+de pendientes **solo pueda encoger** — un repositorio nuevo nace tipado.
+
+### Dos cosas que destapó el tipado
+
+**`sales.sold_at` era nullable.** Tenía `default now()` pero no `not null`, y
+`services/reports.ts` la declara `string` y hace `new Date(v.sold_at)` en tres
+sitios: con NULL eso no lanza, devuelve el epoch, así que esa venta se habría
+contado en **1970** y habría desaparecido de los reportes del dueño sin un solo
+error en ningún log. Había 0 de 9 ventas afectadas. Cerrado con
+`migration-2026-09-19-venta-sin-fecha.sql`, que rellena con `created_at` lo que
+hubiera antes de exigir el NOT NULL.
+
+**`verify:drift` daba un falso positivo permanente.** El lado de `schema.sql`
+contaba solo `BASE TABLE` mientras que el de producción lee el catálogo de
+PostgREST, que **expone vistas igual que tablas**. Así, la vista
+`marketplace_cajones_de_negocio` —que `schema.sql` sí crea— salía eternamente
+como «producción la tiene y schema.sql no». Un detector que grita en falso se
+acaba ignorando, que es justo lo que no le puede pasar al guardián del esquema.

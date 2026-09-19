@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '../tipos-generados'
 import type {
   MarketplaceBusiness, MarketplaceCategory,
 } from '../../services/marketplace-menu'
@@ -10,7 +11,7 @@ import type {
 // aquí. Filtrar en el servidor dejaría el «(3 locales)» del menú contando
 // locales cerrados.
 
-const db: SupabaseClient = require('../client') as typeof import('../client')
+const db: SupabaseClient<Database> = require('../client') as typeof import('../client')
 
 /** Las categorías con al menos un local disponible. Nunca una vacía. */
 const getMarketplaceCategories = async (): Promise<MarketplaceCategory[]> => {

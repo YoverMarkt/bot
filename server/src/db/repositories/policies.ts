@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '../tipos-generados'
 
 type PolicyData = Record<string, unknown>
 
-const db: SupabaseClient = require('../client') as typeof import('../client')
+const db: SupabaseClient<Database> = require('../client') as typeof import('../client')
 
 const getPolicies = async (businessId: string) => {
   const { data } = await db

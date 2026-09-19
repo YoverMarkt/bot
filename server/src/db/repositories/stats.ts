@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '../tipos-generados'
 
-const db: SupabaseClient = require('../client') as typeof import('../client')
+const db: SupabaseClient<Database> = require('../client') as typeof import('../client')
 
 // Las cuatro cifras de la portada del superadmin.
 //

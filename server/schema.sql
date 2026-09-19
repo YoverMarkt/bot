@@ -972,7 +972,9 @@ create table if not exists sales (
   status        text not null default 'completada' check (status in ('completada','anulada')),
   source        text default 'manual',
   created_by    uuid references client_users(id) on delete set null,  -- vendedor que la registró
-  sold_at       timestamptz default now(),
+  -- NOT NULL desde 2026-09-19: una venta sin fecha se contaba en 1970 y
+  -- desaparecía de los reportes sin un solo error. Ver la migración del día.
+  sold_at       timestamptz not null default now(),
   created_at    timestamptz default now()
 );
 
