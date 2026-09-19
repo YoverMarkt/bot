@@ -29,7 +29,12 @@ const archivos = (dir) => readdirSync(dir).flatMap((entrada) => {
   return completa.endsWith('.ts') ? [completa] : []
 })
 
+// ⚠️ `db/tipos-generados.ts` también queda fuera, y no es una excepción
+// cómoda: es un archivo GENERADO que nombra las 57 tablas por definición, sin
+// leer ninguna. Contarlo como infractor convertiría este guardián en ruido
+// permanente el día que se añadieron los tipos (2026-09-19).
 const fuera = (ruta) => !ruta.includes(path.join('db', 'repositories'))
+  && !ruta.endsWith('tipos-generados.ts')
 
 describe('una sola puerta a la cuenta del dueño', () => {
   it('nadie lee `business_bank_accounts` fuera del repositorio', () => {

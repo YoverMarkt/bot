@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '../tipos-generados'
 
 // `SaleData` y `SaleItemData` vivían aquí para el alta manual de ventas, que
 // se retiró el 2026-08-02: hoy toda venta nace de un pedido, una cita o una
 // estadía, y las crea PostgreSQL.
 
-const db: SupabaseClient = require('../client') as typeof import('../client')
+const db: SupabaseClient<Database> = require('../client') as typeof import('../client')
 const getSaleById = async (businessId: string, id: string) => {
   const { data } = await db.from('sales').select('*, sale_items(*)')
     .eq('business_id', businessId).eq('id', id).single()

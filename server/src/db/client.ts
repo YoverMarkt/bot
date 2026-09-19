@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from './tipos-generados'
 import dotenv from 'dotenv'
 import path from 'node:path'
 
@@ -68,7 +69,15 @@ const fetchConLimite: typeof fetch = (entrada, opciones) => {
 }
 
 // Cliente único del backend. La service role nunca se exporta al navegador.
-const supabase = createClient(url, key, {
+// ⚠️ EL TIPO `Database` ES LO QUE HACE QUE ESTO SE COMPRUEBE.
+//
+// Sin él, `sb.from('lo_que_sea').select('columna_inventada')` compila
+// perfectamente y falla en producción. Con él, la base deja de ser un `any`
+// con buenos modales: una columna renombrada o una RPC con otro argumento
+// rompen el build aquí, que es donde cuesta barato.
+//
+// Ver `db/tipos-generados.ts` — se regenera con `npm run tipos:generar`.
+const supabase = createClient<Database>(url, key, {
   global: { fetch: fetchConLimite },
 })
 
