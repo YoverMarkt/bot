@@ -219,6 +219,22 @@ const vistaDe = (flowState: Record<string, unknown> | null): MarketplaceView => 
  *      irreversible (tirar un carrito).
  *   3. El bloqueo de «un pedido a la vez».
  *   4. El menú normal.
+ *
+ * ⚠️ ESTA FUNCIÓN ERA DE 536 LÍNEAS y el 2026-09-19 se quedó en menos de 200.
+ * Cada paso vive ahora en su propia función (`atenderComandoMenu`,
+ * `atenderComprobante`, `atenderConfirmacionDeReinicio`, `atenderCandado`,
+ * `recorrerElMenu`), y lo que queda aquí es solo el ORDEN en que se consultan.
+ *
+ * No se cambió ni una decisión al partirla: se movió código y se dejaron los
+ * comentarios donde estaban. Lo que se gana es que el orden —que ES la lógica
+ * de esta puerta, no una casualidad— pasó de vivir implícito en una pared de
+ * código a estar a la vista y comprobado por un guardián
+ * (`entrada-del-marketplace.test.js`).
+ *
+ * ⚠️ La numeración de los comentarios salta del 4 al 6: el paso 5 se perdió en
+ * algún cambio anterior y no se renumera a propósito, porque los números se
+ * citan en otros sitios. Que falte uno es, de hecho, la señal que destapó que
+ * esta función ya no cabía en la cabeza de nadie.
  */
 export async function handleMarketplaceMessage(
   input: {
@@ -327,202 +343,41 @@ export async function handleMarketplaceMessage(
   const vista = vistaDe(conversation?.flow_state ?? null)
 
   // ── 1. MENÚ, antes que nada ────────────────────────────────────────
-  if (esComandoMenu(text)) {
-    // ⚠️ SEGUNDO MENÚ = SÍ, y esto arregla un bucle real (2026-08-23).
-    //
-    // El muro de «un pedido a la vez» dice literalmente «escribe *MENÚ*». El
-    // cliente lo escribe, se le pregunta si tira su pedido… y como MENÚ se
-    // comprueba antes que la vista, escribirlo otra vez volvía a preguntar lo
-    // mismo. Para siempre. El dueño lo vivió: «sigue enviando y enviando lo
-    // mismo».
-    //
-    // Pedir el menú DOS VECES no es una respuesta ambigua: es la misma
-    // petición repetida. La regla de no decidir por él sigue en pie para todo
-    // lo demás —cualquier otro texto vuelve a preguntar—, porque tirar un
-    // carrito es lo único que no tiene vuelta atrás.
-    if (vista.vista === 'confirmando_reinicio') {
-      // ⚠️ También aquí se cancela. Escribir MENÚ dos veces es la OTRA puerta
-      // para abandonar —«✅ Empezar de nuevo» normaliza a un COMANDO_MENU, así
-      // que el botón entra por aquí, no por el paso 2—. Si solo cancelara una
-      // de las dos, la mitad de los abandonos avisados seguirían caducando y
-      // sumando falta.
-      await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
-      await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
-      // 'vuelta': vuelve al inicio a propósito, igual que `responderAlMenu`.
-      const respuesta = verCategorias(categorias, 0, 'vuelta')
-      await guardar(deps, customer.id, conversation?.version, respuesta, {
-        soltarLocal: true,
-      })
-      await send(respuesta.reply, respuesta.options)
-      return
-    }
-    // ⚠️ MENÚ suelta SIEMPRE, y cancela lo que hubiera sin pagar (2026-09-05).
-    //
-    // Ya no hay una rama que pregunte: `responderAlMenu` devuelve las
-    // categorías pase lo que pase. Escribir MENÚ es avisar de que se deja el
-    // pedido, y avisar no puede costar una falta — por eso se cancela en vez
-    // de dejarlo caducar, igual que hace «✅ Empezar de nuevo».
-    await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
-    // ⚠️ LOS DOS CAMINOS de MENÚ revocan, y conectar solo uno dejaría la mitad
-    // de los MENÚ con el enlace vivo: aquí entra el MENÚ escrito, y arriba el
-    // que llega estando en la pregunta de reinicio —donde además cae el botón
-    // «✅ Empezar de nuevo», porque su texto normaliza a un COMANDO_MENU—.
-    await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
-    const respuesta = responderAlMenu(estado, categorias)
-    await guardar(deps, customer.id, conversation?.version, respuesta, {
-      soltarLocal: true,
-    })
-    await send(respuesta.reply, respuesta.options)
-    return
-  }
+  //
+  // El detalle vive en `atenderComandoMenu`. Que se compruebe aquí arriba, y
+  // no más abajo, es lo que hace que MENÚ funcione siempre.
+  if (await atenderComandoMenu(deps, text, customer, {
+    vista,
+    estado,
+    categorias,
+    negocioElegidoId: conversation?.selected_business_id,
+    estadoDeLaConversacion: conversation?.current_state,
+    version: conversation?.version,
+  })) return
 
   // ── 1b. La foto que ya se procesó como comprobante ─────────────────
   //
-  // ⚠️ Estos textos NO los escribió el cliente: los pone el webhook después de
-  // haber subido y adjuntado (o rechazado) su captura. Si cayeran al menú se
-  // tratarían como una BÚSQUEDA, y quien acaba de pagar recibiría «no
-  // encontramos locales para [el cliente envió su comprobante…]».
-  //
-  // ⚠️ Va detrás de MENÚ para no romper la regla de que MENÚ se comprueba
-  // antes que nada, aunque ninguno de estos marcadores pueda confundirse con
-  // él. Y NO toca el estado de la conversación: el carrito, el local elegido y
-  // la vista se quedan exactamente donde estaban.
-  // ⚠️ El que NO CUADRA va PRIMERO, y el orden importa: su marcador contiene
-  // «un pago que no corresponde a este pedido», que no lleva la subcadena de
-  // `esComprobante`, pero dejarlo detrás sería confiar en esa separación para
-  // siempre. Aquí el error caro es decirle «recibimos tu comprobante» a quien
-  // pagó a otra cuenta: se iría a esperar una comida que nadie va a preparar.
-  if (esComprobanteQueNoCuadra(text)) {
-    await send(respuestaComprobanteNoCuadra(motivoDelDescuadre(text)), [])
-    return
-  }
-  if (esComprobante(text)) {
-    // Con el análisis encendido y todo cuadrando se le dice, porque es lo que
-    // de verdad tranquiliza mientras el dueño mira. Sin análisis, el de
-    // siempre.
-    await send(
-      comprobanteCuadra(text) ? RESPUESTA_COMPROBANTE_CUADRA : RESPUESTA_COMPROBANTE,
-      [],
-    )
-    return
-  }
-  if (esFotoQueNoEsComprobante(text)) {
-    // ⚠️ La consecuencia viaja DENTRO del marcador, igual que los nombres del
-    // comprobante ambiguo: quien lo escribió ya consultó la base, y volver a
-    // consultarla aquí sería pagar dos veces por el mismo dato.
-    //
-    // Sin cola —los marcadores que ya circulaban antes de esto— la respuesta
-    // es exactamente la de siempre.
-    const rechazo = rechazoDelMarcador(text)
-
-    // ⚠️ AL BLOQUEAR, se ofrecen las DEMÁS CATEGORÍAS (2026-09-02).
-    //
-    // El mensaje ya decía «mientras tanto puedes pedir en los demás locales» y
-    // no daba ninguno: el cliente leía una salida que no podía tomar. El dueño
-    // lo pidió con estas palabras: «que me salgan las demás categorías, porque
-    // sí puedo pedir en otros locales».
-    //
-    // ⚠️ Se puede porque el bloqueo es del LOCAL, no de la plataforma. Y se
-    // puede AHORA porque al bloquear se expira su pedido, así que ya no queda
-    // nada retenido — antes de eso, ofrecerle categorías lo habría llevado
-    // contra el muro de «tienes un pedido en proceso».
-    //
-    // ⚠️ Con opciones hay que GUARDAR la vista, o tocar una categoría se lee
-    // con la vista anterior y el cliente tiene que tocarla dos veces. Es el
-    // fallo del 2026-08-24, y aquí volvería a entrar por esta puerta.
-    if (rechazo?.blocked) {
-      const portada = verCategorias(categorias, 0)
-      const respuesta = {
-        ...portada,
-        reply: `${respuestaNoEsComprobante(rechazo)}\n\n${portada.reply}`,
-      }
-      await guardar(deps, customer.id, conversation?.version, respuesta, {
-        soltarLocal: true,
-      })
-      await send(respuesta.reply, respuesta.options)
-      return
-    }
-
-    await send(respuestaNoEsComprobante(rechazo), [])
-    return
-  }
-  if (esComprobanteAmbiguo(text)) {
-    // Los nombres viajan dentro del propio marcador: quien lo escribió ya
-    // consultó la base, y volver a consultarla sería pagar dos veces por la
-    // misma respuesta. Es el mismo desempaquetado que hace `bot-conversation`.
-    const locales = String(text).split(': ').slice(1).join(': ').replace(/\]$/, '')
-    await send(
-      preguntaDeQueLocal(
-        locales.split(' / ').filter(Boolean).map(businessName => ({
-          orderId: '', orderNumber: null, businessName,
-        })),
-      ),
-      [],
-    )
-    return
-  }
+  // El detalle vive en `atenderComprobante`, justo debajo: son cuatro
+  // marcadores con un orden que importa y no cabían aquí sin tapar el resto.
+  if (await atenderComprobante(deps, text, {
+    customerId: customer.id,
+    version: conversation?.version,
+    categorias,
+  })) return
 
   // ── 2. ¿Estaba respondiendo a «¿tiro tu pedido?» ───────────────────
-  if (vista.vista === 'confirmando_reinicio') {
-    const { reinicia, continua, respuesta } = resolverReinicio(text, estado, categorias)
-
-    if (reinicia) {
-      await abandonarPedido(deps, conversation?.selected_business_id, customer.id)
-      // ⚠️ Y SE REVOCA, igual que en las dos ramas de MENÚ (2026-09-17). Este
-      // es el camino REAL del botón «✅ Empezar de nuevo»: con YCloud llega su
-      // NÚMERO («1»), no su título, y «1» no es un comando de MENÚ. Se creía
-      // que el botón entraba por arriba —la prueba mandaba el título—, así que
-      // en producción el enlace seguía abriendo la carta después de reiniciar.
-      await matarEnlaceAnterior(deps, customer.id, conversation?.current_state)
-    }
-
-    await guardar(deps, customer.id, conversation?.version, respuesta, {
-      soltarLocal: reinicia,
-      // ⚠️ Mientras NO reinicie, el estado del pago se conserva: si se pisara
-      // con 'navegando', el «Seguir mi pedido» siguiente volvería a decir
-      // «termínalo» a quien ya pidió. Al reiniciar da igual — el local se
-      // suelta entero.
-      conservarEstado: !reinicia
-        && (conversation?.current_state === 'esperando_comprobante'
-          || conversation?.current_state === 'pago_en_revision'),
-    })
-    // ⚠️ «Seguir mi pedido» DEVUELVE EL ENLACE (2026-09-03).
-    //
-    // Hasta ahora contestaba «Termina tu pedido cuando quieras 👍» y nada más:
-    // una calle sin salida para quien escribió MENÚ justamente porque no
-    // encontraba su enlace —lo borró, lo perdió entre mensajes, cambió de
-    // teléfono—. Sus dos opciones eran tirar el pedido o seguir sin poder
-    // entrar.
-    //
-    // Es la salida que el dueño puso como condición del enlace estricto:
-    // «escribes MENÚ y listo». Sin esto, «estricto» sería una trampa.
-    //
-    // ⚠️ Emitirlo NO le mata la sesión que ya tenga abierta: la revocación
-    // respeta el local vigente a propósito, o recargar con un token nuevo le
-    // vaciaría el carrito.
-    // ⚠️ A quien DEBE el comprobante NO se le manda el enlace (2026-09-04).
-    //
-    // El botón dice «Ver la carta», y esa es exactamente la invitación
-    // equivocada: esta persona no puede pedir nada más hasta cerrar lo que ya
-    // pidió. El dueño lo dijo probándolo: «no debería darme la opción de ver
-    // la carta porque tengo que completar el pedido para hacer otro».
-    //
-    // ⚠️ No la deja sin nada: su enlace SIGUE VIVO —está unos mensajes más
-    // arriba en el mismo chat, y la revocación respeta el local vigente— y los
-    // datos para transferir viven ahí. Lo único que se retira es la invitación
-    // a seguir mirando, que es lo que sobra.
-    //
-    // El enlace SÍ se manda a quien está a medio armar el carrito: ahí volver
-    // a la carta es justo lo que necesita.
-    if (continua && conversation?.selected_business_id && !estado.esperandoComprobante) {
-      await devolverElEnlace(
-        deps, customer, from, conversation.selected_business_id, respuesta,
-      )
-      return
-    }
-    await send(respuesta.reply, respuesta.options)
-    return
-  }
+  //
+  // El detalle vive en `atenderConfirmacionDeReinicio`: «Empezar de nuevo»
+  // cancela y revoca; «Seguir mi pedido» devuelve el enlace sin tocar nada.
+  if (await atenderConfirmacionDeReinicio(deps, from, text, customer, {
+    vista,
+    estado,
+    categorias,
+    negocioElegidoId: conversation?.selected_business_id,
+    esperandoComprobante: estado.esperandoComprobante,
+    estadoDeLaConversacion: conversation?.current_state,
+    version: conversation?.version,
+  })) return
 
   // ── 3. Lo que quedó a medio pedir POR CHAT, antes de esto ────────────
   //
@@ -535,219 +390,30 @@ export async function handleMarketplaceMessage(
   const aMediasEnElChatViejo = ESTADOS_DEL_CHAT_RETIRADO.has(conversation?.current_state || '')
 
   // ── 4. Un pedido a la vez ──────────────────────────────────────────
-  if (estado.bloqueado && negocioActual) {
-    // ⚠️ Dos textos, porque son dos situaciones. Quien está a medio armar su
-    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
-    // tiene que mandar una FOTO. Decirle «termínalo» al segundo lo deja
-    // buscando un menú que ya completó.
-    // ⚠️ TRES mensajes, no dos (2026-08-30). Quien está a medio armar su
-    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
-    // tiene que mandar una FOTO; y quien YA la mandó no tiene que hacer nada
-    // —solo esperar—. Decirle «mándanos la foto» a quien acaba de mandarla, o
-    // «termínalo» a un pedido terminado, suena a que el bot no se enteró.
-    const respuesta = conversation?.current_state === 'pago_en_revision'
-      ? recordarPagoEnRevision({ name: negocioActual.name })
-      : conversation?.current_state === 'esperando_comprobante'
-        ? recordarComprobantePendiente({ name: negocioActual.name })
-        // ⚠️ `en_local` = el enlace ya salió y NO hay pedido todavía. Sin
-        // esto el mensaje decía «tienes un pedido en proceso» a quien acababa
-        // de recibir la carta, que es sencillamente falso.
-        : recordarPedidoEnProceso(
-          { name: negocioActual.name },
-          conversation?.current_state === 'en_local' || aMediasEnElChatViejo,
-        )
-    // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
-    // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
-    // «✅ Empezar de nuevo», y ese texto normalizado es uno de los
-    // `COMANDOS_MENU`. Sin la vista guardada, tocar ese botón se leía como MENÚ
-    // con la vista ANTERIOR, así que volvía a PREGUNTAR en vez de reiniciar y
-    // el cliente tenía que tocarlo dos veces —lo vivió el dueño—. Lo único que
-    // evitaba que fuera un bucle infinito era el parche «segundo MENÚ = SÍ»,
-    // que lo disfrazó de molestia cosmética en vez de dejarlo a la vista.
-    //
-    // ⚠️ `soltarLocal: false`: aquí solo se PREGUNTA. El carrito y el local
-    // siguen donde estaban hasta que el cliente confirme — tirar un carrito es
-    // lo único que no tiene vuelta atrás.
-    // ⚠️ SE NOMBRA LO QUE LLEGÓ, y solo aquí (2026-09-03). El dueño mandó una
-    // foto teniendo local elegido y recibió «Estás pidiendo en Monster Pizza»,
-    // que es cierto pero no dice nada de su foto: se queda sin saber si llegó,
-    // si servía, o si acaba de pagar sin querer.
-    //
-    // ⚠️ NO se aplica a quien DEBE un comprobante ni a quien lo tiene en
-    // revisión, y ese corte es el punto: ahí una foto es justo lo que se
-    // espera. Si una llega hasta aquí en ese estado es porque el buzón no pudo
-    // procesarla, y decirle «esto no es un comprobante» sería lo contrario de
-    // la verdad. Esos dos casos conservan su mensaje intacto.
-    const adjunto = conversation?.current_state !== 'esperando_comprobante'
-      && conversation?.current_state !== 'pago_en_revision'
-      ? textoDeAdjuntoRecibido(text)
-      : null
-    const conAviso = adjunto
-      ? { ...respuesta, reply: `${adjunto}\n\n${respuesta.reply}` }
-      : respuesta
-
-    await guardar(deps, customer.id, conversation?.version, conAviso, {
-      soltarLocal: false,
-      // ⚠️ El estado del PAGO no se pisa. `guardar` escribe 'navegando' salvo
-      // en la confirmación de reinicio, y eso borraría el
-      // `pago_en_revision` que puso el disparador al llegar el comprobante —
-      // con él perdido, el siguiente mensaje volvería a decir «termínalo» a
-      // alguien que ya pagó.
-      // ⚠️ Los DOS estados que pone la BASE, no solo el de revisión: sin
-      // conservar `esperando_comprobante`, el primer recordatorio lo borraba y
-      // el «Seguir mi pedido» siguiente volvía a decir «termínalo».
-      conservarEstado: conversation?.current_state === 'pago_en_revision'
-        || conversation?.current_state === 'esperando_comprobante',
-    })
-    await send(conAviso.reply, conAviso.options)
-    return
-  }
-
-  // ── 6. El menú ─────────────────────────────────────────────────────
   //
-  // `paso` es una función PURA: no consulta nada. Cuando el cliente elige una
-  // categoría devuelve la vista nueva con el texto vacío, porque los locales
-  // de esa categoría todavía no están consultados. Se consultan y se vuelve a
-  // llamar — dos fases, y por eso el bucle tiene tope: sin él, una vista que
-  // no avanzara dejaría el proceso girando dentro de un webhook.
-  let respuesta: MarketplaceReply = { reply: '', options: [], vista }
-  let vistaActual = vista
-  for (let intento = 0; intento < 2; intento += 1) {
-    let negocios: MarketplaceBusiness[] = []
-    if (vistaActual.vista === 'negocios' && vistaActual.categoria) {
-      negocios = await conEstadoDeHorario(
-        deps, await database.getMarketplaceBusinesses(vistaActual.categoria),
-      )
-    } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta && !esSaludo(text)) {
-      // Se repite la búsqueda en vez de guardar los resultados: mantiene el
-      // `flow_state` pequeño y la lista fresca. Falla hacia una lista vacía,
-      // que `paso` resuelve devolviendo al cliente a las categorías.
-      //
-      // ⚠️ SALVO si el mensaje es un saludo: `paso` va a devolver la portada
-      // igualmente (un «hola» aquí es «empecemos», no «repíteme la búsqueda»),
-      // así que consultarla sería gastar una lectura para tirarla. Es la misma
-      // regla que ya cumple la portada — «un saludo no dispara la búsqueda».
-      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
-    }
-    respuesta = paso({
-      // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
-      // consumió al elegir la categoría, y esta llamada solo sirve para
-      // pintar los locales que se acaban de consultar.
-      mensaje: intento === 0 ? text : '',
-      vista: vistaActual,
-      categorias,
-      negocios,
-      // Nunca había escrito: su «hola» merece una bienvenida, no un reproche.
-      primerContacto: !conversation,
-    })
-    if (respuesta.reply || respuesta.negocioElegido) break
-    vistaActual = respuesta.vista
-  }
+  // El detalle vive en `atenderCandado`: son tres textos según en qué punto
+  // esté el pedido, y elegir mal deja al cliente dando vueltas.
+  if (await atenderCandado(deps, text, {
+    customerId: customer.id,
+    bloqueado: estado.bloqueado,
+    negocio: negocioActual,
+    estadoDeLaConversacion: conversation?.current_state,
+    version: conversation?.version,
+    aMediasEnElChatViejo,
+  })) return
 
-  // ── Queda constancia de dónde acabó, para los reportes ─────────────
+  // ── 6 y 7. El menú, y la búsqueda si no casó ───────────────────────
   //
-  // Se apunta la VISTA que se le acaba de pintar, que es exactamente lo que se
-  // quiere medir: cuánta gente ve el menú y cuánta entra en un cajón. Va aquí
-  // —después del bucle— y no en cada pantalla: un solo sitio, y el día que
-  // haya una vista nueva se apunta sola.
-  if (respuesta.vista.vista === 'categorias') {
-    apuntarPaso(deps, { customerId: customer.id, tipo: 'menu' })
-  } else if (respuesta.vista.vista === 'negocios') {
-    apuntarPaso(deps, {
-      customerId: customer.id, tipo: 'cajon', categoryCode: respuesta.vista.categoria,
-    })
-  }
+  // El detalle vive en `recorrerElMenu`. Va el ÚLTIMO a propósito: todo lo de
+  // arriba tiene prioridad sobre el menú.
+  await recorrerElMenu(deps, from, text, customer, {
+    vista,
+    categorias,
+    negocioElegidoId: conversation?.selected_business_id,
+    huboConversacion: Boolean(conversation),
+    version: conversation?.version,
+  })
 
-  // ── El cliente llegó a un local: se le manda su enlace ─────────────
-  if (respuesta.negocioElegido) {
-    // ⚠️ POR DÓNDE llegó: el cajón desde el que lo eligió, o nada si llegó
-    // escribiendo lo que quería. Es lo que le dice al dueño si le buscan
-    // «almuerzo» o «cena», y se sabe SOLO aquí — dentro de `entregarLocal` ya
-    // se perdió la vista de la que venía.
-    await entregarLocal(
-      deps, customer, from, respuesta.negocioElegido, conversation?.version,
-      vistaActual.vista === 'negocios' ? vistaActual.categoria : null,
-    )
-    return
-  }
-
-  // ── 7. No casó con el menú: quizá está BUSCANDO ────────────────────
-  //
-  // «Quiero ceviche» no es una opción equivocada: es un cliente diciendo lo
-  // que quiere. La búsqueda existía desde el 2026-08-21 —alias curados, texto
-  // completo en español y trigramas— y **no la llamaba nadie**, así que esa
-  // frase recibía «🙏 No te entendí» aunque la base supiera resolverla.
-  //
-  // ⚠️ Va DESPUÉS del menú, no antes: si se buscara primero, «1» o «Pizzerías»
-  // se tratarían como texto libre y el cliente que está eligiendo de la lista
-  // acabaría en una búsqueda. El menú manda; buscar es la segunda oportunidad.
-  //
-  // ⚠️ Solo cuando `paso` no entendió Y no hay local elegido: dentro de un
-  // local el ámbito es ese local, y traerle el ceviche de otro negocio metería
-  // en el carrito un producto que no puede estar ahí.
-  //
-  // ⚠️ Falla hacia el mensaje de siempre: si la búsqueda revienta o no
-  // encuentra nada, el cliente recibe exactamente lo que recibía antes.
-  // ⚠️ Un ADJUNTO no se busca (2026-09-06). «[foto]», «[nota de voz]» y
-  // «[ubicación]» son marcadores que pone el webhook, no algo que el cliente
-  // quiera comer: mandarlos a la búsqueda eran DOS consultas a la base por
-  // cada foto suelta —los locales y el diccionario de términos— que no pueden
-  // encontrar nada. El menú ya le respondió nombrando lo que mandó.
-  if (respuesta.noEntendido
-    && !esAdjuntoSinTexto(text)
-    && !conversation?.selected_business_id) {
-    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text))
-    if (encontrados.length) {
-      // ⚠️ La búsqueda se apunta UNA vez y donde se sabe TODO de ella: cuántos
-      // locales salieron y —si no salió ninguno— si al menos se entendió lo
-      // que pedía. Apuntarla dentro de `buscarLocales` contaba doble al pasar
-      // de página y nunca llegaba a saber lo segundo.
-      apuntarPaso(deps, {
-        customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: encontrados.length,
-      })
-      const resultados = verResultados(text, encontrados, 0)
-      deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
-      await guardar(deps, customer.id, conversation?.version, resultados, { soltarLocal: false })
-      await send(resultados.reply, resultados.options)
-      return
-    }
-
-    // ── No hay locales… ¿pero le entendimos? ─────────────────────────
-    //
-    // «pollo» y «asdfghjkl» recibían EXACTAMENTE el mismo «🙏 No te entendí»,
-    // y no son lo mismo: el alias de «pollo» existe y apunta a `asados`, así
-    // que se le entendió — lo que falta es un asadero dado de alta. Decirle
-    // que no se le entendió cuando escribió bien es de las cosas que hacen
-    // que una app parezca tonta, y es justo el cliente que SÍ sabe lo que
-    // quiere.
-    //
-    // ⚠️ Falla hacia el mensaje de siempre: si esto revienta o el término no
-    // está en el diccionario, se responde lo que se respondía antes.
-    const conocido = database.marketplaceKnownTerm
-      ? await database.marketplaceKnownTerm(text).catch(() => null)
-      : null
-    // Sin locales: se apunta igual, y con la categoría que se entendió si la
-    // hay. «La gente pide internacional y no tienes ninguno» es demanda.
-    apuntarPaso(deps, {
-      customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: 0,
-      categoryCode: conocido?.code ?? null,
-    })
-    if (conocido) {
-      const portada = verCategorias(categorias, 0)
-      const aviso = {
-        ...portada,
-        reply: `😔 Todavía no tenemos *${conocido.label}* por aquí.\n\n`
-          + `Esto es lo que sí puedes pedir hoy 👇`,
-      }
-      deps.logger?.log(`🔎 [marketplace] «${text}» → ${conocido.label}, sin locales`)
-      await guardar(deps, customer.id, conversation?.version, aviso, { soltarLocal: false })
-      await send(aviso.reply, aviso.options)
-      return
-    }
-  }
-
-  await guardar(deps, customer.id, conversation?.version, respuesta, { soltarLocal: false })
-  await send(respuesta.reply, respuesta.options)
 }
 
 /**
@@ -934,6 +600,543 @@ async function entregarLocal(
   )
 
   await mandarElEnlace(deps, customer, phone, negocio)
+}
+
+/**
+ * El camino normal: pintar el menú, dejar elegir y, si no casó con nada,
+ * buscar. Es lo que corre cuando ninguna de las puertas anteriores atendió.
+ *
+ * ⚠️ Extraída de `handleMarketplaceMessage` el 2026-09-19 sin cambiar una
+ * decisión. Es el ÚLTIMO paso a propósito: todo lo que va antes —MENÚ, los
+ * comprobantes, la confirmación de reinicio, el candado— tiene prioridad sobre
+ * el menú, y ese orden es la lógica de la puerta, no una casualidad.
+ */
+async function recorrerElMenu(
+  deps: MarketplaceEntryDeps,
+  from: string,
+  text: string,
+  customer: { id: string; name: string | null },
+  contexto: {
+    vista: MarketplaceView
+    categorias: MarketplaceCategory[]
+    negocioElegidoId: string | null | undefined
+    huboConversacion: boolean
+    version: number | undefined
+  },
+): Promise<void> {
+  const { database, send } = deps
+  // ── 6. El menú ─────────────────────────────────────────────────────
+  //
+  // `paso` es una función PURA: no consulta nada. Cuando el cliente elige una
+  // categoría devuelve la vista nueva con el texto vacío, porque los locales
+  // de esa categoría todavía no están consultados. Se consultan y se vuelve a
+  // llamar — dos fases, y por eso el bucle tiene tope: sin él, una vista que
+  // no avanzara dejaría el proceso girando dentro de un webhook.
+  let respuesta: MarketplaceReply = { reply: '', options: [], vista: contexto.vista }
+  let vistaActual = contexto.vista
+  for (let intento = 0; intento < 2; intento += 1) {
+    let negocios: MarketplaceBusiness[] = []
+    if (vistaActual.vista === 'negocios' && vistaActual.categoria) {
+      negocios = await conEstadoDeHorario(
+        deps, await database.getMarketplaceBusinesses(vistaActual.categoria),
+      )
+    } else if (vistaActual.vista === 'busqueda' && vistaActual.consulta && !esSaludo(text)) {
+      // Se repite la búsqueda en vez de guardar los resultados: mantiene el
+      // `flow_state` pequeño y la lista fresca. Falla hacia una lista vacía,
+      // que `paso` resuelve devolviendo al cliente a las categorías.
+      //
+      // ⚠️ SALVO si el mensaje es un saludo: `paso` va a devolver la portada
+      // igualmente (un «hola» aquí es «empecemos», no «repíteme la búsqueda»),
+      // así que consultarla sería gastar una lectura para tirarla. Es la misma
+      // regla que ya cumple la portada — «un saludo no dispara la búsqueda».
+      negocios = await conEstadoDeHorario(deps, await buscarLocales(deps, vistaActual.consulta))
+    }
+    respuesta = paso({
+      // ⚠️ En el segundo intento va VACÍO a propósito: el mensaje ya se
+      // consumió al elegir la categoría, y esta llamada solo sirve para
+      // pintar los locales que se acaban de consultar.
+      mensaje: intento === 0 ? text : '',
+      vista: vistaActual,
+      categorias: contexto.categorias,
+      negocios,
+      // Nunca había escrito: su «hola» merece una bienvenida, no un reproche.
+      primerContacto: !contexto.huboConversacion,
+    })
+    if (respuesta.reply || respuesta.negocioElegido) break
+    vistaActual = respuesta.vista
+  }
+
+  // ── Queda constancia de dónde acabó, para los reportes ─────────────
+  //
+  // Se apunta la VISTA que se le acaba de pintar, que es exactamente lo que se
+  // quiere medir: cuánta gente ve el menú y cuánta entra en un cajón. Va aquí
+  // —después del bucle— y no en cada pantalla: un solo sitio, y el día que
+  // haya una vista nueva se apunta sola.
+  if (respuesta.vista.vista === 'categorias') {
+    apuntarPaso(deps, { customerId: customer.id, tipo: 'menu' })
+  } else if (respuesta.vista.vista === 'negocios') {
+    apuntarPaso(deps, {
+      customerId: customer.id, tipo: 'cajon', categoryCode: respuesta.vista.categoria,
+    })
+  }
+
+  // ── El cliente llegó a un local: se le manda su enlace ─────────────
+  if (respuesta.negocioElegido) {
+    // ⚠️ POR DÓNDE llegó: el cajón desde el que lo eligió, o nada si llegó
+    // escribiendo lo que quería. Es lo que le dice al dueño si le buscan
+    // «almuerzo» o «cena», y se sabe SOLO aquí — dentro de `entregarLocal` ya
+    // se perdió la vista de la que venía.
+    await entregarLocal(
+      deps, customer, from, respuesta.negocioElegido, contexto.version,
+      vistaActual.vista === 'negocios' ? vistaActual.categoria : null,
+    )
+    return
+  }
+
+  // ── 7. No casó con el menú: quizá está BUSCANDO ────────────────────
+  //
+  // «Quiero ceviche» no es una opción equivocada: es un cliente diciendo lo
+  // que quiere. La búsqueda existía desde el 2026-08-21 —alias curados, texto
+  // completo en español y trigramas— y **no la llamaba nadie**, así que esa
+  // frase recibía «🙏 No te entendí» aunque la base supiera resolverla.
+  //
+  // ⚠️ Va DESPUÉS del menú, no antes: si se buscara primero, «1» o «Pizzerías»
+  // se tratarían como texto libre y el cliente que está eligiendo de la lista
+  // acabaría en una búsqueda. El menú manda; buscar es la segunda oportunidad.
+  //
+  // ⚠️ Solo cuando `paso` no entendió Y no hay local elegido: dentro de un
+  // local el ámbito es ese local, y traerle el ceviche de otro negocio metería
+  // en el carrito un producto que no puede estar ahí.
+  //
+  // ⚠️ Falla hacia el mensaje de siempre: si la búsqueda revienta o no
+  // encuentra nada, el cliente recibe exactamente lo que recibía antes.
+  // ⚠️ Un ADJUNTO no se busca (2026-09-06). «[foto]», «[nota de voz]» y
+  // «[ubicación]» son marcadores que pone el webhook, no algo que el cliente
+  // quiera comer: mandarlos a la búsqueda eran DOS consultas a la base por
+  // cada foto suelta —los locales y el diccionario de términos— que no pueden
+  // encontrar nada. El menú ya le respondió nombrando lo que mandó.
+  if (respuesta.noEntendido
+    && !esAdjuntoSinTexto(text)
+    && !contexto.negocioElegidoId) {
+    const encontrados = await conEstadoDeHorario(deps, await buscarLocales(deps, text))
+    if (encontrados.length) {
+      // ⚠️ La búsqueda se apunta UNA vez y donde se sabe TODO de ella: cuántos
+      // locales salieron y —si no salió ninguno— si al menos se entendió lo
+      // que pedía. Apuntarla dentro de `buscarLocales` contaba doble al pasar
+      // de página y nunca llegaba a saber lo segundo.
+      apuntarPaso(deps, {
+        customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: encontrados.length,
+      })
+      const resultados = verResultados(text, encontrados, 0)
+      deps.logger?.log(`🔎 [marketplace] «${text}» encontró ${encontrados.length} local(es)`)
+      await guardar(deps, customer.id, contexto.version, resultados, { soltarLocal: false })
+      await send(resultados.reply, resultados.options)
+      return
+    }
+
+    // ── No hay locales… ¿pero le entendimos? ─────────────────────────
+    //
+    // «pollo» y «asdfghjkl» recibían EXACTAMENTE el mismo «🙏 No te entendí»,
+    // y no son lo mismo: el alias de «pollo» existe y apunta a `asados`, así
+    // que se le entendió — lo que falta es un asadero dado de alta. Decirle
+    // que no se le entendió cuando escribió bien es de las cosas que hacen
+    // que una app parezca tonta, y es justo el cliente que SÍ sabe lo que
+    // quiere.
+    //
+    // ⚠️ Falla hacia el mensaje de siempre: si esto revienta o el término no
+    // está en el diccionario, se responde lo que se respondía antes.
+    const conocido = database.marketplaceKnownTerm
+      ? await database.marketplaceKnownTerm(text).catch(() => null)
+      : null
+    // Sin locales: se apunta igual, y con la categoría que se entendió si la
+    // hay. «La gente pide internacional y no tienes ninguno» es demanda.
+    apuntarPaso(deps, {
+      customerId: customer.id, tipo: 'busqueda', consulta: text, resultados: 0,
+      categoryCode: conocido?.code ?? null,
+    })
+    if (conocido) {
+      const portada = verCategorias(contexto.categorias, 0)
+      const aviso = {
+        ...portada,
+        reply: `😔 Todavía no tenemos *${conocido.label}* por aquí.\n\n`
+          + `Esto es lo que sí puedes pedir hoy 👇`,
+      }
+      deps.logger?.log(`🔎 [marketplace] «${text}» → ${conocido.label}, sin locales`)
+      await guardar(deps, customer.id, contexto.version, aviso, { soltarLocal: false })
+      await send(aviso.reply, aviso.options)
+      return
+    }
+  }
+
+  await guardar(deps, customer.id, contexto.version, respuesta, { soltarLocal: false })
+  await send(respuesta.reply, respuesta.options)
+}
+
+/**
+ * MENÚ: la salida de cualquier sitio, y se comprueba antes que nada.
+ *
+ * Devuelve `true` cuando el mensaje era MENÚ y ya se contestó.
+ *
+ * ⚠️ Extraída de `handleMarketplaceMessage` el 2026-09-19 sin cambiar una
+ * decisión. Que se compruebe ANTES que todo lo demás es la regla que sostiene
+ * el resto: es lo único que siempre funciona, se esté donde se esté.
+ */
+async function atenderComandoMenu(
+  deps: MarketplaceEntryDeps,
+  text: string,
+  customer: { id: string; name: string | null },
+  contexto: {
+    vista: MarketplaceView
+    estado: { negocio: { name: string; slug: string } | null; bloqueado: boolean; esperandoComprobante: boolean }
+    categorias: MarketplaceCategory[]
+    negocioElegidoId: string | null | undefined
+    estadoDeLaConversacion: string | null | undefined
+    version: number | undefined
+  },
+): Promise<boolean> {
+  const { send } = deps
+  if (!esComandoMenu(text)) return false
+
+    // ⚠️ SEGUNDO MENÚ = SÍ, y esto arregla un bucle real (2026-08-23).
+    //
+    // El muro de «un pedido a la vez» dice literalmente «escribe *MENÚ*». El
+    // cliente lo escribe, se le pregunta si tira su pedido… y como MENÚ se
+    // comprueba antes que la vista, escribirlo otra vez volvía a preguntar lo
+    // mismo. Para siempre. El dueño lo vivió: «sigue enviando y enviando lo
+    // mismo».
+    //
+    // Pedir el menú DOS VECES no es una respuesta ambigua: es la misma
+    // petición repetida. La regla de no decidir por él sigue en pie para todo
+    // lo demás —cualquier otro texto vuelve a preguntar—, porque tirar un
+    // carrito es lo único que no tiene vuelta atrás.
+    if (contexto.vista.vista === 'confirmando_reinicio') {
+      // ⚠️ También aquí se cancela. Escribir MENÚ dos veces es la OTRA puerta
+      // para abandonar —«✅ Empezar de nuevo» normaliza a un COMANDO_MENU, así
+      // que el botón entra por aquí, no por el paso 2—. Si solo cancelara una
+      // de las dos, la mitad de los abandonos avisados seguirían caducando y
+      // sumando falta.
+      await abandonarPedido(deps, contexto.negocioElegidoId, customer.id)
+      await matarEnlaceAnterior(deps, customer.id, contexto.estadoDeLaConversacion)
+      // 'vuelta': vuelve al inicio a propósito, igual que `responderAlMenu`.
+      const respuesta = verCategorias(contexto.categorias, 0, 'vuelta')
+      await guardar(deps, customer.id, contexto.version, respuesta, {
+        soltarLocal: true,
+      })
+      await send(respuesta.reply, respuesta.options)
+      return true
+    }
+    // ⚠️ MENÚ suelta SIEMPRE, y cancela lo que hubiera sin pagar (2026-09-05).
+    //
+    // Ya no hay una rama que pregunte: `responderAlMenu` devuelve las
+    // categorías pase lo que pase. Escribir MENÚ es avisar de que se deja el
+    // pedido, y avisar no puede costar una falta — por eso se cancela en vez
+    // de dejarlo caducar, igual que hace «✅ Empezar de nuevo».
+    await abandonarPedido(deps, contexto.negocioElegidoId, customer.id)
+    // ⚠️ LOS DOS CAMINOS de MENÚ revocan, y conectar solo uno dejaría la mitad
+    // de los MENÚ con el enlace vivo: aquí entra el MENÚ escrito, y arriba el
+    // que llega estando en la pregunta de reinicio —donde además cae el botón
+    // «✅ Empezar de nuevo», porque su texto normaliza a un COMANDO_MENU—.
+    await matarEnlaceAnterior(deps, customer.id, contexto.estadoDeLaConversacion)
+    const respuesta = responderAlMenu(contexto.estado, contexto.categorias)
+    await guardar(deps, customer.id, contexto.version, respuesta, {
+      soltarLocal: true,
+    })
+    await send(respuesta.reply, respuesta.options)
+    return true
+  
+
+  return true
+}
+
+/**
+ * La respuesta a «¿tiro tu pedido?»: o lo reinicia, o le devuelve su enlace.
+ *
+ * Devuelve `true` cuando estaba en esa pregunta y ya se contestó.
+ *
+ * ⚠️ Extraída de `handleMarketplaceMessage` el 2026-09-19 sin cambiar una
+ * decisión. Las dos ramas revocan o conservan el enlace de forma distinta, y
+ * ese reparto es lo que aquí no se puede tocar.
+ */
+async function atenderConfirmacionDeReinicio(
+  deps: MarketplaceEntryDeps,
+  from: string,
+  text: string,
+  customer: { id: string; name: string | null },
+  contexto: {
+    vista: MarketplaceView
+    estado: { negocio: { name: string; slug: string } | null; bloqueado: boolean; esperandoComprobante: boolean }
+    categorias: MarketplaceCategory[]
+    negocioElegidoId: string | null | undefined
+    esperandoComprobante: boolean
+    estadoDeLaConversacion: string | null | undefined
+    version: number | undefined
+  },
+): Promise<boolean> {
+  const { send } = deps
+  if (contexto.vista.vista === 'confirmando_reinicio') {
+    const { reinicia, continua, respuesta } = resolverReinicio(text, contexto.estado, contexto.categorias)
+
+    if (reinicia) {
+      await abandonarPedido(deps, contexto.negocioElegidoId, customer.id)
+      // ⚠️ Y SE REVOCA, igual que en las dos ramas de MENÚ (2026-09-17). Este
+      // es el camino REAL del botón «✅ Empezar de nuevo»: con YCloud llega su
+      // NÚMERO («1»), no su título, y «1» no es un comando de MENÚ. Se creía
+      // que el botón entraba por arriba —la prueba mandaba el título—, así que
+      // en producción el enlace seguía abriendo la carta después de reiniciar.
+      await matarEnlaceAnterior(deps, customer.id, contexto.estadoDeLaConversacion)
+    }
+
+    await guardar(deps, customer.id, contexto.version, respuesta, {
+      soltarLocal: reinicia,
+      // ⚠️ Mientras NO reinicie, el estado del pago se conserva: si se pisara
+      // con 'navegando', el «Seguir mi pedido» siguiente volvería a decir
+      // «termínalo» a quien ya pidió. Al reiniciar da igual — el local se
+      // suelta entero.
+      conservarEstado: !reinicia
+        && (contexto.estadoDeLaConversacion === 'esperando_comprobante'
+          || contexto.estadoDeLaConversacion === 'pago_en_revision'),
+    })
+    // ⚠️ «Seguir mi pedido» DEVUELVE EL ENLACE (2026-09-03).
+    //
+    // Hasta ahora contestaba «Termina tu pedido cuando quieras 👍» y nada más:
+    // una calle sin salida para quien escribió MENÚ justamente porque no
+    // encontraba su enlace —lo borró, lo perdió entre mensajes, cambió de
+    // teléfono—. Sus dos opciones eran tirar el pedido o seguir sin poder
+    // entrar.
+    //
+    // Es la salida que el dueño puso como condición del enlace estricto:
+    // «escribes MENÚ y listo». Sin esto, «estricto» sería una trampa.
+    //
+    // ⚠️ Emitirlo NO le mata la sesión que ya tenga abierta: la revocación
+    // respeta el local vigente a propósito, o recargar con un token nuevo le
+    // vaciaría el carrito.
+    // ⚠️ A quien DEBE el comprobante NO se le manda el enlace (2026-09-04).
+    //
+    // El botón dice «Ver la carta», y esa es exactamente la invitación
+    // equivocada: esta persona no puede pedir nada más hasta cerrar lo que ya
+    // pidió. El dueño lo dijo probándolo: «no debería darme la opción de ver
+    // la carta porque tengo que completar el pedido para hacer otro».
+    //
+    // ⚠️ No la deja sin nada: su enlace SIGUE VIVO —está unos mensajes más
+    // arriba en el mismo chat, y la revocación respeta el local vigente— y los
+    // datos para transferir viven ahí. Lo único que se retira es la invitación
+    // a seguir mirando, que es lo que sobra.
+    //
+    // El enlace SÍ se manda a quien está a medio armar el carrito: ahí volver
+    // a la carta es justo lo que necesita.
+    if (continua && contexto.negocioElegidoId && !contexto.esperandoComprobante) {
+      await devolverElEnlace(
+        deps, customer, from, contexto.negocioElegidoId, respuesta,
+      )
+      return true
+    }
+    await send(respuesta.reply, respuesta.options)
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Un pedido a la vez: a quien ya está pidiendo se le recuerda dónde, en vez de
+ * enseñarle el menú.
+ *
+ * Devuelve `true` cuando el candado estaba puesto y ya se contestó.
+ *
+ * ⚠️ Extraída de `handleMarketplaceMessage` el 2026-09-19 sin cambiar una
+ * decisión. Es una regla de DINERO: dos pedidos abiertos a la vez en locales
+ * distintos es exactamente lo que impide.
+ */
+async function atenderCandado(
+  deps: MarketplaceEntryDeps,
+  text: string,
+  contexto: {
+    customerId: string
+    bloqueado: boolean
+    negocio: { name: string } | null
+    estadoDeLaConversacion: string | null | undefined
+    version: number | undefined
+    aMediasEnElChatViejo: boolean
+  },
+): Promise<boolean> {
+  const { send } = deps
+  if (contexto.bloqueado && contexto.negocio) {
+    // ⚠️ Dos textos, porque son dos situaciones. Quien está a medio armar su
+    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
+    // tiene que mandar una FOTO. Decirle «termínalo» al segundo lo deja
+    // buscando un menú que ya completó.
+    // ⚠️ TRES mensajes, no dos (2026-08-30). Quien está a medio armar su
+    // pedido tiene que TERMINARLO; quien ya lo hizo y debe la transferencia
+    // tiene que mandar una FOTO; y quien YA la mandó no tiene que hacer nada
+    // —solo esperar—. Decirle «mándanos la foto» a quien acaba de mandarla, o
+    // «termínalo» a un pedido terminado, suena a que el bot no se enteró.
+    const respuesta = contexto.estadoDeLaConversacion === 'pago_en_revision'
+      ? recordarPagoEnRevision({ name: contexto.negocio.name })
+      : contexto.estadoDeLaConversacion === 'esperando_comprobante'
+        ? recordarComprobantePendiente({ name: contexto.negocio.name })
+        // ⚠️ `en_local` = el enlace ya salió y NO hay pedido todavía. Sin
+        // esto el mensaje decía «tienes un pedido en proceso» a quien acababa
+        // de recibir la carta, que es sencillamente falso.
+        : recordarPedidoEnProceso(
+          { name: contexto.negocio.name },
+          contexto.estadoDeLaConversacion === 'en_local' || contexto.aMediasEnElChatViejo,
+        )
+    // ⚠️ GUARDAR, no solo enviar (2026-08-24). Era la ÚNICA rama que respondía
+    // sin persistir su vista, y el efecto no era cosmético: la respuesta ofrece
+    // «✅ Empezar de nuevo», y ese texto normalizado es uno de los
+    // `COMANDOS_MENU`. Sin la vista guardada, tocar ese botón se leía como MENÚ
+    // con la vista ANTERIOR, así que volvía a PREGUNTAR en vez de reiniciar y
+    // el cliente tenía que tocarlo dos veces —lo vivió el dueño—. Lo único que
+    // evitaba que fuera un bucle infinito era el parche «segundo MENÚ = SÍ»,
+    // que lo disfrazó de molestia cosmética en vez de dejarlo a la vista.
+    //
+    // ⚠️ `soltarLocal: false`: aquí solo se PREGUNTA. El carrito y el local
+    // siguen donde estaban hasta que el cliente confirme — tirar un carrito es
+    // lo único que no tiene vuelta atrás.
+    // ⚠️ SE NOMBRA LO QUE LLEGÓ, y solo aquí (2026-09-03). El dueño mandó una
+    // foto teniendo local elegido y recibió «Estás pidiendo en Monster Pizza»,
+    // que es cierto pero no dice nada de su foto: se queda sin saber si llegó,
+    // si servía, o si acaba de pagar sin querer.
+    //
+    // ⚠️ NO se aplica a quien DEBE un comprobante ni a quien lo tiene en
+    // revisión, y ese corte es el punto: ahí una foto es justo lo que se
+    // espera. Si una llega hasta aquí en ese estado es porque el buzón no pudo
+    // procesarla, y decirle «esto no es un comprobante» sería lo contrario de
+    // la verdad. Esos dos casos conservan su mensaje intacto.
+    const adjunto = contexto.estadoDeLaConversacion !== 'esperando_comprobante'
+      && contexto.estadoDeLaConversacion !== 'pago_en_revision'
+      ? textoDeAdjuntoRecibido(text)
+      : null
+    const conAviso = adjunto
+      ? { ...respuesta, reply: `${adjunto}\n\n${respuesta.reply}` }
+      : respuesta
+
+    await guardar(deps, contexto.customerId, contexto.version, conAviso, {
+      soltarLocal: false,
+      // ⚠️ El estado del PAGO no se pisa. `guardar` escribe 'navegando' salvo
+      // en la confirmación de reinicio, y eso borraría el
+      // `pago_en_revision` que puso el disparador al llegar el comprobante —
+      // con él perdido, el siguiente mensaje volvería a decir «termínalo» a
+      // alguien que ya pagó.
+      // ⚠️ Los DOS estados que pone la BASE, no solo el de revisión: sin
+      // conservar `esperando_comprobante`, el primer recordatorio lo borraba y
+      // el «Seguir mi pedido» siguiente volvía a decir «termínalo».
+      conservarEstado: contexto.estadoDeLaConversacion === 'pago_en_revision'
+        || contexto.estadoDeLaConversacion === 'esperando_comprobante',
+    })
+    await send(conAviso.reply, conAviso.options)
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Los marcadores que deja el webhook tras procesar una captura de pago.
+ *
+ * Devuelve `true` cuando el mensaje era uno de ellos y ya se contestó.
+ *
+ * ⚠️ Se extrajo de `handleMarketplaceMessage` el 2026-09-19 sin tocar una sola
+ * decisión: el orden entre los cuatro marcadores se conserva exacto, y es lo
+ * único que aquí no se puede reordenar.
+ */
+async function atenderComprobante(
+  deps: MarketplaceEntryDeps,
+  text: string,
+  contexto: {
+    customerId: string
+    version: number | undefined
+    categorias: MarketplaceCategory[]
+  },
+): Promise<boolean> {
+  const { send } = deps
+  const { categorias } = contexto
+  //
+  // ⚠️ Estos textos NO los escribió el cliente: los pone el webhook después de
+  // haber subido y adjuntado (o rechazado) su captura. Si cayeran al menú se
+  // tratarían como una BÚSQUEDA, y quien acaba de pagar recibiría «no
+  // encontramos locales para [el cliente envió su comprobante…]».
+  //
+  // ⚠️ Va detrás de MENÚ para no romper la regla de que MENÚ se comprueba
+  // antes que nada, aunque ninguno de estos marcadores pueda confundirse con
+  // él. Y NO toca el estado de la conversación: el carrito, el local elegido y
+  // la vista se quedan exactamente donde estaban.
+  // ⚠️ El que NO CUADRA va PRIMERO, y el orden importa: su marcador contiene
+  // «un pago que no corresponde a este pedido», que no lleva la subcadena de
+  // `esComprobante`, pero dejarlo detrás sería confiar en esa separación para
+  // siempre. Aquí el error caro es decirle «recibimos tu comprobante» a quien
+  // pagó a otra cuenta: se iría a esperar una comida que nadie va a preparar.
+  if (esComprobanteQueNoCuadra(text)) {
+    await send(respuestaComprobanteNoCuadra(motivoDelDescuadre(text)), [])
+    return true
+  }
+  if (esComprobante(text)) {
+    // Con el análisis encendido y todo cuadrando se le dice, porque es lo que
+    // de verdad tranquiliza mientras el dueño mira. Sin análisis, el de
+    // siempre.
+    await send(
+      comprobanteCuadra(text) ? RESPUESTA_COMPROBANTE_CUADRA : RESPUESTA_COMPROBANTE,
+      [],
+    )
+    return true
+  }
+  if (esFotoQueNoEsComprobante(text)) {
+    // ⚠️ La consecuencia viaja DENTRO del marcador, igual que los nombres del
+    // comprobante ambiguo: quien lo escribió ya consultó la base, y volver a
+    // consultarla aquí sería pagar dos veces por el mismo dato.
+    //
+    // Sin cola —los marcadores que ya circulaban antes de esto— la respuesta
+    // es exactamente la de siempre.
+    const rechazo = rechazoDelMarcador(text)
+
+    // ⚠️ AL BLOQUEAR, se ofrecen las DEMÁS CATEGORÍAS (2026-09-02).
+    //
+    // El mensaje ya decía «mientras tanto puedes pedir en los demás locales» y
+    // no daba ninguno: el cliente leía una salida que no podía tomar. El dueño
+    // lo pidió con estas palabras: «que me salgan las demás categorías, porque
+    // sí puedo pedir en otros locales».
+    //
+    // ⚠️ Se puede porque el bloqueo es del LOCAL, no de la plataforma. Y se
+    // puede AHORA porque al bloquear se expira su pedido, así que ya no queda
+    // nada retenido — antes de eso, ofrecerle categorías lo habría llevado
+    // contra el muro de «tienes un pedido en proceso».
+    //
+    // ⚠️ Con opciones hay que GUARDAR la vista, o tocar una categoría se lee
+    // con la vista anterior y el cliente tiene que tocarla dos veces. Es el
+    // fallo del 2026-08-24, y aquí volvería a entrar por esta puerta.
+    if (rechazo?.blocked) {
+      const portada = verCategorias(categorias, 0)
+      const respuesta = {
+        ...portada,
+        reply: `${respuestaNoEsComprobante(rechazo)}\n\n${portada.reply}`,
+      }
+      await guardar(deps, contexto.customerId, contexto.version, respuesta, {
+        soltarLocal: true,
+      })
+      await send(respuesta.reply, respuesta.options)
+      return true
+    }
+
+    await send(respuestaNoEsComprobante(rechazo), [])
+    return true
+  }
+  if (esComprobanteAmbiguo(text)) {
+    // Los nombres viajan dentro del propio marcador: quien lo escribió ya
+    // consultó la base, y volver a consultarla sería pagar dos veces por la
+    // misma respuesta. Es el mismo desempaquetado que hace `bot-conversation`.
+    const locales = String(text).split(': ').slice(1).join(': ').replace(/\]$/, '')
+    await send(
+      preguntaDeQueLocal(
+        locales.split(' / ').filter(Boolean).map(businessName => ({
+          orderId: '', orderNumber: null, businessName,
+        })),
+      ),
+      [],
+    )
+    return true
+  }
+
+  return false
 }
 
 /**

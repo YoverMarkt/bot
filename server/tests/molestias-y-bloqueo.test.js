@@ -327,8 +327,12 @@ describe('el marketplace tiene techo de gasto y honra el bloqueo', () => {
   // techo fuera después bastaría con escribir «MENÚ» sin parar para tener
   // respuestas gratis para siempre.
   it('reclama el techo antes de decidir qué contestar', () => {
+    // ⚠️ Buscaba `if (esComandoMenu(text))`, que el 2026-09-19 se mudó dentro
+    // de `atenderComandoMenu`. El orden que vigila NO cambió —el techo se
+    // sigue reclamando antes—, pero la cadena sí, y eso lo dejaba en -1: un
+    // guardián que no encuentra lo que busca tiene que fallar, y falló.
     const techo = fuente.indexOf('claimMarketplaceReply(customer.id')
-    const menu = fuente.indexOf('if (esComandoMenu(text))')
+    const menu = fuente.indexOf('await atenderComandoMenu(deps, text')
     expect(techo).toBeGreaterThan(-1)
     expect(menu).toBeGreaterThan(-1)
     expect(techo).toBeLessThan(menu)

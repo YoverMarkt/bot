@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const { handleMarketplaceMessage } = require('../dist/services/marketplace-entry')
@@ -455,5 +456,55 @@ describe('escribir algo que no está en el menú', () => {
     await escribir(m.deps, 'zapatos de tacón')
 
     expect(m.enviados.length).toBeGreaterThan(0)
+  })
+})
+
+// ── EL ORDEN DE LAS PUERTAS, QUE ES LA LÓGICA ───────────────────────────────
+
+describe('guardián: el orden de las puertas', () => {
+  const fuente = readFileSync(
+    new URL('../src/services/marketplace-entry.ts', import.meta.url), 'utf8',
+  )
+
+  it('cada puerta se consulta donde tiene que consultarse', () => {
+    // ⚠️ ESTE ORDEN ES LA LÓGICA DE LA PUERTA, no una casualidad de cómo se
+    // escribió. Sus propios comentarios lo dicen: «va ANTES que MENÚ», «el
+    // orden importa», «va detrás de MENÚ». Hasta el 2026-09-19 vivía implícito
+    // en 536 líneas seguidas, donde nadie podía comprobarlo; ahora está aquí.
+    //
+    // Si hace falta mover una puerta, esta prueba tiene que cambiar A MANO y
+    // con su motivo escrito. Que falle es justo lo que se quiere.
+    const puertas = [
+      // El bloqueo de plataforma y el techo van primero: ni se cuenta ni se
+      // contesta a quien no debe recibir respuesta.
+      'isPlatformBlocked',
+      'claimMarketplaceReply(customer.id',
+      // MENÚ, que es la salida de cualquier sitio.
+      'atenderComandoMenu(deps, text',
+      // Los marcadores del webhook, detrás de MENÚ.
+      'atenderComprobante(deps, text',
+      // La respuesta a «¿tiro tu pedido?», antes del candado que la provocó.
+      'atenderConfirmacionDeReinicio(deps, from, text',
+      // El candado de «un pedido a la vez».
+      'atenderCandado(deps, text',
+      // Y el menú, al final: todo lo de arriba tiene prioridad sobre él.
+      'recorrerElMenu(deps, from, text',
+    ]
+
+    const posiciones = puertas.map(puerta => fuente.indexOf(puerta))
+    puertas.forEach((puerta, i) => {
+      expect(posiciones[i], `no encuentro «${puerta}» en el orquestador`).toBeGreaterThan(-1)
+    })
+    expect(posiciones, 'las puertas están desordenadas')
+      .toEqual([...posiciones].sort((a, b) => a - b))
+  })
+
+  it('el orquestador sigue cabiendo en una pantalla y media', () => {
+    // Era de 536 líneas. Esta prueba no persigue una cifra bonita: persigue que
+    // nadie vuelva a meterle un paso entero dentro en vez de sacarlo aparte.
+    const inicio = fuente.indexOf('export async function handleMarketplaceMessage(')
+    const cuerpo = fuente.slice(inicio)
+    const lineas = cuerpo.slice(0, cuerpo.indexOf('\n}\n')).split('\n').length
+    expect(lineas).toBeLessThan(250)
   })
 })
