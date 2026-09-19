@@ -39,6 +39,20 @@ describe('en producción no se pinta nada', () => {
   })
 })
 
+describe('una BASE_URL local no apaga la franja', () => {
+  it('con BASE_URL a localhost sigue diciendo STAGING', () => {
+    // El staging necesita BASE_URL para armar el enlace de la tienda. Si eso
+    // apagara la etiqueta, la copia con datos falsos se vería igual que la
+    // tienda de verdad — que es exactamente lo que la franja viene a evitar.
+    const aviso = franja.avisoDeEntorno({
+      BASE_URL: 'http://localhost:3100',
+      SUPABASE_URL: LOCAL,
+    })
+    expect(aviso).not.toBeNull()
+    expect(aviso.texto).toContain('STAGING')
+  })
+})
+
 describe('fuera de producción, la etiqueta dice cuál de los dos casos es', () => {
   it('base local: staging, datos de mentira', () => {
     const aviso = franja.avisoDeEntorno({ SUPABASE_URL: LOCAL })

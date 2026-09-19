@@ -191,8 +191,11 @@ function entornoDeStaging() {
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
     PORT: PUERTO,
-    // Sin BASE_URL a propósito: así no se registra ningún webhook en ningún
-    // sitio ni se levanta el túnel.
+    // ⚠️ SÍ lleva BASE_URL, y apuntando aquí mismo: sin ella no se puede armar
+    // el enlace de la tienda y elegir un local contesta «no pude abrir la
+    // tienda». Que apunte a localhost es justo lo que hace que
+    // `isProductionEnvironment` siga diciendo que esto NO es producción.
+    BASE_URL: BASE,
     UMBANI_ENTORNO: 'staging',
   }
 }
@@ -224,10 +227,41 @@ grant all on schema public to postgres;
   psql(['-q'], readFileSync(path.join(servidor, 'schema.sql'), 'utf8'))
   console.log('   ✅ schema.sql aplicado')
 
+  // ⚠️ Y SE DEVUELVEN LOS PERMISOS. Al vaciar el esquema se van también los
+  // `grant` que Supabase concede de fábrica a sus roles, y sin ellos el
+  // servidor arranca, contesta `/api/health` en verde… y todo lo que toque la
+  // base falla con «permission denied for table customers». Verde por fuera y
+  // muerto por dentro, que es la peor forma de estar roto.
+  //
+  // Esto reproduce lo que hace Supabase en un proyecto nuevo. El aislamiento
+  // real lo siguen poniendo las políticas RLS de `schema.sql`.
+  psql(['-q'], `
+grant all on all tables    in schema public to postgres, anon, authenticated, service_role;
+grant all on all functions in schema public to postgres, anon, authenticated, service_role;
+grant all on all sequences in schema public to postgres, anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on tables    to postgres, anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to postgres, anon, authenticated, service_role;
+`)
+  console.log('   ✅ permisos de Supabase devueltos')
+
   const bcrypt = require('bcryptjs')
   const plantillas = require(path.join(servidor, 'dist/services/business-templates.js'))
-  const tipos = plantillas.businessTypesWithTemplate()
-  const tipo = tipos.find(t => /comida|restaurante|food/i.test(t)) || tipos[0]
+  // ⚠️ EL TIPO SALE DEL CATÁLOGO DEL MARKETPLACE, con su tilde.
+  //
+  // `businessTypesWithTemplate()` los nombra SIN tildes (`pizzeria`), mientras
+  // que `marketplace_category_types` —la tabla que decide en qué cajón entra un
+  // local— los tiene CON tilde (`pizzería`). No es un fallo: buscar la
+  // plantilla normaliza acentos, así que las dos formas encuentran la suya.
+  //
+  // Pero el `type` que se GUARDA es el que usa el marketplace para asignar
+  // cajón, y sembrando con la forma sin tilde el local nacía fuera de toda
+  // categoría: el menú contestaba «ahora mismo no hay locales disponibles» con
+  // el local ahí, invisible. Producción usa `pizzería`, y esto también.
+  const tipo = 'pizzería'
   const plantilla = JSON.stringify(plantillas.templateForBusinessType(tipo))
 
   console.log(`🌱 Sembrando «${SLUG}» (tipo: ${tipo})…`)
@@ -241,8 +275,15 @@ begin
 
   -- 'marketplace': sin canal propio, lo atiende el número de la plataforma.
   -- Es lo que son hoy todos los locales de verdad.
-  insert into businesses (slug, name, type, whatsapp_provider, takes_orders, active)
-  values (${literal(SLUG)}, 'Local de Pruebas', ${literal(tipo)}, 'marketplace', true, true)
+  -- ⚠️ storefront_enabled en true: un local nace con la TIENDA APAGADA y la
+  -- enciende el superadmin. Sin encenderla aquí, el menú del marketplace no lo
+  -- lista —marketplace_categories_disponibles() solo cuenta los que pueden
+  -- vender— y el chat contesta «ahora mismo no hay locales disponibles» con el
+  -- local sembrado y en su cajón, invisible.
+  insert into businesses (slug, name, type, whatsapp_provider, takes_orders, active,
+                          storefront_enabled)
+  values (${literal(SLUG)}, 'Local de Pruebas', ${literal(tipo)}, 'marketplace', true, true,
+          true)
   returning id into v_negocio;
 
   v_resultado := public.apply_business_template(v_negocio, ${literal(plantilla)}::jsonb);
@@ -253,6 +294,19 @@ begin
   -- El ejemplo nace AGOTADO en el alta real, porque su precio es inventado.
   -- Aquí sí queremos poder comprarlo: es lo que se viene a probar.
   update products set stock = 'disponible' where business_id = v_negocio;
+
+  -- Sin cajón el local NO EXISTE para el cliente: el menú del marketplace se
+  -- arma desde las categorías, no desde la tabla businesses. Es lo mismo que hace el
+  -- superadmin al dar de alta un local de verdad.
+  insert into business_marketplace_categories (business_id, category_id, principal)
+  select v_negocio, t.category_id, true
+    from marketplace_category_types t
+   where t.business_type = ${literal(tipo)}
+   limit 1;
+
+  if not found then
+    raise exception 'El tipo «%» no está en marketplace_category_types: el local nacería invisible', ${literal(tipo)};
+  end if;
 
   insert into client_users (business_id, email, password_hash, name, role)
   values (v_negocio, ${literal(DUENO_EMAIL)}, ${literal(bcrypt.hashSync(DUENO_CLAVE, 10))},

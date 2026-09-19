@@ -49,6 +49,38 @@ describe('en producción no se toca nada', () => {
   })
 })
 
+describe('una BASE_URL local NO es producción', () => {
+  // ⚠️ El staging necesita `BASE_URL` para poder ARMAR el enlace de la tienda:
+  // sin ella, elegir un local contesta «no pude abrir la tienda». Pero si eso
+  // lo convirtiera en producción, se apagaría la franja «STAGING» y el freno
+  // dejaría de mirar — el entorno de mentira se disfrazaría del de verdad.
+  it('con la base local, las tareas corren pero NO por ser producción', () => {
+    const decision = freno.decidirTareasDeFondo({
+      BASE_URL: 'http://localhost:3100',
+      SUPABASE_URL: LOCAL,
+    })
+    expect(decision.permitido).toBe(true)
+    expect(decision.motivo).toContain('local')
+    expect(decision.motivo).not.toContain('producción')
+  })
+
+  it('con la base REMOTA, el freno sigue actuando aunque haya BASE_URL local', () => {
+    const decision = freno.decidirTareasDeFondo({
+      BASE_URL: 'http://127.0.0.1:3100',
+      SUPABASE_URL: PRODUCCION,
+    })
+    expect(decision.permitido).toBe(false)
+  })
+
+  it('el dominio de Railway SÍ es producción', () => {
+    const decision = freno.decidirTareasDeFondo({
+      BASE_URL: 'https://web-production-3433c.up.railway.app',
+      SUPABASE_URL: PRODUCCION,
+    })
+    expect(decision.motivo).toBe('producción')
+  })
+})
+
 describe('en local contra la base REAL, el freno actúa', () => {
   it('no arranca nada', () => {
     const decision = freno.decidirTareasDeFondo({ SUPABASE_URL: PRODUCCION })
