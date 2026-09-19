@@ -88,14 +88,34 @@ const psql = (args, entrada) => execFileSync('docker', [
   maxBuffer: 64 * 1024 * 1024,
 })
 
-function exigirQueEsteLevantado() {
-  try {
-    psql(['-tAc', 'select 1'])
-  } catch {
-    console.error('\n❌ El Supabase local no responde.')
-    console.error('   Levántalo con:  npm run staging:up\n')
-    process.exit(1)
+/**
+ * Espera a que la base acepte consultas, en vez de rendirse al primer intento.
+ *
+ * ⚠️ Nace de una fricción diaria: al arrancar Docker, el contenedor de la base
+ * tarda medio minuto en estar sano y `supabase start` corta con «container is
+ * not ready: starting». No es un error —es prisa—, pero dejaba `staging:up` en
+ * rojo y había que reintentar a mano cada mañana.
+ */
+function esperarALaBase({ intentos = 40 } = {}) {
+  for (let i = 0; i < intentos; i++) {
+    try {
+      psql(['-tAc', 'select 1'])
+      return true
+    } catch {
+      if (i === 0) process.stdout.write('   esperando a la base')
+      else process.stdout.write('.')
+      execFileSync('sleep', ['3'])
+    }
   }
+  console.error('\n\n❌ El Supabase local no responde.')
+  console.error('   ¿Está Docker corriendo?  Levántalo con:  npm run staging:up\n')
+  process.exit(1)
+}
+
+function exigirQueEsteLevantado() {
+  const inicio = Date.now()
+  esperarALaBase()
+  if (Date.now() - inicio > 3000) console.log(' listo')
 }
 
 /**
@@ -370,11 +390,27 @@ function humo() {
   hijo.on('exit', codigo => process.exit(codigo ?? 0))
 }
 
-const comandos = { preparar, servidor: arrancarServidor, humo }
+/**
+ * `supabase start` + sembrar, tolerando que Docker acabe de arrancar.
+ */
+function levantar() {
+  console.log('🐳 Levantando Supabase…')
+  try {
+    execFileSync('supabase', ['start'], { cwd: raiz, stdio: 'inherit' })
+  } catch {
+    // ⚠️ NO se aborta: `supabase start` corta con «container is not ready»
+    // cuando los contenedores ya existen y están subiendo. La base acaba
+    // respondiendo unos segundos después, y `preparar` la espera.
+    console.log('   (los contenedores siguen subiendo…)')
+  }
+  preparar()
+}
+
+const comandos = { levantar, preparar, servidor: arrancarServidor, humo }
 const comando = process.argv[2] || 'preparar'
 
 if (!comandos[comando]) {
-  console.error(`\n❌ No conozco «${comando}». Usa: preparar | servidor | humo\n`)
+  console.error(`\n❌ No conozco «${comando}». Usa: levantar | preparar | servidor | humo\n`)
   process.exit(1)
 }
 comandos[comando]()

@@ -17,7 +17,7 @@
     "test": "npm test -w @botpanel/server && npm test -w @botpanel/store",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
-    "staging:up": "supabase start && npm run staging:preparar -w @botpanel/server",
+    "staging:up": "node server/tests/staging.mjs levantar",
     "staging:down": "supabase stop",
     "staging:reset": "supabase db reset --no-seed && npm run staging:preparar -w @botpanel/server"
   },
