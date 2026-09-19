@@ -314,6 +314,13 @@ begin
 end $$;
 `)
 
+  // ⚠️ El menú va APARTE, en `menu-de-pruebas.sql`. La plantilla del alta deja
+  // un local con su producto de ejemplo, que sirve para comprobar que el alta
+  // funciona pero no para probar la tienda: sin categorías ni opciones no hay
+  // nada que le exija nada al motor. Ese archivo pone una pizzería completa.
+  console.log('🍕 Montando el menú de la pizzería…')
+  psql(['-q'], readFileSync(path.join(aqui, 'menu-de-pruebas.sql'), 'utf8'))
+
   const [negocios, productos, usuarios] = psql(['-tAc', `
     select (select count(*) from businesses),
            (select count(*) from products),
