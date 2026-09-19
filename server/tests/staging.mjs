@@ -204,7 +204,23 @@ const literal = valor => `'${String(valor).replace(/'/g, "''")}'`
 function preparar() {
   exigirQueEsteLevantado()
 
-  console.log('\n📐 Aplicando el esquema…')
+  // ⚠️ SE EMPIEZA DE CERO, y no es por comodidad: `schema.sql` tiene
+  // `alter table … add constraint` que NO son idempotentes, así que
+  // reaplicarlo sobre una base ya poblada revienta con «constraint … already
+  // exists». La primera vez funciona y la segunda no — el peor tipo de
+  // comando, el que solo falla cuando ya confiabas en él.
+  //
+  // Vaciar es seguro AQUÍ porque la guardia de arriba ya se negó a correr
+  // contra nada que no sea una base local de esta máquina.
+  console.log('\n🧹 Vaciando la base de staging…')
+  psql(['-q'], `
+drop schema if exists public cascade;
+create schema public;
+grant usage on schema public to anon, authenticated, service_role;
+grant all on schema public to postgres;
+`)
+
+  console.log('📐 Aplicando el esquema…')
   psql(['-q'], readFileSync(path.join(servidor, 'schema.sql'), 'utf8'))
   console.log('   ✅ schema.sql aplicado')
 
