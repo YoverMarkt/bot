@@ -300,6 +300,17 @@ export async function handleMarketplaceMessage(
     return
   }
 
+  // ⚠️ ESTA CONSULTA NO LLEVA `.catch`, a diferencia de la de
+  // `devolverElEnlace`, y la asimetría es deliberada.
+  //
+  // Si aquí se fallara «abierto», `negocioActual` quedaría en `null`, el paso 4
+  // no entraría y quien tiene un pedido en curso podría abrir OTRO: el candado
+  // de «un pedido a la vez» se saltaría justo cuando la base no está para
+  // impedirlo. Propagando, el webhook reintenta cuando la base vuelve — no se
+  // pierde el mensaje y el candado aguanta.
+  //
+  // El «falla abierto» de arriba (el bloqueo de plataforma) sí vale, porque
+  // equivocarse ahí solo atiende a alguien a quien se debía ignorar.
   const negocioActual = conversation?.selected_business_id
     ? await database.getBusinessById(conversation.selected_business_id)
     : null

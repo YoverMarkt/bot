@@ -241,6 +241,13 @@ alta al levantarse. Las rutas, los paneles y el simulador siguen funcionando.
 
 Para hacerlo a propósito: `PERMITIR_TAREAS_CONTRA_PRODUCCION=si`.
 
+⚠️ **Apaga el staging antes de `npm run check`.** Con los contenedores de
+Supabase corriendo, la máquina se carga lo bastante como para que los workers
+de Vitest fallen al cerrarse (`EnvironmentTeardownError: Closing rpc while
+"onUserConsoleLog" was pending`) y el check termine en rojo **con las 2.897
+pruebas en verde**. No es un fallo del código: se comprobó que pasa igual sin
+cambios, y que desaparece al hacer `npm run staging:down`.
+
 ---
 
 ## 🌐 Despliegue a producción
