@@ -21,7 +21,32 @@ const hasValue = (env: NodeJS.ProcessEnv, key: string): boolean => (
   typeof env[key] === 'string' && Boolean(env[key]?.trim())
 )
 
+/** ¿Esta `BASE_URL` apunta a esta misma máquina? */
+const baseUrlLocal = (valor: string | undefined): boolean => {
+  if (!valor?.trim()) return false
+  try {
+    return ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']
+      .includes(new URL(valor).hostname)
+  } catch {
+    return false
+  }
+}
+
 export function isProductionEnvironment(env: NodeJS.ProcessEnv): boolean {
+  // ⚠️ Una `BASE_URL` que apunta a localhost NO es producción, y esto nació de
+  // un problema concreto (2026-09-19): el staging necesita `BASE_URL` para
+  // poder ARMAR el enlace de la tienda —sin ella, elegir un local contesta «no
+  // pude abrir la tienda»—, pero ponerla hacía que el proceso se creyera
+  // producción: se apagaba la franja «STAGING» y el freno dejaba de mirar.
+  //
+  // En producción real la URL es el dominio de Railway, así que esta condición
+  // no cambia nada allí.
+  if (baseUrlLocal(env.BASE_URL)) {
+    return env.NODE_ENV === 'production'
+      || hasValue(env, 'RAILWAY_ENVIRONMENT')
+      || hasValue(env, 'RAILWAY_ENVIRONMENT_NAME')
+  }
+
   return env.NODE_ENV === 'production'
     || hasValue(env, 'BASE_URL')
     || hasValue(env, 'RAILWAY_ENVIRONMENT')
