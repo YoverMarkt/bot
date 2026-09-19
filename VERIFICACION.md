@@ -195,6 +195,14 @@ mudo, o si el registro de errores tiene algo abierto.
 **No manda correos: termina en rojo**, y de eso se encarga GitHub. Cero cuentas
 y cero credenciales de envío que mantener.
 
+⚠️ **Distingue una CAÍDA de un aviso**, y no es cosmético. El primer aviso real
+que mandó decía «🔴 Producción ha caído» porque al número le quedaban 0,50 USD
+—con el bot vivo y vendiendo—, y un título que exagera se deja de leer: el día
+que se caiga de verdad parecerá uno más. Caída es no contestar, `ok:false` o la
+cola parada; lo demás —saldo, credenciales, canario, silencio— es «🟠 necesita
+atención». Y cada uno tiene su ritmo: la caída se recuerda cada **4 h**, la
+atención cada **24 h**, porque un saldo bajo puede llevar semanas ahí.
+
 ⚠️ **Lo que de verdad hubo que pensar es cuándo callarse.** Corriendo cada 15
 minutos, fallar siempre que algo va mal son 96 correos al día, y una alarma que
 suena 96 veces se apaga el primer día. Así que solo falla cuando la noticia es

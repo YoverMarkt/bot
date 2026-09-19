@@ -53,8 +53,15 @@
  */
 export const HORAS_DE_SILENCIO = 24
 
-/** Cada cuánto se repite el aviso mientras el problema siga ahí. */
+/**
+ * Cada cuánto se repite el aviso mientras el problema siga ahí.
+ *
+ * Dos ritmos, porque son dos urgencias distintas: si el bot está CAÍDO cada
+ * hora cuenta, pero un saldo bajo puede llevar semanas ahí —y de hecho lleva—,
+ * así que recordarlo cada 4 h sería el spam que este vigía existe para evitar.
+ */
 export const RECORDATORIO_MS = 4 * 60 * 60 * 1000
+export const RECORDATORIO_ATENCION_MS = 24 * 60 * 60 * 1000
 
 /** Cuánto se espera a que producción conteste antes de darla por caída. */
 const ESPERA_MS = 20_000
@@ -70,9 +77,19 @@ const ESPERA_MS = 20_000
  */
 export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENCIO }) {
   const motivos = []
+  // ⚠️ `caida` NO es lo mismo que «hay un problema», y confundirlos arruina la
+  // alarma. El primer aviso de verdad que mandó esto decía «🔴 Producción ha
+  // caído» porque al número le quedaban 0,50 USD — con el bot vivo y vendiendo.
+  // Un título que exagera se deja de leer, y el día que de verdad se caiga
+  // parecerá uno más.
+  let caida = false
 
   if (!salud) {
-    return { sano: false, motivos: ['Producción no contesta: el proceso puede estar caído.'] }
+    return {
+      sano: false,
+      caida: true,
+      motivos: ['Producción no contesta: el proceso puede estar caído.'],
+    }
   }
 
   // ⚠️ Contestar no es contestar TÚ. Con el servicio caído, el borde de Railway
@@ -82,6 +99,7 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
   if (typeof salud !== 'object' || !('webhook_inbox' in salud)) {
     return {
       sano: false,
+      caida: true,
       motivos: [
         'Contestó algo que no es nuestro `/api/health`: lo normal es que sea el '
         + 'proxy de Railway con el servicio caído, o una URL equivocada.',
@@ -90,12 +108,18 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
   }
 
   if (salud.ok !== true) {
+    caida = true
     motivos.push('`/api/health` responde que el proceso NO puede trabajar (`ok: false`).')
   }
 
   const cola = salud.webhook_inbox || {}
-  if (cola.running === false) motivos.push('La cola de webhooks no está corriendo.')
-  else if (cola.ready === false) motivos.push('La cola de webhooks no llega a la base.')
+  if (cola.running === false) {
+    caida = true
+    motivos.push('La cola de webhooks no está corriendo.')
+  } else if (cola.ready === false) {
+    caida = true
+    motivos.push('La cola de webhooks no llega a la base.')
+  }
 
   // El canario recorre el camino real del cliente cada 12 h. Si encontró algo,
   // significa que hoy NO se puede comprar, aunque el proceso esté vivo.
@@ -135,7 +159,7 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
     }
   }
 
-  return { sano: motivos.length === 0, motivos }
+  return { sano: motivos.length === 0, caida, motivos }
 }
 
 /**
@@ -144,30 +168,42 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
  * `anteriorFueFallo` y `ultimoFalloHaceMs` salen de la propia historia de
  * ejecuciones de este workflow: no se guarda estado en ningún sitio.
  */
-export function decidirAviso({ sano, anteriorFueFallo, ultimoFalloHaceMs }) {
+export function decidirAviso({ sano, caida = true, anteriorFueFallo, ultimoFalloHaceMs }) {
   if (sano) {
     return anteriorFueFallo
-      ? { avisar: false, tipo: 'recuperado' }
-      : { avisar: false, tipo: 'sigue-bien' }
+      ? { avisar: false, tipo: 'recuperado', caida }
+      : { avisar: false, tipo: 'sigue-bien', caida }
   }
-  if (!anteriorFueFallo) return { avisar: true, tipo: 'se-rompio' }
-  if (ultimoFalloHaceMs === null || ultimoFalloHaceMs >= RECORDATORIO_MS) {
-    return { avisar: true, tipo: 'recordatorio' }
+  if (!anteriorFueFallo) return { avisar: true, tipo: 'se-rompio', caida }
+  const espera = caida ? RECORDATORIO_MS : RECORDATORIO_ATENCION_MS
+  if (ultimoFalloHaceMs === null || ultimoFalloHaceMs >= espera) {
+    return { avisar: true, tipo: 'recordatorio', caida }
   }
-  return { avisar: false, tipo: 'sigue-roto' }
+  return { avisar: false, tipo: 'sigue-roto', caida }
 }
 
 const TITULOS = {
-  'se-rompio': '🔴 Producción ha caído',
-  recordatorio: '🔴 Producción SIGUE caída',
-  'sigue-roto': '🟠 Producción sigue caída (aviso ya enviado)',
-  recuperado: '🟢 Producción se ha recuperado',
-  'sigue-bien': '🟢 Producción en orden',
+  caida: {
+    'se-rompio': '🔴 Producción ha caído',
+    recordatorio: '🔴 Producción SIGUE caída',
+    'sigue-roto': '🟠 Producción sigue caída (aviso ya enviado)',
+    recuperado: '🟢 Producción se ha recuperado',
+    'sigue-bien': '🟢 Producción en orden',
+  },
+  atencion: {
+    'se-rompio': '🟠 Producción necesita atención',
+    recordatorio: '🟠 Producción SIGUE necesitando atención',
+    'sigue-roto': '🟡 Pendiente de atender (aviso ya enviado)',
+    recuperado: '🟢 Resuelto',
+    'sigue-bien': '🟢 Producción en orden',
+  },
 }
 
+export const tituloDe = (tipo, caida) => TITULOS[caida ? 'caida' : 'atencion'][tipo]
+
 /** El resumen que se lee en GitHub al abrir el run. */
-export function redactarResumen({ tipo, motivos, salud }) {
-  const lineas = [`## ${TITULOS[tipo]}`, '']
+export function redactarResumen({ tipo, motivos, salud, caida = true }) {
+  const lineas = [`## ${tituloDe(tipo, caida)}`, '']
 
   if (motivos.length) {
     lineas.push('### Qué se encontró', '')
@@ -193,8 +229,8 @@ export function redactarResumen({ tipo, motivos, salud }) {
 
   if (tipo === 'sigue-roto') {
     lineas.push(
-      '> El aviso ya se envió cuando esto empezó. Se repetirá pasadas 4 h '
-      + 'si el problema sigue ahí.',
+      '> El aviso ya se envió cuando esto empezó. Se repetirá pasadas '
+      + `${caida ? '4 h' : '24 h'} si el problema sigue ahí.`,
     )
   }
 
@@ -260,7 +296,7 @@ async function main() {
   const cuerpoSalud = salud.cuerpo
   // Un detalle que contestó 404 (sin token o sin desplegar) no es un problema:
   // se descarta y se sigue con lo que sí dijo `/api/health`.
-  const { sano, motivos } = evaluarSalud({
+  const { sano, caida, motivos } = evaluarSalud({
     salud: cuerpoSalud,
     detalle: detalle.ok ? detalle.cuerpo : null,
   })
@@ -276,8 +312,8 @@ async function main() {
     runActual: process.env.GITHUB_RUN_ID,
   })
 
-  const { avisar, tipo } = decidirAviso({ sano, ...previa })
-  const resumen = redactarResumen({ tipo, motivos, salud: cuerpoSalud })
+  const { avisar, tipo } = decidirAviso({ sano, caida, ...previa })
+  const resumen = redactarResumen({ tipo, motivos, salud: cuerpoSalud, caida })
 
   console.log(resumen)
   if (process.env.GITHUB_STEP_SUMMARY) {
@@ -286,7 +322,7 @@ async function main() {
   }
 
   if (avisar) {
-    console.error(`\n❌ ${TITULOS[tipo]} — se avisa.`)
+    console.error(`\n❌ ${tituloDe(tipo, caida)} — se avisa.`)
     process.exit(1)
   }
   console.log(`\n✅ Sin aviso nuevo (${tipo}).`)

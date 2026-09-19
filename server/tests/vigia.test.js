@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
 import {
   HORAS_DE_SILENCIO,
+  RECORDATORIO_ATENCION_MS,
   RECORDATORIO_MS,
   decidirAviso,
   evaluarSalud,
   redactarResumen,
+  tituloDe,
 } from '../../.github/scripts/vigia.mjs'
 
 const require = createRequire(import.meta.url)
@@ -32,7 +34,8 @@ const SANA = {
 
 describe('evaluarSalud', () => {
   it('da por sana una producción que va bien', () => {
-    expect(evaluarSalud({ salud: SANA, detalle: null })).toEqual({ sano: true, motivos: [] })
+    expect(evaluarSalud({ salud: SANA, detalle: null }))
+      .toEqual({ sano: true, caida: false, motivos: [] })
   })
 
   it('sin respuesta, la producción está caída', () => {
@@ -138,18 +141,18 @@ describe('evaluarSalud', () => {
 describe('decidirAviso — la regla que evita los 96 correos al día', () => {
   it('avisa cuando algo que estaba bien se rompe', () => {
     expect(decidirAviso({ sano: false, anteriorFueFallo: false, ultimoFalloHaceMs: null }))
-      .toEqual({ avisar: true, tipo: 'se-rompio' })
+      .toMatchObject({ avisar: true, tipo: 'se-rompio' })
   })
 
   it('se calla mientras siga roto y el aviso sea reciente', () => {
     const haceUnaHora = 60 * 60 * 1000
     expect(decidirAviso({ sano: false, anteriorFueFallo: true, ultimoFalloHaceMs: haceUnaHora }))
-      .toEqual({ avisar: false, tipo: 'sigue-roto' })
+      .toMatchObject({ avisar: false, tipo: 'sigue-roto' })
   })
 
   it('vuelve a avisar pasadas 4 h para que no se olvide', () => {
     expect(decidirAviso({ sano: false, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS }))
-      .toEqual({ avisar: true, tipo: 'recordatorio' })
+      .toMatchObject({ avisar: true, tipo: 'recordatorio' })
   })
 
   it('no se queda callado si no pudo consultar su historia', () => {
@@ -160,12 +163,12 @@ describe('decidirAviso — la regla que evita los 96 correos al día', () => {
 
   it('la recuperación no manda correo, pero se marca', () => {
     expect(decidirAviso({ sano: true, anteriorFueFallo: true, ultimoFalloHaceMs: 1000 }))
-      .toEqual({ avisar: false, tipo: 'recuperado' })
+      .toMatchObject({ avisar: false, tipo: 'recuperado' })
   })
 
   it('un día normal no molesta a nadie', () => {
     expect(decidirAviso({ sano: true, anteriorFueFallo: false, ultimoFalloHaceMs: null }))
-      .toEqual({ avisar: false, tipo: 'sigue-bien' })
+      .toMatchObject({ avisar: false, tipo: 'sigue-bien' })
   })
 })
 
@@ -193,5 +196,81 @@ describe('guardián: los dos umbrales de silencio son el mismo', () => {
     // dirían cosas distintas sobre el mismo canal. Esta prueba obliga a tocar
     // los dos sitios a la vez.
     expect(HORAS_DE_SILENCIO).toBe(canal.DEFAULT_SILENCE_HOURS)
+  })
+})
+
+describe('caída NO es lo mismo que «hay un problema»', () => {
+  // El primer aviso de verdad que mandó esto decía «🔴 Producción ha caído»
+  // porque al número le quedaban 0,50 USD — con el bot vivo y vendiendo. Un
+  // título que exagera se deja de leer, y el día que de verdad se caiga
+  // parecerá uno más.
+
+  const conDetalle = problemas => evaluarSalud({
+    salud: SANA,
+    detalle: { problemas },
+  })
+
+  it('el saldo bajo NO es una caída', () => {
+    const { sano, caida } = conDetalle([
+      { categoria: 'canal', codigo: 'saldo_bajo', veces: 210, ultima_vez: 'x' },
+    ])
+    expect(sano).toBe(false)
+    expect(caida).toBe(false)
+    expect(tituloDe('se-rompio', caida)).toContain('necesita atención')
+    expect(tituloDe('se-rompio', caida)).not.toContain('caído')
+  })
+
+  it('no contestar SÍ lo es', () => {
+    expect(evaluarSalud({ salud: null, detalle: null }).caida).toBe(true)
+    expect(tituloDe('se-rompio', true)).toContain('ha caído')
+  })
+
+  it('el proceso que no puede trabajar y la cola parada, también', () => {
+    expect(evaluarSalud({ salud: { ...SANA, ok: false }, detalle: null }).caida).toBe(true)
+    expect(evaluarSalud({
+      salud: { ...SANA, webhook_inbox: { running: false, ready: false } },
+      detalle: null,
+    }).caida).toBe(true)
+  })
+
+  it('el canario y el silencio avisan, pero no son una caída', () => {
+    // El servidor está vivo: lo que falla es lo que vende, y eso se atiende,
+    // no se reinicia.
+    expect(evaluarSalud({
+      salud: { ...SANA, canario: { ...SANA.canario, fallos: 2 } },
+      detalle: null,
+    }).caida).toBe(false)
+  })
+})
+
+describe('los dos ritmos de recordatorio', () => {
+  it('una caída se recuerda cada 4 h', () => {
+    expect(decidirAviso({
+      sano: false, caida: true, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS,
+    }).avisar).toBe(true)
+  })
+
+  it('un aviso de atención espera 24 h', () => {
+    // El saldo bajo lleva meses ahí. Recordarlo cada 4 h sería exactamente el
+    // spam que este vigía existe para evitar.
+    const aLasCuatro = decidirAviso({
+      sano: false, caida: false, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS,
+    })
+    expect(aLasCuatro.avisar).toBe(false)
+
+    const alDiaSiguiente = decidirAviso({
+      sano: false,
+      caida: false,
+      anteriorFueFallo: true,
+      ultimoFalloHaceMs: RECORDATORIO_ATENCION_MS,
+    })
+    expect(alDiaSiguiente.avisar).toBe(true)
+  })
+
+  it('el resumen dice cuándo volverá a sonar', () => {
+    expect(redactarResumen({ tipo: 'sigue-roto', motivos: ['x'], salud: SANA, caida: false }))
+      .toContain('24 h')
+    expect(redactarResumen({ tipo: 'sigue-roto', motivos: ['x'], salud: SANA, caida: true }))
+      .toContain('4 h')
   })
 })
