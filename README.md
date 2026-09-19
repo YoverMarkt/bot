@@ -193,6 +193,56 @@ nuevo con el cambio.
 
 ---
 
+## 🧪 Staging local (probar sin tocar a nadie)
+
+```bash
+npm run staging:up                        # levanta Supabase en Docker y siembra
+npm run dev:staging -w @botpanel/server   # arranca el servidor contra esa base
+npm run staging:down                      # lo apaga
+```
+
+Levanta **el stack de Supabase entero** en tu máquina —no un PostgreSQL pelado,
+porque el servidor habla con la base por HTTP (supabase-js → PostgREST)— y
+siembra un local de mentira llamando a `apply_business_template`, la misma
+función que corre el alta real.
+
+| | Dónde |
+|---|---|
+| Panel del dueño | `localhost:3100/app` — `demo@umbani.local` / `staging-demo-2026` |
+| Panel admin | `localhost:3100/app-admin` — `admin@umbani.local` / `staging-admin-2026` |
+| La tienda | el enlace sale del **simulador del admin**, como en la vida real |
+| Prueba de humo | `npm run verify:smoke:staging -w @botpanel/server` |
+
+**La mini app se abre en el escritorio** activando el modo móvil del navegador
+(en Chrome, F12 → el icono de teléfono). La detección de dispositivo es
+fricción contra curiosos, no seguridad, y así además ves consola y peticiones.
+
+⚠️ **WhatsApp de verdad se sigue probando en producción**, porque solo hay un
+número. Lo que sí se prueba aquí es todo lo demás —el dinero, los pedidos, el
+catálogo, las migraciones, los paneles— y la conversación del bot por el
+simulador, que corre `handleMarketplaceMessage`, exactamente la misma función
+que atiende el webhook.
+
+### Cómo sabes dónde estás
+
+- **Si escribiste por WhatsApp, es producción.** Siempre: el número solo puede
+  apuntar a un sitio.
+- En el navegador, la página lleva una etiqueta abajo a la izquierda:
+  **«STAGING · datos de mentira»** (índigo) o **«⚠️ LOCAL · BASE REAL»** (rojo).
+  En producción no aparece ninguna.
+
+### El freno
+
+`server/.env` apunta a la base de **producción**, así que arrancar el servidor
+en local sin más procesaría mensajes de clientes reales y, a los 30 segundos,
+empezaría a **cancelar sus pedidos**. Por eso, cuando el proceso es local y la
+base es remota, las tareas de fondo **no arrancan** y el servidor lo dice en voz
+alta al levantarse. Las rutas, los paneles y el simulador siguen funcionando.
+
+Para hacerlo a propósito: `PERMITIR_TAREAS_CONTRA_PRODUCCION=si`.
+
+---
+
 ## 🌐 Despliegue a producción
 
 En producción **NO se usa el túnel** — se usa un dominio fijo.

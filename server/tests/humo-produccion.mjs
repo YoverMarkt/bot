@@ -207,6 +207,10 @@ try {
 console.log(
   fallos
     ? `\n❌ ${fallos} comprobaciones fallaron${avisos ? ` (y ${avisos} avisos)` : ''}`
-    : `\n✅ Producción responde correctamente${avisos ? ` (${avisos} avisos, revísalos)` : ''}`,
+    // Dice a QUIÉN respondió, no «producción» a secas: desde 2026-09-19 esto
+    // también se corre contra el staging local, y un resumen que diga
+    // «producción» sobre una base de mentira es justo la confusión que el
+    // staging viene a quitar.
+    : `\n✅ ${BASE} responde correctamente${avisos ? ` (${avisos} avisos, revísalos)` : ''}`,
 )
 process.exit(fallos ? 1 : 0)

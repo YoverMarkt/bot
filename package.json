@@ -16,7 +16,10 @@
     "check": "npm run check -w @botpanel/server && npm run lint -w @botpanel/ui && npm run lint -w @botpanel/client && npm run lint -w @botpanel/admin && npm run lint -w @botpanel/store && npm test -w @botpanel/store && npm test -w @botpanel/client && npm test -w @botpanel/admin && npx knip --no-progress",
     "test": "npm test -w @botpanel/server && npm test -w @botpanel/store",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "staging:up": "supabase start && npm run staging:preparar -w @botpanel/server",
+    "staging:down": "supabase stop",
+    "staging:reset": "supabase db reset --no-seed && npm run staging:preparar -w @botpanel/server"
   },
   "engines": {
     "node": ">=22.0.0"
