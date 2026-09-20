@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import {
   RiAddLine,
   RiBankLine,
@@ -15,8 +15,19 @@ import { money } from '../lib/format'
 import {
   cartTotal, detalleDeLinea, esPlatoPorPartes, lineTotal, needsAddress, orderTotal,
 } from '../lib/cart'
-import FormularioDireccion from './FormularioDireccion'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
+
+/**
+ * El formulario de dirección se DESCARGA APARTE.
+ *
+ * ⚠️ No es una optimización de manual: al unificarlo pasó a este componente,
+ * que sí entra en el arranque, y la mini app se salió del presupuesto de
+ * tamaño (96 kB) que existe porque la tienda se abre con datos móviles. Es
+ * una pantalla secundaria —solo la ve quien no tiene dirección guardada—, así
+ * que no tiene por qué pesar en el primer pintado. `DireccionRapida`, que ya
+ * se cargaba aparte, comparte el mismo trozo.
+ */
+const FormularioDireccion = lazy(() => import('./FormularioDireccion'))
 import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod, StorePaymentMethod } from '../lib/types'
 
@@ -383,11 +394,17 @@ export default function CartSheet({
               Guárdala una vez y no te la volvemos a pedir. La usamos solo para
               llevarte el pedido.
             </p>
-            <FormularioDireccion
-              onGuardar={guardarDireccion}
-              onListo={() => setPaso('checkout')}
-              textoGuardar="Guardar dirección"
-            />
+            {/* Sin `fallback`: mientras baja, lo correcto es que no se vea
+                nada. Un esqueleto que aparece y desaparece molesta más que el
+                cuarto de segundo que tarda — el mismo criterio que la hoja de
+                la portada. */}
+            <Suspense fallback={null}>
+              <FormularioDireccion
+                onGuardar={guardarDireccion}
+                onListo={() => setPaso('checkout')}
+                textoGuardar="Guardar dirección"
+              />
+            </Suspense>
           </section>
         )}
 
