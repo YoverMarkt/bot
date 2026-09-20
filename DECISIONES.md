@@ -1202,3 +1202,48 @@ síntomas (que no se veía el toque, que no se veía el pedido) y el tercero
 encontró la causa: la pantalla mezclaba dos flujos. Cuando un arreglo obliga a
 enseñar dos números para explicarse, el fallo está en el flujo, no en la
 pantalla.
+
+### Al cliente NUEVO no se le pedía nunca la dirección
+
+Probando en staging (2026-09-20): *«elijo una pizza y me deja entrar sin
+pedirme dirección; tengo que escoger un producto solo para que salga la
+pantalla»*.
+
+La causa: había **una sola marca** de «ya se lo pedimos» para DOS peticiones
+distintas —el número de WhatsApp y la dirección—. Y `necesita_telefono` no es
+un caso raro: es **«la primera apertura de TODO enlace nuevo»**
+(`middleware/storefront.ts`). Así que a cada cliente nuevo le pasaba esto:
+
+1. agrega algo → todavía no hay sesión → se le pide el número, y **la marca se
+   gasta ahí**;
+2. confirma su número y sigue, ya identificado y sin direcciones;
+3. el efecto vuelve a correr → la marca ya está puesta → **la pantalla de
+   dirección no sale nunca**, y lo descubre al ir a pagar.
+
+⚠️ **Lo que más despistó: parecía depender del producto, y no era eso.** Con
+un plato que se ARMA (una pizza, un almuerzo) fallaba; con uno suelto no. Lo
+que cambia no es el producto, es el **TIEMPO**: armando el plato da tiempo a
+que `/me` conteste 401 antes de agregar, así que al agregar ya se entra por la
+rama de la sesión y la marca se gasta. Con un producto suelto se agrega antes
+de que conteste, y la marca se gastaba más tarde, cuando ya no estorbaba.
+
+Dos marcas separadas, y la decisión sacada del `useEffect` a
+**`lib/que-pedir.ts`**, que sí se puede comprobar: dentro de un efecto no se
+podía, y esta mezcla ya se rompió una vez.
+
+⚠️ El orden importa y está fijado por pruebas: **primero la sesión, después la
+dirección**. Sin sesión no hay dirección que guardar —el servidor la
+rechazaría—, pero mirar la marca de la dirección antes de la de la sesión
+reintroduce el mismo fallo del revés.
+
+⚠️ Y ahora, en cuanto la sesión se estrena, la pantalla de dirección sale
+**sola**: no hay que agregar otra cosa. Es lo que pidió el dueño — «me logeo y
+regreso, y quiero agregar algo, de una la dirección».
+
+**Cómo se cazó, que es la parte reutilizable:** no con las pruebas —el CI
+estaba verde— sino levantando el staging y recorriendo el flujo del cliente
+nuevo con un navegador de verdad, y comparando A/B con y sin el arreglo. Dos
+intentos anteriores «demostraron» que no había fallo porque el guion recargaba
+la página entre pasos, y **recargar reinicia las marcas y hace desaparecer el
+bug**. Una reproducción que no es fiel miente en la dirección más cara: dice
+que todo va bien.

@@ -361,3 +361,19 @@ export type StorePaymentMethod = {
   is_prepaid: boolean
   requires_proof: boolean
 }
+
+/**
+ * Lo que se manda al guardar una dirección. El pin viaja aparte y es opcional.
+ *
+ * ⚠️ Vive aquí y no en el carrito porque lo usan tres pantallas: el formulario
+ * compartido, la hoja que salta al primer «Agregar» y el checkout.
+ */
+export interface NuevaDireccion {
+  label: string
+  address: string
+  reference: string
+  buildingType: string
+  latitude?: number
+  longitude?: number
+  accuracy?: number | null
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ClipboardList, DollarSign, Target, TrendingUp, Camera, Mic, MessageSquare, Server } from 'lucide-react'
+import { ClipboardList, DollarSign, Target, TrendingUp, Camera, Mic, MessageSquare, Server, Check, AlertTriangle } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Input } from '@botpanel/ui/components/input'
@@ -144,8 +144,18 @@ export default function Calculator() {
               <div className="flex justify-between"><span className="text-muted-foreground">Ganancia</span><strong className={`font-mono ${ok ? 'text-primary' : 'text-destructive'}`}>{money(margin)}</strong></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Margen</span><span className={ok ? 'text-primary' : 'text-destructive'}>{marginPct.toFixed(0)}% ({realMult.toFixed(1)}x)</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">De tu precio, Meta se lleva</span><span className="text-foreground/90 font-mono">{money(cWa)} ({Math.round((cWa / myPrice) * 100)}%)</span></div>
-              <div className={`mt-2 rounded-lg px-3 py-2 text-xs ${ok ? 'bg-primary/10 text-primary' : 'bg-red-600/10 text-destructive'}`}>
-                {ok ? (marginPct >= 200 ? '✓ Excelente margen' : '✓ Rentable, pero podrías cobrar más') : 'Atención: Estás cobrando por debajo del costo'}
+              {/* ⚠️ Iconos, no los caracteres «✓» y «⚠»: con el carácter se
+                  alinea la caja de línea de la fuente y el símbolo queda alto
+                  respecto al texto. Misma regla que en la tienda. */}
+              <div className={`mt-2 flex items-start gap-1.5 rounded-lg px-3 py-2 text-xs ${ok ? 'bg-primary/10 text-primary' : 'bg-red-600/10 text-destructive'}`}>
+                {ok
+                  ? <Check className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  : <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />}
+                <span>
+                  {ok
+                    ? (marginPct >= 200 ? 'Excelente margen' : 'Rentable, pero podrías cobrar más')
+                    : 'Estás cobrando por debajo del costo'}
+                </span>
               </div>
             </div>
           ) : (

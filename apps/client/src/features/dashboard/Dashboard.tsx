@@ -5,7 +5,7 @@ import { api, session } from '../../api/client'
 import { getAlerts } from '../reports/api'
 import { getProducts } from '../catalog/api'
 import { useBusinessInfo } from '../../lib/biz'
-import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus, CircleCheck, Circle, PackageX, PackageMinus, ClipboardList, TrendingDown, UserMinus, ShoppingCart, Brain, Moon, CreditCard, CircleAlert, TriangleAlert, Info, Receipt, MessageSquare } from 'lucide-react'
+import { TrendingUp, DollarSign, Trophy, Users, Package, Rocket, Plus, CircleCheck, Circle, PackageX, PackageMinus, ClipboardList, TrendingDown, UserMinus, ShoppingCart, Brain, Moon, CreditCard, CircleAlert, TriangleAlert, Info, Receipt, MessageSquare, X } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card as UICard, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Progress } from '@botpanel/ui/components/progress'
@@ -127,7 +127,14 @@ export default function Dashboard() {
       </div>
     </div>
   )
-  if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
+  if (error) {
+    return (
+      <p className="text-destructive flex items-start gap-1.5">
+        <X className="w-4 h-4 shrink-0 mt-0.5" />
+        <span>{(error as Error).message}</span>
+      </p>
+    )
+  }
 
   const k = data?.kpis
   const pct = data?.comparison.pct ?? null

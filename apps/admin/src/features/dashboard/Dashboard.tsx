@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getStats, getClients, getChannelHealth, enElMarketplace, type ChannelStatus } from '../clients/api'
-import { Store, CircleCheck, CirclePause, MessageSquare, RadioTower, TriangleAlert } from 'lucide-react'
+import { Store, CircleCheck, CirclePause, MessageSquare, RadioTower, TriangleAlert, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
@@ -42,7 +42,14 @@ export default function Dashboard() {
       <Skeleton className="mt-6 h-56 w-full rounded-xl" />
     </div>
   )
-  if (error) return <p className="text-destructive">✗ {(error as Error).message}</p>
+  if (error) {
+    return (
+      <p className="text-destructive flex items-start gap-1.5">
+        <X className="w-4 h-4 shrink-0 mt-0.5" />
+        <span>{(error as Error).message}</span>
+      </p>
+    )
+  }
   if (!data) return null
 
   // ⚠️ Dos de las cuatro cambiaron de significado el 2026-08-23:

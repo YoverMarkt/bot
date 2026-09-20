@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Film, Plus, Pencil, Trash2, Package, Camera } from 'lucide-react'
+import { Search, Film, Plus, Pencil, Trash2, Package, Camera, Check, X } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as catApi from './api'
 import OptionsManager from './OptionsManager'
@@ -226,8 +226,16 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     video_url: product?.video_url ?? '',
     video_public_id: product?.video_public_id ?? '',
   })
-  const [imgStatus, setImgStatus] = useState('')
-  const [vidStatus, setVidStatus] = useState('')
+  /**
+   * Cómo fue la subida. `ok` en `null` = en marcha.
+   *
+   * ⚠️ El visto y la cruz NO viajan dentro del texto. Los llevaba, dibujados
+   * como caracteres, y así se alinea la caja de línea de la fuente: el símbolo
+   * queda alto respecto al texto y se lee como pegado de otra app. Quien pinta
+   * decide el icono (2026-09-20).
+   */
+  const [imgStatus, setImgStatus] = useState<{ ok: boolean | null; texto: string } | null>(null)
+  const [vidStatus, setVidStatus] = useState<{ ok: boolean | null; texto: string } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -240,17 +248,17 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
     const limit = catApi.MEDIA_LIMITS[kind]
     const setStatus = kind === 'image' ? setImgStatus : setVidStatus
     if (file.size > limit) {
-      setStatus(`✗ Supera el límite de WhatsApp: máximo ${kind === 'image' ? '5 MB' : '16 MB'}, tu archivo pesa ${catApi.fmtMB(file.size)}.`)
+      setStatus({ ok: false, texto: `Supera el límite de WhatsApp: máximo ${kind === 'image' ? '5 MB' : '16 MB'}, tu archivo pesa ${catApi.fmtMB(file.size)}.` })
       return
     }
-    setStatus('Subiendo…'); setUploading(true)
+    setStatus({ ok: null, texto: 'Subiendo…' }); setUploading(true)
     try {
       const out = await catApi.uploadMedia(file)
       if (kind === 'image') setF(prev => ({ ...prev, image_url: out.url, image_public_id: out.public_id }))
       else setF(prev => ({ ...prev, video_url: out.url, video_public_id: out.public_id }))
-      setStatus('✓ Subido')
+      setStatus({ ok: true, texto: 'Subido' })
     } catch (e) {
-      setStatus(`✗ ${e instanceof Error ? e.message : 'Error al subir'}`)
+      setStatus({ ok: false, texto: e instanceof Error ? e.message : 'Error al subir' })
     } finally { setUploading(false) }
   }
 
@@ -412,7 +420,13 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
             <Label htmlFor="product-image" className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Imagen <span className="font-normal text-muted-foreground/80">(máx 5 MB)</span></Label>
             {f.image_url && <img src={f.image_url} alt="" className="h-16 rounded object-cover mb-2" />}
             <Input id="product-image" type="file" accept="image/*" className="text-xs w-full" onChange={e => upload('image', e.target.files?.[0])} />
-            {imgStatus && <div className="text-[11px] mt-1">{imgStatus}</div>}
+            {imgStatus && (
+              <div className="text-[11px] mt-1 flex items-start gap-1">
+                {imgStatus.ok === true && <Check className="w-3 h-3 shrink-0 mt-0.5 text-primary" />}
+                {imgStatus.ok === false && <X className="w-3 h-3 shrink-0 mt-0.5 text-destructive" />}
+                <span>{imgStatus.texto}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -486,14 +500,33 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
           </div>
           <div className="rounded-lg border border-dashed border-input p-3">
             <Label htmlFor="product-video" className="text-xs font-semibold text-foreground/90 mb-1 flex items-center gap-1.5"><Film className="w-3.5 h-3.5" /> Video <span className="font-normal text-muted-foreground/80">(máx 16 MB)</span></Label>
-            {f.video_url && <div className="text-[11px] text-primary mb-2">✓ Video cargado</div>}
+            {/* ⚠️ El icono `Check`, no el carácter «✓»: con el carácter, lo
+                que se alinea es la caja de línea de la fuente y el visto queda
+                alto respecto al texto. Misma regla que el `+` de la tienda. */}
+            {f.video_url && (
+              <div className="text-[11px] text-primary mb-2 flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                Video cargado
+              </div>
+            )}
             <Input id="product-video" type="file" accept="video/*" className="text-xs w-full" onChange={e => upload('video', e.target.files?.[0])} />
-            {vidStatus && <div className="text-[11px] mt-1">{vidStatus}</div>}
+            {vidStatus && (
+              <div className="text-[11px] mt-1 flex items-start gap-1">
+                {vidStatus.ok === true && <Check className="w-3 h-3 shrink-0 mt-0.5 text-primary" />}
+                {vidStatus.ok === false && <X className="w-3 h-3 shrink-0 mt-0.5 text-destructive" />}
+                <span>{vidStatus.texto}</span>
+              </div>
+            )}
           </div>
           </div>
         </details>
 
-        {error && <p role="alert" className="text-sm text-destructive mb-3">✗ {error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive mb-3 flex items-start gap-1.5">
+            <X className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </p>
+        )}
 
         <DialogFooter className="mx-0 mb-0 px-0 pb-0">
           <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>

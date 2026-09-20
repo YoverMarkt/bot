@@ -6,7 +6,7 @@ import { Button } from '@botpanel/ui/components/button'
 import { Input } from '@botpanel/ui/components/input'
 import { Label } from '@botpanel/ui/components/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@botpanel/ui/components/card'
-import { Bot } from 'lucide-react'
+import { Bot, X } from 'lucide-react'
 
 type LoginResponse = { token: string; business: Business; user?: PanelUser; error?: string }
 
@@ -60,7 +60,12 @@ export default function Login() {
               <Input id="password" type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••" autoComplete="current-password" />
             </div>
-            {error && <p role="alert" className="text-sm text-destructive">✗ {error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-destructive flex items-start gap-1.5">
+                <X className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </p>
+            )}
             <Button variant="ghost" type="submit" disabled={loading} className="w-full">
               {loading ? 'Entrando…' : 'Entrar'}
             </Button>

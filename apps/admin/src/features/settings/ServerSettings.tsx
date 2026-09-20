@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as cfg from './api'
 import { getPlatformBlocked, setPlatformBlocked } from '../clients/api'
-import { Ban, Bot as BotIcon, Cloud, Plug, Receipt, Search, Store, Undo2 } from 'lucide-react'
+import { Ban, Bot as BotIcon, Check, Cloud, Plug, Receipt, Search, Store, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -25,6 +25,30 @@ const AI_FIELDS: Record<string, { key: string; label: string; ph: string }> = {
 }
 
 
+/**
+ * El resultado de una verificación.
+ *
+ * ⚠️ El visto y la cruz van como ICONO, no como caracteres dibujados en el
+ * texto. Con el carácter, lo que se alinea es la caja de línea de la fuente y
+ * el símbolo queda alto respecto al texto: se lee como pegado de otra app. Es
+ * la misma regla que el `+` y el visto de la tienda, y esta pantalla era de
+ * los últimos sitios donde quedaban a mano (2026-09-20).
+ */
+function Veredicto({ estado, cuando }: {
+  estado: { ok: boolean | null; texto: string } | null
+  /** Qué decir mientras nadie ha verificado nada. */
+  cuando: string
+}) {
+  if (!estado) return <span className="text-xs text-foreground/80">{cuando}</span>
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-foreground/80">
+      {estado.ok === true && <Check className="w-3.5 h-3.5 shrink-0 text-primary" />}
+      {estado.ok === false && <X className="w-3.5 h-3.5 shrink-0 text-destructive" />}
+      {estado.texto}
+    </span>
+  )
+}
+
 export default function ServerSettings() {
   const qc = useQueryClient()
   const { data: saved = {} } = useQuery({ queryKey: ['adm-settings'], queryFn: cfg.getServerSettings })
@@ -32,9 +56,9 @@ export default function ServerSettings() {
   // Solo lo que el admin ESCRIBE se guarda; lo vacío no pisa keys existentes
   const [f, setF] = useState<Record<string, string>>({})
   const [provider, setProvider] = useState('')
-  const [aiMsg, setAiMsg] = useState('')
-  const [cldMsg, setCldMsg] = useState('')
-  const [platMsg, setPlatMsg] = useState('')
+  const [aiMsg, setAiMsg] = useState<{ ok: boolean | null; texto: string } | null>(null)
+  const [cldMsg, setCldMsg] = useState<{ ok: boolean | null; texto: string } | null>(null)
+  const [platMsg, setPlatMsg] = useState<{ ok: boolean | null; texto: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
   const activeProvider = provider || saved.ai_provider || 'claude'
@@ -43,27 +67,27 @@ export default function ServerSettings() {
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF(p => ({ ...p, [k]: e.target.value }))
 
   async function verifyAI() {
-    setAiMsg('Verificando…')
+    setAiMsg({ ok: null, texto: 'Verificando…' })
     try {
       const r = await cfg.verifyAI({ provider: activeProvider, [aiField.key]: val(aiField.key) || undefined })
-      setAiMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
-    } catch (e) { setAiMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+      setAiMsg({ ok: r.ok, texto: r.info })
+    } catch (e) { setAiMsg({ ok: false, texto: e instanceof Error ? e.message : 'Error' }) }
   }
 
   async function verifyCloudinary() {
-    setCldMsg('Verificando…')
+    setCldMsg({ ok: null, texto: 'Verificando…' })
     try {
       const r = await cfg.verifyCloudinary({
         cloudinary_cloud_name: val('cloudinary_cloud_name') || undefined,
         cloudinary_api_key: val('cloudinary_api_key') || undefined,
         cloudinary_api_secret: val('cloudinary_api_secret') || undefined,
       })
-      setCldMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
-    } catch (e) { setCldMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+      setCldMsg({ ok: r.ok, texto: r.info })
+    } catch (e) { setCldMsg({ ok: false, texto: e instanceof Error ? e.message : 'Error' }) }
   }
 
   async function verifyPlatform() {
-    setPlatMsg('Verificando el número del marketplace…')
+    setPlatMsg({ ok: null, texto: 'Verificando el número del marketplace…' })
     try {
       const r = await cfg.verifyPlatformChannel({
         platform_ycloud_api_key: val('platform_ycloud_api_key') || undefined,
@@ -71,8 +95,8 @@ export default function ServerSettings() {
         platform_webhook_secret: val('platform_webhook_secret') || undefined,
         platform_webhook_endpoint_id: val('platform_webhook_endpoint_id') || undefined,
       })
-      setPlatMsg(`${r.ok ? '✓' : '✗'} ${r.info}`)
-    } catch (e) { setPlatMsg(`✗ ${e instanceof Error ? e.message : 'Error'}`) }
+      setPlatMsg({ ok: r.ok, texto: r.info })
+    } catch (e) { setPlatMsg({ ok: false, texto: e instanceof Error ? e.message : 'Error' }) }
   }
 
   async function save() {
@@ -118,7 +142,7 @@ export default function ServerSettings() {
         </div>
         <div className="flex items-center gap-3 mt-3">
           <Button variant="outline" size="sm" onClick={verifyAI} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
-          <span className="text-xs text-foreground/80">{aiMsg || 'Ingresa la key (o usa la guardada) y verifica'}</span>
+          <Veredicto estado={aiMsg} cuando="Ingresa la key (o usa la guardada) y verifica" />
         </div>
       </Card>
 
@@ -176,7 +200,7 @@ export default function ServerSettings() {
         </div>
         <div className="flex items-center gap-3 mt-3">
           <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
-          <span className="text-xs text-foreground/80">{cldMsg || 'Guarda o ingresa las llaves y verifica'}</span>
+          <Veredicto estado={cldMsg} cuando="Guarda o ingresa las llaves y verifica" />
         </div>
       </Card>
 
@@ -211,9 +235,10 @@ export default function ServerSettings() {
           <Button variant="outline" size="sm" onClick={verifyPlatform}>
             <span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar el número</span>
           </Button>
-          <span className="text-xs text-foreground/80">
-            {platMsg || 'Comprueba contra YCloud que el número está vinculado y el webhook configurado'}
-          </span>
+          <Veredicto
+            estado={platMsg}
+            cuando="Comprueba contra YCloud que el número está vinculado y el webhook configurado"
+          />
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           En producción el signing secret es <strong>obligatorio</strong>: sin
