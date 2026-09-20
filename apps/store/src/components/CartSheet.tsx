@@ -15,6 +15,7 @@ import { money } from '../lib/format'
 import {
   cartTotal, detalleDeLinea, esPlatoPorPartes, lineTotal, needsAddress, orderTotal,
 } from '../lib/cart'
+import FormularioDireccion from './FormularioDireccion'
 import { MENSAJES, pedirUbicacion } from '../lib/ubicacion'
 import type { Ubicacion } from '../lib/ubicacion'
 import type { Address, CartLine, Fulfillment, Me, PaymentMethod, StorePaymentMethod } from '../lib/types'
@@ -41,29 +42,6 @@ export interface NuevaDireccion {
   latitude?: number
   longitude?: number
   accuracy?: number | null
-}
-
-/**
- * Los mismos cinco valores que acepta el CHECK de `customer_addresses`. Si
- * alguien añade uno aquí sin añadirlo allí, la base rechaza la dirección
- * entera — por eso los textos se separan de los valores.
- *
- * ⚠️ Estas cápsulas son TAMBIÉN la etiqueta de la dirección. Antes había
- * además un campo de texto libre —«Casa, Oficina…»— justo encima, y preguntaba
- * dos veces lo mismo: el cliente escribía «Casa» arriba y volvía a tocar
- * «Casa» abajo. Peor, podía escribir «Fffffff» y quedarse con una libreta de
- * direcciones que no distingue una de otra. Eligiendo, no hay forma de fallar.
- */
-const TIPOS_DE_EDIFICIO = [
-  { valor: 'casa', texto: 'Casa' },
-  { valor: 'departamento', texto: 'Departamento' },
-  { valor: 'oficina', texto: 'Oficina' },
-  { valor: 'hotel', texto: 'Hotel' },
-  { valor: 'otro', texto: 'Otro' },
-] as const
-
-const DIRECCION_EN_BLANCO: NuevaDireccion = {
-  label: 'Casa', address: '', reference: '', buildingType: 'casa',
 }
 
 /** Con pin es tener los DOS: media coordenada apunta al ecuador, no a medias. */
@@ -130,7 +108,7 @@ export default function CartSheet({
    * scroll de distancia de los productos. Revisar y decidir son dos momentos
    * distintos: el carrito revisa, el checkout decide.
    */
-  const [paso, setPaso] = useState<'carrito' | 'checkout'>('carrito')
+  const [paso, setPaso] = useState<'carrito' | 'checkout' | 'direccion'>('carrito')
   const [pago, setPago] = useState<PaymentMethod>('transferencia')
   const [direccionId, setDireccionId] = useState<string | null>(null)
   /**
@@ -149,18 +127,6 @@ export default function CartSheet({
   // Lo que cambia de un pedido a otro: «llame al llegar», «timbre roto». La
   // referencia de la dirección es del SITIO y se queda; esto es de HOY.
   const [instrucciones, setInstrucciones] = useState('')
-  const [nuevaAbierta, setNuevaAbierta] = useState(false)
-  const [nueva, setNueva] = useState<NuevaDireccion>({ ...DIRECCION_EN_BLANCO })
-  const [guardando, setGuardando] = useState(false)
-  /**
-   * El pin del formulario, mientras se escribe la dirección.
-   *
-   * `null` = no se ha pedido o no se pudo. Es OPCIONAL a propósito: quien niega
-   * el permiso —o abre el enlace dentro de WhatsApp, que no siempre lo reenvía—
-   * tiene que poder pedir igual. Perder la venta por un dato de ayuda sería
-   * peor que repartir con la dirección escrita, que es como se hizo siempre.
-   */
-  const [pin, setPin] = useState<Ubicacion | null>(null)
   const [avisoPin, setAvisoPin] = useState<string | null>(null)
   /** Qué dirección está pidiendo ubicación: `'nueva'`, un id, o nada. */
   const [ubicando, setUbicando] = useState<string | null>(null)
@@ -182,6 +148,8 @@ export default function CartSheet({
     }
   }
 
+  // Solo para ponerle el pin a una dirección YA guardada. El de una dirección
+  // nueva lo lleva `FormularioDireccion`, con el suyo propio.
   const capturar = async (destino: string) => {
     setUbicando(destino)
     setAvisoPin(null)
@@ -191,8 +159,7 @@ export default function CartSheet({
         setAvisoPin(resultado.mensaje)
         return
       }
-      if (destino === 'nueva') setPin(resultado.ubicacion)
-      else await onUbicarDireccion(destino, resultado.ubicacion)
+      await onUbicarDireccion(destino, resultado.ubicacion)
     } catch {
       // Ni un fallo inesperado puede dejar al cliente sin poder pedir.
       setAvisoPin(MENSAJES.no_disponible)
@@ -219,27 +186,17 @@ export default function CartSheet({
     needsAddress(entrega) && pago === 'pago_al_retirar' ? 'efectivo' : pago
   const faltaNombre = nombreFinal.length < 2
 
-  const guardarDireccion = async () => {
-    if (nueva.address.trim().length < 5) return
-    setGuardando(true)
-    try {
-      const creadaId = await onNuevaDireccion({
-        ...nueva,
-        latitude: pin?.latitude,
-        longitude: pin?.longitude,
-        accuracy: pin?.accuracy ?? null,
-      })
-      // ⚠️ Queda ELEGIDA. Quien escribe una dirección en el checkout la escribe
-      // para este pedido; sin esto seguía seleccionada la anterior y el pedido
-      // salía a la casa vieja mientras la app decía «guardada».
-      if (creadaId) setDireccionId(creadaId)
-      setNueva({ ...DIRECCION_EN_BLANCO })
-      setPin(null)
-      setAvisoPin(null)
-      setNuevaAbierta(false)
-    } finally {
-      setGuardando(false)
-    }
+  /**
+   * Guarda la dirección que acaba de escribir el cliente en el paso anterior.
+   *
+   * ⚠️ Queda ELEGIDA. Quien escribe una dirección en el checkout la escribe
+   * para ESTE pedido; sin esto seguía seleccionada la anterior y el pedido
+   * salía a la casa vieja mientras la app decía «guardada».
+   */
+  const guardarDireccion = async (datos: NuevaDireccion) => {
+    const creadaId = await onNuevaDireccion(datos)
+    if (creadaId) setDireccionId(creadaId)
+    return creadaId
   }
 
   const opcionesEntrega = [
@@ -288,13 +245,23 @@ export default function CartSheet({
   const total = orderTotal(lines, entrega, deliveryFee)
 
   const enCarrito = paso === 'carrito'
+  const enDireccion = paso === 'direccion'
+
+  // ⚠️ La flecha vuelve al paso ANTERIOR, no siempre al carrito: desde la
+  // dirección se vuelve al checkout, que es de donde se vino. Mandarla al
+  // carrito obligaría a rehacer el camino entero por escribir una calle.
+  const TITULOS = {
+    carrito: 'Tu carrito',
+    checkout: 'Finalizar pedido',
+    direccion: '¿A dónde te lo llevamos?',
+  } as const
 
   return (
     <Hoja
       abierta={abierta}
       onCerrar={cerrar}
-      onAtras={enCarrito ? undefined : () => setPaso('carrito')}
-      titulo={enCarrito ? 'Tu carrito' : 'Finalizar pedido'}
+      onAtras={enCarrito ? undefined : () => setPaso(enDireccion ? 'checkout' : 'carrito')}
+      titulo={TITULOS[paso]}
     >
       {/* ⚠️ El cuerpo va sobre el OFF-WHITE, no sobre el blanco de la hoja:
           con las tarjetas blancas sobre fondo blanco, lo único que las separa
@@ -400,8 +367,27 @@ export default function CartSheet({
         </section>
         )}
 
+        {/* ── PASO 3: escribir una dirección nueva ──────────────────────
+            La MISMA pantalla que salta al primer «Agregar», no un formulario
+            propio: ver `FormularioDireccion`. Sin resumen ni total debajo —
+            aquí no se decide una compra, se escribe una calle, y el botón que
+            importa es «Guardar». */}
+        {enDireccion && (
+          <section className="space-y-4 px-4 pt-4 pb-6">
+            <p className="text-[14px] leading-relaxed texto-cuerpo">
+              Guárdala una vez y no te la volvemos a pedir. La usamos solo para
+              llevarte el pedido.
+            </p>
+            <FormularioDireccion
+              onGuardar={guardarDireccion}
+              onListo={() => setPaso('checkout')}
+              textoGuardar="Guardar dirección"
+            />
+          </section>
+        )}
+
         {/* ── PASO 2: cómo lo recibe, a dónde, cómo paga y quién ────────── */}
-        {!enCarrito && (
+        {paso === 'checkout' && (
         <>
         <section>
           <h3 className={ROTULO}>¿Cómo lo quieres?</h3>
@@ -510,116 +496,44 @@ export default function CartSheet({
                 </div>
               ))}
 
-              {nuevaAbierta
-                ? (
-                    <div className="superficie space-y-2.5 rounded-(--radius-tarjeta) border-2 borde-tema p-3.5 shadow-tarjeta">
-                      {/* ⚠️ Un `select` NATIVO, no cápsulas. Abre la rueda del
-                          teléfono, ocupa una línea en vez de dos filas y pesa
-                          cero. Pone el tipo Y la etiqueta a la vez: son lo
-                          mismo, y así no pueden contradecirse. */}
-                      <select
-                        value={nueva.buildingType}
-                        onChange={(event) => {
-                          const tipo = TIPOS_DE_EDIFICIO
-                            .find(item => item.valor === event.target.value)
-                          if (tipo) setNueva({ ...nueva, buildingType: tipo.valor, label: tipo.texto })
-                        }}
-                        className="w-full rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] font-semibold outline-none focus:border-(--tinta)"
-                      >
-                        {TIPOS_DE_EDIFICIO.map(tipo => (
-                          <option key={tipo.valor} value={tipo.valor}>{tipo.texto}</option>
-                        ))}
-                      </select>
-                      <textarea
-                        value={nueva.address}
-                        onChange={event => setNueva({ ...nueva, address: event.target.value.slice(0, 300) })}
-                        rows={2}
-                        placeholder="Calle, número, sector…"
-                        className="w-full resize-none rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-(--tinta) placeholder:texto-tenue"
-                      />
-                      <input
-                        value={nueva.reference}
-                        onChange={event => setNueva({ ...nueva, reference: event.target.value.slice(0, 300) })}
-                        placeholder="Referencia (casa azul, portón negro…)"
-                        className="w-full rounded-xl border-2 borde-tema bg-transparent px-3 py-2.5 text-[14px] outline-none focus:border-(--tinta) placeholder:texto-tenue"
-                      />
+              {/* ⚠️ El aviso de que el GPS falló va AQUÍ, y antes no se
+                  veía nunca: vivía dentro del formulario de dirección nueva,
+                  que normalmente está cerrado cuando alguien toca «Agregar
+                  ubicación» en una dirección que ya tiene guardada. El
+                  permiso denegado se quedaba mudo y el cliente volvía a
+                  tocar. Al retirar aquel formulario quedó a la vista. */}
+              {avisoPin && (
+                <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-[13px] font-medium text-amber-700">
+                  {avisoPin}
+                </p>
+              )}
 
-                      {/* ── El pin ──
-                          Va con un BOTÓN y nunca solo: quien pide desde la
-                          oficina para su casa mandaría al repartidor a la
-                          oficina sin enterarse. */}
-                      <button
-                        onClick={() => void capturar('nueva')}
-                        disabled={ubicando === 'nueva'}
-                        // ⚠️ En tinta, no en acento: el verde de Monster Pizza
-                        // da 1,80:1 sobre blanco y el lima 1,19:1 — AA exige
-                        // 4,5. Este botón pide permiso de ubicación, así que
-                        // tiene que leerse a la primera.
-                        className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-3 py-3.5 text-[14px] font-bold transition active:scale-[0.98] ${
-                          pin
-                            ? 'border-emerald-500 text-emerald-700'
-                            : 'borde-tema texto-cuerpo shadow-tarjeta'
-                        }`}
-                      >
-                        <RiFocus3Line size={16} />
-                        {ubicando === 'nueva'
-                          ? 'Buscando tu ubicación…'
-                          : pin
-                            ? `Ubicación lista${pin.accuracy ? ` · ±${Math.round(pin.accuracy)} m` : ''}`
-                            // Tras un fallo el botón dice «Reintentar»: dejarlo
-                            // igual, con un aviso debajo, parece que no hizo
-                            // nada y el cliente no sabe que puede volver.
-                            : avisoPin ? 'Reintentar' : 'Usar mi ubicación actual'}
-                      </button>
-                      {avisoPin && (
-                        <p className="text-[12px] leading-snug texto-tenue">{avisoPin}</p>
-                      )}
+              {/* ⚠️ Lleva a un PASO de esta misma hoja, no abre un
+                  formulario aquí dentro ni una ventana encima.
 
-                      {/* ⚠️ Aquí había un segundo campo de instrucciones, el
-                          PERMANENTE de esta casa. Se retiró: preguntaba casi lo
-                          mismo que «Instrucciones» de más abajo —a dos dedos de
-                          distancia— y el cliente no sabía cuál llenar. Queda el
-                          del PEDIDO, que es el que el dueño lee en su comanda.
-                          `customer_addresses.courier_notes` sigue en la base y
-                          el panel la pinta si tiene algo; simplemente ya no se
-                          pide aquí. */}
+                  Aquí vivía un formulario propio —con un `select` y el pin
+                  abajo, de secundario— que hacía lo mismo que la pantalla
+                  «¿A dónde te lo llevamos?» del primer «Agregar», con otra
+                  cara. Dos formularios para lo mismo: el cliente aprendía los
+                  dos y nosotros manteníamos los dos, que ya habían empezado a
+                  divergir. Lo vio el dueño probando La Abuelita (2026-09-19).
 
-                      <Boton
-                        variante="suave"
-                        onClick={guardarDireccion}
-                        disabled={guardando || nueva.address.trim().length < 5}
-                      >
-                        {guardando ? 'Guardando…' : 'Guardar dirección'}
-                      </Boton>
-                      {/* Sin esto el formulario se abría y no se cerraba: quien
-                          toca «Agregar dirección» teniendo ya una guardada se
-                          quedaba con el cuadro abierto y sin salida. */}
-                      <button
-                        onClick={() => {
-                          setNuevaAbierta(false)
-                          setNueva({ ...DIRECCION_EN_BLANCO })
-                          setPin(null)
-                          setAvisoPin(null)
-                        }}
-                        className="w-full py-1.5 text-[13px] font-semibold texto-tenue transition active:scale-[0.98]"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  )
-                : (
-                    /* El icono `RiAddLine`, no el CARÁCTER «+»: con el
-                       carácter, lo que se centra es la caja de línea y el
-                       signo queda alto respecto al texto. Mismo arreglo que
-                       ya se hizo en el `+` de la carta. */
-                    <button
-                      onClick={() => setNuevaAbierta(true)}
-                      className="flex w-full items-center justify-center gap-2 rounded-(--radius-tarjeta) border-2 border-dashed borde-tema px-4 py-3.5 text-[14px] font-bold texto-cuerpo transition active:scale-[0.98]"
-                    >
-                      <RiAddLine size={17} />
-                      Agregar dirección
-                    </button>
-                  )}
+                  Gana la otra, y el motivo no es estético: pone «Usar mi
+                  ubicación actual» ARRIBA y grande. El pin es el dato que hace
+                  que el repartidor llegue —una calle escrita en un barrio sin
+                  numerar puede ser cualquier sitio—, y enterrarlo al final
+                  empujaba al camino peor.
+
+                  Un paso y no una ventana encima porque la hoja ya sabe ir y
+                  volver (`onAtras`): apilar dos modales deja el aspa
+                  ambigua — ¿cierro la dirección o el pedido? */}
+              <button
+                onClick={() => setPaso('direccion')}
+                className="flex w-full items-center justify-center gap-2 rounded-(--radius-tarjeta) border-2 border-dashed borde-tema px-4 py-3.5 text-[14px] font-bold texto-cuerpo transition active:scale-[0.98]"
+              >
+                <RiAddLine size={17} />
+                Agregar dirección
+              </button>
             </div>
           </section>
         )}
@@ -700,6 +614,12 @@ export default function CartSheet({
         {error && <Aviso tono="alerta">{error}</Aviso>}
       </div>
 
+      {/* ⚠️ El pie NO se pinta al escribir una dirección. Ahí el botón que
+          importa es «Guardar dirección», y un «Confirmar pedido · $2.83»
+          pegado debajo compite con él y deja al cliente sin saber cuál cierra
+          qué. Además el resumen no cambia por escribir una calle: repetirlo
+          es ruido. */}
+      {!enDireccion && (
       <div className="superficie sticky bottom-0 border-t borde-tema px-4 pt-3 pb-seguro">
         {/* ⚠️ El desglose en `texto-cuerpo`, no en el gris de metadatos: a
             13,5 px, `texto-tenue` da 3,17:1 sobre blanco y esto es lo que el
@@ -773,6 +693,7 @@ export default function CartSheet({
           El negocio confirma tu pedido por WhatsApp y coordina el pago.
         </p>
       </div>
+      )}
     </Hoja>
   )
 }
