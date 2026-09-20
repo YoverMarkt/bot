@@ -30,6 +30,7 @@ import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
 import { money, rangoDeEspera, cuandoAbre, rangoDeHoy } from '../lib/format'
 import { foto } from '../lib/imagen'
 import { randomId } from '../lib/session'
+import { quePedir } from '../lib/que-pedir'
 import ProductSheet from '../components/ProductSheet'
 import CartSheet from '../components/CartSheet'
 import OrderPlaced from './OrderPlaced'
@@ -108,6 +109,32 @@ export default function FoodStore({
    */
   const [pidiendoDireccion, setPidiendoDireccion] = useState(false)
   const yaPedimosDireccion = useRef(false)
+  /**
+   * Si ya se avisó de que esta persona no tiene sesión. SEPARADA de la de
+   * arriba, y esa separación arregla que a un cliente NUEVO no se le pidiera
+   * nunca la dirección.
+   *
+   * ⚠️ Las dos marcas eran una sola, y `necesita_telefono` no es un caso
+   * raro: es «la primera apertura de TODO enlace nuevo» (lo dice
+   * `middleware/storefront.ts`). Así que al cliente nuevo le pasaba esto:
+   *
+   *   1. agrega algo → todavía no hay sesión → se le pide el número, y la
+   *      marca se gasta AQUÍ;
+   *   2. confirma su número y sigue, ya identificado y sin direcciones;
+   *   3. el efecto vuelve a correr → la marca ya está puesta → **la pantalla
+   *      de dirección no sale**, y se entera al ir a pagar.
+   *
+   * Se veía con los platos que se ARMAN (una pizza, un almuerzo) y no con los
+   * sueltos, y esa diferencia despistó: lo que cambia no es el producto, es
+   * el TIEMPO. Armando el plato da tiempo a que `/me` conteste 401 antes de
+   * agregar, así que al agregar ya se entra por la rama de la sesión y la
+   * marca se gasta. Con un producto suelto se agrega antes de que conteste.
+   *
+   * Lo cazó el dueño probando en staging (2026-09-20): «elijo una pizza y me
+   * deja entrar sin pedirme dirección; tengo que escoger un producto solo
+   * para que salga la pantalla».
+   */
+  const yaAvisamosDeLaSesion = useRef(false)
   /**
    * El error de `GET /me`, cuando es un problema de ENLACE (401).
    *
@@ -344,48 +371,48 @@ export default function FoodStore({
   }, [catalogo])
 
   /**
-   * El momento de pedir la dirección: cuando el carrito deja de estar vacío.
+   * El momento de pedir lo que falta: cuando el carrito deja de estar vacío.
    *
    * Se pide AQUÍ y no al entrar porque quien acaba de tocar «Agregar» ya
-   * decidió comprar —dar su dirección es parte de lo que vino a hacer—,
-   * mientras que al entrar sería un peaje antes de saber si le interesa. Ver
-   * el encabezado de `DireccionRapida.tsx`.
+   * decidió comprar —dar sus datos es parte de lo que vino a hacer—, mientras
+   * que al entrar sería un peaje antes de saber si le interesa. Ver el
+   * encabezado de `DireccionRapida.tsx`.
    *
-   * Las cuatro condiciones importan:
-   *  · `lineas.length` — solo al pasar de vacío a con algo.
-   *  · `entrega === 'delivery'` — quien retira en el local no tiene a dónde
-   *    llevarle nada, y pedirle una dirección es pedir un dato que nadie usará.
-   *  · `me` cargado y sin direcciones — quien ya tiene una guardada no vuelve
-   *    a ver esto nunca.
-   *  · `yaPedimosDireccion` — una vez por visita, no en cada producto.
+   * ⚠️ Son DOS peticiones con DOS marcas, y esa separación es un arreglo, no
+   * una elegancia: con una marca compartida, pedir el número gastaba el turno
+   * de pedir la dirección y el cliente nuevo no la veía nunca. Todo el
+   * razonamiento está en `lib/que-pedir.ts`.
+   *
+   * ⚠️ En cuanto la sesión se estrena, esto vuelve a correr solo —`me` está en
+   * las dependencias—, así que quien acaba de confirmar su número ve la
+   * pantalla de dirección sin tener que agregar otra cosa.
    */
   useEffect(() => {
-    if (!lineas.length || yaPedimosDireccion.current) return
+    // ⚠️ La decisión vive en `quePedir` (`lib/que-pedir.ts`) y está probada
+    // allí: dentro de un efecto no se puede comprobar, y esta mezcla ya se
+    // rompió una vez —el cliente nuevo no veía nunca la pantalla de dirección.
+    const toca = quePedir({
+      hayLineas: lineas.length > 0,
+      sinSesion: Boolean(sinSesion),
+      yaAvisamosDeLaSesion: yaAvisamosDeLaSesion.current,
+      yaPedimosDireccion: yaPedimosDireccion.current,
+      entrega,
+      // `me` en nulo aquí ya solo significa «todavía no contestó»: si no
+      // hubiera sesión, `sinSesion` lo habría dicho.
+      tieneDirecciones: me ? Boolean(me.addresses?.length) : null,
+    })
 
-    // ── Sin sesión: se avisa YA, no al guardar la dirección ────────────────
-    //
-    // ⚠️ Este caso NO tenía aviso, y era el peor: la carta es pública, así que
-    // quien llega sin enlace elegía, llenaba el carrito y solo al escribir su
-    // dirección descubría que no podía pedir. Se le dice en el primer
-    // «Agregar», que es cuando todavía no ha invertido nada.
-    //
-    // Va ANTES de la comprobación de dirección: sin sesión no hay dirección
-    // que guardar, y pedírsela sería un formulario que el servidor va a
-    // rechazar.
-    //
-    // No destruye el carrito: `onFalloEnlace` lo pinta ENCIMA de la tienda.
-    if (sinSesion) {
-      yaPedimosDireccion.current = true
+    if (toca === 'sesion') {
+      yaAvisamosDeLaSesion.current = true
+      // No destruye el carrito: `onFalloEnlace` lo pinta ENCIMA de la tienda.
       void onFalloEnlace(sinSesion)
       return
     }
 
-    if (entrega !== 'delivery') return
-    // `me` en nulo aquí ya solo significa «todavía no respondió»: si no
-    // hubiera sesión, la rama de arriba lo habría atendido.
-    if (!me || me.addresses?.length) return
-    yaPedimosDireccion.current = true
-    setPidiendoDireccion(true)
+    if (toca === 'direccion') {
+      yaPedimosDireccion.current = true
+      setPidiendoDireccion(true)
+    }
   }, [lineas.length, entrega, me, sinSesion, onFalloEnlace])
 
   const irACategoria = (id: string) => {

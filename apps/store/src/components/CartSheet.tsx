@@ -373,7 +373,12 @@ export default function CartSheet({
             aquí no se decide una compra, se escribe una calle, y el botón que
             importa es «Guardar». */}
         {enDireccion && (
-          <section className="space-y-4 px-4 pt-4 pb-6">
+          /* ⚠️ SIN padding propio: el cuerpo de la hoja ya trae `p-4`, y
+              ponerlo otra vez aquí restaba 32 px de ancho a los campos. Se
+              notaba comparándolo con la misma pantalla del primer «Agregar»,
+              que sí los lleva a todo lo ancho — mismo formulario y dos anchos
+              distintos. Lo vio el dueño en staging (2026-09-20). */
+          <section className="space-y-4">
             <p className="text-[14px] leading-relaxed texto-cuerpo">
               Guárdala una vez y no te la volvemos a pedir. La usamos solo para
               llevarte el pedido.
