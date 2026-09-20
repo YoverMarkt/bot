@@ -140,35 +140,72 @@ describe('evaluarSalud', () => {
 
 describe('decidirAviso — la regla que evita los 96 correos al día', () => {
   it('avisa cuando algo que estaba bien se rompe', () => {
-    expect(decidirAviso({ sano: false, anteriorFueFallo: false, ultimoFalloHaceMs: null }))
+    expect(decidirAviso({ sano: false, ultimoFalloHaceMs: null }))
       .toMatchObject({ avisar: true, tipo: 'se-rompio' })
   })
 
   it('se calla mientras siga roto y el aviso sea reciente', () => {
     const haceUnaHora = 60 * 60 * 1000
-    expect(decidirAviso({ sano: false, anteriorFueFallo: true, ultimoFalloHaceMs: haceUnaHora }))
+    expect(decidirAviso({ sano: false, ultimoFalloHaceMs: haceUnaHora }))
       .toMatchObject({ avisar: false, tipo: 'sigue-roto' })
   })
 
   it('vuelve a avisar pasadas 4 h para que no se olvide', () => {
-    expect(decidirAviso({ sano: false, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS }))
+    expect(decidirAviso({ sano: false, ultimoFalloHaceMs: RECORDATORIO_MS }))
       .toMatchObject({ avisar: true, tipo: 'recordatorio' })
   })
 
   it('no se queda callado si no pudo consultar su historia', () => {
     // Más vale un correo de más que un silencio por no saber.
-    expect(decidirAviso({ sano: false, anteriorFueFallo: true, ultimoFalloHaceMs: null }).avisar)
-      .toBe(true)
+    expect(decidirAviso({ sano: false, ultimoFalloHaceMs: null }).avisar).toBe(true)
   })
 
   it('la recuperación no manda correo, pero se marca', () => {
-    expect(decidirAviso({ sano: true, anteriorFueFallo: true, ultimoFalloHaceMs: 1000 }))
+    expect(decidirAviso({ sano: true, ultimoFalloHaceMs: 1000 }))
       .toMatchObject({ avisar: false, tipo: 'recuperado' })
   })
 
   it('un día normal no molesta a nadie', () => {
-    expect(decidirAviso({ sano: true, anteriorFueFallo: false, ultimoFalloHaceMs: null }))
+    expect(decidirAviso({ sano: true, ultimoFalloHaceMs: null }))
       .toMatchObject({ avisar: false, tipo: 'sigue-bien' })
+  })
+
+  // ── El fallo que mandaba 48 correos al día (2026-09-19) ──────────────────
+  //
+  // La memoria era «¿la ejecución anterior fue un fallo?», y callarse dejaba un
+  // run VERDE: el siguiente veía verde detrás, creía que el problema acababa de
+  // empezar y volvía a fallar. Rojo, verde, rojo, verde, cada 15 minutos.
+  it('callarse NO reabre el aviso: rojo, verde, verde, verde…', () => {
+    const CADA_15_MIN = 15 * 60 * 1000
+    let ultimoFalloHaceMs = null
+    const conclusiones = []
+
+    // 16 vueltas = 4 horas de un problema de ATENCIÓN que no se va (el saldo).
+    for (let vuelta = 0; vuelta < 16; vuelta += 1) {
+      const { avisar } = decidirAviso({ sano: false, caida: false, ultimoFalloHaceMs })
+      conclusiones.push(avisar ? 'rojo' : 'verde')
+      // Un run en rojo ES el aviso: reinicia el reloj. Uno en verde no lo toca.
+      ultimoFalloHaceMs = avisar ? 0 : (ultimoFalloHaceMs ?? 0)
+      ultimoFalloHaceMs += CADA_15_MIN
+    }
+
+    expect(conclusiones[0]).toBe('rojo')
+    expect(conclusiones.filter(c => c === 'rojo')).toHaveLength(1)
+  })
+
+  it('el saldo bajo manda UN correo al día, no cuarenta y ocho', () => {
+    const CADA_15_MIN = 15 * 60 * 1000
+    let ultimoFalloHaceMs = null
+    let correos = 0
+
+    // 96 vueltas = 24 h corriendo cada cuarto de hora.
+    for (let vuelta = 0; vuelta < 96; vuelta += 1) {
+      const { avisar } = decidirAviso({ sano: false, caida: false, ultimoFalloHaceMs })
+      if (avisar) correos += 1
+      ultimoFalloHaceMs = avisar ? CADA_15_MIN : (ultimoFalloHaceMs ?? 0) + CADA_15_MIN
+    }
+
+    expect(correos).toBe(1)
   })
 })
 
@@ -246,7 +283,7 @@ describe('caída NO es lo mismo que «hay un problema»', () => {
 describe('los dos ritmos de recordatorio', () => {
   it('una caída se recuerda cada 4 h', () => {
     expect(decidirAviso({
-      sano: false, caida: true, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS,
+      sano: false, caida: true, ultimoFalloHaceMs: RECORDATORIO_MS,
     }).avisar).toBe(true)
   })
 
@@ -254,14 +291,13 @@ describe('los dos ritmos de recordatorio', () => {
     // El saldo bajo lleva meses ahí. Recordarlo cada 4 h sería exactamente el
     // spam que este vigía existe para evitar.
     const aLasCuatro = decidirAviso({
-      sano: false, caida: false, anteriorFueFallo: true, ultimoFalloHaceMs: RECORDATORIO_MS,
+      sano: false, caida: false, ultimoFalloHaceMs: RECORDATORIO_MS,
     })
     expect(aLasCuatro.avisar).toBe(false)
 
     const alDiaSiguiente = decidirAviso({
       sano: false,
       caida: false,
-      anteriorFueFallo: true,
       ultimoFalloHaceMs: RECORDATORIO_ATENCION_MS,
     })
     expect(alDiaSiguiente.avisar).toBe(true)
@@ -272,5 +308,69 @@ describe('los dos ritmos de recordatorio', () => {
       .toContain('24 h')
     expect(redactarResumen({ tipo: 'sigue-roto', motivos: ['x'], salud: SANA, caida: true }))
       .toContain('4 h')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DOS VIGÍAS, DOS MEMORIAS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `vigia.yml` mira si el bot vive; `vigia-atencion.yml`, el saldo y lo demás.
+// Están separados porque el script recuerda UNA cosa —la hora de su último
+// rojo— y esa memoria es por workflow: juntos, el saldo bajo se comía el hueco
+// de silencio de una caída de verdad.
+
+describe('el modo parte la vigilancia en dos', () => {
+  const CON_SALDO_BAJO = {
+    ok: false,
+    problemas: [
+      { categoria: 'canal', codigo: 'saldo_bajo', veces: 220, ultima_vez: '2026-09-19T18:05:27Z' },
+    ],
+  }
+
+  it('el vigía de caídas ignora el saldo bajo', () => {
+    const veredicto = evaluarSalud({ salud: SANA, detalle: CON_SALDO_BAJO, modo: 'caida' })
+    expect(veredicto.sano).toBe(true)
+    expect(veredicto.motivos).toEqual([])
+  })
+
+  it('el vigía de atención sí lo ve, y no lo llama caída', () => {
+    const veredicto = evaluarSalud({ salud: SANA, detalle: CON_SALDO_BAJO, modo: 'atencion' })
+    expect(veredicto.sano).toBe(false)
+    expect(veredicto.caida).toBe(false)
+    expect(veredicto.motivos.join(' ')).toContain('saldo_bajo')
+  })
+
+  it('una caída con el saldo bajo encima: cada uno avisa de lo suyo', () => {
+    // El caso que hacía falta separar. El de caídas tiene que sonar AUNQUE el
+    // de atención lleve semanas sonando, porque sus relojes son distintos.
+    const muerta = { salud: null, detalle: CON_SALDO_BAJO }
+
+    const urgente = evaluarSalud({ ...muerta, modo: 'caida' })
+    expect(urgente.sano).toBe(false)
+    expect(urgente.caida).toBe(true)
+    expect(urgente.motivos.join(' ')).toContain('no contesta')
+
+    // Y el de atención se calla: sin respuesta no puede mirar el saldo, y
+    // repetir «producción no contesta» en dos correos no añade nada.
+    expect(evaluarSalud({ ...muerta, modo: 'atencion' }).sano).toBe(true)
+  })
+
+  it('el canal mudo y el canario son de atención, no de caída', () => {
+    const conCanario = { ...SANA, canario: { ...SANA.canario, fallos: 2 } }
+    expect(evaluarSalud({ salud: conCanario, detalle: null, modo: 'caida' }).sano).toBe(true)
+    expect(evaluarSalud({ salud: conCanario, detalle: null, modo: 'atencion' }).sano).toBe(false)
+  })
+
+  it('la cola parada es de caída, no de atención', () => {
+    const colaParada = { ...SANA, webhook_inbox: { running: false, ready: false } }
+    expect(evaluarSalud({ salud: colaParada, detalle: null, modo: 'caida' }).sano).toBe(false)
+    expect(evaluarSalud({ salud: colaParada, detalle: null, modo: 'atencion' }).sano).toBe(true)
+  })
+
+  it('sin modo se comporta como siempre: lo mira todo junto', () => {
+    const veredicto = evaluarSalud({ salud: SANA, detalle: CON_SALDO_BAJO })
+    expect(veredicto.sano).toBe(false)
+    expect(veredicto.motivos.join(' ')).toContain('saldo_bajo')
   })
 })

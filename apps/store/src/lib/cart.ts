@@ -279,6 +279,24 @@ export function addLine(lines: CartLine[], nueva: CartLine): CartLine[] {
     : line)
 }
 
+/**
+ * La línea SUELTA de un producto: sin variante, sin extras, sin opciones y sin
+ * nota. Es la que crea el `+` de un adicional, y la única que un contador
+ * puede representar sin mentir — un producto con variantes da varias líneas
+ * distintas, y un solo número no dice cuál de ellas.
+ *
+ * ⚠️ Vive aquí, y no en la pantalla, por el mismo motivo que `ENTREGA_POR_DEFECTO`:
+ * la calculan la portada (al agregar) y la ficha (al contar), y dos copias se
+ * desincronizan. Si divergieran, el contador enseñaría 0 sobre algo que sí
+ * está en el carrito y el cliente lo pediría dos veces.
+ */
+export const claveSuelta = (product: Product): string =>
+  lineKey(product, null, [], '', [])
+
+/** Cuántos lleva ya el carrito de ese producto como línea suelta. */
+export const cantidadSuelta = (lines: CartLine[], product: Product): number =>
+  lines.find(line => line.key === claveSuelta(product))?.quantity ?? 0
+
 /** Cambia la cantidad; en cero la línea desaparece. */
 export function setQuantity(lines: CartLine[], key: string, quantity: number): CartLine[] {
   if (quantity <= 0) return lines.filter(line => line.key !== key)

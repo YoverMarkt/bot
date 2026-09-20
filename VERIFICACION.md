@@ -183,17 +183,28 @@ Estas dos corren en GitHub Actions, **fuera del servidor**, que es la única
 manera de cubrir el fallo que ningún detector interno puede avisar — que el
 proceso haya muerto.
 
-### El vigía · `.github/workflows/vigia.yml` + `.github/scripts/vigia.mjs`
+### Los vigías · `vigia.yml` + `vigia-atencion.yml` + `.github/scripts/vigia.mjs`
 
-Cada 15 minutos le pregunta a producción por `/api/health` (público) y por
-`/api/health/detalle` (con token). Da la producción por rota si no contesta, si
-contesta algo que no es nuestro health —el proxy de Railway con el servicio
-caído—, si `ok` es `false`, si la cola de webhooks no está lista, si el canario
-encontró fallos, si hay entregas del webhook rechazadas, si el canal lleva 24 h
-mudo, o si el registro de errores tiene algo abierto.
+Le preguntan a producción por `/api/health` (público) y por
+`/api/health/detalle` (con token). Comparten el script y se reparten el trabajo
+por `VIGIA_MODO`:
 
-**No manda correos: termina en rojo**, y de eso se encarga GitHub. Cero cuentas
-y cero credenciales de envío que mantener.
+| Workflow | Modo | Cada | Mira | Recordatorio |
+|---|---|---|---|---|
+| `vigia.yml` | `caida` | 15 min | No contesta · contesta algo que no es nuestro health · `ok:false` · cola de webhooks parada | 4 h |
+| `vigia-atencion.yml` | `atencion` | 6 h | Saldo y credenciales · canario con fallos · entregas rechazadas · canal 24 h mudo | 24 h |
+
+**No mandan correos: terminan en rojo**, y de eso se encarga GitHub. Cero
+cuentas y cero credenciales de envío que mantener.
+
+⚠️ **Están partidos por la MEMORIA, no por orden** (2026-09-19). El script
+recuerda una sola cosa —la hora del último run en rojo— y esa memoria es *por
+workflow*. Juntos, el saldo de YCloud en 0,50 USD, que lleva semanas sonando,
+ocupaba el hueco de silencio, y una caída de verdad se habría quedado esperando
+el turno de una alarma crónica. Separados, cada gravedad tiene su propio reloj.
+El segundo motivo es cómo se lee el correo: un rojo de `vigia-atencion` es
+«revísalo cuando puedas» y uno de `vigia.yml` es «ahora»; mezclados, los dos
+acaban leyéndose igual.
 
 ⚠️ **Distingue una CAÍDA de un aviso**, y no es cosmético. El primer aviso real
 que mandó decía «🔴 Producción ha caído» porque al número le quedaban 0,50 USD
@@ -206,14 +217,57 @@ atención cada **24 h**, porque un saldo bajo puede llevar semanas ahí.
 ⚠️ **Lo que de verdad hubo que pensar es cuándo callarse.** Corriendo cada 15
 minutos, fallar siempre que algo va mal son 96 correos al día, y una alarma que
 suena 96 veces se apaga el primer día. Así que solo falla cuando la noticia es
-nueva: al romperse, y como recordatorio cada 4 h mientras siga rota. Su memoria
-es la conclusión de su propia ejecución anterior, consultada por la API — no
+nueva: al romperse, y como recordatorio mientras siga rota. Su memoria es **la
+hora del último run en rojo** de su propio workflow, consultada por la API — no
 guarda estado en ningún sitio. La recuperación queda en verde y escrita en el
 resumen, pero **no genera correo**: es una limitación asumida.
+
+⚠️ **La memoria NO puede ser «¿la ejecución anterior fue un fallo?»**, y lo fue
+hasta el 2026-09-19. Esa pregunta se contesta sola mal: cuando el vigía se
+callaba dejaba un run **verde**, el siguiente veía verde detrás, creía que el
+problema acababa de empezar y volvía a fallar. Rojo, verde, rojo, verde cada 15
+minutos — **48 correos al día** del único workflow escrito para no mandar 96.
+Lo destapó el dueño preguntando por qué le llegaban tantos avisos y ninguno en
+verde. La hora del último rojo no tiene ese problema: no la cambia el hecho de
+haberse callado. `vigia.test.js` simula 96 vueltas seguidas y exige que salga
+**un** correo.
 
 ⚠️ El umbral de silencio son **24 h** y tiene que valer lo mismo que
 `DEFAULT_SILENCE_HOURS` en `channel-health.ts`. `vigia.test.js` lo comprueba,
 porque desincronizarlos haría que los dos digan cosas distintas del mismo canal.
+
+### El parte diario · `parte-diario.yml` + `.github/scripts/parte-diario.mjs`
+
+Los vigías avisan **fallando**, y GitHub solo manda correo cuando un run acaba
+en rojo. Eso deja un agujero que se vio al usarlo: con todo en orden no llega
+nada, y «nada» no se distingue de «el workflow dejó de ejecutarse». El dueño lo
+dijo así: «me llegan muchas notificaciones, pero todas de errores y ninguna de
+OK».
+
+Cada día a las 7:30 de Ecuador publica el estado como **comentario en un
+issue** etiquetado `parte-diario`. Un comentario en un issue al que estás
+suscrito sí notifica, así que el OK llega por el mismo canal que las alarmas,
+sin cuentas nuevas y sin Telegram, que el dueño no usa. La primera vez crea el
+issue y **se lo asigna al dueño del repositorio**: sin asignado no habría nadie
+suscrito y el parte no le llegaría a nadie.
+
+⚠️ **Nunca falla por lo que encuentre.** Si el parte pudiera ponerse rojo sería
+una alarma más, y el correo que existe para leerse con calma acabaría en la
+misma carpeta que las urgencias. Solo termina en rojo si no pudo publicar.
+
+⚠️ **No decide nada por su cuenta:** reutiliza `evaluarSalud` del vigía. Dos
+criterios distintos para el mismo estado acabarían diciendo cosas distintas el
+mismo día.
+
+⚠️ **En un repositorio PÚBLICO el parte no da detalles.** `YoverMarkt/bot` lo
+es, y un issue diario contando que al canal le queda saldo para dos mensajes,
+que lleva 31 h sin un pedido o que producción está caída es un informe
+operativo del negocio —indexable y permanente— para cualquiera. Publica el
+semáforo, que es para lo que existe, y remite a la pestaña Actions. El script
+lo pregunta a la API en vez de fiarlo a una variable, así que el día que el
+repositorio cambie de visibilidad se ajusta solo; si no puede saberlo, asume
+**público**, porque equivocarse hacia el silencio no cuesta nada y hacia el
+otro lado publica el saldo del canal en internet.
 
 ### El respaldo · repositorio privado `YoverMarkt/bot-respaldos`
 

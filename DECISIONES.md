@@ -1098,3 +1098,54 @@ Sin PR —son datos, no código—, con respaldo en `server/respaldos/2026-09-16
 
 - ⚠️ **El panel es defensivo con el bloque nuevo** (`data.umbani?.embudo ?? []`): un servidor viejo o un despliegue a medias no puede dejar la pantalla del dueño en blanco. Lo cazó el E2E, que reventó con `Cannot read properties of undefined` en cuanto faltó el dato — la misma lección de «arranque sin blanco».
 
+
+## El «+» de los adicionales no acusaba el toque
+
+El dueño probó Monster Pizza en producción (2026-09-19), tocó el `+` de «Para
+acompañar» y «Bebidas», y **no pasó nada en pantalla**. Volvió a tocar. Al
+abrir el carrito estaban los cuatro productos.
+
+Lo primero que hay que decir es lo que NO era: **el dinero estaba bien desde el
+principio**. Pan de Ajo $2.75, Nachos $3.85, Cola $1.65 y Cerveza $1.65 entran
+al carrito con su precio y suman $9.90. Se comprobó contra el catálogo real de
+producción antes de tocar nada, y quedó escrito en `cart.test.ts` para que
+nadie lo «arregle».
+
+Lo que fallaba era que **nada se lo decía al cliente**, y las tres señales
+posibles estaban tapadas a la vez:
+
+- «Precio actual $3.03» es el precio **del plato**, y no sube — correcto: un
+  adicional es otro producto, va en su propia línea, y sumarlo a la pizza haría
+  que el negocio cobrara dos veces;
+- la barra «Ver pedido», que sí lleva el total, vive en `z-40` y **la ficha la
+  tapa entera**;
+- el botón pintaba siempre el mismo `+`, porque `ProductSheet` **no sabía nada
+  del carrito**: solo recibía la línea de su propio plato por partes.
+
+Así que el cliente tocaba cuatro veces creyendo que no respondía, y `addLine`
+suma cantidades: cuatro panes de ajo, $11 que nadie quiso. El riesgo de dinero
+existía, pero al revés de como parecía — no es que no cobre, es que puede
+cobrar de más sin que se note.
+
+**El arreglo es el patrón de cualquier app de comida:** el `+` se convierte en
+contador (`− n +`) en cuanto el adicional entra al carrito. Avisa de que el
+toque llegó, dice cuántos llevas, y deja quitarlo ahí mismo sin abrir el
+carrito — que es el viaje que de verdad molesta.
+
+⚠️ **Un adicional que se ARMA se queda con el `+`.** Si tiene variantes u
+obligatorios, `agregarAdicional` le abre su ficha y puede acabar en varias
+líneas distintas (Personal, Mediana…): un solo número no diría cuál. Sale
+gratis, sin un `if` especial — su línea suelta no existe, así que `cantidadSuelta`
+devuelve 0 y el mismo camino pinta el `+`.
+
+⚠️ **`claveSuelta` vive en `cart.ts`, no en la pantalla**, por el mismo motivo
+que `ENTREGA_POR_DEFECTO`: la calculan la portada (al agregar) y la ficha (al
+contar). Dos copias se desincronizan, y el día que divergieran el contador
+diría 0 sobre algo que sí está en el carrito y el cliente lo pediría dos veces.
+
+⚠️ Esto **no era un dato de Monster Pizza**: es el componente compartido, así
+que le pasaba a cualquier local con recomendaciones configuradas, y le habría
+pasado a todos los que se den de alta.
+
+En la carta (la rejilla de la portada) el `+` se deja como está: allí la barra
+del pedido **sí se ve** y sube al tocar, así que la señal ya existe.

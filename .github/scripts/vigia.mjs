@@ -30,6 +30,24 @@
 //   · sigue roto, hace 4 h o más         → falla (el recordatorio)
 //   · se recuperó                        → pasa en verde y lo dice en el resumen
 //
+// ⚠️ La memoria es LA HORA DEL ÚLTIMO ROJO, no «la conclusión de la anterior».
+// Ver `decidirAviso`: la segunda se contesta sola mal, porque callarse deja un
+// run verde y el siguiente cree que el problema acaba de empezar.
+//
+// ── DOS VIGÍAS, DOS MEMORIAS (2026-09-19) ───────────────────────────────────
+//
+// `VIGIA_MODO` parte la vigilancia en dos workflows:
+//
+//   · `vigia.yml`           modo `caida`    — ¿vive el bot? Cada 15 min, y el
+//                                             recordatorio a las 4 h.
+//   · `vigia-atencion.yml`  modo `atencion` — saldo, credenciales, canario y
+//                                             canal mudo. Cada 6 h, recordatorio
+//                                             a las 24 h.
+//
+// No es manía de ordenar: comparten el hueco de silencio si comparten workflow.
+// Con el saldo de YCloud en 0,50 USD fallando a diario, una caída de verdad se
+// habría quedado esperando el turno de una alarma que lleva semanas sonando.
+//
 // ⚠️ La recuperación NO genera correo, solo deja el run en verde y el resumen
 // escrito. Es una limitación asumida: lo que no se puede perder es enterarse de
 // la caída, no de la vuelta.
@@ -75,21 +93,39 @@ const ESPERA_MS = 20_000
  * el endpoint no está desplegado todavía): NO se considera un fallo, porque el
  * detalle es información de más y su ausencia no dice nada del bot.
  */
-export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENCIO }) {
-  const motivos = []
-  // ⚠️ `caida` NO es lo mismo que «hay un problema», y confundirlos arruina la
+export function evaluarSalud({
+  salud,
+  detalle,
+  horasDeSilencio = HORAS_DE_SILENCIO,
+  modo = 'todo',
+}) {
+  // ⚠️ Los motivos van en DOS cestas, y esa separación es lo que permite que
+  // el saldo bajo no tape una caída. Hasta el 2026-09-19 todo iba en una sola
+  // lista y un único workflow: con el saldo de YCloud en 0,50 USD fallando a
+  // diario, el hueco de silencio de esa alarma se le aplicaba también a «el
+  // bot está muerto». Ahora cada gravedad tiene su workflow y su memoria.
+  const deCaida = []
+  const deAtencion = []
+
+  // `caida` NO es lo mismo que «hay un problema», y confundirlos arruina la
   // alarma. El primer aviso de verdad que mandó esto decía «🔴 Producción ha
   // caído» porque al número le quedaban 0,50 USD — con el bot vivo y vendiendo.
   // Un título que exagera se deja de leer, y el día que de verdad se caiga
   // parecerá uno más.
-  let caida = false
+  const veredicto = () => {
+    const motivos = modo === 'caida'
+      ? deCaida
+      : modo === 'atencion' ? deAtencion : [...deCaida, ...deAtencion]
+    return {
+      sano: motivos.length === 0,
+      caida: modo !== 'atencion' && deCaida.length > 0,
+      motivos,
+    }
+  }
 
   if (!salud) {
-    return {
-      sano: false,
-      caida: true,
-      motivos: ['Producción no contesta: el proceso puede estar caído.'],
-    }
+    deCaida.push('Producción no contesta: el proceso puede estar caído.')
+    return veredicto()
   }
 
   // ⚠️ Contestar no es contestar TÚ. Con el servicio caído, el borde de Railway
@@ -97,35 +133,29 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
   // como «el proceso dice que no puede trabajar» — que manda a buscar el fallo
   // dentro del servidor cuando el servidor ni siquiera está arrancado.
   if (typeof salud !== 'object' || !('webhook_inbox' in salud)) {
-    return {
-      sano: false,
-      caida: true,
-      motivos: [
-        'Contestó algo que no es nuestro `/api/health`: lo normal es que sea el '
-        + 'proxy de Railway con el servicio caído, o una URL equivocada.',
-      ],
-    }
+    deCaida.push(
+      'Contestó algo que no es nuestro `/api/health`: lo normal es que sea el '
+      + 'proxy de Railway con el servicio caído, o una URL equivocada.',
+    )
+    return veredicto()
   }
 
   if (salud.ok !== true) {
-    caida = true
-    motivos.push('`/api/health` responde que el proceso NO puede trabajar (`ok: false`).')
+    deCaida.push('`/api/health` responde que el proceso NO puede trabajar (`ok: false`).')
   }
 
   const cola = salud.webhook_inbox || {}
   if (cola.running === false) {
-    caida = true
-    motivos.push('La cola de webhooks no está corriendo.')
+    deCaida.push('La cola de webhooks no está corriendo.')
   } else if (cola.ready === false) {
-    caida = true
-    motivos.push('La cola de webhooks no llega a la base.')
+    deCaida.push('La cola de webhooks no llega a la base.')
   }
 
   // El canario recorre el camino real del cliente cada 12 h. Si encontró algo,
   // significa que hoy NO se puede comprar, aunque el proceso esté vivo.
   const canario = salud.canario
   if (canario && Number(canario.fallos) > 0) {
-    motivos.push(
+    deAtencion.push(
       `El canario encontró ${canario.fallos} fallo(s) recorriendo el camino del cliente `
       + `(${canario.revisados ?? '?'} local(es) revisados el ${canario.at}).`,
     )
@@ -134,7 +164,7 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
   const canal = salud.inbound_channel || {}
   if (Number(canal.recent_failures) > 0) {
     const ultimo = canal.last_failure
-    motivos.push(
+    deAtencion.push(
       `${canal.recent_failures} entrega(s) del webhook rechazadas`
       + (ultimo ? ` — la última: ${ultimo.provider} ${ultimo.status} (${ultimo.reason}).` : '.'),
     )
@@ -142,7 +172,7 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
 
   const horas = canal.hours_since_last_inbound
   if (typeof horas === 'number' && horas >= horasDeSilencio) {
-    motivos.push(
+    deAtencion.push(
       `Canal en silencio: ${horas} h sin un solo mensaje entrante `
       + `(el límite son ${horasDeSilencio} h).`,
     )
@@ -152,34 +182,49 @@ export function evaluarSalud({ salud, detalle, horasDeSilencio = HORAS_DE_SILENC
   // credenciales. Que no esté no es un problema; que traiga problemas, sí.
   if (detalle && Array.isArray(detalle.problemas) && detalle.problemas.length) {
     for (const problema of detalle.problemas) {
-      motivos.push(
+      deAtencion.push(
         `Registro [${problema.categoria}] ${problema.codigo || 'sin código'}: `
         + `${problema.veces} vez(ces), la última el ${problema.ultima_vez}.`,
       )
     }
   }
 
-  return { sano: motivos.length === 0, caida, motivos }
+  return veredicto()
 }
 
 /**
  * ¿Toca avisar? Aquí vive la regla que evita los 96 correos al día.
  *
- * `anteriorFueFallo` y `ultimoFalloHaceMs` salen de la propia historia de
- * ejecuciones de este workflow: no se guarda estado en ningún sitio.
+ * `ultimoFalloHaceMs` sale de la propia historia de ejecuciones de este
+ * workflow: no se guarda estado en ningún sitio. Un run en ROJO es un aviso
+ * enviado, así que la hora del último rojo es la hora del último correo.
+ *
+ * ⚠️ ANTES esto preguntaba «¿la ejecución anterior fue un fallo?», y esa
+ * pregunta se contestaba sola mal: cuando el vigía se callaba dejaba un run
+ * VERDE, así que el siguiente veía verde detrás, creía que el problema era
+ * nuevo y volvía a fallar. Rojo, verde, rojo, verde cada 15 minutos — 48
+ * correos al día del único workflow escrito para no mandar 96. Estuvo así
+ * hasta el 2026-09-19, y lo destapó el dueño preguntando por qué le llegaban
+ * tantos avisos y ninguno en verde.
+ *
+ * La hora del último ROJO no tiene ese problema: no la cambia el hecho de
+ * haberse callado.
  */
-export function decidirAviso({ sano, caida = true, anteriorFueFallo, ultimoFalloHaceMs }) {
-  if (sano) {
-    return anteriorFueFallo
-      ? { avisar: false, tipo: 'recuperado', caida }
-      : { avisar: false, tipo: 'sigue-bien', caida }
-  }
-  if (!anteriorFueFallo) return { avisar: true, tipo: 'se-rompio', caida }
+export function decidirAviso({ sano, caida = true, ultimoFalloHaceMs }) {
   const espera = caida ? RECORDATORIO_MS : RECORDATORIO_ATENCION_MS
-  if (ultimoFalloHaceMs === null || ultimoFalloHaceMs >= espera) {
-    return { avisar: true, tipo: 'recordatorio', caida }
+  // Sin historia (no se pudo consultar) se asume que no hay aviso reciente:
+  // más vale un correo de más que un silencio por no saber.
+  const avisoReciente = ultimoFalloHaceMs !== null && ultimoFalloHaceMs < espera
+
+  if (sano) {
+    return { avisar: false, tipo: avisoReciente ? 'recuperado' : 'sigue-bien', caida }
   }
-  return { avisar: false, tipo: 'sigue-roto', caida }
+  if (avisoReciente) return { avisar: false, tipo: 'sigue-roto', caida }
+  return {
+    avisar: true,
+    tipo: ultimoFalloHaceMs === null ? 'se-rompio' : 'recordatorio',
+    caida,
+  }
 }
 
 const TITULOS = {
@@ -260,20 +305,21 @@ async function pedirJson(url, cabeceras = {}) {
  * anterior fue bien: más vale un aviso de más que un silencio.
  */
 async function historiaPrevia({ repo, workflow, token, runActual }) {
-  if (!token) return { anteriorFueFallo: false, ultimoFalloHaceMs: null }
+  if (!token) return { ultimoFalloHaceMs: null }
   const url = `https://api.github.com/repos/${repo}/actions/workflows/${workflow}/runs`
     + '?status=completed&per_page=20'
   const { ok, cuerpo } = await pedirJson(url, {
     authorization: `Bearer ${token}`,
     accept: 'application/vnd.github+json',
   })
-  if (!ok || !cuerpo?.workflow_runs) return { anteriorFueFallo: false, ultimoFalloHaceMs: null }
+  if (!ok || !cuerpo?.workflow_runs) return { ultimoFalloHaceMs: null }
 
-  const previos = cuerpo.workflow_runs.filter(run => String(run.id) !== String(runActual))
-  const anterior = previos[0]
-  const ultimoFallo = previos.find(run => run.conclusion === 'failure')
+  // ⚠️ Se busca el último ROJO, no «el anterior». Cada workflow tiene su propia
+  // historia, así que el vigía de las caídas y el de atención no se pisan.
+  const ultimoFallo = cuerpo.workflow_runs
+    .filter(run => String(run.id) !== String(runActual))
+    .find(run => run.conclusion === 'failure')
   return {
-    anteriorFueFallo: anterior?.conclusion === 'failure',
     ultimoFalloHaceMs: ultimoFallo
       ? Date.now() - new Date(ultimoFallo.created_at).getTime()
       : null,
@@ -296,9 +342,13 @@ async function main() {
   const cuerpoSalud = salud.cuerpo
   // Un detalle que contestó 404 (sin token o sin desplegar) no es un problema:
   // se descarta y se sigue con lo que sí dijo `/api/health`.
+  // `caida` mira solo si el bot vive; `atencion`, lo que se puede atender con
+  // calma. Cada uno corre en su propio workflow para tener su propia memoria.
+  const modo = process.env.VIGIA_MODO || 'todo'
   const { sano, caida, motivos } = evaluarSalud({
     salud: cuerpoSalud,
     detalle: detalle.ok ? detalle.cuerpo : null,
+    modo,
   })
 
   if (token && !detalle.ok) {
@@ -307,7 +357,8 @@ async function main() {
 
   const previa = await historiaPrevia({
     repo: process.env.GITHUB_REPOSITORY,
-    workflow: process.env.VIGIA_WORKFLOW || 'vigia.yml',
+    workflow: process.env.VIGIA_WORKFLOW
+      || (modo === 'atencion' ? 'vigia-atencion.yml' : 'vigia.yml'),
     token: process.env.GITHUB_TOKEN,
     runActual: process.env.GITHUB_RUN_ID,
   })

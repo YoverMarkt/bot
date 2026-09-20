@@ -22,8 +22,8 @@ import {
   setAddressLocation,
 } from '../lib/api'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, claveDelPlato, esPlatoPorPartes, lineKey,
-  lineTotal, needsAddress, orderTotal, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cantidadSuelta, cartCount, cartTotal, claveDelPlato, claveSuelta,
+  esPlatoPorPartes, lineTotal, needsAddress, orderTotal, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Bienvenida, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
@@ -300,7 +300,7 @@ export default function FoodStore({
     }
 
     setLineas(actuales => addLine(actuales, {
-      key: lineKey(producto, null, [], '', []),
+      key: claveSuelta(producto),
       product: producto,
       variant: null,
       extras: [],
@@ -309,6 +309,24 @@ export default function FoodStore({
       note: '',
       unitPrice: unitPrice(producto, null, [], []),
     }))
+  }, [catalogo])
+
+  /** Cuántos lleva el carrito de ese adicional. Alimenta el contador de la ficha. */
+  const cuantosSueltos = useCallback((productId: string): number => {
+    const producto = catalogo?.products.find(item => item.id === productId)
+    return producto ? cantidadSuelta(lineas, producto) : 0
+  }, [catalogo, lineas])
+
+  /**
+   * Sube, baja o quita un adicional desde la ficha de otro producto.
+   *
+   * ⚠️ En CERO la línea desaparece y el contador vuelve a ser un `+`, que es
+   * lo que espera cualquiera: `setQuantity` ya lo resuelve así.
+   */
+  const cambiarSuelto = useCallback((productId: string, cantidad: number) => {
+    const producto = catalogo?.products.find(item => item.id === productId)
+    if (!producto) return
+    setLineas(actuales => setQuantity(actuales, claveSuelta(producto), Math.min(99, cantidad)))
   }, [catalogo])
 
   /**
@@ -1254,6 +1272,8 @@ export default function FoodStore({
         onCerrar={() => setElegido(null)}
         onAgregar={linea => setLineas(actuales => addLine(actuales, linea))}
         onAgregarSuelto={agregarAdicional}
+        cantidadSuelta={cuantosSueltos}
+        onCambiarSuelto={cambiarSuelto}
         puedePedir={puedePedir}
         lineaEnCarrito={elegido
           ? lineas.find(linea => linea.key === claveDelPlato(elegido)) ?? null

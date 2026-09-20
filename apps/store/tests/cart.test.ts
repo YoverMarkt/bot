@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, groupExtras, groupPrice,
-  chosenLines, detalleDeLinea, groupChosen, lineKey, lineTotal, missingRequirement, needsAddress,
-  optionPriceLabel, orderTotal, pillLayout, setQuantity, singleChoice, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cantidadSuelta, cartCount, cartTotal, chosenCount, claveSuelta,
+  groupExtras, groupPrice, chosenLines, detalleDeLinea, groupChosen, lineKey, lineTotal,
+  missingRequirement, needsAddress, optionPriceLabel, orderTotal, pillLayout, setQuantity,
+  singleChoice, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -751,5 +752,85 @@ describe('detalleDeLinea', () => {
     expect(detalleDeLinea(linea({
       product: producto({ description: '   ', optionGroups: [] }),
     }))).toEqual([])
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL CONTADOR DE LOS ADICIONALES
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El `+` de «Para acompañar» metía el pan de ajo en el carrito con su precio
+// correcto y NO cambiaba nada en pantalla: el precio de arriba es el del plato
+// —no sube, y está bien que no suba— y la barra del pedido queda tapada por la
+// ficha. El cliente tocaba cuatro veces y pedía cuatro. Lo encontró el dueño
+// probando Monster Pizza en producción (2026-09-19).
+//
+// Lo que se comprueba aquí es que la ficha y la portada cuenten LO MISMO: si
+// `claveSuelta` divergiera de la clave con la que se agrega, el contador diría
+// 0 sobre algo que sí está en el carrito y se volvería a pedir.
+
+describe('los adicionales que se agregan desde la ficha de otro plato', () => {
+  const pan = producto({ id: 'pan', name: 'Pan de Ajo Cheese', priceFrom: 2.75 })
+
+  const enCarrito = (cantidad: number): CartLine[] => [linea({
+    key: claveSuelta(pan),
+    product: pan,
+    unitPrice: unitPrice(pan, null, [], []),
+    quantity: cantidad,
+  })]
+
+  it('la clave es la MISMA con la que lo agrega la portada', () => {
+    expect(claveSuelta(pan)).toBe(lineKey(pan, null, [], '', []))
+  })
+
+  it('cuenta lo que ya lleva el carrito', () => {
+    expect(cantidadSuelta(enCarrito(3), pan)).toBe(3)
+  })
+
+  it('sin nada en el carrito son cero, que es lo que deja el botón en «+»', () => {
+    expect(cantidadSuelta([], pan)).toBe(0)
+  })
+
+  it('el adicional SÍ sube el total del carrito, aunque el plato no cambie', () => {
+    // El fallo que se reportó era este, y resultó no serlo: el dinero estaba
+    // bien desde el principio. Se deja escrito para que nadie lo «arregle».
+    expect(cartTotal(enCarrito(1))).toBe(2.75)
+    expect(cartTotal(enCarrito(4))).toBe(11)
+  })
+
+  it('tocar cuatro veces son cuatro panes, y por eso hacía falta verlo', () => {
+    let lineas: CartLine[] = []
+    for (let toque = 0; toque < 4; toque += 1) {
+      lineas = addLine(lineas, {
+        key: claveSuelta(pan),
+        product: pan,
+        variant: null,
+        extras: [],
+        options: [],
+        quantity: 1,
+        note: '',
+        unitPrice: unitPrice(pan, null, [], []),
+      })
+    }
+    expect(lineas).toHaveLength(1)
+    expect(cantidadSuelta(lineas, pan)).toBe(4)
+  })
+
+  it('bajar a cero lo quita, y el contador vuelve a ser un «+»', () => {
+    const vacio = setQuantity(enCarrito(1), claveSuelta(pan), 0)
+    expect(vacio).toHaveLength(0)
+    expect(cantidadSuelta(vacio, pan)).toBe(0)
+  })
+
+  it('una línea CON variante no la cuenta: ahí el contador mentiría', () => {
+    // Un adicional que se arma abre su ficha y puede acabar en varias líneas
+    // (Personal, Mediana…). Un solo número no dice cuál, así que se queda el
+    // «+» — y sale gratis porque su línea suelta no existe.
+    const conVariante = [linea({
+      key: lineKey(pan, variante(), [], '', []),
+      product: pan,
+      unitPrice: 16,
+    })]
+    expect(cantidadSuelta(conVariante, pan)).toBe(0)
   })
 })
