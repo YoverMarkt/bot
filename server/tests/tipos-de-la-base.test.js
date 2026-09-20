@@ -94,6 +94,9 @@ describe('los tipos están ENCHUFADOS, no solo generados', () => {
       const t = readFileSync(`${repos}/${f}`, 'utf8')
       return t.includes('SupabaseClient<Database>')
     })
-    expect(tipados.length).toBeGreaterThanOrEqual(6)
+    // ⚠️ Eran 6 hasta el 2026-09-20. Bajó a 5 porque se RETIRÓ `policies.ts`
+    // con la tabla `bot_policies`, no porque se desenchufara ninguno: este
+    // número solo puede bajar retirando repositorios, nunca destipándolos.
+    expect(tipados.length).toBeGreaterThanOrEqual(5)
   })
 })

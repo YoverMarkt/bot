@@ -1,6 +1,5 @@
 import businesses = require('./repositories/businesses')
 import users = require('./repositories/client-users')
-import policies = require('./repositories/policies')
 import billing = require('./repositories/billing')
 import products = require('./repositories/products')
 import history = require('./repositories/conversation-history')
@@ -30,7 +29,6 @@ import pricingRules = require('./repositories/pricing-rules')
 const database = {
   ...businesses,
   ...users,
-  ...policies,
   ...billing,
   ...products,
   ...history,

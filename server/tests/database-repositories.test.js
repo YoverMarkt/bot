@@ -20,10 +20,6 @@ const usersSource = readFileSync(
   `${serverDir}/src/db/repositories/client-users.ts`,
   'utf8',
 )
-const policiesSource = readFileSync(
-  `${serverDir}/src/db/repositories/policies.ts`,
-  'utf8',
-)
 const billingSource = readFileSync(
   `${serverDir}/src/db/repositories/billing.ts`,
   'utf8',
@@ -126,7 +122,7 @@ describe('migración de la capa de datos', () => {
     expect(channelsSource).toContain('nunca infiere país ni compara sufijos')
   })
 
-  it('mantiene usuarios, políticas y facturación en repositorios tipados', () => {
+  it('mantiene usuarios y facturación en repositorios tipados', () => {
     for (const method of [
       'getClientByEmail',
       'getClientUserByBusiness',
@@ -136,8 +132,6 @@ describe('migración de la capa de datos', () => {
       'getClientUserById',
       'updateClientUserById',
       'deleteClientUserById',
-      'getPolicies',
-      'upsertPolicies',
       'getBilling',
       'ensureCurrentMonthBilling',
       'updateBillingStatus',
@@ -149,12 +143,13 @@ describe('migración de la capa de datos', () => {
     expect(facadeSource).not.toContain("from('billing')")
   })
 
-  it('protege dueño, empleados y políticas con business_id', () => {
+  // ⚠️ Aquí también se comprobaba `policies.ts`. El repositorio se retiró el
+  // 2026-09-20 con la tabla `bot_policies`: el saludo y las políticas que
+  // guardaba no los leía nadie.
+  it('protege dueño y empleados con business_id', () => {
     expect(usersSource).toContain(".eq('business_id', businessId)")
     expect(usersSource).toContain(".eq('role', 'owner')")
     expect(usersSource).toContain(".eq('role', 'employee')")
-    expect(policiesSource).toContain(".eq('business_id', businessId)")
-    expect(policiesSource).toContain('business_id: businessId')
     expect(billingSource).toContain("db.rpc('ensure_current_month_billing')")
   })
 

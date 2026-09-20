@@ -1247,3 +1247,42 @@ intentos anteriores «demostraron» que no había fallo porque el guion recargab
 la página entre pasos, y **recargar reinicia las marcas y hace desaparecer el
 bug**. Una reproducción que no es fiel miente en la dirección más cara: dice
 que todo va bien.
+
+## La pantalla «Bienvenida» no la leía nadie
+
+El dueño, mirando su panel (2026-09-20): *«lo que sí tenemos que eliminar es el
+mensaje de bienvenida de los paneles de los dueños; ahora cada local sale de
+Umbani»*.
+
+Al ir a quitarlo apareció que el problema era mayor: **la pantalla entera
+estaba desconectada**. Sus cuatro campos —el saludo, envíos, devoluciones y
+descuentos— se guardaban en `bot_policies`, y **ningún servicio los
+consultaba**: ni el bot, ni el marketplace, ni la tienda. El dueño escribía y
+el cliente no veía nada. Medido en producción antes de tocar: 2 filas, una con
+un saludo de Monster Pizza y el resto vacío.
+
+Venía de la época de la IA —`bot_prompt` y `bot_instructions` se fueron el
+2026-08-21— y el saludo quedó de herencia, sin nadie que lo leyera.
+
+**Se retiró entero:** la pantalla del panel del dueño, el «Mensaje de
+bienvenida» del superadmin, las cinco rutas, el repositorio y la tabla.
+
+⚠️ **El orden dentro de la migración no es negociable.**
+`create_business_onboarding` insertaba una fila en `bot_policies` al dar de
+alta un negocio. Borrar la tabla sin redefinir antes la función habría roto
+**el alta de todo negocio nuevo** — exactamente el fallo que ya tumbó las altas
+el 2026-08-02. Por eso la migración redefine la función primero y hace el
+`drop` después, en la misma transacción.
+
+⚠️ **Dos pasos menos en la lista de configuración.** «Personaliza el prompt del
+bot» y «Completa las políticas» medían campos de esa tabla: el dueño los
+rellenaba, la lista se ponía en verde, y el cliente no veía nada distinto. Una
+lista de tareas que premia trabajo inútil es peor que no tenerla.
+
+**Lo que lo cazó todo, y por eso vale la pena tenerlo:** cuatro guardianes
+distintos fallaron uno tras otro al retirarlo, y cada uno señaló algo que se
+habría escapado —el verificador de esquema exigía la fila del alta, el del
+contrato panel↔servidor encontró dos funciones del panel llamando a rutas ya
+borradas, el del consolidado vio que `schema.sql` y la última migración habían
+divergido, y el multi-tenant tenía la tabla en su lista—. Ninguno era un falso
+positivo.

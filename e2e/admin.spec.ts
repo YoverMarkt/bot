@@ -329,9 +329,15 @@ test('la tabla de clientes no promete un bot ni un canal por local', async ({ pa
 
   // «Verificar conexión» respondía SIEMPRE «Proveedor no reconocido», y
   // «Pausar bot» prometía dejar mudo a un local sin cortar nada.
+  //
+  // ⚠️ «Mensaje de bienvenida» se sumó a esa lista el 2026-09-20: el saludo
+  // que guardaba no lo leía NADIE —ni el bot, ni el marketplace, ni la
+  // tienda—, así que el superadmin editaba un campo que no cambiaba nada.
+  // Cada local se presenta desde Umbani.
   await visible.getByRole('button', { name: /Más acciones/ }).click()
   const menu = page.getByRole('menu')
-  await expect(menu.getByRole('menuitem', { name: 'Mensaje de bienvenida' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Ver información' })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Mensaje de bienvenida' })).toHaveCount(0)
   await expect(menu.getByRole('menuitem', { name: /Verificar conexión/ })).toHaveCount(0)
   await expect(menu.getByRole('menuitem', { name: /Pausar bot/ })).toHaveCount(0)
   await expect(menu.getByRole('menuitem', { name: /Reanudar bot/ })).toHaveCount(0)

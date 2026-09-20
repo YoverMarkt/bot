@@ -818,24 +818,17 @@ create index if not exists idx_menu_modifiers_business_tag
 create unique index if not exists uq_menu_modifiers_business_tag_name
   on public.menu_modifiers (business_id, category_tag, lower(name));
 
--- ── TABLA 4: Políticas + prompt del bot por negocio ────────
-create table if not exists bot_policies (
-  id                uuid primary key default gen_random_uuid(),
-  business_id       uuid not null references businesses(id) on delete cascade unique,
-  -- El saludo que escribe el DUEÑO y se manda TAL CUAL, sin pasar por ningún
-  -- modelo. Admite {{negocio}}. Vacío = saludo por defecto con el nombre.
-  --
-  -- ⚠️ Era `bot_prompt` —instrucciones para una IA de las que el código pescaba
-  -- un saludo con expresiones regulares— hasta el 2026-08-21. `bot_instructions`
-  -- se fue con la IA: nada más lo leía.
-  welcome_message   text
-                    constraint bot_policies_welcome_check
-                    check (welcome_message is null or char_length(welcome_message) <= 280),
-  shipping          text,
-  returns           text,
-  discounts         text,
-  updated_at        timestamptz default now()
-);
+-- ── TABLA 4: RETIRADA ──────────────────────────────────────
+--
+-- `bot_policies` (saludo del dueño + envíos, devoluciones y descuentos) se
+-- retiró el 2026-09-20. Sus cuatro campos los escribía el dueño en la pantalla
+-- «Bienvenida» del panel y **no los leía NADIE**: ningún servicio del bot, del
+-- marketplace ni de la tienda los consultaba. Cada local se presenta desde
+-- Umbani, y el saludo del marketplace es otro y vive aparte.
+--
+-- ⚠️ El `insert into bot_policies` que hacía `create_business_onboarding` se
+-- fue con ella: dejarlo habría roto el alta de TODO negocio nuevo, que es
+-- justo el fallo que ya tumbó las altas el 2026-08-02.
 
 -- ── TABLA 5: Historial de conversaciones ───────────────────
 create table if not exists conversation_history (
@@ -1683,8 +1676,6 @@ begin
     nullif(p_business ->> 'notes', ''),
     p_monthly_rate
   ) returning * into v_business;
-
-  insert into bot_policies (business_id) values (v_business.id);
 
   insert into business_schedule (
     business_id, day_of_week, open_time, close_time, slot_duration, is_active
@@ -4023,7 +4014,6 @@ alter table business_channel_identifiers enable row level security;
 alter table client_users          enable row level security;
 alter table products              enable row level security;
 alter table menu_modifiers        enable row level security;
-alter table bot_policies          enable row level security;
 alter table conversation_history  enable row level security;
 alter table conversation_sessions enable row level security;
 alter table conversation_tags     enable row level security;
@@ -4130,8 +4120,6 @@ begin
     nullif(p_business ->> 'notes', ''),
     p_monthly_rate
   ) returning * into v_business;
-
-  insert into public.bot_policies (business_id) values (v_business.id);
 
   insert into public.business_schedule (
     business_id, day_of_week, open_time, close_time, slot_duration, is_active
@@ -4782,9 +4770,6 @@ begin
     v_outbound_limit
   )
   returning * into v_business;
-
-  insert into public.bot_policies (business_id)
-  values (v_business.id);
 
   insert into public.business_schedule (
     business_id,
@@ -6302,9 +6287,6 @@ begin
     coalesce((p_business ->> 'delivery_extra_minutes')::int, 10)
   )
   returning * into v_business;
-
-  insert into public.bot_policies (business_id)
-  values (v_business.id);
 
   insert into public.business_schedule (
     business_id,

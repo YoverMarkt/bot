@@ -30,7 +30,6 @@ const bcrypt = require('bcryptjs') as {
 }
 const db: {
   countProducts(businessId: string): Promise<number>
-  getPolicies(businessId: string): Promise<DataRecord | null>
   getSchedule(businessId: string): Promise<Array<{ is_active?: unknown }>>
   getBusinessById(businessId: string): Promise<BusinessRecord | null>
   getClientUsers(businessId: string): Promise<unknown>
@@ -75,18 +74,11 @@ function filterPermissions(value: unknown): Permission[] {
 router.get('/api/client/onboarding', auth.authClient, async (req, res) => {
   try {
     const businessId = getClientBusinessId(req)
-    const [productCount, policies, schedule, business] = await Promise.all([
+    const [productCount, schedule, business] = await Promise.all([
       db.countProducts(businessId),
-      db.getPolicies(businessId),
       db.getSchedule(businessId),
       db.getBusinessById(businessId),
     ])
-    const policiesReady = policies && (
-      hasValue(policies.shipping)
-      || hasValue(policies.returns)
-      || hasValue(policies.discounts)
-      
-    )
     const scheduleReady = schedule.some(day => day.is_active) || hasValue(business?.hours)
     const whatsappNumber = business?.whatsapp_number
     const steps = [
@@ -97,18 +89,12 @@ router.get('/api/client/onboarding', auth.authClient, async (req, res) => {
         hint: productCount > 0 ? `${productCount} cargado(s)` : '',
         page: 'products',
       },
-      {
-        key: 'prompt',
-        label: 'Personaliza el prompt del bot',
-        done: hasValue(policies?.welcome_message),
-        page: 'botprompt',
-      },
-      {
-        key: 'politicas',
-        label: 'Completa las políticas (envíos, garantía…)',
-        done: Boolean(policiesReady),
-        page: 'policies',
-      },
+      // ⚠️ Aquí había dos pasos más —«Personaliza el prompt del bot» y
+      // «Completa las políticas»— retirados el 2026-09-20 con la pantalla
+      // «Bienvenida». Los dos medían campos de `bot_policies` que no leía
+      // NADIE: el dueño los rellenaba, la lista se ponía en verde y el cliente
+      // no veía nada distinto. Una lista de tareas que premia trabajo inútil
+      // es peor que no tenerla. Cada local se presenta desde Umbani.
       {
         key: 'horario',
         label: 'Define tu horario de atención',

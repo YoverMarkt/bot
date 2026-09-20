@@ -201,44 +201,6 @@ export type Database = {
           },
         ]
       }
-      bot_policies: {
-        Row: {
-          business_id: string
-          discounts: string | null
-          id: string
-          returns: string | null
-          shipping: string | null
-          updated_at: string | null
-          welcome_message: string | null
-        }
-        Insert: {
-          business_id: string
-          discounts?: string | null
-          id?: string
-          returns?: string | null
-          shipping?: string | null
-          updated_at?: string | null
-          welcome_message?: string | null
-        }
-        Update: {
-          business_id?: string
-          discounts?: string | null
-          id?: string
-          returns?: string | null
-          shipping?: string | null
-          updated_at?: string | null
-          welcome_message?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "bot_policies_business_id_fkey"
-            columns: ["business_id"]
-            isOneToOne: true
-            referencedRelation: "businesses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       business_bank_accounts: {
         Row: {
           account_number: string

@@ -83,10 +83,6 @@ describe('onboarding y equipo del negocio', () => {
 
   it('calcula onboarding únicamente con datos del negocio autenticado', async () => {
     vi.spyOn(db, 'countProducts').mockResolvedValue(2)
-    vi.spyOn(db, 'getPolicies').mockResolvedValue({
-      welcome_message: '¡Hola! Bienvenido 👋',
-      shipping: 'Envíos nacionales',
-    })
     vi.spyOn(db, 'getSchedule').mockResolvedValue([{ is_active: true }])
     vi.spyOn(db, 'getBusinessById').mockResolvedValue({
       hours: '09:00-18:00',
@@ -99,8 +95,12 @@ describe('onboarding y equipo del negocio', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(response.body).toMatchObject({ done: 5, total: 5, pct: 100 })
-    for (const method of ['countProducts', 'getPolicies', 'getSchedule', 'getBusinessById']) {
+    // ⚠️ Eran CINCO pasos. «Personaliza el prompt del bot» y «Completa las
+    // políticas» se retiraron el 2026-09-20: medían campos de `bot_policies`
+    // que no leía nadie, así que ponían la lista en verde por trabajo que el
+    // cliente nunca llegaba a ver.
+    expect(response.body).toMatchObject({ done: 3, total: 3, pct: 100 })
+    for (const method of ['countProducts', 'getSchedule', 'getBusinessById']) {
       expect(db[method]).toHaveBeenCalledWith('business-a')
     }
   })

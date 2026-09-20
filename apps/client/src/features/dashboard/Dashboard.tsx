@@ -48,7 +48,7 @@ type QuickStats = { totalProducts: number; availableProducts: number; messagesTo
 
 // Mapa de páginas del viejo → rutas del panel React (para el checklist)
 const PAGE_ROUTE: Record<string, string> = {
-  products: '/catalog', botprompt: '/settings', policies: '/settings',
+  products: '/catalog',
   settings: '/settings', schedule: '/schedule', conversations: '/conversations',
 }
 

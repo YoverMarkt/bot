@@ -59,14 +59,13 @@ async function dispatch(method, path, { auth, body = {}, query = {} } = {}) {
 }
 
 describe('identidad y políticas del negocio', () => {
-  it('protege ocho endpoints y reserva las escrituras para el dueño', async () => {
+  // ⚠️ Eran ocho. Las tres de políticas se retiraron el 2026-09-20 con la
+  // tabla `bot_policies`: lo que guardaban no lo leía nadie.
+  it('protege cinco endpoints y reserva las escrituras para el dueño', async () => {
     const routes = [
       ['get', '/api/client/stats', 2],
       ['get', '/api/client/business', 2],
       ['put', '/api/client/business', 3],
-      ['get', '/api/client/policies', 3],
-      ['put', '/api/client/policies', 3],
-      ['put', '/api/client/welcome-message', 3],
       ['get', '/api/client/bank-account', 3],
       ['put', '/api/client/bank-account', 3],
     ]
@@ -305,27 +304,6 @@ describe('identidad y políticas del negocio', () => {
     expect(JSON.stringify(failed.body)).not.toContain('detalle interno')
     expect(updateBusiness).toHaveBeenCalledWith('business-a', {
       name: 'Nombre actualizado',
-    })
-  })
-
-  it('lee y guarda políticas únicamente para el negocio autenticado', async () => {
-    const policies = { shipping: 'Envíos nacionales' }
-    const getPolicies = vi.spyOn(db, 'getPolicies').mockResolvedValue(policies)
-    const upsertPolicies = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({})
-    const auth = authorization()
-
-    const read = await dispatch('get', '/api/client/policies', { auth })
-    await dispatch('put', '/api/client/policies', { auth, body: policies })
-    await dispatch('put', '/api/client/welcome-message', {
-      auth,
-      body: { welcome_message: '¡Hola! Bienvenido', businessId: 'business-b' },
-    })
-
-    expect(read.body).toEqual(policies)
-    expect(getPolicies).toHaveBeenCalledWith('business-a')
-    expect(upsertPolicies).toHaveBeenNthCalledWith(1, 'business-a', policies)
-    expect(upsertPolicies).toHaveBeenNthCalledWith(2, 'business-a', {
-      welcome_message: '¡Hola! Bienvenido',
     })
   })
 

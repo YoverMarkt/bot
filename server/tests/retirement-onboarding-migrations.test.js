@@ -46,6 +46,13 @@ describe('onboarding durante el retiro por fases', () => {
   const sinIA = ultimaFuncionOnboarding(
     leer('migration-2026-08-21-retirar-el-modo-ia.sql'),
   )
+  // La ÚLTIMA: retira el `insert into bot_policies` del alta, porque la tabla
+  // se fue con la pantalla «Bienvenida» (2026-09-20). Si no estuviera aquí,
+  // este guardián compararía el esquema con una versión anterior y daría por
+  // bueno el desfase — que es justo lo que avisa el comentario de arriba.
+  const sinPoliticas = ultimaFuncionOnboarding(
+    leer('migration-2026-09-20-retirar-bot-policies.sql'),
+  )
   it('fase 1 conserva citas, tienda y los tres modos del despliegue mixto', () => {
     expect(hospedaje).toContain("v_chat_mode not in ('menu', 'ai', 'miniapp')")
     expect(hospedaje).toMatch(
@@ -114,7 +121,9 @@ describe('onboarding durante el retiro por fases', () => {
   it('el contrato final de schema.sql coincide con la última migración', () => {
     const contratoFinal = ultimaFuncionOnboarding(leer('schema.sql'))
 
-    expect(contratoFinal).toBe(sinMenu)
+    expect(contratoFinal).toBe(sinPoliticas)
+    // Y el alta ya no toca la tabla retirada.
+    expect(contratoFinal).not.toContain('bot_policies')
     expect(contratoFinal).toContain("v_chat_mode not in ('miniapp')")
     expect(contratoFinal).not.toMatch(/\btakes_bookings\b|\blodging_enabled\b/)
     expect(contratoFinal).toMatch(/\bprep_time_minutes,\s*delivery_extra_minutes/)
