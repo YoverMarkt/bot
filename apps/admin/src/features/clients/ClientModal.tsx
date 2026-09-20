@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import * as adm from './api'
 import type { BusinessPayload } from './api'
 import { Button } from '@botpanel/ui/components/button'
@@ -505,7 +506,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
             {!id && <p className="mb-4 text-xs text-muted-foreground">Se creará un horario inicial de lunes a viernes, 09:00–18:00, y sábado, 09:00–13:00. El dueño puede cambiarlo inmediatamente desde Horarios.</p>}
 
-            {error && <p role="alert" className="text-sm text-destructive mb-3">✗ {error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-destructive mb-3 flex items-start gap-1.5">
+                <X className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </p>
+            )}
 
             <DialogFooter className="mx-0 mb-0 px-0 pb-0">
               <Button variant="outline" type="button" onClick={onClose}>Cancelar</Button>

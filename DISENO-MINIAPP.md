@@ -239,6 +239,34 @@ El `+` **no agrega a ciegas**: si el producto tiene grupos obligatorios o
 variantes, abre su ficha para completarlos. Es la misma regla que ya seguían
 los adicionales, y la que la base va a exigir igual al crear el pedido.
 
+## Los símbolos son ICONOS, nunca caracteres
+
+Un visto, una cruz, un más o un menos **se pintan con el icono del sistema**
+(`RiCheckLine` y compañía en la tienda; `Check`, `X` de lucide en los paneles),
+nunca escribiendo «✓», «✗» o «+» dentro del texto.
+
+**Por qué:** con el carácter, lo que el navegador alinea es la caja de línea de
+la FUENTE, así que el símbolo queda alto respecto al texto que lleva al lado y
+la pantalla se lee como pegada de otra app. Con el icono se alinea la caja del
+icono.
+
+Ya estaba escrito para el `+` de la carta —«el icono `Plus`, no el CARÁCTER
+"+": con el carácter, lo que el flex centra es la caja de línea y la cruz queda
+alta en el círculo»— y volvió por otra puerta: el 2026-09-20 el dueño vio la
+píldora «✓ Listo» de un grupo obligatorio y dijo «el check de obligatorio es un
+check viejo». Al buscarlo aparecieron **nueve más** repartidos por los dos
+paneles: errores de login, de dashboard, de subida de archivos y de
+verificación de credenciales.
+
+⚠️ **Aplica a las TRES aplicaciones**, no solo a la tienda: el dueño lo pidió
+así —«quiero que el diseño esté en todas las pantallas y estas cosas no
+pasen»—, y lo vigila `server/tests/iconos-guardian.test.js`, que recorre
+`apps/*/src` en cada PR. Los comentarios sí pueden nombrarlos: explicar por
+qué no se usan es parte de que la regla sobreviva.
+
+⚠️ Un precio **sí** lleva su signo en el texto (`+$1.65`, `−$0.50`): ahí el
+signo es parte del número, no un icono de estado.
+
 ## 3. Ficha del producto
 
 **Rehecha el 2026-08-27** sobre el mismo lenguaje que la portada nueva. Su

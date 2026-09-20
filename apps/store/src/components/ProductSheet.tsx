@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { RiAddLine, RiCloseLine } from '@remixicon/react'
+import { RiAddLine, RiCheckLine, RiCloseLine } from '@remixicon/react'
 import { Boton, Contador, Foto, Hoja, LISTA, Marca, ROTULO } from './ui'
 import { money } from '../lib/format'
 import { foto } from '../lib/imagen'
@@ -536,11 +536,23 @@ export default function ProductSheet({
                       // conserva entero: lo que cambia es que el color de marca
                       // va de FONDO —con su letra calculada por luminancia— en
                       // vez de ir en la letra.
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold tracking-normal normal-case ${
+                      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold tracking-normal normal-case ${
                         cumplido ? 'bg-marca-suave texto-cuerpo' : 'acento shadow-acento'
                       }`}
                       >
-                        {cumplido ? '✓ Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}
+                        {/* ⚠️ El icono `RiCheckLine`, no el CARÁCTER «✓». Es la
+                            misma cicatriz que el `+` de la carta: con el
+                            carácter, lo que el flex centra es la caja de línea
+                            de la fuente, así que el visto queda alto respecto
+                            al texto y se lee como de otra app. Además es el
+                            único ✓ dibujado a mano que quedaba en la tienda —
+                            los demás (la marca de la opción elegida, la
+                            ubicación lista, el pedido recibido) ya usaban el
+                            icono. Lo pidió el dueño al verlo en producción
+                            (2026-09-20): «el check de obligatorio es un check
+                            viejo». */}
+                        {cumplido && <RiCheckLine size={12} />}
+                        {cumplido ? 'Listo' : minimo > 1 ? `Elige ${minimo}` : 'Obligatorio'}
                       </span>
                     )
                   : esPlato

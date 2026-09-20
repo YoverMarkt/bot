@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS VISTOS Y LAS CRUCES SON ICONOS, NO CARACTERES
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Con el carácter «✓» dentro de un texto, lo que el navegador alinea es la
+// caja de línea de la FUENTE: el símbolo queda alto respecto al texto que
+// lleva al lado y la pantalla se lee como pegada de otra app. Con el icono,
+// se alinea la caja del icono.
+//
+// No es teoría: es la misma cicatriz que ya está escrita para el `+` de la
+// carta («el icono `Plus`, no el CARÁCTER «+»: con el carácter, lo que el flex
+// centra es la caja de línea y la cruz queda alta en el círculo»).
+//
+// El dueño lo vio en producción el 2026-09-20, en la píldora «✓ Listo» de un
+// grupo obligatorio: «el check de obligatorio es un check viejo». Al buscarlo
+// aparecieron NUEVE más repartidos por los dos paneles — errores de login, de
+// dashboard, de subida de archivos y de verificación de credenciales.
+//
+// Este guardián existe porque el dueño pidió justo eso: «quiero que el diseño
+// esté en todas las pantallas y estas cosas no pasen».
+//
+// ⚠️ Los COMENTARIOS sí pueden nombrarlos: explicar por qué no se usan es
+// parte de que la regla sobreviva.
+
+/** El visto, la cruz y sus parientes, cuando van dibujados en el texto. */
+const SIMBOLOS = /[✓✔✗✘☑☒]/
+
+const CARPETAS = ['apps/store/src', 'apps/client/src', 'apps/admin/src', 'packages/ui/src']
+
+/**
+ * Las líneas que son comentario, marcadas de una pasada.
+ *
+ * ⚠️ Hay que RASTREAR el bloque, no mirar línea a línea: la segunda línea de
+ * un comentario `{/* … *\/}` de JSX no empieza por `*` ni por `//`, y un
+ * detector ingenuo la daba por código. Lo destapó este mismo guardián
+ * señalando el comentario que explica su propia regla.
+ */
+function lineasDeComentario(lineas) {
+  const marcadas = new Set()
+  let dentro = false
+  lineas.forEach((linea, i) => {
+    const limpia = linea.trim()
+    if (dentro) {
+      marcadas.add(i)
+      if (limpia.includes('*/')) dentro = false
+      return
+    }
+    if (limpia.startsWith('//')) return marcadas.add(i)
+    const abre = linea.indexOf('/*')
+    if (abre === -1) return
+    marcadas.add(i)
+    // Un bloque que abre y cierra en la misma línea no deja nada abierto.
+    if (linea.indexOf('*/', abre) === -1) dentro = true
+  })
+  return marcadas
+}
+
+function fuentes(dir) {
+  const completa = path.join(raiz, dir)
+  let entradas = []
+  try { entradas = readdirSync(completa) } catch { return [] }
+  return entradas.flatMap((nombre) => {
+    const ruta = path.join(dir, nombre)
+    if (statSync(path.join(raiz, ruta)).isDirectory()) return fuentes(ruta)
+    return /\.tsx?$/.test(nombre) ? [ruta] : []
+  })
+}
+
+describe('los vistos y las cruces van como icono', () => {
+  it('ninguna pantalla los dibuja a mano en el texto', () => {
+    const culpables = []
+    for (const carpeta of CARPETAS) {
+      for (const archivo of fuentes(carpeta)) {
+        const lineas = readFileSync(path.join(raiz, archivo), 'utf8').split('\n')
+        const comentarios = lineasDeComentario(lineas)
+        lineas.forEach((linea, i) => {
+          if (SIMBOLOS.test(linea) && !comentarios.has(i)) {
+            culpables.push(`${archivo}:${i + 1} → ${linea.trim().slice(0, 90)}`)
+          }
+        })
+      }
+    }
+
+    expect(culpables, `Usa el icono del sistema (RiCheckLine en la tienda, `
+      + `Check/X de lucide en los paneles) en vez del carácter:\n${culpables.join('\n')}`)
+      .toEqual([])
+  })
+
+  it('sabe distinguir un comentario de una pantalla', () => {
+    // Si no supiera, el propio aviso que explica la regla lo haría fallar para
+    // siempre y alguien acabaría borrando el guardián.
+    const marcadas = lineasDeComentario([
+      '    {/* Aquí iba un visto',
+      '        dibujado a mano, y quedaba alto */}',
+      "    setStatus('OK')",
+      '    // ojo con esto',
+      '    <p>{error}</p>',
+      '    /* de una línea */',
+    ])
+    expect([...marcadas].sort((a, b) => a - b)).toEqual([0, 1, 3, 5])
+  })
+
+  it('caza de verdad un símbolo escrito en una pantalla', () => {
+    // Un guardián que nunca ha visto lo que persigue no sirve de nada.
+    const lineas = ["  <p>✗ {error}</p>", '  // el ✓ va como icono']
+    const comentarios = lineasDeComentario(lineas)
+    const pillados = lineas.filter((l, i) => SIMBOLOS.test(l) && !comentarios.has(i))
+    expect(pillados).toHaveLength(1)
+    expect(pillados[0]).toContain('<p>')
+  })
+})
