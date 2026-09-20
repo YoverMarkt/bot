@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
     "staging:up": "node server/tests/staging.mjs levantar",
+    "staging:actualizar": "node server/tests/staging.mjs actualizar",
     "staging:down": "supabase stop",
     "staging:reset": "supabase db reset --no-seed && npm run staging:preparar -w @botpanel/server"
   },
