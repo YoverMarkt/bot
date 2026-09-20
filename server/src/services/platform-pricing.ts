@@ -48,12 +48,13 @@ export type MarkupStrategy = 'percentage' | 'fixed' | 'tiered'
  * · `absorbed` → el cliente paga $10, el comercio recibe $9, la plataforma $1.
  * · `on_top`   → el cliente paga $11, el comercio recibe $10, la plataforma $1.
  *
- * ⚠️ **`on_top` no se puede guardar todavía**: el CHECK de `pricing_rules` solo
- * admite `absorbed`, porque aplicarlo de verdad exige que el catálogo, el
- * carrito y el resumen pinten el precio con margen — si no, el cliente
- * descubriría el precio real al confirmar. Aquí está implementado y probado a
- * propósito: el día que esas tres pantallas estén listas, se abre el CHECK y
- * no hay que escribir este cálculo con prisa.
+ * ⚠️ **`on_top` es el modo del negocio desde el 2026-08-25** y es el que pone
+ * por defecto el panel del superadmin. Aquí decía lo contrario —«no se puede
+ * guardar todavía, el CHECK solo admite `absorbed`»— y esa nota sobrevivió a
+ * la migración que levantó el freno (`migration-2026-08-29-margen-sobre-el-
+ * precio.sql`). No era inocua: leyéndola se daba por imposible justo la
+ * combinación que resultó estar rota —`on_top` con techo—, y el fallo vivió
+ * meses sin que nadie lo buscara ahí.
  *
  * Mismo cálculo, mismo asiento y misma deuda: lo único que cambia es si el
  * margen se suma al precio del cliente o se absorbe del precio del comercio.

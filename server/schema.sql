@@ -11422,6 +11422,8 @@ declare
   v_base     numeric(10,2);
   v_modo     text;
   v_pct      numeric;
+  v_piso     numeric;
+  v_techo    numeric;
   v_markup   numeric(10,2);
   v_porlinea numeric(10,2);
   v_envio    numeric(10,2);
@@ -11449,13 +11451,26 @@ begin
   -- Si el pedido aún no tiene líneas (bot y mostrador) se queda el del
   -- subtotal: en esos caminos nunca se mostró un precio unitario con margen.
   if v_modo = 'on_top' and (v_calc ->> 'strategy') = 'percentage' then
-    v_pct := coalesce((
-      select percentage from public.pricing_rules
-      where id = nullif(v_calc ->> 'rule_id', '')::uuid
-    ), 0);
-    v_porlinea := public.order_markup_by_line(new.id, v_pct);
-    if v_porlinea is not null then
-      v_markup := v_porlinea;
+    select percentage, min_amount, max_amount
+      into v_pct, v_piso, v_techo
+    from public.pricing_rules
+    where id = nullif(v_calc ->> 'rule_id', '')::uuid;
+
+    -- ⚠️ SOLO por línea cuando la regla no tiene frenos de PEDIDO.
+    --
+    -- Un techo o un piso no son del producto, son del pedido entero: con un
+    -- techo de $1 el reparto por línea cobraba $5 y se saltaba el freno. Y el
+    -- cliente nunca vio ese número, porque ni el catálogo (`precioDeVitrina`)
+    -- ni la cotización (`quoteCart`) pintan margen por producto cuando la
+    -- regla lleva topes. Esta era la única capa que no hacía la excepción.
+    --
+    -- Con frenos se queda el margen del subtotal, que es el que YA viene
+    -- recortado por `calculate_platform_markup` y el que la app le enseñó.
+    if v_piso is null and v_techo is null then
+      v_porlinea := public.order_markup_by_line(new.id, coalesce(v_pct, 0));
+      if v_porlinea is not null then
+        v_markup := v_porlinea;
+      end if;
     end if;
   end if;
 
