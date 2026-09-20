@@ -17,6 +17,7 @@ import {
   pillLayout,
   singleChoice,
   topeDeLaOpcion,
+  totalAAgregar,
   totalDelPlato,
   unitPrice,
 } from '../lib/cart'
@@ -73,7 +74,7 @@ const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.fla
 
 export default function ProductSheet({
   product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir, lineaEnCarrito = null,
-  cantidadSuelta, onCambiarSuelto, unidadesEnPedido, totalDelPedido,
+  onAgregarAdicionales, seArmaElAdicional,
 }: {
   product: Product | null
   abierto: boolean
@@ -92,36 +93,28 @@ export default function ProductSheet({
    */
   onAgregarSuelto: (productId: string) => void
   /**
-   * Cuántos lleva YA el carrito de ese adicional, como línea suelta.
+   * Los acompañamientos marcados en ESTA ficha, que se agregan junto con el
+   * plato al tocar el botón.
    *
-   * ⚠️ La ficha no sabía NADA del carrito —solo la línea de su propio plato—,
-   * y por eso el `+` de los adicionales era mudo: entraban al carrito con su
-   * precio correcto, pero en pantalla no cambiaba absolutamente nada. Con la
-   * ficha abierta la barra «Ver pedido» queda debajo (`z-40`), así que el
-   * cliente tocaba otra vez creyendo que no había respondido y se llevaba
-   * cuatro panes de ajo. Lo vio el dueño probando Monster Pizza (2026-09-19).
+   * ⚠️ Antes entraban al carrito solos, en cuanto se tocaba el `+`, y eso
+   * partía el pie en DOS cuentas: «ya en tu pedido $16.85» y «este plato
+   * $14.85». El dueño lo dijo probándolo: «ver que tiene como 2 cuentas es
+   * raro… agrego solo 14 y saliendo tengo otra cantidad». Tenía razón, y el
+   * origen era que la ficha hacía dos cosas a la vez: armar un plato y meter
+   * otros productos al carrito por detrás.
    *
-   * Cuenta SOLO la línea sin variante, sin extras, sin opciones y sin nota
-   * —la que crea `agregarAdicional`—, porque es la única que un contador
-   * puede representar sin mentir: un adicional con variantes da varias líneas
-   * distintas y ahí se sigue abriendo su ficha.
+   * Ahora la ficha hace UNA sola cosa. Lo que se marca aquí se suma al botón,
+   * y el botón dice exactamente lo que va a pasar.
    */
-  cantidadSuelta: (productId: string) => number
-  onCambiarSuelto: (productId: string, cantidad: number) => void
+  onAgregarAdicionales: (cantidades: Record<string, number>) => void
   /**
-   * Lo que YA lleva el pedido, para enseñarlo en el pie de la ficha.
+   * ¿Ese adicional hay que armarlo (variantes, obligatorios, por partes)?
    *
-   * ⚠️ Con la ficha abierta, la barra «Ver pedido» queda debajo (`z-40`), así
-   * que mientras el cliente elige NO ve por ningún sitio lo que lleva: mete
-   * cuatro panes, tres nachos y seis colas, y el pie sigue diciendo el precio
-   * de la pizza. Lo probó el dueño el 2026-09-19 con $34.10 en adicionales y
-   * un pie que marcaba $14.85 — «la app no funciona».
-   *
-   * Son los MISMOS números de la barra de la portada (unidades y total con
-   * envío), para que al cerrar la ficha la cifra no cambie de golpe.
+   * Los que sí no se pueden contar en este pie: no entran de un toque, se les
+   * abre su propia ficha. Lo decide `seArma` en `cart.ts`, la misma regla que
+   * usa la portada.
    */
-  unidadesEnPedido: number
-  totalDelPedido: number
+  seArmaElAdicional: (productId: string) => boolean
   puedePedir: boolean
 }) {
   const [variante, setVariante] = useState<Variant | null>(null)
@@ -129,6 +122,8 @@ export default function ProductSheet({
   const [opciones, setOpciones] = useState<ChosenOption[]>([])
   const [nota, setNota] = useState('')
   const [cantidad, setCantidad] = useState(1)
+  /** Lo marcado en «Para acompañar», que viaja con el plato y no antes. */
+  const [adicionales, setAdicionales] = useState<Record<string, number>>({})
 
   // Al cambiar de producto se descarta lo elegido del anterior.
   const idActual = product?.id || ''
@@ -143,6 +138,10 @@ export default function ProductSheet({
     setOpciones(mesa ? mesa.options : opcionesPorDefecto(product?.optionGroups || []))
     setNota(mesa?.note || '')
     setCantidad(1)
+    // ⚠️ Los acompañamientos arrancan VACÍOS, no con lo que ya haya en el
+    // carrito. Son lo que se va a agregar ahora; precargarlos haría que al
+    // tocar «Agregar» se sumaran otra vez los que ya estaban.
+    setAdicionales({})
   }
 
   const grupos = useMemo(() => groupExtras(product?.extras || []), [product])
@@ -157,6 +156,26 @@ export default function ProductSheet({
   const plato = product && esPlato ? lineasDelPlato(product, opciones) : null
   let precio = product ? unitPrice(product, variante, extras, opciones) : 0
   if (plato) precio = totalDelPlato(plato.lines ?? [])
+
+  // ── Lo que se va a agregar, en UN solo número ────────────────────────────
+  //
+  // En centavos enteros, como todo el dinero de esta app: sumar dólares en
+  // coma flotante y redondear al final da un céntimo de diferencia con lo que
+  // cobra la base, y el cliente lo ve.
+  const precioDelAdicional = (productId: string) =>
+    product?.recommendations.find(reco => reco.productId === productId)?.price ?? 0
+  const marcados = Object.entries(adicionales).filter(([, cuantos]) => cuantos > 0)
+  const unidadesAdicionales = marcados.reduce((total, [, cuantos]) => total + cuantos, 0)
+  const totalAdicionales = marcados.reduce(
+    (centavos, [id, cuantos]) => centavos + Math.round(precioDelAdicional(id) * 100) * cuantos,
+    0,
+  ) / 100
+  const precioDeEstePlato = Math.round(precio * 100) * (plato ? 1 : cantidad) / 100
+  const totalDeLaFicha = totalAAgregar(
+    precio,
+    plato ? 1 : cantidad,
+    marcados.map(([id, cuantos]) => ({ price: precioDelAdicional(id), quantity: cuantos })),
+  )
   const falta = esPlato ? null : missingRequirement(gruposOpciones, opciones)
 
   // Los adicionales, por la sección que les puso el dueño y en su orden.
@@ -286,6 +305,9 @@ export default function ProductSheet({
       note: nota.trim(),
       unitPrice: precio,
     })
+    // ⚠️ Los acompañamientos van DESPUÉS del plato y como líneas propias: el
+    // negocio tiene que ver «1 Pizza» y «3 Colas», no «Pizza (con colas)».
+    if (unidadesAdicionales > 0) onAgregarAdicionales(Object.fromEntries(marcados))
     onCerrar()
   }
 
@@ -303,7 +325,9 @@ export default function ProductSheet({
     }
     if (faltaVariante) return 'Elige una opción'
     if (falta) return falta.message
-    return `Agregar · ${money(precio * cantidad)}`
+    // El total de TODO lo que va a entrar al carrito: el plato y lo que se
+    // haya marcado para acompañarlo. Es el único número del pie.
+    return `Agregar · ${money(totalDeLaFicha)}`
   }
 
   /** El precio de una opción: «Incluida», «+$1.50» o nada. */
@@ -780,7 +804,8 @@ export default function ProductSheet({
             </h3>
             <div className={LISTA}>
               {items.map((reco) => {
-                const llevadas = cantidadSuelta(reco.productId)
+                const llevadas = adicionales[reco.productId] || 0
+                const hayQueArmarlo = seArmaElAdicional(reco.productId)
                 return (
                   <div
                     key={reco.productId}
@@ -820,34 +845,36 @@ export default function ProductSheet({
                         línea y la cruz queda alta dentro del círculo; y con el
                         blanco forzado, sobre el lima no se ve. Las dos cosas ya
                         se corrigieron en la rejilla de la portada. */}
-                    {/* ⚠️ El `+` se convierte en CONTADOR en cuanto el
-                        adicional entra al carrito, que es lo que hace Rappi y lo
-                        que aquí faltaba: sin esto el botón no acusaba el toque
-                        —el precio de arriba es el del PLATO y no se mueve, y la
-                        barra del pedido está tapada por esta ficha—, así que el
-                        cliente lo tocaba cuatro veces y pedía cuatro.
+                    {/* ⚠️ Lo que se marca aquí NO entra al carrito todavía:
+                        se suma al botón de abajo y viaja con el plato. Cuando
+                        entraba solo, el pie enseñaba DOS cuentas —«ya en tu
+                        pedido» y «este plato»— y el cliente no sabía cuál iba
+                        a pagar. Una ficha, una cuenta, un botón.
 
-                        Y no es solo avisar: el contador también deja QUITARLO
-                        aquí mismo. Enterarse de más en el carrito y tener que
-                        volver es justo el viaje que esto ahorra.
+                        El `+` se vuelve contador en cuanto hay uno marcado:
+                        acusa el toque y deja corregir sin salir de aquí.
 
-                        Un adicional que se arma (variantes u obligatorios) se
-                        queda con el `+`: `agregarAdicional` le abre su ficha y
-                        puede acabar en varias líneas distintas, así que un solo
-                        número mentiría. Sale gratis: su línea suelta no existe,
-                        de modo que `llevadas` es 0 y este mismo `if` lo resuelve. */}
+                        ⚠️ Un adicional que hay que ARMAR (variantes, un grupo
+                        obligatorio, por partes) no se puede contar aquí: no
+                        entra de un toque porque la base lo rechazaría. Ese
+                        conserva el `+` y abre su propia ficha. */}
                     {llevadas > 0
                       ? (
                           <Contador
                             valor={llevadas}
                             minimo={0}
-                            onCambiar={valor => onCambiarSuelto(reco.productId, valor)}
+                            onCambiar={valor => setAdicionales(previos => ({
+                              ...previos,
+                              [reco.productId]: valor,
+                            }))}
                           />
                         )
                       : (
                           <button
                             type="button"
-                            onClick={() => onAgregarSuelto(reco.productId)}
+                            onClick={() => (hayQueArmarlo
+                              ? onAgregarSuelto(reco.productId)
+                              : setAdicionales(previos => ({ ...previos, [reco.productId]: 1 })))}
                             disabled={!puedePedir}
                             aria-label={`Agregar ${reco.name}`}
                             className="acento flex size-11 shrink-0 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
@@ -907,49 +934,51 @@ export default function ProductSheet({
           : opciones.some(opcion => opcion.quantity > 0) && (
             <p className="mb-2.5 text-[13px] leading-snug font-semibold texto-cuerpo">{plato.error}</p>
           ))}
-        {/* ── Lo que YA llevas ─────────────────────────────────────────
-            Va SIEMPRE que el carrito tenga algo, tenga o no grupos este
-            producto: es la única forma de ver, sin cerrar la ficha, que los
-            adicionales que acabas de tocar cuentan.
+        {/* ── Lo que se va a agregar ───────────────────────────────────
+            UN solo total, en el botón, y encima el desglose de dónde sale.
 
-            ⚠️ Es un texto, NO un botón, y es a propósito. Llevar al carrito
-            desde aquí tiraría lo que el cliente esté armando —la masa, el
-            sabor, los extras— sin avisar. Para ir al pedido se cierra la
-            ficha, que es un gesto que ya conoce.
+            ⚠️ Esto sustituye a las dos cuentas que hubo aquí un rato el
+            2026-09-19 («ya en tu pedido $16.85» / «este plato $14.85»). No era
+            un problema de maquetación: la ficha metía los acompañamientos al
+            carrito por su cuenta, así que de verdad había dos importes y
+            ninguno era el que ibas a pagar. Se arregló donde estaba el fallo
+            —los acompañamientos ahora viajan con el plato—, y el pie pudo
+            volver a enseñar un número.
 
-            ⚠️ Y NO se suma al botón de abajo. «Agregar» mete SOLO este plato;
-            si dijera el total del carrito, agregaría una pizza cobrando el
-            pedido entero. Son dos números distintos a propósito, y por eso
-            este lleva su etiqueta delante. */}
-        {unidadesEnPedido > 0 && (
-          <div className="fondo-app mb-2.5 flex items-center justify-between gap-3 rounded-full px-4 py-2">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="acento flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold tabular-nums">
-                {unidadesEnPedido}
+            El desglose solo aparece si hay acompañamientos marcados; con la
+            ficha limpia repetiría el botón. */}
+        {!plato && unidadesAdicionales > 0 && (
+          <div className="mb-2.5 space-y-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-[13px] font-semibold texto-cuerpo">
+                {product.name}
               </span>
-              <span className="truncate text-[13px] font-semibold texto-cuerpo">
-                ya en tu pedido
+              <span className="shrink-0 text-[14px] font-bold tabular-nums">
+                {money(precioDeEstePlato)}
               </span>
-            </span>
-            <span className="shrink-0 text-[15px] font-extrabold tracking-tight tabular-nums">
-              {money(totalDelPedido)}
-            </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-[13px] font-semibold texto-cuerpo">
+                Acompañamientos (
+                {unidadesAdicionales}
+                )
+              </span>
+              <span className="shrink-0 text-[14px] font-bold tabular-nums">
+                {money(totalAdicionales)}
+              </span>
+            </div>
           </div>
         )}
 
         {/* Precio actual: cómo va quedando según lo que elige.
             Solo en productos que se arman —donde el número CAMBIA mientras
             eliges—; en uno simple repetiría lo que ya dice el botón. En la mesa
-            lo dice el botón, con el desglose justo encima. */}
-        {!plato && gruposOpciones.length > 0 && (
+            lo dice el botón, con el desglose justo encima.
+            Con acompañamientos marcados sobra: el desglose de arriba ya lo
+            dice, y dos veces el mismo importe se lee como un error. */}
+        {!plato && gruposOpciones.length > 0 && unidadesAdicionales === 0 && (
           <div className="mb-2.5 flex items-baseline justify-between">
-            {/* ⚠️ «Este plato» y no «Precio actual» cuando hay algo en el
-                carrito: dos importes seguidos sin decir de qué es cada uno se
-                leen como un error de la app. Sin pedido detrás no hay con qué
-                confundirlo y se queda el texto de siempre. */}
-            <span className="text-[13px] font-semibold texto-cuerpo">
-              {unidadesEnPedido > 0 ? 'Este plato' : 'Precio actual'}
-            </span>
+            <span className="text-[13px] font-semibold texto-cuerpo">Precio actual</span>
             <span className="text-[19px] font-extrabold tracking-tight tabular-nums">
               {money(precio * cantidad)}
             </span>

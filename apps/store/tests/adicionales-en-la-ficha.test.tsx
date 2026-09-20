@@ -75,11 +75,7 @@ const bloqueDeAdicionales = (html: string): string => {
   return html.slice(desde, hasta)
 }
 
-const pintar = (
-  cuantos: number,
-  puedePedir = true,
-  pedido: { unidades: number; total: number } = { unidades: 0, total: 0 },
-): string =>
+const pintar = (puedePedir = true, seArma = false): string =>
   renderToStaticMarkup(
     <ProductSheet
       product={pizza}
@@ -87,119 +83,55 @@ const pintar = (
       onCerrar={() => {}}
       onAgregar={() => {}}
       onAgregarSuelto={() => {}}
-      cantidadSuelta={() => cuantos}
-      onCambiarSuelto={() => {}}
-      unidadesEnPedido={pedido.unidades}
-      totalDelPedido={pedido.total}
+      onAgregarAdicionales={() => {}}
+      seArmaElAdicional={() => seArma}
       puedePedir={puedePedir}
     />,
   )
 
-/** Solo el pie: donde vive el precio del plato y lo que ya lleva el pedido. */
+/** Solo el pie: donde vive el total de lo que se va a agregar. */
 const pieDeLaFicha = (html: string): string =>
   html.slice(html.lastIndexOf('sticky bottom-0'))
 
 describe('el adicional en la ficha de otro plato', () => {
-  it('sin nada en el carrito enseña el «+»', () => {
-    const bloque = bloqueDeAdicionales(pintar(0))
+  it('se enseña con su nombre, su descripción y su precio', () => {
+    const bloque = bloqueDeAdicionales(pintar())
     expect(bloque).toContain('Pan de Ajo Cheese')
+    expect(bloque).toContain('8 rebanadas de full sabor')
+    expect(bloque).toContain('$2.75')
+  })
+
+  it('sin marcar nada, el control es un «+»', () => {
+    const bloque = bloqueDeAdicionales(pintar())
     expect(bloque).toContain('Agregar Pan de Ajo Cheese')
     expect(bloque).not.toContain('Quitar uno')
   })
 
-  it('con dos en el carrito enseña el CONTADOR, no el «+»', () => {
-    // El fallo que reportó el dueño: tocaba y la pantalla no acusaba el toque.
-    const bloque = bloqueDeAdicionales(pintar(2))
-    expect(bloque).toContain('Quitar uno')
-    expect(bloque).not.toContain('Agregar Pan de Ajo Cheese')
-    expect(bloque).toMatch(/>2</)
-  })
-
-  it('el contador deja QUITARLO sin abrir el carrito', () => {
-    // Enterarse de más en el carrito y tener que volver es el viaje que esto
-    // ahorra: el «−» tiene que estar vivo con uno solo en el carrito, y por eso
-    // va con `minimo={0}`.
-    const bloque = bloqueDeAdicionales(pintar(1))
-    expect(bloque).toContain('Quitar uno')
-    // ⚠️ `disabled=""` es el atributo; `disabled:opacity-30` es una clase de
-    // Tailwind que llevan todos los botones. Buscar «disabled» a secas daba
-    // por apagado un botón que estaba vivo.
-    expect(bloque).not.toContain('disabled=""')
-  })
-
-  it('el precio del PLATO no cambia, y está bien que no cambie', () => {
-    // El adicional es otro producto y va por su cuenta. Quien «arregle» esto
-    // sumándolo al plato hará que el negocio cobre dos veces.
-    expect(pintar(0)).toContain('$3.03')
-    expect(pintar(3)).toContain('$3.03')
-  })
-
-  it('con la tienda cerrada el «+» va deshabilitado', () => {
-    expect(bloqueDeAdicionales(pintar(0, false))).toContain('disabled=""')
-    expect(bloqueDeAdicionales(pintar(0, true))).not.toContain('disabled=""')
-  })
-})
-
-// ═══════════════════════════════════════════════════════════════════════════
-// LO QUE YA LLEVAS, VISIBLE MIENTRAS ELIGES
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// Con la ficha abierta, la barra «Ver pedido» queda debajo (`z-40`). El dueño
-// metió $34.10 en acompañamientos y el pie seguía marcando $14.85 —el precio
-// de la pizza—, así que la app parecía no estar sumando. Sumaba: no lo
-// enseñaba.
-
-describe('lo que ya lleva el pedido', () => {
-  const CON_PEDIDO = { unidades: 14, total: 50.95 }
-
-  it('el pie enseña las unidades y el total del pedido', () => {
-    const pie = pieDeLaFicha(pintar(4, true, CON_PEDIDO))
-    expect(pie).toContain('ya en tu pedido')
-    expect(pie).toContain('14')
-    expect(pie).toContain('$50.95')
-  })
-
-  it('con el carrito vacío no se enseña nada: no hay nada que contar', () => {
-    expect(pieDeLaFicha(pintar(0))).not.toContain('ya en tu pedido')
-  })
-
-  it('el botón sigue cobrando SOLO este plato, no el carrito', () => {
-    // El fallo que NO hay que «arreglar»: si el botón dijera $50.95, agregaría
-    // una pizza cobrando el pedido entero.
-    const pie = pieDeLaFicha(pintar(4, true, CON_PEDIDO))
-    expect(pie).toContain('Agregar · $3.03')
-    expect(pie).not.toContain('Agregar · $50.95')
-  })
-
-  it('los dos importes van etiquetados, para no leerse como un error', () => {
-    // Dos cifras seguidas sin decir de qué es cada una parecen un fallo de la
-    // app. Con pedido detrás, el del plato deja de llamarse «Precio actual».
-    const conPedido = pieDeLaFicha(pintar(0, true, CON_PEDIDO))
-    expect(conPedido).toContain('Este plato')
-    expect(conPedido).not.toContain('Precio actual')
-    // Sin nada detrás no hay con qué confundirlo.
-    expect(pieDeLaFicha(pintar(0))).toContain('Precio actual')
-  })
-
-  it('no es un botón: tocarlo no puede tirar lo que estás armando', () => {
-    const html = pintar(4, true, CON_PEDIDO)
-    const inicio = html.indexOf('ya en tu pedido')
-    const trozo = html.slice(Math.max(0, inicio - 400), inicio)
-    expect(trozo).not.toContain('<button')
-  })
-})
-
-describe('la fila del adicional no corta el nombre', () => {
   it('el nombre y el precio no compiten por el mismo ancho', () => {
     // Con nombre, precio y contador en fila, producción enseñaba «Pan de Ajo …»
     // y «Nachos Sup…». El precio pasó a ir DEBAJO del nombre.
-    const bloque = bloqueDeAdicionales(pintar(4))
+    const bloque = bloqueDeAdicionales(pintar())
     const nombre = bloque.indexOf('Pan de Ajo Cheese')
     const precio = bloque.indexOf('$2.75')
-    const control = bloque.indexOf('Quitar uno')
+    const control = bloque.indexOf('Agregar Pan de Ajo Cheese')
     expect(nombre).toBeLessThan(precio)
     expect(precio).toBeLessThan(control)
-    // El precio vive DENTRO del bloque del nombre, no en una columna aparte.
-    expect(bloque.slice(nombre, precio)).not.toContain('</span></span>')
+  })
+
+  it('con la tienda cerrada el «+» va deshabilitado', () => {
+    expect(bloqueDeAdicionales(pintar(false))).toContain('disabled=""')
+    expect(bloqueDeAdicionales(pintar(true))).not.toContain('disabled=""')
+  })
+
+  it('el pie enseña UN solo importe: el de lo que se va a agregar', () => {
+    // ⚠️ La cicatriz: aquí hubo dos cuentas a la vez —«ya en tu pedido $16.85»
+    // y «este plato $14.85»— porque los acompañamientos entraban al carrito
+    // por su cuenta. «Ver dos cuentas es raro», y ninguna era la que ibas a
+    // pagar. Una ficha, una cuenta.
+    const pie = pieDeLaFicha(pintar())
+    expect(pie).toContain('Precio actual')
+    expect(pie).toContain('Agregar · $3.03')
+    expect(pie).not.toContain('ya en tu pedido')
+    expect(pie).not.toContain('Este plato')
   })
 })

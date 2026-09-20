@@ -281,21 +281,54 @@ export function addLine(lines: CartLine[], nueva: CartLine): CartLine[] {
 
 /**
  * La línea SUELTA de un producto: sin variante, sin extras, sin opciones y sin
- * nota. Es la que crea el `+` de un adicional, y la única que un contador
- * puede representar sin mentir — un producto con variantes da varias líneas
- * distintas, y un solo número no dice cuál de ellas.
+ * nota. Es la que crea el `+` de un adicional.
  *
  * ⚠️ Vive aquí, y no en la pantalla, por el mismo motivo que `ENTREGA_POR_DEFECTO`:
- * la calculan la portada (al agregar) y la ficha (al contar), y dos copias se
- * desincronizan. Si divergieran, el contador enseñaría 0 sobre algo que sí
- * está en el carrito y el cliente lo pediría dos veces.
+ * la usan la portada y la ficha, y dos copias se desincronizan.
  */
 export const claveSuelta = (product: Product): string =>
   lineKey(product, null, [], '', [])
 
-/** Cuántos lleva ya el carrito de ese producto como línea suelta. */
-export const cantidadSuelta = (lines: CartLine[], product: Product): number =>
-  lines.find(line => line.key === claveSuelta(product))?.quantity ?? 0
+/**
+ * Lo que costará tocar «Agregar»: el plato por su cantidad, más lo que se haya
+ * marcado para acompañarlo.
+ *
+ * ⚠️ En CENTAVOS ENTEROS, como todo el dinero de esta app. Sumar dólares en
+ * coma flotante y redondear al final da un céntimo de diferencia con lo que
+ * cobra la base (`create_storefront_order`), y ese céntimo lo ve el cliente.
+ *
+ * ⚠️ Vive aquí y no en el componente porque es un número que el cliente LEE
+ * antes de decidir. La regla de la casa es que el dinero se calcula donde se
+ * puede comprobar; en el JSX no se puede.
+ */
+export const totalAAgregar = (
+  precioDelPlato: number,
+  cantidad: number,
+  acompanantes: { price: number; quantity: number }[],
+): number => {
+  const centavos = Math.round(precioDelPlato * 100) * Math.max(0, cantidad)
+  const extra = acompanantes.reduce(
+    (suma, item) => suma + Math.round((item.price || 0) * 100) * Math.max(0, item.quantity || 0),
+    0,
+  )
+  return Math.max(0, centavos + extra) / 100
+}
+
+/**
+ * ¿Hay que ARMAR este producto antes de meterlo al carrito?
+ *
+ * Un producto con variantes, con un grupo obligatorio o que se pide por partes
+ * no entra de un toque: la base lo rechazaría, así que se le abre su ficha.
+ *
+ * ⚠️ Una sola definición para las dos pantallas. La portada la usa para decidir
+ * si abre la ficha, y la ficha para decidir si el adicional se puede contar en
+ * su propio pie o hay que mandarlo a armar. Si divergieran, el pie sumaría un
+ * producto que el carrito nunca recibió.
+ */
+export const seArma = (product: Product): boolean =>
+  product.hasVariants
+  || esPlatoPorPartes(product)
+  || product.optionGroups.some(grupo => grupo.required || grupo.minSelectable > 0)
 
 /** Cambia la cantidad; en cero la línea desaparece. */
 export function setQuantity(lines: CartLine[], key: string, quantity: number): CartLine[] {
