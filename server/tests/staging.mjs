@@ -23,8 +23,9 @@
 // staging sembrado por otro camino prueba un mundo que no existe.
 import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
 const aqui = path.dirname(fileURLToPath(import.meta.url))
@@ -376,6 +377,87 @@ function arrancarServidor() {
   hijo.on('exit', codigo => process.exit(codigo ?? 0))
 }
 
+// ── actualizar ──────────────────────────────────────────────────────────────
+
+/**
+ * La huella del esquema: el consolidado más la lista de migraciones.
+ *
+ * Sirve para una sola pregunta, y es la que evita la peor confusión de este
+ * entorno: ¿lo que acabo de traer cambia la forma de la base? Si cambió y la
+ * base de staging sigue con la de ayer, la aplicación falla con errores de
+ * columna que parecen bugs de la app y no lo son.
+ */
+export function huellaDelEsquema(esquema, migraciones) {
+  return createHash('sha1').update(esquema).update([...migraciones].sort().join(',')).digest('hex')
+}
+
+/** La huella de lo que hay ahora mismo en el disco. */
+function huellaDelDisco() {
+  return huellaDelEsquema(
+    readFileSync(path.join(servidor, 'schema.sql'), 'utf8'),
+    readdirSync(servidor).filter(n => n.startsWith('migration-') && n.endsWith('.sql')),
+  )
+}
+
+/**
+ * Trae lo último de GitHub, lo reconstruye entero y arranca el staging.
+ *
+ * ⚠️ Existe porque «tengo el staging levantado» NO significa «el staging
+ * tiene lo último», y las tres razones por las que no lo tiene son
+ * invisibles:
+ *
+ *   1. el repositorio local no se actualiza solo (falta `git pull`);
+ *   2. el servidor no vigila cambios — compila al arrancar y ya;
+ *   3. y la peor: `npm run build` del SERVIDOR no construye los paneles. La
+ *      mini app se sirve desde `apps/store/dist`, así que sin reconstruirla
+ *      el staging enseña la tienda de antes con un servidor nuevo. Esa
+ *      trampa ya se pagó una vez en producción.
+ *
+ * Un comando en vez de cuatro pasos que hay que recordar en el orden correcto.
+ */
+function actualizar() {
+  const git = (...args) => execFileSync('git', args, { cwd: raiz, encoding: 'utf8' }).trim()
+
+  // ⚠️ NUNCA un pull encima de trabajo sin guardar: el conflicto llegaría a
+  // media construcción y con el staging a medio arrancar.
+  if (git('status', '--porcelain')) {
+    console.error(`
+❌ Hay cambios sin guardar en el repositorio.
+
+   Guárdalos o descártalos antes de actualizar el staging:
+     git status          ver qué hay
+     git stash           apartarlos para luego
+`)
+    process.exit(1)
+  }
+
+  const rama = git('rev-parse', '--abbrev-ref', 'HEAD')
+  const antes = huellaDelDisco()
+
+  console.log(`\n⬇️  Trayendo lo último de «${rama}»…`)
+  execFileSync('git', ['pull', '--ff-only'], { cwd: raiz, stdio: 'inherit' })
+
+  // ⚠️ El build de la RAÍZ, que construye el servidor Y los tres frontales.
+  // El del servidor solo compila `server/src`, y ahí está la trampa del punto 3.
+  console.log('\n🔨 Reconstruyendo servidor, paneles y mini app…')
+  execFileSync('npm', ['run', 'build'], { cwd: raiz, stdio: 'inherit' })
+
+  if (huellaDelDisco() !== antes) {
+    console.error(`
+⚠️  LO QUE TRAJISTE CAMBIA LA BASE, y la de staging sigue con la de antes.
+
+   Arrancar así da errores de columna que parecen bugs de la app. Resetea
+   primero (borra los datos de prueba y vuelve a sembrar):
+
+     npm run staging:reset && npm run staging:actualizar
+`)
+    process.exit(1)
+  }
+
+  exigirQueEsteLevantado()
+  arrancarServidor()
+}
+
 // ── humo ────────────────────────────────────────────────────────────────────
 
 function humo() {
@@ -406,11 +488,14 @@ function levantar() {
   preparar()
 }
 
-const comandos = { levantar, preparar, servidor: arrancarServidor, humo }
-const comando = process.argv[2] || 'preparar'
+const comandos = { levantar, preparar, servidor: arrancarServidor, humo, actualizar }
 
-if (!comandos[comando]) {
-  console.error(`\n❌ No conozco «${comando}». Usa: levantar | preparar | servidor | humo\n`)
-  process.exit(1)
+// Solo corre cuando se ejecuta como programa: importado desde las pruebas, no.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const comando = process.argv[2] || 'preparar'
+  if (!comandos[comando]) {
+    console.error(`\n❌ No conozco «${comando}». Usa: levantar | preparar | servidor | humo | actualizar\n`)
+    process.exit(1)
+  }
+  comandos[comando]()
 }
-comandos[comando]()
