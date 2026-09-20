@@ -164,6 +164,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Vigilancia de credenciales** → [DECISIONES.md](DECISIONES.md#vigilancia-de-credenciales)
 - **Registro de errores** → [DECISIONES.md](DECISIONES.md#registro-de-errores)
 - **Mini app de la tienda** → [DECISIONES.md](DECISIONES.md#mini-app-de-la-tienda)
+- **El «+» de los adicionales (y por qué el precio del plato NO sube)** → [DECISIONES.md](DECISIONES.md#el--de-los-adicionales-no-acusaba-el-toque)
 - **El horario del dueño manda sobre todos los modos** → [DECISIONES.md](DECISIONES.md#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - **Lo que gana la plataforma (motor de margen)** → [DECISIONES.md](DECISIONES.md#lo-que-gana-la-plataforma)
 - **Qué pide el alta de un negocio** → [DECISIONES.md](DECISIONES.md#el-alta-no-pregunta-lo-que-se-deduce-del-tipo)
@@ -177,7 +178,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **El plato por partes (almuerzo de una familia)** → [DECISIONES.md](DECISIONES.md#el-plato-por-partes-el-almuerzo-de-una-familia)
 - **Cortar un flujo (modos, atajos, `return` temprano)** → [cambios-seguros](.claude/skills/cambios-seguros/SKILL.md#cortar-un-flujo-el-inventario-de-lo-que-hacía-de-paso)
 - **Construido y desconectado (el fallo que las pruebas no ven)** → [camino-real](.claude/skills/camino-real/SKILL.md)
-- **El vigía externo y el respaldo diario (lo que vigila producción YA desplegada)** → [VERIFICACION.md](VERIFICACION.md#las-dos-capas-que-vigilan-lo-que-ya-está-en-producción-2026-09-18)
+- **Los vigías, el parte diario y el respaldo (lo que vigila producción YA desplegada)** → [VERIFICACION.md](VERIFICACION.md#las-dos-capas-que-vigilan-lo-que-ya-está-en-producción-2026-09-18)
 - **El staging local y el freno de tareas de fondo** → [VERIFICACION.md](VERIFICACION.md#el-staging-local-y-el-freno-que-lo-hizo-necesario-2026-09-19)
 - **Los tipos generados de la base (y por qué generarlos no basta)** → [VERIFICACION.md](VERIFICACION.md#los-tipos-de-la-base-generados-desde-la-base-2026-09-19)
 ---

@@ -73,6 +73,7 @@ const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.fla
 
 export default function ProductSheet({
   product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir, lineaEnCarrito = null,
+  cantidadSuelta, onCambiarSuelto,
 }: {
   product: Product | null
   abierto: boolean
@@ -90,6 +91,23 @@ export default function ProductSheet({
    * vería «Pizza (con pan de ajo)» en vez de dos cosas que preparar.
    */
   onAgregarSuelto: (productId: string) => void
+  /**
+   * Cuántos lleva YA el carrito de ese adicional, como línea suelta.
+   *
+   * ⚠️ La ficha no sabía NADA del carrito —solo la línea de su propio plato—,
+   * y por eso el `+` de los adicionales era mudo: entraban al carrito con su
+   * precio correcto, pero en pantalla no cambiaba absolutamente nada. Con la
+   * ficha abierta la barra «Ver pedido» queda debajo (`z-40`), así que el
+   * cliente tocaba otra vez creyendo que no había respondido y se llevaba
+   * cuatro panes de ajo. Lo vio el dueño probando Monster Pizza (2026-09-19).
+   *
+   * Cuenta SOLO la línea sin variante, sin extras, sin opciones y sin nota
+   * —la que crea `agregarAdicional`—, porque es la única que un contador
+   * puede representar sin mentir: un adicional con variantes da varias líneas
+   * distintas y ahí se sigue abriendo su ficha.
+   */
+  cantidadSuelta: (productId: string) => number
+  onCambiarSuelto: (productId: string, cantidad: number) => void
   puedePedir: boolean
 }) {
   const [variante, setVariante] = useState<Variant | null>(null)
@@ -747,49 +765,78 @@ export default function ProductSheet({
               <span className="min-w-0 truncate">{section}</span>
             </h3>
             <div className={LISTA}>
-              {items.map(reco => (
-                <div
-                  key={reco.productId}
-                  className="flex items-center gap-3 px-4 py-3.5"
-                >
-                  {reco.imageUrl && (
-                    <img
-                      src={foto(reco.imageUrl, 'miniatura') || undefined}
-                      alt=""
-                      loading="lazy"
-                      className="size-12 shrink-0 rounded-xl object-cover"
-                    />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14.5px] font-bold tracking-tight">
-                      {reco.name}
-                    </span>
-                    {reco.description && (
-                      <span className="block truncate text-[12.5px] texto-cuerpo">
-                        {reco.description}
-                      </span>
-                    )}
-                  </span>
-                  <span className="shrink-0 text-[14px] font-bold tabular-nums">
-                    {money(reco.price)}
-                  </span>
-                  {/* ⚠️ El mismo `+` de la carta: acento con su glow y el icono
-                      `RiAddLine`, no `bg-marca text-white` con el CARÁCTER «+».
-                      Con el carácter, lo que el flex centra es la caja de
-                      línea y la cruz queda alta dentro del círculo; y con el
-                      blanco forzado, sobre el lima no se ve. Las dos cosas ya
-                      se corrigieron en la rejilla de la portada. */}
-                  <button
-                    type="button"
-                    onClick={() => onAgregarSuelto(reco.productId)}
-                    disabled={!puedePedir}
-                    aria-label={`Agregar ${reco.name}`}
-                    className="acento flex size-11 shrink-0 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+              {items.map((reco) => {
+                const llevadas = cantidadSuelta(reco.productId)
+                return (
+                  <div
+                    key={reco.productId}
+                    className="flex items-center gap-3 px-4 py-3.5"
                   >
-                    <RiAddLine size={20} />
-                  </button>
-                </div>
-              ))}
+                    {reco.imageUrl && (
+                      <img
+                        src={foto(reco.imageUrl, 'miniatura') || undefined}
+                        alt=""
+                        loading="lazy"
+                        className="size-12 shrink-0 rounded-xl object-cover"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14.5px] font-bold tracking-tight">
+                        {reco.name}
+                      </span>
+                      {reco.description && (
+                        <span className="block truncate text-[12.5px] texto-cuerpo">
+                          {reco.description}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-[14px] font-bold tabular-nums">
+                      {money(reco.price)}
+                    </span>
+                    {/* ⚠️ El mismo `+` de la carta: acento con su glow y el icono
+                        `RiAddLine`, no `bg-marca text-white` con el CARÁCTER «+».
+                        Con el carácter, lo que el flex centra es la caja de
+                        línea y la cruz queda alta dentro del círculo; y con el
+                        blanco forzado, sobre el lima no se ve. Las dos cosas ya
+                        se corrigieron en la rejilla de la portada. */}
+                    {/* ⚠️ El `+` se convierte en CONTADOR en cuanto el
+                        adicional entra al carrito, que es lo que hace Rappi y lo
+                        que aquí faltaba: sin esto el botón no acusaba el toque
+                        —el precio de arriba es el del PLATO y no se mueve, y la
+                        barra del pedido está tapada por esta ficha—, así que el
+                        cliente lo tocaba cuatro veces y pedía cuatro.
+
+                        Y no es solo avisar: el contador también deja QUITARLO
+                        aquí mismo. Enterarse de más en el carrito y tener que
+                        volver es justo el viaje que esto ahorra.
+
+                        Un adicional que se arma (variantes u obligatorios) se
+                        queda con el `+`: `agregarAdicional` le abre su ficha y
+                        puede acabar en varias líneas distintas, así que un solo
+                        número mentiría. Sale gratis: su línea suelta no existe,
+                        de modo que `llevadas` es 0 y este mismo `if` lo resuelve. */}
+                    {llevadas > 0
+                      ? (
+                          <Contador
+                            valor={llevadas}
+                            minimo={0}
+                            onCambiar={valor => onCambiarSuelto(reco.productId, valor)}
+                          />
+                        )
+                      : (
+                          <button
+                            type="button"
+                            onClick={() => onAgregarSuelto(reco.productId)}
+                            disabled={!puedePedir}
+                            aria-label={`Agregar ${reco.name}`}
+                            className="acento flex size-11 shrink-0 items-center justify-center rounded-full shadow-acento transition active:scale-95 disabled:opacity-40 disabled:shadow-none"
+                          >
+                            <RiAddLine size={20} />
+                          </button>
+                        )}
+                  </div>
+                )
+              })}
             </div>
           </section>
         ))}

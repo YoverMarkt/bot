@@ -6,6 +6,12 @@ name: Vigía de producción
 # Toda la lógica —incluido cuándo callarse para no mandar 96 correos al día—
 # vive en `.github/scripts/vigia.mjs`, que está probado en
 # `server/tests/vigia.test.js`. Aquí solo se decide cada cuánto mirar.
+#
+# ⚠️ Este mira SOLO si el bot está vivo (`VIGIA_MODO: caida`). El saldo, las
+# credenciales, el canario y el canal mudo son de `vigia-atencion.yml`, y están
+# separados a propósito: los dos workflows comparten el script pero NO la
+# memoria, y compartirla dejaba que una alarma crónica —el saldo de YCloud en
+# 0,50 USD— se tragara el hueco de silencio de una caída de verdad.
 
 on:
   schedule:
@@ -36,6 +42,7 @@ jobs:
 
       - name: Preguntar a producción
         env:
+          VIGIA_MODO: caida
           # La URL real de Railway. `vars.PRODUCTION_URL` la sustituye sin tocar
           # este archivo el día que haya dominio propio.
           BASE_URL: ${{ vars.PRODUCTION_URL || 'https://web-production-3433c.up.railway.app' }}

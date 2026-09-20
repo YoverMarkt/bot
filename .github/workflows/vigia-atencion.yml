@@ -1,0 +1,48 @@
+name: Vigía de atención
+
+# Lo que NO es una caída pero hay que atender: saldo del canal, credenciales
+# caducadas, el canario que no pudo comprar y el canal sin un solo mensaje.
+#
+# ⚠️ Vive aparte de `vigia.yml` por la MEMORIA, no por orden. Los dos usan el
+# mismo `.github/scripts/vigia.mjs`, y ese script recuerda una sola cosa: la
+# hora del último run en rojo de SU workflow. Juntos, el saldo bajo —que lleva
+# semanas sonando— ocupaba ese hueco y una caída real se habría quedado
+# esperando su turno. Separados, cada gravedad tiene su propio reloj.
+#
+# El otro motivo es el correo: un rojo aquí se lee «revísalo cuando puedas», y
+# uno de `vigia.yml` se lee «ahora». Mezclados, los dos acaban leyéndose igual.
+
+on:
+  schedule:
+    # Cada 6 horas. Un saldo bajo o una credencial por caducar no cambian en
+    # quince minutos, y mirarlo más seguido solo gasta el hueco de silencio.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: vigia-atencion
+  cancel-in-progress: false
+
+jobs:
+  mirar:
+    name: ¿Hay algo que atender?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preguntar a producción
+        env:
+          VIGIA_MODO: atencion
+          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://web-production-3433c.up.railway.app' }}
+          # Sin este token no se ve el saldo ni las credenciales, que es
+          # justamente de lo que va este workflow.
+          HEALTH_DETAIL_TOKEN: ${{ secrets.HEALTH_DETAIL_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/vigia.mjs

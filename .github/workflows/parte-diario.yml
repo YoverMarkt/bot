@@ -1,0 +1,48 @@
+name: Parte diario
+
+# El único workflow que dice «todo va bien».
+#
+# Los dos vigías avisan FALLANDO, y GitHub solo manda correo cuando un run
+# acaba en rojo: con todo en orden no llega nada, y «nada» no se distingue de
+# «el workflow dejó de ejecutarse». Este publica el estado en un issue una vez
+# al día, y el comentario sí notifica.
+#
+# ⚠️ NO falla por lo que encuentre — de eso ya se encargan los vigías. Si el
+# parte diario pudiera ponerse rojo sería una alarma más, y el correo que
+# existe para leerse con calma acabaría en la misma carpeta que las urgencias.
+# Solo termina en rojo si no pudo publicar.
+
+on:
+  schedule:
+    # 12:30 UTC = 7:30 a.m. en Ecuador, con el día por delante para actuar.
+    - cron: '30 12 * * *'
+  workflow_dispatch:
+
+# `issues: write` es lo único que pide de más: el parte vive en un issue.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: parte-diario
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: ¿Cómo amaneció producción?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publicar el parte
+        env:
+          BASE_URL: ${{ vars.PRODUCTION_URL || 'https://web-production-3433c.up.railway.app' }}
+          HEALTH_DETAIL_TOKEN: ${{ secrets.HEALTH_DETAIL_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          # A quién se le asigna el issue la primera vez. Un asignado queda
+          # suscrito, y sin eso el comentario diario no le llegaría a nadie.
+          PARTE_DUENO: ${{ github.repository_owner }}
+        run: node .github/scripts/parte-diario.mjs
