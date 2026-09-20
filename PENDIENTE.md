@@ -174,6 +174,43 @@ por la app.
 mostrar en vivo «recibes $X · comisión $Y», para que no tenga que hacer cuentas.
 
 
+## Dos asperezas de la ficha del producto — decidido ESPERAR (2026-09-19)
+
+Salieron al cerrar «una ficha, una cuenta» (#390). **No se construye nada
+hasta que molesten de verdad al usarlo**, y esa fue la decisión del dueño:
+*«por ahora dejemos así… si entras y ves un plato es porque te gusta; si no,
+sales y ves otro»*.
+
+### 1. Cerrar la ficha con la X pierde los acompañamientos marcados
+
+Marcas 3 colas en la ficha de la pizza, no te convence ningún sabor, cierras
+con la X → las colas desaparecen.
+
+Es el precio exacto de que sea reversible, y la otra cara es la buena: marcar
+cuatro panes por error y cerrar no te cuesta nada. **Si algún día molesta**, el
+arreglo es un aviso al cerrar («tienes 3 cosas sin agregar, ¿salir igual?»).
+No se pone antes de saber si hace falta: es una ventana más en medio.
+
+### 2. Con el plato incompleto no se puede agregar NADA, ni lo que acompaña
+
+Marcas 2 cervezas, no eliges la masa → el botón dice «Elige masa» y está
+apagado. Para salir hay que cerrar, y al cerrar se pierden (ver el punto 1).
+
+El razonamiento del dueño para dejarlo: **si entras a una ficha es porque ese
+plato te interesa**; quien solo quiere cervezas las busca en la carta. Y lo
+que sí reconoció como oportunidad —*«si yo quiero puedo hacerlo para vender
+más, si solo escogen cervezas y ya»*— es justo eso, una idea de venta, no un
+fallo que tapar.
+
+**Si algún día se hace**, el botón tendría que cambiar de oficio según el
+estado (`Agregar 2 cervezas · $3.30` cuando la pizza está a medias). Se puede,
+pero un botón que cambia de significado confunde por otro lado: hay que verlo
+con el caso real delante, no imaginado.
+
+⚠️ **Lo que NO se toca al resolver ninguna de las dos:** que el botón diga solo
+lo que entra al carrito con ese toque. Ver «Una ficha, una cuenta» en
+[DECISIONES.md](DECISIONES.md).
+
 ## Estrategia — dos notas que vivían en CLAUDE.md
 
 _Movidas aquí el 2026-09-08: orientan el «¿y si añadimos…?», que es justo
