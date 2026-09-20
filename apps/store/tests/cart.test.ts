@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cantidadSuelta, cartCount, cartTotal, chosenCount, claveSuelta,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, chosenCount, claveSuelta,
   groupExtras, groupPrice, chosenLines, detalleDeLinea, groupChosen, lineKey, lineTotal,
-  missingRequirement, needsAddress, optionPriceLabel, orderTotal, pillLayout, setQuantity,
-  singleChoice, unitPrice,
+  missingRequirement, needsAddress, optionPriceLabel, orderTotal, pillLayout, seArma,
+  setQuantity, singleChoice, totalAAgregar, unitPrice,
 } from '../src/lib/cart'
 import type {
   CartLine, ChosenOption, Extra, OptionGroup, Product, Variant,
@@ -772,65 +772,119 @@ describe('detalleDeLinea', () => {
 describe('los adicionales que se agregan desde la ficha de otro plato', () => {
   const pan = producto({ id: 'pan', name: 'Pan de Ajo Cheese', priceFrom: 2.75 })
 
-  const enCarrito = (cantidad: number): CartLine[] => [linea({
-    key: claveSuelta(pan),
-    product: pan,
-    unitPrice: unitPrice(pan, null, [], []),
-    quantity: cantidad,
-  })]
-
   it('la clave es la MISMA con la que lo agrega la portada', () => {
     expect(claveSuelta(pan)).toBe(lineKey(pan, null, [], '', []))
   })
 
-  it('cuenta lo que ya lleva el carrito', () => {
-    expect(cantidadSuelta(enCarrito(3), pan)).toBe(3)
-  })
-
-  it('sin nada en el carrito son cero, que es lo que deja el botón en «+»', () => {
-    expect(cantidadSuelta([], pan)).toBe(0)
-  })
-
   it('el adicional SÍ sube el total del carrito, aunque el plato no cambie', () => {
-    // El fallo que se reportó era este, y resultó no serlo: el dinero estaba
+    // El fallo que se reportó primero, y resultó no serlo: el dinero estaba
     // bien desde el principio. Se deja escrito para que nadie lo «arregle».
+    const enCarrito = (cantidad: number): CartLine[] => [linea({
+      key: claveSuelta(pan),
+      product: pan,
+      unitPrice: unitPrice(pan, null, [], []),
+      quantity: cantidad,
+    })]
     expect(cartTotal(enCarrito(1))).toBe(2.75)
     expect(cartTotal(enCarrito(4))).toBe(11)
   })
 
-  it('tocar cuatro veces son cuatro panes, y por eso hacía falta verlo', () => {
-    let lineas: CartLine[] = []
-    for (let toque = 0; toque < 4; toque += 1) {
-      lineas = addLine(lineas, {
-        key: claveSuelta(pan),
-        product: pan,
-        variant: null,
-        extras: [],
-        options: [],
-        quantity: 1,
-        note: '',
-        unitPrice: unitPrice(pan, null, [], []),
-      })
-    }
-    expect(lineas).toHaveLength(1)
-    expect(cantidadSuelta(lineas, pan)).toBe(4)
-  })
-
-  it('bajar a cero lo quita, y el contador vuelve a ser un «+»', () => {
-    const vacio = setQuantity(enCarrito(1), claveSuelta(pan), 0)
-    expect(vacio).toHaveLength(0)
-    expect(cantidadSuelta(vacio, pan)).toBe(0)
-  })
-
-  it('una línea CON variante no la cuenta: ahí el contador mentiría', () => {
-    // Un adicional que se arma abre su ficha y puede acabar en varias líneas
-    // (Personal, Mediana…). Un solo número no dice cuál, así que se queda el
-    // «+» — y sale gratis porque su línea suelta no existe.
-    const conVariante = [linea({
-      key: lineKey(pan, variante(), [], '', []),
+  it('agregar el mismo adicional dos veces suma en UNA línea', () => {
+    const nueva = (cantidad: number): CartLine => ({
+      key: claveSuelta(pan),
       product: pan,
-      unitPrice: 16,
-    })]
-    expect(cantidadSuelta(conVariante, pan)).toBe(0)
+      variant: null,
+      extras: [],
+      options: [],
+      quantity: cantidad,
+      note: '',
+      unitPrice: unitPrice(pan, null, [], []),
+    })
+    const lineas = addLine(addLine([], nueva(2)), nueva(3))
+    expect(lineas).toHaveLength(1)
+    expect(lineas[0].quantity).toBe(5)
+  })
+})
+
+// ⚠️ UNA sola regla para «¿hay que armarlo?»: la portada decide con ella si
+// abre la ficha, y la ficha si el adicional se puede contar en su pie. Si
+// divergieran, el pie sumaría un producto que el carrito nunca recibe.
+describe('qué productos hay que armar antes de meterlos al carrito', () => {
+  it('uno simple entra de un toque', () => {
+    expect(seArma(producto())).toBe(false)
+  })
+
+  it('con variantes, no: hay que elegir cuál', () => {
+    expect(seArma(producto({ hasVariants: true }))).toBe(true)
+  })
+
+  it('con un grupo obligatorio, no: la base lo rechazaría', () => {
+    expect(seArma(producto({ optionGroups: [grupo({ required: true })] }))).toBe(true)
+    expect(seArma(producto({ optionGroups: [grupo({ minSelectable: 1 })] }))).toBe(true)
+  })
+
+  it('un grupo opcional no obliga a nada', () => {
+    expect(seArma(producto({ optionGroups: [grupo()] }))).toBe(false)
+  })
+
+  it('el plato por partes tampoco entra de un toque', () => {
+    expect(seArma(producto({ optionGroups: [grupo({ isMealPart: true })] }))).toBe(true)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UN SOLO IMPORTE EN LA FICHA
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El 2026-09-19 la ficha llegó a enseñar DOS cuentas: «ya en tu pedido $16.85»
+// y «este plato $14.85». El dueño, probándolo: «ver que tiene como 2 cuentas
+// es raro… agrego solo 14 y saliendo tengo otra cantidad». El origen no era
+// maquetación: los acompañamientos entraban al carrito por su cuenta, así que
+// de verdad había dos importes y ninguno era el que se iba a pagar.
+//
+// Ahora viajan con el plato y este es EL número del botón.
+
+describe('lo que costará tocar «Agregar»', () => {
+  it('sin acompañamientos, el plato por su cantidad', () => {
+    expect(totalAAgregar(14.85, 1, [])).toBe(14.85)
+    expect(totalAAgregar(14.85, 3, [])).toBe(44.55)
+  })
+
+  it('con acompañamientos, el caso real de Monster Pizza', () => {
+    // 1 pan $2.75 + 1 nachos $3.85 + 3 colas $4.95 + 2 cervezas $3.30 = $14.85
+    const acompanantes = [
+      { price: 2.75, quantity: 1 },
+      { price: 3.85, quantity: 1 },
+      { price: 1.65, quantity: 3 },
+      { price: 1.65, quantity: 2 },
+    ]
+    expect(totalAAgregar(0, 0, acompanantes)).toBe(14.85)
+    // La pizza personal ($14.85) con todo eso encima.
+    expect(totalAAgregar(14.85, 1, acompanantes)).toBe(29.7)
+  })
+
+  it('NO lleva el envío: esto es lo que se agrega, no lo que se paga', () => {
+    // ⚠️ La franja que hubo aquí un rato enseñaba $16.85 con esos mismos
+    // acompañamientos, y la diferencia eran los $2.00 del envío: mezclaba «lo
+    // que llevas» con «lo que costará el reparto». El envío se suma UNA vez,
+    // en el carrito (`orderTotal`), y no en cada ficha.
+    expect(totalAAgregar(0, 0, [{ price: 1.65, quantity: 3 }])).toBe(4.95)
+  })
+
+  it('cuenta en centavos enteros, como la base', () => {
+    // 0.1 + 0.2 en coma flotante da 0.30000000000000004. Ese céntimo se ve.
+    expect(totalAAgregar(0.1, 1, [{ price: 0.2, quantity: 1 }])).toBe(0.3)
+    expect(totalAAgregar(1.15, 3, [{ price: 0.35, quantity: 7 }])).toBe(5.9)
+  })
+
+  it('la cantidad del plato NO multiplica los acompañamientos', () => {
+    // Dos pizzas y una cola son dos pizzas y UNA cola.
+    expect(totalAAgregar(10, 2, [{ price: 1.65, quantity: 1 }])).toBe(21.65)
+  })
+
+  it('nada en negativo, pase lo que pase', () => {
+    expect(totalAAgregar(-5, 1, [])).toBe(0)
+    expect(totalAAgregar(10, -2, [])).toBe(0)
+    expect(totalAAgregar(10, 1, [{ price: 2, quantity: -3 }])).toBe(10)
   })
 })

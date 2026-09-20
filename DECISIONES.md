@@ -1150,32 +1150,55 @@ pasado a todos los que se den de alta.
 En la carta (la rejilla de la portada) el `+` se deja como está: allí la barra
 del pedido **sí se ve** y sube al tocar, así que la señal ya existe.
 
-### Lo que faltaba: ver el pedido MIENTRAS eliges (2026-09-19, segunda vuelta)
+### Una ficha, una cuenta (2026-09-19, y hubo que llegar en tres pasos)
 
-El contador arregló el «no acusa el toque», pero al probarlo en producción
-apareció lo de debajo: el dueño metió cuatro panes, tres nachos y seis colas
-—$34.10— y **el pie de la ficha seguía marcando $14.85**, el precio de la
-pizza. Su conclusión fue la que tendría cualquier cliente: «la app no
-funciona». Y su preocupación, la correcta: *«si un local nuevo crea su menú y
-el cliente ve que la app no funciona, no pedirá más»*.
+El contador arregló el «no acusa el toque». Pero el pie seguía marcando el
+precio del plato mientras el carrito crecía por detrás, así que se le añadió
+una franja con lo que ya llevabas. Y ahí apareció lo de verdad, dicho por el
+dueño probándolo:
 
-Sumaba bien —el carrito decía $48.95— pero **no lo enseñaba**, porque con la
-ficha abierta la barra «Ver pedido» queda debajo (`z-40`). Ahora el pie lleva
-una franja `N ya en tu pedido · $50.95`, con los mismos números que esa barra
-para que al cerrar la ficha la cifra no dé un salto.
+> «ver que tiene como 2 cuentas es raro, y es como que dices agrego solo 14 y
+> saliendo tengo una cantidad y pues decir qué pasó aquí»
 
-⚠️ **Lo que NO se hizo, y es lo que más tienta:** sumar los adicionales al
-«Precio actual» y al botón. Ese botón agrega **solo este plato** — si dijera
-`Agregar · $50.95`, metería una pizza cobrando el pedido entero, y al agregarla
-el carrito contaría dos veces lo que ya tenía. Son dos importes distintos a
-propósito, y por eso el del plato pasa a llamarse **«Este plato»** cuando hay
-pedido detrás: dos cifras seguidas sin etiquetar se leen como un error.
+Tenía razón, y el problema **no era la maquetación**: era que la ficha hacía
+DOS cosas a la vez —armar un plato y meter otros productos al carrito por
+detrás—, así que de verdad había dos importes y **ninguno era el que se iba a
+pagar**. Ninguna app de reparto hace eso.
 
-⚠️ **La franja es un texto, no un botón.** Llevar al carrito desde ahí tiraría
-la masa, el sabor y los extras a medio elegir. Para ir al pedido se cierra la
-ficha.
+**El arreglo fue mover el fallo, no maquillarlo:** lo que se marca en «Para
+acompañar» ya no entra al carrito solo. Se suma al botón y viaja con el plato.
+Un botón, un número, y dice exactamente lo que va a pasar:
 
-⚠️ **Y el contador rompió los nombres.** «Pan de Ajo Cheese» salía «Pan de Ajo
-…» porque nombre, precio y contador competían por el mismo ancho. El precio se
-movió **debajo del nombre**. Se vio en producción, no en el CI: una prueba de
-render no mide anchos.
+```
+Pizza                        $14.85
+Acompañamientos (7)          $14.85
+ − 1 +   [ Agregar · $29.70 ]
+```
+
+⚠️ **Lo que sigue estando prohibido:** que el botón cobre el carrito entero.
+«Agregar» mete lo de ESTA ficha; si sumara lo que ya había en el pedido,
+agregaría una pizza cobrando todo y contaría dos veces lo guardado.
+
+⚠️ **Arrancan vacíos al abrir la ficha**, no con lo que ya haya en el carrito:
+precargarlos haría que al tocar «Agregar» se sumaran otra vez.
+
+⚠️ **Un adicional que hay que ARMAR** (variantes, obligatorio, por partes)
+conserva el `+` y abre su propia ficha — no entra de un toque porque la base lo
+rechazaría. La regla es `seArma` en `cart.ts`, **una sola** para la portada y
+la ficha: si divergieran, el pie sumaría un producto que el carrito no recibe.
+
+⚠️ **El total se calcula en `cart.ts` (`totalAAgregar`), no en el JSX**, y en
+centavos enteros. Es un número que el cliente lee antes de decidir, y en el
+componente no se puede comprobar.
+
+⚠️ **Y el contador rompió los nombres**: «Pan de Ajo Cheese» salía «Pan de Ajo
+…» porque nombre, precio y contador competían por el ancho. El precio se movió
+**debajo del nombre**. Se vio PROBANDO, no en el CI — una prueba de render no
+mide anchos.
+
+**La lección del episodio entero:** se reportó como «no suma el dinero», y el
+dinero llevaba bien desde el principio. Los dos primeros intentos arreglaron
+síntomas (que no se veía el toque, que no se veía el pedido) y el tercero
+encontró la causa: la pantalla mezclaba dos flujos. Cuando un arreglo obliga a
+enseñar dos números para explicarse, el fallo está en el flujo, no en la
+pantalla.

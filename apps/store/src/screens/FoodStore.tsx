@@ -22,8 +22,8 @@ import {
   setAddressLocation,
 } from '../lib/api'
 import {
-  ENTREGA_POR_DEFECTO, addLine, cantidadSuelta, cartCount, cartTotal, claveDelPlato, claveSuelta,
-  esPlatoPorPartes, lineTotal, needsAddress, orderTotal, setQuantity, unitPrice,
+  ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, claveDelPlato, claveSuelta,
+  lineTotal, needsAddress, orderTotal, seArma, setQuantity, unitPrice,
 } from '../lib/cart'
 import { Aviso, Bienvenida, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
@@ -290,14 +290,10 @@ export default function FoodStore({
     const producto = catalogo?.products.find(item => item.id === productId)
     if (!producto || !producto.available) return
 
-    const obligatorios = producto.optionGroups.some(
-      grupo => grupo.required || grupo.minSelectable > 0,
-    )
-    // Un plato por partes tampoco entra de un toque: sin sopa ni segundo la base
-    // lo rechaza, así que se abre su ficha para armar la mesa.
-    if (obligatorios || producto.hasVariants || esPlatoPorPartes(producto)) {
-      return setElegido(producto)
-    }
+    // Un producto con variantes, con un obligatorio o por partes no entra de un
+    // toque: la base lo rechazaría, así que se abre su ficha. La regla vive en
+    // `cart.ts` porque la ficha la necesita para lo mismo.
+    if (seArma(producto)) return setElegido(producto)
 
     setLineas(actuales => addLine(actuales, {
       key: claveSuelta(producto),
@@ -311,22 +307,40 @@ export default function FoodStore({
     }))
   }, [catalogo])
 
-  /** Cuántos lleva el carrito de ese adicional. Alimenta el contador de la ficha. */
-  const cuantosSueltos = useCallback((productId: string): number => {
-    const producto = catalogo?.products.find(item => item.id === productId)
-    return producto ? cantidadSuelta(lineas, producto) : 0
-  }, [catalogo, lineas])
-
   /**
-   * Sube, baja o quita un adicional desde la ficha de otro producto.
+   * Los acompañamientos que el cliente marcó dentro de la ficha de otro plato.
+   * Entran JUNTOS al tocar «Agregar», cada uno como su propia línea.
    *
-   * ⚠️ En CERO la línea desaparece y el contador vuelve a ser un `+`, que es
-   * lo que espera cualquiera: `setQuantity` ya lo resuelve así.
+   * ⚠️ En una sola pasada de `setLineas`. Una llamada por producto haría que
+   * React encadenara actualizaciones sobre estados intermedios y se perdieran
+   * líneas por el camino.
    */
-  const cambiarSuelto = useCallback((productId: string, cantidad: number) => {
+  const agregarAdicionales = useCallback((cantidades: Record<string, number>) => {
+    setLineas((actuales) => {
+      let siguientes = actuales
+      for (const [productId, cantidad] of Object.entries(cantidades)) {
+        if (cantidad <= 0) continue
+        const producto = catalogo?.products.find(item => item.id === productId)
+        if (!producto || !producto.available) continue
+        siguientes = addLine(siguientes, {
+          key: claveSuelta(producto),
+          product: producto,
+          variant: null,
+          extras: [],
+          options: [],
+          quantity: Math.min(99, cantidad),
+          note: '',
+          unitPrice: unitPrice(producto, null, [], []),
+        })
+      }
+      return siguientes
+    })
+  }, [catalogo])
+
+  /** ¿Ese adicional hay que armarlo? La misma regla que usa `agregarAdicional`. */
+  const adicionalSeArma = useCallback((productId: string): boolean => {
     const producto = catalogo?.products.find(item => item.id === productId)
-    if (!producto) return
-    setLineas(actuales => setQuantity(actuales, claveSuelta(producto), Math.min(99, cantidad)))
+    return producto ? seArma(producto) : false
   }, [catalogo])
 
   /**
@@ -1272,12 +1286,8 @@ export default function FoodStore({
         onCerrar={() => setElegido(null)}
         onAgregar={linea => setLineas(actuales => addLine(actuales, linea))}
         onAgregarSuelto={agregarAdicional}
-        cantidadSuelta={cuantosSueltos}
-        onCambiarSuelto={cambiarSuelto}
-        // Los MISMOS que la barra «Ver pedido», para que al cerrar la ficha la
-        // cifra no dé un salto.
-        unidadesEnPedido={unidades}
-        totalDelPedido={total}
+        onAgregarAdicionales={agregarAdicionales}
+        seArmaElAdicional={adicionalSeArma}
         puedePedir={puedePedir}
         lineaEnCarrito={elegido
           ? lineas.find(linea => linea.key === claveDelPlato(elegido)) ?? null

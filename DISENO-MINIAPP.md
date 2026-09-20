@@ -322,29 +322,28 @@ que compartía tipografía y tokens pero no la forma. Lo que cambió:
   de una: con tope de 1 el radio ya lo dice.
 - **Precio actual** encima del botón, solo en productos con grupos de opciones
   —donde el número cambia mientras eliges—. En uno simple repetiría el botón.
-  Pasa a llamarse **«Este plato»** cuando el carrito ya lleva algo: con dos
-  importes seguidos en el pie, uno sin etiquetar se lee como un error de la app.
-- **«N ya en tu pedido · $50.95»**, en una franja encima de lo anterior y solo
-  si el carrito tiene algo. Con la ficha abierta la barra «Ver pedido» queda
-  debajo (`z-40`), así que sin esto el cliente **no ve por ningún sitio** lo
-  que lleva: se probó en producción con $34.10 en adicionales y un pie que
-  marcaba $14.85, y la conclusión de quien lo probó fue «la app no funciona».
-  Lleva los MISMOS números que la barra de la portada, para que al cerrar la
-  ficha la cifra no dé un salto.
-  - ⚠️ Es un **texto, no un botón**: llevar al carrito desde aquí tiraría la
-    masa, el sabor y los extras que el cliente esté eligiendo.
-  - ⚠️ Y **no se suma al botón de abajo**, que agrega SOLO este plato. Un
-    botón que dijera `Agregar · $50.95` cobraría el pedido entero por una pizza.
+- **UN solo importe en el pie**, y es el del botón: lo que se va a agregar.
+  Con acompañamientos marcados, encima va su desglose (`Pizza $14.85` /
+  `Acompañamientos (7) $16.85`) y desaparece «Precio actual», que repetiría la
+  primera línea.
+  - ⚠️ **Nunca dos cuentas.** El 2026-09-19 el pie llegó a enseñar «ya en tu
+    pedido $16.85» y «este plato $14.85» a la vez, porque los acompañamientos
+    entraban al carrito por su cuenta. «Ver que tiene como 2 cuentas es raro…
+    agrego solo 14 y saliendo tengo otra cantidad», y tenía razón: ninguno de
+    los dos era el importe que se iba a pagar. **La ficha hace UNA cosa.**
 - Al llegar al máximo, las opciones no elegidas bajan de opacidad y no
   responden; las ya elegidas se pueden desmarcar.
 - **Complementos incluidos**: se ven como cualquier grupo, con la palabra
   `Incluida` donde iría el precio, y `+$1.50` solo en las mejoras.
 - **«Agrega algo más»**: los adicionales, agrupados por la sección que puso el
   dueño, con foto, precio y botón `+`. Entran al carrito como línea propia.
-  - El `+` se vuelve **contador** (`− n +`) en cuanto el adicional está en el
-    carrito: sin eso el botón no acusaba el toque y se pedían cuatro panes de
-    ajo sin querer. Un adicional que se ARMA (variantes u obligatorios) se
-    queda con el `+`, porque abre su ficha y puede dar varias líneas.
+  - ⚠️ **No entran al carrito al tocarlos:** se suman al botón y viajan con el
+    plato. Entrar solos es lo que partía el pie en dos cuentas.
+  - El `+` se vuelve **contador** (`− n +`) en cuanto hay uno marcado: sin eso
+    el botón no acusaba el toque y se pedían cuatro panes de ajo sin querer.
+    Un adicional que se ARMA (variantes, obligatorios, por partes) conserva el
+    `+` y abre su propia ficha: no entra de un toque porque la base lo
+    rechazaría. Lo decide `seArma` en `cart.ts`, la misma regla que la portada.
   - El **precio va debajo del nombre**, no en su propia columna: con las tres
     cosas en fila el contador se comía el ancho y los nombres salían cortados
     («Pan de Ajo …»).
