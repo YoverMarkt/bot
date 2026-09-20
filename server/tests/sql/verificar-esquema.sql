@@ -3683,6 +3683,88 @@ begin
     raise exception 'con on_top la plataforma debía sumar 10.00, y sumó %', v_ped.platform_markup;
   end if;
 
+  -- (d) EL TECHO Y EL PISO SE RESPETAN TAMBIÉN CON `on_top`.
+  --
+  -- ⚠️ La prueba (c) NO cubría esto y por eso el fallo vivió meses: inserta un
+  -- pedido SIN LÍNEAS, y sin `order_items` el camino por línea ni se activa.
+  -- Aquí se recorre el camino de verdad —pedido, líneas, y DESPUÉS el subtotal,
+  -- que es el orden exacto de `create_storefront_order`— porque el disparador
+  -- es BEFORE y solo ve las líneas en el UPDATE.
+  --
+  -- El fallo, medido el 2026-09-20 contra PostgreSQL real: con `on_top` al 10 %
+  -- y techo de $1, un pedido de $50 sellaba $5.00 de margen —cinco veces el
+  -- techo— y cobraba $55 cuando la app había enseñado $51. Fallaba también al
+  -- revés: con piso de $3 sobre $5 sellaba $0.50.
+  --
+  -- La causa era que `order_markup_by_line` no aplica `min_amount` ni
+  -- `max_amount`, y el disparador la dejaba pisar el margen ya recortado.
+  declare
+    v_pedido_id uuid;
+    v_margen numeric;
+  begin
+    update public.pricing_rules
+       set markup_mode = 'on_top', percentage = 10, max_amount = 1.00
+     where id = v_regla;
+
+    delete from public.orders where business_id = v_biz;
+    insert into public.orders (business_id, contact_phone, status, subtotal, total, currency, source)
+    values (v_biz, '593900000932', 'pendiente', 0, 0, 'USD', 'storefront')
+    returning id into v_pedido_id;
+
+    insert into public.order_items (order_id, business_id, product_name, quantity, unit_price, line_total)
+    values (v_pedido_id, v_biz, 'Arroz 5kg', 10, 5.00, 50.00);
+
+    update public.orders set subtotal = 50.00, total = 50.00 where id = v_pedido_id;
+
+    select platform_markup into v_margen from public.orders where id = v_pedido_id;
+    if v_margen <> 1.00 then
+      raise exception 'el TECHO de $1 se ignoró con on_top: se sellaron % (el cliente vio $51 y pagaría $%)',
+        v_margen, 50 + v_margen;
+    end if;
+
+    -- Y el piso, en la otra dirección.
+    update public.pricing_rules
+       set max_amount = null, min_amount = 3.00
+     where id = v_regla;
+
+    delete from public.orders where business_id = v_biz;
+    insert into public.orders (business_id, contact_phone, status, subtotal, total, currency, source)
+    values (v_biz, '593900000932', 'pendiente', 0, 0, 'USD', 'storefront')
+    returning id into v_pedido_id;
+    insert into public.order_items (order_id, business_id, product_name, quantity, unit_price, line_total)
+    values (v_pedido_id, v_biz, 'Arroz 5kg', 1, 5.00, 5.00);
+    update public.orders set subtotal = 5.00, total = 5.00 where id = v_pedido_id;
+
+    select platform_markup into v_margen from public.orders where id = v_pedido_id;
+    if v_margen <> 3.00 then
+      raise exception 'el PISO de $3 se ignoró con on_top: se sellaron %', v_margen;
+    end if;
+
+    -- Y SIN frenos se sigue calculando por línea, que es lo que hace que el
+    -- total coincida con lo que el cliente sumó en pantalla. Esto NO cambia.
+    update public.pricing_rules
+       set min_amount = null, max_amount = null
+     where id = v_regla;
+
+    delete from public.orders where business_id = v_biz;
+    insert into public.orders (business_id, contact_phone, status, subtotal, total, currency, source)
+    values (v_biz, '593900000932', 'pendiente', 0, 0, 'USD', 'storefront')
+    returning id into v_pedido_id;
+    -- 3 × $0.75: por línea da 3 × $0.08 = $0.24; sobre el subtotal daría $0.23.
+    insert into public.order_items (order_id, business_id, product_name, quantity, unit_price, line_total)
+    values (v_pedido_id, v_biz, 'Empanada', 3, 0.75, 2.25);
+    update public.orders set subtotal = 2.25, total = 2.25 where id = v_pedido_id;
+
+    select platform_markup into v_margen from public.orders where id = v_pedido_id;
+    if v_margen <> 0.24 then
+      raise exception 'sin frenos el margen debía seguir yendo por línea (0.24), fue %', v_margen;
+    end if;
+  end;
+
+  update public.pricing_rules
+     set markup_mode = 'on_top', min_amount = null, max_amount = null
+   where id = v_regla;
+
   -- Y un modo inventado sigue fallando CERRADO.
   begin
     update public.pricing_rules set markup_mode = 'regalado' where id = v_regla;
