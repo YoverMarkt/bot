@@ -73,7 +73,7 @@ const opcionesPorDefecto = (groups: OptionGroup[]): ChosenOption[] => groups.fla
 
 export default function ProductSheet({
   product, abierto, onCerrar, onAgregar, onAgregarSuelto, puedePedir, lineaEnCarrito = null,
-  cantidadSuelta, onCambiarSuelto,
+  cantidadSuelta, onCambiarSuelto, unidadesEnPedido, totalDelPedido,
 }: {
   product: Product | null
   abierto: boolean
@@ -108,6 +108,20 @@ export default function ProductSheet({
    */
   cantidadSuelta: (productId: string) => number
   onCambiarSuelto: (productId: string, cantidad: number) => void
+  /**
+   * Lo que YA lleva el pedido, para enseñarlo en el pie de la ficha.
+   *
+   * ⚠️ Con la ficha abierta, la barra «Ver pedido» queda debajo (`z-40`), así
+   * que mientras el cliente elige NO ve por ningún sitio lo que lleva: mete
+   * cuatro panes, tres nachos y seis colas, y el pie sigue diciendo el precio
+   * de la pizza. Lo probó el dueño el 2026-09-19 con $34.10 en adicionales y
+   * un pie que marcaba $14.85 — «la app no funciona».
+   *
+   * Son los MISMOS números de la barra de la portada (unidades y total con
+   * envío), para que al cerrar la ficha la cifra no cambie de golpe.
+   */
+  unidadesEnPedido: number
+  totalDelPedido: number
   puedePedir: boolean
 }) {
   const [variante, setVariante] = useState<Variant | null>(null)
@@ -780,6 +794,13 @@ export default function ProductSheet({
                         className="size-12 shrink-0 rounded-xl object-cover"
                       />
                     )}
+                    {/* ⚠️ El precio va DEBAJO del nombre, no en su propia
+                        columna. Con las tres cosas en fila —nombre, precio y
+                        control— el contador se comía el ancho y los nombres
+                        salían cortados: «Pan de Ajo …», «Nachos Sup…». Se vio
+                        en producción en cuanto el contador sustituyó al `+`.
+                        Debajo, el nombre se lleva todo el ancho que sobra y
+                        el precio se sigue leyendo igual de bien. */}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[14.5px] font-bold tracking-tight">
                         {reco.name}
@@ -789,9 +810,9 @@ export default function ProductSheet({
                           {reco.description}
                         </span>
                       )}
-                    </span>
-                    <span className="shrink-0 text-[14px] font-bold tabular-nums">
-                      {money(reco.price)}
+                      <span className="mt-0.5 block text-[14px] font-bold tabular-nums">
+                        {money(reco.price)}
+                      </span>
                     </span>
                     {/* ⚠️ El mismo `+` de la carta: acento con su glow y el icono
                         `RiAddLine`, no `bg-marca text-white` con el CARÁCTER «+».
@@ -886,13 +907,49 @@ export default function ProductSheet({
           : opciones.some(opcion => opcion.quantity > 0) && (
             <p className="mb-2.5 text-[13px] leading-snug font-semibold texto-cuerpo">{plato.error}</p>
           ))}
+        {/* ── Lo que YA llevas ─────────────────────────────────────────
+            Va SIEMPRE que el carrito tenga algo, tenga o no grupos este
+            producto: es la única forma de ver, sin cerrar la ficha, que los
+            adicionales que acabas de tocar cuentan.
+
+            ⚠️ Es un texto, NO un botón, y es a propósito. Llevar al carrito
+            desde aquí tiraría lo que el cliente esté armando —la masa, el
+            sabor, los extras— sin avisar. Para ir al pedido se cierra la
+            ficha, que es un gesto que ya conoce.
+
+            ⚠️ Y NO se suma al botón de abajo. «Agregar» mete SOLO este plato;
+            si dijera el total del carrito, agregaría una pizza cobrando el
+            pedido entero. Son dos números distintos a propósito, y por eso
+            este lleva su etiqueta delante. */}
+        {unidadesEnPedido > 0 && (
+          <div className="fondo-app mb-2.5 flex items-center justify-between gap-3 rounded-full px-4 py-2">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="acento flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold tabular-nums">
+                {unidadesEnPedido}
+              </span>
+              <span className="truncate text-[13px] font-semibold texto-cuerpo">
+                ya en tu pedido
+              </span>
+            </span>
+            <span className="shrink-0 text-[15px] font-extrabold tracking-tight tabular-nums">
+              {money(totalDelPedido)}
+            </span>
+          </div>
+        )}
+
         {/* Precio actual: cómo va quedando según lo que elige.
             Solo en productos que se arman —donde el número CAMBIA mientras
             eliges—; en uno simple repetiría lo que ya dice el botón. En la mesa
             lo dice el botón, con el desglose justo encima. */}
         {!plato && gruposOpciones.length > 0 && (
           <div className="mb-2.5 flex items-baseline justify-between">
-            <span className="text-[13px] font-semibold texto-cuerpo">Precio actual</span>
+            {/* ⚠️ «Este plato» y no «Precio actual» cuando hay algo en el
+                carrito: dos importes seguidos sin decir de qué es cada uno se
+                leen como un error de la app. Sin pedido detrás no hay con qué
+                confundirlo y se queda el texto de siempre. */}
+            <span className="text-[13px] font-semibold texto-cuerpo">
+              {unidadesEnPedido > 0 ? 'Este plato' : 'Precio actual'}
+            </span>
             <span className="text-[19px] font-extrabold tracking-tight tabular-nums">
               {money(precio * cantidad)}
             </span>

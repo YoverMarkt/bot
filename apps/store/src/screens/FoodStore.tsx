@@ -1274,6 +1274,10 @@ export default function FoodStore({
         onAgregarSuelto={agregarAdicional}
         cantidadSuelta={cuantosSueltos}
         onCambiarSuelto={cambiarSuelto}
+        // Los MISMOS que la barra «Ver pedido», para que al cerrar la ficha la
+        // cifra no dé un salto.
+        unidadesEnPedido={unidades}
+        totalDelPedido={total}
         puedePedir={puedePedir}
         lineaEnCarrito={elegido
           ? lineas.find(linea => linea.key === claveDelPlato(elegido)) ?? null
