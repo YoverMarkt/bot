@@ -101,49 +101,8 @@ describe('horario: un cuerpo malformado no revienta el servidor', () => {
   })
 })
 
-describe('políticas: solo se escriben las columnas que existen', () => {
-  it('descarta las claves que no son columnas de bot_policies', async () => {
-    const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
-    const res = await dispatch(profileRouter, 'put', '/api/client/policies', {
-      body: {
-        welcome_message: '¡Hola! 👋',
-        delivery_info: 'columna que no existe',
-        payment_info: 'otra que tampoco',
-      },
-    })
-    expect(res.status).toBe(200)
-    expect(upsert).toHaveBeenCalledWith('business-a', { welcome_message: '¡Hola! 👋' })
-  })
-
-  it('un cuerpo sin ninguna columna conocida → 400, sin tocar la base', async () => {
-    const upsert = vi.spyOn(db, 'upsertPolicies')
-    const res = await dispatch(profileRouter, 'put', '/api/client/policies', {
-      body: { delivery_info: 'x' },
-    })
-    expect(res.status).toBe(400)
-    expect(upsert).not.toHaveBeenCalled()
-  })
-
-  it('el business_id del cuerpo NUNCA llega a la base', async () => {
-    // No era explotable —el repositorio lo pisa con el del JWT— pero que
-    // ni siquiera salga de la ruta lo deja fuera de discusión.
-    const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
-    await dispatch(profileRouter, 'put', '/api/client/policies', {
-      body: { welcome_message: '¡Hola! 👋', business_id: 'business-de-otro', id: 'fila-de-otro' },
-    })
-    const [, datos] = upsert.mock.calls[0]
-    expect(datos).toEqual({ welcome_message: '¡Hola! 👋' })
-    expect(datos).not.toHaveProperty('business_id')
-    expect(datos).not.toHaveProperty('id')
-  })
-
-  it('acepta todas las columnas que el panel sí edita', async () => {
-    const upsert = vi.spyOn(db, 'upsertPolicies').mockResolvedValue({ error: null })
-    const todas = {
-      // `bot_prompt` y `bot_instructions` se fueron con la IA el 2026-08-21.
-      welcome_message: 'a', shipping: 'b', returns: 'c', discounts: 'd',
-    }
-    await dispatch(profileRouter, 'put', '/api/client/policies', { body: todas })
-    expect(upsert).toHaveBeenCalledWith('business-a', todas)
-  })
-})
+// ⚠️ Aquí vivía «políticas: solo se escriben las columnas que existen», que
+// cubría `PUT /api/client/policies`. Esa ruta y la tabla `bot_policies` se
+// retiraron el 2026-09-20: el saludo y las políticas que guardaban no los
+// leía nadie. La lección que dejó —filtrar las claves del cuerpo en vez de
+// pasarlo entero a la base— sigue viva en el resto de este archivo.

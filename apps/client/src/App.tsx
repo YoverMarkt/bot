@@ -16,7 +16,6 @@ const Customers = lazy(() => import('./features/customers/Customers'))
 const Reactivar = lazy(() => import('./features/customers/Reactivar'))
 const Schedule = lazy(() => import('./features/schedule/Schedule'))
 const Settings = lazy(() => import('./features/settings/Settings'))
-const Bienvenida = lazy(() => import('./features/settings/Bienvenida'))
 const Users = lazy(() => import('./features/settings/Users'))
 
 // Solo entra quien tiene sesión; si no, al login.
@@ -56,10 +55,15 @@ export default function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/reactivate" element={<Reactivar />} />
-              <Route path="/bienvenida" element={<Bienvenida />} />
-              <Route path="/policies" element={<Navigate to="/bienvenida" replace />} />
-              {/* El enlace viejo sigue funcionando: alguien puede tenerlo guardado. */}
-              <Route path="/bot-prompt" element={<Navigate to="/bienvenida" replace />} />
+              {/* ⚠️ «Bienvenida» se retiró el 2026-09-20: el saludo y las
+                  políticas que el dueño escribía aquí no los leía NADIE — se
+                  guardaban en `bot_policies` y ningún servicio del bot, del
+                  marketplace ni de la tienda los consultaba. Ahora cada local
+                  se presenta desde Umbani. Los enlaces viejos van al inicio,
+                  no a una pantalla que ya no existe. */}
+              <Route path="/bienvenida" element={<Navigate to="/" replace />} />
+              <Route path="/policies" element={<Navigate to="/" replace />} />
+              <Route path="/bot-prompt" element={<Navigate to="/" replace />} />
               <Route path="/users" element={<Users />} />
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />

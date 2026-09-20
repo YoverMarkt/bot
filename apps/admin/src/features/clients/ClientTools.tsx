@@ -1,22 +1,22 @@
-import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import * as adm from './api'
 import { enElMarketplace, type BusinessRow } from './api'
-import { toast } from 'sonner'
 import { Button } from '@botpanel/ui/components/button'
-import { Textarea } from '@botpanel/ui/components/textarea'
-import { Smartphone, Bot as BotIcon, TriangleAlert } from 'lucide-react'
+import { Smartphone, Bot as BotIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { planLabel } from './plans'
 
 // ── Herramientas por negocio (paridad con el admin viejo):
 // 👁 Ver negocio (datos + estadísticas + últimas conversaciones)
-// 🤖 Prompt del Bot por negocio (con plantillas formal/casual/luxury)
+// Herramientas del superadmin sobre un negocio.
+//
+// ⚠️ Aquí vivía «Mensaje de bienvenida», retirado el 2026-09-20 junto con la
+// pantalla del panel del dueño: el saludo se guardaba en `bot_policies` y no
+// lo leía NADIE. Cada local se presenta desde Umbani.
 
 export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void }) {
   const { data: prods = [] } = useQuery({ queryKey: ['adm-cprods', c.id], queryFn: () => adm.getClientProducts(c.id) })
   const { data: convs = [] } = useQuery({ queryKey: ['adm-cconvs', c.id], queryFn: () => adm.getClientConversations(c.id) })
-  const { data: pol } = useQuery({ queryKey: ['adm-cpol', c.id], queryFn: () => adm.getClientPolicies(c.id) })
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
@@ -45,7 +45,6 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Estadísticas</div>
             <div><strong className="text-foreground/90">Productos:</strong> {prods.length}</div>
             <div><strong className="text-foreground/90">Conversaciones:</strong> {convs.length}</div>
-            <div><strong className="text-foreground/90">Envíos:</strong> {pol?.shipping ? 'Configurado' : 'Sin configurar'}</div>
           </div>
         </div>
         {/* ⚠️ Estas son las conversaciones del CANAL PROPIO
@@ -74,59 +73,6 @@ export function ViewModal({ c, onClose }: { c: BusinessRow; onClose: () => void 
         </div>
         <DialogFooter className="mx-0 mb-0 mt-4 px-0 pb-0">
           <Button variant="outline" onClick={onClose}>Cerrar</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// Mismas plantillas del admin viejo
-
-export function BienvenidaModal({ c, onClose }: { c: BusinessRow; onClose: () => void }) {
-  const [saludo, setSaludo] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    adm.getClientPolicies(c.id).then(d => setSaludo(d.welcome_message || '')).catch(() => {})
-  }, [c.id])
-
-  async function save() {
-    setSaving(true)
-    try {
-      await adm.saveClientPolicies(c.id, { welcome_message: saludo.trim() || null })
-      toast.success('Saludo guardado')
-      setTimeout(onClose, 800)
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Error') }
-    setSaving(false)
-  }
-
-  return (
-    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Mensaje de bienvenida</DialogTitle>
-          <DialogDescription>Lo primero que lee el cliente. Se manda tal cual.</DialogDescription>
-          <p className="text-sm text-muted-foreground">{c.name}</p>
-        </DialogHeader>
-        <Textarea
-          id="client-welcome-message"
-          aria-label="Mensaje de bienvenida"
-          value={saludo}
-          onChange={e => setSaludo(e.target.value)}
-          rows={3}
-          maxLength={280}
-          className="w-full"
-          placeholder="¡Hola! 👋 Bienvenido a {{negocio}}. ¿Qué se te antoja hoy?"
-        />
-        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
-          <TriangleAlert className="w-3 h-3 shrink-0" />
-          {280 - saludo.length} caracteres disponibles. Vacío = saludo estándar con el nombre del negocio.
-        </p>
-        <DialogFooter className="mx-0 mb-0 mt-3 px-0 pb-0">
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={save} disabled={saving}>
-            {saving ? 'Guardando…' : 'Guardar saludo'}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -121,10 +121,8 @@ const db: {
     email: string,
     passwordHash: string | null,
   ): Promise<DatabaseResult>
-  upsertPolicies(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
   getProducts(businessId: string): Promise<unknown[]>
   getConversations(businessId: string): Promise<unknown[]>
-  getPolicies(businessId: string): Promise<unknown>
 } = require('../db') as typeof import('../db')
 const auth: {
   authAdmin: RequestHandler
@@ -890,20 +888,7 @@ router.get('/api/admin/clients/:id/conversations', auth.authAdmin, async (req, r
   res.json(await db.getConversations(req.params.id))
 })
 
-router.get('/api/admin/clients/:id/policies', auth.authAdmin, async (req, res) => {
-  res.json(await db.getPolicies(req.params.id) || {})
-})
-
-router.put('/api/admin/clients/:id/policies', auth.authAdmin, async (req, res) => {
-  try {
-    assertDatabaseResult(
-      await db.upsertPolicies(req.params.id, req.body as Record<string, unknown>),
-      'actualizar políticas',
-    )
-    res.json({ ok: true })
-  } catch (error) {
-    safeFailure(res, 'actualizar las políticas', error)
-  }
-})
+// ⚠️ Aquí vivían `GET/PUT /api/admin/clients/:id/policies`, retiradas el
+// 2026-09-20 con la pantalla «Bienvenida»: el saludo no lo leía nadie.
 
 export = router

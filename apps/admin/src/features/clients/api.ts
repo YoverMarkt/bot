@@ -234,13 +234,9 @@ export const getClientProducts = (id: string) =>
 export const getClientConversations = (id: string) =>
   api<ClientMsg[]>(`/api/admin/clients/${id}/conversations`)
 
-export const getClientPolicies = (id: string) =>
-  api<{ welcome_message?: string | null; shipping?: string | null }>(`/api/admin/clients/${id}/policies`)
-
-// `null` vacía el campo: un saludo borrado vuelve al de por defecto, y eso
-// es distinto de mandar cadena vacía.
-export const saveClientPolicies = (id: string, p: Record<string, string | null>) =>
-  api(`/api/admin/clients/${id}/policies`, { method: 'PUT', body: JSON.stringify(p) })
+// ⚠️ Aquí vivían `getClientPolicies` y `saveClientPolicies`, retiradas el
+// 2026-09-20 con la tabla `bot_policies`: el saludo que guardaban no lo leía
+// nadie y cada local se presenta desde Umbani.
 
 // ⚠️ Aquí vivía `verifyClient`, retirada del panel el 2026-08-23.
 //

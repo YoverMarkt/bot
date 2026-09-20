@@ -75,12 +75,12 @@ describe('clientes y onboarding del superadmin', () => {
   // lista y cambiar el estado de un número). El número exacto es lo que obliga
   // a mirar aquí cuando alguien añade una ruta: una nueva sin autenticación
   // pasaría inadvertida, y estas hablan de todos los negocios a la vez.
-  it('protege sus 21 endpoints exclusivamente con autenticación admin', async () => {
+  it('protege sus 19 endpoints exclusivamente con autenticación admin', async () => {
     // 21 desde el 2026-09-18: entraron la lista de cajones del menú del chat y
     // el uso de Umbani.
     // El número se sube A MANO y a propósito — una ruta nueva que se colara
     // sin `authAdmin` tiene que romper esta prueba, no pasar de largo.
-    expect(clientsRouter.stack).toHaveLength(21)
+    expect(clientsRouter.stack).toHaveLength(19)
     expect(clientsRouter.stack.every(layer => layer.route.stack.length === 2)).toBe(true)
     expect((await dispatch('get', '/api/admin/clients')).status).toBe(401)
     expect((await dispatch('get', '/api/admin/clients', {
@@ -673,7 +673,6 @@ describe('clientes y onboarding del superadmin', () => {
   it.each([
     ['post', '/api/admin/clients/:id/suspend', 'suspendBusiness'],
     ['post', '/api/admin/clients/:id/reactivate', 'reactivateBusiness'],
-    ['put', '/api/admin/clients/:id/policies', 'upsertPolicies'],
   ])('no devuelve éxito cuando %s %s falla', async (method, path, operation) => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(db, operation).mockResolvedValue({ error: { message: 'fallo interno' } })

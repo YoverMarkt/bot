@@ -3,14 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as adm from './api'
 import { enElMarketplace, type BusinessRow } from './api'
 import ClientModal from './ClientModal'
-import { ViewModal, BienvenidaModal } from './ClientTools'
-import { Trash2, MessageSquareText, Plus, Eye, Pencil, MoreHorizontal, Store, EyeOff } from 'lucide-react'
+import { ViewModal } from './ClientTools'
+import { Trash2, Plus, Eye, Pencil, MoreHorizontal, Store, EyeOff } from 'lucide-react'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@botpanel/ui/components/table'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@botpanel/ui/components/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@botpanel/ui/components/dropdown-menu'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 import { planLabel } from './plans'
@@ -19,7 +19,6 @@ export default function Clients() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [viewing, setViewing] = useState<BusinessRow | null>(null)
-  const [prompting, setPrompting] = useState<BusinessRow | null>(null)
   const { data: clients = [], isLoading, isError, refetch } = useQuery({ queryKey: ['adm-clients'], queryFn: adm.getClients })
 
   const filtered = clients
@@ -168,10 +167,6 @@ export default function Clients() {
                             está «Aparece en el marketplace», en su ficha; para
                             cortarle el servicio, Suspender. */}
                         <DropdownMenuContent align="end" className="w-56">
-                          <DropdownMenuItem onSelect={() => setPrompting(c)}>
-                            <MessageSquareText /> Mensaje de bienvenida
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem onSelect={() => setViewing(c)}><Eye /> Ver información</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -191,7 +186,6 @@ export default function Clients() {
         />
       )}
       {viewing && <ViewModal c={viewing} onClose={() => setViewing(null)} />}
-      {prompting && <BienvenidaModal c={prompting} onClose={() => setPrompting(null)} />}
     </div>
   )
 }

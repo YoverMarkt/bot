@@ -4,7 +4,8 @@ import fs from 'node:fs'
 const tenantTables = [
   'client_users',
   'products',
-  'bot_policies',
+  // ⚠️ `bot_policies` estuvo aquí hasta el 2026-09-20: se retiró con la
+  // pantalla «Bienvenida» del panel, porque lo que guardaba no lo leía nadie.
   'conversation_history',
   'conversation_sessions',
   'conversation_tags',

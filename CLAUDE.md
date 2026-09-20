@@ -166,6 +166,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Vigilancia de credenciales** → [DECISIONES.md](DECISIONES.md#vigilancia-de-credenciales)
 - **Registro de errores** → [DECISIONES.md](DECISIONES.md#registro-de-errores)
 - **Mini app de la tienda** → [DECISIONES.md](DECISIONES.md#mini-app-de-la-tienda)
+- **La pantalla «Bienvenida», RETIRADA (y por qué el alta se rompe si se hace al revés)** → [DECISIONES.md](DECISIONES.md#la-pantalla-bienvenida-no-la-leía-nadie)
 - **El «+» de los adicionales (y por qué el precio del plato NO sube)** → [DECISIONES.md](DECISIONES.md#el--de-los-adicionales-no-acusaba-el-toque)
 - **El horario del dueño manda sobre todos los modos** → [DECISIONES.md](DECISIONES.md#el-horario-del-dueño-manda-sobre-todos-los-modos)
 - **Lo que gana la plataforma (motor de margen)** → [DECISIONES.md](DECISIONES.md#lo-que-gana-la-plataforma)

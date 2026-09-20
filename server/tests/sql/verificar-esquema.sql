@@ -64,12 +64,14 @@ begin
     raise exception 'El alta no guardó miniapp con storefront_enabled=true';
   end if;
 
-  -- El alta es atómica: negocio, dueño, políticas y primera cuota o nada.
+  -- El alta es atómica: negocio, dueño y primera cuota, o nada.
+  --
+  -- ⚠️ Aquí se exigía además una fila en `bot_policies`. La tabla se retiró el
+  -- 2026-09-20 —el saludo y las políticas que guardaba no los leía nadie— y
+  -- con ella el insert del alta. Esta comprobación fue la que lo cazó al
+  -- borrar la tabla sin tocarla, que es justo para lo que está.
   if (select count(*) from client_users where business_id = v_nuevo) <> 1 then
     raise exception 'El alta no creó el usuario dueño';
-  end if;
-  if (select count(*) from bot_policies where business_id = v_nuevo) <> 1 then
-    raise exception 'El alta no creó las políticas del negocio';
   end if;
   select count(*) into v_cuotas from billing where business_id = v_nuevo;
   if v_cuotas <> 1 then
