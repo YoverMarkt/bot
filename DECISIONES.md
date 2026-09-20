@@ -1149,3 +1149,33 @@ pasado a todos los que se den de alta.
 
 En la carta (la rejilla de la portada) el `+` se deja como está: allí la barra
 del pedido **sí se ve** y sube al tocar, así que la señal ya existe.
+
+### Lo que faltaba: ver el pedido MIENTRAS eliges (2026-09-19, segunda vuelta)
+
+El contador arregló el «no acusa el toque», pero al probarlo en producción
+apareció lo de debajo: el dueño metió cuatro panes, tres nachos y seis colas
+—$34.10— y **el pie de la ficha seguía marcando $14.85**, el precio de la
+pizza. Su conclusión fue la que tendría cualquier cliente: «la app no
+funciona». Y su preocupación, la correcta: *«si un local nuevo crea su menú y
+el cliente ve que la app no funciona, no pedirá más»*.
+
+Sumaba bien —el carrito decía $48.95— pero **no lo enseñaba**, porque con la
+ficha abierta la barra «Ver pedido» queda debajo (`z-40`). Ahora el pie lleva
+una franja `N ya en tu pedido · $50.95`, con los mismos números que esa barra
+para que al cerrar la ficha la cifra no dé un salto.
+
+⚠️ **Lo que NO se hizo, y es lo que más tienta:** sumar los adicionales al
+«Precio actual» y al botón. Ese botón agrega **solo este plato** — si dijera
+`Agregar · $50.95`, metería una pizza cobrando el pedido entero, y al agregarla
+el carrito contaría dos veces lo que ya tenía. Son dos importes distintos a
+propósito, y por eso el del plato pasa a llamarse **«Este plato»** cuando hay
+pedido detrás: dos cifras seguidas sin etiquetar se leen como un error.
+
+⚠️ **La franja es un texto, no un botón.** Llevar al carrito desde ahí tiraría
+la masa, el sabor y los extras a medio elegir. Para ir al pedido se cierra la
+ficha.
+
+⚠️ **Y el contador rompió los nombres.** «Pan de Ajo Cheese» salía «Pan de Ajo
+…» porque nombre, precio y contador competían por el mismo ancho. El precio se
+movió **debajo del nombre**. Se vio en producción, no en el CI: una prueba de
+render no mide anchos.
