@@ -211,6 +211,106 @@ con el caso real delante, no imaginado.
 lo que entra al carrito con ese toque. Ver «Una ficha, una cuenta» en
 [DECISIONES.md](DECISIONES.md).
 
+## Cobro digital: dejar de revisar comprobantes (investigado 2026-09-20)
+
+**El problema, en palabras del dueño:** *«es muy complicado para el dueño
+revisar comprobantes, y si en ese momento le salen 15 pedidos, mejor que todo
+sea más dinámico»*.
+
+⚠️ **Esto cambiaría la regla inviolable #6 del CLAUDE.md** («Cobro manual»), y
+hay piezas construidas encima — la validación de comprobantes con IA está
+encendida en producción. No es un impedimento; es una decisión que hay que
+tomar a conciencia.
+
+### La decisión que va ANTES de elegir pasarela
+
+**¿El dinero pasa por Umbani o va directo a cada local?**
+
+- **Directo al local:** sin riesgo legal y el margen se sigue cobrando aparte,
+  pero **cada local** tiene que cumplir los requisitos de la pasarela.
+- **Por Umbani:** una sola integración, pero Umbani pasa a mover dinero de
+  terceros —con lo que eso implica legal y fiscalmente en Ecuador— y tiene que
+  liquidar a cada local.
+
+**Bloqueante sin resolver: ¿Umbani está constituida como empresa con RUC?**
+
+### Lo medido (septiembre 2026)
+
+| | Comisión al comercio | Ambiente de pruebas | Requisitos |
+|---|---|---|---|
+| **Deuna** (B. Pichincha) | **0 %** | ❌ hay que ir al banco | empresa constituida + **cuenta corriente Pichincha** + contrato |
+| **PayPhone** | ~5 % + IVA (se negocia) | ✅ público | cuenta PayPhone Business |
+| Kushki | ~2,95 % + $0,25 | — | tiene pagos divididos |
+| Datafast | 4,5 % débito / 6,5 % crédito | — | más burocrático |
+
+⚠️ **La Deuna que todos tienen es la PERSONAL**, y esa no tiene API: con ella
+se vuelve al comprobante. La que avisa es la **de comercio**, y ahí está la
+barrera — un local de almuerzos de barrio difícilmente tiene empresa
+constituida y cuenta corriente en Pichincha.
+
+⚠️ **PayPal descartado.** Funciona en Ecuador, pero el retiro tarda **hasta 7
+días hábiles** y cuesta hasta $5, la comisión se come un pedido de $3.50, y
+nadie pide comida a domicilio con PayPal aquí. Sus disputas favorecen al
+comprador: en comida entregada el local pierde el contracargo casi siempre.
+
+⚠️ **`docs.deuna.com` NO es la Deuna del Pichincha** — es otra empresa. La
+buena es `deuna.ec`.
+
+### ⚠️ PayPhone NO tiene webhook, y eso decide el diseño
+
+Su **Cajita de Pagos** se incrusta en la mini app y el cliente paga sin salir
+ni generar enlace (Visa, Mastercard, Diners, Discover y saldo PayPhone), y
+admite un `clientTransactionId` propio que devuelve al confirmar. Pero:
+
+1. el cliente paga;
+2. PayPhone **redirige** a una URL nuestra con `id` y `clientTransactionId`;
+3. **nuestro servidor** debe llamar a `POST /api/confirm`;
+4. **si no se confirma en 5 MINUTOS, la transacción se revierte.**
+
+**La confirmación no puede depender de que el móvil del cliente cargue la
+página de vuelta.** Si se le va el 4G, cierra la pestaña o entra en un túnel,
+nadie confirma y el cobro se deshace solo: el cliente jura que pagó, el local
+no ve el dinero y el pedido queda en el aire.
+
+**Se resuelve con lo que ya existe:** guardar el `clientTransactionId` al crear
+el pedido y que una tarea de la cola reintente `/api/confirm` hasta tener
+respuesta firme, pase lo que pase con el teléfono. La redirección solo enseña
+el resultado antes. Es el mismo principio que ya rige el dinero aquí: la
+pantalla informa, el servidor decide.
+
+⚠️ **Probarlo rompiéndolo:** cerrar la app justo después de pagar y comprobar
+que el pedido acaba en «pagado» igual.
+
+⚠️ **Las credenciales de prueba y producción de PayPhone parecen ser LAS
+MISMAS** (el ambiente se cambia por configuración). Hace falta un aviso bien
+visible de en qué modo corre, como la franja «STAGING · datos de mentira», o
+se cobra de verdad creyendo que se prueba.
+
+### Plan acordado
+
+Las dos cosas en paralelo: montar contra el **sandbox de PayPhone** (se puede
+empezar ya) y llamar a Banca Empresas de Pichincha preguntando (1) si una
+plataforma puede cobrar por varios locales o cada uno necesita su contrato,
+(2) si hay webhook y referencia propia, y (3) si hay ambiente de pruebas.
+
+El trabajo no se tira si gana Deuna: la parte difícil —marcar el pedido como
+pagado sin tocar comprobantes— es la misma para las dos.
+
+## El pedido trazable — encargo anunciado, prompt pendiente
+
+El dueño avisó (2026-09-20) de un módulo nuevo alrededor del pedido y quedó en
+pasar un prompt. Sus palabras: **ir marcando lo que lleva el pedido** para que
+no salga incompleto, **el sellado del pedido**, y **qué pasa si al repartidor
+se le cae**. Pidió ver «cómo lo hacen las grandes empresas».
+
+**No empezar sin ese prompt.** Y la decisión de fondo que hay que resolver
+antes de diseñar nada: **quién responde de qué en cada punto del camino** — de
+ahí sale qué se registra, quién paga un pedido perdido y si el cliente ve algo.
+
+⚠️ Aquí el reparto **lo hace el propio local**, no una flota de Umbani. Las
+respuestas de Rappi o Uber no se copian tal cual: ellos responden del
+repartidor porque es suyo.
+
 ## Estrategia — dos notas que vivían en CLAUDE.md
 
 _Movidas aquí el 2026-09-08: orientan el «¿y si añadimos…?», que es justo
