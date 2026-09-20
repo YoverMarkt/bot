@@ -25,7 +25,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
 const aqui = path.dirname(fileURLToPath(import.meta.url))
@@ -387,13 +387,16 @@ function arrancarServidor() {
  * base de staging sigue con la de ayer, la aplicación falla con errores de
  * columna que parecen bugs de la app y no lo son.
  */
-function huellaDelEsquema() {
-  const esquema = readFileSync(path.join(servidor, 'schema.sql'), 'utf8')
-  const migraciones = readdirSync(servidor)
-    .filter(nombre => nombre.startsWith('migration-') && nombre.endsWith('.sql'))
-    .sort()
-    .join(',')
-  return createHash('sha1').update(esquema).update(migraciones).digest('hex')
+export function huellaDelEsquema(esquema, migraciones) {
+  return createHash('sha1').update(esquema).update([...migraciones].sort().join(',')).digest('hex')
+}
+
+/** La huella de lo que hay ahora mismo en el disco. */
+function huellaDelDisco() {
+  return huellaDelEsquema(
+    readFileSync(path.join(servidor, 'schema.sql'), 'utf8'),
+    readdirSync(servidor).filter(n => n.startsWith('migration-') && n.endsWith('.sql')),
+  )
 }
 
 /**
@@ -429,7 +432,7 @@ function actualizar() {
   }
 
   const rama = git('rev-parse', '--abbrev-ref', 'HEAD')
-  const antes = huellaDelEsquema()
+  const antes = huellaDelDisco()
 
   console.log(`\n⬇️  Trayendo lo último de «${rama}»…`)
   execFileSync('git', ['pull', '--ff-only'], { cwd: raiz, stdio: 'inherit' })
@@ -439,7 +442,7 @@ function actualizar() {
   console.log('\n🔨 Reconstruyendo servidor, paneles y mini app…')
   execFileSync('npm', ['run', 'build'], { cwd: raiz, stdio: 'inherit' })
 
-  if (huellaDelEsquema() !== antes) {
+  if (huellaDelDisco() !== antes) {
     console.error(`
 ⚠️  LO QUE TRAJISTE CAMBIA LA BASE, y la de staging sigue con la de antes.
 
@@ -486,10 +489,13 @@ function levantar() {
 }
 
 const comandos = { levantar, preparar, servidor: arrancarServidor, humo, actualizar }
-const comando = process.argv[2] || 'preparar'
 
-if (!comandos[comando]) {
-  console.error(`\n❌ No conozco «${comando}». Usa: levantar | preparar | servidor | humo | actualizar\n`)
-  process.exit(1)
+// Solo corre cuando se ejecuta como programa: importado desde las pruebas, no.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const comando = process.argv[2] || 'preparar'
+  if (!comandos[comando]) {
+    console.error(`\n❌ No conozco «${comando}». Usa: levantar | preparar | servidor | humo | actualizar\n`)
+    process.exit(1)
+  }
+  comandos[comando]()
 }
-comandos[comando]()

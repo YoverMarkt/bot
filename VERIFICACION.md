@@ -323,6 +323,34 @@ lo comprueba desde las dos direcciones, y un guardián verifica que el `if` sigu
 envolviendo las tareas en `index.ts` — de nada sirve un freno bien probado que
 el arranque no consulte.
 
+### Cómo se trabaja con él (decidido 2026-09-19)
+
+**Nada llega a producción sin haber funcionado antes aquí.** Se decidió después
+de tres arreglos seguidos de la mini app que fueron directos a producción y
+que el dueño tuvo que encontrar con clientes pudiendo entrar: el `+` mudo, las
+dos cuentas y los nombres cortados. Ninguno era un error que salte — los tres
+solo se veían tocando la app en un teléfono.
+
+```
+cambio → staging → lo pruebo en el móvil → ¿al 100 %? → PR → CI → producción
+```
+
+⚠️ **«Tengo el staging levantado» NO significa «el staging tiene lo último»**, y
+las tres razones son invisibles:
+
+1. el repositorio local no se actualiza solo;
+2. el servidor **no vigila cambios** — compila al arrancar y ya;
+3. y la peor: **`npm run build` del servidor no construye los paneles**. La
+   mini app se sirve desde `apps/store/dist`, así que sin reconstruirla el
+   staging enseña la tienda de antes con un servidor nuevo. Esa trampa ya se
+   pagó una vez en producción (ver [[feedback_deploy-local-paneles]]).
+
+`npm run staging:actualizar` hace los cuatro pasos en el orden correcto: se
+niega si hay trabajo sin guardar, trae lo último, reconstruye **todo** y
+arranca. Y si lo que traes cambia el esquema, **corta en vez de arrancar** —
+con la base de ayer la aplicación falla con errores de columna que parecen
+bugs de la app y no lo son; ahí toca `npm run staging:reset` primero.
+
 ### El staging
 
 `supabase/config.toml` + `server/tests/staging.mjs`. Levanta **el stack de
