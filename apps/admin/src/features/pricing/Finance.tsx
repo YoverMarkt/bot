@@ -264,6 +264,21 @@ export default function Finance() {
               <p className="text-xs text-muted-foreground">
                 Cuenta al ENTREGAR el pedido. Una venta anulada deja de contar.
               </p>
+              {/* ── El desglose entero, para poder AUDITAR una fila ──────────
+                  Pedido por el dueño el 2026-09-21: «por auditoría o algún
+                  reclamo… tendríamos que poner ahí, como en las cards de
+                  pedidos, bien desglosado el valor del pedido, el valor del
+                  delivery y así».
+
+                  Con las tres partes y el total a la vista, una fila se
+                  comprueba sola: ante un reclamo no hay que ir a buscar el
+                  pedido para reconstruir de dónde salió el importe. Las
+                  tarjetas de arriba siguen enseñando solo lo vendido y la
+                  comisión, que es lo que mira la plataforma a diario. */}
+              <p className="mt-1 text-xs text-muted-foreground">
+                Productos + reparto + comisión = lo que pagó el cliente.
+                <span className="ml-1">La carrera es de quien entrega, no del local ni nuestra.</span>
+              </p>
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -271,20 +286,24 @@ export default function Finance() {
                   <TableRow>
                     <TableHead>Negocio</TableHead>
                     <TableHead className="text-right">Pedidos</TableHead>
-                    {/* ⚠️ «Vendido» son los PRODUCTOS del local, sin la
-                        carrera: esa es de quien entrega y la plataforma ni la
-                        cobra ni la paga. Se retiró «Se queda» porque con
-                        `on_top` repetía «Vendido» al céntimo —el local
-                        conserva su precio entero— y con la carrera dentro
-                        además mentía. */}
+                    {/* Las tres partes y luego el total, que es el orden en
+                        que se lee una factura y el que deja comprobar la suma
+                        de un vistazo.
+
+                        ⚠️ «Vendido» son los PRODUCTOS del local, sin la
+                        carrera. Se retiró «Se queda» porque con `on_top`
+                        repetía «Vendido» al céntimo —el local conserva su
+                        precio entero— y con la carrera dentro además mentía. */}
                     <TableHead className="text-right">Vendido</TableHead>
+                    <TableHead className="text-right">Reparto</TableHead>
+                    <TableHead className="text-right">Pagó el cliente</TableHead>
                     <TableHead className="text-right">Nos debe</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(resumen.data || []).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
                         Todavía no hay ventas este mes.
                       </TableCell>
                     </TableRow>
@@ -294,6 +313,15 @@ export default function Finance() {
                       <TableCell className="font-medium text-foreground">{f.business_name}</TableCell>
                       <TableCell className="text-right tabular-nums">{f.pedidos}</TableCell>
                       <TableCell className="text-right tabular-nums">{dinero(f.productos)}</TableCell>
+                      {/* La carrera se informa, no se cobra: la plataforma ni
+                          la recibe ni la paga. Va en gris para que no se
+                          confunda con las dos que sí son dinero nuestro. */}
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {dinero(f.reparto)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {dinero(f.bruto)}
+                      </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums text-primary">
                         {dinero(f.margen)}
                       </TableCell>
