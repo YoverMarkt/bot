@@ -40,7 +40,10 @@ export type PlatformFees = {
   pedidos: number
   bruto: number
   margen: number
-  comercio: number
+  /** De quien entrega. NO es del local. */
+  reparto: number
+  /** Del local, por su comida. Su venta de verdad. */
+  productos: number
 }
 
 export const getPlatformFees = () => api<PlatformFees>('/api/client/platform-fees')

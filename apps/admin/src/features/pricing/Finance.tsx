@@ -137,7 +137,9 @@ export default function Finance() {
   )
 
   const totalMargen = (resumen.data || []).reduce((s, r) => s + Number(r.margen || 0), 0)
-  const totalBruto = (resumen.data || []).reduce((s, r) => s + Number(r.bruto || 0), 0)
+  // Los PRODUCTOS, no lo que pagó el cliente: la carrera es de quien entrega
+  // y el margen ya se cuenta aparte en «comisión acumulada».
+  const totalBruto = (resumen.data || []).reduce((s, r) => s + Number(r.productos || 0), 0)
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
@@ -269,15 +271,20 @@ export default function Finance() {
                   <TableRow>
                     <TableHead>Negocio</TableHead>
                     <TableHead className="text-right">Pedidos</TableHead>
+                    {/* ⚠️ «Vendido» son los PRODUCTOS del local, sin la
+                        carrera: esa es de quien entrega y la plataforma ni la
+                        cobra ni la paga. Se retiró «Se queda» porque con
+                        `on_top` repetía «Vendido» al céntimo —el local
+                        conserva su precio entero— y con la carrera dentro
+                        además mentía. */}
                     <TableHead className="text-right">Vendido</TableHead>
-                    <TableHead className="text-right">Se queda</TableHead>
                     <TableHead className="text-right">Nos debe</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(resumen.data || []).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
                         Todavía no hay ventas este mes.
                       </TableCell>
                     </TableRow>
@@ -286,8 +293,7 @@ export default function Finance() {
                     <TableRow key={f.business_id}>
                       <TableCell className="font-medium text-foreground">{f.business_name}</TableCell>
                       <TableCell className="text-right tabular-nums">{f.pedidos}</TableCell>
-                      <TableCell className="text-right tabular-nums">{dinero(f.bruto)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{dinero(f.comercio)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{dinero(f.productos)}</TableCell>
                       <TableCell className="text-right font-semibold tabular-nums text-primary">
                         {dinero(f.margen)}
                       </TableCell>

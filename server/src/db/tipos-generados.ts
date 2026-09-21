@@ -3373,9 +3373,10 @@ export type Database = {
           bruto: number
           business_id: string
           business_name: string
-          comercio: number
           margen: number
           pedidos: number
+          productos: number
+          reparto: number
         }[]
       }
       producto_en_horario: {

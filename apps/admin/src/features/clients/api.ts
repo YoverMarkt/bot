@@ -307,7 +307,10 @@ export type MarkupSummaryRow = {
   pedidos: number
   bruto: number
   margen: number
-  comercio: number
+  /** De quien entrega. Ni del local ni de la plataforma. */
+  reparto: number
+  /** Del local, por su comida. */
+  productos: number
 }
 
 export type BusinessFamily = { code: string, label: string, sort: number }

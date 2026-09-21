@@ -3553,6 +3553,76 @@ begin
     raise exception 'el acumulado de un negocio se vio desde otro';
   end if;
 
+  -- ── LA CARRERA NO ES DEL LOCAL ─────────────────────────────────────────
+  --
+  -- Dicho por el dueño el 2026-09-21 mirando Finanzas: «suma el valor de la
+  -- carrera y eso es del motorizado». `comercio = bruto − margen` le atribuía
+  -- al local un dinero de quien entrega: sobre un pedido de $15.18 decía que
+  -- se quedaba $13.98 cuando de su comida solo eran $11.98.
+  --
+  -- Las tres bolsas tienen que sumar lo que pagó el cliente, y ninguna puede
+  -- llevarse lo de otra.
+  declare
+    v_con_envio uuid;
+    v_r record;
+  begin
+    -- ⚠️ NO se borra nada de lo anterior: la venta de arriba quedó `anulada`
+    -- y el resumen solo mira las `completada`, así que aquí no estorba. Y la
+    -- prueba 12 la resucita para cerrar el mes — borrarla la dejaba sin nada
+    -- que cerrar.
+    insert into public.orders (
+      business_id, contact_phone, status, subtotal, shipping, discount, total, currency, source
+    )
+    values (v_biz, '593900000921', 'completado', 11.98, 2.00, 0, 15.18, 'USD', 'storefront')
+    returning id into v_con_envio;
+
+    insert into public.sales (business_id, order_id, total, status, sold_at)
+    values (v_biz, v_con_envio, 15.18, 'completada', now());
+
+    select * into v_r
+    from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+
+    -- El margen se calcula sobre el PRODUCTO, nunca sobre el total con
+    -- carrera: 10 % de 11.98 son 1.20, y de 13.98 serían 1.40.
+    if v_r.margen <> 1.20 then
+      raise exception 'el margen debía salir del producto (1.20), fue %', v_r.margen;
+    end if;
+    if v_r.reparto <> 2.00 then
+      raise exception 'la carrera debía informarse aparte (2.00), fue %', v_r.reparto;
+    end if;
+    if v_r.productos <> 11.98 then
+      raise exception 'al local le tocan SUS PRODUCTOS (11.98), no % con la carrera dentro',
+        v_r.productos;
+    end if;
+    -- La invariante: ninguna bolsa se lleva lo de otra.
+    if round(v_r.productos + v_r.reparto + v_r.margen, 2) <> v_r.bruto then
+      raise exception 'las tres bolsas no suman lo que pagó el cliente: % + % + % <> %',
+        v_r.productos, v_r.reparto, v_r.margen, v_r.bruto;
+    end if;
+
+    -- Quien retira en el local no paga carrera, y ahí `productos` se lo lleva
+    -- todo: sin esto, un negocio sin reparto podría quedar descuadrado.
+    delete from public.sales  where order_id = v_con_envio;
+    delete from public.orders where id       = v_con_envio;
+    insert into public.orders (
+      business_id, contact_phone, status, subtotal, shipping, discount, total, currency, source
+    )
+    values (v_biz, '593900000921', 'completado', 11.98, 0, 0, 13.18, 'USD', 'storefront')
+    returning id into v_con_envio;
+    insert into public.sales (business_id, order_id, total, status, sold_at)
+    values (v_biz, v_con_envio, 13.18, 'completada', now());
+
+    select * into v_r
+    from public.platform_markup_summary('2000-01-01', '2100-01-01', v_biz);
+    if v_r.reparto <> 0 or v_r.productos <> 11.98 then
+      raise exception 'sin reparto: carrera % y productos %', v_r.reparto, v_r.productos;
+    end if;
+
+    -- Se retira SOLO lo de esta prueba, y se deja intacto lo que la 12 espera.
+    delete from public.sales  where order_id = v_con_envio;
+    delete from public.orders where id       = v_con_envio;
+  end;
+
   -- 12. EL CIERRE DE MES lleva la comisión a la factura.
   --
   -- ⚠️ El mes va en la zona del NEGOCIO —`America/Guayaquil`—, igual que en

@@ -120,7 +120,7 @@ router.get('/api/client/platform-fees', auth.authClient, canViewReports, async (
     const filas = await db.getPlatformMarkupSummary(desde, hasta, getClientBusinessId(req))
     // Un mes sin ventas no es un error: es un mes sin ventas. Sin esto la
     // pantalla tendría que distinguir «no hay datos» de «falló la consulta».
-    res.json(filas[0] || { pedidos: 0, bruto: 0, margen: 0, comercio: 0, desde, hasta })
+    res.json(filas[0] || { pedidos: 0, bruto: 0, margen: 0, reparto: 0, productos: 0, desde, hasta })
   } catch (error) {
     console.error('❌ comisión acumulada:', (error as Error).message)
     res.status(500).json({ error: 'No se pudo cargar la comisión acumulada' })
