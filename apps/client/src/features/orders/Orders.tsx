@@ -27,6 +27,7 @@ import {
   type Order, type OrderStatus, type ReceiptAnalysis,
 } from './api'
 import CounterOrder from './CounterOrder'
+import { desgloseDelPedido } from './dinero-del-pedido'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -441,6 +442,10 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   })
   const precision = Number(pedido.delivery_accuracy_m)
   const enCurso = ACTIVOS.includes(pedido.status)
+
+  // Lo que se queda la plataforma y lo que le entra al local. El porqué y las
+  // dos reglas que no se negocian están en `dinero-del-pedido.ts`.
+  const { servicio, recibeElLocal, servicioVaEncima } = desgloseDelPedido(pedido)
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
@@ -722,7 +727,19 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
           {Number(pedido.shipping) > 0 && (
             <span className="ml-3 text-muted-foreground">Envío {money(pedido.shipping!)}</span>
           )}
+          {servicio > 0 && (
+            <span className="ml-3 text-muted-foreground">
+              Servicio {servicioVaEncima ? '' : '−'}{money(servicio)}
+            </span>
+          )}
           <span className="ml-3 font-bold text-foreground">Total {money(pedido.total)}</span>
+          {/* Lo que de verdad le entra al local. En su propia línea porque es
+              SU número: el total de arriba es el del cliente. */}
+          {servicio > 0 && (
+            <span className="mt-0.5 block font-medium text-foreground">
+              Recibes {money(recibeElLocal)}
+            </span>
+          )}
         </div>
 
         {/* Las acciones: avanzar o rechazar. Nunca retroceder. */}
