@@ -30,6 +30,8 @@
 /** Lo que hace falta del pedido para repartir su dinero. */
 export interface DineroDelPedido {
   subtotal?: number | string | null
+  /** La carrera. Va aparte porque NO es del local. */
+  shipping?: number | string | null
   total?: number | string | null
   platform_markup?: number | string | null
   merchant_subtotal?: number | string | null
@@ -63,11 +65,26 @@ export const elPedidoSeCobra = (status?: string | null): boolean =>
 export interface DesgloseDelPedido {
   /** Lo que se queda la plataforma. 0 = no hay nada que enseñar. */
   servicio: number
-  /** Lo que de verdad le entra al local por este pedido. */
-  recibeElLocal: number
+  /**
+   * Lo que recibe el local POR SUS PRODUCTOS. Sin la carrera.
+   *
+   * ⚠️ Este es el número del dueño, y el que va a los reportes.
+   */
+  porLosProductos: number
+  /**
+   * La carrera. NO es del local: es de quien reparte.
+   *
+   * Hoy reparte el propio local, así que hoy también acaba en su bolsillo —
+   * pero no por vender comida, sino por llevarla. Van separadas desde ya para
+   * que el día que exista el módulo de repartidores no haya que volver a
+   * explicarle al dueño por qué le baja un número.
+   */
+  reparto: number
   /**
    * Si el servicio se SUMÓ al cliente (`on_top`) o se le DESCONTÓ al comercio
-   * (`absorbed`). Decide el signo con que se pinta.
+   * (`absorbed`). Decide el signo con que se pinta: con `absorbed` ya está
+   * DENTRO del subtotal, así que enseñarlo sumando dejaría la cuenta cuadrando
+   * al revés.
    */
   servicioVaEncima: boolean
 }
@@ -77,24 +94,43 @@ const numero = (valor: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 
+const aCentavos = (valor: number): number => Math.round(valor * 100) / 100
+
 /**
- * Reparte el dinero de un pedido entre la plataforma y el local.
+ * Reparte el dinero de un pedido entre sus TRES dueños.
  *
- * ⚠️ `recibeElLocal` se calcula restando del TOTAL, no sumando al subtotal, y
- * eso vale para los dos modos de margen: con `on_top` el servicio se le sumó al
- * cliente y con `absorbed` se le descontó al comercio, pero en ambos casos lo
- * que recibe el local es el total menos el servicio.
+ * Sobre el pedido #3 de staging ($11.98 de producto + $2.00 de envío):
  *
- * ⚠️ Con `absorbed` el margen ya está DENTRO del subtotal, así que pintarlo
- * como una línea más que se suma dejaría la cuenta cuadrando al revés. Se
- * distingue mirando si al comercio le quedó su precio entero o recortado.
+ *     el cliente paga ............. $15.18
+ *     Umbani (servicio) ...........  $1.20   ← 10 % del PRODUCTO, no del total
+ *     quien reparte (carrera) .....  $2.00
+ *     el local por sus productos ..  $11.98
+ *
+ * ⚠️ **La carrera no es del local.** Decisión del dueño (2026-08-15, y
+ * repetida el 2026-09-21 al ver la tarjeta): al motorizado le paga el CLIENTE
+ * y la carrera es íntegra suya. Decir «Recibes $13.98» juntaba el plato con la
+ * carrera en un solo número, que es justo lo que no puede pasar.
+ *
+ * ⚠️ **El servicio de Umbani se calcula solo sobre el producto**, nunca sobre
+ * la carrera — lo hace `orders_stamp_pricing` con
+ * `v_base = subtotal − discount`, sin envío. Aquí solo se refleja.
+ *
+ * ⚠️ `porLosProductos` se obtiene restando del TOTAL y no sumando al subtotal,
+ * porque así vale para los DOS modos de margen sin preguntar cuál es: con
+ * `on_top` el servicio se le sumó al cliente y con `absorbed` se le descontó al
+ * comercio, pero en ambos lo que le queda al local por su comida es el total
+ * menos el servicio y menos la carrera.
+ *
+ *     on_top   #70:  14.09 − 1.10 − 2.00 = 10.99  = su merchant_subtotal
+ *     absorbed #57:  12.99 − 1.10 − 2.00 =  9.89  = su merchant_subtotal
  */
 export const desgloseDelPedido = (pedido: DineroDelPedido): DesgloseDelPedido => {
   const servicio = numero(pedido.platform_markup)
-  const total = numero(pedido.total)
+  const reparto = numero(pedido.shipping)
   return {
     servicio,
-    recibeElLocal: Math.round((total - servicio) * 100) / 100,
+    reparto,
+    porLosProductos: aCentavos(numero(pedido.total) - servicio - reparto),
     servicioVaEncima: pedido.merchant_subtotal == null
       || numero(pedido.merchant_subtotal) >= numero(pedido.subtotal),
   }

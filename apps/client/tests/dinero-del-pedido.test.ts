@@ -18,21 +18,37 @@ import { desgloseDelPedido, elPedidoSeCobra } from '../src/features/orders/diner
 describe('con `on_top`: el servicio se le suma al cliente', () => {
   // Pedido #70 de Monster Pizza, entregado el 2026-08-29.
   const pedido70 = {
-    subtotal: 10.99, total: 14.09, platform_markup: 1.10, merchant_subtotal: 10.99,
+    subtotal: 10.99, shipping: 2.00, total: 14.09,
+    platform_markup: 1.10, merchant_subtotal: 10.99,
   }
 
-  it('el local recibe el total menos el servicio', () => {
-    expect(desgloseDelPedido(pedido70).recibeElLocal).toBe(12.99)
+  it('el local recibe SUS PRODUCTOS, sin la carrera', () => {
+    // $14.09 − $1.10 de servicio − $2.00 de carrera. NO $12.99.
+    expect(desgloseDelPedido(pedido70).porLosProductos).toBe(10.99)
+  })
+
+  it('y coincide con lo que la base selló como del comercio', () => {
+    expect(desgloseDelPedido(pedido70).porLosProductos)
+      .toBe(Number(pedido70.merchant_subtotal))
+  })
+
+  it('la carrera se informa aparte: es de quien reparte', () => {
+    expect(desgloseDelPedido(pedido70).reparto).toBe(2.00)
   })
 
   it('el servicio va ENCIMA, así que se pinta sumando', () => {
     expect(desgloseDelPedido(pedido70).servicioVaEncima).toBe(true)
   })
 
-  it('y entonces la cuenta cierra: subtotal + envío + servicio = total', () => {
-    const envio = 2.00
-    const { servicio } = desgloseDelPedido(pedido70)
-    expect(Number(pedido70.subtotal) + envio + servicio).toBeCloseTo(Number(pedido70.total), 2)
+  it('y las tres partes suman lo que paga el cliente', () => {
+    const { servicio, reparto, porLosProductos } = desgloseDelPedido(pedido70)
+    expect(porLosProductos + reparto + servicio).toBeCloseTo(Number(pedido70.total), 2)
+  })
+
+  it('el servicio es un porcentaje del PRODUCTO, no del total con carrera', () => {
+    // 10 % de $10.99 = $1.10. De $12.99 serían $1.30, y nunca se cobró eso.
+    const { servicio, porLosProductos } = desgloseDelPedido(pedido70)
+    expect(servicio).toBeCloseTo(porLosProductos * 0.10, 2)
   })
 })
 
@@ -40,11 +56,12 @@ describe('con `absorbed`: el servicio se le descuenta al comercio', () => {
   // Pedido #57 de Monster Pizza, del 2026-08-16, antes del cambio de modelo.
   // El cliente pagó lo mismo; al comercio se le recortó el margen del subtotal.
   const pedido57 = {
-    subtotal: 10.99, total: 12.99, platform_markup: 1.10, merchant_subtotal: 9.89,
+    subtotal: 10.99, shipping: 2.00, total: 12.99,
+    platform_markup: 1.10, merchant_subtotal: 9.89,
   }
 
-  it('el local recibe el total menos el servicio, igual que con on_top', () => {
-    expect(desgloseDelPedido(pedido57).recibeElLocal).toBe(11.89)
+  it('la misma fórmula vale, y da lo que la base selló', () => {
+    expect(desgloseDelPedido(pedido57).porLosProductos).toBe(9.89)
   })
 
   it('pero el servicio NO va encima: ya estaba dentro del subtotal', () => {
@@ -57,29 +74,38 @@ describe('los pedidos sin margen se quedan como estaban', () => {
   it('sin regla de margen no hay nada que enseñar', () => {
     const d = desgloseDelPedido({ subtotal: 15.50, total: 15.50, platform_markup: 0 })
     expect(d.servicio).toBe(0)
-    expect(d.recibeElLocal).toBe(15.50)
+    expect(d.porLosProductos).toBe(15.50)
   })
 
   it('un pedido viejo sin el campo tampoco rompe', () => {
     const d = desgloseDelPedido({ subtotal: 18, total: 18 })
     expect(d.servicio).toBe(0)
-    expect(d.recibeElLocal).toBe(18)
+    expect(d.porLosProductos).toBe(18)
+  })
+
+  it('quien retira en el local no paga carrera', () => {
+    const d = desgloseDelPedido({
+      subtotal: 11.98, shipping: 0, total: 13.18, platform_markup: 1.20,
+    })
+    expect(d.reparto).toBe(0)
+    expect(d.porLosProductos).toBe(11.98)
   })
 })
 
 describe('los importes llegan como texto según el driver', () => {
   it('se normalizan antes de restar', () => {
     const d = desgloseDelPedido({
-      subtotal: '10.99', total: '14.09', platform_markup: '1.10', merchant_subtotal: '10.99',
+      subtotal: '10.99', shipping: '2.00', total: '14.09',
+      platform_markup: '1.10', merchant_subtotal: '10.99',
     })
-    expect(d.recibeElLocal).toBe(12.99)
+    expect(d.porLosProductos).toBe(10.99)
     expect(d.servicioVaEncima).toBe(true)
   })
 
   it('un valor ilegible cuenta como cero y no propaga NaN', () => {
     const d = desgloseDelPedido({ subtotal: 10, total: 10, platform_markup: 'nada' })
     expect(d.servicio).toBe(0)
-    expect(d.recibeElLocal).toBe(10)
+    expect(d.porLosProductos).toBe(10)
   })
 })
 
@@ -87,9 +113,9 @@ describe('la resta no arrastra céntimos de coma flotante', () => {
   it('$3.85 − $0.35 son exactamente $3.50', () => {
     // Pedido #23 de La Abuelita. En coma flotante esta resta da 3.4999…
     const d = desgloseDelPedido({
-      subtotal: 3.50, total: 3.85, platform_markup: 0.35, merchant_subtotal: 3.50,
+      subtotal: 3.50, shipping: 0, total: 3.85, platform_markup: 0.35, merchant_subtotal: 3.50,
     })
-    expect(d.recibeElLocal).toBe(3.50)
+    expect(d.porLosProductos).toBe(3.50)
   })
 })
 

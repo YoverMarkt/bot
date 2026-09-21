@@ -446,7 +446,7 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   // Lo que se queda la plataforma y lo que le entra al local. El porqué, las
   // dos reglas que no se negocian y por qué esto tiene que cuadrar con
   // Finanzas están en `dinero-del-pedido.ts`.
-  const { servicio, recibeElLocal, servicioVaEncima } = desgloseDelPedido(pedido)
+  const { servicio, porLosProductos, reparto, servicioVaEncima } = desgloseDelPedido(pedido)
   const seCobra = elPedidoSeCobra(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -741,10 +741,16 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
           )}
           <span className="font-bold text-foreground">Total {money(pedido.total)}</span>
 
-          {/* ── Lo que de verdad le entra al local ──────────────────────────
+          {/* ── Lo que le entra al local, y de quién es cada parte ──────────
               SU número, tan visible como el total: el de al lado es el del
-              CLIENTE, y el dueño no tiene por qué restar de cabeza para saber
-              cuánto le queda.
+              CLIENTE, y el dueño no tiene por qué restar de cabeza.
+
+              ⚠️ LA CARRERA VA APARTE Y NO SE SUMA AQUÍ. No es del local, es de
+              quien reparte. Hoy reparte él mismo, así que hoy también acaba en
+              su bolsillo —pero por llevar la comida, no por venderla—. Juntar
+              las dos en un «Recibes $13.98» es lo que pidió quitar el dueño el
+              2026-09-21: el día que exista el módulo de repartidores, esa cifra
+              bajaría sola y habría que explicar por qué.
 
               ⚠️ Y solo si el pedido llega a cobrarse. Sobre uno expirado,
               cancelado o rechazado no recibe nada y la plataforma tampoco
@@ -752,9 +758,19 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
               con Finanzas, que suma únicamente lo entregado. */}
           {servicio > 0 && (
             seCobra ? (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 font-semibold text-foreground">
-                Recibes <span className="tabular-nums">{money(recibeElLocal)}</span>
-              </span>
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 font-semibold text-foreground">
+                  Recibes <span className="tabular-nums">{money(porLosProductos)}</span>
+                  <span className="font-normal text-muted-foreground">por tus productos</span>
+                </span>
+                {reparto > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    <Bike className="h-3.5 w-3.5 shrink-0" />
+                    Reparto <span className="tabular-nums">{money(reparto)}</span>
+                    <span>· de quien entrega</span>
+                  </span>
+                )}
+              </>
             ) : (
               <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
                 Sin cobro — este pedido no se completó
