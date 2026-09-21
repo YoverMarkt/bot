@@ -61,6 +61,21 @@ export type Order = {
   discount: number | string
   shipping?: number | string | null
   total: number | string
+  /**
+   * Lo que se queda la plataforma, sellado por `orders_stamp_pricing`.
+   *
+   * ⚠️ Ya venía en la respuesta desde siempre —el repositorio pide `select('*')`—
+   * pero no estaba declarado aquí ni se pintaba, y con el margen `on_top` eso
+   * dejaba la tarjeta SIN CUADRAR a la vista: subtotal $10.99 + envío $2.00 no
+   * suman los $14.09 del total, y el $1.10 que falta no aparecía por ningún
+   * lado. El dueño leía una resta imposible en la pantalla que mira a diario.
+   *
+   * Nulo o 0 en los pedidos sin regla de margen, que es la mayoría de los
+   * viejos: entonces la tarjeta se pinta como siempre.
+   */
+  platform_markup?: number | string | null
+  /** Lo que le queda al comercio por los productos, sin envío. */
+  merchant_subtotal?: number | string | null
   currency?: string
   payment_method?: 'transferencia' | 'efectivo' | 'pago_al_retirar' | null
   /** Lo que el cliente escribió para ESTE pedido: «llame al llegar». */

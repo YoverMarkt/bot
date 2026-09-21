@@ -27,6 +27,7 @@ import {
   type Order, type OrderStatus, type ReceiptAnalysis,
 } from './api'
 import CounterOrder from './CounterOrder'
+import { desgloseDelPedido, elPedidoSeCobra } from './dinero-del-pedido'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -441,6 +442,12 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   })
   const precision = Number(pedido.delivery_accuracy_m)
   const enCurso = ACTIVOS.includes(pedido.status)
+
+  // Lo que se queda la plataforma y lo que le entra al local. El porqué, las
+  // dos reglas que no se negocian y por qué esto tiene que cuadrar con
+  // Finanzas están en `dinero-del-pedido.ts`.
+  const { servicio, porLosProductos, reparto, servicioVaEncima } = desgloseDelPedido(pedido)
+  const seCobra = elPedidoSeCobra(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
@@ -714,15 +721,62 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
 
       {/* El dinero, tal como lo calculó el servidor */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
-        <div className="text-sm">
+        {/* El espaciado va por `gap` y no por un `ml-3` en cada pieza: así en
+            un móvil las líneas envuelven sin dejar sangrías sueltas. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Subtotal {money(pedido.subtotal)}</span>
           {Number(pedido.discount) > 0 && (
-            <span className="ml-3 text-muted-foreground">Descuento −{money(pedido.discount)}</span>
+            <span className="text-muted-foreground">Descuento −{money(pedido.discount)}</span>
           )}
           {Number(pedido.shipping) > 0 && (
-            <span className="ml-3 text-muted-foreground">Envío {money(pedido.shipping!)}</span>
+            <span className="text-muted-foreground">Envío {money(pedido.shipping!)}</span>
           )}
-          <span className="ml-3 font-bold text-foreground">Total {money(pedido.total)}</span>
+          {/* Lleva el NOMBRE a propósito: «Servicio» a secas no dice quién se
+              queda ese dinero, y el dueño tiene derecho a leerlo sin
+              suponerlo. */}
+          {servicio > 0 && (
+            <span className="text-muted-foreground">
+              Servicio Umbani {servicioVaEncima ? '' : '−'}{money(servicio)}
+            </span>
+          )}
+          <span className="font-bold text-foreground">Total {money(pedido.total)}</span>
+
+          {/* ── Lo que le entra al local, y de quién es cada parte ──────────
+              SU número, tan visible como el total: el de al lado es el del
+              CLIENTE, y el dueño no tiene por qué restar de cabeza.
+
+              ⚠️ LA CARRERA VA APARTE Y NO SE SUMA AQUÍ. No es del local, es de
+              quien reparte. Hoy reparte él mismo, así que hoy también acaba en
+              su bolsillo —pero por llevar la comida, no por venderla—. Juntar
+              las dos en un «Recibes $13.98» es lo que pidió quitar el dueño el
+              2026-09-21: el día que exista el módulo de repartidores, esa cifra
+              bajaría sola y habría que explicar por qué.
+
+              ⚠️ Y solo si el pedido llega a cobrarse. Sobre uno expirado,
+              cancelado o rechazado no recibe nada y la plataforma tampoco
+              factura su servicio: afirmar «Recibes» ahí descuadraba la tarjeta
+              con Finanzas, que suma únicamente lo entregado. */}
+          {servicio > 0 && (
+            seCobra ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 font-semibold text-foreground">
+                  Recibes <span className="tabular-nums">{money(porLosProductos)}</span>
+                  <span className="font-normal text-muted-foreground">por tus productos</span>
+                </span>
+                {reparto > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    <Bike className="h-3.5 w-3.5 shrink-0" />
+                    Reparto <span className="tabular-nums">{money(reparto)}</span>
+                    <span>· de quien entrega</span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                Sin cobro — este pedido no se completó
+              </span>
+            )
+          )}
         </div>
 
         {/* Las acciones: avanzar o rechazar. Nunca retroceder. */}
