@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desgloseDelPedido } from '../src/features/orders/dinero-del-pedido'
+import { desgloseDelPedido, elPedidoSeCobra } from '../src/features/orders/dinero-del-pedido'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LA TARJETA DEL PEDIDO TIENE QUE CUADRAR A LA VISTA
@@ -90,5 +90,45 @@ describe('la resta no arrastra céntimos de coma flotante', () => {
       subtotal: 3.50, total: 3.85, platform_markup: 0.35, merchant_subtotal: 3.50,
     })
     expect(d.recibeElLocal).toBe(3.50)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Y TIENE QUE CUADRAR CON FINANZAS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// El caso que lo destapó: el pedido de la captura estaba **Expirado** y la
+// tarjeta afirmaba igual «Servicio $1.20 · Recibes $13.98». Pero un pedido
+// expirado nunca llega a `sales`, y `platform_markup_summary` —lo que alimenta
+// la comisión del mes y la tarjeta de Finanzas— suma SOLO ventas completadas.
+//
+// O sea: la plataforma no factura ese servicio y el local no recibe nada.
+// Sumando los «Servicio» que se veían en pantalla nunca salía el número de
+// Finanzas.
+
+describe('un pedido que murió no mueve dinero', () => {
+  it.each(['expirado', 'cancelado', 'rechazado'])('%s no se cobra', (status) => {
+    expect(elPedidoSeCobra(status)).toBe(false)
+  })
+})
+
+describe('un pedido vivo o entregado sí cuenta', () => {
+  it.each([
+    'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado',
+    'aceptado', 'preparacion', 'listo_para_retiro', 'en_camino', 'completado',
+  ])('%s se cobra', (status) => {
+    expect(elPedidoSeCobra(status)).toBe(true)
+  })
+
+  it('un estado desconocido se cobra: falla ABIERTO', () => {
+    // Si mañana nace un estado y nadie toca esto, es preferible enseñar el
+    // importe de más que esconderle al dueño un dinero que sí recibe.
+    expect(elPedidoSeCobra('inventado')).toBe(true)
+    expect(elPedidoSeCobra(null)).toBe(true)
+    expect(elPedidoSeCobra(undefined)).toBe(true)
+  })
+
+  it('no se deja engañar por espacios', () => {
+    expect(elPedidoSeCobra('  expirado  ')).toBe(false)
   })
 })

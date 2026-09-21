@@ -33,7 +33,32 @@ export interface DineroDelPedido {
   total?: number | string | null
   platform_markup?: number | string | null
   merchant_subtotal?: number | string | null
+  status?: string | null
 }
+
+/**
+ * Los estados en los que el pedido MURIÓ sin que se moviera un centavo.
+ *
+ * ⚠️ Esto es lo que hace que la tarjeta CUADRE CON FINANZAS, y no es un detalle
+ * de redacción. `platform_markup_summary` —lo que alimenta la comisión del mes
+ * y la tarjeta de Finanzas— suma solo ventas `completada`, y una venta nace al
+ * ENTREGAR. Un pedido expirado, cancelado o rechazado nunca llega a `sales`:
+ * la plataforma NO le factura ese servicio y el local NO recibe nada.
+ *
+ * Sin esta distinción la tarjeta afirmaba «Servicio $1.20 · Recibes $13.98»
+ * sobre un pedido EXPIRADO —el caso que lo destapó, 2026-09-20— y sumar los
+ * servicios que se ven en pantalla nunca daba el número de Finanzas.
+ */
+const SIN_COBRO = ['cancelado', 'rechazado', 'expirado']
+
+/**
+ * Si este pedido mueve dinero de verdad.
+ *
+ * Los que siguen vivos todavía no están en Finanzas pero llegarán si se
+ * entregan; los muertos no llegarán nunca.
+ */
+export const elPedidoSeCobra = (status?: string | null): boolean =>
+  !SIN_COBRO.includes(String(status || '').trim())
 
 export interface DesgloseDelPedido {
   /** Lo que se queda la plataforma. 0 = no hay nada que enseñar. */

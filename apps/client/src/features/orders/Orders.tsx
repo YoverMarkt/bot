@@ -27,7 +27,7 @@ import {
   type Order, type OrderStatus, type ReceiptAnalysis,
 } from './api'
 import CounterOrder from './CounterOrder'
-import { desgloseDelPedido } from './dinero-del-pedido'
+import { desgloseDelPedido, elPedidoSeCobra } from './dinero-del-pedido'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
@@ -443,9 +443,11 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   const precision = Number(pedido.delivery_accuracy_m)
   const enCurso = ACTIVOS.includes(pedido.status)
 
-  // Lo que se queda la plataforma y lo que le entra al local. El porqué y las
-  // dos reglas que no se negocian están en `dinero-del-pedido.ts`.
+  // Lo que se queda la plataforma y lo que le entra al local. El porqué, las
+  // dos reglas que no se negocian y por qué esto tiene que cuadrar con
+  // Finanzas están en `dinero-del-pedido.ts`.
   const { servicio, recibeElLocal, servicioVaEncima } = desgloseDelPedido(pedido)
+  const seCobra = elPedidoSeCobra(pedido.status)
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
@@ -719,26 +721,45 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
 
       {/* El dinero, tal como lo calculó el servidor */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
-        <div className="text-sm">
+        {/* El espaciado va por `gap` y no por un `ml-3` en cada pieza: así en
+            un móvil las líneas envuelven sin dejar sangrías sueltas. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Subtotal {money(pedido.subtotal)}</span>
           {Number(pedido.discount) > 0 && (
-            <span className="ml-3 text-muted-foreground">Descuento −{money(pedido.discount)}</span>
+            <span className="text-muted-foreground">Descuento −{money(pedido.discount)}</span>
           )}
           {Number(pedido.shipping) > 0 && (
-            <span className="ml-3 text-muted-foreground">Envío {money(pedido.shipping!)}</span>
+            <span className="text-muted-foreground">Envío {money(pedido.shipping!)}</span>
           )}
+          {/* Lleva el NOMBRE a propósito: «Servicio» a secas no dice quién se
+              queda ese dinero, y el dueño tiene derecho a leerlo sin
+              suponerlo. */}
           {servicio > 0 && (
-            <span className="ml-3 text-muted-foreground">
-              Servicio {servicioVaEncima ? '' : '−'}{money(servicio)}
+            <span className="text-muted-foreground">
+              Servicio Umbani {servicioVaEncima ? '' : '−'}{money(servicio)}
             </span>
           )}
-          <span className="ml-3 font-bold text-foreground">Total {money(pedido.total)}</span>
-          {/* Lo que de verdad le entra al local. En su propia línea porque es
-              SU número: el total de arriba es el del cliente. */}
+          <span className="font-bold text-foreground">Total {money(pedido.total)}</span>
+
+          {/* ── Lo que de verdad le entra al local ──────────────────────────
+              SU número, tan visible como el total: el de al lado es el del
+              CLIENTE, y el dueño no tiene por qué restar de cabeza para saber
+              cuánto le queda.
+
+              ⚠️ Y solo si el pedido llega a cobrarse. Sobre uno expirado,
+              cancelado o rechazado no recibe nada y la plataforma tampoco
+              factura su servicio: afirmar «Recibes» ahí descuadraba la tarjeta
+              con Finanzas, que suma únicamente lo entregado. */}
           {servicio > 0 && (
-            <span className="mt-0.5 block font-medium text-foreground">
-              Recibes {money(recibeElLocal)}
-            </span>
+            seCobra ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 font-semibold text-foreground">
+                Recibes <span className="tabular-nums">{money(recibeElLocal)}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                Sin cobro — este pedido no se completó
+              </span>
+            )
           )}
         </div>
 
