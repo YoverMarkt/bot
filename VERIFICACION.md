@@ -444,8 +444,17 @@ vez de un impago hubiera sido un borrado, se perdía el mes entero.
 1. `pg_dump` de la base de producción.
 2. **Comprueba el inventario** (`.github/scripts/respaldo-sano.mjs`): exige las
    seis tablas sin las que el respaldo no sirve y un mínimo de 30 con datos.
-3. **Lo restaura en un PostgreSQL limpio** y cuenta tablas y negocios. Generar
-   un dump no demuestra nada; que vuelva a entrar, sí.
+3. **Lo restaura en un PostgreSQL limpio** y comprueba que traen datos
+   `businesses`, `products` y `orders`. Generar un dump no demuestra nada; que
+   vuelva a entrar, sí.
+
+   ⚠️ **La imagen es `pgvector/pgvector:pg17`, no `postgres:17`.** El esquema
+   usa columnas vectoriales y con la imagen oficial **`products` no se
+   restaura**: la comprobación pasaba con 53 tablas y sin catálogo, que es
+   justo el tipo de verificación que no verifica. Con pgvector entran las 54 y
+   los datos cuadran con producción (2 negocios, 23 productos, 71 pedidos).
+   Por eso `products` está en la lista que se comprueba: si alguien cambia la
+   imagen, esto lo caza.
 4. Lo **cifra** y lo guarda como artefacto 90 días.
 5. Si algo falla, el workflow queda en rojo — y ese rojo **es** el aviso, igual
    que en los vigías. Sin integraciones ni cuentas nuevas.
