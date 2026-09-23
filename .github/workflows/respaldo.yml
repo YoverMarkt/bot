@@ -58,9 +58,14 @@ jobs:
 
     # El PostgreSQL contra el que se RESTAURA para comprobar que sirve.
     # Generar un dump no demuestra nada: lo que importa es que vuelva a entrar.
+    # ⚠️ pgvector, NO `postgres:17` a secas. El esquema usa columnas vectoriales
+    # y con la imagen oficial `products` —el catálogo— NO se restaura: la
+    # comprobación pasaba con 53 tablas y sin catálogo, que es justo el tipo de
+    # verificación que no verifica. Con pgvector entran las 54 y los datos
+    # cuadran con producción. Es la misma imagen que usa el script local.
     services:
       verificacion:
-        image: postgres:17
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_PASSWORD: verificar
           POSTGRES_DB: restaurado
@@ -148,14 +153,23 @@ jobs:
             exit 1
           fi
 
-          # Y que traiga datos, no solo el esqueleto.
-          NEG=$(psql -h localhost -p 5433 -U postgres -d restaurado -t -A -c \
-            "select count(*) from public.businesses")
-          echo "🏪 Negocios restaurados: $NEG"
-          if [ "$NEG" -lt 1 ]; then
-            echo "❌ El respaldo se restaura vacío: ningún negocio."
-            exit 1
-          fi
+          # Y que traiga DATOS, no solo el esqueleto. Se miran las tres que
+          # son el negocio: quién vende, qué vende y qué le pidieron.
+          #
+          # ⚠️ `products` está aquí a propósito: es la que NO se restauraba con
+          # la imagen oficial de PostgreSQL por su columna vectorial, y la
+          # comprobación pasaba igual. Si mañana alguien cambia la imagen, esto
+          # lo caza.
+          for t in businesses products orders; do
+            N=$(psql -h localhost -p 5433 -U postgres -d restaurado -t -A -c \
+              "select count(*) from public.$t")
+            echo "   $t: $N"
+            if [ "$N" -lt 1 ]; then
+              echo "❌ El respaldo se restaura sin datos en $t."
+              head -20 restore.err
+              exit 1
+            fi
+          done
           echo "✅ El respaldo se restaura y trae datos."
 
       # ⚠️ El dump lleva teléfonos, nombres y direcciones de clientes REALES.
