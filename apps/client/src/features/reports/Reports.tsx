@@ -180,7 +180,7 @@ export default function Reports() {
         <>
           {/* Resumen del período */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-            <Stat icon={DollarSign} label="Total vendido" value={money(data.summary.total)} />
+            <Stat icon={DollarSign} label="Tus ventas" value={money(data.summary.total)} />
             <Stat icon={ShoppingCart} label="Pedidos" value={String(data.summary.orders)} />
             <Stat icon={Package} label="Ítems" value={String(data.summary.items)} />
             <Stat icon={Receipt} label="Ticket promedio" value={money(data.summary.avg)} />

@@ -2723,6 +2723,8 @@ export type Database = {
           created_by: string | null
           id: string
           order_id: string | null
+          platform_markup: number
+          shipping: number
           sold_at: string
           source: string | null
           status: string
@@ -2736,6 +2738,8 @@ export type Database = {
           created_by?: string | null
           id?: string
           order_id?: string | null
+          platform_markup?: number
+          shipping?: number
           sold_at?: string
           source?: string | null
           status?: string
@@ -2749,6 +2753,8 @@ export type Database = {
           created_by?: string | null
           id?: string
           order_id?: string | null
+          platform_markup?: number
+          shipping?: number
           sold_at?: string
           source?: string | null
           status?: string

@@ -28,13 +28,51 @@ interface SaleItemRow {
 }
 
 interface SaleRow {
+  /** Lo que pagó el CLIENTE. No es lo que recibe el local. */
   total?: number | string | null
+  /** La carrera, congelada al vender. De quien entrega. */
+  shipping?: number | string | null
+  /** Lo que se llevó la plataforma, congelado al vender. */
+  platform_markup?: number | string | null
   sale_items?: SaleItemRow[] | null
   contact_phone?: string | null
   contact_name?: string | null
   sold_at: string
   created_by?: string | null
 }
+
+/**
+ * Lo que le entra al local por una venta: SUS PRODUCTOS.
+ *
+ * ⚠️ Esto es lo que va a los reportes, y no `sales.total`. Pedido por el dueño
+ * el 2026-09-21: «sobre los reportes tiene que ir solo lo que el dueño recibe,
+ * no con mi margen de ganancia»; y antes, sobre la carrera: «eso es del
+ * motorizado».
+ *
+ * `sales.total` es lo que pagó el CLIENTE y lleva dentro dos dineros ajenos.
+ * Medido contra producción, Monster Pizza en agosto:
+ *
+ *     «Total vendido» que veía .......... $112.32
+ *     de comida vendió de verdad ........  $94.12
+ *     carreras (de quien entrega) .......  $16.00
+ *     comisión de la plataforma .........   $2.20
+ *
+ * $18.20 de diferencia en un mes flojo — y ese es el número con el que el dueño
+ * paga a su cocinero y decide si le dio el mes.
+ *
+ * ⚠️ Las dos partes vienen CONGELADAS en la venta, no unidas desde `orders`:
+ * una venta es un hecho consumado y lo que se llevó la plataforma ese día no
+ * puede cambiar porque mañana se edite una regla. Las ventas anteriores al
+ * 2026-09-23 se rellenaron desde su pedido en la migración.
+ *
+ * ⚠️ En centavos enteros, como el resto del dinero de este proyecto: restar en
+ * coma flotante deja céntimos colgando que luego no cuadran con Finanzas.
+ */
+const loDelLocal = (venta: SaleRow): number => Math.round(
+  (Number(venta.total || 0) * 100)
+  - (Number(venta.shipping || 0) * 100)
+  - (Number(venta.platform_markup || 0) * 100),
+) / 100
 
 interface ClientUserRow { id: string; name?: string | null; email?: string | null }
 interface ProductRow { id?: string | null; name: string; stock?: string | null }
@@ -159,7 +197,7 @@ async function computeSummary(bizId: string, period?: ReportPeriod | null, prelo
     db.getSaleCustomers(bizId),
     db.getWritersInRange(bizId, start)
   ])
-  const total = sales.reduce((s, v) => s + Number(v.total || 0), 0)
+  const total = sales.reduce((s, v) => s + loDelLocal(v), 0)
   const items = sales.reduce((s, v) => s + (v.sale_items || []).reduce((a, i) => a + Number(i.quantity || 0), 0), 0)
 
   // Compradores distintos del período
@@ -202,7 +240,7 @@ async function computeBySeller(bizId: string, period?: ReportPeriod | null, prel
     const name = v.created_by ? (nameById[v.created_by] || 'Usuario') : 'Sin asignar'
     if (!map[key]) map[key] = { name, orders: 0, total: 0 }
     map[key].orders += 1
-    map[key].total += Number(v.total || 0)
+    map[key].total += loDelLocal(v)
   }
   return { label, rows: Object.values(map).sort((a, b) => b.total - a.total) }
 }
@@ -248,7 +286,7 @@ async function computeComparison(bizId: string, period?: ReportPeriod | null, pr
     preloadedSales ?? db.getSalesWithItems(bizId, cur.start),
     db.getSalesWithItems(bizId, prev.start, prev.end)
   ])
-  const sum = (arr: SaleRow[]) => arr.reduce((s, v) => s + Number(v.total || 0), 0)
+  const sum = (arr: SaleRow[]) => arr.reduce((s, v) => s + loDelLocal(v), 0)
   const curTotal = sum(curSales), prevTotal = sum(prevSales)
   const pct = prevTotal === 0 ? null : ((curTotal - prevTotal) / prevTotal) * 100
   return { label: cur.label, curTotal, curOrders: curSales.length, prevTotal, prevOrders: prevSales.length, pct }
@@ -264,7 +302,7 @@ async function computeRecurring(bizId: string, period?: ReportPeriod | null, top
     const k = key9(v.contact_phone) || 's/n'
     if (!map[k]) map[k] = { name: sessName[key9(v.contact_phone)] || v.contact_name || v.contact_phone || 'Cliente', orders: 0, total: 0 }
     map[k].orders += 1
-    map[k].total += Number(v.total || 0)
+    map[k].total += loDelLocal(v)
   }
   return { label, rows: Object.values(map).sort((a, b) => b.orders - a.orders).slice(0, topN) }
 }
@@ -352,7 +390,7 @@ async function getCustomerDirectory(bizId: string): Promise<CustomerDirectoryRow
     if (!map[customerKey]) map[customerKey] = { phone: ph, name: v.contact_name || sessName[customerKey] || ph, orders: 0, total: 0, last: null, first: null }
     const c = map[customerKey]
     c.orders += 1
-    c.total += Number(v.total || 0)
+    c.total += loDelLocal(v)
     const t = new Date(v.sold_at).getTime()
     if (c.last === null || t > c.last) c.last = t
     if (c.first === null || t < c.first) c.first = t
@@ -385,7 +423,7 @@ async function getInactiveContacts(bizId: string, days = 15) {
     if (!customerKey) continue
     if (!buy[customerKey]) buy[customerKey] = { orders: 0, total: 0 }
     buy[customerKey].orders += 1
-    buy[customerKey].total += Number(v.total || 0)
+    buy[customerKey].total += loDelLocal(v)
   }
   const now = Date.now(), DAY = 86400000
   const rows: Array<{
@@ -439,7 +477,7 @@ async function computeSalesTrend(bizId: string, period?: ReportPeriod | null) {
   for (const s of sales) {
     const k = key(s.sold_at)
     if (!map[k]) map[k] = { total: 0, orders: 0 }
-    map[k].total += Number(s.total || 0); map[k].orders++
+    map[k].total += loDelLocal(s); map[k].orders++
   }
   const rows: Array<{ date: string; label: string; total: number; orders: number }> = []
   for (let i = 0; i < days; i++) {
@@ -572,7 +610,7 @@ const fmtSummary = (d: SummaryReport) => {
 
   const salesBody = !d.orders
     ? 'Sin ventas registradas en el período. 🤷'
-    : `💰 Total vendido: ${money(d.total)}\n🧾 Pedidos: ${d.orders}\n📦 Ítems vendidos: ${d.items}\n🎟️ Ticket promedio: ${money(d.avg)}\n🆕 Clientes nuevos: ${d.nuevos}\n🔁 Clientes recurrentes: ${d.recurrentes}\n📈 Conversión: ${d.conversion === null ? 's/d' : d.conversion.toFixed(0) + '%'}`
+    : `💰 Tus ventas: ${money(d.total)}\n🧾 Pedidos: ${d.orders}\n📦 Ítems vendidos: ${d.items}\n🎟️ Ticket promedio: ${money(d.avg)}\n🆕 Clientes nuevos: ${d.nuevos}\n🔁 Clientes recurrentes: ${d.recurrentes}\n📈 Conversión: ${d.conversion === null ? 's/d' : d.conversion.toFixed(0) + '%'}`
 
   return `📊 Resumen de ventas (${d.label})\n\n${salesBody}${footer}`
 }

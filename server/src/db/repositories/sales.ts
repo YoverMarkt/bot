@@ -28,7 +28,12 @@ const getSaleCustomers = async (businessId: string) => {
 
 const getCustomerSales = async (businessId: string) => {
   const { data, error } = await db.from('sales')
-    .select('contact_phone, contact_name, total, sold_at')
+    // ⚠️ `shipping` y `platform_markup` van SÍ O SÍ: alimentan el directorio de
+    // clientes, que suma cuánto ha gastado cada uno. Sin ellas `loDelLocal`
+    // los leería como 0 y esta pantalla seguiría contando la carrera y la
+    // comisión como dinero del local — justo lo que se vino a quitar. Es la
+    // única consulta de ventas que enumera columnas en vez de pedir `*`.
+    .select('contact_phone, contact_name, total, shipping, platform_markup, sold_at')
     .eq('business_id', businessId).eq('status', 'completada')
   if (error) throw new Error(error.message)
   return data || []
