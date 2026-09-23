@@ -92,7 +92,21 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+
+          # ⚠️ NO BASTA CON INSTALARLO. El runner ya trae el cliente 16, y el
+          # `pg_dump` de `/usr/bin` siguió resolviendo a 16.15 con el 17 ya
+          # instalado al lado: el volcado moría con «server version mismatch»
+          # igual que antes. Hay que poner los binarios versionados DELANTE en
+          # el PATH.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+          # Y comprobarlo aquí, no descubrirlo tres pasos más abajo.
+          VER=$(/usr/lib/postgresql/17/bin/pg_dump --version | grep -oE '[0-9]+' | head -1)
+          echo "pg_dump: $(/usr/lib/postgresql/17/bin/pg_dump --version)"
+          if [ "$VER" != "17" ]; then
+            echo "❌ Se esperaba pg_dump 17 y hay $VER."
+            exit 1
+          fi
 
       - name: Volcar la base de producción
         env:
