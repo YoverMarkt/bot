@@ -1,0 +1,184 @@
+name: Respaldo diario
+
+# ⚠️ ESTE WORKFLOW EXISTE PORQUE EL RESPALDO NO SE HACÍA.
+#
+# El comando `npm run backup -w @botpanel/server` lleva meses funcionando y se
+# autoverifica restaurando en un PostgreSQL limpio — pero había que acordarse
+# de correrlo. Se corrió seis veces en agosto y ahí se quedó.
+#
+# El 2026-09-23 el proyecto de Supabase estuvo ~39 horas sin existir (se
+# resolvió pagando el plan). El respaldo más reciente era del 2026-08-23: un
+# mes. Si en vez de un impago hubiera sido un borrado, se perdía el mes entero.
+#
+# ── POR QUÉ EL POOLER Y NO EL HOST DIRECTO ─────────────────────────────────
+#
+# `db.<proyecto>.supabase.co` **solo tiene registro AAAA**: es IPv6 puro. Los
+# runners de GitHub no tienen IPv6, así que desde aquí es inalcanzable — por eso
+# el script local necesita Docker con `--network host`.
+#
+# El pooler (`aws-1-sa-east-1.pooler.supabase.com`) SÍ responde por IPv4, y en
+# modo sesión (puerto 5432) admite `pg_dump`. Comprobado el 2026-09-23: 992 KB
+# y 98 tablas con datos.
+#
+# ⚠️ El usuario del pooler NO es `postgres`, es `postgres.<proyecto>`. Con el
+# usuario suelto responde `Tenant or user not found`, que no dice lo que pasa.
+#
+# ⚠️ Y CADA POOLER SOLO CONOCE SUS PROPIOS PROYECTOS: apuntar a otra región da
+# el mismo error de usuario inexistente aunque la contraseña sea correcta.
+# El de este proyecto es **sa-east-1** (São Paulo), y el prefijo es `aws-1`,
+# no `aws-0`.
+#
+# ── EL SECRETO QUE NECESITA ────────────────────────────────────────────────
+#
+#   BACKUP_DATABASE_URL   la cadena del pooler, en modo sesión:
+#     postgresql://postgres.<proyecto>:<clave>@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+#
+#   BACKUP_PASSPHRASE     con la que se cifra el dump antes de guardarlo.
+#     ⚠️ GUÁRDALA EN UN GESTOR DE CONTRASEÑAS. Sin ella los respaldos no se
+#     pueden abrir, y entonces no son respaldos.
+
+on:
+  schedule:
+    # 10:00 UTC = 05:00 en Ecuador. De madrugada, cuando no hay servicio: un
+    # `pg_dump` es lectura, pero no tiene sentido cargarlo en hora punta.
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: respaldo
+  cancel-in-progress: false
+
+jobs:
+  respaldar:
+    name: Respaldar y comprobar que se restaura
+    runs-on: ubuntu-latest
+
+    # El PostgreSQL contra el que se RESTAURA para comprobar que sirve.
+    # Generar un dump no demuestra nada: lo que importa es que vuelva a entrar.
+    services:
+      verificacion:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: verificar
+          POSTGRES_DB: restaurado
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # ⚠️ La versión IMPORTA. El servidor es PostgreSQL 17 y `pg_dump` se
+      # niega a volcar una base más nueva que él: «aborting because of server
+      # version mismatch». Ubuntu trae el 16, así que hay que traer el 17.
+      - name: Instalar el cliente de PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc > /dev/null
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Volcar la base de producción
+        env:
+          URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "❌ Falta el secreto BACKUP_DATABASE_URL (la cadena del POOLER, no la directa)."
+            exit 1
+          fi
+          # `--format=custom` para poder restaurar selectivamente y comprimido.
+          # Sin dueños ni permisos: en otra instalación los roles no existen.
+          pg_dump --format=custom --no-owner --no-privileges \
+                  --file=respaldo.dump "$URL"
+          echo "SELLO=$(date -u +%Y-%m-%dT%H-%M-%S)" >> "$GITHUB_ENV"
+          ls -lh respaldo.dump
+
+      # Lo que convierte esto en un respaldo de verdad y no en un archivo.
+      - name: Comprobar que trae lo imprescindible
+        run: pg_restore -l respaldo.dump | node .github/scripts/respaldo-sano.mjs
+
+      - name: Restaurarlo en una base limpia
+        env:
+          PGPASSWORD: verificar
+        run: |
+          # ⚠️ `pg_restore` SIEMPRE avisa aquí, y no es un fallo: el dump trae
+          # extensiones y esquemas de Supabase (Vault, auth) que una imagen
+          # oficial de PostgreSQL no tiene. Por eso no se usa `--exit-on-error`;
+          # quien decide si sirve es la comprobación de abajo.
+          pg_restore --no-owner --no-privileges \
+            -h localhost -p 5433 -U postgres -d restaurado \
+            respaldo.dump 2>restore.err || true
+
+          TABLAS=$(psql -h localhost -p 5433 -U postgres -d restaurado -t -A -c \
+            "select count(*) from information_schema.tables where table_schema='public'")
+          echo "📥 Tablas restauradas: $TABLAS"
+          if [ "$TABLAS" -lt 30 ]; then
+            echo "❌ El respaldo NO se restaura: solo $TABLAS tablas."
+            head -20 restore.err
+            exit 1
+          fi
+
+          # Y que traiga datos, no solo el esqueleto.
+          NEG=$(psql -h localhost -p 5433 -U postgres -d restaurado -t -A -c \
+            "select count(*) from public.businesses")
+          echo "🏪 Negocios restaurados: $NEG"
+          if [ "$NEG" -lt 1 ]; then
+            echo "❌ El respaldo se restaura vacío: ningún negocio."
+            exit 1
+          fi
+          echo "✅ El respaldo se restaura y trae datos."
+
+      # ⚠️ El dump lleva teléfonos, nombres y direcciones de clientes REALES.
+      # Se cifra antes de guardarlo: un artefacto lo ve cualquiera que entre a
+      # la cuenta de GitHub.
+      - name: Cifrar
+        env:
+          FRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$FRASE" ]; then
+            echo "❌ Falta el secreto BACKUP_PASSPHRASE. El respaldo lleva datos de clientes."
+            exit 1
+          fi
+          # AES-256 con derivación de clave lenta (PBKDF2), formato openssl.
+          # Para abrirlo:
+          #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+          #     -in respaldo.dump.enc -out respaldo.dump
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in respaldo.dump -out respaldo.dump.enc -pass env:FRASE
+          rm -f respaldo.dump
+          ls -lh respaldo.dump.enc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-${{ env.SELLO }}
+          path: respaldo.dump.enc
+          # 90 días: si algo se rompió y nadie lo notó en tres meses, el
+          # problema no es el respaldo.
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Cómo abrirlo
+        run: |
+          echo "📦 respaldo-${{ env.SELLO }}"
+          echo ""
+          echo "Para restaurarlo:"
+          echo "  1. Descarga el artefacto desde esta ejecución."
+          echo "  2. openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \\"
+          echo "       -in respaldo.dump.enc -out respaldo.dump"
+          echo "  3. pg_restore --no-owner --no-privileges -d <destino> respaldo.dump"

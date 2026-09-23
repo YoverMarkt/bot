@@ -424,3 +424,69 @@ PostgREST, que **expone vistas igual que tablas**. Así, la vista
 `marketplace_cajones_de_negocio` —que `schema.sql` sí crea— salía eternamente
 como «producción la tiene y schema.sql no». Un detector que grita en falso se
 acaba ignorando, que es justo lo que no le puede pasar al guardián del esquema.
+
+## El respaldo, por fin automático (2026-09-23)
+
+**El comando existía desde hacía meses y no lo corría nadie.**
+`npm run backup -w @botpanel/server` funciona, se autoverifica restaurando en
+un PostgreSQL limpio, y se ejecutó **seis veces en agosto**. Después, nunca más.
+
+El 2026-09-23 el proyecto de Supabase estuvo **~39 horas sin existir** —dejó de
+resolver el DNS; se arregló pagando el plan—. Producción seguía viva pero
+ciega: `/api/health` daba `ok:false` y la cola llevaba desde el día 21 sin
+llegar a la base. **El respaldo más reciente era del 2026-08-23: un mes.** Si en
+vez de un impago hubiera sido un borrado, se perdía el mes entero.
+
+`.github/workflows/respaldo.yml` lo corre **cada día a las 05:00 de Ecuador**.
+
+### Qué hace, y qué NO
+
+1. `pg_dump` de la base de producción.
+2. **Comprueba el inventario** (`.github/scripts/respaldo-sano.mjs`): exige las
+   seis tablas sin las que el respaldo no sirve y un mínimo de 30 con datos.
+3. **Lo restaura en un PostgreSQL limpio** y cuenta tablas y negocios. Generar
+   un dump no demuestra nada; que vuelva a entrar, sí.
+4. Lo **cifra** y lo guarda como artefacto 90 días.
+5. Si algo falla, el workflow queda en rojo — y ese rojo **es** el aviso, igual
+   que en los vigías. Sin integraciones ni cuentas nuevas.
+
+**NO cubre:** que el respaldo salga de GitHub. Si se pierde la cuenta, se
+pierden los artefactos. Para eso hay que bajarse uno de vez en cuando.
+
+### ⚠️ Las tres trampas que costaron encontrar
+
+**1. El host directo de Supabase es IPv6 PURO.** `db.<proyecto>.supabase.co` no
+tiene registro A, solo AAAA. Los runners de GitHub no tienen IPv6, así que desde
+ahí es inalcanzable — por eso el script local necesita Docker con
+`--network host` (ver [[feedback_respaldo-ipv6]]). **La salida es el pooler**,
+que sí responde por IPv4 y en modo sesión (puerto 5432) admite `pg_dump`.
+
+**2. El usuario del pooler NO es `postgres`, es `postgres.<proyecto>`.** Y
+**cada pooler solo conoce sus propios proyectos**: apuntar a otra región
+devuelve `Tenant or user not found` aunque la contraseña sea correcta, que es un
+error que no dice lo que pasa. El de este proyecto es
+`aws-1-sa-east-1.pooler.supabase.com` — São Paulo, y con prefijo `aws-1`, no
+`aws-0`.
+
+**3. `pg_dump` 16 se niega a volcar un servidor 17**: «aborting because of
+server version mismatch». Ubuntu trae el 16, así que el workflow instala el 17
+desde PGDG.
+
+### Los dos secretos que necesita
+
+| secreto | qué es |
+|---|---|
+| `BACKUP_DATABASE_URL` | la cadena del **pooler**, no la directa |
+| `BACKUP_PASSPHRASE` | con la que se cifra el dump |
+
+⚠️ **La frase va en un gestor de contraseñas.** Un secreto de GitHub no se puede
+volver a leer: si se pierde, los respaldos cifrados no se abren nunca más y
+entonces no son respaldos.
+
+Para abrir uno:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+  -in respaldo.dump.enc -out respaldo.dump
+pg_restore --no-owner --no-privileges -d <destino> respaldo.dump
+```
