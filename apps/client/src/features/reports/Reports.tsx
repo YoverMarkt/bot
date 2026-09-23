@@ -95,18 +95,27 @@ export default function Reports() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* ── Las TRES bolsas, y no se mezclan ─────────────────────────
+                Antes eran «Vendiste / Te quedas / Comisión», y las dos
+                primeras llevaban dentro la CARRERA: sobre $15.18 decían que
+                el local se quedaba $13.98 cuando de su comida solo eran
+                $11.98. La carrera es de quien entrega — hoy el propio local,
+                pero por LLEVAR la comida, no por venderla. */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
                 <div className="text-xs text-muted-foreground">Vendiste</div>
-                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.bruto)}</div>
-                <div className="text-xs text-muted-foreground">{fees.pedidos} pedidos entregados</div>
+                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.productos)}</div>
+                <div className="text-xs text-muted-foreground">
+                  {fees.pedidos} pedidos entregados · solo tus productos
+                </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Te quedas</div>
-                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.comercio)}</div>
+                <div className="text-xs text-muted-foreground">Reparto</div>
+                <div className="text-xl font-bold tabular-nums text-foreground">{money(fees.reparto)}</div>
+                <div className="text-xs text-muted-foreground">de quien entrega</div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Comisión</div>
+                <div className="text-xs text-muted-foreground">Comisión Umbani</div>
                 <div className="text-xl font-bold tabular-nums text-primary">{money(fees.margen)}</div>
                 <div className="text-xs text-muted-foreground">se suma a tu cuota mensual</div>
               </div>

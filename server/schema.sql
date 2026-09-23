@@ -10752,7 +10752,19 @@ grant execute on function public.settle_month_commission(date)
 --    que `scope` con 'category'.
 
 -- ── 1. El mes, en hora de Ecuador ──────────────────────────────────────────
-create or replace function public.platform_markup_summary(
+-- ⚠️ LAS TRES BOLSAS NO SE MEZCLAN (2026-09-21). `comercio = bruto - margen`
+-- le atribuia al local la CARRERA, que es de quien entrega: sobre un pedido de
+-- $15.18 decia «se queda $13.98» cuando de su comida solo eran $11.98. Se
+-- retiro esa columna —conservarla «por compatibilidad» garantizaba que alguien
+-- volviera a pintarla— y se devuelven `reparto` y `productos` por separado.
+-- `margen` NO cambia: de ahi salen la factura del mes y el arrastre.
+--
+-- ⚠️ El `drop` es obligatorio y no un adorno: `create or replace` NO admite
+-- cambiar las columnas de salida, asi que sin el un esquema aplicado desde
+-- cero fallaria al llegar aqui.
+drop function if exists public.platform_markup_summary(date, date, uuid);
+
+create function public.platform_markup_summary(
   p_from        date,
   p_to          date,
   p_business_id uuid default null
@@ -10761,9 +10773,14 @@ returns table (
   business_id   uuid,
   business_name text,
   pedidos       bigint,
+  -- Lo que pago el cliente, entero: productos + reparto + margen.
   bruto         numeric,
+  -- De la PLATAFORMA. La factura del mes sale de aqui.
   margen        numeric,
-  comercio      numeric
+  -- De QUIEN ENTREGA. Ni del local ni de la plataforma.
+  reparto       numeric,
+  -- Del LOCAL, por su comida. Su venta de verdad.
+  productos     numeric
 )
 language sql
 stable
@@ -10776,8 +10793,12 @@ as $$
     count(*)                                       as pedidos,
     round(coalesce(sum(s.total), 0), 2)            as bruto,
     round(coalesce(sum(o.platform_markup), 0), 2)  as margen,
+    -- Una venta sin pedido —cita, estadia, mostrador— no tiene carrera: ahi
+    -- `reparto` es 0 y `productos` se lleva todo.
+    round(coalesce(sum(o.shipping), 0), 2)         as reparto,
     round(coalesce(sum(s.total), 0)
-        - coalesce(sum(o.platform_markup), 0), 2)  as comercio
+        - coalesce(sum(o.platform_markup), 0)
+        - coalesce(sum(o.shipping), 0), 2)         as productos
   from public.sales s
   join public.businesses b on b.id = s.business_id
   left join public.orders o on o.id = s.order_id
