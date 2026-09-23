@@ -961,7 +961,20 @@ create table if not exists sales (
   business_id   uuid not null references businesses(id) on delete cascade,
   contact_phone text,
   contact_name  text,
+  -- Lo que pagó el CLIENTE. No cambia de significado: es lo que se compara con
+  -- un comprobante.
   total         numeric(10,2) not null default 0,
+  -- ── Las dos partes que NO son del local, congeladas al vender ────────────
+  --
+  -- Una venta es un hecho consumado: lo que se llevó la plataforma ESE día no
+  -- puede cambiar porque mañana se edite una regla. Con las dos, la venta se
+  -- audita sola —total = productos + carrera + comisión— y los reportes pueden
+  -- enseñar SOLO lo del local sin unir con `orders` en cada consulta.
+  --
+  -- ⚠️ Los reportes leen `sales` en ocho cuentas distintas; una unión en cada
+  -- una serían ocho oportunidades de olvidarse de una.
+  shipping        numeric(10,2) not null default 0,  -- de quien entrega
+  platform_markup numeric(10,2) not null default 0,  -- de la plataforma
   status        text not null default 'completada' check (status in ('completada','anulada')),
   source        text default 'manual',
   created_by    uuid references client_users(id) on delete set null,  -- vendedor que la registró
@@ -1470,13 +1483,18 @@ begin
 
   insert into public.sales (
     business_id, order_id, contact_phone, contact_name,
-    total, status, source, sold_at
+    total, shipping, platform_markup, status, source, sold_at
   ) values (
     p_business_id, p_order_id,
     -- 'mostrador' no es el teléfono de nadie: la venta va sin contacto.
     nullif(v_order.contact_phone, 'mostrador'),
     v_order.contact_name,
-    v_order.total, 'completada',
+    -- `total` NO cambia: es lo que pagó el cliente. Lo que se añade al lado es
+    -- de quién es cada parte, para que los reportes enseñen solo la del local.
+    v_order.total,
+    coalesce(v_order.shipping, 0),
+    coalesce(v_order.platform_markup, 0),
+    'completada',
     case
       when v_order.source = 'storefront' then 'tienda'
       when v_order.source = 'manual' then 'mostrador'

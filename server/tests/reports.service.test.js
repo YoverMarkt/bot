@@ -84,7 +84,7 @@ describe('servicio de reportes del dueño', () => {
     )
 
     expect(result.handled).toBe(true)
-    expect(result.reply).toContain('Total vendido: $12.50')
+    expect(result.reply).toContain('Tus ventas: $12.50')
     expect(getSales).toHaveBeenCalledWith('business-a', expect.any(String))
     expect(getCustomers).toHaveBeenCalledWith('business-a')
     expect(getWriters).toHaveBeenCalledWith('business-a', expect.any(String))
