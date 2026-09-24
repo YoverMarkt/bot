@@ -3267,6 +3267,15 @@ export type Database = {
           veces: number
         }[]
       }
+      marcar_linea_preparada: {
+        Args: {
+          p_business_id: string
+          p_item_id: string
+          p_order_id: string
+          p_user_id?: string
+        }
+        Returns: Json
+      }
       marketplace_alias_parecido: {
         Args: { p_minimo?: number; p_palabras: string[] }
         Returns: {

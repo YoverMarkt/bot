@@ -372,6 +372,32 @@ const getOrderForOwnerNotice = async (businessId: string, orderId: string) => {
  * Devuelve el pedido si lo marcó, y `null` si no cumplía. Quien llama
  * distingue los dos casos, que no son el mismo error.
  */
+/**
+ * Marca una línea del pedido como metida en la bolsa.
+ *
+ * ⚠️ La decide PostgreSQL, no esta capa: `marcar_linea_preparada` comprueba
+ * que el pedido y la línea sean de ESTE negocio y lanza 42501 si no. Ponerlo
+ * aquí sería una promesa del servidor; ahí es una regla de la base.
+ *
+ * ⚠️ Idempotente: en una cocina se toca dos veces por nervio. Un doble toque
+ * no deja dos eventos ni cambia quién la marcó.
+ */
+const markOrderItemPrepared = async (
+  businessId: string,
+  orderId: string,
+  itemId: string,
+  userId: string | null,
+) => {
+  const { data, error } = await db.rpc('marcar_linea_preparada', {
+    p_business_id: businessId,
+    p_order_id: orderId,
+    p_item_id: itemId,
+    p_user_id: userId,
+  })
+  if (error) throw new Error(error.message)
+  return data as { result: string; faltan?: number; total?: number; status?: string }
+}
+
 const confirmOrderPayment = async (businessId: string, orderId: string) => {
   const { data, error } = await db
     .from('orders')
@@ -441,6 +467,7 @@ export = {
   setOrderStatus,
   requestNewPaymentProof,
   confirmOrderPayment,
+  markOrderItemPrepared,
   claimOrderNotification,
   expireUnpaidOrders,
   registerUnpaidExpiry,

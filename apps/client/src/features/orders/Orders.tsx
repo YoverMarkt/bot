@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import {
   ACTIVOS, ESTADO_COLOR, ESTADO_TEXTO, confirmOrderPayment, getOrderProof, getOrders, money,
-  getReceiptAnalysis, requestNewProof,
+  getReceiptAnalysis, marcarLineaPreparada, requestNewProof,
   setOrderStatus, siguientePaso,
   type Order, type OrderStatus, type ReceiptAnalysis,
 } from './api'
@@ -448,6 +448,19 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
   // Finanzas están en `dinero-del-pedido.ts`.
   const { servicio, porLosProductos, reparto, servicioVaEncima } = desgloseDelPedido(pedido)
   const seCobra = elPedidoSeCobra(pedido.status)
+
+  // ── La checklist: cuántas líneas están ya en la bolsa ────────────────────
+  const preparadas = pedido.order_items.filter(item => item.prepared_at).length
+  const faltanPorPreparar = pedido.order_items.length - preparadas
+
+  // ⚠️ Se refresca la lista al marcar, no se toca el estado local: el número
+  // que manda lo lleva la base, y con dos empleados preparando el mismo
+  // pedido en dos pantallas, un contador propio se desincroniza enseguida.
+  const prepararLinea = useMutation({
+    mutationFn: (itemId: string) => marcarLineaPreparada(pedido.id, itemId),
+    onSuccess: () => { onRefrescar() },
+    onError: (e: Error) => toast.error(e.message || 'No pudimos marcar ese producto'),
+  })
   const [abriendo, setAbriendo] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
 
@@ -541,10 +554,68 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
         )}
       </div>
 
+      {/* ── LA CHECKLIST DE PREPARACIÓN ──────────────────────────────────────
+          El caso del dueño: «el cliente pide hamburguesa, papas y gaseosa; el
+          empleado mete las dos primeras, olvida la gaseosa y el pedido sale
+          incompleto».
+
+          ⚠️ Solo mientras el pedido está VIVO. En uno ya entregado o cancelado
+          sobra: la tarjeta volvería a ser una lista y ya no hay nada que meter
+          en ninguna bolsa.
+
+          ⚠️ Y esto es AYUDA, no la defensa. Quien impide de verdad que salga
+          incompleto es `set_order_status` en PostgreSQL: esta pantalla se
+          puede saltar, esa puerta no. */}
+      {enCurso && faltanPorPreparar > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+            <span>Preparación del pedido</span>
+            <span className="tabular-nums">
+              {preparadas} de {pedido.order_items.length}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber-200 dark:bg-amber-900">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-all"
+              style={{ width: `${Math.round((preparadas / Math.max(1, pedido.order_items.length)) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
+            Falta meter {faltanPorPreparar} producto{faltanPorPreparar === 1 ? '' : 's'} en la bolsa.
+          </p>
+        </div>
+      )}
+      {enCurso && faltanPorPreparar === 0 && pedido.order_items.length > 0 && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-300/60 bg-emerald-50 p-2.5 text-sm font-semibold text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <Check className="h-4 w-4 shrink-0" />
+          Pedido completo — todo está en la bolsa
+        </div>
+      )}
+
       {/* Qué pidió */}
       <div className="mt-3 space-y-1 text-sm">
-        {pedido.order_items.map((item, indice) => (
-          <div key={indice} className="flex justify-between gap-3">
+        {pedido.order_items.map(item => (
+          // ⚠️ Por `id` y no por índice: la lista se refresca cada vez que se
+          // marca una línea, y con el índice React reutilizaría el nodo
+          // equivocado — el tilde aparecería en el producto de al lado.
+          <div key={item.id} className="flex justify-between gap-3">
+            {enCurso && (
+              <button
+                type="button"
+                onClick={() => { if (!item.prepared_at) prepararLinea.mutate(item.id) }}
+                disabled={Boolean(item.prepared_at) || prepararLinea.isPending}
+                aria-label={item.prepared_at
+                  ? `${item.product_name} ya está en la bolsa`
+                  : `Marcar ${item.product_name} como puesto en la bolsa`}
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
+                  item.prepared_at
+                    ? 'border-emerald-500 bg-emerald-500 text-white'
+                    : 'border-amber-400 bg-background hover:bg-amber-100 dark:hover:bg-amber-950'
+                }`}
+              >
+                {item.prepared_at && <Check className="h-3.5 w-3.5" />}
+              </button>
+            )}
             <span className="min-w-0">
               <span className="font-medium text-foreground">{item.quantity}× {item.product_name}</span>
               {item.variant_name && (

@@ -995,6 +995,13 @@ const getStorefrontOrder = async (input: {
     .select('to_status,created_at')
     .eq('business_id', input.businessId)
     .eq('order_id', input.orderId)
+    // ⚠️ SIN los eventos de COCINA (2026-09-24). Desde la checklist de
+    // preparación, `order_events` guarda también «producto_agregado» por cada
+    // línea que el empleado mete en la bolsa. Eso es del local, no del
+    // cliente: enseñárselo en su seguimiento le contaría cómo trabajan dentro
+    // —y le pintaría una lista de estados que no entiende— en la pantalla
+    // donde solo quiere saber si su pedido va en camino.
+    .is('order_item_id', null)
     .order('created_at', { ascending: true })
 
   return { data: { ...data, events: eventos.data || [] }, error: null }

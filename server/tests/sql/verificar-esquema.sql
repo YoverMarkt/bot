@@ -1730,7 +1730,85 @@ begin
        <> 'not_deliverable' then
       raise exception 'Un pedido de retiro salió a reparto';
     end if;
-    -- …pero sí puede quedar listo para retirar.
+    -- ── EL CANDADO: NINGÚN PEDIDO SALE INCOMPLETO (2026-09-24) ───────────
+    --
+    -- Antes de preparar sus líneas, NO puede quedar listo. Es la protección
+    -- que pidió el dueño: «que en el pedido se vaya marcando lo que tiene,
+    -- para que no salga incompleto».
+    --
+    -- ⚠️ Va en las DOS salidas —`en_camino` y `listo_para_retiro`— porque el
+    -- 96 % de los pedidos son a domicilio y salen por la primera. Bloquear
+    -- solo el retiro habría dejado sin proteger justo el caso del encargo.
+    if (public.set_order_status(v_business, v_pedido_idem, 'listo_para_retiro') ->> 'result')
+       <> 'incompleto' then
+      raise exception 'Un pedido con líneas sin preparar pudo salir';
+    end if;
+    -- Y dice QUÉ falta, no solo que no puede: el empleado tiene que saberlo.
+    if (public.set_order_status(v_business, v_pedido_idem, 'listo_para_retiro') ->> 'faltan')
+       is null then
+      raise exception 'El bloqueo no dijo qué producto faltaba';
+    end if;
+
+    -- ── LA CHECKLIST, A FONDO (2026-09-24) ───────────────────────────────
+    --
+    -- El caso del dueño: «el cliente pide hamburguesa, papas y gaseosa; el
+    -- empleado mete las dos primeras, olvida la gaseosa y el pedido sale
+    -- incompleto».
+    declare
+      v_l1 uuid;
+      v_r  jsonb;
+      v_n  integer;
+    begin
+      select id into v_l1 from order_items where order_id = v_pedido_idem limit 1;
+
+      -- (a) Marcar una línea deja su huella: cuándo, y un evento en la línea
+      -- de tiempo.
+      v_r := public.marcar_linea_preparada(v_business, v_pedido_idem, v_l1, null);
+      if (v_r ->> 'result') <> 'ok' then
+        raise exception 'no se pudo marcar la línea: %', v_r;
+      end if;
+      if (select prepared_at from order_items where id = v_l1) is null then
+        raise exception 'la línea quedó sin fecha de preparación';
+      end if;
+      if not exists (
+        select 1 from order_events
+        where order_item_id = v_l1 and to_status = 'producto_agregado'
+      ) then
+        raise exception 'marcar una línea no dejó evento en la línea de tiempo';
+      end if;
+
+      -- (b) ⚠️ IDEMPOTENTE: en una cocina se toca dos veces por nervio. Un
+      -- doble toque no puede dejar dos eventos.
+      perform public.marcar_linea_preparada(v_business, v_pedido_idem, v_l1, null);
+      select count(*) into v_n from order_events
+       where order_item_id = v_l1 and to_status = 'producto_agregado';
+      if v_n <> 1 then
+        raise exception 'un doble toque dejó % eventos, y debía dejar 1', v_n;
+      end if;
+
+      -- (c) ⚠️ EL AISLAMIENTO: la línea de OTRO negocio no se puede marcar.
+      begin
+        perform public.marcar_linea_preparada(
+          gen_random_uuid(), v_pedido_idem, v_l1, null
+        );
+        raise exception 'se marcó una línea desde otro negocio';
+      exception when sqlstate '42501' then
+        null;
+      end;
+    end;
+
+
+    -- El empleado mete todo en la bolsa…
+    declare
+      v_linea uuid;
+    begin
+      for v_linea in select id from order_items where order_id = v_pedido_idem
+      loop
+        perform public.marcar_linea_preparada(v_business, v_pedido_idem, v_linea, null);
+      end loop;
+    end;
+
+    -- …y AHORA sí puede quedar listo para retirar.
     if (public.set_order_status(v_business, v_pedido_idem, 'listo_para_retiro') ->> 'result')
        <> 'updated' then
       raise exception 'Un pedido de retiro no pudo quedar listo para retirar';
