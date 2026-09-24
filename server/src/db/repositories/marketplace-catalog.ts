@@ -108,9 +108,28 @@ const marketplaceKnownTerm = async (
     .select('category_code')
     .in('term', terminos)
     .limit(1)
-  if (error || !data?.length) return null
 
-  const code = (data[0] as { category_code?: string }).category_code
+  let code = error || !data?.length
+    ? null
+    : (data[0] as { category_code?: string }).category_code || null
+
+  // ── Segunda oportunidad: LA ERRATA ────────────────────────────────────────
+  //
+  // «pizzza», «hanburguesa», «almuerso». Las apps grandes no le piden al
+  // cliente que escriba mejor: entienden y actúan. Solo se consulta si la
+  // coincidencia exacta falló, así que quien escribe bien no paga este viaje.
+  //
+  // ⚠️ El umbral vive en la BASE (0.40 por defecto) y se midió, no se eligió:
+  // la peor basura da 0.14 y la peor errata real 0.44. Ver la migración
+  // `2026-09-23-el-chat-entiende-erratas.sql`.
+  if (!code) {
+    const { data: parecido } = await db.rpc('marketplace_alias_parecido', {
+      p_palabras: palabras,
+    })
+    const fila = (parecido as { category_code?: string }[] | null)?.[0]
+    code = fila?.category_code || null
+  }
+
   if (!code) return null
 
   const { data: categoria } = await db

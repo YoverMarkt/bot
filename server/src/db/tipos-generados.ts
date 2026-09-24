@@ -3267,6 +3267,14 @@ export type Database = {
           veces: number
         }[]
       }
+      marketplace_alias_parecido: {
+        Args: { p_minimo?: number; p_palabras: string[] }
+        Returns: {
+          category_code: string
+          parecido: number
+          term: string
+        }[]
+      }
       marketplace_buscar_negocios: {
         Args: { p_limite?: number; p_query: string }
         Returns: {

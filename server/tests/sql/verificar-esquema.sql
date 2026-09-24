@@ -226,6 +226,51 @@ begin
     end if;
   end;
 
+  -- ── 1c. EL CHAT ENTIENDE LAS ERRATAS, Y NO CONFUNDE LA BASURA ────────────
+  --
+  -- El dueño probando su app (2026-09-23): «"pizzza", "seviche"… ¿mandamos un
+  -- mensaje educando al cliente? Una cosa es "sdadskads" y otra "pissa"».
+  --
+  -- Se decidió NO pedirle que escriba mejor —las apps grandes no lo hacen— y
+  -- entender la errata. El umbral 0.40 se MIDIÓ contra el diccionario real: la
+  -- peor basura da 0.14 y la peor errata de verdad 0.44.
+  --
+  -- Esto comprueba el COMPORTAMIENTO, que es lo único que importa: que las
+  -- erratas se entiendan y que la basura NO se cuele. Una red que deja pasar
+  -- «asdfghjkl» como si fuera comida es peor que no tenerla.
+  declare
+    v_cat text;
+  begin
+    -- (a) Las erratas de verdad se entienden.
+    foreach v_cat in array array['pizzza', 'hanburguesa', 'almuerso', 'parriyada']
+    loop
+      if not exists (select 1 from public.marketplace_alias_parecido(array[v_cat])) then
+        raise exception 'La errata «%» debía entenderse y no se entendió', v_cat;
+      end if;
+    end loop;
+
+    -- (b) La basura NO se cuela. Esto es lo que hace útil a la red.
+    foreach v_cat in array array['asdfghjkl', 'sdadskads', 'qwerty', 'gracias']
+    loop
+      if exists (select 1 from public.marketplace_alias_parecido(array[v_cat])) then
+        raise exception 'La basura «%» se coló como si fuera comida', v_cat;
+      end if;
+    end loop;
+
+    -- (c) Una palabra de menos de 4 letras no entra: ahí los trigramas fallan
+    -- («pisa» contra «pizza» da lo mismo que la basura).
+    if exists (select 1 from public.marketplace_alias_parecido(array['pan'])) then
+      raise exception 'Una palabra de 3 letras entró al parecido';
+    end if;
+
+    -- (d) Y «pizzza» cae en pizzerías, no en cualquier sitio.
+    select category_code into v_cat
+    from public.marketplace_alias_parecido(array['pizzza']) limit 1;
+    if v_cat is distinct from 'pizzerias' then
+      raise exception '«pizzza» debía caer en pizzerias y cayó en %', v_cat;
+    end if;
+  end;
+
   -- ── 2. Registro de errores ────────────────────────────────────────────────
   perform public.record_platform_error(
     v_business, 'canal', '503', 'Error de verificación', '{}'::jsonb, repeat('e', 64)
