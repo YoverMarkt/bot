@@ -222,9 +222,17 @@ const armarEntrada = ({ hits = [], buscar, conocido = null } = {}) => {
       return { conflicto: false }
     }),
     getMarketplaceCategories: vi.fn().mockResolvedValue(CATEGORIAS),
-    getMarketplaceBusinesses: vi.fn().mockResolvedValue([
-      { id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 },
-    ]),
+    // ⚠️ RESPONDE SEGÚN LA CATEGORÍA, no siempre lo mismo (2026-09-23).
+    //
+    // Antes devolvía Monster Pizza para CUALQUIER código, y eso escondía un
+    // caso real: cuando el chat entiende «pizzza» y va a buscar los locales de
+    // esa categoría, un simulacro que contesta a todo haría pasar por bueno
+    // enseñar una pizzería como si fuera un asadero.
+    getMarketplaceBusinesses: vi.fn(async (code) => (
+      code === 'pizzerias'
+        ? [{ id: 'biz-1', slug: 'monster-pizza', name: 'Monster Pizza', type: 'pizzería', prep_min: 30 }]
+        : []
+    )),
     getBusinessById: vi.fn().mockResolvedValue({
       id: 'biz-9', name: 'El Puerto', slug: 'el-puerto',
       storefront_enabled: true, takes_orders: true,
@@ -238,8 +246,13 @@ const armarEntrada = ({ hits = [], buscar, conocido = null } = {}) => {
     // ⚠️ Desde el 2026-09-18 devuelve {code, label}: el chat enseña la
     // etiqueta y el registro del menú guarda el código, que es lo que
     // convierte «no lo tengo» en demanda medible.
+    // ⚠️ El CÓDIGO importa desde el 2026-09-23: es con él con lo que se buscan
+    // los locales de la categoría entendida. Se admite una cadena —el código
+    // cae en `asados`, como siempre— o un `{code, label}` explícito.
     marketplaceKnownTerm: vi.fn().mockResolvedValue(
-      conocido ? { code: 'asados', label: conocido } : null,
+      typeof conocido === 'string'
+        ? { code: 'asados', label: conocido }
+        : (conocido || null),
     ),
   }
   return {
@@ -401,6 +414,53 @@ describe('la búsqueda, conectada al flujo', () => {
 // cosas que hacen que una app parezca tonta, y le pasa justo al cliente que
 // sabe lo que quiere.
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// CUANDO SE ENTIENDE **Y SÍ HAY** LOCALES (2026-09-23)
+//
+// El caso que lo pidió: el dueño escribió «Parrilladas» (plural) y luego
+// preguntó por «pizzza», «seviche». Se decidió NO pedirle al cliente que
+// escriba mejor —las apps grandes no lo hacen— sino entender y actuar.
+//
+// ⚠️ EL RIESGO DE ESTE CAMBIO, y por eso esta prueba: si el término se
+// entiende pero se responde «todavía no tenemos Pizzerías» TENIENDO una, se le
+// estaría mintiendo — y es la peor mentira, la que manda al cliente a otra app
+// a buscar lo que aquí sí hay.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('cuando se entiende y SÍ hay locales', () => {
+  it('enseña los locales en vez de decir que no los hay', async () => {
+    const { deps, enviados } = armarEntrada({
+      hits: [], conocido: { code: 'pizzerias', label: 'Pizzerías' },
+    })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    // La búsqueda literal no lo encuentra (es una errata), pero el término sí
+    // se reconoce.
+    await escribir(deps, 'pizzza')
+
+    const texto = enviados.map(e => e.reply).join('\n')
+    expect(texto).not.toContain('Todavía no tenemos')
+    expect(texto).not.toContain('no lo pude entender')
+    // Se dice lo que se entendió, en una línea y sin regañar.
+    expect(texto).toContain('Pizzerías')
+    // Y se le enseña el local de verdad, que es a lo que venía.
+    expect(enviados.flatMap(e => e.options).join(' ')).toContain('Monster Pizza')
+  })
+
+  it('NO le pide que escriba mejor: nunca se le regaña', async () => {
+    const { deps, enviados } = armarEntrada({
+      hits: [], conocido: { code: 'pizzerias', label: 'Pizzerías' },
+    })
+    await escribir(deps, 'hola')
+    enviados.length = 0
+    await escribir(deps, 'pizzza')
+
+    const texto = enviados.map(e => e.reply).join('\n').toLowerCase()
+    for (const regano of ['escribe bien', 'escriba bien', 'error', 'incorrecto', 'mal escrito']) {
+      expect(texto, `no puede regañar con «${regano}»`).not.toContain(regano)
+    }
+  })
+})
+
 describe('cuando se entiende pero no hay locales', () => {
   it('lo dice con su nombre, y ofrece lo que sí hay', async () => {
     const { deps, enviados } = armarEntrada({ hits: [], conocido: 'Asados y parrilladas' })

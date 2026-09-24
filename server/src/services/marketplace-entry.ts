@@ -6,6 +6,7 @@ import {
   recordarPedidoEnProceso,
   responderAlMenu,
   verCategorias,
+  verNegocios,
   esAdjuntoSinTexto,
   textoDeAdjuntoRecibido,
   verResultados,
@@ -755,6 +756,36 @@ async function recorrerElMenu(
       categoryCode: conocido?.code ?? null,
     })
     if (conocido) {
+      // ── SEGUNDO INTENTO: con lo que SÍ entendimos ───────────────────────
+      //
+      // La búsqueda literal falló, pero el término se reconoció — porque venía
+      // en plural («parrilladas») o con una errata («pizzza»). Si esa
+      // categoría TIENE locales, se enseñan.
+      //
+      // ⚠️ Sin esto, a quien escribe «pizzza» se le respondería «todavía no
+      // tenemos Pizzerías» teniendo una. Sería mentirle, y además la peor
+      // mentira: la que le manda a otra app a buscar lo que aquí sí hay.
+      const deLaCategoria = await conEstadoDeHorario(
+        deps, await database.getMarketplaceBusinesses(conocido.code).catch(() => []),
+      )
+      if (deLaCategoria.length) {
+        const categoria = contexto.categorias.find(c => c.code === conocido.code)
+          || { code: conocido.code, label: conocido.label }
+        const vista = verNegocios(categoria as MarketplaceCategory, deLaCategoria, 0)
+        // Se dice lo que se entendió, en una línea y sin regañar. El cliente
+        // aprende cómo se escribe viéndolo, no porque se lo pidan.
+        const conAviso = {
+          ...vista,
+          reply: `🔎 Te muestro *${conocido.label}* 👇\n\n${vista.reply}`,
+        }
+        deps.logger?.log(
+          `🔎 [marketplace] «${text}» → ${conocido.label}, ${deLaCategoria.length} local(es)`,
+        )
+        await guardar(deps, customer.id, contexto.version, conAviso, { soltarLocal: false })
+        await send(conAviso.reply, conAviso.options)
+        return
+      }
+
       const portada = verCategorias(contexto.categorias, 0)
       const aviso = {
         ...portada,

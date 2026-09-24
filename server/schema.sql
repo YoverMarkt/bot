@@ -12621,6 +12621,66 @@ alter table public.marketplace_search_aliases enable row level security;
 create index if not exists idx_marketplace_search_aliases_categoria
   on public.marketplace_search_aliases (category_code);
 
+-- ── ENTENDER LAS ERRATAS, SIN PEDIRLE AL CLIENTE QUE ESCRIBA MEJOR ─────────
+--
+-- Las apps grandes nunca le piden que corrija: escribes «pizzza» y te enseñan
+-- pizzas. Pedírselo le pasa a él el trabajo, le hace sentir tonto y cuesta un
+-- saliente pagado de ida y vuelta.
+--
+-- ⚠️ EL UMBRAL 0.40 NO SE ELIGIÓ A OJO. Medido contra el diccionario real:
+--
+--     BASURA                         ERRATAS DE VERDAD
+--     asdfghjkl  → asado     0.14    pizzza      → pizza        0.86
+--     gracias    → farmacia  0.13    hanburguesa → hamburguesa  0.60
+--     hola       → helado    0.09    piza        → pizza        0.57
+--     sdadskads  → seco      0.08    almuerso    → almuerzo     0.50
+--     qwerty     → ceviche   0.00    seviche     → ceviche      0.45
+--
+-- Línea limpia en 0.40, con 3 veces de margen sobre la peor basura.
+--
+-- ⚠️ Lo que NO pesca, y conviene saberlo: «pissa» (0.20) y «pisa» (0.22) caen
+-- en territorio de basura. Son demasiado CORTAS y a los trigramas les faltan
+-- letras. Bajar el umbral metería «asdfghjkl» dentro. Esas caen al menú, que
+-- educa sin sermón.
+--
+-- ⚠️ `search_path` incluye `extensions`: ahí vive `pg_trgm`. Es la misma
+-- trampa que tumbó WhatsApp cinco días en julio de 2026 con `digest()`.
+create or replace function public.marketplace_alias_parecido(
+  p_palabras text[],
+  p_minimo   real default 0.40
+)
+returns table (
+  category_code text,
+  term          text,
+  parecido      real
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp, extensions
+as $$
+  select a.category_code, a.term, max(similarity(a.term, p.palabra))::real as parecido
+  from public.marketplace_search_aliases a
+  cross join unnest(p_palabras) as p(palabra)
+  -- Menos de 4 letras NO entra: es donde los trigramas fallan.
+  where char_length(p.palabra) >= 4
+    and similarity(a.term, p.palabra) >= p_minimo
+  group by a.category_code, a.term
+  order by parecido desc, a.term
+  limit 1;
+$$;
+
+revoke all on function public.marketplace_alias_parecido(text[], real)
+  from public, anon, authenticated;
+grant execute on function public.marketplace_alias_parecido(text[], real)
+  to service_role;
+
+-- Sin este índice cada errata recorre el diccionario entero calculando
+-- trigramas. Hoy son 44 filas y da igual, pero la tabla crece con cada
+-- término que añade el superadmin.
+create index if not exists idx_alias_trigramas
+  on public.marketplace_search_aliases using gin (term extensions.gin_trgm_ops);
+
 insert into public.marketplace_search_aliases (term, category_code) values
   -- Las tres grafías se usan en Ecuador. «sebiche» queda por debajo del
   -- umbral de parecido (0.29), así que sin el alias no se encuentra: es
