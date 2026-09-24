@@ -1753,7 +1753,9 @@ declare
   v_event_id uuid;
   v_received_at timestamptz;
   v_quiet_until timestamptz;
-  v_is_text boolean;
+  -- ⚠️ «texto LIBRE»: lo que el cliente ESCRIBIÓ, frente a lo que ELIGIÓ
+  -- tocando un botón. Lo elegido llega entero y no espera la ventana.
+  v_es_texto_libre boolean;
 begin
   if p_provider not in ('meta', 'ycloud') then
     raise exception using errcode = '22023', message = 'Proveedor de webhook invalido';
@@ -1772,9 +1774,13 @@ begin
     raise exception using errcode = '22023', message = 'Payload de webhook invalido';
   end if;
 
-  v_is_text := coalesce((
+  v_es_texto_libre := coalesce((
     p_payload #>> '{content,kind}' = 'text'
     and jsonb_typeof(p_payload #> '{content,text}') = 'string'
+    -- ⚠️ Lo elegido (botón o fila de lista) NO es texto libre. Llega entero y
+    -- de una vez, así que la ventana de silencio —que existe para juntar
+    -- mensajes escritos a trozos— solo le hacía lento el menú.
+    and coalesce((p_payload #>> '{content,interactivo}')::boolean, false) = false
   ), false);
   -- Serializa solamente los enqueue del mismo stream. Así dos textos
   -- concurrentes observan la ventana más reciente y un duplicado nunca la
@@ -1811,7 +1817,7 @@ begin
     'pending',
     0,
     8,
-    case when v_is_text then v_quiet_until else now() end,
+    case when v_es_texto_libre then v_quiet_until else now() end,
     null,
     null,
     v_received_at,
@@ -1824,7 +1830,7 @@ begin
     return false;
   end if;
 
-  if v_is_text then
+  if v_es_texto_libre then
     update public.webhook_inbound_events as queued
     set available_at = greatest(queued.available_at, v_quiet_until),
         updated_at = clock_timestamp()
@@ -1834,6 +1840,8 @@ begin
       and queued.status = 'pending'
       and queued.payload #>> '{content,kind}' = 'text'
       and jsonb_typeof(queued.payload #> '{content,text}') = 'string'
+      -- Una elección pendiente no se retrasa por un texto posterior.
+      and coalesce((queued.payload #>> '{content,interactivo}')::boolean, false) = false
       and not (queued.payload ? '_inboxBatch')
       and (queued.received_at, queued.id) <= (v_received_at, v_event_id)
       -- Una imagen/audio (o un lote ya congelado) separa conversaciones
@@ -1851,6 +1859,9 @@ begin
             < (v_received_at, v_event_id)
           and (
             boundary.payload #>> '{content,kind}' is distinct from 'text'
+            -- ⚠️ Una ELECCIÓN también es frontera: lo escrito antes de tocar
+            -- un botón pertenece a otra conversación.
+            or coalesce((boundary.payload #>> '{content,interactivo}')::boolean, false)
             or boundary.payload ? '_inboxBatch'
           )
       );

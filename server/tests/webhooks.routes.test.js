@@ -233,7 +233,8 @@ describe('webhooks WhatsApp', () => {
       'meta-batch-3',
       'meta:business-a:+593999000002',
       expect.objectContaining({
-        content: { kind: 'text', text: 'Confirmar' },
+        // Un botón: llega marcado para no esperar la ventana de silencio.
+        content: { kind: 'text', text: 'Confirmar', interactivo: true },
       }),
     )
   })
@@ -408,12 +409,16 @@ describe('webhooks WhatsApp', () => {
     expect(db.enqueueWebhookEvent).toHaveBeenNthCalledWith(
       1, 'business-a', 'ycloud', 'ycloud-event-button-1',
       'ycloud:business-a:+593999000001',
-      expect.objectContaining({ content: { kind: 'text', text: 'Ver catálogo' } }),
+      expect.objectContaining({
+        content: { kind: 'text', text: 'Ver catálogo', interactivo: true },
+      }),
     )
     expect(db.enqueueWebhookEvent).toHaveBeenNthCalledWith(
       2, 'business-a', 'ycloud', 'ycloud-event-interactive-1',
       'ycloud:business-a:+593999000001',
-      expect.objectContaining({ content: { kind: 'text', text: 'Perfumes' } }),
+      expect.objectContaining({
+        content: { kind: 'text', text: 'Perfumes', interactivo: true },
+      }),
     )
   })
 
@@ -439,7 +444,9 @@ describe('webhooks WhatsApp', () => {
     expect(db.enqueueWebhookEvent).toHaveBeenCalledWith(
       'business-a', 'ycloud', 'ycloud-event-listid-1',
       'ycloud:business-a:+593999000001',
-      expect.objectContaining({ content: { kind: 'text', text: '3' } }),
+      expect.objectContaining({
+        content: { kind: 'text', text: '3', interactivo: true },
+      }),
     )
   })
 
