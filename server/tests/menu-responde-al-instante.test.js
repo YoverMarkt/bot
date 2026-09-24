@@ -82,9 +82,14 @@ describe('la cola deja de esperar por lo elegido', () => {
         expect(frontera).toMatch(/boundary\.payload #>> '\{content,interactivo\}'/)
       })
 
-      it('⚠️ el texto ESCRITO sigue esperando sus tres segundos', () => {
+      it('⚠️ el texto ESCRITO sigue esperando su ventana', () => {
         const cuerpo = enqueue()
-        expect(cuerpo).toContain("v_quiet_until := v_received_at + interval '3 seconds'")
+        // Se comprueba que la ventana EXISTE y que se aplica solo al texto
+        // libre, no su duración: el número vive en cada fuente y cambió el
+        // 2026-09-23 (3 s → 300 ms en el consolidado). Lo que no puede
+        // desaparecer es el agrupado — sin él, tres mensajes seguidos se
+        // contestan tres veces, y cada saliente se paga.
+        expect(cuerpo).toMatch(/v_quiet_until := v_received_at \+ interval/)
         expect(cuerpo).toContain('if v_es_texto_libre then')
       })
     })
@@ -108,5 +113,36 @@ describe('el comportamiento se comprueba en PostgreSQL real', () => {
     const sql = readFileSync(`${serverDir}/tests/sql/verificar-esquema.sql`, 'utf8')
     expect(sql).toContain('el menú tiene que responder al instante')
     expect(sql).toContain('El texto escrito dejó de agruparse')
+  })
+})
+
+describe('la ventana baja a 300 ms, medida contra producción', () => {
+  const ventana = readFileSync(
+    `${serverDir}/migration-2026-09-23-ventana-de-300ms.sql`,
+    'utf8',
+  )
+
+  it('el consolidado y su migración usan 300 ms', () => {
+    for (const [donde, fuente] of [['consolidado', schema], ['migración', ventana]]) {
+      expect(cuerpoDe(fuente, 'enqueue_webhook_event'), donde).toContain(
+        "v_quiet_until := v_received_at + interval '300 milliseconds'",
+      )
+    }
+  })
+
+  it('NO se pone a cero: el agrupado se queda', () => {
+    // Quitarla del todo quitaría el agrupado entero, que es una pieza con
+    // nombre y pruebas (`_inboxBatch`), no un retraso suelto. La red sigue
+    // valiendo para dos webhooks casi simultáneos.
+    const enqueue = cuerpoDe(schema, 'enqueue_webhook_event')
+    expect(enqueue).toContain('_inboxBatch')
+    expect(enqueue).toContain('greatest(queued.available_at, v_quiet_until)')
+  })
+
+  it('deja escrito POR QUÉ ese número y cuál es el suelo real', () => {
+    // El dato que lo justifica tiene que sobrevivir al commit: sin él, el
+    // siguiente que lo lea creerá que es arbitrario y lo subirá «por si acaso».
+    expect(ventana).toMatch(/5,67/)
+    expect(ventana).toMatch(/1000 ms/)
   })
 })

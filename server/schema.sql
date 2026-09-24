@@ -1790,7 +1790,18 @@ begin
     0
   ));
   v_received_at := clock_timestamp();
-  v_quiet_until := v_received_at + interval '3 seconds';
+  -- ⚠️ 300 ms, no 3 segundos (2026-09-23). Medido en producción: el hueco más
+  -- corto entre dos mensajes de un mismo cliente en TODA la historia es 5,67 s
+  -- —19 veces esta ventana—, y hubo 0 casos por debajo de 3 s en 128 huecos.
+  -- La ventana de 3 s nunca agrupó nada y se la pagaba cada cliente.
+  --
+  -- No se pone a cero: la red sigue valiendo para dos webhooks casi
+  -- simultáneos (un reintento de WhatsApp, un envío doble), que sí ocurre y
+  -- costaría una respuesta de más — y cada saliente se paga.
+  --
+  -- ⚠️ El suelo ya NO es esto: el worker sondea cada 1000 ms. Ver la migración
+  -- `2026-09-23-ventana-de-300ms.sql`.
+  v_quiet_until := v_received_at + interval '300 milliseconds';
 
   insert into public.webhook_inbound_events (
     business_id,
