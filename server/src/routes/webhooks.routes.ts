@@ -225,6 +225,12 @@ function metaContent(message: InboundMessage): InboundWebhookPayload['content'] 
         ? message.interactive?.button_reply?.title
           || message.interactive?.list_reply?.title
         : undefined
+  // Tocar un botón o una fila de lista NO es escribir: llega entero y de una
+  // vez. Se marca para que la cola no le imponga la ventana de silencio que
+  // existe para juntar mensajes escritos a trozos.
+  if (text?.trim() && (message.type === 'button' || message.type === 'interactive')) {
+    return { kind: 'text', text, interactivo: true }
+  }
   if (text?.trim()) return { kind: 'text', text }
   if ((message.type === 'audio' || message.type === 'voice') && message.audio?.id) {
     return {
@@ -256,6 +262,10 @@ function ycloudContent(message: InboundMessage): InboundWebhookPayload['content'
     // trunca a 20-24 caracteres.
     const id = String(reply?.id || '').trim()
     text = /^\d{1,2}$/.test(id) ? id : reply?.title
+  }
+  // Igual que en Meta: lo elegido llega entero y no debe esperar la ventana.
+  if (text?.trim() && (message.type === 'button' || message.type === 'interactive')) {
+    return { kind: 'text', text, interactivo: true }
   }
   if (text?.trim()) return { kind: 'text', text }
   const kind = message.type === 'image'

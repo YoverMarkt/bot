@@ -168,6 +168,60 @@ begin
     raise exception 'La deduplicación de la cola no está funcionando';
   end if;
 
+  -- ── 1b. EL MENÚ RESPONDE AL INSTANTE ──────────────────────────────────────
+  --
+  -- Pedido del dueño el 2026-09-23: «el tiempo de respuesta en WhatsApp lo más
+  -- rápido posible, antes parecía lento, como de 3 segundos».
+  --
+  -- Era literal. `webhooks.routes.ts` convierte las respuestas interactivas en
+  -- `kind: 'text'` —a propósito, para no duplicar el emparejamiento del menú—,
+  -- y la cola abría su ventana de silencio de 3 s para TODO lo que fuera texto.
+  -- Resultado: **cada toque de un botón esperaba tres segundos** por una
+  -- ventana que existe para juntar mensajes escritos a trozos.
+  --
+  -- Una elección no se puede fragmentar. Aquí se comprueba el comportamiento,
+  -- no el texto del SQL: lo elegido entra YA y lo escrito sigue esperando.
+  declare
+    v_elegido timestamptz;
+    v_escrito timestamptz;
+  begin
+    -- (a) Lo que el cliente ELIGIÓ: disponible de inmediato.
+    perform public.enqueue_webhook_event(
+      v_business, 'ycloud', repeat('c', 64), repeat('d', 64),
+      '{"content":{"kind":"text","text":"2","interactivo":true},"inboundId":"eleccion-1"}'::jsonb
+    );
+    select available_at into v_elegido
+    from webhook_inbound_events where message_id_hash = repeat('c', 64);
+
+    if v_elegido > now() + interval '250 milliseconds' then
+      raise exception 'Tocar un botón esperó % — el menú tiene que responder al instante',
+        v_elegido - now();
+    end if;
+
+    -- (b) Lo que el cliente ESCRIBIÓ: sigue esperando su ventana. Esto NO
+    -- cambia, y es la mitad que hay que proteger: sin ella, tres mensajes
+    -- seguidos se contestan tres veces.
+    perform public.enqueue_webhook_event(
+      v_business, 'ycloud', repeat('e', 64), repeat('f', 64),
+      '{"content":{"kind":"text","text":"hola"},"inboundId":"escrito-1"}'::jsonb
+    );
+    select available_at into v_escrito
+    from webhook_inbound_events where message_id_hash = repeat('e', 64);
+
+    if v_escrito <= now() + interval '1 second' then
+      raise exception 'El texto escrito dejó de agruparse: disponible en %',
+        v_escrito - now();
+    end if;
+
+    -- (c) Un texto posterior NO puede retrasar una elección ya encolada: ella
+    -- ya entró con `now()` y su respuesta no depende de lo que se escriba
+    -- después.
+    if (select available_at from webhook_inbound_events
+        where message_id_hash = repeat('c', 64)) <> v_elegido then
+      raise exception 'Un texto posterior retrasó una elección ya encolada';
+    end if;
+  end;
+
   -- ── 2. Registro de errores ────────────────────────────────────────────────
   perform public.record_platform_error(
     v_business, 'canal', '503', 'Error de verificación', '{}'::jsonb, repeat('e', 64)

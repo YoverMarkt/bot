@@ -36,7 +36,17 @@ export interface InboundLocation {
 }
 
 type InboundContent =
-  | { kind: 'text'; text: string }
+  /**
+   * `interactivo` marca lo que el cliente ELIGIÓ —un botón o una fila de
+   * lista—, frente a lo que ESCRIBIÓ.
+   *
+   * ⚠️ Los dos llegan como `text` a propósito: el menú entiende números y
+   * títulos, y unificarlos evitó duplicar el emparejamiento. Pero para la cola
+   * NO son lo mismo: un texto escrito puede venir a trozos y por eso espera
+   * tres segundos a ver si llega el resto; **una elección no se puede
+   * fragmentar**, así que esperar por ella es solo hacer lento el menú.
+   */
+  | { kind: 'text'; text: string; interactivo?: true }
   | { kind: 'audio' | 'image'; media: InboundMediaReference }
   | { kind: 'location'; location: InboundLocation }
 
@@ -351,7 +361,11 @@ export function parseInboundWebhookPayload(value: unknown): InboundWebhookPayloa
   if (content.kind === 'text') {
     const text = boundedMessageText(content.text)
     if (!text) throw new Error('Texto durable de webhook inválido')
-    parsedContent = { kind: 'text', text }
+    // La marca viaja con el payload: la cola ya decidió con ella al encolar,
+    // pero se conserva para que el worker y las pruebas vean lo mismo.
+    parsedContent = content.interactivo === true
+      ? { kind: 'text', text, interactivo: true }
+      : { kind: 'text', text }
   } else if (content.kind === 'location') {
     const location = inboundLocation(content.location)
     if (!location) throw new Error('Ubicación durable de webhook inválida')
