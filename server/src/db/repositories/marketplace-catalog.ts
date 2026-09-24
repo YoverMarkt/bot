@@ -50,6 +50,42 @@ const getMarketplaceBusinesses = async (
  * caerá en «no te entendí» hasta que alguien la añada, que es un fallo que se
  * corrige con datos y sin desplegar.
  */
+/**
+ * Las formas en que alguien puede escribir una misma palabra: como la tecleó,
+ * en singular y en plural.
+ *
+ * ⚠️ NACIÓ DE UNA PRUEBA REAL (2026-09-23). El dueño escribió «Parrilladas» y
+ * recibió «no lo pude entender» — aunque `parrillada → asados` SÍ está en el
+ * diccionario. La consulta exigía la palabra EXACTA, así que el plural no
+ * casaba.
+ *
+ * Y no era un caso raro: en el diccionario hay `pizza` pero no `pizzas`,
+ * `almuerzo` pero no `almuerzos`, `asado` pero no `asados`. **Escribir en
+ * plural fallaba siempre**, que es justo como habla la gente («quiero pizzas»,
+ * «tienen almuerzos»).
+ *
+ * Se generan las variantes en el CÓDIGO y no en la tabla: duplicar cada
+ * término a mano es una lista que se desincroniza sola, y el superadmin
+ * tendría que acordarse del plural de cada cosa que añada.
+ *
+ * ⚠️ Solo se QUITAN o AÑADEN sufijos, nunca se inventan letras. `panes` da
+ * `pane` y `pan`; `pan` da `pans` y `panes`. Alguna variante no existirá en la
+ * tabla y simplemente no casará — el coste de sobrar es cero, el de faltar es
+ * llamarle tonto a quien escribió bien.
+ */
+export const formasDeLaPalabra = (palabra: string): string[] => {
+  const formas = new Set<string>([palabra])
+  // Plural → singular.
+  if (palabra.length > 4 && palabra.endsWith('es')) formas.add(palabra.slice(0, -2))
+  if (palabra.length > 3 && palabra.endsWith('s')) formas.add(palabra.slice(0, -1))
+  // Singular → plural, por si el diccionario guarda el plural («tacos»).
+  if (!palabra.endsWith('s')) {
+    formas.add(`${palabra}s`)
+    formas.add(`${palabra}es`)
+  }
+  return [...formas]
+}
+
 const marketplaceKnownTerm = async (
   query: string,
 ): Promise<{ code: string; label: string } | null> => {
@@ -63,10 +99,14 @@ const marketplaceKnownTerm = async (
     .slice(0, 8)
   if (!palabras.length) return null
 
+  // Todas las formas de todas las palabras, en UNA sola consulta: buscar por
+  // variante sería multiplicar los viajes a la base por cada frase escrita.
+  const terminos = [...new Set(palabras.flatMap(formasDeLaPalabra))].slice(0, 40)
+
   const { data, error } = await db
     .from('marketplace_search_aliases')
     .select('category_code')
-    .in('term', palabras)
+    .in('term', terminos)
     .limit(1)
   if (error || !data?.length) return null
 
