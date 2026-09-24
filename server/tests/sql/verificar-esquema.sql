@@ -208,9 +208,13 @@ begin
     select available_at into v_escrito
     from webhook_inbound_events where message_id_hash = repeat('e', 64);
 
-    if v_escrito <= now() + interval '1 second' then
-      raise exception 'El texto escrito dejó de agruparse: disponible en %',
-        v_escrito - now();
+    -- ⚠️ La ventana bajó a 300 ms el 2026-09-23 (medido: el hueco más corto
+    -- entre dos mensajes de un cliente es 5,67 s, así que 3 s no agrupaban
+    -- nada). Se comprueba que SIGUE EXISTIENDO, no su duración exacta: lo que
+    -- no puede desaparecer es el agrupado — sin él, tres mensajes seguidos se
+    -- contestan tres veces y cada saliente se paga.
+    if v_escrito <= now() then
+      raise exception 'El texto escrito dejó de agruparse: disponible ya, sin ventana';
     end if;
 
     -- (c) Un texto posterior NO puede retrasar una elección ya encolada: ella

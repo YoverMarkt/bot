@@ -205,7 +205,10 @@ describe('migración del agrupado durable de mensajes rápidos', () => {
 
   it('mantiene schema y documentación en el mismo orden de despliegue', () => {
     for (const fragment of [
-      "v_quiet_until := v_received_at + interval '3 seconds'",
+      // ⚠️ El CONSOLIDADO bajó a 300 ms el 2026-09-23. La migración de arriba
+      // conserva sus 3 s: es historia y no se edita. Medido en producción, el
+      // hueco más corto entre dos mensajes de un cliente es 5,67 s.
+      "v_quiet_until := v_received_at + interval '300 milliseconds'",
       "'_inboxBatch'",
       'batch_position <= 20',
       'combined_length <= 16384',
