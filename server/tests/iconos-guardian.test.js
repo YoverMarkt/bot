@@ -65,7 +65,10 @@ describe('los vistos y las cruces van como icono', () => {
       '    // ojo con esto',
       '    <p>{error}</p>',
       '    /* de una línea */',
+      '    <input type="file" accept="image/*" />',
+      '    <p>✓ esto ya no es comentario</p>',
     ])
+    // El `accept="image/*"` no abre un comentario: la línea de debajo se mira.
     expect([...marcadas].sort((a, b) => a - b)).toEqual([0, 1, 3, 5])
   })
 

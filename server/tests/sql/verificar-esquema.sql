@@ -2918,6 +2918,120 @@ end;
 $plantillas$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- LA CARTA DEL LOCAL: precios de verdad, tamaños en SU producto y el portón
+-- ═══════════════════════════════════════════════════════════════════════════
+-- La IA lee la carta en el superadmin, una persona la revisa y el alta la
+-- carga con `apply_business_menu` en vez de los productos de ejemplo. Lo que
+-- no puede fallar: que nazca a la venta (la plantilla deja todo agotado), que
+-- cada tamaño cuelgue del producto correcto, y que nunca pise un catálogo.
+do $carta$
+declare
+  v_limpio uuid; v_ocupado uuid;
+  v_resultado jsonb;
+  v_carta jsonb := jsonb_build_object('categorias', jsonb_build_array(
+    jsonb_build_object(
+      'nombre', 'Pizzas', 'orden', 0,
+      'productos', jsonb_build_array(
+        jsonb_build_object('nombre', 'Hawaiana', 'precio', 5.99, 'tipo', 'simple',
+          'variantes', jsonb_build_array(
+            jsonb_build_object('nombre', 'Personal', 'precio', 5.99, 'orden', 0),
+            jsonb_build_object('nombre', 'Mediana', 'precio', 11.99, 'orden', 1)
+          )),
+        jsonb_build_object('nombre', 'Pepperoni', 'precio', 6.50, 'tipo', 'simple')
+      )
+    ),
+    jsonb_build_object(
+      'nombre', 'Almuerzos', 'orden', 1,
+      'productos', jsonb_build_array(
+        jsonb_build_object('nombre', 'Almuerzo', 'precio', 3, 'tipo', 'configurable',
+          'grupos', jsonb_build_array(jsonb_build_object(
+            'nombre', 'Sopas', 'tipo', 'single', 'obligatorio', true, 'min', 1, 'max', 1,
+            'opciones', jsonb_build_array(
+              jsonb_build_object('nombre', 'Caldo de hueso de res'),
+              jsonb_build_object('nombre', 'Crema de zapallo')
+            )
+          )))
+      )
+    )
+  ));
+begin
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-carta-limpio', 'Carta limpia', 'pizzería', 'ycloud',
+    '+593900777001', '+593900777001', true)
+  returning id into v_limpio;
+  insert into businesses (slug, name, type, whatsapp_provider, whatsapp_number,
+    ycloud_number, takes_orders)
+  values ('verif-carta-ocupado', 'Carta ocupada', 'pizzería', 'ycloud',
+    '+593900777002', '+593900777002', true)
+  returning id into v_ocupado;
+
+  v_resultado := public.apply_business_menu(v_limpio, v_carta);
+  if (v_resultado->>'aplicada')::boolean is not true
+     or (v_resultado->>'productos')::integer <> 3
+     or (v_resultado->>'variantes')::integer <> 2
+     or (v_resultado->>'opciones')::integer <> 2 then
+    raise exception 'apply_business_menu no cargó la carta: %', v_resultado;
+  end if;
+
+  -- Precios de verdad: a la venta, no agotados como los de ejemplo.
+  if exists (select 1 from products where business_id = v_limpio and stock <> 'disponible') then
+    raise exception 'la carta dejó productos agotados como si fueran de ejemplo';
+  end if;
+
+  -- Cada tamaño en SU producto, con su precio.
+  if (select count(*) from product_variants pv
+      join products p on p.id = pv.product_id
+      where pv.business_id = v_limpio and p.name = 'Hawaiana'
+        and ((pv.name = 'Personal' and pv.price = 5.99)
+          or (pv.name = 'Mediana' and pv.price = 11.99))) <> 2
+     or exists (select 1 from product_variants pv join products p on p.id = pv.product_id
+                where pv.business_id = v_limpio and p.name <> 'Hawaiana') then
+    raise exception 'los tamaños de la carta no quedaron en su producto';
+  end if;
+
+  -- El portón: sobre un negocio con catálogo no toca nada, tampoco el stock.
+  insert into product_categories (business_id, name) values (v_ocupado, 'Ya existía');
+  insert into products (business_id, name, price, stock)
+  values (v_ocupado, 'De antes', 1, 'agotado');
+  v_resultado := public.apply_business_menu(v_ocupado, v_carta);
+  if (v_resultado->>'aplicada')::boolean is not false
+     or (select count(*) from products where business_id = v_ocupado) <> 1
+     or (select stock from products where business_id = v_ocupado) <> 'agotado'
+     or exists (select 1 from product_variants where business_id = v_ocupado) then
+    raise exception 'apply_business_menu pisó un negocio con catálogo: %', v_resultado;
+  end if;
+
+  -- Nombres repetidos: un tamaño no puede acabar en el producto equivocado.
+  begin
+    perform public.apply_business_menu(v_ocupado, jsonb_build_object('categorias',
+      jsonb_build_array(jsonb_build_object('nombre', 'Pizzas'),
+                        jsonb_build_object('nombre', ' pizzas '))));
+    raise exception 'apply_business_menu aceptó una categoría repetida';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.apply_business_menu(v_ocupado, jsonb_build_object('categorias',
+      jsonb_build_array(jsonb_build_object('nombre', 'Pizzas', 'productos', jsonb_build_array(
+        jsonb_build_object('nombre', 'Hawaiana', 'precio', 1),
+        jsonb_build_object('nombre', 'hawaiana', 'precio', 2))))));
+    raise exception 'apply_business_menu aceptó un producto repetido';
+  exception when invalid_parameter_value then null;
+  end;
+
+  -- Y un negocio inexistente se rechaza, como en la plantilla.
+  begin
+    perform public.apply_business_menu(gen_random_uuid(), v_carta);
+    raise exception 'apply_business_menu aceptó un negocio inexistente';
+  exception when insufficient_privilege then null;
+  end;
+
+  delete from businesses where id in (v_limpio, v_ocupado);
+  raise notice 'CARTA DEL LOCAL: carga a la venta, tamaños, portón y repetidos comprobados';
+end;
+$carta$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- CADA LOCAL NACE ARMADO: producto de ejemplo, parte del plato y listas
 -- ═══════════════════════════════════════════════════════════════════════════
 -- La plantilla vieja solo sabía colgar grupos de la CATEGORÍA, y una parte del

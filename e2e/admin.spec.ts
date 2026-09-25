@@ -401,6 +401,73 @@ test('el superadmin elige en qué cajones del menú aparece el local', async ({ 
     .toEqual(['restaurantes', 'almuerzos', 'desayunos'])
 })
 
+test('el alta carga la carta leída de la foto, revisada y con el precio del dueño', async ({ page }) => {
+  // ⚠️ 2026-09-24. El dueño sube la foto de la carta al dar de alta el local;
+  // la IA propone y él corrige. Con la carta real de La Abuelita la IA leyó
+  // $3.00 y «Para llevar $3,50», y el precio que vale es el que él decide.
+  await seedAdminSession(page)
+  await mockAdminApi(page)
+
+  let fotosSubidas = 0
+  await page.route('**/api/admin/carta/leer', async (route) => {
+    fotosSubidas = (route.request().postData() || '').split('filename=').length - 1
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ propuesta: {
+        categorias: [{ nombre: 'Menú del Día', productos: [{
+          nombre: 'Almuerzos', precio: null, descripcion: null, variantes: [],
+          listas: [{ titulo: 'Sopas', opciones: ['Caldo de hueso de res', 'Crema de zapallo'] }],
+        }] }],
+        otrosPrecios: [{ producto: 'Almuerzos', texto: 'Para llevar: $3,50' }],
+      } }),
+    })
+  })
+  let enviado: Record<string, unknown> | null = null
+  await page.route('**/api/admin/clients', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    enviado = route.request().postDataJSON()
+    await route.fulfill({
+      status: 201, contentType: 'application/json',
+      body: JSON.stringify({ id: 'nuevo', carta: { aplicada: true, productos: 1 } }),
+    })
+  })
+
+  await page.goto(`${adminUrl}#/clients`)
+  await page.getByRole('button', { name: 'Nuevo cliente' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo negocio' })
+
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'carta.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('foto de la carta'),
+  })
+  expect(fotosSubidas).toBe(1)
+
+  // El precio «para llevar» se enseña, pero no se usa.
+  await expect(dialog.getByText('La carta trae otros precios')).toBeVisible()
+  await expect(dialog.getByText('«Para llevar: $3,50» (Almuerzos)')).toBeVisible()
+
+  // Un precio que la IA no leyó se pide, no se adivina: sin él no se crea.
+  await expect(dialog.getByText('Falta 1 precio')).toBeVisible()
+  await dialog.getByLabel('Nombre *').fill('La Abuelita 2')
+  await dialog.getByLabel('WhatsApp del dueño (reportes) *').fill('+593900111333')
+  await dialog.getByLabel('Correo del dueño (panel)').fill('abuelita@prueba.local')
+  await dialog.getByLabel('Contraseña del panel').fill('ClaveDePruebaLarga123')
+  await dialog.getByRole('button', { name: 'Crear negocio' }).click()
+  await expect(dialog.getByRole('alert').filter({ hasText: 'Faltan precios en la carta' })).toBeVisible()
+  expect(enviado).toBeNull()
+
+  await dialog.getByLabel('Precio de Almuerzos').fill('3,50')
+  await expect(dialog.getByText('Falta 1 precio')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Crear negocio' }).click()
+
+  await expect.poll(() => enviado?.carta).toEqual({
+    categorias: [{ nombre: 'Menú del Día', productos: [{
+      nombre: 'Almuerzos', precio: 3.5, descripcion: null, variantes: [],
+      listas: [{ titulo: 'Sopas', opciones: ['Caldo de hueso de res', 'Crema de zapallo'], obligatoria: true }],
+    }] }],
+  })
+  await expect(page.getByText('Carta cargada: 1 producto')).toBeVisible()
+})
+
 test('el superadmin ve cómo usa la gente el menú de Umbani', async ({ page }) => {
   // ⚠️ Las tres preguntas del dueño (2026-09-18): dónde se cae la gente, qué
   // cajón se abandona y qué escribe. La pantalla existe para CONTESTARLAS, así

@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { getClientBusinessId } from '../lib/request'
+import { esCorreoRepetido } from '../lib/duplicados'
 import { createRouter } from '../middleware/async'
 import type { BusinessRecord , WriteResult } from '../db/types'
 
@@ -38,7 +39,7 @@ const db: {
     businessId: string,
     userId: string,
     fields: UserFields,
-  ): Promise<unknown>
+  ): Promise<{ error: { message: string } | null }>
   deleteClientUserById(businessId: string, userId: string): Promise<unknown>
 } = require('../db') as typeof import('../db')
 const auth: {
@@ -121,6 +122,8 @@ router.get('/api/client/users', auth.authClient, auth.requireOwner, async (req, 
   res.json(await db.getClientUsers(getClientBusinessId(req)))
 })
 
+const CORREO_REPETIDO = 'Ese correo ya tiene una cuenta en Umbani. Usa otro correo para este empleado.'
+
 router.post('/api/client/users', auth.authClient, auth.requireOwner, async (req, res) => {
   const { email, password, name, permissions } = req.body as UserPayload
   if (!email || !password) {
@@ -143,6 +146,7 @@ router.post('/api/client/users', auth.authClient, auth.requireOwner, async (req,
       role: 'employee',
       permissions: filteredPermissions,
     })
+    if (esCorreoRepetido(error)) return res.status(409).json({ error: CORREO_REPETIDO })
     if (error) return res.status(500).json({ error: error.message })
     res.status(201).json({ id: data.id })
   } catch (error) {
@@ -165,7 +169,12 @@ router.put('/api/client/users/:id', auth.authClient, auth.requireOwner, async (r
 
   try {
     if (Object.keys(fields).length) {
-      await db.updateClientUserById(getClientBusinessId(req), req.params.id, fields)
+      // ⚠️ El error VIENE en la respuesta, no se lanza: antes se ignoraba y la
+      // ruta decía «ok» aunque no se hubiera guardado nada — un correo
+      // repetido parecía cambiado.
+      const { error } = await db.updateClientUserById(getClientBusinessId(req), req.params.id, fields)
+      if (esCorreoRepetido(error)) return res.status(409).json({ error: CORREO_REPETIDO })
+      if (error) return res.status(500).json({ error: error.message })
     }
     res.json({ ok: true })
   } catch (error) {

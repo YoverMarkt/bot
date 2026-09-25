@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@botpanel/ui/components/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@botpanel/ui/components/dialog'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
+import { toast } from 'sonner'
+import CartaDelLocal from './CartaDelLocal'
+import { contarProductos, paraEnviar, preciosQueFaltan, type CartaEnRevision } from './carta'
 import {
   BUSINESS_TYPE_OPTIONS,
   CUSTOM_BUSINESS_TYPE,
@@ -101,6 +104,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
   // Vacío = no se manda nada y sigue mandando el tipo, que es como viven los
   // locales que nadie ha editado.
   const [cajones, setCajones] = useState<string[]>([])
+  // Solo al crear: la carta revisada ocupa el sitio de los productos de ejemplo.
+  const [carta, setCarta] = useState<CartaEnRevision | null>(null)
   const [cajonesDelMenu, setCajonesDelMenu] = useState<adm.CajonDelMenu[]>([])
   useEffect(() => {
     adm.getMarketplaceCategories().then(setCajonesDelMenu).catch(() => setCajonesDelMenu([]))
@@ -223,6 +228,20 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     if (f.telegram_bot_token.trim()) payload.telegram_bot_token = f.telegram_bot_token.trim()
     if (f.client_email) payload.client_email = f.client_email.trim()
     if (f.client_password) payload.client_password = f.client_password
+    if (!id && carta) {
+      // El servidor lo vuelve a comprobar todo; esto ahorra el viaje para lo
+      // que ya se ve en pantalla.
+      const faltan = preciosQueFaltan(carta)
+      if (faltan.length) {
+        setError(`Faltan precios en la carta: ${faltan.slice(0, 3).join(' · ')}`)
+        return
+      }
+      if (!contarProductos(carta)) {
+        setError('La carta se quedó sin productos: quítala o añade alguno')
+        return
+      }
+      payload.carta = paraEnviar(carta)
+    }
     setSaving(true)
     // ⚠️ Aquí se verificaban las credenciales del canal antes de guardar, y el
     // bloque entero murió el 2026-08-23: sin canal propio no hay credenciales
@@ -236,7 +255,15 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
     // verde, porque ninguno pasa por el panel.
     try {
       if (id) await adm.updateClient(id, payload)
-      else await adm.createClient(payload)
+      else {
+        const alta = await adm.createClient(payload)
+        if (alta.carta) {
+          toast.success(`Carta cargada: ${alta.carta.productos} producto${alta.carta.productos === 1 ? '' : 's'}`)
+        }
+        // Si la carta no entró, quien la revisó tiene que enterarse: el local
+        // existe igual, pero sin sus productos.
+        if (alta.aviso) toast.warning(alta.aviso, { duration: 12_000 })
+      }
       onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar')
@@ -497,10 +524,12 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
             {/* Acceso del dueño */}
             <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
-              <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" value={f.client_email} onChange={set('client_email')} /></div>
-              <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
+              <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" autoComplete="off" value={f.client_email} onChange={set('client_email')} /></div>
+              <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" autoComplete="new-password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
               <div className="sm:col-span-2"><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
             </div>
+
+            {!id && <CartaDelLocal carta={carta} onCambio={setCarta} />}
 
             {!id && <p className="mb-4 text-xs text-muted-foreground">Se creará un horario inicial de lunes a viernes, 09:00–18:00, y sábado, 09:00–13:00. El dueño puede cambiarlo inmediatamente desde Horarios.</p>}
 

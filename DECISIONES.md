@@ -1290,3 +1290,66 @@ contrato panel↔servidor encontró dos funciones del panel llamando a rutas ya
 borradas, el del consolidado vio que `schema.sql` y la última migración habían
 divergido, y el multi-tenant tenía la tabla en su lista—. Ninguno era un falso
 positivo.
+
+## La carta del local se lee de su foto
+
+**Pedido del dueño (2026-09-24):** subir el menú de los locales que venda sin
+teclearlo producto a producto. Era el cuello de botella para vender: cada
+producto se creaba a mano, uno a uno, y lo tecleaba él.
+
+```
+superadmin → alta del local → fotos de la carta → la IA PROPONE
+  → pantalla de revisión → «Crear negocio» → `apply_business_menu`
+```
+
+**Dónde:** en el SUPERADMIN, al dar de alta el local (su decisión: «yo
+controlo eso»). La carta revisada **ocupa el lugar de los productos de
+ejemplo** del tipo, nunca los dos. Sin carta, el alta siembra los ejemplos
+como siempre. Lo manual no cambia: la IA es un botón más.
+
+**Medido antes de construir** con la carta real de La Abuelita (flyer
+digital), en un guion de usar y tirar:
+
+| Modelo | Resultado |
+|---|---|
+| `gpt-4o` | 9/9 lecturas perfectas, también con la foto torcida, con reflejo y con poca luz (simuladas). ~3 s, menos de 1 centavo por carta |
+| `gpt-4o-mini` | leyó los nombres pero convirtió «Sopas» en un PRODUCTO de $3. Y no era más barato: 37.000 tokens por imagen contra 1.400 |
+
+⚠️ **Por eso `gpt-4o` y no el mini de los comprobantes.** Un precio pegado al
+sitio equivocado es justo el error que no se ve.
+
+⚠️ **La IA lee lo IMPRESO; no inventa las REGLAS.** Entran categorías,
+productos, precios, tamaños con su precio (`product_variants`) y las listas
+impresas para elegir, como «elige una». NO entran qué parte del plato se vende
+suelta, qué va gratis ni los mínimos y máximos: la carta no los dice, y si la
+IA se los inventa cobra mal sin que nadie lo note. Se ponen después en el panel
+del local.
+
+⚠️ **Nada se guarda sin revisión humana.** Es un catálogo de PRECIOS. Un precio
+dudoso llega VACÍO y la pantalla no deja crear el local hasta rellenarlo; el
+servidor (`validarCarta`) lo vuelve a comprobar y devuelve cada error con su
+sitio («Almuerzos › Almuerzo del día: falta el precio») antes de crear nada.
+
+⚠️ **El segundo precio impreso se enseña y no se usa.** «Para llevar $3,50» en
+La Abuelita: el dueño lo dejó claro, el precio es el del producto. La IA lo
+aparta en `otros_precios` y la revisión lo muestra como aviso.
+
+**`apply_business_menu` usa `apply_business_template` por dentro sin tocarla.**
+La de plantillas es el alta de TODOS los locales y ya se rompió una vez
+(2026-08-02). La nueva añade lo que separa una carta de un ejemplo: precios de
+verdad (nacen DISPONIBLES, no agotados) y tamaños. El portón de la plantilla es
+lo que hace seguro poner todo a la venta: si aplica, todo producto del negocio
+salió de esta carta.
+
+⚠️ **Si la carta no entra, el alta lo AVISA y no siembra los ejemplos.**
+Alguien revisó esa carta producto a producto: tiene que ver que no entró, no un
+catálogo que no pidió.
+
+**Lo que NO se hizo, a propósito:**
+- Índice de búsqueda (embeddings) de los productos de la carta: nada vivo lo
+  lee — `searchProductsByVector` no tiene llamadores — y existe
+  `/api/client/reindex` si algún día vuelve a hacer falta.
+- Cargar la carta en un local que ya existe: el portón lo impide, y pisar un
+  catálogo con decisiones tomadas es justo lo que no debe pasar.
+- **Sin medir todavía:** una carta grande (40 productos, 40 precios, tamaños de
+  pizza). Se mide con la próxima carta real.
