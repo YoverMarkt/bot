@@ -28,9 +28,11 @@ import {
 } from './api'
 import CounterOrder from './CounterOrder'
 import { desgloseDelPedido, elPedidoSeCobra } from './dinero-del-pedido'
+import { Alert, AlertDescription, AlertTitle } from '@botpanel/ui/components/alert'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Button } from '@botpanel/ui/components/button'
 import { Card } from '@botpanel/ui/components/card'
+import { Progress } from '@botpanel/ui/components/progress'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@botpanel/ui/components/tabs'
@@ -566,30 +568,25 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
           ⚠️ Y esto es AYUDA, no la defensa. Quien impide de verdad que salga
           incompleto es `set_order_status` en PostgreSQL: esta pantalla se
           puede saltar, esa puerta no. */}
-      {enCurso && faltanPorPreparar > 0 && (
-        <div className="mt-3 rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 dark:border-amber-900/60 dark:bg-amber-950/30">
-          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+      {enCurso && pedido.order_items.length > 0 && (
+        <Alert className="mt-3">
+          <ShoppingBag className="h-4 w-4" />
+          <AlertTitle className="flex items-center justify-between gap-2">
             <span>Preparación del pedido</span>
-            <span className="tabular-nums">
+            <span className="tabular-nums font-normal text-muted-foreground">
               {preparadas} de {pedido.order_items.length}
             </span>
-          </div>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber-200 dark:bg-amber-900">
-            <div
-              className="h-full rounded-full bg-amber-500 transition-all"
-              style={{ width: `${Math.round((preparadas / Math.max(1, pedido.order_items.length)) * 100)}%` }}
+          </AlertTitle>
+          <AlertDescription className="block">
+            <Progress
+              value={Math.round((preparadas / pedido.order_items.length) * 100)}
+              className="my-2 h-1.5"
             />
-          </div>
-          <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
-            Falta meter {faltanPorPreparar} producto{faltanPorPreparar === 1 ? '' : 's'} en la bolsa.
-          </p>
-        </div>
-      )}
-      {enCurso && faltanPorPreparar === 0 && pedido.order_items.length > 0 && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-300/60 bg-emerald-50 p-2.5 text-sm font-semibold text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
-          <Check className="h-4 w-4 shrink-0" />
-          Pedido completo — todo está en la bolsa
-        </div>
+            {faltanPorPreparar > 0
+              ? `Falta meter ${faltanPorPreparar} producto${faltanPorPreparar === 1 ? '' : 's'} en la bolsa.`
+              : 'Pedido completo — todo está en la bolsa.'}
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Qué pidió */}
@@ -599,22 +596,33 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
           // marca una línea, y con el índice React reutilizaría el nodo
           // equivocado — el tilde aparecería en el producto de al lado.
           <div key={item.id} className="flex justify-between gap-3">
+            {/* ⚠️ `Button` y no un `<button>` a pelo: lo exige el sistema de
+                diseño, y con él vienen gratis el foco visible, el estado
+                deshabilitado y el tema oscuro.
+
+                ⚠️ Y no es un `Checkbox`: marcar es IRREVERSIBLE y va al
+                servidor. Una casilla invita a desmarcar, y eso aquí no existe
+                — un producto que ya está en la bolsa no se saca. */}
             {enCurso && (
-              <button
-                type="button"
-                onClick={() => { if (!item.prepared_at) prepararLinea.mutate(item.id) }}
-                disabled={Boolean(item.prepared_at) || prepararLinea.isPending}
-                aria-label={item.prepared_at
-                  ? `${item.product_name} ya está en la bolsa`
-                  : `Marcar ${item.product_name} como puesto en la bolsa`}
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
-                  item.prepared_at
-                    ? 'border-emerald-500 bg-emerald-500 text-white'
-                    : 'border-amber-400 bg-background hover:bg-amber-100 dark:hover:bg-amber-950'
-                }`}
-              >
-                {item.prepared_at && <Check className="h-3.5 w-3.5" />}
-              </button>
+              item.prepared_at
+                ? (
+                    <span
+                      className="mt-0.5 flex size-7 shrink-0 items-center justify-center text-primary"
+                      aria-label={`${item.product_name} ya está en la bolsa`}
+                    >
+                      <Check className="size-4" />
+                    </span>
+                  )
+                : (
+                    <Button
+                      variant="outline"
+                      size="icon-xs"
+                      className="mt-0.5 shrink-0"
+                      disabled={prepararLinea.isPending}
+                      onClick={() => prepararLinea.mutate(item.id)}
+                      aria-label={`Marcar ${item.product_name} como puesto en la bolsa`}
+                    />
+                  )
             )}
             <span className="min-w-0">
               <span className="font-medium text-foreground">{item.quantity}× {item.product_name}</span>

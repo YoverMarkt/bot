@@ -234,7 +234,15 @@ test('un pedido recorre confirmación, preparación y reparto sin generar cobros
           id: 'order-e2e', contact_phone: '+593999000111', contact_name: 'Cliente pedido',
           status: orderStatus, subtotal: 25, discount: 0, total: 25, currency: 'USD',
           created_at: '2026-07-14T10:00:00.000Z',
-          order_items: [{ product_id: 'product-e2e', product_name: 'Producto E2E', quantity: 1, unit_price: 25, line_total: 25 }],
+          // ⚠️ CON `id`, como en la realidad: `order_items.id` es clave
+          // primaria y siempre viene. Sin él aquí, la tarjeta pintaba la lista
+          // con una clave indefinida y React avisaba — lo cazó esta misma
+          // prueba al añadir la checklist de preparación (2026-09-24).
+          order_items: [{
+            id: 'order-item-e2e',
+            product_id: 'product-e2e', product_name: 'Producto E2E',
+            quantity: 1, unit_price: 25, line_total: 25,
+          }],
         }]),
       })
     }
