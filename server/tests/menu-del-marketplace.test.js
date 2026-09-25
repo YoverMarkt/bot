@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  PAGINA, VER_MAS, VOLVER, elegir, esSaludo, paso, verCategorias, verNegocios,
+  PAGINA, VER_MAS, VOLVER, elegir, esConversacion, esSaludo, paso, verCategorias, verNegocios,
 } from '../dist/services/marketplace-menu.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -116,7 +116,7 @@ describe('navegar', () => {
     const r = paso({
       mensaje: 'aaaa', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
-    expect(r.reply).toMatch(/no lo pude entender/)
+    expect(r.reply).toMatch(/no te puedo ayudar por aquí/)
     expect(r.options).toContain('🍕 Pizzerías')
   })
 
@@ -155,7 +155,7 @@ describe('repintar la vista tras elegir una categoría', () => {
 
   it('con el mensaje vacío pinta los locales SIN reprochar nada', () => {
     const r = paso({ mensaje: '', vista: enNegocios, categorias: CATEGORIAS, negocios })
-    expect(r.reply).not.toContain('no lo pude entender')
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
     expect(r.reply).toContain('Elige un local')
     expect(r.options).toContain('Pizza Uno')
   })
@@ -165,7 +165,7 @@ describe('repintar la vista tras elegir una categoría', () => {
       mensaje: '', vista: { vista: 'categorias', pagina: 0 },
       categorias: CATEGORIAS, negocios: [],
     })
-    expect(r.reply).not.toContain('no lo pude entender')
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
   })
 
   // ⚠️ Lo que NO puede perderse: quien de verdad escribe cualquier cosa
@@ -175,7 +175,7 @@ describe('repintar la vista tras elegir una categoría', () => {
       mensaje: 'quiero un helado de mora',
       vista: enNegocios, categorias: CATEGORIAS, negocios,
     })
-    expect(r.reply).toContain('no lo pude entender')
+    expect(r.reply).toContain('no te puedo ayudar por aquí')
     expect(r.options).toContain('Pizza Uno')
   })
 
@@ -190,7 +190,7 @@ describe('repintar la vista tras elegir una categoría', () => {
     const pintada = paso({
       mensaje: '', vista: elegida.vista, categorias: CATEGORIAS, negocios,
     })
-    expect(pintada.reply).not.toContain('no lo pude entender')
+    expect(pintada.reply).not.toContain('no te puedo ayudar por aquí')
 
     const local = paso({
       mensaje: 'Pizza Uno', vista: pintada.vista, categorias: CATEGORIAS, negocios,
@@ -211,7 +211,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: true,
     })
-    expect(r.reply).not.toContain('no lo pude entender')
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
     expect(r.reply).toContain('Bienvenido')
     expect(r.options.length).toBeGreaterThan(0)
   })
@@ -228,7 +228,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: false,
     })
-    expect(r.reply).not.toContain('no lo pude entender')
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
     expect(r.reply).toContain('Bienvenido')
     expect(r.options.length).toBeGreaterThan(0)
   })
@@ -242,7 +242,7 @@ describe('el primer mensaje de alguien que nunca ha escrito', () => {
       categorias: CATEGORIAS, negocios: [],
       primerContacto: false,
     })
-    expect(r.reply).toContain('no lo pude entender')
+    expect(r.reply).toContain('no te puedo ayudar por aquí')
   })
 })
 
@@ -394,6 +394,9 @@ describe('volver al menú con un pedido en marcha', () => {
     const r = resolverReinicio('ok', { bloqueado: true, negocio: { name: 'X', slug: 'x' } }, CATEGORIAS)
     expect(r.reinicia).toBe(false)
     expect(r.respuesta.vista.vista).toBe('confirmando_reinicio')
+    // Y desde el 2026-09-24 no se le reprocha: «ok» es español. Se le recuerda
+    // dónde está, igual que a quien saluda.
+    expect(r.respuesta.reply).toBe('Estás pidiendo en *X*.\n\n¿Empezamos de nuevo o sigues con tu pedido?')
   })
 })
 
@@ -529,7 +532,7 @@ describe('lo que llega y no es texto', () => {
       mensaje: '[foto]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
     expect(r.reply).toContain('foto')
-    expect(r.reply).not.toContain('no lo pude entender')
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
     // Y sigue siendo un «no casó»: el llamador necesita la señal.
     expect(r.noEntendido).toBe(true)
     expect(r.options).toContain('🍕 Pizzerías')
@@ -540,13 +543,13 @@ describe('lo que llega y no es texto', () => {
       mensaje: '[nota de voz]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
     expect(voz.reply).toContain('voz')
-    expect(voz.reply).not.toContain('no lo pude entender')
+    expect(voz.reply).not.toContain('no te puedo ayudar por aquí')
 
     const donde = paso({
       mensaje: '[ubicación]', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
     expect(donde.reply).toContain('ubicación')
-    expect(donde.reply).not.toContain('no lo pude entender')
+    expect(donde.reply).not.toContain('no te puedo ayudar por aquí')
   })
 
   // Dentro de una categoría la lista de locales se repinta igual que siempre:
@@ -568,7 +571,7 @@ describe('lo que llega y no es texto', () => {
     const r = paso({
       mensaje: 'asdfghjkl', vista: enPortada, categorias: CATEGORIAS, negocios: [],
     })
-    expect(r.reply).toContain('no lo pude entender')
+    expect(r.reply).toContain('no te puedo ayudar por aquí')
     expect(r.reply).not.toContain('foto')
   })
 
@@ -733,7 +736,7 @@ describe('lo que se responde con un local ya elegido', () => {
     for (const saludo of ['Hola', 'buenas', 'qué tal', 'hola buenas noches']) {
       const { respuesta } = await resolver(saludo)
       expect(respuesta.reply, saludo).toContain('Monster Pizza')
-      expect(respuesta.reply, saludo).not.toContain('no lo pude entender')
+      expect(respuesta.reply, saludo).not.toContain('no te puedo ayudar por aquí')
     }
   })
 
@@ -741,7 +744,7 @@ describe('lo que se responde con un local ya elegido', () => {
   // saber que no se le entendió, o la pregunta se vuelve ruido.
   it('pero una tontería SIGUE recibiendo el reproche', async () => {
     const { respuesta } = await resolver('asdfghjkl')
-    expect(respuesta.reply).toContain('no lo pude entender')
+    expect(respuesta.reply).toContain('no te puedo ayudar por aquí')
   })
 
   // ⚠️ Y los dos botones se conservan en los dos casos: `resolverReinicio` los
@@ -757,7 +760,7 @@ describe('lo que se responde con un local ya elegido', () => {
 
   it('sin local elegido, el saludo también se responde con calma', async () => {
     const { respuesta } = await resolver('Hola', { bloqueado: false, negocio: null })
-    expect(respuesta.reply).not.toContain('no lo pude entender')
+    expect(respuesta.reply).not.toContain('no te puedo ayudar por aquí')
     expect(respuesta.reply).toContain('Hola')
   })
 
@@ -828,5 +831,65 @@ describe('un local sin carta a esta hora', () => {
     const r = verNegocios(CATEGORIAS[0], [local('y', 'Sin Dato', { abierto: true })], 0)
     expect(r.options).toContain('Sin Dato')
     expect(r.reply).not.toContain('🌙')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// «BUENO» ES ESPAÑOL: SE CONTESTA, NO SE REPROCHA
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 2026-09-24. El dueño escribió «Bueno» y recibió «🙏 Eso no lo pude
+// entender»: «no es una palabra rara, es una palabra en español que existe».
+// Las palabras con las que la gente contesta por WhatsApp reciben un acuse; lo
+// que de verdad no es nada recibe «Con eso no te puedo ayudar por aquí», que
+// no le atribuye el fallo a lo que escribió.
+describe('las palabras de conversación', () => {
+  it('reconoce cómo contesta la gente, también estirado y mezclado con saludos', () => {
+    for (const mensaje of ['Bueno', 'ok', 'OK gracias', 'Siii', 'listo!!', 'muchas gracias',
+      'hola bueno', 'dale', 'Perfecto 👍', 'jajaja']) {
+      expect(esConversacion(mensaje), mensaje).toBe(true)
+    }
+  })
+
+  it('una frase con algo que pedir sigue siendo una búsqueda, y un saludo sigue siendo saludo', () => {
+    for (const mensaje of ['bueno quiero pizza', 'ok una hamburguesa', 'asdfgh', 'pollo', '']) {
+      expect(esConversacion(mensaje), mensaje).toBe(false)
+    }
+    // El saludo puro tiene su propia respuesta: la bienvenida.
+    expect(esConversacion('hola buenas noches')).toBe(false)
+  })
+
+  it('en la portada, «Bueno» recibe el acuse con las categorías y no dispara la búsqueda', () => {
+    const r = paso({
+      mensaje: 'Bueno', vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).toBe('🙂 ¡Listo! Cuando quieras pedir, elige una categoría y te llevo al local 👇')
+    expect(r.options).toContain('🍕 Pizzerías')
+    // `noEntendido` es lo que manda el texto a buscar locales: «bueno» no se busca.
+    expect(r.noEntendido).toBeFalsy()
+  })
+
+  it('lo que no es nada recibe el mensaje nuevo, con la guía y las categorías', () => {
+    const r = paso({
+      mensaje: 'asdfgh', vista: { vista: 'categorias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [],
+    })
+    expect(r.reply).toBe(
+      '🙏 Con eso no te puedo ayudar por aquí.\n\n'
+      + 'Por este chat se pide en *Umbani*: elige una categoría y te llevo al local 👇',
+    )
+    expect(r.reply).not.toMatch(/no lo pude entender/)
+    expect(r.options).toContain('🍕 Pizzerías')
+    expect(r.noEntendido).toBe(true)
+  })
+
+  it('dentro de una categoría, un «ok» repinta los locales sin reprochar', () => {
+    const r = paso({
+      mensaje: 'ok', vista: { vista: 'negocios', categoria: 'pizzerias', pagina: 0 },
+      categorias: CATEGORIAS, negocios: [neg('pizza-uno', 'Pizza Uno')],
+    })
+    expect(r.reply).not.toContain('no te puedo ayudar por aquí')
+    expect(r.options).toContain('Pizza Uno')
   })
 })

@@ -124,7 +124,24 @@ const PREGUNTA = '¿Qué deseas pedir?'
  */
 const GUIA = 'Por este chat se pide en *Umbani*: elige una categoría y te llevo al local 👇'
 
-const NO_ENTENDI = '🙏 Eso no lo pude entender.'
+/**
+ * Lo que se le dice a quien escribió algo que no es un local, ni un plato, ni
+ * una opción de la lista.
+ *
+ * ⚠️ Decía «🙏 Eso no lo pude entender» hasta el 2026-09-24, y el dueño lo
+ * vio escribiendo «Bueno»: «no es una palabra rara, es una palabra en español
+ * que existe». Tenía razón — sí se entiende; lo que pasa es que por aquí no se
+ * puede hacer nada con ella. Así que se dice ESO, sin atribuir el fallo a lo
+ * que escribió el cliente. Las palabras de conversación de verdad («bueno»,
+ * «ok», «gracias») ni siquiera llegan aquí: ver `esConversacion`.
+ */
+const NO_ENTENDI = '🙏 Con eso no te puedo ayudar por aquí.'
+
+/**
+ * El acuse de quien contesta «bueno», «ok» o «gracias» estando en la portada.
+ * No es un error: es conversación. Se le recuerda qué hacer sin regañarle.
+ */
+const ACUSE = '🙂 ¡Listo! Cuando quieras pedir, elige una categoría y te llevo al local 👇'
 
 /**
  * Lo que se responde a un mensaje que NO es texto.
@@ -174,6 +191,23 @@ const PALABRAS_DE_SALUDO = new Set([
 const MAX_PALABRAS_DE_SALUDO = 4
 
 /**
+ * Las palabras con las que la gente CONTESTA por WhatsApp sin pedir nada:
+ * «bueno», «ok», «gracias», «listo», «sí». No son un saludo ni un error.
+ *
+ * ⚠️ Nace del 2026-09-24: el dueño escribió «Bueno» y recibió «Eso no lo pude
+ * entender». Se exige, como con los saludos, que TODAS las palabras sean de
+ * estas —se admiten saludos mezclados: «ok gracias», «hola bueno»—, así que
+ * «bueno quiero pizza» sigue siendo una búsqueda.
+ */
+const PALABRAS_DE_CONVERSACION = new Set([
+  'bueno', 'buena', 'ok', 'okey', 'okay', 'oki', 'okis', 'vale', 'dale', 'listo',
+  'lista', 'perfecto', 'perfecta', 'genial', 'excelente', 'super', 'chevere',
+  'bacan', 'bien', 'muy', 'gracias', 'grax', 'grasias', 'mil', 'muchas',
+  'muchisimas', 'de', 'nada', 'igualmente', 'si', 'no', 'ya', 'claro',
+  'entendido', 'entiendo', 'jaja', 'jajaja', 'jeje', 'ah', 'oh', 'mmm',
+])
+
+/**
  * ¿El mensaje es SOLO un saludo?
  *
  * ⚠️ Se exige que TODAS sus palabras sean de saludo, no que contenga una.
@@ -186,17 +220,36 @@ const MAX_PALABRAS_DE_SALUDO = 4
  * Las letras estiradas del final se recortan («holaaa», «buenasss»): es como
  * se saluda de verdad por WhatsApp.
  */
-export function esSaludo(mensaje: string): boolean {
+const palabrasSueltas = (mensaje: string): string[] => {
   const texto = normalizar(mensaje)
     .replace(/[^a-z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (!texto) return false
+  if (!texto) return []
   const palabras = texto.split(' ')
-  if (palabras.length > MAX_PALABRAS_DE_SALUDO) return false
-  return palabras.every(palabra => (
-    PALABRAS_DE_SALUDO.has(palabra.replace(/(.)\1+$/, '$1'))
-  ))
+  if (palabras.length > MAX_PALABRAS_DE_SALUDO) return []
+  // Las letras estiradas del final («holaaa», «graciasss», «okkk»).
+  return palabras.map(palabra => palabra.replace(/(.)\1+$/, '$1'))
+}
+
+export function esSaludo(mensaje: string): boolean {
+  const palabras = palabrasSueltas(mensaje)
+  return palabras.length > 0 && palabras.every(palabra => PALABRAS_DE_SALUDO.has(palabra))
+}
+
+/**
+ * ¿El mensaje es SOLO conversación («bueno», «ok gracias», «siii»)?
+ *
+ * Un saludo puro NO cuenta aquí —ese tiene su propia respuesta, la
+ * bienvenida—; lo que se reconoce es al menos una palabra de conversación y
+ * ninguna que no lo sea.
+ */
+export function esConversacion(mensaje: string): boolean {
+  const palabras = palabrasSueltas(mensaje)
+  return palabras.some(palabra => PALABRAS_DE_CONVERSACION.has(palabra))
+    && palabras.every(palabra => (
+      PALABRAS_DE_CONVERSACION.has(palabra) || PALABRAS_DE_SALUDO.has(palabra)
+    ))
 }
 
 /**
@@ -565,7 +618,8 @@ export function paso(input: PasoInput): MarketplaceReply {
     if (esSaludo(mensaje)) return verCategorias(categorias, 0, true)
     // Repintado sin mensaje (una foto, un audio): no hay nada que reprochar y
     // tampoco una frase nueva que atribuirle, así que se queda donde estaba.
-    if (repintar) return repetir
+    // Un «ok» o un «gracias» tampoco: el cliente contesta, no se equivoca.
+    if (repintar || esConversacion(mensaje)) return repetir
     return { ...repetir, reply: `${reproche(mensaje)}\n\n${repetir.reply}`, noEntendido: true }
   }
 
@@ -601,7 +655,7 @@ export function paso(input: PasoInput): MarketplaceReply {
     // donde estaba. Aquí NO se saluda con «Bienvenido a Umbani» — el cliente
     // ya está dentro de una categoría, y darle la bienvenida otra vez leería
     // como si hubiera vuelto al principio.
-    if (repintar || esSaludo(mensaje)) return repetir
+    if (repintar || esSaludo(mensaje) || esConversacion(mensaje)) return repetir
     return { ...repetir, reply: `${reproche(mensaje)}\n\n${repetir.reply}`, noEntendido: true }
   }
 
@@ -628,6 +682,12 @@ export function paso(input: PasoInput): MarketplaceReply {
     return verCategorias(
       categorias, vista.pagina, Boolean(input.primerContacto) || saluda,
     )
+  }
+  // «Bueno», «ok», «gracias»: se le contesta, no se le reprocha — y tampoco
+  // se busca un local con esa palabra (`noEntendido` es lo que dispara la
+  // búsqueda en `marketplace-entry`).
+  if (esConversacion(mensaje)) {
+    return { ...verCategorias(categorias, vista.pagina), reply: ACUSE }
   }
   // ⚠️ Aquí NO se repite `PREGUNTA`, se explica (2026-09-06). «No te entendí.
   // ¿Qué deseas pedir?» deja al cliente sin saber qué esperaba el bot — y el
@@ -901,11 +961,15 @@ export function resolverReinicio(
   //
   // ⚠️ El reproche NO desaparece: «asdfghjkl» lo sigue recibiendo. Lo que se
   // separa es «escribió algo que no toca» de «escribió cualquier cosa».
-  const cabecera = esSaludo(mensaje)
-    ? (estado.negocio
-      ? `Estás pidiendo en *${estado.negocio.name}*.`
-      : '👋 ¡Hola!')
-    : reproche(mensaje)
+  const saluda = esSaludo(mensaje)
+  const conversa = esConversacion(mensaje)
+  const cabecera = (saluda || conversa) && estado.negocio
+    ? `Estás pidiendo en *${estado.negocio.name}*.`
+    : saluda
+      ? '👋 ¡Hola!'
+      : conversa
+        ? '🙂 ¡Listo!'
+        : reproche(mensaje)
   return {
     reinicia: false,
     continua: false,
