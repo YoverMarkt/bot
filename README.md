@@ -241,12 +241,16 @@ alta al levantarse. Las rutas, los paneles y el simulador siguen funcionando.
 
 Para hacerlo a propósito: `PERMITIR_TAREAS_CONTRA_PRODUCCION=si`.
 
-⚠️ **Apaga el staging antes de `npm run check`.** Con los contenedores de
-Supabase corriendo, la máquina se carga lo bastante como para que los workers
-de Vitest fallen al cerrarse (`EnvironmentTeardownError: Closing rpc while
-"onUserConsoleLog" was pending`) y el check termine en rojo **con las 2.897
-pruebas en verde**. No es un fallo del código: se comprobó que pasa igual sin
-cambios, y que desaparece al hacer `npm run staging:down`.
+✅ **Ya no hace falta apagar el staging antes de `npm run check`.** Hasta el
+2026-09-24 los workers de Vitest fallaban a veces al cerrarse
+(`EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was pending`)
+con todas las pruebas en verde, y con el staging encendido más a menudo. No era
+la carga de la máquina: tres registros lanzados sin esperar (el de errores, el
+paso del menú y el índice de un producto) terminaban DESPUÉS de su prueba, y con
+la base local levantada tardaban más en fallar. Ahora quedan apuntados en
+`lib/segundo-plano.ts` y `tests/setup-segundo-plano.js` los espera antes de
+cerrar cada prueba. Medido con el staging encendido: `main` salía en rojo 2 de
+cada 15 corridas; con el arreglo, 0 de 15.
 
 ---
 

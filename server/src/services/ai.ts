@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import axios from 'axios'
 import { recordError } from './error-log'
+import { enSegundoPlano } from '../lib/segundo-plano'
 
 type SettingKey = 'ai_provider' | 'groq_api_key' | 'gemini_api_key'
   | 'openai_api_key' | 'anthropic_api_key' | 'deepseek_api_key'
@@ -197,7 +198,13 @@ function productText(product: ProductForIndex): string {
   ].filter(Boolean).join(' — ')
 }
 
-async function indexProduct(product: ProductForIndex): Promise<boolean> {
+// Guardar un producto no espera a su índice: queda en `enSegundoPlano` para
+// que las pruebas lo esperen antes de cerrar (ver lib/segundo-plano).
+function indexProduct(product: ProductForIndex): Promise<boolean> {
+  return enSegundoPlano(indexar(product))
+}
+
+async function indexar(product: ProductForIndex): Promise<boolean> {
   try {
     const embedding = await embedText(productText(product))
     const { error } = await db.setProductEmbedding(product.business_id, product.id, embedding)

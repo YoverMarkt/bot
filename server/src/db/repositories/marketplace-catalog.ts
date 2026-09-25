@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enSegundoPlano } from '../../lib/segundo-plano'
 import type { Database } from '../tipos-generados'
 import type {
   MarketplaceBusiness, MarketplaceCategory,
@@ -265,15 +266,23 @@ const setBusinessMarketplaceCategories = async (
  * ⚠️ Es un registro de PRODUCTO, no de dinero. Nunca lanza hacia arriba: si la
  * base falla, el cliente tiene que recibir su respuesta igual. Lo que se
  * pierde es una fila de un reporte, no una venta.
+ *
+ * El menú lo lanza sin esperar: queda en `enSegundoPlano` para que las pruebas
+ * lo esperen antes de cerrar (ver lib/segundo-plano).
  */
-const logMarketplaceEvent = async (evento: {
+type PasoDelMenu = {
   customerId: string | null
   tipo: 'menu' | 'cajon' | 'busqueda' | 'local'
   categoryCode?: string | null
   businessId?: string | null
   consulta?: string | null
   resultados?: number | null
-}): Promise<void> => {
+}
+
+const logMarketplaceEvent = (evento: PasoDelMenu): Promise<void> =>
+  enSegundoPlano(guardarPasoDelMenu(evento))
+
+const guardarPasoDelMenu = async (evento: PasoDelMenu): Promise<void> => {
   const { error } = await db.from('marketplace_events').insert({
     customer_id: evento.customerId,
     tipo: evento.tipo,

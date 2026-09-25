@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { enSegundoPlano } from '../lib/segundo-plano'
 
 // Registro de errores de plataforma.
 //
@@ -142,7 +143,13 @@ export function resetErrorLogThrottle(): void {
 // ── Registro ────────────────────────────────────────────────────────────────
 
 export function createErrorLogger(database: ErrorLogDatabase) {
-  return async function recordError(input: RecordErrorInput): Promise<void> {
+  // Casi todos lo llaman con `void`, sin esperar: queda en `enSegundoPlano`
+  // para que las pruebas lo esperen antes de cerrar (ver lib/segundo-plano).
+  return function recordError(input: RecordErrorInput): Promise<void> {
+    return enSegundoPlano(registrar(input))
+  }
+
+  async function registrar(input: RecordErrorInput): Promise<void> {
     try {
       const message = sanitizeErrorText(input.message)
       const code = input.code === null || input.code === undefined
