@@ -12,6 +12,7 @@ import { Textarea } from '@botpanel/ui/components/textarea'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { Label } from '@botpanel/ui/components/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import { leerPunto, verEnElMapa, MENSAJE_DEL_PUNTO } from '@/lib/ubicacion'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
 
@@ -126,15 +127,16 @@ export function BankAccountForm() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label htmlFor="bank-type">Tipo de cuenta</Label>
-            <select
-              id="bank-type"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            <Select
               value={f.account_type}
-              onChange={e => setDraft({ ...f, account_type: e.target.value as BankAccount['account_type'] })}
+              onValueChange={v => setDraft({ ...f, account_type: v as BankAccount['account_type'] })}
             >
-              <option value="ahorros">Ahorros</option>
-              <option value="corriente">Corriente</option>
-            </select>
+              <SelectTrigger id="bank-type" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ahorros">Ahorros</SelectItem>
+                <SelectItem value="corriente">Corriente</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="bank-number">Número de cuenta</Label>
@@ -244,13 +246,14 @@ function UbicacionDelLocal({ latitude, longitude, onCambio }: {
           >
             Ver en el mapa
           </a>
-          <button
+          <Button
             type="button"
+            variant="link"
             onClick={() => { onCambio(null); setPegado(''); setError('') }}
-            className="text-[13px] text-muted-foreground underline underline-offset-2 ml-auto"
+            className="ml-auto h-auto p-0 text-[13px] font-normal text-muted-foreground underline underline-offset-2"
           >
             Quitar
-          </button>
+          </Button>
         </div>
       ) : (
         <Input
@@ -405,12 +408,12 @@ export function BusinessForm() {
             convierte una mejora en una factura que nadie decidió. La alarma
             del panel sigue avisando gratis, encendido o no. */}
         <div className="border-t pt-4 mt-1">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 size-4 accent-current"
+          <label htmlFor="business-notify-owner" className="flex items-start gap-3 cursor-pointer">
+            <Checkbox
+              id="business-notify-owner"
+              className="mt-1"
               checked={f.notify_owner_whatsapp === true}
-              onChange={e => setDraft({ ...f, notify_owner_whatsapp: e.target.checked })}
+              onCheckedChange={marcado => setDraft({ ...f, notify_owner_whatsapp: marcado === true })}
             />
             <span>
               <span className="text-[13px] font-semibold block">

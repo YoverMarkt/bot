@@ -761,15 +761,16 @@ function TarjetaPedido({ pedido, ocupado, onCambiar, onRefrescar }: {
               <>
                 {pedido.payment_proof_url
                   ? (
-                      <button
+                      <Button
                         type="button"
+                        variant="link"
                         onClick={abrirComprobante}
                         disabled={abriendo}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary underline underline-offset-2 disabled:opacity-50"
+                        className="h-auto gap-1 p-0 text-xs font-semibold underline underline-offset-2"
                       >
-                        <FileText className="h-3 w-3" />
+                        <FileText className="size-3" />
                         {abriendo ? 'Abriendo…' : 'Ver comprobante'}
-                      </button>
+                      </Button>
                     )
                   : !pedido.payment_confirmed_at && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">

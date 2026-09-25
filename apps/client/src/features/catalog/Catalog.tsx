@@ -350,9 +350,11 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
               {DIAS_DE_LA_SEMANA.map(dia => {
                 const elegido = f.available_days.includes(dia.valor)
                 return (
-                  <button
+                  <Button
                     key={dia.valor}
                     type="button"
+                    size="icon-sm"
+                    variant={elegido ? 'default' : 'outline'}
                     aria-pressed={elegido}
                     aria-label={dia.nombre}
                     onClick={() => setF(prev => ({
@@ -361,14 +363,10 @@ function ProductModal({ product, onClose, onSaved }: { product: Product | null; 
                         ? prev.available_days.filter(v => v !== dia.valor)
                         : [...prev.available_days, dia.valor],
                     }))}
-                    className={`size-8 rounded-full border text-[11px] font-semibold transition ${
-                      elegido
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border/70 text-muted-foreground hover:border-primary/50'
-                    }`}
+                    className={`rounded-full text-[11px] font-semibold ${elegido ? '' : 'text-muted-foreground'}`}
                   >
                     {dia.letra}
-                  </button>
+                  </Button>
                 )
               })}
             </div>

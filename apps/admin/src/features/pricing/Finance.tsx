@@ -13,6 +13,7 @@ import { Card } from '@botpanel/ui/components/card'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Input } from '@botpanel/ui/components/input'
 import { Label } from '@botpanel/ui/components/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@botpanel/ui/components/select'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@botpanel/ui/components/table'
@@ -347,36 +348,40 @@ export default function Finance() {
           <div className="space-y-3">
             <div>
               <Label htmlFor="ambito">Aplica a</Label>
-              <select
-                id="ambito"
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <Select
                 value={borrador.scope}
-                onChange={e => setBorrador({
+                onValueChange={v => setBorrador({
                   ...borrador,
-                  scope: e.target.value as PricingRule['scope'],
+                  scope: v as PricingRule['scope'],
                   business_id: '', target_name: '',
                 })}
               >
-                <option value="business">Un negocio</option>
-                <option value="business_type">Un tipo de negocio</option>
-                <option value="global">Toda la plataforma</option>
-              </select>
+                <SelectTrigger id="ambito" className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="business">Un negocio</SelectItem>
+                  <SelectItem value="business_type">Un tipo de negocio</SelectItem>
+                  <SelectItem value="global">Toda la plataforma</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {borrador.scope === 'business' && (
               <div>
                 <Label htmlFor="negocio">Negocio</Label>
-                <select
-                  id="negocio"
-                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                {/* El valor vacío no es una opción: Radix pinta el
+                    `placeholder` mientras no se elige nada, y el borrador
+                    sigue viajando con '' igual que antes. */}
+                <Select
                   value={borrador.business_id || ''}
-                  onChange={e => setBorrador({ ...borrador, business_id: e.target.value })}
+                  onValueChange={v => setBorrador({ ...borrador, business_id: v })}
                 >
-                  <option value="">Elige uno…</option>
-                  {(negocios.data || []).map(n => (
-                    <option key={n.id} value={n.id}>{n.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="negocio" className="mt-1 w-full"><SelectValue placeholder="Elige uno…" /></SelectTrigger>
+                  <SelectContent>
+                    {(negocios.data || []).map(n => (
+                      <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
@@ -388,17 +393,17 @@ export default function Finance() {
                     NEGOCIO, no un tipo—: no casaba con nada y no se aplicó
                     nunca, sin que nada avisara. El nombre tiene que coincidir
                     exacto con `businesses.type` o la regla es decorativa. */}
-                <select
-                  id="tipo"
-                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <Select
                   value={borrador.target_name || ''}
-                  onChange={e => setBorrador({ ...borrador, target_name: e.target.value })}
+                  onValueChange={v => setBorrador({ ...borrador, target_name: v })}
                 >
-                  <option value="">Elige uno…</option>
-                  {BUSINESS_TYPE_OPTIONS.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="tipo" className="mt-1 w-full"><SelectValue placeholder="Elige uno…" /></SelectTrigger>
+                  <SelectContent>
+                    {BUSINESS_TYPE_OPTIONS.map(t => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Se aplica a todos los locales de ese tipo. Un negocio concreto
                   puede llevar su propia regla y gana sobre esta.
@@ -408,22 +413,23 @@ export default function Finance() {
 
             <div>
               <Label htmlFor="estrategia">Cómo cobra</Label>
-              <select
-                id="estrategia"
-                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <Select
                 value={borrador.strategy}
-                onChange={e => setBorrador({
+                onValueChange={v => setBorrador({
                   ...borrador,
-                  strategy: e.target.value as PricingRule['strategy'],
-                  percentage: e.target.value === 'percentage' ? 10 : null,
-                  fixed_amount: e.target.value === 'fixed' ? 0.5 : null,
-                  tiers: e.target.value === 'tiered' ? [{ up_to: 10, amount: 0.5 }, { up_to: null, amount: 1.5 }] : null,
+                  strategy: v as PricingRule['strategy'],
+                  percentage: v === 'percentage' ? 10 : null,
+                  fixed_amount: v === 'fixed' ? 0.5 : null,
+                  tiers: v === 'tiered' ? [{ up_to: 10, amount: 0.5 }, { up_to: null, amount: 1.5 }] : null,
                 })}
               >
-                <option value="percentage">Porcentaje</option>
-                <option value="fixed">Monto fijo</option>
-                <option value="tiered">Por tramos</option>
-              </select>
+                <SelectTrigger id="estrategia" className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percentage">Porcentaje</SelectItem>
+                  <SelectItem value="fixed">Monto fijo</SelectItem>
+                  <SelectItem value="tiered">Por tramos</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {borrador.strategy === 'percentage' && (
