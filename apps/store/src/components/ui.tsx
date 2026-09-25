@@ -416,6 +416,14 @@ function FotoCargable({ fuente, alto, nombre }: {
  * (`vz-boot`, `vz-logo`, `vz-t`, `vz-s`): así los tres relevos —HTML → App →
  * FoodStore— son invisibles y no cuesta ni un byte de CSS nuevo. Si cambia el
  * texto o el logo, hay que cambiarlo también allí.
+ *
+ * ⚠️ Icono de línea sobre el tinte lima de Umbani, no el emoji 🛍️
+ * (2026-09-25). Todas las demás pantallas llevan su sello así —un icono en un
+ * recuadro con tinte—, y el emoji era la única imagen de la app que no seguía
+ * el diseño: cambia de dibujo según el teléfono. El tamaño se queda, que fue
+ * la decisión del 2026-09-06. En el `index.html` el trazo va con un decimal:
+ * los comentarios y los bytes de ese archivo SÍ llegan al teléfono, y la
+ * tienda tiene presupuesto de tamaño.
  */
 export const Bienvenida = () => (
   <div className="vz-boot">
