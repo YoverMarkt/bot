@@ -15,6 +15,7 @@ import { Textarea } from '@botpanel/ui/components/textarea'
 import { Label } from '@botpanel/ui/components/label'
 import { Badge } from '@botpanel/ui/components/badge'
 import { Checkbox } from '@botpanel/ui/components/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@botpanel/ui/components/collapsible'
 import { ConfirmAction } from '@botpanel/ui/components/confirm-action'
 import { QueryError } from '@botpanel/ui/components/query-error'
 import { Skeleton } from '@botpanel/ui/components/skeleton'
@@ -421,12 +422,15 @@ export default function OptionsManager({
     const desplegado = abierto[grupo.id]
     return (
           <Card key={grupo.id} className="overflow-hidden">
+            {/* `contents`: la raíz del desplegable no pinta caja propia, así la
+                cabecera y el cuerpo siguen siendo hijos directos de la tarjeta. */}
+            <Collapsible
+              className="contents"
+              open={Boolean(desplegado)}
+              onOpenChange={abrir => setAbierto({ ...abierto, [grupo.id]: abrir })}
+            >
             <div className="flex flex-wrap items-start justify-between gap-3 p-4">
-              <button
-                type="button"
-                onClick={() => setAbierto({ ...abierto, [grupo.id]: !desplegado })}
-                className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
-              >
+              <CollapsibleTrigger className="flex min-w-0 flex-1 items-start gap-2.5 text-left">
                 {desplegado
                   ? <ChevronDown className="mt-0.5 size-4 shrink-0" />
                   : <ChevronRight className="mt-0.5 size-4 shrink-0" />}
@@ -445,7 +449,7 @@ export default function OptionsManager({
                     {!suyas.length && ' — sin opciones, tu cliente no lo ve'}
                   </span>
                 </span>
-              </button>
+              </CollapsibleTrigger>
               <div className="flex shrink-0 items-center gap-1.5">
                 {/* El orden decide cómo se lee el plato: en la ficha del
                     cliente, en el carrito, en el pedido y en su WhatsApp. */}
@@ -477,8 +481,7 @@ export default function OptionsManager({
               </div>
             </div>
 
-            {desplegado && (
-              <div className="border-t bg-muted/30 p-4">
+              <CollapsibleContent className="border-t bg-muted/30 p-4">
                 <div className="space-y-2">
                   {suyas.map((opcion, puesto) => (
                     <div
@@ -556,8 +559,8 @@ export default function OptionsManager({
                 >
                   <Plus className="mr-1.5 size-3.5" /> Agregar opción
                 </Button>
-              </div>
-            )}
+              </CollapsibleContent>
+            </Collapsible>
           </Card>
     )
   }
@@ -619,25 +622,21 @@ export default function OptionsManager({
             mezclarlo con lo vivo es lo que hacía imposible saber qué estaba
             en pie. Aquí se ve, se dice por qué no cuenta, y se puede borrar. */}
         {ocultos.length > 0 && (
+          <Collapsible asChild open={verOcultos} onOpenChange={setVerOcultos}>
           <section className="space-y-3">
-            <button
-              type="button"
-              onClick={() => setVerOcultos(!verOcultos)}
-              className="flex w-full items-center gap-2 border-b pb-2 text-left"
-            >
+            <CollapsibleTrigger className="flex w-full items-center gap-2 border-b pb-2 text-left">
               {verOcultos ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
               <span className="font-semibold">Tu cliente no ve estos</span>
               <Badge variant="outline">{ocultos.length}</Badge>
               <span className="text-sm text-muted-foreground">
                 — apagados o sin opciones dentro
               </span>
-            </button>
-            {verOcultos && (
-              <div className="space-y-3">
-                {ocultos.map((grupo, indice) => tarjetaGrupo(grupo, indice, ocultos, true))}
-              </div>
-            )}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3">
+              {ocultos.map((grupo, indice) => tarjetaGrupo(grupo, indice, ocultos, true))}
+            </CollapsibleContent>
           </section>
+          </Collapsible>
         )}
       </div>
 
@@ -665,12 +664,13 @@ export default function OptionsManager({
             const desplegada = abierto[clave]
             return (
               <Card key={plantilla.id} className="overflow-hidden">
+                <Collapsible
+                  className="contents"
+                  open={Boolean(desplegada)}
+                  onOpenChange={abrir => setAbierto({ ...abierto, [clave]: abrir })}
+                >
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3">
-                  <button
-                    type="button"
-                    onClick={() => setAbierto({ ...abierto, [clave]: !desplegada })}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
+                  <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-2 text-left">
                     {desplegada
                       ? <ChevronDown className="size-4 shrink-0" />
                       : <ChevronRight className="size-4 shrink-0" />}
@@ -681,7 +681,7 @@ export default function OptionsManager({
                         ? `usada en ${plantilla.used_by_groups} grupo${plantilla.used_by_groups > 1 ? 's' : ''}`
                         : 'sin usar todavía'}
                     </span>
-                  </button>
+                  </CollapsibleTrigger>
                   <ConfirmAction
                     title="¿Eliminar esta plantilla?"
                     description={plantilla.used_by_groups
@@ -699,8 +699,7 @@ export default function OptionsManager({
                     pero no meterle un solo sabor: las funciones estaban en la
                     API y ninguna pantalla las llamaba. Lo que se agrega aquí lo
                     copia la base a todos los grupos que usan la plantilla. */}
-                {desplegada && (
-                  <div className="border-t bg-muted/30 p-3">
+                  <CollapsibleContent className="border-t bg-muted/30 p-3">
                     <div className="space-y-2">
                       {suyos.map(item => (
                         <div
@@ -756,8 +755,8 @@ export default function OptionsManager({
                     >
                       <Plus className="mr-1.5 size-3.5" /> Agregar opción
                     </Button>
-                  </div>
-                )}
+                  </CollapsibleContent>
+                </Collapsible>
               </Card>
             )
           })}

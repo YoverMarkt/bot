@@ -390,20 +390,18 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
                     const elegido = cajones.includes(cajon.code)
                     const principal = cajones[0] === cajon.code
                     return (
-                      <button
+                      <Button
                         key={cajon.code}
                         type="button"
+                        size="sm"
+                        variant={elegido ? 'default' : 'outline'}
                         aria-pressed={elegido}
                         onClick={() => alternarCajon(cajon.code)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                          elegido
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border/70 text-muted-foreground hover:border-primary/50'
-                        }`}
+                        className={`gap-0 rounded-full text-xs ${elegido ? '' : 'text-muted-foreground'}`}
                       >
                         {cajon.emoji ? `${cajon.emoji} ` : ''}{cajon.label}
                         {principal && ' · principal'}
-                      </button>
+                      </Button>
                     )
                   })}
                 </div>
