@@ -1070,6 +1070,16 @@ create table if not exists public.order_events (
   from_status text,
   to_status   text not null,
   note        text,
+  -- Quién lo hizo, cuando se sabe. Nulo para lo que mueve el sistema.
+  -- ⚠️ Foránea COMPUESTA más abajo, como `prepared_by`.
+  created_by  uuid,
+  -- ⚠️ Si el evento es de una LÍNEA (marcarla preparada) y no del pedido
+  -- entero. El seguimiento del CLIENTE los filtra: la cocina no se le enseña.
+  --
+  -- ⚠️ Sin `references` AQUÍ: `order_items` se crea MÁS ABAJO y un esquema
+  -- aplicado desde cero fallaría. La clave foránea se añade después de esa
+  -- tabla, con un `alter`.
+  order_item_id uuid,
   created_at  timestamptz not null default now(),
   constraint order_events_datos_check check (
     char_length(btrim(to_status)) between 1 and 40
@@ -1108,8 +1118,25 @@ create table if not exists order_items (
   quantity     int not null default 1 check (quantity > 0),
   unit_price   numeric(10,2) not null default 0,
   line_total   numeric(10,2) not null default 0,
+  -- ── LA CHECKLIST DE PREPARACIÓN (2026-09-24) ────────────────────────────
+  -- Nula = todavía no está en la bolsa. Es una FECHA y no un estado porque
+  -- «agregado» y «confirmado» son el mismo instante: el empleado la mete y la
+  -- tilda. Dos toques para lo mismo, en una cocina con prisa, es un toque que
+  -- nadie da. Y guardando cuándo y quién, la línea de tiempo sale sola.
+  prepared_at  timestamptz,
+  -- ⚠️ Sin `references` aquí: la foránea es COMPUESTA con `business_id` y se
+  -- ata más abajo, donde ya existe `uq_client_users_id_business`.
+  prepared_by  uuid,
   created_at   timestamptz default now()
 );
+
+-- Para el candado de `set_order_status`: encontrar rápido si falta algo.
+create index if not exists idx_order_items_pendientes
+  on public.order_items (order_id)
+  where prepared_at is null;
+
+-- La clave foránea que no cabía en `order_events`: esa tabla se declara ANTES
+-- que esta, así que su `order_item_id` se ata aquí.
 
 -- ── TABLA 17: Inbox durable de webhooks ───────────────────
 -- Conserva el payload normalizado solo mientras esta pendiente, en proceso o
@@ -5592,6 +5619,25 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.order_events'::regclass
+      and conname = 'fk_order_events_linea'
+  ) then
+    -- ⚠️ COMPUESTA, con `business_id`. Una foránea a `order_items(id)` a secas
+    -- deja abierta la frontera entre negocios: un evento del local A podría
+    -- apuntar a una línea del local B. La RPC ya comprueba pertenencia, pero
+    -- eso es una promesa del código; esto lo hace IMPOSIBLE en la base. Mismo
+    -- patrón que `product_variants`, y lo exige `verificar-fronteras.sql`.
+    alter table public.order_events
+      add constraint fk_order_events_linea
+      foreign key (order_item_id, business_id)
+      references public.order_items (id, business_id) on delete cascade;
+  end if;
+end $$;
+
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- LAS PLANTILLAS DE OPCIONES FUNCIONAN (2026-09-16)
@@ -8086,6 +8132,89 @@ $$;
 -- (migration-2026-08-08-flujo-del-pedido.sql)
 -- ════════════════════════════════════════════════════════════════════════
 
+-- ── MARCAR UNA LÍNEA COMO PREPARADA (2026-09-24) ──────────────────────────
+--
+-- La checklist que impide que un pedido salga incompleto. Idempotente: en una
+-- cocina se toca dos veces por nervio, y un doble toque no puede dejar dos
+-- eventos ni cambiar quién la marcó.
+create or replace function public.marcar_linea_preparada(
+  p_business_id uuid,
+  p_order_id    uuid,
+  p_item_id     uuid,
+  p_user_id     uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_item   public.order_items%rowtype;
+  v_estado text;
+  v_faltan integer;
+begin
+  select status into v_estado
+  from public.orders
+  where id = p_order_id and business_id = p_business_id;
+  if not found then
+    raise exception using errcode = '42501', message = 'El pedido no pertenece a este negocio';
+  end if;
+
+  -- Un pedido cerrado no se re-prepara: rompería la trazabilidad de lo que de
+  -- verdad pasó. Se avisa en vez de escribir.
+  if v_estado in ('completado', 'cancelado', 'rechazado', 'expirado') then
+    return jsonb_build_object('result', 'cerrado', 'status', v_estado);
+  end if;
+
+  select * into v_item
+  from public.order_items
+  where id = p_item_id and order_id = p_order_id and business_id = p_business_id
+  for update;
+  if not found then
+    raise exception using errcode = '42501', message = 'Esa línea no es de este pedido';
+  end if;
+
+  if v_item.prepared_at is null then
+    update public.order_items
+       set prepared_at = now(),
+           prepared_by = p_user_id
+     where id = p_item_id;
+
+    insert into public.order_events (
+      business_id, order_id, from_status, to_status, note, created_by, order_item_id
+    ) values (
+      p_business_id, p_order_id, v_estado, 'producto_agregado',
+      left(v_item.product_name || ' x' || v_item.quantity, 300),
+      p_user_id, p_item_id
+    );
+  end if;
+
+  select count(*) into v_faltan
+  from public.order_items
+  where order_id = p_order_id and prepared_at is null;
+
+  -- Cuando cae la última, se apunta que el pedido está completo: es el hito
+  -- que el dueño busca en la línea de tiempo.
+  if v_faltan = 0 and v_item.prepared_at is null then
+    insert into public.order_events (
+      business_id, order_id, from_status, to_status, created_by
+    ) values (p_business_id, p_order_id, v_estado, 'pedido_completo', p_user_id);
+  end if;
+
+  return jsonb_build_object(
+    'result', 'ok',
+    'faltan', v_faltan,
+    'total', (select count(*) from public.order_items where order_id = p_order_id)
+  );
+end;
+$$;
+
+revoke all on function public.marcar_linea_preparada(uuid, uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.marcar_linea_preparada(uuid, uuid, uuid, uuid)
+  to service_role;
+
+
 create or replace function public.set_order_status(
   p_business_id uuid,
   p_order_id uuid,
@@ -8099,6 +8228,8 @@ as $$
 declare
   v_order public.orders%rowtype;
   v_anterior text;
+  -- Lo que falta por meter en la bolsa, ya con nombre y cantidad.
+  v_faltan text;
 begin
   if p_status not in (
     'pendiente', 'esperando_pago', 'pago_en_revision', 'confirmado', 'aceptado',
@@ -8134,6 +8265,33 @@ begin
   if p_status = 'listo_para_retiro'
      and coalesce(v_order.fulfillment, 'delivery') = 'delivery' then
     return jsonb_build_object('result', 'not_pickable', 'order', to_jsonb(v_order));
+  end if;
+
+  -- ── EL CANDADO: NINGÚN PEDIDO SALE INCOMPLETO ──────────────────────────
+  --
+  -- ⚠️ EN LAS DOS SALIDAS, y esto corrige el encargo. El prompt pedía bloquear
+  -- solo `listo_para_recoger`; aquí ese estado es `listo_para_retiro` y SOLO
+  -- vale para quien pasa a recoger. Un pedido a domicilio sale por `en_camino`.
+  --
+  -- Medido en producción: 69 pedidos a domicilio contra 3 de retiro. Bloquear
+  -- solo el retiro habría protegido 3 de 72, y habría dejado fuera justo el
+  -- caso que motivó todo: la bolsa que se va en la moto sin la gaseosa.
+  --
+  -- ⚠️ Vive AQUÍ y no en el panel porque esta es la única puerta que cambia el
+  -- estado de un pedido: así no se salta recargando ni desde el navegador.
+  if p_status in ('en_camino', 'listo_para_retiro') then
+    select string_agg(product_name || ' x' || quantity, ', ' order by created_at)
+    into v_faltan
+    from public.order_items
+    where order_id = p_order_id and prepared_at is null;
+
+    if v_faltan is not null then
+      return jsonb_build_object(
+        'result', 'incompleto',
+        'faltan', v_faltan,
+        'order', to_jsonb(v_order)
+      );
+    end if;
   end if;
 
   -- El pedido avanza; nunca retrocede. `completado`, `cancelado`, `rechazado`
@@ -13678,6 +13836,31 @@ alter table public.payment_receipt_audit_logs
 alter table public.payment_receipt_audit_logs
   add constraint payment_receipt_audit_logs_usuario_del_negocio_fkey
   foreign key (user_id, business_id)
+  references public.client_users (id, business_id) on delete set null;
+
+-- ── Quién preparó cada línea, y quién movió cada evento (2026-09-24) ───────
+--
+-- ⚠️ COMPUESTAS con `business_id`, y no por gusto: con una foránea de una sola
+-- columna, una línea del local A podría decir que la preparó un empleado del
+-- local B. Lo cazó `verificar-fronteras.sql` al escribir esto — que es
+-- exactamente para lo que se construyó ese guardián.
+--
+-- `set null` para no perder la trazabilidad si ese empleado se borra: lo que
+-- hizo sigue escrito, solo deja de tener nombre.
+alter table public.order_items
+  drop constraint if exists order_items_prepared_by_fkey,
+  drop constraint if exists fk_order_items_preparado_por;
+alter table public.order_items
+  add constraint fk_order_items_preparado_por
+  foreign key (prepared_by, business_id)
+  references public.client_users (id, business_id) on delete set null;
+
+alter table public.order_events
+  drop constraint if exists order_events_created_by_fkey,
+  drop constraint if exists fk_order_events_hecho_por;
+alter table public.order_events
+  add constraint fk_order_events_hecho_por
+  foreign key (created_by, business_id)
   references public.client_users (id, business_id) on delete set null;
 
 -- ── 4. Registrar un comprobante y buscar si ya se usó ────────────────

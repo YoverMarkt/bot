@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express'
-import { getClientBusinessId } from '../lib/request'
+import { getClientBusinessId, getClientUserId } from '../lib/request'
 import { createRouter } from '../middleware/async'
 import { signedMediaUrl } from '../integrations/cloudinary'
 import {
@@ -68,6 +68,12 @@ interface ModuloDb {
     businessId: string,
     orderId: string,
   ): Promise<{ id: string; status: string; payment_confirmed_at: string } | null>
+  markOrderItemPrepared(
+    businessId: string,
+    orderId: string,
+    itemId: string,
+    userId: string | null,
+  ): Promise<{ result: string; faltan?: number; total?: number; status?: string }>
   claimOrderNotification(
     businessId: string,
     orderId: string,
@@ -212,6 +218,54 @@ router.get(
 //
 // El precio NO viaja: se mandan ids y cantidades y la RPC resuelve cada
 // importe del catálogo (regla inviolable #8).
+// ── LA CHECKLIST: marcar una línea como metida en la bolsa ─────────────────
+//
+// El caso del dueño: «el cliente pide hamburguesa, papas y gaseosa; el
+// empleado mete las dos primeras, olvida la gaseosa y el pedido sale
+// incompleto».
+//
+// ⚠️ Esta ruta NO decide nada: la comprobación de que el pedido y la línea son
+// de ESTE negocio vive en `marcar_linea_preparada`, en PostgreSQL. Aquí solo
+// se pasa quién lo hizo, para que la línea de tiempo lo pueda decir.
+//
+// ⚠️ Y el CANDADO tampoco está aquí: vive en `set_order_status`, que es la
+// única puerta que mueve un pedido de estado. Ponerlo en el panel dejaría la
+// puerta abierta desde el navegador.
+router.post(
+  '/api/client/orders/:id/items/:itemId/prepared',
+  auth.authClient,
+  auth.requirePermission('ventas'),
+  async (req, res) => {
+    const businessId = getClientBusinessId(req)
+    const orderId = String(req.params.id || '').trim()
+    const itemId = String(req.params.itemId || '').trim()
+    if (!orderId || !itemId) {
+      return res.status(400).json({ error: 'Falta el pedido o la línea' })
+    }
+    try {
+      const estado = await db.markOrderItemPrepared(
+        businessId, orderId, itemId, getClientUserId(req),
+      )
+      if (estado?.result === 'cerrado') {
+        return res.status(409).json({
+          error: 'Este pedido ya está cerrado y no se puede volver a preparar',
+        })
+      }
+      return res.json(estado)
+    } catch (error) {
+      const mensaje = (error as Error).message || ''
+      // 42501 lo lanza la base cuando el pedido o la línea no son de este
+      // negocio. Se responde 404 y no 403: distinguirlos diría si ese id
+      // existe en otro local.
+      if (/no pertenece|no es de este pedido/i.test(mensaje)) {
+        return res.status(404).json({ error: 'No encontramos esa línea' })
+      }
+      console.error('❌ marcar línea preparada:', mensaje)
+      return res.status(500).json({ error: 'No pudimos marcar ese producto' })
+    }
+  },
+)
+
 router.post(
   '/api/client/orders',
   auth.authClient,

@@ -37,6 +37,14 @@ export type GrupoElegido = {
 }
 
 export type OrderItem = {
+  /**
+   * El id de la LÍNEA, no del producto.
+   *
+   * ⚠️ Hacía falta declararlo para la checklist: es lo que se manda al marcar
+   * que ya está en la bolsa. El servidor siempre lo mandó (`select('*')`),
+   * solo que nadie lo usaba y la lista se pintaba por índice.
+   */
+  id: string
   product_id: string | null
   product_name: string
   variant_name?: string | null
@@ -48,6 +56,13 @@ export type OrderItem = {
   quantity: number
   unit_price: number | string
   line_total: number | string
+  /**
+   * Cuándo se metió esta línea en la bolsa. Nula = todavía pendiente.
+   *
+   * ⚠️ Es una FECHA y no un estado porque «agregado» y «confirmado» son el
+   * mismo instante: el empleado la mete y la tilda.
+   */
+  prepared_at?: string | null
 }
 
 export type Order = {
@@ -340,3 +355,15 @@ export const siguientePaso = (pedido: Order): {
   }
   return null
 }
+
+/**
+ * Marca una línea como metida en la bolsa.
+ *
+ * ⚠️ Quien decide es PostgreSQL: comprueba que la línea sea de este negocio y
+ * es idempotente, porque en una cocina se toca dos veces por nervio.
+ */
+export const marcarLineaPreparada = (orderId: string, itemId: string) =>
+  api<{ result: string; faltan: number; total: number }>(
+    `/api/client/orders/${orderId}/items/${itemId}/prepared`,
+    { method: 'POST' },
+  )
