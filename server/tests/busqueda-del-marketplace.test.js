@@ -282,7 +282,7 @@ describe('la búsqueda, conectada al flujo', () => {
 
     expect(database.searchMarketplaceBusinesses).toHaveBeenCalledWith('quiero ceviche', 9)
     const texto = enviados.map(e => e.reply).join('\n')
-    expect(texto).not.toContain('no lo pude entender')
+    expect(texto).not.toContain('no te puedo ayudar por aquí')
     // El local va en las OPCIONES: en WhatsApp es una fila de la lista, no
     // texto del mensaje.
     expect(enviados.flatMap(e => e.options)).toContain('El Puerto')
@@ -317,7 +317,7 @@ describe('la búsqueda, conectada al flujo', () => {
     await escribir(deps, 'hola')
     enviados.length = 0
     await escribir(deps, 'quiero sushi de wagyu')
-    expect(enviados.map(e => e.reply).join('')).toContain('no lo pude entender')
+    expect(enviados.map(e => e.reply).join('')).toContain('no te puedo ayudar por aquí')
   })
 
   // La búsqueda es una MEJORA sobre «no te entendí»: un fallo suyo no puede
@@ -329,7 +329,7 @@ describe('la búsqueda, conectada al flujo', () => {
     await escribir(deps, 'hola')
     enviados.length = 0
     await escribir(deps, 'quiero ceviche')
-    expect(enviados.map(e => e.reply).join('')).toContain('no lo pude entender')
+    expect(enviados.map(e => e.reply).join('')).toContain('no te puedo ayudar por aquí')
   })
 
   // Dentro de un local el ámbito es ese local: traerle el ceviche de otro
@@ -399,7 +399,7 @@ describe('la búsqueda, conectada al flujo', () => {
       // Y no se queda callado: se le nombra lo que mandó y se le repiten las
       // categorías, que es lo que sí puede tocar.
       const texto = enviados.map(e => e.reply).join('\n')
-      expect(texto).not.toContain('no lo pude entender')
+      expect(texto).not.toContain('no te puedo ayudar por aquí')
       expect(enviados.flatMap(e => e.options)).toContain('🍕 Pizzerías')
     }
   })
@@ -439,7 +439,7 @@ describe('cuando se entiende y SÍ hay locales', () => {
 
     const texto = enviados.map(e => e.reply).join('\n')
     expect(texto).not.toContain('Todavía no tenemos')
-    expect(texto).not.toContain('no lo pude entender')
+    expect(texto).not.toContain('no te puedo ayudar por aquí')
     // Se dice lo que se entendió, en una línea y sin regañar.
     expect(texto).toContain('Pizzerías')
     // Y se le enseña el local de verdad, que es a lo que venía.
@@ -469,7 +469,7 @@ describe('cuando se entiende pero no hay locales', () => {
     await escribir(deps, 'quiero pollo asado')
 
     const texto = enviados.map(e => e.reply).join('\n')
-    expect(texto).not.toContain('no lo pude entender')
+    expect(texto).not.toContain('no te puedo ayudar por aquí')
     expect(texto).toContain('Asados y parrilladas')
     // No es una calle sin salida: se le enseña lo que sí puede pedir.
     expect(enviados.flatMap(e => e.options)).toContain('🍕 Pizzerías')
@@ -482,7 +482,7 @@ describe('cuando se entiende pero no hay locales', () => {
     await escribir(deps, 'hola')
     enviados.length = 0
     await escribir(deps, 'asdfghjkl')
-    expect(enviados.map(e => e.reply).join('')).toContain('no lo pude entender')
+    expect(enviados.map(e => e.reply).join('')).toContain('no te puedo ayudar por aquí')
   })
 
   // Primero se busca de verdad: si hay locales, se enseñan. Este mensaje es
@@ -507,6 +507,6 @@ describe('cuando se entiende pero no hay locales', () => {
     await escribir(m.deps, 'hola')
     m.enviados.length = 0
     await escribir(m.deps, 'quiero pollo')
-    expect(m.enviados.map(e => e.reply).join('')).toContain('no lo pude entender')
+    expect(m.enviados.map(e => e.reply).join('')).toContain('no te puedo ayudar por aquí')
   })
 })
