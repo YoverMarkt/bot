@@ -10,6 +10,12 @@ export default defineConfig({
       SUPABASE_SERVICE_KEY: 'clave-sintetica-solo-para-tests',
       JWT_SECRET: 'secreto-sintetico-solo-para-tests-de-vitest',
     },
+    // Espera lo que el código lanzó sin esperar antes de dar la prueba por
+    // cerrada. Era la causa del CI rojo una de cada cuatro veces
+    // (`EnvironmentTeardownError`). ⚠️ `silent` y `pool: 'threads'` se
+    // midieron antes y NO lo arreglaban: el problema no era la consola ni el
+    // transporte, era trabajo suelto. Ver `tests/setup-segundo-plano.js`.
+    setupFiles: ['./tests/setup-segundo-plano.js'],
     coverage: {
       provider: 'v8',
       // Se mide `dist/`, no `src/`, porque es lo que las pruebas cargan de
