@@ -112,3 +112,63 @@ describe('los paneles usan los controles del sistema', () => {
     expect(pillados).toEqual([])
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NINGÚN CAMPO DE CONTRASEÑA SE DEJA AL AUTORRELLENO DEL NAVEGADOR
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 2026-09-24. Sin `autoComplete`, el navegador trata cualquier correo +
+// contraseña como un inicio de sesión y los rellena con una cuenta guardada.
+// En el alta de un local metió `demo@umbani.local` —el acceso de otro
+// negocio— y el dueño repitió el alta cinco veces sin saber por qué. Y el
+// riesgo de verdad era peor: la contraseña del SUPERADMIN acabando en la cuenta
+// de un dueño nuevo, o pegada encima de la clave de OpenAI en Configuración.
+//
+// La regla: `current-password` solo donde se inicia sesión; en todo lo demás
+// (cuentas nuevas, claves de servicios) `new-password`, que el navegador
+// entiende como «no rellenes con lo guardado».
+
+const INICIOS_DE_SESION = /features\/auth\/Login\.tsx$/
+
+function contrasenasSinDeclarar(archivo, lineas) {
+  const comentarios = lineasDeComentario(lineas)
+  const esperado = INICIOS_DE_SESION.test(archivo) ? 'current-password' : 'new-password'
+  const pillados = []
+  lineas.forEach((linea, i) => {
+    if (comentarios.has(i) || !/type="password"/.test(linea)) return
+    // La etiqueta puede abrirse unas líneas antes del `type`: se busca su `<`.
+    let inicio = i
+    while (inicio > Math.max(0, i - 5) && !/<(Input|input)\b/.test(lineas[inicio])) inicio--
+    const etiqueta = etiquetaDesde(lineas, inicio)
+    if (!etiqueta.includes(`autoComplete="${esperado}"`)) pillados.push({ linea: i, esperado })
+  })
+  return pillados
+}
+
+describe('los campos de contraseña declaran qué son', () => {
+  it('ninguno queda al autorrelleno del navegador', () => {
+    const culpables = []
+    for (const carpeta of CARPETAS) {
+      for (const archivo of fuentes(carpeta)) {
+        const lineas = readFileSync(path.join(raiz, archivo), 'utf8').split('\n')
+        for (const { linea, esperado } of contrasenasSinDeclarar(archivo, lineas)) {
+          culpables.push(`${archivo}:${linea + 1} → falta autoComplete="${esperado}"`)
+        }
+      }
+    }
+    expect(culpables, `El navegador los rellenaría con una cuenta guardada:\n${culpables.join('\n')}`)
+      .toEqual([])
+  })
+
+  it('caza el campo sin declarar y distingue el inicio de sesión', () => {
+    const sinDeclarar = ['<Input id="clave" type="password" value={clave} />']
+    // Y la etiqueta partida en varias líneas se lee entera.
+    const partida = ['<div>', '  <Input', '    id="clave"', '    type="password"', '    autoComplete="new-password"', '  />']
+    expect(contrasenasSinDeclarar('apps/admin/src/features/settings/X.tsx', partida)).toHaveLength(0)
+    expect(contrasenasSinDeclarar('apps/admin/src/features/settings/X.tsx', sinDeclarar)).toHaveLength(1)
+    // En un alta, `current-password` es justo lo que invita a rellenar.
+    const comoLogin = ['<Input type="password" autoComplete="current-password" />']
+    expect(contrasenasSinDeclarar('apps/admin/src/features/clients/Alta.tsx', comoLogin)).toHaveLength(1)
+    expect(contrasenasSinDeclarar('apps/admin/src/features/auth/Login.tsx', comoLogin)).toHaveLength(0)
+  })
+})

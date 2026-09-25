@@ -749,8 +749,8 @@ export function Team() {
         <h2 className="font-semibold text-foreground mb-3">+ Nuevo empleado</h2>
         <div className="space-y-3">
           <div><Label htmlFor="team-new-name">Nombre</Label><Input id="team-new-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-          <div><Label htmlFor="team-new-email">Correo *</Label><Input id="team-new-email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-          <div><Label htmlFor="team-new-password">Contraseña * (mínimo 12 caracteres)</Label><Input id="team-new-password" type="password" minLength={12} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+          <div><Label htmlFor="team-new-email">Correo *</Label><Input id="team-new-email" type="email" autoComplete="off" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          <div><Label htmlFor="team-new-password">Contraseña * (mínimo 12 caracteres)</Label><Input id="team-new-password" type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
           <div role="group" aria-labelledby="team-new-permissions-label">
             <p id="team-new-permissions-label" className="mb-2 flex items-center gap-2 text-sm leading-none font-medium text-foreground select-none">Permisos (qué secciones puede ver)</p>
             <div className="flex flex-wrap gap-2 mt-1">

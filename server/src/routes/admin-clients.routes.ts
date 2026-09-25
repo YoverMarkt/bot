@@ -48,6 +48,7 @@ import { recordError } from '../services/error-log'
 import { validarCarta } from '../services/carta-del-local'
 import { prepTimeForBusinessType, templateForBusinessType } from '../services/business-templates'
 import { slugLibre } from '../lib/slug'
+import { esCorreoRepetido } from '../lib/duplicados'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
 import { normalizeChannelIdentifier } from '../types/channels'
 
@@ -429,6 +430,11 @@ function duplicateChannelMessage(error: unknown): string | null {
   }
   if (/businesses_slug_key|\bslug\b/i.test(error.message)) {
     return 'Ese identificador (slug) ya lo usa otro negocio. Elige uno distinto.'
+  }
+  // ⚠️ Decir CUÁL: con «ese dato» a secas el dueño repitió el alta cinco
+  // veces sin saber que era el correo (ver lib/duplicados).
+  if (esCorreoRepetido(error)) {
+    return 'Ese correo ya es el acceso al panel de otro negocio. Usa otro correo para este dueño.'
   }
   return 'Ese dato ya está registrado en otro negocio y debe ser único.'
 }

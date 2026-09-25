@@ -137,7 +137,7 @@ export default function ServerSettings() {
           </div>
           <div>
             <Label htmlFor="server-ai-api-key">{aiField.label} {saved[aiField.key] && <em className="text-muted-foreground not-italic">— guardada: {saved[aiField.key]}</em>}</Label>
-            <Input id="server-ai-api-key" type="password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
+            <Input id="server-ai-api-key" type="password" autoComplete="new-password" value={val(aiField.key)} onChange={set(aiField.key)} placeholder={saved[aiField.key] || aiField.ph} />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
@@ -196,7 +196,7 @@ export default function ServerSettings() {
           <div><Label htmlFor="server-cloudinary-api-key">API Key</Label>
             <Input id="server-cloudinary-api-key" value={val('cloudinary_api_key')} onChange={set('cloudinary_api_key')} placeholder={saved.cloudinary_api_key || '123456789012345'} /></div>
           <div><Label htmlFor="server-cloudinary-api-secret">API Secret</Label>
-            <Input id="server-cloudinary-api-secret" type="password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
+            <Input id="server-cloudinary-api-secret" type="password" autoComplete="new-password" value={val('cloudinary_api_secret')} onChange={set('cloudinary_api_secret')} placeholder={saved.cloudinary_api_secret || '••••••••'} /></div>
         </div>
         <div className="flex items-center gap-3 mt-3">
           <Button variant="outline" size="sm" onClick={verifyCloudinary} ><span className="inline-flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Verificar conexión</span></Button>
@@ -220,7 +220,7 @@ export default function ServerSettings() {
           </div>
           <div>
             <Label htmlFor="server-platform-api-key">YCloud API Key {saved.platform_ycloud_api_key && <em className="text-muted-foreground not-italic">— guardada</em>}</Label>
-            <Input id="server-platform-api-key" type="password" value={val('platform_ycloud_api_key')} onChange={set('platform_ycloud_api_key')} placeholder={saved.platform_ycloud_api_key || 'Escribe solo para reemplazarla'} />
+            <Input id="server-platform-api-key" type="password" autoComplete="new-password" value={val('platform_ycloud_api_key')} onChange={set('platform_ycloud_api_key')} placeholder={saved.platform_ycloud_api_key || 'Escribe solo para reemplazarla'} />
           </div>
           <div>
             <Label htmlFor="server-platform-endpoint">Webhook Endpoint ID</Label>
@@ -228,7 +228,7 @@ export default function ServerSettings() {
           </div>
           <div>
             <Label htmlFor="server-platform-secret">Webhook Signing Secret {saved.platform_webhook_secret && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
-            <Input id="server-platform-secret" type="password" value={val('platform_webhook_secret')} onChange={set('platform_webhook_secret')} placeholder={saved.platform_webhook_secret || 'whsec_…'} />
+            <Input id="server-platform-secret" type="password" autoComplete="new-password" value={val('platform_webhook_secret')} onChange={set('platform_webhook_secret')} placeholder={saved.platform_webhook_secret || 'whsec_…'} />
           </div>
         </div>
         <div className="flex items-center gap-3 mt-3">
@@ -252,7 +252,7 @@ export default function ServerSettings() {
         <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Plug className="w-4 h-4" /> Otras conexiones</h2>
         <div>
           <div><Label htmlFor="server-telegram-token">Telegram Bot Token (global) {saved.telegram_bot_token && <em className="text-muted-foreground not-italic">— guardado</em>}</Label>
-            <Input id="server-telegram-token" type="password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
+            <Input id="server-telegram-token" type="password" autoComplete="new-password" value={val('telegram_bot_token')} onChange={set('telegram_bot_token')} placeholder={saved.telegram_bot_token || '1234567890:ABC…'} /></div>
         </div>
       </Card>
 

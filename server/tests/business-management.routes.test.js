@@ -157,6 +157,47 @@ describe('onboarding y equipo del negocio', () => {
     })
   })
 
+  // ⚠️ 2026-09-24. El correo del panel es único en toda la plataforma. Antes
+  // al crear llegaba el error crudo de PostgreSQL, en inglés; y al EDITAR la
+  // ruta ignoraba el error y decía «ok» sin haber guardado nada.
+  describe('un correo que ya tiene cuenta', () => {
+    const repetido = {
+      message: 'duplicate key value violates unique constraint "client_users_email_key"',
+      code: '23505',
+    }
+
+    it('al crear un empleado lo dice en claro, sin el error de la base', async () => {
+      vi.spyOn(bcrypt, 'hash').mockResolvedValue('hash')
+      vi.spyOn(db, 'createClientUser').mockResolvedValue({ data: null, error: repetido })
+
+      const respuesta = await dispatch('post', '/api/client/users', {
+        auth: authorization(),
+        body: { email: 'dueno@example.com', password: 'clave-segura-12' },
+      })
+
+      expect(respuesta.status).toBe(409)
+      expect(respuesta.body.error).toBe(
+        'Ese correo ya tiene una cuenta en Umbani. Usa otro correo para este empleado.',
+      )
+      expect(JSON.stringify(respuesta.body)).not.toMatch(/duplicate|constraint/)
+    })
+
+    it('al editarlo ya no dice «ok» cuando no guardó nada', async () => {
+      const editar = vi.spyOn(db, 'updateClientUserById')
+      editar.mockResolvedValueOnce({ error: repetido })
+      const repetida = await dispatch('put', '/api/client/users/:id', {
+        auth: authorization(), params: { id: 'employee-1' }, body: { email: 'otro@example.com' },
+      })
+      expect(repetida.status).toBe(409)
+
+      editar.mockResolvedValueOnce({ error: { message: 'la base no contestó' } })
+      const caida = await dispatch('put', '/api/client/users/:id', {
+        auth: authorization(), params: { id: 'employee-1' }, body: { name: 'Ana' },
+      })
+      expect(caida.status).toBe(500)
+    })
+  })
+
   it('actualiza y elimina empleados dentro del negocio del JWT', async () => {
     vi.spyOn(bcrypt, 'hash').mockResolvedValue('new-password-hash')
     const updateClientUserById = vi.spyOn(db, 'updateClientUserById').mockResolvedValue({})

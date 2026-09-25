@@ -32,11 +32,15 @@ export function lineasDeComentario(lineas) {
       return
     }
     if (limpia.startsWith('//')) return marcadas.add(i)
-    const abre = linea.indexOf('/*')
+    // ⚠️ Un `/*` dentro de un TEXTO no abre nada: `accept="image/*"` dejaba
+    // ciego al guardián desde la subida del logo de Ajustes hasta el
+    // formulario de empleados, 190 líneas más abajo (2026-09-24).
+    const sinTextos = linea.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""')
+    const abre = sinTextos.indexOf('/*')
     if (abre === -1) return
     marcadas.add(i)
     // Un bloque que abre y cierra en la misma línea no deja nada abierto.
-    if (linea.indexOf('*/', abre) === -1) dentro = true
+    if (sinTextos.indexOf('*/', abre) === -1) dentro = true
   })
   return marcadas
 }

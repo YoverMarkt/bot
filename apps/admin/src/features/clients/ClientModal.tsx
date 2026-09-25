@@ -524,8 +524,8 @@ export default function ClientModal({ id, onClose, onSaved }: { id: string | nul
 
             {/* Acceso del dueño */}
             <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
-              <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" value={f.client_email} onChange={set('client_email')} /></div>
-              <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
+              <div><Label htmlFor="client-owner-email">Correo del dueño (panel)</Label><Input id="client-owner-email" type="email" autoComplete="off" value={f.client_email} onChange={set('client_email')} /></div>
+              <div><Label htmlFor="client-owner-password">Contraseña {id ? '(solo si cambia)' : 'del panel'}</Label><Input id="client-owner-password" type="password" autoComplete="new-password" minLength={12} value={f.client_password} onChange={set('client_password')} /></div>
               <div className="sm:col-span-2"><Label htmlFor="client-internal-notes">Notas internas</Label><Input id="client-internal-notes" value={f.notes} onChange={set('notes')} /></div>
             </div>
 

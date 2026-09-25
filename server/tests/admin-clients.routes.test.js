@@ -386,6 +386,30 @@ describe('clientes y onboarding del superadmin', () => {
     })
   })
 
+  // ⚠️ 2026-09-24. «Ese dato ya está registrado» no decía CUÁL, y el dueño
+  // repitió el alta cinco veces: era el correo, que el navegador rellenó solo.
+  it('un correo de dueño que ya tiene cuenta se dice por su nombre', async () => {
+    vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+      data: null,
+      error: { message: 'duplicate key value violates unique constraint "client_users_email_key"' },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const respuesta = await dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'Otro local', whatsapp_number: '+593999000011',
+        client_email: 'demo@umbani.local', client_password: 'safe-password-12',
+        ycloud_api_key: 'k', ycloud_webhook_endpoint_id: 'e', ycloud_webhook_secret: 's',
+      },
+    })
+
+    expect(respuesta.status).toBe(409)
+    expect(respuesta.body.error).toBe(
+      'Ese correo ya es el acceso al panel de otro negocio. Usa otro correo para este dueño.',
+    )
+  })
+
   it('si la dirección ya existe, prueba la siguiente en vez de fallar', async () => {
     vi.spyOn(db, 'getBusinessBySlug').mockImplementation(
       async slug => (slug === 'pizzeria-don-pepe' ? { id: 'otro' } : null),
