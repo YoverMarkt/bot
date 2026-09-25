@@ -292,6 +292,100 @@ describe('clientes y onboarding del superadmin', () => {
     expect(createOnboarding.mock.calls[0][0].slug).toBe('pizzeria-don-pepe')
   })
 
+  // ── La carta del local (2026-09-24) ─────────────────────────────────────
+  // El dueño sube la foto de la carta al dar de alta el local, la IA propone y
+  // él la revisa. «Lo mejor, al momento de dar de alta»: lo real ocupa el
+  // sitio de los productos de ejemplo, nunca los dos.
+  describe('el alta con la carta revisada', () => {
+    const altaCon = carta => dispatch('post', '/api/admin/clients', {
+      auth: authorization(),
+      body: {
+        name: 'La Abuelita 2', whatsapp_number: '+593999000010', type: 'almuerzos',
+        client_email: 'abuelita@example.com', client_password: 'safe-password-12',
+        ycloud_api_key: 'k', ycloud_webhook_endpoint_id: 'e', ycloud_webhook_secret: 's',
+        carta,
+      },
+    })
+    const cartaRevisada = {
+      categorias: [{ nombre: 'Almuerzos', productos: [{
+        nombre: 'Almuerzo del día', precio: 3.5,
+        listas: [{ titulo: 'Sopa', opciones: ['Caldo de hueso de res', 'Crema de zapallo'] }],
+      }] }],
+    }
+
+    it('carga la carta EN LUGAR de los productos de ejemplo', async () => {
+      vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+        data: { id: 'business-carta', name: 'La Abuelita 2' }, error: null,
+      })
+      const plantilla = vi.spyOn(db, 'applyBusinessTemplate')
+      const menu = vi.spyOn(db, 'applyBusinessMenu').mockResolvedValue({
+        data: { aplicada: true, categorias: 1, listas: 0, productos: 1, grupos: 1, opciones: 2, variantes: 0 },
+        error: null,
+      })
+
+      const respuesta = await altaCon(cartaRevisada)
+
+      expect(respuesta.status).toBe(201)
+      expect(plantilla).not.toHaveBeenCalled()
+      const [negocio, carta] = menu.mock.calls[0]
+      expect(negocio).toBe('business-carta')
+      expect(carta.categorias[0].productos[0]).toMatchObject({
+        nombre: 'Almuerzo del día', precio: 3.5, tipo: 'configurable',
+      })
+      expect(respuesta.body.carta).toMatchObject({ aplicada: true, productos: 1 })
+      expect(respuesta.body.aviso).toBeUndefined()
+    })
+
+    it('una carta con algo por corregir no crea el local', async () => {
+      const crear = vi.spyOn(db, 'createBusinessOnboarding')
+      const conHueco = structuredClone(cartaRevisada)
+      conHueco.categorias[0].productos[0].precio = null
+
+      const respuesta = await altaCon(conHueco)
+
+      expect(respuesta.status).toBe(400)
+      expect(respuesta.body.errores).toEqual(['Almuerzos › Almuerzo del día: falta el precio'])
+      expect(crear).not.toHaveBeenCalled()
+    })
+
+    it('si la carta no entra, el local queda creado y el alta lo AVISA', async () => {
+      vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+        data: { id: 'business-carta', name: 'La Abuelita 2' }, error: null,
+      })
+      vi.spyOn(db, 'applyBusinessMenu').mockResolvedValue({
+        data: null, error: { message: 'se cayó la base' },
+      })
+      const plantilla = vi.spyOn(db, 'applyBusinessTemplate')
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const respuesta = await altaCon(cartaRevisada)
+
+      expect(respuesta.status).toBe(201)
+      expect(respuesta.body.aviso).toMatch(/la carta no se pudo guardar/)
+      // Ni siquiera entonces se siembran los ejemplos: alguien revisó una
+      // carta y tiene que ver que no entró, no un catálogo que no pidió.
+      expect(plantilla).not.toHaveBeenCalled()
+    })
+
+    it('sin carta, el alta sigue sembrando los ejemplos de su tipo como siempre', async () => {
+      vi.spyOn(db, 'createBusinessOnboarding').mockResolvedValue({
+        data: { id: 'business-sin-carta', name: 'La Abuelita 2' }, error: null,
+      })
+      const plantilla = vi.spyOn(db, 'applyBusinessTemplate').mockResolvedValue({
+        data: { aplicada: true, categorias: 1, listas: 0, productos: 1, grupos: 0, opciones: 0 },
+        error: null,
+      })
+      const menu = vi.spyOn(db, 'applyBusinessMenu')
+
+      const respuesta = await altaCon(undefined)
+
+      expect(respuesta.status).toBe(201)
+      expect(plantilla).toHaveBeenCalledWith('business-sin-carta', expect.any(Object))
+      expect(menu).not.toHaveBeenCalled()
+      expect(respuesta.body.carta).toBeUndefined()
+    })
+  })
+
   it('si la dirección ya existe, prueba la siguiente en vez de fallar', async () => {
     vi.spyOn(db, 'getBusinessBySlug').mockImplementation(
       async slug => (slug === 'pizzeria-don-pepe' ? { id: 'otro' } : null),

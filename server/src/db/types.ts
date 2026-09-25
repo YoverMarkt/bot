@@ -208,6 +208,30 @@ export interface BusinessTemplate {
   categorias: TemplateCategory[]
 }
 
+/**
+ * La carta de un local, leída de su foto y REVISADA por una persona. Es una
+ * plantilla con dos diferencias que aplica `apply_business_menu`: sus precios
+ * son de verdad (los productos nacen a la venta) y trae tamaños.
+ */
+export interface MenuVariant {
+  nombre: string
+  precio: number
+  orden?: number
+}
+
+export interface MenuProduct extends TemplateProduct {
+  /** «Personal $5.99 · mediana $11.99»: van a `product_variants`. */
+  variantes?: MenuVariant[]
+}
+
+export interface MenuCategory extends Omit<TemplateCategory, 'productos'> {
+  productos?: MenuProduct[]
+}
+
+export interface BusinessMenu {
+  categorias: MenuCategory[]
+}
+
 // Las columnas viajan en una cadena unida, así que el SDK no puede deducirlas y
 // devuelve un tipo de error en vez de la fila. La conversión vive AQUÍ, en el
 // borde con el driver, y no repartida por quien consume — que fue el agujero de

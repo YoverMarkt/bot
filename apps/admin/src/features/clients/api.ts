@@ -184,6 +184,56 @@ export type BusinessPayload = Omit<Partial<BusinessDetail>, 'credential_status'>
   telegram_bot_token?: string
   client_password?: string
   apply_plan_defaults?: boolean
+  /** Solo al crear: la carta revisada ocupa el sitio de los productos de ejemplo. */
+  carta?: CartaRevisada
+}
+
+// ── La carta del local (2026-09-24) ──────────────────────────────────────────
+// Lo que la IA leyó de las fotos (`propuesta`) y lo que se manda al crear, ya
+// revisado. Los precios dudosos llegan en `null`: se rellenan, no se adivinan.
+
+export type CartaPropuesta = {
+  categorias: {
+    nombre: string
+    productos: {
+      nombre: string
+      precio: number | null
+      descripcion: string | null
+      variantes: { nombre: string; precio: number | null }[]
+      listas: { titulo: string; opciones: string[] }[]
+    }[]
+  }[]
+  /** «Para llevar $3,50»: se enseña como aviso y no se usa. */
+  otrosPrecios: { producto: string; texto: string }[]
+}
+
+export type CartaRevisada = {
+  categorias: {
+    nombre: string
+    productos: {
+      nombre: string
+      precio: number | null
+      descripcion: string | null
+      variantes: { nombre: string; precio: number | null }[]
+      listas: { titulo: string; opciones: string[]; obligatoria: boolean }[]
+    }[]
+  }[]
+}
+
+/** Manda las fotos de la carta a leer. No guarda nada: devuelve la propuesta. */
+export const leerCarta = (fotos: File[]) => {
+  const formulario = new FormData()
+  fotos.forEach(foto => formulario.append('fotos', foto))
+  return api<{ propuesta: CartaPropuesta }>('/api/admin/carta/leer', {
+    method: 'POST',
+    body: formulario,
+  }).then(r => r.propuesta)
+}
+
+/** Lo que devuelve el alta: el negocio y, si hubo carta o cajones, cómo fue. */
+export type AltaDeNegocio = BusinessRow & {
+  carta?: { productos: number; variantes?: number }
+  aviso?: string
 }
 
 export const getClient = (id: string) => api<BusinessDetail>(`/api/admin/clients/${id}`)
@@ -213,7 +263,7 @@ export const getMarketplaceCategories = () =>
     .then(r => r.categories)
 
 export const createClient = (p: BusinessPayload) =>
-  api<BusinessRow>('/api/admin/clients', { method: 'POST', body: JSON.stringify(p) })
+  api<AltaDeNegocio>('/api/admin/clients', { method: 'POST', body: JSON.stringify(p) })
 
 export const updateClient = (id: string, p: BusinessPayload) =>
   api(`/api/admin/clients/${id}`, { method: 'PUT', body: JSON.stringify(p) })

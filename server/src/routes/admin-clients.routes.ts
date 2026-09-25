@@ -1,6 +1,6 @@
 import type { RequestHandler, Response } from 'express'
 import { createRouter } from '../middleware/async'
-import type { BusinessTemplate, WriteResult } from '../db/types'
+import type { BusinessMenu, BusinessTemplate, WriteResult } from '../db/types'
 
 /** Lo que devuelve `apply_business_template`: qué dejó cargado, o por qué no. */
 interface TemplateSummary {
@@ -13,6 +13,11 @@ interface TemplateSummary {
   productos: number
   grupos: number
   opciones: number
+}
+
+/** Lo que devuelve `apply_business_menu`: la plantilla más los tamaños. */
+interface MenuSummary extends TemplateSummary {
+  variantes?: number
 }
 import {
   getPlanDefinition,
@@ -40,6 +45,7 @@ interface PlatformErrorRow {
   last_seen_at: string
 }
 import { recordError } from '../services/error-log'
+import { validarCarta } from '../services/carta-del-local'
 import { prepTimeForBusinessType, templateForBusinessType } from '../services/business-templates'
 import { slugLibre } from '../lib/slug'
 import { sanitizeBusinessForAdmin, type BusinessRecord } from '../services/secrets'
@@ -103,6 +109,10 @@ const db: {
     businessId: string,
     template: BusinessTemplate,
   ): Promise<WriteResult<TemplateSummary>>
+  applyBusinessMenu(
+    businessId: string,
+    menu: BusinessMenu,
+  ): Promise<WriteResult<MenuSummary>>
   updateBusiness(businessId: string, data: Record<string, unknown>): Promise<DatabaseResult>
   deleteBusiness(businessId: string): Promise<DatabaseResult>
   suspendBusiness(businessId: string, reason: string): Promise<DatabaseResult>
@@ -312,6 +322,43 @@ const seedBusinessCatalog = async (
       message: errorMessage(error),
       context: { type },
     })
+  }
+}
+
+/**
+ * Carga la carta REVISADA del local en lugar de los productos de ejemplo.
+ *
+ * Igual que la plantilla, va DESPUÉS del alta y no puede tumbarla: el negocio
+ * ya existe y es transaccional. Pero aquí un fallo NO se traga en silencio:
+ * alguien revisó esa carta producto a producto, y tiene que saber que no
+ * entró. Se devuelve como aviso en la respuesta del alta.
+ */
+const cargarCartaDelLocal = async (
+  businessId: string,
+  menu: BusinessMenu,
+  name: string,
+): Promise<{ resumen: MenuSummary } | { aviso: string }> => {
+  try {
+    const cargada = await db.applyBusinessMenu(businessId, menu)
+    assertDatabaseResult(cargada, 'cargar la carta del local')
+    const resumen = cargada.data
+    if (!resumen?.aplicada) {
+      return { aviso: `La carta no se cargó: ${resumen?.motivo || 'motivo desconocido'}` }
+    }
+    console.log(
+      `🛒 Carta de ${name} cargada — ${resumen.categorias} categorías, `
+      + `${resumen.productos} productos, ${resumen.variantes ?? 0} tamaños`,
+    )
+    return { resumen }
+  } catch (error) {
+    console.error('❌ cargar la carta del local:', errorMessage(error))
+    void recordError({
+      businessId,
+      category: 'servidor',
+      code: 'carta-del-local',
+      message: errorMessage(error),
+    })
+    return { aviso: 'El local se creó, pero la carta no se pudo guardar: sus productos habrá que cargarlos a mano.' }
   }
 }
 
@@ -601,6 +648,15 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Selecciona uno de los seis planes disponibles' })
   }
   const usageLimits = usageLimitsForPlan(planDefinition)
+  // La carta revisada se comprueba ANTES de crear nada: un precio que falta
+  // se corrige en la pantalla, no deja un local a medio cargar.
+  const carta = body.carta === undefined || body.carta === null ? null : validarCarta(body.carta)
+  if (carta && !carta.ok) {
+    return res.status(400).json({
+      error: `La carta tiene cosas por corregir: ${carta.errores.slice(0, 3).join(' · ')}`,
+      errores: carta.errores,
+    })
+  }
 
   try {
     // La dirección de su tienda. Sin sufijo salvo que otro negocio ya la use:
@@ -661,7 +717,15 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     if (!business) throw new Error('crear onboarding: respuesta vacía')
     Object.assign(business, usageLimits, { chat_mode: businessPayload.chat_mode })
     console.log(`💳 Cuota mensual automática para ${name} — $${monthlyRate}/mes`)
-    await seedBusinessCatalog(business.id, businessPayload.type as string, name)
+    // Con carta, la carta; sin ella, los productos de ejemplo de su tipo, como
+    // siempre. Nunca las dos: «lo mejor, al momento de dar de alta un local»
+    // es que lo real ocupe el sitio del ejemplo (el dueño, 2026-09-24).
+    const cargaDeCarta = carta?.ok
+      ? await cargarCartaDelLocal(business.id, carta.menu, name)
+      : null
+    if (!cargaDeCarta) {
+      await seedBusinessCatalog(business.id, businessPayload.type as string, name)
+    }
     // ⚠️ Después del alta y sin poder tumbarla, igual que la plantilla: el
     // negocio ya existe y es transaccional. Si los cajones vienen mal, se dice
     // en la respuesta y el local se queda con los de su tipo, que es un sitio
@@ -670,9 +734,14 @@ router.post('/api/admin/clients', auth.authAdmin, async (req, res) => {
     if (cajonesMal) {
       console.error('❌ cajones del menú al crear:', cajonesMal)
     }
+    const avisos = [
+      cargaDeCarta && 'aviso' in cargaDeCarta ? cargaDeCarta.aviso : null,
+      cajonesMal,
+    ].filter(Boolean)
     res.status(201).json({
       ...sanitizeBusinessForAdmin(business),
-      ...(cajonesMal ? { aviso: cajonesMal } : {}),
+      ...(cargaDeCarta && 'resumen' in cargaDeCarta ? { carta: cargaDeCarta.resumen } : {}),
+      ...(avisos.length ? { aviso: avisos.join(' · ') } : {}),
     })
   } catch (error) {
     const duplicated = duplicateChannelMessage(error)

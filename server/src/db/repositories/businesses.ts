@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { BusinessRecord, BusinessTemplate } from '../types'
+import type { BusinessMenu, BusinessRecord, BusinessTemplate } from '../types'
 import {
   normalizeChannelIdentifier,
   type ChannelAddress,
@@ -218,6 +218,19 @@ const applyBusinessTemplate = async (businessId: string, template: BusinessTempl
   })
 )
 
+/**
+ * Carga la carta REVISADA de un local recién creado, en lugar de los productos
+ * de ejemplo de su tipo. Usa la misma RPC de plantillas por dentro —con su
+ * portón: `aplicada: false` si el negocio ya tiene catálogo— y además deja los
+ * productos a la venta y crea sus tamaños. Todo o nada.
+ */
+const applyBusinessMenu = async (businessId: string, menu: BusinessMenu) => (
+  db.rpc('apply_business_menu', {
+    p_business_id: businessId,
+    p_menu: menu,
+  })
+)
+
 
 /**
  * Los métodos de pago de un negocio, encendidos y apagados, para su panel.
@@ -273,4 +286,5 @@ export = {
   updateBusinessPlanBilling,
   deleteBusiness,
   applyBusinessTemplate,
+  applyBusinessMenu,
 }

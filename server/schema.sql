@@ -6049,6 +6049,105 @@ revoke all on function public.apply_business_template(uuid, jsonb)
 grant execute on function public.apply_business_template(uuid, jsonb)
   to service_role;
 
+-- ── La carta del local (2026-09-24): lo que la IA leyó y una persona revisó ──
+-- Usa `apply_business_template` por dentro (con su portón) y añade precios de
+-- verdad y tamaños. Ver `migration-2026-09-24-carta-del-local.sql`.
+create or replace function public.apply_business_menu(
+  p_business_id uuid,
+  p_menu jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_resultado jsonb;
+  v_categoria jsonb;
+  v_producto jsonb;
+  v_variante jsonb;
+  v_producto_id uuid;
+  v_variantes integer := 0;
+begin
+  -- ── 0. Nombres únicos: es lo que enlaza cada tamaño con SU producto ──────
+  -- Dos «Pizzas» en la carta, o dos «Hawaiana» dentro de la misma, dejarían
+  -- un tamaño colgado del producto equivocado. El panel ya lo avisa; esto
+  -- impide que llegue aunque alguien se salte el panel.
+  if exists (
+    select 1
+    from jsonb_array_elements(coalesce(p_menu->'categorias', '[]'::jsonb)) c
+    group by lower(btrim(c->>'nombre'))
+    having count(*) > 1
+  ) then
+    raise exception 'La carta repite una categoría' using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(coalesce(p_menu->'categorias', '[]'::jsonb))
+           with ordinality c(categoria, n),
+         jsonb_array_elements(coalesce(c.categoria->'productos', '[]'::jsonb)) p
+    group by c.n, lower(btrim(p->>'nombre'))
+    having count(*) > 1
+  ) then
+    raise exception 'La carta repite un producto dentro de una categoría'
+      using errcode = '22023';
+  end if;
+
+  -- ── 1. El mismo motor que el alta, con su portón ─────────────────────────
+  v_resultado := public.apply_business_template(p_business_id, p_menu);
+  if (v_resultado->>'aplicada')::boolean is not true then
+    return v_resultado;
+  end if;
+
+  -- ── 2. Precios de verdad: a la venta (ver la cabecera) ───────────────────
+  update products set stock = 'disponible'
+  where business_id = p_business_id;
+
+  -- ── 3. Los tamaños, colgados de su producto ──────────────────────────────
+  for v_categoria in
+    select * from jsonb_array_elements(coalesce(p_menu->'categorias', '[]'::jsonb))
+  loop
+    for v_producto in
+      select * from jsonb_array_elements(coalesce(v_categoria->'productos', '[]'::jsonb))
+    loop
+      if jsonb_array_length(coalesce(v_producto->'variantes', '[]'::jsonb)) = 0 then
+        continue;
+      end if;
+
+      select p.id into strict v_producto_id
+      from products p
+      join product_categories c on c.id = p.category_id
+      where p.business_id = p_business_id
+        and c.business_id = p_business_id
+        and lower(btrim(c.name)) = lower(btrim(v_categoria->>'nombre'))
+        and lower(btrim(p.name)) = lower(btrim(v_producto->>'nombre'));
+
+      for v_variante in
+        select * from jsonb_array_elements(v_producto->'variantes')
+      loop
+        insert into product_variants (business_id, product_id, name, price, sort)
+        values (
+          p_business_id,
+          v_producto_id,
+          v_variante->>'nombre',
+          (v_variante->>'precio')::numeric,
+          coalesce((v_variante->>'orden')::integer, 0)
+        );
+        v_variantes := v_variantes + 1;
+      end loop;
+    end loop;
+  end loop;
+
+  return v_resultado || jsonb_build_object('variantes', v_variantes);
+end;
+$$;
+
+revoke all on function public.apply_business_menu(uuid, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.apply_business_menu(uuid, jsonb)
+  to service_role;
+
 -- ── 2. Las ventas solo pueden apuntar a algo de SU negocio ────────────────
 --
 -- Las tres nacieron con `on delete set null` a secas y eso anulaba también

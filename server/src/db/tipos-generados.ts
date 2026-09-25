@@ -1575,31 +1575,51 @@ export type Database = {
         Row: {
           business_id: string
           created_at: string
+          created_by: string | null
           from_status: string | null
           id: string
           note: string | null
           order_id: string
+          order_item_id: string | null
           to_status: string
         }
         Insert: {
           business_id: string
           created_at?: string
+          created_by?: string | null
           from_status?: string | null
           id?: string
           note?: string | null
           order_id: string
+          order_item_id?: string | null
           to_status: string
         }
         Update: {
           business_id?: string
           created_at?: string
+          created_by?: string | null
           from_status?: string | null
           id?: string
           note?: string | null
           order_id?: string
+          order_item_id?: string | null
           to_status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_order_events_hecho_por"
+            columns: ["created_by", "business_id"]
+            isOneToOne: false
+            referencedRelation: "client_users"
+            referencedColumns: ["id", "business_id"]
+          },
+          {
+            foreignKeyName: "fk_order_events_linea"
+            columns: ["order_item_id", "business_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
+            referencedColumns: ["id", "business_id"]
+          },
           {
             foreignKeyName: "fk_order_events_pedido_del_negocio"
             columns: ["order_id", "business_id"]
@@ -1685,6 +1705,8 @@ export type Database = {
           item_note: string | null
           line_total: number
           order_id: string | null
+          prepared_at: string | null
+          prepared_by: string | null
           product_id: string | null
           product_name: string
           quantity: number
@@ -1700,6 +1722,8 @@ export type Database = {
           item_note?: string | null
           line_total?: number
           order_id?: string | null
+          prepared_at?: string | null
+          prepared_by?: string | null
           product_id?: string | null
           product_name: string
           quantity?: number
@@ -1715,6 +1739,8 @@ export type Database = {
           item_note?: string | null
           line_total?: number
           order_id?: string | null
+          prepared_at?: string | null
+          prepared_by?: string | null
           product_id?: string | null
           product_name?: string
           quantity?: number
@@ -1723,6 +1749,13 @@ export type Database = {
           variant_name?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_order_items_preparado_por"
+            columns: ["prepared_by", "business_id"]
+            isOneToOne: false
+            referencedRelation: "client_users"
+            referencedColumns: ["id", "business_id"]
+          },
           {
             foreignKeyName: "order_items_business_id_fkey"
             columns: ["business_id"]
@@ -2980,6 +3013,10 @@ export type Database = {
           p_shopping_locked?: boolean
           p_state?: string
         }
+        Returns: Json
+      }
+      apply_business_menu: {
+        Args: { p_business_id: string; p_menu: Json }
         Returns: Json
       }
       apply_business_template: {

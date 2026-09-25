@@ -169,6 +169,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **La pantalla «Bienvenida», RETIRADA (y por qué el alta se rompe si se hace al revés)** → [DECISIONES.md](DECISIONES.md#la-pantalla-bienvenida-no-la-leía-nadie)
 - **El «+» de los adicionales (y por qué el precio del plato NO sube)** → [DECISIONES.md](DECISIONES.md#el--de-los-adicionales-no-acusaba-el-toque)
 - **El horario del dueño manda sobre todos los modos** → [DECISIONES.md](DECISIONES.md#el-horario-del-dueño-manda-sobre-todos-los-modos)
+- **La carta del local se lee de su foto (y por qué `gpt-4o` y no el mini)** → [DECISIONES.md](DECISIONES.md#la-carta-del-local-se-lee-de-su-foto)
 - **Lo que gana la plataforma (motor de margen)** → [DECISIONES.md](DECISIONES.md#lo-que-gana-la-plataforma)
 - **Qué pide el alta de un negocio** → [DECISIONES.md](DECISIONES.md#el-alta-no-pregunta-lo-que-se-deduce-del-tipo)
 - **Verificar el número del marketplace** → [DECISIONES.md](DECISIONES.md#el-número-del-marketplace-se-verifica)

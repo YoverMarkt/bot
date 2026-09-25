@@ -20,7 +20,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const res = await fetch(path, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // Con fotos (FormData) el navegador pone él el tipo, con su separador:
+      // forzar JSON aquí dejaría la subida ilegible para el servidor.
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(session.token ? { Authorization: `Bearer ${session.token}` } : {}),
       ...(options.headers || {}),
     },
