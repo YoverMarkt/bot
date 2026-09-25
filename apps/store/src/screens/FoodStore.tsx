@@ -11,6 +11,7 @@ import {
   RiEBikeLine,
   RiHome5Line,
   RiMapPin2Line,
+  RiRestaurantLine,
   RiSearchLine,
   RiShoppingBag3Line,
   RiShoppingCart2Line,
@@ -25,7 +26,7 @@ import {
   ENTREGA_POR_DEFECTO, addLine, cartCount, cartTotal, claveDelPlato, claveSuelta,
   lineTotal, needsAddress, orderTotal, seArma, setQuantity, unitPrice,
 } from '../lib/cart'
-import { Aviso, Bienvenida, Foto } from '../components/ui'
+import { Aviso, Bienvenida, EstadoVacio, Foto } from '../components/ui'
 import { resumenDesdeCarrito, resumenDesdePedido } from '../lib/resumen'
 import { money, rangoDeEspera, cuandoAbre, rangoDeHoy } from '../lib/format'
 import { foto } from '../lib/imagen'
@@ -558,6 +559,7 @@ export default function FoodStore({
           me={me}
           onVolver={() => setEnCuenta(false)}
           onBorrarDireccion={borrarDireccion}
+          onFalloEnlace={onFalloEnlace}
         />
       </Suspense>
     )
@@ -974,15 +976,15 @@ export default function FoodStore({
 
       {!puedePedir && (
         <div className="px-4 pt-3">
-          <Aviso tono="alerta">
-            <span className="flex items-center gap-2">
-              <RiTimeLine size={15} />
-              {status === 'cerrada'
-                // «volver cuando abra» no dice cuándo, y era la mitad del
-                // problema: el cliente tiene que adivinar a qué hora volver.
-                ? `Ahora está cerrado.${apertura ? ` ${cuandoAbre(apertura)}.` : ''} Puedes ver la carta mientras tanto.`
-                : 'La tienda no está recibiendo pedidos en este momento.'}
-            </span>
+          <Aviso
+            tono="alerta"
+            icono={<RiTimeLine size={18} />}
+            titulo={status === 'cerrada' ? 'Ahora está cerrado' : 'No está recibiendo pedidos'}
+          >
+            {/* «volver cuando abra» no dice cuándo, y era la mitad del
+                problema: el cliente tiene que adivinar a qué hora volver. */}
+            {status === 'cerrada' && apertura ? `${cuandoAbre(apertura)}. ` : ''}
+            Puedes ver la carta mientras tanto.
           </Aviso>
         </div>
       )}
@@ -995,27 +997,14 @@ export default function FoodStore({
           buscador, y ahí va el aviso del pago pendiente. */}
       {pagoPendiente && (
         <div className="px-4 pt-4">
-          <button
+          <Aviso
+            tono="alerta"
+            icono={<RiTimeLine size={18} />}
+            titulo="Falta tu comprobante"
             onClick={() => setAbrirPago(true)}
-            // Sin `dark:`. Esta app no tiene modo oscuro —`color-scheme: light`
-            // fijo en `index.css`—, pero la media query SÍ se dispara con el
-            // teléfono en oscuro: quedaba un ámbar al 10 % sobre página clara,
-            // o sea el aviso más importante de la portada casi sin fondo.
-            className="flex w-full items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-left shadow-tarjeta transition active:scale-[0.99]"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
-              <RiTimeLine size={18} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-bold">
-                Falta tu comprobante
-              </span>
-              <span className="block text-[12.5px] texto-tenue">
-                Tu pedido #{pagoPendiente.order_number} está guardado. Toca para pagarlo.
-              </span>
-            </span>
-            <RiArrowLeftSLine size={18} className="shrink-0 rotate-180 texto-tenue" />
-          </button>
+            Tu pedido #{pagoPendiente.order_number} está guardado. Toca para pagarlo.
+          </Aviso>
         </div>
       )}
 
@@ -1077,11 +1066,11 @@ export default function FoodStore({
 
           {/* Cuánto se encontró, dentro de la misma barra: el contador estaba
               suelto sobre la lista y se iba con el primer scroll. */}
-          {busqueda.trim() && (
+          {/* Solo con resultados: sin ninguno, lo dice el estado vacío de
+              abajo, y «Nada con…» aquí era decirlo dos veces (2026-09-25). */}
+          {busqueda.trim() && Boolean(resultados?.length) && (
             <p className="caption mt-2.5 px-1 texto-tenue">
-              {resultados?.length
-                ? `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'} para «${busqueda.trim()}»`
-                : `Nada con «${busqueda.trim()}»`}
+              {`${resultados?.length} ${resultados?.length === 1 ? 'resultado' : 'resultados'} para «${busqueda.trim()}»`}
             </p>
           )}
         </div>
@@ -1124,11 +1113,9 @@ export default function FoodStore({
           {resultados.length
             ? <div className="grid grid-cols-2 gap-3">{resultados.map(tarjeta)}</div>
             : (
-                <p className="py-10 text-center text-[14px] texto-tenue">
-                  No encontramos «{busqueda.trim()}».
-                  <br />
+                <EstadoVacio icono={<RiSearchLine size={28} />} titulo={`No encontramos «${busqueda.trim()}»`}>
                   Prueba con otra palabra o mira la carta completa.
-                </p>
+                </EstadoVacio>
               )}
         </section>
       )}
@@ -1161,9 +1148,11 @@ export default function FoodStore({
       ))}
 
       {!grupos.length && (
-        <p className="px-4 py-16 text-center text-[15px] texto-tenue">
-          El negocio todavía no cargó su carta.
-        </p>
+        <div className="px-4">
+          <EstadoVacio icono={<RiRestaurantLine size={28} />} titulo="Todavía no hay carta">
+            El negocio aún no cargó sus productos. Vuelve a mirar en un rato.
+          </EstadoVacio>
+        </div>
       )}
 
       {/* ══ EL PIE: «Ver pedido» ENCIMA de la barra, no tapándola ═══════

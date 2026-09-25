@@ -48,7 +48,7 @@ export default function DesktopGate({ business }: { business: Business | null })
             <Boton variante="linea">
               <span className="flex items-center justify-center gap-2">
                 <RiWhatsappLine size={18} />
-                Escribir al negocio
+                {business?.phoneIsPlatform ? 'Escribir a Umbani' : 'Escribir al negocio'}
               </span>
             </Boton>
           </a>

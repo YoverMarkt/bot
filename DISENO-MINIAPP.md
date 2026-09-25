@@ -68,8 +68,29 @@ cliente se iba creyendo que el local había cerrado.
   cliente puede seguir mirando la carta y volver cuando abra; sacarlo a una
   pantalla sería cerrarle una puerta que no está cerrada.
 - **Carrito vacío** → estado dentro de la hoja del carrito.
-- **Búsqueda sin resultados** → línea bajo el buscador.
-- **Catálogo vacío** → «El negocio todavía no cargó su carta».
+- **Búsqueda sin resultados** → estado vacío en la lista. El contador de la
+  barra sale SOLO con resultados: con cero decía «Nada con…» y el estado vacío
+  lo repetía debajo (repaso del 2026-09-25).
+- **Catálogo vacío** → estado vacío «Todavía no hay carta».
+
+### Avisos y estados vacíos: una sola forma (2026-09-25)
+
+Salió del repaso con capturas de TODAS las pantallas, pedido por el dueño: «que
+la mini app tenga el diseño que ya tiene en todas sus pantallas y avisos».
+
+- **`Aviso`** (`components/ui.tsx`) es el ÚNICO aviso dentro de una pantalla:
+  icono en círculo, título, explicación y flecha si se puede tocar. Había tres
+  —la tienda cerrada en melocotón, «Falta tu comprobante» en crema con borde, y
+  los errores sin icono— y se leían como tres apps.
+- **`EstadoVacio`** es el único «no hay nada»: icono en círculo gris, título y
+  qué hacer. Lo usan el carrito, la carta y la búsqueda.
+- **La bienvenida** lleva el sello de las demás puertas (icono de línea sobre
+  tinte), no el emoji 🛍️, que cambia de dibujo según el teléfono.
+- **El foco** global vive en `@layer base`: suelto, ganaba a las clases y cada
+  campo enseñaba su borde de foco más un segundo anillo negro encima.
+- **Los textos nombran a quien de verdad atiende**: con el marketplace el chat
+  es el de Umbani, así que nada dice «escríbele al negocio» ni «el chat del
+  local» cuando no es verdad.
 - **Seguimiento del pedido** → **retirado el 2026-08-12** a propósito: el viaje
   termina donde empezó, en el chat.
 

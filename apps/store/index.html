@@ -69,10 +69,15 @@
          mínimo en pantalla: se va en cuanto la tienda está lista. Añadir una
          espera artificial para lucir la marca sería empeorar a propósito justo
          lo que se estaba arreglando en la misma sesión. */
+      /* ⚠️ Icono de línea sobre el tinte lima de Umbani, no el emoji 🛍️
+         (2026-09-25). Todas las demás pantallas llevan su sello así —un icono
+         en un recuadro con tinte—, y el emoji era la única imagen de la app
+         que no seguía el diseño: cambia de dibujo según el teléfono. El
+         tamaño se queda, que fue la decisión del 2026-09-06. */
       .vz-logo {
         width:96px; height:96px; border-radius:28px; display:flex;
-        align-items:center; justify-content:center; font-size:46px;
-        background:#fff; box-shadow:0 12px 34px rgba(11,11,12,.12);
+        align-items:center; justify-content:center; color:var(--t);
+        background:#F7FDD9; box-shadow:0 12px 34px rgba(11,11,12,.12);
         animation:vz-late .9s ease-in-out infinite alternate;
       }
       .vz-t { font-size:27px; font-weight:800; letter-spacing:-.03em; margin:0; line-height:1.15; }
@@ -85,7 +90,7 @@
   </head>
   <body>
     <div id="root"><div class="vz-boot">
-      <div class="vz-logo">🛍️</div>
+      <div class="vz-logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="44" height="44" fill="currentColor" aria-hidden="true"><path d="M6.50488 2H17.5049C17.8196 2 18.116 2.14819 18.3049 2.4L21.0049 6V21C21.0049 21.5523 20.5572 22 20.0049 22H4.00488C3.4526 22 3.00488 21.5523 3.00488 21V6L5.70488 2.4C5.89374 2.14819 6.19013 2 6.50488 2ZM19.0049 8H5.00488V20H19.0049V8ZM18.5049 6L17.0049 4H7.00488L5.50488 6H18.5049ZM9.00488 10V12C9.00488 13.6569 10.348 15 12.0049 15C13.6617 15 15.0049 13.6569 15.0049 12V10H17.0049V12C17.0049 14.7614 14.7663 17 12.0049 17C9.24346 17 7.00488 14.7614 7.00488 12V10H9.00488Z"></path></svg></div>
       <p class="vz-t">Bienvenido a Umbani</p>
       <p class="vz-s">Abriendo tu tienda…</p>
     </div></div>

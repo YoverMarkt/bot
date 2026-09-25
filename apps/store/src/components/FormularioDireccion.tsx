@@ -139,7 +139,7 @@ export default function FormularioDireccion({ onGuardar, onListo, textoGuardar =
             <input
               value={direccion}
               onChange={event => setDireccion(event.target.value.slice(0, 160))}
-              placeholder="Av. Amazonas N34-120"
+              placeholder="Av. Manabí y 10 de Agosto"
               className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:font-normal placeholder:texto-tenue"
             />
           </div>

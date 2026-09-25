@@ -378,7 +378,7 @@ export default function OrderPlaced({
                   // solo apareciera al rechazar un comprobante, parecería una
                   // norma inventada sobre la marcha justo cuando la persona
                   // ya transfirió.
-                  ? `Envía la captura de tu transferencia al chat de ${business.phoneIsPlatform ? 'Umbani' : 'el local'}. Tiene que estar a tu nombre. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.`
+                  ? `Envía la captura de tu transferencia al chat ${business.phoneIsPlatform ? 'de Umbani' : 'del local'}. Tiene que estar a tu nombre. En cuanto la revisen, te avisamos por ahí y empiezan a prepararlo.`
                   : entrega === 'delivery'
                     ? 'Te escribimos cuando el local empiece a prepararlo, cuando salga para tu dirección y cuando llegue.'
                     : 'Te escribimos cuando el local empiece a prepararlo y cuando esté listo para que pases a retirarlo.'}
