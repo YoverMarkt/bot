@@ -697,3 +697,84 @@ describe('webhooks WhatsApp', () => {
     })
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EL WEBHOOK DESPIERTA AL WORKER (2026-09-25)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Antes el worker se enteraba sondeando cada segundo. Ver
+// `lib/despertador-de-la-cola.ts`.
+describe('el webhook despierta al worker al guardar el mensaje', () => {
+  const { alEntrarUnMensaje } = require('../dist/lib/despertador-de-la-cola')
+  afterEach(() => alEntrarUnMensaje(null))
+
+  it('al instante si el cliente tocó un botón, tras la ventana si escribió', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    const despertar = vi.fn()
+    alEntrarUnMensaje(despertar)
+
+    const boton = ycloudPayload('ycloud-event-despertar-1', 'ycloud-message-despertar-1')
+    boton.whatsappInboundMessage.type = 'button'
+    delete boton.whatsappInboundMessage.text
+    boton.whatsappInboundMessage.button = { text: 'Pizzas', payload: 'pizzas' }
+    const escrito = ycloudPayload('ycloud-event-despertar-2', 'ycloud-message-despertar-2')
+
+    await dispatch('post', '/webhook/ycloud', { body: boton, ...signedYCloudRequest(boton) })
+    await dispatch('post', '/webhook/ycloud', { body: escrito, ...signedYCloudRequest(escrito) })
+
+    expect(despertar).toHaveBeenCalledTimes(2)
+    expect(despertar).toHaveBeenNthCalledWith(1, 0)
+    expect(despertar.mock.calls[1][0]).toBeGreaterThan(300)
+  })
+
+  it('también por Meta, que pasa por el mismo embudo', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    process.env.META_APP_SECRET = 'meta-app-secret'
+    const despertar = vi.fn()
+    alEntrarUnMensaje(despertar)
+    const body = metaPayload('meta-despertar-1')
+    const rawBody = Buffer.from(JSON.stringify(body))
+    const signature = `sha256=${crypto
+      .createHmac('sha256', process.env.META_APP_SECRET)
+      .update(rawBody)
+      .digest('hex')}`
+
+    const response = await dispatch('post', '/webhook', {
+      body,
+      rawBody,
+      headers: { 'x-hub-signature-256': signature },
+    })
+
+    expect(response.status).toBe(200)
+    expect(despertar).toHaveBeenCalledOnce()
+  })
+
+  it('un duplicado no despierta a nadie: no trae nada nuevo', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    db.enqueueWebhookEvent.mockResolvedValueOnce({ data: false, error: null })
+    const despertar = vi.fn()
+    alEntrarUnMensaje(despertar)
+    const body = ycloudPayload('ycloud-event-despertar-dup', 'ycloud-message-despertar-dup')
+
+    await dispatch('post', '/webhook/ycloud', { body, ...signedYCloudRequest(body) })
+
+    expect(despertar).not.toHaveBeenCalled()
+  })
+
+  it('si guardar falla tampoco: el proveedor reintentará', async () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.BASE_URL
+    db.enqueueWebhookEvent.mockResolvedValueOnce({ data: null, error: { message: 'caída' } })
+    const despertar = vi.fn()
+    alEntrarUnMensaje(despertar)
+    const body = ycloudPayload('ycloud-event-despertar-err', 'ycloud-message-despertar-err')
+
+    const response = await dispatch('post', '/webhook/ycloud', { body, ...signedYCloudRequest(body) })
+
+    expect(response.status).toBe(503)
+    expect(despertar).not.toHaveBeenCalled()
+  })
+})

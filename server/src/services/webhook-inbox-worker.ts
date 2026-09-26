@@ -10,6 +10,12 @@ import {
 
 type TimerHandle = ReturnType<typeof setTimeout>
 
+/** Lo que trajo una reserva: cuántos eventos, y cuándo terminan todos. */
+interface Reserva {
+  reservados: number
+  procesados: Promise<void>
+}
+
 export const WEBHOOK_INBOX_ERROR_MAX_LENGTH = 2_000
 
 export interface WebhookInboxRepository {
@@ -103,6 +109,11 @@ export interface WebhookInboxWorker {
   stop(): Promise<void>
   drain(): Promise<void>
   pollOnce(): Promise<number>
+  /**
+   * Adelanta la próxima reserva: la llama el webhook al guardar un mensaje.
+   * Ver `lib/despertador-de-la-cola.ts`.
+   */
+  despertar(esperaMilisegundos?: number): void
   isRunning(): boolean
   isReady(): boolean
   inFlightCount(): number
@@ -284,7 +295,16 @@ export function createWebhookInboxWorker(
   const activeEvents = new Set<Promise<void>>()
   let running = false
   let pollTimer: TimerHandle | null = null
+  // Cuándo vence `pollTimer`: despertar solo lo reemplaza si es para ANTES.
+  let pollTimerVence = 0
   let currentPoll: Promise<number> | null = null
+  // La reserva en vuelo. Nunca hay dos: con dos a la vez, las dos calcularían
+  // el hueco libre antes de que la otra arrancara lo suyo y se pasarían de la
+  // concurrencia.
+  let reservaEnCurso: Promise<Reserva> | null = null
+  // Un despertar que llegó con una reserva en vuelo: esa reserva pudo no ver
+  // el mensaje nuevo, así que al terminar se vuelve a mirar en este plazo.
+  let vueltaPedida: number | null = null
   let lastDatabaseSuccessAt: number | null = null
 
   const markDatabaseSuccess = (): void => {
@@ -544,45 +564,68 @@ export function createWebhookInboxWorker(
       await task
     } finally {
       activeEvents.delete(task)
+      // ⚠️ Al terminar un mensaje se vuelve a mirar YA: el siguiente de esa
+      // misma conversación estaba esperando justo a este (la cola es FIFO por
+      // conversación). Antes pagaba el segundo del sondeo, y una ráfaga de 12
+      // toques pagaba 12.
+      despertar(0)
     }
   }
 
-  const processWithBoundedConcurrency = async (
-    events: WebhookInboxLease[],
-  ): Promise<void> => {
-    let cursor = 0
-    const consume = async (): Promise<void> => {
-      while (cursor < events.length) {
-        const event = events[cursor]
-        cursor += 1
-        await trackEvent(event)
-      }
-    }
-    const workers = Array.from(
-      { length: Math.min(concurrency, events.length) },
-      () => consume(),
-    )
-    await Promise.all(workers)
-  }
-
-  const executePoll = async (): Promise<number> => {
+  /**
+   * Reserva lo que CABE y lo pone a procesar, sin esperarlo.
+   *
+   * ⚠️ Hasta el 2026-09-25 se reservaba un lote y no se volvía a mirar la
+   * cola hasta que el lote ENTERO terminaba. Con un solo número para todo el
+   * marketplace, eso ponía a cada cliente detrás del anterior: el mensaje de B
+   * esperaba los ~3 s que tardaba el de A aunque sobraran manos libres.
+   *
+   * Ahora se reserva mientras otros se procesan. Es seguro porque el orden NO
+   * lo cuida este worker sino `lease_webhook_events`: un evento solo se
+   * entrega si ninguno anterior de su conversación sigue `pending` o
+   * `processing`. Dos mensajes del mismo cliente nunca corren a la vez.
+   *
+   * No se reservan más filas de las que pueden empezar a procesarse: así
+   * ningún lease queda esperando detrás de otro sin heartbeat activo.
+   */
+  const reservarYArrancar = async (): Promise<Reserva> => {
+    const libres = leaseLimit - activeEvents.size
+    if (libres <= 0) return { reservados: 0, procesados: Promise.resolve() }
     const leased = rpcData(
-      await repository.leaseWebhookEvents(workerId, leaseLimit, leaseSeconds),
+      await repository.leaseWebhookEvents(workerId, libres, leaseSeconds),
       'No se pudieron reservar webhooks',
     )
     if (!Array.isArray(leased)
-      || leased.length > leaseLimit
+      || leased.length > libres
       || !leased.every(isLease)) {
       throw new Error('La RPC de leases devolvió filas inválidas')
     }
     markDatabaseSuccess()
-    await processWithBoundedConcurrency(leased)
-    return leased.length
+    // Caben todos: `trackEvent` apunta cada uno en `activeEvents` antes de
+    // devolver, así que la próxima reserva ya cuenta con ellos.
+    const procesados = Promise.all(leased.map(trackEvent)).then(() => undefined)
+    return { reservados: leased.length, procesados }
   }
 
+  const reservar = (): Promise<Reserva> => {
+    if (reservaEnCurso) return reservaEnCurso
+    const operation = reservarYArrancar()
+    reservaEnCurso = operation
+    const soltar = () => {
+      if (reservaEnCurso === operation) reservaEnCurso = null
+    }
+    void operation.then(soltar, soltar)
+    return operation
+  }
+
+  /** Una vuelta completa: reservar y esperar a que termine lo reservado. */
   const pollOnce = (): Promise<number> => {
     if (currentPoll) return currentPoll
-    const operation = executePoll()
+    const operation = (async () => {
+      const { reservados, procesados } = await reservar()
+      await procesados
+      return reservados
+    })()
     currentPoll = operation
     void operation.then(
       () => {
@@ -595,23 +638,61 @@ export function createWebhookInboxWorker(
     return operation
   }
 
-  const schedulePoll = (delayMilliseconds: number): void => {
-    if (!running || pollTimer) return
+  /** Programa la próxima vuelta, salvo que ya haya una para antes. */
+  const programar = (delayMilliseconds: number): void => {
+    if (!running) return
+    const vence = Date.now() + delayMilliseconds
+    if (pollTimer) {
+      if (pollTimerVence <= vence) return
+      scheduler.clearTimeout(pollTimer)
+      pollTimer = null
+    }
+    pollTimerVence = vence
     pollTimer = scheduler.setTimeout(() => {
       pollTimer = null
       if (!running) return
-      void pollOnce()
-        .catch(error => report(error, { phase: 'poll' }))
-        .then(() => {
-          if (running) schedulePoll(pollIntervalMilliseconds)
+      vueltaPedida = null
+      // ⚠️ El ciclo automático NO espera a que se procese lo reservado: eso
+      // es lo que deja atender a otro cliente mientras tanto.
+      void reservar()
+        .then(({ reservados, procesados }) => {
+          // Aquí nadie espera `procesados`. Hoy no rechaza —`handleEvent` lo
+          // atrapa todo—, pero un rechazo sin atender tumba el proceso entero
+          // y con él la cola de TODOS los clientes: se escucha igual.
+          void procesados.catch(error => report(error, { phase: 'process' }))
+          return reservados
+        })
+        .catch((error) => {
+          report(error, { phase: 'poll' })
+          return 0
+        })
+        .then((reservados) => {
+          // Si trajo trabajo, puede haber más esperando; si no, el sondeo de
+          // siempre, salvo que alguien haya pedido mirar antes.
+          const siguiente = reservados > 0
+            ? 0
+            : (vueltaPedida ?? pollIntervalMilliseconds)
+          vueltaPedida = null
+          programar(siguiente)
         })
     }, delayMilliseconds)
   }
 
+  const despertar = (esperaMilisegundos = 0): void => {
+    if (!running) return
+    const espera = Math.max(0, Math.floor(esperaMilisegundos) || 0)
+    if (reservaEnCurso) {
+      vueltaPedida = Math.min(vueltaPedida ?? espera, espera)
+      return
+    }
+    programar(espera)
+  }
+
   const drain = async (): Promise<void> => {
-    while (currentPoll || activeEvents.size) {
+    while (currentPoll || reservaEnCurso || activeEvents.size) {
       const pending: Promise<unknown>[] = []
       if (currentPoll) pending.push(currentPoll)
+      if (reservaEnCurso) pending.push(reservaEnCurso)
       pending.push(...activeEvents)
       await Promise.allSettled(pending)
     }
@@ -630,11 +711,12 @@ export function createWebhookInboxWorker(
     start() {
       if (running) return
       running = true
-      schedulePoll(0)
+      programar(0)
     },
     stop,
     drain,
     pollOnce,
+    despertar,
     isRunning: () => running,
     isReady: () => {
       if (!running || lastDatabaseSuccessAt === null) return false

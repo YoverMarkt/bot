@@ -890,19 +890,36 @@ const processor = createInboundWebhookProcessor({
     // la respuesta, o no sirve de nada.
     //
     // Nunca lanza y nunca bloquea la atención: si falla, se contesta igual.
-    await platform.marcarLeidoPorLaPlataforma(inboundId)
+    //
+    // ⚠️ Se LANZA aquí pero no se espera aquí (2026-09-25). Hasta entonces se
+    // esperaba entero antes de leer la base, y la ida a YCloud se sumaba a
+    // cada respuesta. Lo que importa es que aterrice antes del ENVÍO, no antes
+    // de pensar: por eso cada envío va encadenado a él, y pensar y marcar
+    // corren a la vez.
+    const visto = platform.marcarLeidoPorLaPlataforma(inboundId)
+    const trasElVisto = <T>(enviar: () => Promise<T>): Promise<T> => visto.then(enviar)
 
     // ⚠️ La ubicación ya no viaja: el checkout del chat se retiró (2026-09-15) y
     // la mini app captura el punto con el navegador. El marketplace la nombra
     // como adjunto («[ubicación]») y ahí acaba su viaje.
-    await entry.handleMarketplaceMessage({ from, text, inboundId }, {
-      database: db,
-      issueLink: link.issueStorefrontLink,
-      send: (reply, options) => platform.enviarPorLaPlataforma(from, reply, options),
-      // El enlace, como botón «Ver la carta». Cae al texto si no sale.
-      sendLink: mensaje => platform.enviarEnlacePorLaPlataforma(from, mensaje),
-      logger: console,
-    })
+    try {
+      await entry.handleMarketplaceMessage({ from, text, inboundId }, {
+        database: db,
+        issueLink: link.issueStorefrontLink,
+        send: (reply, options) => trasElVisto(
+          () => platform.enviarPorLaPlataforma(from, reply, options),
+        ),
+        // El enlace, como botón «Ver la carta». Cae al texto si no sale.
+        sendLink: mensaje => trasElVisto(
+          () => platform.enviarEnlacePorLaPlataforma(from, mensaje),
+        ),
+        logger: console,
+      })
+    } finally {
+      // Aunque no se conteste (techo, bloqueo), el visto sale igual que antes,
+      // y el evento no se da por terminado con él todavía en vuelo.
+      await visto
+    }
   },
 })
 

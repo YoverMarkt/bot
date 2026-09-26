@@ -304,8 +304,31 @@ export async function handleMarketplaceMessage(
     }
   }
 
-  const conversation = await database.getConversation(customer.id)
-  const categorias = await database.getMarketplaceCategories()
+  // ⚠️ A LA VEZ, no una tras otra (2026-09-25): conversación, categorías y el
+  // local elegido son lecturas independientes, y cada ida a la base se paga
+  // entera. El local sí depende de la conversación, así que se encadena a ella
+  // sin esperar a las categorías.
+  //
+  // ⚠️ Pero DESPUÉS del bloqueo y del techo, nunca antes: a quien está
+  // silenciado no se le gasta ni una consulta más. Lo fija
+  // `techo-del-marketplace.test.js`, y es una de las capas anti-molestias.
+  //
+  // ⚠️ El local NO lleva `.catch` —a diferencia de `devolverElEnlace`— y la asimetría es
+  // deliberada. Si aquí se fallara «abierto», `negocioActual` quedaría en
+  // `null`, el paso 4 no entraría y quien tiene un pedido en curso podría abrir
+  // OTRO: el candado de «un pedido a la vez» se saltaría justo cuando la base
+  // no está para impedirlo. Propagando, el webhook reintenta cuando la base
+  // vuelve — no se pierde el mensaje y el candado aguanta. El «falla abierto»
+  // del bloqueo sí vale, porque equivocarse ahí solo atiende a alguien a quien
+  // se debía ignorar.
+  const conversacionLeida = database.getConversation(customer.id)
+  const [conversation, categorias, negocioActual] = await Promise.all([
+    conversacionLeida,
+    database.getMarketplaceCategories(),
+    conversacionLeida.then(leida => (leida?.selected_business_id
+      ? database.getBusinessById(leida.selected_business_id)
+      : null)),
+  ])
 
   // Un marketplace sin un solo local disponible no puede ofrecer nada, y una
   // lista vacía es una calle sin salida que además cuesta un mensaje.
@@ -317,20 +340,6 @@ export async function handleMarketplaceMessage(
     return
   }
 
-  // ⚠️ ESTA CONSULTA NO LLEVA `.catch`, a diferencia de la de
-  // `devolverElEnlace`, y la asimetría es deliberada.
-  //
-  // Si aquí se fallara «abierto», `negocioActual` quedaría en `null`, el paso 4
-  // no entraría y quien tiene un pedido en curso podría abrir OTRO: el candado
-  // de «un pedido a la vez» se saltaría justo cuando la base no está para
-  // impedirlo. Propagando, el webhook reintenta cuando la base vuelve — no se
-  // pierde el mensaje y el candado aguanta.
-  //
-  // El «falla abierto» de arriba (el bloqueo de plataforma) sí vale, porque
-  // equivocarse ahí solo atiende a alguien a quien se debía ignorar.
-  const negocioActual = conversation?.selected_business_id
-    ? await database.getBusinessById(conversation.selected_business_id)
-    : null
   const estado = {
     negocio: negocioActual
       ? { name: negocioActual.name, slug: negocioActual.slug || '' }

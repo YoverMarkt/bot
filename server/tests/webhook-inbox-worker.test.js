@@ -700,3 +700,192 @@ describe('worker del inbox durable de webhooks', () => {
     expect(workerSource).not.toContain('.unref(')
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NO ESPERAR AL SONDEO CUANDO HAY TRABAJO (2026-09-25)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Medido en producción: una ráfaga de 12 toques de un cliente esperó 50 s el
+// último — cada toque pagaba su segundo de sondeo — y el mensaje de un cliente
+// esperaba entero el lote del anterior aunque sobraran manos libres.
+describe('el worker no hace esperar a nadie cuando hay trabajo', () => {
+  it('atiende a otro cliente mientras el anterior sigue procesándose', async () => {
+    const timers = manualScheduler()
+    const primero = deferred()
+    const lotes = [[lease(1)], [lease(2)]]
+    const repo = repository({ leaseWebhookEvents: vi.fn(async () => ok(lotes.shift() ?? [])) })
+    const terminados = []
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-sin-turnos',
+      repository: repo,
+      scheduler: timers.scheduler,
+      processEvent: async (event) => {
+        if (event.id === 'event-1') await primero.promise
+        terminados.push(event.id)
+      },
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(worker.inFlightCount()).toBe(1))
+    // Trajo trabajo: vuelve a mirar YA, sin esperar a que el primero acabe.
+    await vi.waitFor(() => expect(timers.countByDelay(0)).toBe(1))
+    timers.runByDelay(0)
+
+    await vi.waitFor(() => expect(terminados).toEqual(['event-2']))
+    // Y solo reservó el hueco que quedaba libre (4 de concurrencia, 1 ocupado).
+    expect(repo.leaseWebhookEvents).toHaveBeenLastCalledWith('worker-sin-turnos', 3, 180)
+
+    primero.resolve()
+    await vi.waitFor(() => expect(terminados).toEqual(['event-2', 'event-1']))
+    await worker.stop()
+  })
+
+  it('al terminar un mensaje vuelve a mirar al instante: el siguiente del cliente espera a ese', async () => {
+    const timers = manualScheduler()
+    const puerta = deferred()
+    const lotes = [[lease(1)]]
+    const repo = repository({ leaseWebhookEvents: vi.fn(async () => ok(lotes.shift() ?? [])) })
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-rafaga',
+      repository: repo,
+      scheduler: timers.scheduler,
+      processEvent: () => puerta.promise,
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(timers.countByDelay(0)).toBe(1))
+    timers.runByDelay(0)
+    // La cola está vacía por ahora: toca el sondeo de siempre.
+    await vi.waitFor(() => expect(timers.countByDelay(1_000)).toBe(1))
+
+    puerta.resolve()
+    await vi.waitFor(() => expect(repo.completeWebhookEvent).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(timers.countByDelay(0)).toBe(1))
+    expect(timers.countByDelay(1_000)).toBe(0)
+    await worker.stop()
+  })
+
+  it('despertar adelanta un sondeo lejano, pero nunca atrasa uno cercano', async () => {
+    const timers = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-despertador',
+      repository: repository(),
+      scheduler: timers.scheduler,
+      processEvent: async () => {},
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(timers.countByDelay(1_000)).toBe(1))
+
+    worker.despertar(350)
+    expect(timers.countByDelay(350)).toBe(1)
+    expect(timers.countByDelay(1_000)).toBe(0)
+
+    worker.despertar(800)
+    expect(timers.countByDelay(350)).toBe(1)
+    expect(timers.countByDelay(800)).toBe(0)
+
+    worker.despertar()
+    expect(timers.countByDelay(0)).toBe(1)
+    expect(timers.size()).toBe(1)
+    await worker.stop()
+  })
+
+  it('un aviso que llega con la reserva en vuelo no se pierde', async () => {
+    // Esa reserva pudo leer la cola ANTES de que el mensaje nuevo existiera.
+    const timers = manualScheduler()
+    const reserva = deferred()
+    const repo = repository({ leaseWebhookEvents: vi.fn(() => reserva.promise) })
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-aviso-en-vuelo',
+      repository: repo,
+      scheduler: timers.scheduler,
+      processEvent: async () => {},
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(repo.leaseWebhookEvents).toHaveBeenCalledOnce())
+    worker.despertar(350)
+    expect(timers.size()).toBe(0)
+
+    reserva.resolve(ok([]))
+    await vi.waitFor(() => expect(timers.countByDelay(350)).toBe(1))
+    expect(timers.countByDelay(1_000)).toBe(0)
+    await worker.stop()
+  })
+
+  it('nunca pasa de su concurrencia, por mucho que lo despierten', async () => {
+    const timers = manualScheduler()
+    const puerta = deferred()
+    const repo = repository({
+      leaseWebhookEvents: vi.fn(async (_worker, limit) => ok(
+        Array.from({ length: limit }, (_, index) => lease(index)),
+      )),
+    })
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-lleno',
+      repository: repo,
+      scheduler: timers.scheduler,
+      concurrency: 2,
+      processEvent: () => puerta.promise,
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(worker.inFlightCount()).toBe(2))
+    await vi.waitFor(() => expect(timers.countByDelay(0)).toBe(1))
+    timers.runByDelay(0)
+    worker.despertar(0)
+    await vi.waitFor(() => expect(timers.countByDelay(1_000) + timers.countByDelay(0)).toBe(1))
+    if (timers.countByDelay(0)) timers.runByDelay(0)
+
+    // Lleno: ni siquiera pregunta a la base.
+    await Promise.resolve()
+    expect(repo.leaseWebhookEvents).toHaveBeenCalledOnce()
+    expect(worker.inFlightCount()).toBe(2)
+
+    puerta.resolve()
+    await worker.stop()
+  })
+
+  it('si la base falla, vuelve al sondeo de siempre en vez de insistir en bucle', async () => {
+    const timers = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-base-caida',
+      repository: repository({
+        leaseWebhookEvents: vi.fn(async () => ({ data: null, error: { message: 'caída' } })),
+      }),
+      scheduler: timers.scheduler,
+      processEvent: async () => {},
+      onError: () => {},
+    })
+
+    worker.start()
+    timers.runByDelay(0)
+    await vi.waitFor(() => expect(timers.countByDelay(1_000)).toBe(1))
+    expect(timers.countByDelay(0)).toBe(0)
+    await worker.stop()
+  })
+
+  it('sin arrancar, o ya parado, despertar no deja temporizadores', async () => {
+    const timers = manualScheduler()
+    const worker = createWebhookInboxWorker({
+      workerId: 'worker-dormido',
+      repository: repository(),
+      scheduler: timers.scheduler,
+      processEvent: async () => {},
+    })
+
+    worker.despertar(0)
+    expect(timers.size()).toBe(0)
+
+    worker.start()
+    await worker.stop()
+    worker.despertar(0)
+    expect(timers.size()).toBe(0)
+  })
+})
