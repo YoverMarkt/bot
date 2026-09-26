@@ -2291,6 +2291,49 @@ begin
     raise notice 'BÚSQUEDA DEL MARKETPLACE: verificada';
   end;
 
+  -- ── La búsqueda recorta por RELEVANCIA, no por identificador ─────────────
+  --
+  -- 2026-09-26: el `limit` iba pegado a un `distinct on` ordenado por `id`, y
+  -- se quedaban los locales de uuid más bajo. El más parecido lleva aquí el
+  -- uuid MÁS ALTO a propósito: con el código viejo queda fuera siempre, no
+  -- una de cada tantas.
+  declare
+    v_mejor  uuid := 'ffffffff-ffff-4fff-bfff-fffffffffff1';
+    v_primero uuid;
+  begin
+    insert into public.businesses (
+      id, slug, name, type, whatsapp_provider, takes_orders, storefront_enabled
+    ) values
+      ('00000000-0000-4000-8000-0000000000a1', 'verificacion-relevancia-1',
+       'Relevancia verificada sucursal norte', 'pizzería', 'marketplace', true, true),
+      ('00000000-0000-4000-8000-0000000000a2', 'verificacion-relevancia-2',
+       'Relevancia verificada sucursal sur', 'pizzería', 'marketplace', true, true),
+      (v_mejor, 'verificacion-relevancia-3',
+       'Relevancia verificada', 'pizzería', 'marketplace', true, true);
+
+    select id into v_primero
+    from public.marketplace_buscar_negocios('relevancia verificada', 1);
+    if v_primero is distinct from v_mejor then
+      raise exception 'La búsqueda recorta por identificador: el local más parecido se quedó fuera';
+    end if;
+
+    -- Y lo que sale llega de más a menos parecido, que es como lo pinta el chat.
+    if exists (
+      select 1
+      from (
+        select r.orden, lag(r.orden) over (order by r.n) as anterior
+        from public.marketplace_buscar_negocios('relevancia verificada', 3)
+          with ordinality as r(id, slug, name, type, motivo, orden, n)
+      ) s
+      where s.anterior < s.orden
+    ) then
+      raise exception 'La búsqueda devuelve los locales sin ordenar por relevancia';
+    end if;
+
+    delete from public.businesses where slug like 'verificacion-relevancia-%';
+    raise notice 'BÚSQUEDA POR RELEVANCIA: verificada';
+  end;
+
   -- ── La cola de avisos ────────────────────────────────────────────────────
   declare
     v_neg_out uuid;

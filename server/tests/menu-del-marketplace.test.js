@@ -893,3 +893,66 @@ describe('las palabras de conversación', () => {
     expect(r.options).toContain('Pizza Uno')
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UNA CATEGORÍA ESCRITA POR SU NOMBRE, AUNQUE ESTÉ EN OTRA PÁGINA (2026-09-25)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Con los locales de muestra hubo más de nueve categorías con locales, y
+// «Panaderías» y «Minimarkets» cayeron a la segunda página de la portada. El
+// canario escribía su nombre desde la primera y no las encontraba: cinco
+// veces seguidas, con dos locales invisibles para quien escribe.
+describe('la categoría escrita por su nombre', () => {
+  const MUCHAS = [
+    cat('pizzerias', 'Pizzerías', '🍕'), cat('hamburguesas', 'Hamburguesas', '🍔'),
+    cat('almuerzos', 'Almuerzos', '🍽️'), cat('restaurantes', 'Comida típica y restaurantes', '🍲'),
+    cat('asados', 'Asados y parrilla', '🔥'), cat('mariscos', 'Mariscos y ceviches', '🐟'),
+    cat('internacional', 'Comida internacional', '🌎'), cat('desayunos', 'Desayunos y café', '🍳'),
+    cat('postres', 'Heladerías y postres', '🍦'), cat('jugos', 'Jugos y batidos', '🥤'),
+    cat('panaderias', 'Panaderías', '🥖'), cat('minimarkets', 'Minimarkets', '🛒'),
+  ]
+  const portada = { vista: 'categorias', pagina: 0 }
+  const escribir = mensaje => paso({ mensaje, vista: portada, categorias: MUCHAS, negocios: [] })
+
+  it('parte de la premisa: esas dos NO están en la primera página', () => {
+    expect(verCategorias(MUCHAS, 0).options).not.toContain('🥖 Panaderías')
+    expect(verCategorias(MUCHAS, 0).options).not.toContain('🛒 Minimarkets')
+  })
+
+  it('las encuentra igual desde la portada, que es lo que hace el canario', () => {
+    expect(escribir('Panaderías').vista).toEqual({ vista: 'negocios', categoria: 'panaderias', pagina: 0 })
+    expect(escribir('Minimarkets').vista).toEqual({ vista: 'negocios', categoria: 'minimarkets', pagina: 0 })
+  })
+
+  it('sin tildes, en minúsculas y en singular, como escribe la gente', () => {
+    expect(escribir('panaderia').vista.categoria).toBe('panaderias')
+    expect(escribir('MINIMARKET').vista.categoria).toBe('minimarkets')
+  })
+
+  it('un NÚMERO sigue siendo la fila que el cliente tiene delante', () => {
+    // «10» no es la décima categoría de una página que no ve.
+    expect(escribir('3').vista).toEqual({ vista: 'negocios', categoria: 'almuerzos', pagina: 0 })
+    expect(escribir('10').vista.vista).toBe('categorias')
+  })
+
+  it('con dos de otra página que empiezan igual no adivina: sigue buscando', () => {
+    // Las dos «Comida…» empujadas a la segunda página.
+    const relleno = Array.from({ length: 9 }, (_, i) => cat(`c${i}`, `Categoría ${i}`))
+    const r = paso({
+      mensaje: 'comida',
+      vista: portada,
+      categorias: [
+        ...relleno,
+        cat('restaurantes', 'Comida típica y restaurantes'),
+        cat('internacional', 'Comida internacional'),
+      ],
+      negocios: [],
+    })
+    expect(r.vista.vista).toBe('categorias')
+    expect(r.noEntendido).toBe(true)
+  })
+
+  it('una palabra corta tampoco secuestra la búsqueda', () => {
+    expect(escribir('pan').noEntendido).toBe(true)
+  })
+})

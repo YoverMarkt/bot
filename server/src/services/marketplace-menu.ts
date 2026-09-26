@@ -447,6 +447,36 @@ export function elegir(mensaje: string, opciones: string[]): string | null {
 }
 
 /**
+ * La categoría que el cliente ESCRIBIÓ por su nombre, esté en la página que
+ * esté.
+ *
+ * ⚠️ `elegir` solo mira las opciones de la página que se está viendo, y la
+ * portada enseña 9. Con los locales de muestra hubo más de 9 categorías con
+ * locales, y «Panaderías» y «Minimarkets» cayeron a la segunda página: quien
+ * escribía su nombre desde la portada no las encontraba. Lo cazó el canario
+ * cinco veces seguidas (2026-09-25), con los dos locales invisibles.
+ *
+ * ⚠️ Solo por NOMBRE, nunca por número: «3» es la tercera fila que el cliente
+ * TIENE DELANTE, no la tercera de una página que no ve. Y se exige que sea
+ * inequívoco: con dos categorías que empiezan igual se sigue preguntando —o
+ * buscando—, como hacía antes.
+ */
+function categoriaEscrita(
+  mensaje: string,
+  categorias: MarketplaceCategory[],
+): MarketplaceCategory | null {
+  const texto = normalizar(mensaje).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (texto.length < 4 || /^\d+$/.test(texto)) return null
+  const limpia = (categoria: MarketplaceCategory) => normalizar(categoria.label)
+    .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const exacta = categorias.find(categoria => limpia(categoria) === texto)
+  if (exacta) return exacta
+  // «panaderia» en singular, o «heladerias» sin «y postres».
+  const porInicio = categorias.filter(categoria => limpia(categoria).startsWith(texto))
+  return porInicio.length === 1 ? porInicio[0] : null
+}
+
+/**
  * La portada: las categorías que hoy tienen locales detrás.
  *
  * `saludar` tiene TRES estados, no dos (2026-09-06):
@@ -666,6 +696,7 @@ export function paso(input: PasoInput): MarketplaceReply {
   if (elegida === VER_MAS) return verCategorias(categorias, vista.pagina + 1)
 
   const categoria = mostrados.find(c => etiquetaCategoria(c) === elegida)
+    ?? categoriaEscrita(mensaje, categorias)
   if (categoria) {
     // El llamador aún no trae los locales de ESTA categoría: los pide y
     // vuelve a llamar. Se devuelve la vista para que sepa cuál consultar.
