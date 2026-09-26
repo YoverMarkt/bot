@@ -54,11 +54,18 @@ if (!directa) {
 }
 
 // El host directo de Supabase es IPv6 puro; la CLI va por el pooler IPv4.
-const url = new URL(directa)
-const ref = url.hostname.replace(/^db\./, '').replace(/\.supabase\.co$/, '')
+//
+// ⚠️ DATABASE_URL puede ser de las dos formas, y desde el traslado a EE. UU.
+// Este (2026-09-26) ya es la del POOLER. Deducir el proyecto de
+// `db.<ref>.supabase.co` con una cadena de pooler daba un proyecto inventado,
+// y mandarla al pooler fijo de São Paulo, «Tenant or user not found»: cada
+// pooler solo conoce los proyectos de su región.
 const pooler = new URL(directa)
-pooler.hostname = process.env.POOLER_HOST || 'aws-1-sa-east-1.pooler.supabase.com'
-pooler.username = `postgres.${ref}`
+if (!pooler.hostname.endsWith('.pooler.supabase.com')) {
+  const ref = pooler.hostname.replace(/^db\./, '').replace(/\.supabase\.co$/, '')
+  pooler.hostname = process.env.POOLER_HOST || 'aws-0-us-east-1.pooler.supabase.com'
+  pooler.username = `postgres.${ref}`
+}
 pooler.port = '5432'
 
 console.log('🔎 Leyendo el esquema de la base…')
