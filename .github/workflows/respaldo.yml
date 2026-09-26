@@ -16,7 +16,7 @@ name: Respaldo diario
 # runners de GitHub no tienen IPv6, así que desde aquí es inalcanzable — por eso
 # el script local necesita Docker con `--network host`.
 #
-# El pooler (`aws-1-sa-east-1.pooler.supabase.com`) SÍ responde por IPv4, y en
+# El pooler (`aws-0-us-east-1.pooler.supabase.com`) SÍ responde por IPv4, y en
 # modo sesión (puerto 5432) admite `pg_dump`. Comprobado el 2026-09-23: 992 KB
 # y 98 tablas con datos.
 #
@@ -25,13 +25,14 @@ name: Respaldo diario
 #
 # ⚠️ Y CADA POOLER SOLO CONOCE SUS PROPIOS PROYECTOS: apuntar a otra región da
 # el mismo error de usuario inexistente aunque la contraseña sea correcta.
-# El de este proyecto es **sa-east-1** (São Paulo), y el prefijo es `aws-1`,
-# no `aws-0`.
+# El de este proyecto es **us-east-1** (Virginia) desde el traslado del
+# 2026-09-26, con prefijo `aws-0`. El proyecto viejo (São Paulo) era `aws-1`:
+# el prefijo depende de CADA proyecto, así que se copia del botón «Connect».
 #
 # ── EL SECRETO QUE NECESITA ────────────────────────────────────────────────
 #
 #   BACKUP_DATABASE_URL   la cadena del pooler, en modo sesión:
-#     postgresql://postgres.<proyecto>:<clave>@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
+#     postgresql://postgres.<proyecto>:<clave>@aws-0-us-east-1.pooler.supabase.com:5432/postgres
 #
 #   BACKUP_PASSPHRASE     con la que se cifra el dump antes de guardarlo.
 #     ⚠️ GUÁRDALA EN UN GESTOR DE CONTRASEÑAS. Sin ella los respaldos no se

@@ -285,8 +285,10 @@ el de aquí: el workflow hace checkout de este repositorio y ejecuta
 ⚠️ **Usa la cadena del POOLER, no la directa.** `db.<ref>.supabase.co` resuelve
 solo a IPv6 y los runners de GitHub no tienen IPv6. Con la directa falla con
 «Network is unreachable», que parece un problema de credenciales y no lo es.
-La que funciona es `aws-1-sa-east-1.pooler.supabase.com:5432` con usuario
-`postgres.<ref>` — `aws-0` contesta «tenant not found» en todas las regiones.
+La que funciona es `aws-0-us-east-1.pooler.supabase.com:5432` con usuario
+`postgres.<ref>` desde el traslado del 2026-09-26. El prefijo (`aws-0`,
+`aws-1`…) depende de CADA proyecto —el viejo de São Paulo era `aws-1` y ahí
+`aws-0` contestaba «tenant not found»—: se copia del botón «Connect».
 
 ## El staging local, y el freno que lo hizo necesario (2026-09-19)
 
@@ -474,8 +476,9 @@ que sí responde por IPv4 y en modo sesión (puerto 5432) admite `pg_dump`.
 **cada pooler solo conoce sus propios proyectos**: apuntar a otra región
 devuelve `Tenant or user not found` aunque la contraseña sea correcta, que es un
 error que no dice lo que pasa. El de este proyecto es
-`aws-1-sa-east-1.pooler.supabase.com` — São Paulo, y con prefijo `aws-1`, no
-`aws-0`.
+`aws-0-us-east-1.pooler.supabase.com` — Virginia, desde el traslado del
+2026-09-26. El de São Paulo era `aws-1-sa-east-1`: el prefijo cambia de un
+proyecto a otro.
 
 **3. `pg_dump` 16 se niega a volcar un servidor 17**: «aborting because of
 server version mismatch». Ubuntu trae el 16, así que el workflow instala el 17
@@ -499,3 +502,44 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
   -in respaldo.dump.enc -out respaldo.dump
 pg_restore --no-owner --no-privileges -d <destino> respaldo.dump
 ```
+
+## El traslado de la base a EE. UU. Este (2026-09-26)
+
+La base vivía en **São Paulo** y el servidor en **Virginia** (Railway us-east4):
+cada consulta cruzaba el continente, ~140 ms, y un mensaje del chat hace entre
+6 y 10. Se trasladó al proyecto «Umbani» en **us-east-1**. La consulta de la
+salud (`base_ms`) pasó de ~140 ms a ~25 ms. El corte dejó el servidor parado
+4 min 40 s.
+
+⚠️ **Supabase da EXECUTE a `anon` en cada función que se crea** (permisos por
+defecto), y `pg_dump` no lo deshace: vuelca los permisos respecto a los de
+PostgreSQL, no a los del proyecto destino. En el ensayo, funciones que en
+producción solo ejecuta el servidor —`create_storefront_order`,
+`block_customer_temporarily`…— quedaron ejecutables con la clave pública. Por
+eso **el `--no-privileges` del respaldo diario NO sirve para trasladar**: el
+traslado vuelca CON permisos y después aplica un guion generado desde la base
+vieja con `aclexplode` (revocar a PUBLIC/anon/authenticated/service_role y
+conceder exactamente lo de producción).
+
+**Lo que decidió que el traslado era bueno** no fue «el volcado terminó», fue
+comparar una huella de las dos bases —filas y contenido de cada tabla, RLS,
+permisos, código de cada función, disparadores, índices, restricciones, vista y
+extensiones— y exigir cero diferencias: 786 hechos idénticos. Las restricciones
+CHECK se comparan sin paréntesis: PostgreSQL los reescribe al recrearlas
+(`((a AND b) AND c)` → `(a AND b AND c)`) sin cambiar lo que dicen.
+
+Otras trampas del día:
+
+- **Railway no deja un servicio con cero réplicas.** `railway scale us-east=0`
+  lo MUDÓ a us-west2 con una réplica. Para parar de verdad: `railway down`, y
+  `railway redeploy --from-source` para volver a arrancar desde `main`.
+- **Las extensiones van en el MISMO esquema que en origen**: `pgcrypto`,
+  `pg_trgm` y `unaccent` en `extensions`; `vector` y `btree_gist` en `public`.
+- **Una contraseña con `@` rompe `pg_dump`/`psql`** aunque Node la lea bien, y
+  el error imprime un trozo de ella. Tras cambiarla, el pooler tarda ~30 s en
+  aceptar la nueva.
+- Las fotos y los comprobantes viven en Cloudinary: el traslado es solo la base.
+
+El proyecto de São Paulo quedó intacto como vuelta atrás: volver es devolver
+las tres variables `SUPABASE_*` de Railway (lo escrito después del corte se
+perdería).
