@@ -109,7 +109,7 @@ describe('el parte que se publica', () => {
 // LO QUE NO SE PUBLICA EN UN REPOSITORIO PÚBLICO
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// `YoverMarkt/bot` es PÚBLICO. Un issue diario contando que al canal le queda
+// `YoverMarkt/umbani` es PÚBLICO. Un issue diario contando que al canal le queda
 // saldo para dos mensajes, que lleva 30 h sin un pedido o que producción está
 // caída es un informe operativo del negocio —indexable y permanente— para
 // cualquiera que pase por ahí. El semáforo sí se puede decir: es justo lo que

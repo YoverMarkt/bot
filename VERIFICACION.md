@@ -259,7 +259,7 @@ misma carpeta que las urgencias. Solo termina en rojo si no pudo publicar.
 criterios distintos para el mismo estado acabarían diciendo cosas distintas el
 mismo día.
 
-⚠️ **En un repositorio PÚBLICO el parte no da detalles.** `YoverMarkt/bot` lo
+⚠️ **En un repositorio PÚBLICO el parte no da detalles.** `YoverMarkt/umbani` lo
 es, y un issue diario contando que al canal le queda saldo para dos mensajes,
 que lleva 31 h sin un pedido o que producción está caída es un informe
 operativo del negocio —indexable y permanente— para cualquiera. Publica el
