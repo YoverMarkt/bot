@@ -13139,11 +13139,23 @@ as $$
     union all select * from por_texto
     union all select * from por_parecido
     union all select * from por_nombre
+  ),
+  -- Un local aparece UNA vez, con su mejor motivo…
+  mejor as (
+    select distinct on (t.id) t.id, t.slug, t.name, t.type, t.motivo, t.orden
+    from todo t
+    order by t.id, t.orden desc
   )
-  -- Un local aparece UNA vez, con su mejor motivo.
-  select distinct on (t.id) t.id, t.slug, t.name, t.type, t.motivo, t.orden
-  from todo t
-  order by t.id, t.orden desc
+  -- …y el recorte va por RELEVANCIA, no por identificador.
+  --
+  -- ⚠️ Hasta el 2026-09-26 el `limit` iba pegado al `distinct on`, cuyo
+  -- `order by` EMPIEZA por `t.id` —así lo exige PostgreSQL—. Con más locales
+  -- que el límite se quedaban los de uuid más bajo, que es un sorteo: el más
+  -- parecido podía quedarse fuera, y los que salían llegaban en ese mismo
+  -- orden sin sentido. El nombre desempata para que la lista no baile.
+  select m.id, m.slug, m.name, m.type, m.motivo, m.orden
+  from mejor m
+  order by m.orden desc, m.name
   limit greatest(coalesce(p_limite, 8), 1);
 $$;
 
