@@ -303,11 +303,17 @@ app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
   // /api/admin/channel-health.
   const ok = !shuttingDown && webhookInboxWorker.isReady()
   let lastInboundAt: string | null = null
+  // Lo que tarda UNA consulta a la base desde el servidor (2026-09-26). Cada
+  // respuesta del chat hace varias en fila, así que este número multiplicado
+  // es el grueso de lo que el cliente espera. Con la región al lado, dice si
+  // servidor y base están cerca o se cruzan medio continente.
+  const antesDeLaBase = Date.now()
   try {
     lastInboundAt = await db.getLastInboundAt()
   } catch {
     lastInboundAt = null
   }
+  const baseMs = Date.now() - antesDeLaBase
   const recentFailures = getRecentWebhookFailures(5)
   res.status(ok ? 200 : 503).json({
     ok,
@@ -328,6 +334,8 @@ app.get('/api/health', asyncHandler(async (_req: Request, res: Response) => {
     // Railway inyecta la variable sola. En local no existe y vale 'local',
     // que es exactamente lo que hay que ver ahí.
     version: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
+    region: process.env.RAILWAY_REPLICA_REGION || null,
+    base_ms: baseMs,
     // ── ¿El canario está VIVO? ───────────────────────────────────────────
     //
     // ⚠️ El canario calla cuando todo va bien, y eso lo hacía indistinguible

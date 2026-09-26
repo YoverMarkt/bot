@@ -3,11 +3,12 @@ import {
   RiArrowLeftSLine,
   RiArrowRightSLine,
   RiDeleteBin6Line,
+  RiLockLine,
   RiErrorWarningLine,
   RiMapPin2Line,
   RiShoppingBag3Line,
 } from '@remixicon/react'
-import { Aviso } from '../components/ui'
+import { Aviso, Boton, EstadoVacio } from '../components/ui'
 import { getOrders } from '../lib/api'
 import { money } from '../lib/format'
 import type { Address, Me, TrackedOrder } from '../lib/types'
@@ -87,7 +88,7 @@ const cuando = (iso: string) => {
 type Vista = 'inicio' | 'pedidos' | 'direcciones'
 
 export default function Account({
-  slug, me, onVolver, onBorrarDireccion, onFalloEnlace,
+  slug, me, onVolver, onBorrarDireccion, onFalloEnlace, sesionesNuevas = 0,
 }: {
   slug: string
   me: Me | null
@@ -95,9 +96,15 @@ export default function Account({
   onBorrarDireccion: (addressId: string) => Promise<void>
   /** El mismo manejo que el resto de la tienda para un enlace que no vale. */
   onFalloEnlace: (error: unknown) => Promise<boolean>
+  /** Sube cada vez que el cliente confirma su número: hay que volver a pedir. */
+  sesionesNuevas?: number
 }) {
   const [pedidos, setPedidos] = useState<TrackedOrder[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // El enlace pidió confirmar el número (o no vale) y la puerta ya se encargó:
+  // no es un error ni una carga, es un paso pendiente del cliente.
+  const [faltaConfirmar, setFaltaConfirmar] = useState(false)
+  const [intento, setIntento] = useState(0)
   /**
    * ⚠️ Las dos secciones dejan de ir APILADAS (2026-08-28, pedido del dueño).
    * Con los pedidos arriba y las direcciones debajo, quien entraba a cambiar
@@ -108,6 +115,8 @@ export default function Account({
   const [vista, setVista] = useState<Vista>('inicio')
 
   useEffect(() => {
+    setError(null)
+    setFaltaConfirmar(false)
     getOrders(slug)
       .then(setPedidos)
       .catch(async (fallo) => {
@@ -117,10 +126,19 @@ export default function Account({
         // ya lo pedía y esta pantalla se lo tragaba. Ahora pasa por la misma
         // puerta — confirmar, enlace caducado o bloqueo — y solo lo que de
         // verdad es un fallo del camino se queda como error aquí.
-        if (await onFalloEnlace(fallo)) return
+        //
+        // ⚠️ Y DESPUÉS de confirmar hay que volver a pedir (2026-09-26). Con el
+        // `return` a secas la pantalla se quedaba en «Cargando…» para siempre:
+        // el cliente confirmaba su número y nadie volvía a preguntar. Lo vio el
+        // dueño en producción. Ahora escucha `sesionesNuevas`, que la app sube
+        // al confirmar, y mientras tanto dice lo que falta en vez de cargar.
+        if (await onFalloEnlace(fallo)) {
+          setFaltaConfirmar(true)
+          return
+        }
         setError('No pudimos cargar tus pedidos')
       })
-  }, [slug, onFalloEnlace])
+  }, [slug, onFalloEnlace, sesionesNuevas, intento])
 
   const direcciones: Address[] = me?.addresses || []
   // La flecha vuelve un paso, no dos: desde una sección se vuelve a la portada
@@ -168,7 +186,9 @@ export default function Account({
                 id: 'pedidos' as const,
                 icono: RiShoppingBag3Line,
                 texto: 'Mis pedidos',
-                detalle: pedidos === null
+                detalle: faltaConfirmar
+                  ? 'Confirma tu número para verlos'
+                  : pedidos === null
                   ? 'Cargando…'
                   : pedidos.length === 0
                     ? 'Todavía no has pedido nada'
@@ -214,7 +234,16 @@ export default function Account({
               pantalla no salta cuando llegan los datos. El `brillo` recorre en
               vez de parpadear —un bloque que respira parece algo que viene— y
               se apaga solo con `prefers-reduced-motion`. */}
-          {!pedidos && !error && (
+          {faltaConfirmar && (
+            <EstadoVacio icono={<RiLockLine size={28} />} titulo="Confirma tu número">
+              Para ver tus pedidos, confirma el WhatsApp con el que pediste tu enlace.
+              <span className="mt-4 block">
+                <Boton onClick={() => setIntento(n => n + 1)}>Confirmar mi número</Boton>
+              </span>
+            </EstadoVacio>
+          )}
+
+          {!pedidos && !error && !faltaConfirmar && (
             <div className="space-y-2">
               {[0, 1].map(fila => (
                 <div key={fila} className="brillo h-17 rounded-(--radius-tarjeta)" />
@@ -223,12 +252,9 @@ export default function Account({
           )}
 
           {pedidos?.length === 0 && (
-            <div className="rounded-(--radius-tarjeta) border border-dashed borde-tema px-4 py-8 text-center">
-              <p className="titulo-m">Todavía no has pedido nada</p>
-              <p className="mt-1.5 text-[13px] texto-cuerpo">
-                Cuando hagas tu primer pedido, aparecerá aquí.
-              </p>
-            </div>
+            <EstadoVacio icono={<RiShoppingBag3Line size={28} />} titulo="Todavía no has pedido nada">
+              Cuando hagas tu primer pedido, aparecerá aquí.
+            </EstadoVacio>
           )}
 
           <div className="space-y-2">

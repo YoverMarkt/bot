@@ -154,7 +154,20 @@ const DIST = path.join(RAIZ, 'dist')
 // que haya un plato. Son unas décimas y ninguna librería. Faltaban porque la
 // ficha dejaba marcar diez jugos gratis sobre un almuerzo mientras el carrito
 // los rechazaba: pantalla y cobro tienen que contar igual, y eso no se recorta.
-const PRESUPUESTO_KB = 96
+//
+// 96 → 97 el 2026-09-26. Medido en el CI: 95,4 kB en `main` antes de #412 →
+// 96,0 kB con esto. Ninguna librería. Entraron, en dos pasos:
+//   · #412 (+0,5): el `Aviso` y el `EstadoVacio` únicos que pidió el dueño
+//     —«el diseño en todas sus pantallas y avisos»— y el icono de la
+//     bienvenida en el `index.html`, que SÍ viaja entero (se le quitó el
+//     comentario y se recortó el trazo a un decimal para que cupiera).
+//   · Los tres fallos que el dueño encontró en producción (+0,1): «Mis
+//     pedidos» que se quedaba cargando, la barra de categorías que no seguía
+//     el scroll y el aviso del comprobante que solo salía al recargar. Son
+//     arreglos de lo que el cliente ve roto: no se recortan para ahorrar
+//     bytes. La palanca grande sigue siendo la de arriba (diferir la ficha y
+//     el carrito), y la pantalla de Buscar nace diferida para no sumar aquí.
+const PRESUPUESTO_KB = 97
 
 const recorrer = dir => readdirSync(dir).flatMap(entrada => {
   const completa = path.join(dir, entrada)
