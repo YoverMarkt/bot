@@ -6,7 +6,7 @@ Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** 
 
 ## 1. Antes de empezar
 
-- Cuenta en [Railway](https://railway.com) (conecta tu GitHub `YoverMarkt/bot`).
+- Cuenta en [Railway](https://railway.com) (conecta tu GitHub `YoverMarkt/umbani`).
 - Un dominio (Namecheap, GoDaddy, Cloudflare, etc.).
 - Tener a mano las credenciales de Supabase y del superadmin.
 
@@ -14,7 +14,7 @@ Guía para pasar de local (túnel Cloudflare) a producción 24/7 en **Railway** 
 
 ## 2. Crear el servicio en Railway
 
-1. **New Project → Deploy from GitHub repo →** elige `YoverMarkt/bot`, rama `main`.
+1. **New Project → Deploy from GitHub repo →** elige `YoverMarkt/umbani`, rama `main`.
 2. **Settings → Root Directory:** deja **vacío** (raíz).
    - La raíz contiene los cuatro workspaces y un solo `package-lock.json`.
 3. `railway.json` fija Railpack con **Build Command:** `npm run build` y **Start Command:** `node server/dist/index.js`. La configuración del repositorio prevalece sobre el dashboard y genera el servidor y ambos paneles.

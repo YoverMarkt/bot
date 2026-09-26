@@ -57,7 +57,7 @@ export function redactarParte({ salud, detalle, sano, caida, motivos, fecha, pub
   const lineas = [`## ${emoji} ${texto}`, '', `**${dia}, ${hora}** (hora de Ecuador)`, '']
 
   // ⚠️ EN UN REPOSITORIO PÚBLICO EL PARTE NO DA DETALLES, y no es prudencia de
-  // más: `YoverMarkt/bot` es público, así que un issue diario contando que al
+  // más: `YoverMarkt/umbani` es público, así que un issue diario contando que al
   // canal le queda saldo para dos mensajes, que lleva 30 h sin un pedido o que
   // producción está caída es un informe operativo del negocio, indexable y
   // permanente, para cualquiera. El semáforo sí se puede decir: sirve para lo

@@ -10,7 +10,7 @@ Express que sirve el bot, la API y los dos paneles desde un solo proceso.
 ## 0. Prerrequisitos
 
 - [ ] Cuenta en [Railway](https://railway.com).
-- [ ] Repo `YoverMarkt/bot` conectado a Railway (deploy desde GitHub).
+- [ ] Repo `YoverMarkt/umbani` conectado a Railway (deploy desde GitHub).
 - [ ] Los mismos valores que hoy tienes en `server/.env` (Supabase, JWT, admin, etc.).
 - [ ] Opcional más adelante: dominio `vezzper.com` comprado.
 
@@ -98,7 +98,7 @@ webhooks y CORS tengan un único origen canónico.
 
 ## 3. Pasos del deploy
 
-1. [ ] Crear el proyecto en Railway apuntando al repo `YoverMarkt/bot`. Si
+1. [ ] Crear el proyecto en Railway apuntando al repo `YoverMarkt/umbani`. Si
    Railway inicia un deploy automático sin variables, puede fallar; se
    relanzará después de completar estos pasos.
 2. [ ] Abrir el servicio → **Settings → Networking → Public Networking** y
