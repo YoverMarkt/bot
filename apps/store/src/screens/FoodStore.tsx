@@ -162,7 +162,7 @@ export default function FoodStore({
   // estuviera en el estado, cambiarla repintaría la tienda entera.
   const claveDelPedido = useRef<string | null>(null)
 
-  useEffect(() => {
+  const revisarPagoPendiente = useCallback(() => {
     let guardado: string | null = null
     try { guardado = localStorage.getItem(`pedido:${slug}`) } catch { /* modo privado */ }
     if (!guardado) return
@@ -182,11 +182,19 @@ export default function FoodStore({
      */
     getOrder(slug, guardado)
       .then((pedido) => {
-        if (pedido.status !== 'esperando_pago' || pedido.payment_confirmed_at) return
-        setPagoPendiente(pedido)
+        // Se APAGA también: quien vuelve del pago con el comprobante enviado
+        // no puede seguir viendo «Falta tu comprobante».
+        const debe = pedido.status === 'esperando_pago' && !pedido.payment_confirmed_at
+        setPagoPendiente(debe ? pedido : null)
       })
       .catch(() => { /* sin conexión o pedido borrado: la tienda abre igual */ })
   }, [slug])
+
+  // ⚠️ No solo al abrir (2026-09-26). Se calculaba UNA vez, así que quien
+  // pedía por transferencia y tocaba «Volver al menú» no veía el aviso hasta
+  // recargar la app. Lo vio el dueño en producción. Ahora se vuelve a mirar al
+  // salir del pedido recibido y de la pantalla de pago.
+  useEffect(() => { revisarPagoPendiente() }, [revisarPagoPendiente])
 
   useEffect(() => {
     // ⚠️ El fallo de `me` se GUARDA en vez de tragarse. `null` no distinguía
@@ -269,8 +277,15 @@ export default function FoodStore({
    * La línea de lectura es una franja justo debajo de las pestañas: lo que la
    * cruza es lo que el cliente tiene delante.
    */
+  // ⚠️ La carta se DESMONTA mientras se ve la cuenta, el pago o el pedido
+  // recibido, y al volver nace con secciones nuevas (2026-09-26). El vigilante
+  // se armaba una sola vez y seguía mirando las secciones viejas, ya fuera de
+  // la página: la barra se quedaba en «Pizzas» aunque el cliente estuviera en
+  // Bebidas. Lo vio el dueño en producción al volver de «Mi cuenta». Con esto
+  // se vuelve a armar cada vez que la carta reaparece.
+  const cartaALaVista = !enCuenta && !(pagoPendiente && abrirPago) && !recienHecho
   useEffect(() => {
-    if (!grupos.length || resultados) return
+    if (!grupos.length || resultados || !cartaALaVista) return
     // Qué secciones cruzan la línea de lectura. Vive dentro del efecto porque
     // no sobrevive a él: al cambiar la carta se empieza a contar de cero.
     const visibles = new Set<string>()
@@ -295,7 +310,7 @@ export default function FoodStore({
       if (nodo) observador.observe(nodo)
     }
     return () => observador.disconnect()
-  }, [grupos, resultados])
+  }, [grupos, resultados, cartaALaVista])
 
   // La pestaña activa se trae a la vista sola: con seis categorías, la que
   // manda puede haber quedado fuera de la pantalla por la derecha.
@@ -560,6 +575,7 @@ export default function FoodStore({
           onVolver={() => setEnCuenta(false)}
           onBorrarDireccion={borrarDireccion}
           onFalloEnlace={onFalloEnlace}
+          sesionesNuevas={sesionesNuevas}
         />
       </Suspense>
     )
@@ -598,7 +614,7 @@ export default function FoodStore({
         entrega={pagoPendiente.fulfillment || entrega}
         transferencia
         volviendo
-        onVolver={() => setAbrirPago(false)}
+        onVolver={() => { setAbrirPago(false); revisarPagoPendiente() }}
       />
     )
   }
@@ -619,7 +635,7 @@ export default function FoodStore({
         nombre={recienHecho.nombre}
         entrega={entrega}
         transferencia={recienHecho.transferencia}
-        onVolver={() => setRecienHecho(null)}
+        onVolver={() => { setRecienHecho(null); revisarPagoPendiente() }}
       />
     )
   }

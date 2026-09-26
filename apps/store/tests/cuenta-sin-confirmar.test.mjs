@@ -32,3 +32,39 @@ describe('la cuenta usa la misma puerta que el resto de la tienda', () => {
     expect(cuenta).toContain('onFalloEnlace={onFalloEnlace}')
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOS TRES FALLOS QUE EL DUEÑO ENCONTRÓ EN PRODUCCIÓN (2026-09-26)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('después de confirmar el número, los pedidos se vuelven a pedir', () => {
+  it('la cuenta escucha las sesiones nuevas y no se queda cargando', () => {
+    const cuenta = leer('../src/screens/Account.tsx')
+    // El efecto que carga los pedidos se repite al confirmar…
+    expect(cuenta).toMatch(/\}, \[slug, onFalloEnlace, sesionesNuevas, intento\]\)/)
+    // …y mientras falta confirmar lo DICE, en vez de un «Cargando…» eterno.
+    expect(cuenta).toMatch(/if \(await onFalloEnlace\(fallo\)\) \{\s*setFaltaConfirmar\(true\)/)
+    expect(cuenta).toContain('Confirmar mi número')
+    const tienda = leer('../src/screens/FoodStore.tsx')
+    const cuentaEnTienda = tienda.slice(tienda.indexOf('<Account'), tienda.indexOf('/>', tienda.indexOf('<Account')))
+    expect(cuentaEnTienda).toContain('sesionesNuevas={sesionesNuevas}')
+  })
+})
+
+describe('la barra de categorías sigue al scroll también al volver', () => {
+  it('el vigilante se vuelve a armar cuando la carta reaparece', () => {
+    const tienda = leer('../src/screens/FoodStore.tsx')
+    expect(tienda).toMatch(/const cartaALaVista = !enCuenta && !\(pagoPendiente && abrirPago\) && !recienHecho/)
+    expect(tienda).toMatch(/\}, \[grupos, resultados, cartaALaVista\]\)/)
+  })
+})
+
+describe('«Falta tu comprobante» no espera a recargar', () => {
+  it('se vuelve a mirar al salir del pedido recibido y de la pantalla de pago', () => {
+    const tienda = leer('../src/screens/FoodStore.tsx')
+    expect(tienda).toContain('onVolver={() => { setRecienHecho(null); revisarPagoPendiente() }}')
+    expect(tienda).toContain('onVolver={() => { setAbrirPago(false); revisarPagoPendiente() }}')
+    // Y se apaga cuando ya no debe nada, no solo se enciende.
+    expect(tienda).toContain('setPagoPendiente(debe ? pedido : null)')
+  })
+})
