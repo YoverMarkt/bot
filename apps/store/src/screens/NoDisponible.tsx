@@ -20,7 +20,8 @@ export default function NoDisponible() {
       <SelloDePuerta><RiStore2Line size={26} /></SelloDePuerta>
       <h1 className="titulo-xl">Esta tienda no está disponible</h1>
       <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
-        Puede que el negocio la haya desactivado. Escríbele por WhatsApp y te atiende igual.
+        Puede que el negocio la haya desactivado. Vuelve al chat de WhatsApp donde
+        recibiste el enlace: ahí puedes elegir otra opción.
       </p>
     </div>
   )

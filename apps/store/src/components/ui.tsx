@@ -3,6 +3,7 @@ import {
   RiArrowLeftSLine,
   RiCheckLine,
   RiCloseLine,
+  RiShoppingBag3Line,
 } from '@remixicon/react'
 import { foto } from '../lib/imagen'
 import type { AnchoDeFoto } from '../lib/imagen'
@@ -246,17 +247,87 @@ export function Contador({ valor, onCambiar, minimo = 1, maximo = 99 }: {
   )
 }
 
-export function Aviso({ tono = 'info', children }: { tono?: 'info' | 'alerta'; children: ReactNode }) {
-  // El aviso informativo va sobre el acento del negocio, con su texto legible
-  // calculado; el de alerta se queda ámbar siempre, porque «ojo» no es marca.
-  const estilo = tono === 'alerta'
-    ? 'bg-amber-500/15 text-amber-700'
-    : 'acento'
+/**
+ * Lo que se enseña cuando no hay nada que enseñar: el carrito vacío, la carta
+ * que el negocio aún no cargó, una búsqueda sin resultados.
+ *
+ * ⚠️ UNA sola forma (2026-09-25). El carrito vacío ya la tenía —icono en un
+ * círculo, título y una línea de qué hacer— y la carta vacía era una frase
+ * gris suelta en mitad de la pantalla, que se leía como un fallo.
+ */
+export function EstadoVacio({ icono, titulo, children }: {
+  icono: ReactNode
+  titulo: ReactNode
+  children?: ReactNode
+}) {
   return (
-    <div className={`rounded-2xl px-4 py-3 text-[13.5px] font-semibold ${estilo}`}>
-      {children}
+    <div className="py-12 text-center">
+      <span className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-black/5 texto-tenue">
+        {icono}
+      </span>
+      <p className="titulo-m">{titulo}</p>
+      {children && (
+        <p className="mx-auto mt-1.5 max-w-64 text-[13.5px] leading-relaxed texto-cuerpo">{children}</p>
+      )}
     </div>
   )
+}
+
+/**
+ * Un aviso DENTRO de una pantalla: la tienda cerrada, el comprobante que
+ * falta, algo que no se pudo cargar.
+ *
+ * ⚠️ UNA sola forma (2026-09-25). Había tres: la tienda cerrada era un bloque
+ * melocotón con letra naranja, «Falta tu comprobante» una tarjeta crema con
+ * borde y un círculo, y los errores otro melocotón sin icono. El dueño pidió
+ * que la mini app tuviera su diseño «en todas sus pantallas y avisos», y tres
+ * avisos distintos para decir «ojo» se leen como tres apps.
+ *
+ * Se tomó la del comprobante, que era la completa: icono en círculo, título,
+ * explicación, y flecha cuando se puede tocar. El de alerta se queda ámbar
+ * siempre, porque «ojo» no es marca; el informativo va sobre el acento.
+ *
+ * ⚠️ Sin `dark:`. Esta app no tiene modo oscuro —`color-scheme: light` fijo en
+ * `index.css`—, pero la media query SÍ se dispara con el teléfono en oscuro:
+ * quedaba un ámbar al 10 % sobre página clara, casi sin fondo.
+ */
+export function Aviso({ tono = 'info', icono, titulo, children, onClick }: {
+  tono?: 'info' | 'alerta'
+  icono?: ReactNode
+  titulo?: ReactNode
+  children?: ReactNode
+  /** Si el aviso lleva a algún sitio, se pinta como botón y con flecha. */
+  onClick?: () => void
+}) {
+  const fondo = tono === 'alerta' ? 'border border-amber-300 bg-amber-50' : 'acento'
+  const clases = `flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left shadow-tarjeta ${fondo}`
+  const contenido = (
+    <>
+      {icono && (
+        <span className={`flex size-9 shrink-0 items-center justify-center rounded-full ${
+          tono === 'alerta' ? 'bg-amber-500 text-white' : 'bg-white/60'}`}
+        >
+          {icono}
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        {titulo && <span className="block text-[14px] font-bold">{titulo}</span>}
+        {children && (
+          <span className={`block ${titulo ? 'mt-0.5 text-[12.5px] texto-tenue' : 'text-[13.5px] font-semibold'}`}>
+            {children}
+          </span>
+        )}
+      </span>
+      {onClick && <RiArrowLeftSLine size={18} className="shrink-0 rotate-180 texto-tenue" />}
+    </>
+  )
+  return onClick
+    ? (
+        <button type="button" onClick={onClick} className={`${clases} transition active:scale-[0.99]`}>
+          {contenido}
+        </button>
+      )
+    : <div role="status" className={clases}>{contenido}</div>
 }
 
 /**
@@ -345,10 +416,18 @@ function FotoCargable({ fuente, alto, nombre }: {
  * (`vz-boot`, `vz-logo`, `vz-t`, `vz-s`): así los tres relevos —HTML → App →
  * FoodStore— son invisibles y no cuesta ni un byte de CSS nuevo. Si cambia el
  * texto o el logo, hay que cambiarlo también allí.
+ *
+ * ⚠️ Icono de línea sobre el tinte lima de Umbani, no el emoji 🛍️
+ * (2026-09-25). Todas las demás pantallas llevan su sello así —un icono en un
+ * recuadro con tinte—, y el emoji era la única imagen de la app que no seguía
+ * el diseño: cambia de dibujo según el teléfono. El tamaño se queda, que fue
+ * la decisión del 2026-09-06. En el `index.html` el trazo va con un decimal:
+ * los comentarios y los bytes de ese archivo SÍ llegan al teléfono, y la
+ * tienda tiene presupuesto de tamaño.
  */
 export const Bienvenida = () => (
   <div className="vz-boot">
-    <div className="vz-logo">🛍️</div>
+    <div className="vz-logo"><RiShoppingBag3Line size={44} aria-hidden="true" /></div>
     <p className="vz-t">Bienvenido a Umbani</p>
     <p className="vz-s">Abriendo tu tienda…</p>
   </div>

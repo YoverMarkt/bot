@@ -194,11 +194,20 @@ body {
 }
 
 /* El foco tiene que VERSE: esta app se usa con el teclado del navegador de
-   WhatsApp, y un anillo invisible deja al cliente sin saber dónde está. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--texto);
-  outline-offset: 2px;
-  border-radius: 0.5rem;
+   WhatsApp, y un anillo invisible deja al cliente sin saber dónde está.
+
+   ⚠️ En `@layer base`, no suelta (2026-09-25). Suelta, esta regla ganaba a
+   TODAS las clases de Tailwind —lo que no está en una capa gana siempre a lo
+   que sí—, así que el `outline-none` de los campos no hacía nada: el campo del
+   teléfono y el buscador enseñaban su borde negro de foco Y este anillo
+   encima, un doble borde que se veía roto. En la capa base, cada campo manda
+   con su propio foco (el borde en tinta) y botones y enlaces conservan este. */
+@layer base {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--texto);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
 }
 
 /* La barra inferior no puede quedar debajo del gesto de inicio del iPhone. */

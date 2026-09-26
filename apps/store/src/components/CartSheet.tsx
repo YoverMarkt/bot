@@ -1,5 +1,6 @@
 import { Suspense, lazy, useState } from 'react'
 import {
+  RiErrorWarningLine,
   RiAddLine,
   RiBankLine,
   RiDeleteBin6Line,
@@ -10,7 +11,7 @@ import {
   RiShoppingBag3Line,
   RiShoppingCart2Line,
 } from '@remixicon/react'
-import { Aviso, Boton, Contador, Foto, Hoja, Marca, ROTULO } from './ui'
+import { Aviso, Boton, Contador, EstadoVacio, Foto, Hoja, Marca, ROTULO } from './ui'
 import { money } from '../lib/format'
 import {
   cartTotal, detalleDeLinea, esPlatoPorPartes, lineTotal, needsAddress, orderTotal,
@@ -281,15 +282,9 @@ export default function CartSheet({
       <div className="fondo-app space-y-6 p-4">
         {/* ── PASO 1: solo lo que lleva ─────────────────────────────────── */}
         {enCarrito && !lines.length && (
-          <div className="py-12 text-center">
-            <span className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-black/5 texto-tenue">
-              <RiShoppingCart2Line size={28} />
-            </span>
-            <p className="titulo-m">Tu carrito está vacío</p>
-            <p className="mx-auto mt-1.5 max-w-64 text-[13.5px] leading-relaxed texto-cuerpo">
-              Vuelve a la carta y agrega lo que quieras pedir.
-            </p>
-          </div>
+          <EstadoVacio icono={<RiShoppingCart2Line size={28} />} titulo="Tu carrito está vacío">
+            Vuelve a la carta y agrega lo que quieras pedir.
+          </EstadoVacio>
         )}
 
         {enCarrito && (
@@ -633,7 +628,7 @@ export default function CartSheet({
         </>
         )}
 
-        {error && <Aviso tono="alerta">{error}</Aviso>}
+        {error && <Aviso tono="alerta" icono={<RiErrorWarningLine size={18} />}>{error}</Aviso>}
       </div>
 
       {/* ⚠️ El pie NO se pinta al escribir una dirección. Ahí el botón que

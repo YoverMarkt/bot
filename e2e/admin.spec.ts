@@ -439,7 +439,8 @@ test('el alta carga la carta leída de la foto, revisada y con el precio del due
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'carta.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('foto de la carta'),
   })
-  expect(fotosSubidas).toBe(1)
+  // La subida sale DESPUÉS de elegir el archivo: se espera, no se da por hecha.
+  await expect.poll(() => fotosSubidas).toBe(1)
 
   // El precio «para llevar» se enseña, pero no se usa.
   await expect(dialog.getByText('La carta trae otros precios')).toBeVisible()

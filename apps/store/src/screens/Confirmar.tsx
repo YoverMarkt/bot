@@ -65,8 +65,8 @@ export default function Confirmar({ business, onConfirmar }: {
         Confirma tu número
       </h1>
       <p className="mt-3 text-[15px] leading-relaxed texto-cuerpo">
-        Escribe el número de WhatsApp con el que le escribiste al negocio. Es
-        para que nadie más pueda pedir a tu nombre.
+        Escribe el número de WhatsApp con el que pediste tu enlace. Es para que
+        nadie más pueda pedir a tu nombre.
       </p>
 
       <form

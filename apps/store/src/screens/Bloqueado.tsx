@@ -68,7 +68,7 @@ export default function Bloqueado({ business, until, permanent, onReintentar }: 
           nada — es cómo nació el fallo del número del 2026-08-23. */}
       {until && !cumplido && (
         <p className="superficie mt-6 rounded-(--radius-tarjeta) px-4 py-4 text-center text-[15px] font-bold shadow-tarjeta">
-          Podrás pedir de nuevo en un rato
+          Podrás volver a pedir
           <span className="mt-1 block text-[13px] font-semibold texto-cuerpo">{restante}</span>
         </p>
       )}

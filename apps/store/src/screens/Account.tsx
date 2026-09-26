@@ -3,6 +3,7 @@ import {
   RiArrowLeftSLine,
   RiArrowRightSLine,
   RiDeleteBin6Line,
+  RiErrorWarningLine,
   RiMapPin2Line,
   RiShoppingBag3Line,
 } from '@remixicon/react'
@@ -86,12 +87,14 @@ const cuando = (iso: string) => {
 type Vista = 'inicio' | 'pedidos' | 'direcciones'
 
 export default function Account({
-  slug, me, onVolver, onBorrarDireccion,
+  slug, me, onVolver, onBorrarDireccion, onFalloEnlace,
 }: {
   slug: string
   me: Me | null
   onVolver: () => void
   onBorrarDireccion: (addressId: string) => Promise<void>
+  /** El mismo manejo que el resto de la tienda para un enlace que no vale. */
+  onFalloEnlace: (error: unknown) => Promise<boolean>
 }) {
   const [pedidos, setPedidos] = useState<TrackedOrder[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -107,8 +110,17 @@ export default function Account({
   useEffect(() => {
     getOrders(slug)
       .then(setPedidos)
-      .catch(() => setError('No pudimos cargar tus pedidos'))
-  }, [slug])
+      .catch(async (fallo) => {
+        // ⚠️ Un enlace sin confirmar NO es «no pudimos cargar» (2026-09-25).
+        // Abriendo el enlace en otro teléfono, «Mis pedidos» decía que fallaba
+        // cuando lo que faltaba era confirmar el número: el resto de la tienda
+        // ya lo pedía y esta pantalla se lo tragaba. Ahora pasa por la misma
+        // puerta — confirmar, enlace caducado o bloqueo — y solo lo que de
+        // verdad es un fallo del camino se queda como error aquí.
+        if (await onFalloEnlace(fallo)) return
+        setError('No pudimos cargar tus pedidos')
+      })
+  }, [slug, onFalloEnlace])
 
   const direcciones: Address[] = me?.addresses || []
   // La flecha vuelve un paso, no dos: desde una sección se vuelve a la portada
@@ -192,7 +204,11 @@ export default function Account({
         {/* ── Mis pedidos ── */}
         {vista === 'pedidos' && (
         <section>
-          {error && <Aviso tono="alerta">{error}</Aviso>}
+          {error && (
+            <Aviso tono="alerta" icono={<RiErrorWarningLine size={18} />} titulo={error}>
+              Revisa tu conexión y vuelve a entrar.
+            </Aviso>
+          )}
 
           {/* Esqueleto con la forma de la lista, no una rueda girando: así la
               pantalla no salta cuando llegan los datos. El `brillo` recorre en

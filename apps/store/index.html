@@ -69,10 +69,11 @@
          mínimo en pantalla: se va en cuanto la tienda está lista. Añadir una
          espera artificial para lucir la marca sería empeorar a propósito justo
          lo que se estaba arreglando en la misma sesión. */
+      /* Icono, no emoji: ver `Bienvenida` en components/ui.tsx. */
       .vz-logo {
         width:96px; height:96px; border-radius:28px; display:flex;
-        align-items:center; justify-content:center; font-size:46px;
-        background:#fff; box-shadow:0 12px 34px rgba(11,11,12,.12);
+        align-items:center; justify-content:center; color:var(--t);
+        background:#F7FDD9; box-shadow:0 12px 34px rgba(11,11,12,.12);
         animation:vz-late .9s ease-in-out infinite alternate;
       }
       .vz-t { font-size:27px; font-weight:800; letter-spacing:-.03em; margin:0; line-height:1.15; }
@@ -85,7 +86,7 @@
   </head>
   <body>
     <div id="root"><div class="vz-boot">
-      <div class="vz-logo">🛍️</div>
+      <div class="vz-logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="44" height="44" fill="currentColor" aria-hidden="true"><path d="M6.5 2H17.5C17.8 2 18.1 2.1 18.3 2.4L21 6V21C21 21.5 20.5 22 20 22H4C3.4 22 3 21.5 3 21V6L5.7 2.4C5.8 2.1 6.1 2 6.5 2ZM19 8H5V20H19V8ZM18.5 6L17 4H7L5.5 6H18.5ZM9 10V12C9 13.6 10.3 15 12 15C13.6 15 15 13.6 15 12V10H17V12C17 14.7 14.7 17 12 17C9.2 17 7 14.7 7 12V10H9Z"></path></svg></div>
       <p class="vz-t">Bienvenido a Umbani</p>
       <p class="vz-s">Abriendo tu tienda…</p>
     </div></div>
