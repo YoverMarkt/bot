@@ -161,6 +161,7 @@ Cada una existe porque algo falló. Lo que parece complejidad de más suele ser 
 - **Todo local pide por su mini app (el pedido por chat, RETIRADO)** → [DECISIONES.md](DECISIONES.md#todo-local-pide-por-su-mini-app-se-retira-el-pedido-por-chat) y [el canal propio](DECISIONES.md#el-canal-propio-también-pide-por-su-mini-app)
 - **Reportes del dueño** → [DECISIONES.md](DECISIONES.md#reportes-del-dueño)
 - **Salud del canal** → [DECISIONES.md](DECISIONES.md#salud-del-canal)
+- **La cola de mensajes y por qué no espera al sondeo** → [DECISIONES.md](DECISIONES.md#el-chat-no-espera-al-sondeo)
 - **Evals del bot** → [DECISIONES.md](DECISIONES.md#evals-del-bot)
 - **Vigilante de precios** → [DECISIONES.md](DECISIONES.md#vigilante-de-precios)
 - **Vigilancia de credenciales** → [DECISIONES.md](DECISIONES.md#vigilancia-de-credenciales)

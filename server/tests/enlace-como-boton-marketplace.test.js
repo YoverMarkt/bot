@@ -135,6 +135,23 @@ describe('el visto azul del número de Umbani', () => {
     expect(marcar, 'marca leído DESPUÉS de contestar').toBeLessThan(atender)
   })
 
+  it('y CADA envío espera al visto, aunque pensar y marcar corran a la vez', async () => {
+    // 2026-09-25: el visto dejó de esperarse ANTES de leer la base —la ida a
+    // YCloud se sumaba entera a cada respuesta— y pasó a lanzarse a la vez.
+    // Que la llamada esté escrita antes ya no basta: lo que garantiza que el
+    // visto aterrice primero es que cada envío vaya encadenado a él.
+    const fs = await import('node:fs')
+    const fuente = fs.readFileSync('dist/services/inbound-webhook.js', 'utf8')
+    const bloque = fuente.slice(fuente.indexOf('atenderMarketplace: async'))
+    expect(bloque).toMatch(/const trasElVisto = \(enviar\) => visto\.then\(enviar\)/)
+    expect(bloque, 'el texto sale sin esperar al visto')
+      .toMatch(/send: \(reply, options\) => trasElVisto\(\(\) => platform\.enviarPorLaPlataforma\(/)
+    expect(bloque, 'el enlace sale sin esperar al visto')
+      .toMatch(/sendLink: mensaje => trasElVisto\(\(\) => platform\.enviarEnlacePorLaPlataforma\(/)
+    // Y el evento no se da por terminado con el visto todavía en vuelo.
+    expect(bloque).toMatch(/finally \{[^}]*await visto;/)
+  })
+
   it('marcar leído nunca puede impedir la respuesta', async () => {
     const platform = await import('../dist/services/platform-channel.js')
     // Sin id de mensaje no hay nada que marcar, y no se rompe.

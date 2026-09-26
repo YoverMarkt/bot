@@ -49,6 +49,7 @@ import catalogStructureRouter = require('./routes/catalog-structure.routes')
 import storefrontRouter = require('./routes/storefront.routes')
 import healthRouter = require('./routes/health.routes')
 import { cachearEstaticos, enviarHtmlDeSpa } from './lib/cache-estaticos'
+import { alEntrarUnMensaje } from './lib/despertador-de-la-cola'
 
 interface StartupDatabase {
   getProductImageById(productId: string): Promise<{ image_url?: string | null } | null>
@@ -569,6 +570,9 @@ httpServer = app.listen(port, () => {
 
   if (tareas.permitido) {
     webhookInboxWorker.start()
+    // El webhook despierta al worker en cuanto guarda un mensaje, en vez de
+    // esperar a su próximo sondeo. Ver `lib/despertador-de-la-cola.ts`.
+    alEntrarUnMensaje(espera => webhookInboxWorker.despertar(espera))
     setTimeout(generateCurrentMonthBilling, 3000)
     setInterval(generateCurrentMonthBilling, 24 * 60 * 60 * 1000)
     // Después de generar la cuota: la comisión se escribe sobre esa misma fila.

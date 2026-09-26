@@ -10,6 +10,7 @@ import {
 } from '../services/inbound-webhook'
 import { recordWebhookFailure } from '../services/channel-health'
 import { verifyYCloudSignature } from '../services/webhook-signatures'
+import { avisarQueEntroUnMensaje } from '../lib/despertador-de-la-cola'
 import {
   esNumeroDePlataforma,
   getPlatformChannel,
@@ -166,7 +167,11 @@ async function enqueueResolvedInbound(
     payload,
   )
   if (error) throw new Error(error.message || 'No se pudo persistir el webhook')
-  return data ? 'accepted' : 'duplicate'
+  if (!data) return 'duplicate'
+  // Ya está a salvo en la cola: se despierta al worker en vez de dejar que se
+  // entere en su próximo sondeo. Un duplicado no trae nada nuevo que atender.
+  avisarQueEntroUnMensaje(payload)
+  return 'accepted'
 }
 
 function loggedError(error: unknown): string {
